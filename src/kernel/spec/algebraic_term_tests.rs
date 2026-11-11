@@ -533,7 +533,9 @@ fn match_on_symbolic_algebraic_value_remains_one_expression_path() {
     assert_eq!(paths.len(), 1);
     assert!(paths[0].facts.is_empty());
     assert!(paths[0].obligations.is_empty());
-    let CValue::Int32(MachineTerm::AlgebraicMatch { scrutinee, arms }) = &paths[0].value else {
+    let CValue::Int32(MachineTerm::AlgebraicMatch { scrutinee, arms }) =
+        &paths[0].value.clone().into_native()
+    else {
         panic!("unknown match should lower to an algebraic-match term");
     };
     assert_eq!(
@@ -587,7 +589,9 @@ fn nested_match_binder_remains_symbolic_inside_its_arm() {
     .expect("a nested algebraic binder should remain available to the arm body");
 
     assert_eq!(paths.len(), 1);
-    let CValue::Int32(MachineTerm::AlgebraicMatch { arms, .. }) = &paths[0].value else {
+    let CValue::Int32(MachineTerm::AlgebraicMatch { arms, .. }) =
+        &paths[0].value.clone().into_native()
+    else {
         panic!("the outer match should remain symbolic");
     };
     let MachineTerm::AlgebraicMatch { .. } = &arms[1].body else {
@@ -674,7 +678,7 @@ fn match_on_known_constructor_reduces_to_selected_arm() {
     .expect("a match on a checked constructor should reduce");
 
     assert_eq!(paths.len(), 1);
-    assert_eq!(paths[0].value, int32(7));
+    assert_eq!(paths[0].value.clone().into_native(), int32(7));
 }
 
 #[test]
@@ -707,14 +711,15 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
             assert_eq!(paths.len(), 1);
             assert_eq!(paths[0].value.c_type(), result_type);
             // The declared return type's class reaches the pointer result.
-            let crate::kernel::CValue::Pointer(pointer) = &paths[0].value else {
+            let crate::kernel::CValue::Pointer(pointer) = &paths[0].value.clone().into_native()
+            else {
                 panic!("a pointer result");
             };
             assert_eq!(
                 pointer.object_class().map(|class| class.spelling()),
                 Some("struct node".to_string())
             );
-            let CValue::Pointer(pointer) = &paths[0].value else {
+            let CValue::Pointer(pointer) = &paths[0].value.clone().into_native() else {
                 panic!("lost pointer sort")
             };
             assert!(matches!(
@@ -750,7 +755,7 @@ fn pure_function_application_is_not_eagerly_evaluated() {
 
     assert_eq!(paths.len(), 1);
     assert_eq!(
-        paths[0].value,
+        paths[0].value.clone().into_native(),
         CValue::Int32(MachineTerm::ClickFunctionApplication {
             name: "increment".to_string(),
             arguments: vec![PureFunctionArgument::Value(int32(41))],
@@ -784,7 +789,8 @@ fn pure_function_application_retains_symbolic_algebraic_argument() {
     .expect("an ADT argument should remain one typed term");
 
     assert_eq!(paths.len(), 1);
-    let CValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = &paths[0].value
+    let CValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) =
+        &paths[0].value.clone().into_native()
     else {
         panic!("pure call should remain an application");
     };
@@ -887,7 +893,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
         .expect("typed pointer match");
         assert_eq!(paths.len(), usize::from(valid));
         if valid {
-            assert_eq!(paths[0].value, payload);
+            assert_eq!(paths[0].value.clone().into_native(), payload);
         }
         let model_match = SpecAlgebraicExpression {
             algebraic_type: ty.clone(),

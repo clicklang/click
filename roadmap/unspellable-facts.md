@@ -906,8 +906,9 @@ Literal folding remains evaluator-only. The single-operation signed module is
 removed. Available machine leaves use the existing retained-machine boundary,
 so opaque Boolean, pure-function and binder payloads preserve their observation
 identity beneath shared arithmetic. The general term importer is not a substitute
-for that machine boundary. The final `SpecExpressionPath` still requires one
-native `CValue` export.
+for that machine boundary. `SpecExpressionPath` now retains these results as
+`SpecValue::Shared`; native inputs and unmigrated sorts use its explicit native
+variant, with conversion only at consumers that still require native payloads.
 
 Validation: the final `scripts/check.sh --no-fail-fast` exited 0: 7,111 unit/API
 tests, 58 example projects and 5,146 mdtests passed. This includes cold nested
@@ -949,10 +950,20 @@ zero-export regressions cover the new boundaries. Steps 2–4 remain open.
 
 | Producer | Representation boundary still to close |
 | --- | --- |
-| `spec/shared_machine::prepare` | Same-format available 32/64-bit arithmetic, including division/remainder and shifts, retains common children and debts. The final `SpecExpressionPath::value` is still a native `CValue`. |
-| `spec::evaluate_spec_expression_dispatch` | Deferred values, mixed-format arithmetic, narrow arithmetic, casts, short-circuit branches, and scoped requirements still use native path values. Preserve their ordering and branch-local obligations when replacing that carrier. |
+| `spec/shared_machine::prepare` | Same-format available 32/64-bit arithmetic, including division/remainder and shifts, retains common children and debts through `SpecExpressionPath::value`. |
+| `spec::evaluate_spec_expression_dispatch` | Deferred same-format 32/64-bit add/subtract/multiply/divide/remainder and scoped requirement handoffs retain results, debts and structural Integer observations. Opaque/read observation payloads and deferred partial operations over those payloads retain their native identity/domain boundary. Literal-right add chains evaluate iteratively with retained prefixes, including deferred bases. Deferred shifts, mixed/narrow/wide operations, casts, let bindings, symbolic conditional joins, folds, pure-call arguments, pointer indices, scalar comparison propositions and C execution/API outputs still have explicit native boundaries. |
 | `eval/operators` and `eval/operators/spec_arithmetic` | C execution, Rust shifts, conversions, bitwise operations and wide operations construct native `CExpressionOutcome::Value` payloads. Runtime-error branches and logical specification debts have distinct rules. |
 | `ProofObligation::verification_condition` | Observation canonicalization now retains shared comparisons instead of exporting their prefixes, preserving polarity and native/shared checking equivalence. |
+
+
+Result-carrier validation: all 1,442 scaling tests passed; the combined gate's
+unit phase passed 7,212 tests. Its fixture phase exposed two deferred-shift
+domain regressions (PCG and unsigned wide narrowing). The compatibility
+boundaries above preserve the old domain shapes: all 58 examples passed their
+rerun, all 18 shared-producer regressions passed, and the final production
+fact-stability run passed all 5,188 mdtests with zero differences (the baseline
+also had zero). The final boundary fixes were checked by these targeted and
+corpus reruns; the combined gate was not rerun afterward. Steps 2–4 remain open.
 
 ### 3. Finish existing term families without redesigning their semantics
 

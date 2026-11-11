@@ -1718,7 +1718,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
         )
         .unwrap();
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].value, int32(expected));
+        assert_eq!(paths[0].value.clone().into_native(), int32(expected));
         assert!(paths[0].facts.is_empty() && paths[0].obligations.is_empty());
     }
     let projection = |at_entry| SpecAlgebraicExpression {

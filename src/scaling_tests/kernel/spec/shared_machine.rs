@@ -220,3 +220,45 @@ fn signed_shift_production_retains_prefixes_and_debts() {
     assert!(costs[1] <= costs[0] * 5, "{costs:?}");
     assert!(costs[2] <= costs[1] * 5, "{costs:?}");
 }
+
+#[test]
+fn deferred_results_and_integer_observations_retain_growing_prefixes() {
+    let mut previous = None;
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state =
+            CState::new().with_local("x", CValue::UInt64(MachineTerm::Variable(Variable(992200))));
+        let mut expression = SpecExpression::CExpression(CExpression::Variable("x".into()));
+        for _ in 0..size {
+            expression = SpecExpression::Add(
+                Box::new(expression),
+                Box::new(SpecExpression::Value(CValue::UInt64(
+                    MachineTerm::uint64_constant(1),
+                ))),
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut execution = ExecutionBudget::new();
+            evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                SpecScope::unbound(&state, None),
+                &expression,
+                &PureFactContext::new(),
+                &mut SpecEvaluation::logical(&mut execution),
+            )
+            .unwrap()
+        });
+        assert_eq!(paths.len(), 1);
+        assert!(matches!(paths[0].value, SpecValue::Shared(_)));
+        let observed = paths[0].value.observe().unwrap();
+        assert!(matches!(observed, IntegerTerm::Machine(_)));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        if let Some(previous) = previous {
+            assert!(
+                work <= previous * 5,
+                "size={size}, work={work}, previous={previous}"
+            );
+        }
+        previous = Some(work);
+    }
+}

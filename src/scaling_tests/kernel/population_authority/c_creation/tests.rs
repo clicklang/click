@@ -534,7 +534,10 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
             )
             .unwrap()
         });
-        assert_eq!(paths[0].value, CValue::Int32(MachineTerm::constant(7)));
+        assert_eq!(
+            paths[0].value.clone().into_native(),
+            CValue::Int32(MachineTerm::constant(7))
+        );
         work
     });
     assert!(samples[0] > 0, "lookup must charge its work: {samples:?}");

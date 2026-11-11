@@ -88,7 +88,9 @@ fn wide_scalar_integer_conversion_checks_bounds_and_keeps_symbolic_obligations()
         for integer in [min.clone(), max.clone()] {
             let paths = convert(IntegerTerm::constant(integer.clone())).unwrap();
             assert_eq!(paths.len(), 1);
-            let value = destination.constant_from_value(&paths[0].value).unwrap();
+            let value = destination
+                .constant_from_value(&paths[0].value.clone().into_native())
+                .unwrap();
             assert_eq!(value.to_integer(), integer);
             assert!(paths[0].obligations.is_empty());
         }

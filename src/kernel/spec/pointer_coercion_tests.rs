@@ -33,8 +33,11 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
         let [path] = paths.as_slice() else {
             panic!("one pointer value expected")
         };
-        assert_eq!(path.value, CValue::Pointer(expected.clone()));
-        let CValue::Pointer(actual) = &path.value else {
+        assert_eq!(
+            path.value.clone().into_native(),
+            CValue::Pointer(expected.clone())
+        );
+        let CValue::Pointer(actual) = &path.value.clone().into_native() else {
             unreachable!()
         };
         assert!(actual.pointee_constant());
@@ -78,12 +81,15 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
         let [path] = paths.as_slice() else {
             panic!("one pointer value expected")
         };
-        let CValue::Pointer(root) = &path.value else {
+        let CValue::Pointer(root) = &path.value.clone().into_native() else {
             panic!("pointer expected")
         };
         assert!(root.extent_is_known());
         assert!(root.extent().is_none());
-        assert_ne!(&path.value, &CValue::Pointer(actual.clone()));
+        assert_ne!(
+            &path.value.clone().into_native(),
+            &CValue::Pointer(actual.clone())
+        );
     }
 }
 

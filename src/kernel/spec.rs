@@ -51,9 +51,12 @@ pub(super) struct SpecPropositionPath {
     pub(super) introductions: LoweringIntroductions,
 }
 
+mod result;
+use result::SpecValue;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SpecExpressionPath {
-    pub(super) value: CValue,
+    pub(super) value: SpecValue,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
 }
@@ -126,6 +129,7 @@ struct SpecEvaluation<'a> {
     recover_resource_call_types: bool,
     pointer_cast_operand: bool,
     machine_preparation_disabled: bool,
+    machine_result_production_disabled: bool,
     integer_bindings: BTreeMap<Variable, IntegerTerm>,
 }
 
@@ -184,6 +188,7 @@ impl<'a> SpecEvaluation<'a> {
             recover_resource_call_types: false,
             pointer_cast_operand: false,
             machine_preparation_disabled: false,
+            machine_result_production_disabled: false,
             integer_bindings: initial_integer_bindings(),
         }
     }
@@ -195,6 +200,7 @@ impl<'a> SpecEvaluation<'a> {
             recover_resource_call_types: false,
             pointer_cast_operand: false,
             machine_preparation_disabled: false,
+            machine_result_production_disabled: false,
             integer_bindings: initial_integer_bindings(),
         }
     }
@@ -452,7 +458,7 @@ pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
     Ok(paths
         .into_iter()
         .map(|path| CExpressionPath {
-            outcome: CExpressionOutcome::Value(path.value),
+            outcome: CExpressionOutcome::Value(path.value.into_native()),
             facts: path.facts,
             obligations: path.obligations,
         })
@@ -2222,10 +2228,7 @@ fn evaluate_spec_integer_expression_paths_in(
             paths
                 .into_iter()
                 .map(|path| {
-                    let ty = MachineIntegerType::from_c_type(path.value.c_type())
-                        .ok_or(ExecutionLimit::Paths)?;
-                    let bits = c_value_bitvector_term(&path.value).ok_or(ExecutionLimit::Paths)?;
-                    let value = IntegerTerm::from_machine(ty, bits).ok_or(ExecutionLimit::Paths)?;
+                    let value = path.value.observe().ok_or(ExecutionLimit::Paths)?;
                     let mut obligations = path.obligations;
                     retain_required_integer_obligation(
                         &mut obligations,
@@ -3064,7 +3067,11 @@ fn evaluate_spec_integer_range_fold_indices_in(
                         continue;
                     };
                     // Each kind takes endpoints of its own type only.
-                    let index = match (start_path.value.clone(), end_path.value, unsigned64) {
+                    let index = match (
+                        start_path.value.clone().into_native(),
+                        end_path.value.into_native(),
+                        unsigned64,
+                    ) {
                         (CValue::Int32(start), CValue::Int32(end), false) => {
                             IntegerRangeFoldIndex::Int32 {
                                 start: SharedIntegerRangeEndpoint::intern(start),
@@ -3751,7 +3758,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                 assumptions,
                 budget,
             )? {
-                let CValue::Parameter(term) = path.value else {
+                let CValue::Parameter(term) = path.value.into_native() else {
                     return Err(ExecutionLimit::Paths);
                 };
                 if term.algebraic_type != expression.algebraic_type {
@@ -4262,7 +4269,7 @@ fn evaluate_spec_algebraic_value_at_state_in(
             )?
             .into_iter()
             .map(|path| SpecAlgebraicValuePath {
-                value: AlgebraicValue::C(path.value),
+                value: AlgebraicValue::C(path.value.into_native()),
                 facts: path.facts,
                 obligations: path.obligations,
             })
@@ -4476,7 +4483,7 @@ fn lower_spec_sequence_membership_at_state_in(
             let comparisons = sequence_elements(&sequence_path.value)
                 .filter_map(|member| {
                     c_value_comparison_proposition(
-                        &element_path.value,
+                        &element_path.value.native(),
                         CComparisonOperator::Equal,
                         member,
                     )
@@ -4668,7 +4675,7 @@ fn evaluate_spec_sequence_at_state_in(
                             continue;
                         };
                         let mut next_values = values.clone();
-                        next_values.push(element_path.value);
+                        next_values.push(element_path.value.into_native());
                         next.push((next_values, merged_facts, merged_obligations));
                     }
                 }
@@ -4774,7 +4781,7 @@ fn lower_spec_float_classification_proposition_at_state_in(
     )?
     .into_iter()
     .filter_map(|path| {
-        let condition = match path.value {
+        let condition = match path.value.into_native() {
             CValue::Float32(value) => ConditionTerm::float32_classification(value, classification),
             CValue::Float64(value) => ConditionTerm::float64_classification(value, classification),
             _ => return None,
@@ -4829,7 +4836,7 @@ fn evaluate_spec_values_at_state_in(
                     continue;
                 };
                 let mut values = prefix.values.clone();
-                values.push(value_path.value);
+                values.push(value_path.value.into_native());
                 next_paths.push(SpecValuesPath {
                     values,
                     facts,
@@ -5556,12 +5563,7 @@ fn lower_spec_comparison_proposition_at_state_in(
                 merge_failure_count = merge_failure_count.saturating_add(1);
                 continue;
             };
-            let bool_comparison =
-                bool_comparison_proposition(&left_path.value, operator, &right_path.value)
-                    .transpose()?;
-            if let Some(proposition) = bool_comparison.or_else(|| {
-                c_value_comparison_proposition(&left_path.value, operator, &right_path.value)
-            }) {
+            if let Some(proposition) = left_path.value.comparison(operator, &right_path.value)? {
                 paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
                     proposition,
@@ -5634,7 +5636,7 @@ fn lower_spec_predicate_proposition_at_state_in(
         return Ok(paths
             .into_iter()
             .map(|path| {
-                let CValue::Pointer(mutex) = path.value else {
+                let CValue::Pointer(mutex) = path.value.into_native() else {
                     return invalid_mutex_held_path(
                         path.facts,
                         path.obligations,
@@ -5752,7 +5754,7 @@ fn lower_spec_predicate_proposition_at_state_in(
                     };
                     arguments.push(Term::CMemory(memory.clone()));
                 }
-                arguments.push(Term::CValue(argument_path.value.clone()));
+                arguments.push(Term::CValue(argument_path.value.clone().into_native()));
                 next_paths.push(SpecPropositionPath {
                     introductions: Vec::new(),
                     proposition: Proposition::Predicate { name, arguments },
@@ -5875,15 +5877,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_in(
         );
     if candidate {
         if let Some(mut prepared) = shared_machine::prepare(expression, budget)? {
-            let PureFunctionArgument::Value(value) = KernelTermExport::default()
-                .argument(&prepared.value)
-                .map_err(|_| ExecutionLimit::Paths)?
-            else {
-                unreachable!()
-            };
+            let value = prepared.value;
             apply_held_resource_domain_policy(&mut prepared.obligations, assumptions);
             return Ok(vec![SpecExpressionPath {
-                value,
+                value: value.into(),
                 facts: Vec::new().into(),
                 obligations: prepared.obligations,
             }]);
@@ -5912,7 +5909,7 @@ fn evaluate_spec_expression_dispatch(
         right_operands.push(right.as_ref());
         current = left;
     }
-    if right_operands.len() > 128 && matches!(current, SpecExpression::Value(_)) {
+    if right_operands.len() > 1 {
         return evaluate_spec_add_chain_paths_in(
             scope,
             current,
@@ -5956,7 +5953,7 @@ fn evaluate_spec_expression_dispatch(
     Ok(paths
         .into_iter()
         .map(|mut path| {
-            path.value = path.value.numeric_value().clone();
+            path.value = path.value.numeric();
             path
         })
         .collect())
@@ -5970,7 +5967,7 @@ fn evaluate_spec_add_chain_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let state = scope.state;
-    let mut paths = evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
+    let mut paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
         base,
         assumptions,
@@ -5985,7 +5982,7 @@ fn evaluate_spec_add_chain_paths_in(
                 &left_path.facts,
                 &left_path.obligations,
             );
-            for right_path in evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
+            for right_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
                 right,
                 &right_assumptions,
@@ -6001,11 +5998,32 @@ fn evaluate_spec_add_chain_paths_in(
                 ) else {
                     continue;
                 };
+                if left_path.value.c_type() == CType::Bool
+                    || right_path.value.c_type() == CType::Bool
+                {
+                    return Err(ExecutionLimit::BoolArithmetic);
+                }
+                if let Some(mut result) = shared_machine::apply_values(
+                    Some(MachineBinaryOp::Add),
+                    &left_path.value,
+                    &right_path.value,
+                    budget,
+                ) {
+                    apply_held_resource_domain_policy(&mut result.obligations, assumptions);
+                    let mut obligations = obligations;
+                    obligations.extend(result.obligations);
+                    next.push(SpecExpressionPath {
+                        value: result.value.into(),
+                        facts,
+                        obligations,
+                    });
+                    continue;
+                }
                 next.extend(spec_value_paths_in(
                     apply_spec_arithmetic(
                         crate::kernel::MachineBinaryOp::Add,
-                        left_path.value.clone(),
-                        right_path.value,
+                        left_path.value.clone().into_native(),
+                        right_path.value.into_native(),
                         facts,
                         obligations,
                         assumptions,
@@ -6114,7 +6132,7 @@ fn evaluate_resource_count_paths(
                     continue;
                 };
                 let mut next_values = values.clone();
-                next_values.push(Some(AlgebraicValue::C(argument_path.value)));
+                next_values.push(Some(AlgebraicValue::C(argument_path.value.into_native())));
                 next.push((next_values, merged_facts, merged_obligations));
             }
         }
@@ -6193,7 +6211,7 @@ fn evaluate_resource_count_paths(
                 // does not restore ownership or permission to change members.
                 if creation.checked_empty_population(&description) {
                     return Ok(SpecExpressionPath {
-                        value: CValue::Int32(MachineTerm::constant(0)),
+                        value: CValue::Int32(MachineTerm::constant(0)).into(),
                         facts,
                         obligations,
                     });
@@ -6339,7 +6357,7 @@ fn evaluate_resource_count_paths(
                         }
                     };
                     return Ok(SpecExpressionPath {
-                        value: CValue::Int32(count),
+                        value: CValue::Int32(count).into(),
                         facts,
                         obligations,
                     });
@@ -6366,7 +6384,7 @@ fn evaluate_resource_count_paths(
                     ));
                 }
                 Ok(SpecExpressionPath {
-                    value: CValue::Int32(count),
+                    value: CValue::Int32(count).into(),
                     facts,
                     obligations,
                 })
@@ -6451,7 +6469,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             for path in integer_paths {
                 if let Some(value) = integer_constant_to_machine(&path.value, *destination) {
                     paths.push(SpecExpressionPath {
-                        value,
+                        value: value.into(),
                         facts: path.facts,
                         obligations: path.obligations,
                     });
@@ -6480,7 +6498,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 )
                 .ok_or(ExecutionLimit::Paths)?;
                 paths.push(SpecExpressionPath {
-                    value,
+                    value: value.into(),
                     facts: path.facts,
                     obligations,
                 });
@@ -6509,13 +6527,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 return Err(ExecutionLimit::Paths);
             }
             vec![SpecExpressionPath {
-                value: value.clone(),
+                value: value.clone().into(),
                 facts: vec![].into(),
                 obligations: vec![],
             }]
         }
         SpecExpression::Value(value) => vec![SpecExpressionPath {
-            value: value.clone(),
+            value: value.clone().into(),
             facts: Vec::new().into(),
             obligations: Vec::new(),
         }],
@@ -6614,7 +6632,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         result_type = Some(body_type);
                         // The only remaining body facts are derived read equations.
                         // They belong to this arm, not to the enclosing match.
-                        if let CValue::Parameter(body) = body_path.value {
+                        if let CValue::Parameter(body) = body_path.value.clone().into_native() {
                             // A value of a Rust type parameter is a term of
                             // its type, so the match is one too.
                             parameter_arms.push(AlgebraicResultMatchArm {
@@ -6625,7 +6643,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             });
                             continue;
                         }
-                        let Some(body) = c_value_bitvector_term(&body_path.value) else {
+                        let Some(body) = c_value_bitvector_term(&body_path.value.native()) else {
                             return Err(ExecutionLimit::Paths);
                         };
                         lowered_arms.push(AlgebraicBitvectorMatchArm {
@@ -6657,7 +6675,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         .ok_or(ExecutionLimit::Paths)?
                     };
                     paths.push(SpecExpressionPath {
-                        value,
+                        value: value.into(),
                         facts,
                         obligations,
                     });
@@ -6744,6 +6762,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let left_step_width = spec_expression_pointer_step_width(state, left);
             let right_step_width = spec_expression_pointer_step_width(state, right);
             evaluate_spec_scalar_binary_paths_in(
+                shared_machine::operator(expression),
                 SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 left,
                 right,
@@ -6777,6 +6796,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let left_step_width = spec_expression_pointer_step_width(state, left);
             let right_step_width = spec_expression_pointer_step_width(state, right);
             evaluate_spec_scalar_binary_paths_in(
+                shared_machine::operator(expression),
                 SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 left,
                 right,
@@ -6807,6 +6827,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             )?
         }
         SpecExpression::Multiply(left, right) => evaluate_spec_scalar_binary_paths_in(
+            shared_machine::operator(expression),
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
@@ -6827,6 +6848,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         SpecExpression::Divide(left, right) => {
             let division = SpecDivision::of(budget);
             evaluate_spec_scalar_binary_paths_in(
+                shared_machine::operator(expression),
                 SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 left,
                 right,
@@ -6849,6 +6871,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         SpecExpression::Remainder(left, right) => {
             let division = SpecDivision::of(budget);
             evaluate_spec_scalar_binary_paths_in(
+                shared_machine::operator(expression),
                 SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 left,
                 right,
@@ -6870,6 +6893,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         }
         SpecExpression::RustShiftLeft(left, right)
         | SpecExpression::RustShiftRight(left, right) => evaluate_spec_scalar_binary_paths_in(
+            shared_machine::operator(expression),
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
@@ -6904,6 +6928,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::ShiftLeft(left, right) => evaluate_spec_scalar_binary_paths_in(
+            shared_machine::operator(expression),
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
@@ -6922,6 +6947,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::ShiftRight(left, right) => evaluate_spec_scalar_binary_paths_in(
+            shared_machine::operator(expression),
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
@@ -6940,6 +6966,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::BitwiseAnd(left, right) => evaluate_spec_scalar_binary_paths_in(
+            shared_machine::operator(expression),
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
@@ -6957,6 +6984,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::BitwiseOr(left, right) => evaluate_spec_scalar_binary_paths_in(
+            shared_machine::operator(expression),
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
@@ -6974,6 +7002,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::BitwiseXor(left, right) => evaluate_spec_scalar_binary_paths_in(
+            shared_machine::operator(expression),
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
             right,
@@ -7115,6 +7144,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let left_step_width = spec_expression_pointer_step_width(state, left);
             let right_step_width = spec_expression_pointer_step_width(state, right);
             evaluate_spec_scalar_binary_paths_in(
+                shared_machine::operator(expression),
                 scope,
                 left,
                 right,
@@ -7234,7 +7264,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 let mut body_state = state.clone();
                 body_state
                     .locals
-                    .set(name.clone(), value_path.value.clone());
+                    .set(name.clone(), value_path.value.clone().into_native());
                 let body_assumptions = assumptions_with_path_context(
                     assumptions,
                     &value_path.facts,
@@ -7305,13 +7335,14 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             )?
             .into_iter()
             .filter_map(|mut path| {
-                let CValue::Pointer(value) = path.value else {
+                let CValue::Pointer(value) = path.value.into_native() else {
                     return None;
                 };
                 path.value = CValue::Pointer(value.clone().with_extent(Some(SubobjectExtent {
                     start: value.pointer().clone(),
                     width: (*width).into(),
-                })));
+                })))
+                .into();
                 Some(path)
             })
             .collect()
@@ -7361,7 +7392,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
             )? {
-                let CValue::Pointer(pointer) = pointer_path.value else {
+                let CValue::Pointer(pointer) = pointer_path.value.into_native() else {
                     continue;
                 };
                 let pointer = pointer.into_pointer();
@@ -7459,7 +7490,7 @@ fn evaluate_spec_pure_function_application_paths_in(
             projection.and_then(|projection| projected_field(projection, &arguments, result_type))
         {
             results.push(SpecExpressionPath {
-                value,
+                value: value.into(),
                 facts,
                 obligations,
             });
@@ -7512,7 +7543,7 @@ fn evaluate_spec_pure_function_application_paths_in(
             .ok_or(ExecutionLimit::UnsupportedPureFunctionResult(result_type))?
         };
         results.push(SpecExpressionPath {
-            value,
+            value: value.into(),
             facts,
             obligations,
         });
@@ -7722,7 +7753,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
             Ok(paths
                 .into_iter()
                 .map(|path| SpecPureFunctionArgumentPath {
-                    value: PureFunctionArgument::Value(path.value),
+                    value: PureFunctionArgument::Value(path.value.into_native()),
                     facts: path.facts,
                     obligations: path.obligations,
                 })
@@ -7775,8 +7806,8 @@ fn evaluate_spec_pure_function_argument_paths_in(
                     // that still agrees with this one about everything the
                     // function can observe through this pointer, so a fact
                     // survives exactly the steps that cannot touch the array.
-                    memory: array_ref_argument_memory(memory, &path.value),
-                    pointer: path.value,
+                    memory: array_ref_argument_memory(memory, &path.value.native()),
+                    pointer: path.value.into_native(),
                     element_type: *element_type,
                 },
                 facts: path.facts,
@@ -7863,7 +7894,7 @@ fn evaluate_spec_pointer_offset_paths_in(
         assumptions,
         budget,
     )? {
-        let CValue::Pointer(pointer) = pointer_path.value else {
+        let CValue::Pointer(pointer) = pointer_path.value.into_native() else {
             continue;
         };
         let element_assumptions = assumptions_with_path_context(
@@ -7878,7 +7909,7 @@ fn evaluate_spec_pointer_offset_paths_in(
             budget,
         )? {
             let Some((elements, unsigned, wide)) =
-                crate::kernel::eval::pointer_index_term(element_path.value)
+                crate::kernel::eval::pointer_index_term(element_path.value.into_native())
             else {
                 continue;
             };
@@ -7898,13 +7929,14 @@ fn evaluate_spec_pointer_offset_paths_in(
                 canonicalized_offset_index_term(elements, &mut facts)
             };
             paths.push(SpecExpressionPath {
-                value: CValue::Pointer(
+                value: (CValue::Pointer(
                     pointer.clone().with_address(
                         pointer
                             .pointer()
                             .offset_by_typed_elements(elements, byte_width, unsigned, wide),
                     ),
-                ),
+                ))
+                .into(),
                 facts,
                 obligations,
             });
@@ -8041,7 +8073,7 @@ fn spec_value_paths_in(
         }
         match path.outcome {
             CExpressionOutcome::Value(value) => values.push(SpecExpressionPath {
-                value,
+                value: value.into(),
                 facts: path.facts,
                 obligations: path.obligations,
             }),
@@ -8159,6 +8191,7 @@ fn apply_held_resource_domain_policy(
 }
 
 fn evaluate_spec_scalar_binary_paths_in(
+    operator: Option<MachineBinaryOp>,
     scope: SpecScope<'_>,
     left: &SpecExpression,
     right: &SpecExpression,
@@ -8188,16 +8221,27 @@ fn evaluate_spec_scalar_binary_paths_in(
             ) else {
                 continue;
             };
-            if matches!(left_path.value, CValue::Bool(_))
-                || matches!(right_path.value, CValue::Bool(_))
-            {
+            if left_path.value.c_type() == CType::Bool || right_path.value.c_type() == CType::Bool {
                 // Decision D2: a `Bool` is not a number.
                 return Err(ExecutionLimit::BoolArithmetic);
             }
+            if let Some(mut result) =
+                shared_machine::apply_values(operator, &left_path.value, &right_path.value, budget)
+            {
+                apply_held_resource_domain_policy(&mut result.obligations, assumptions);
+                let mut obligations = obligations;
+                obligations.extend(result.obligations);
+                paths.push(SpecExpressionPath {
+                    value: result.value.into(),
+                    facts,
+                    obligations,
+                });
+                continue;
+            }
             paths.extend(spec_value_paths_in(
                 apply(
-                    left_path.value.clone(),
-                    right_path.value,
+                    left_path.value.clone().into_native(),
+                    right_path.value.into_native(),
                     facts,
                     obligations,
                 ),
@@ -8223,7 +8267,7 @@ fn evaluate_spec_scalar_unary_paths_in(
         budget,
     )? {
         paths.extend(spec_value_paths_in(
-            apply(path.value, path.facts, path.obligations),
+            apply(path.value.into_native(), path.facts, path.obligations),
             budget,
         ));
     }
@@ -8367,19 +8411,22 @@ fn evaluate_spec_if_paths_in(
                         ) else {
                             continue;
                         };
+                        // Conditional payloads still have a native join boundary.
+                        let then_value = then_path.value.clone().into_native();
+                        let else_value = else_path.value.clone().into_native();
                         // Decision D2: an integer arm beside a `Bool` one.
-                        if bool_beside_integer(&then_path.value, &else_path.value) {
+                        if bool_beside_integer(&then_value, &else_value) {
                             return Err(ExecutionLimit::MixedBoolArms);
                         }
                         let Some(value) = conditional_spec_value(
                             &condition_path.proposition,
-                            then_path.value.clone(),
-                            else_path.value.clone(),
+                            then_value,
+                            else_value,
                         ) else {
                             continue;
                         };
                         branch_paths.push(SpecExpressionPath {
-                            value,
+                            value: value.into(),
                             facts,
                             obligations,
                         });
@@ -8691,7 +8738,7 @@ fn evaluate_spec_range_fold_paths_in(
         assumptions,
         budget,
     )? {
-        let CValue::Int32(start) = start_path.value else {
+        let CValue::Int32(start) = start_path.value.into_native() else {
             continue;
         };
         let start_assumptions =
@@ -8702,7 +8749,7 @@ fn evaluate_spec_range_fold_paths_in(
             &start_assumptions,
             budget,
         )? {
-            let CValue::Int32(end) = end_path.value else {
+            let CValue::Int32(end) = end_path.value.into_native() else {
                 continue;
             };
             let Some((bound_facts, bound_obligations)) =
@@ -8739,7 +8786,7 @@ fn evaluate_spec_range_fold_paths_in(
                     scope,
                     start.clone(),
                     end.clone(),
-                    initial_path.value,
+                    initial_path.value.into_native(),
                     accumulator,
                     item,
                     body,
@@ -8810,12 +8857,12 @@ fn evaluate_spec_range_fold_body_path_in(
                 else {
                     return Ok(None);
                 };
-                value = body_path.value;
+                value = body_path.value.into_native();
                 facts = next_facts;
                 obligations = next_obligations;
             }
             Ok(Some(SpecExpressionPath {
-                value,
+                value: value.into(),
                 facts,
                 obligations,
             }))
@@ -8864,12 +8911,12 @@ fn evaluate_spec_range_fold_body_path_in(
                 initial,
                 accumulator,
                 item,
-                body_path.value,
+                body_path.value.into_native(),
             ) else {
                 return Ok(None);
             };
             Ok(Some(SpecExpressionPath {
-                value,
+                value: value.into(),
                 facts,
                 obligations,
             }))
@@ -9630,8 +9677,11 @@ mod pointer_integer_observation_tests {
             )
             .unwrap();
             assert_eq!(paths.len(), 1);
-            assert_eq!(&paths[0].value, word.numeric_value());
-            assert!(!matches!(paths[0].value, CValue::PointerInteger(_)));
+            assert_eq!(&paths[0].value.clone().into_native(), word.numeric_value());
+            assert!(!matches!(
+                paths[0].value.clone().into_native(),
+                CValue::PointerInteger(_)
+            ));
         }
     }
 }

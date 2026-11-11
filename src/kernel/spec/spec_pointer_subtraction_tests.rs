@@ -26,7 +26,7 @@ fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
     .expect("pointer subtraction should stay within its specification budget");
     assert_eq!(paths.len(), 1);
     assert_eq!(
-        paths[0].value,
+        paths[0].value.clone().into_native(),
         int32(MachineTerm::subtract(
             MachineTerm::Variable(Variable(32_001)),
             MachineTerm::Variable(Variable(32_000)),
