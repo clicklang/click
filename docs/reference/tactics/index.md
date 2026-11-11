@@ -201,11 +201,15 @@ stated disequality of the two `int32` index words (see
 [Verifier design](../../internals/verifier-design.md)); otherwise it drops the
 element. When a statement the implicit tail or `step_until` runs drops such
 an element, the tail spells that disequality, `((m - 1) as int32) != 0` say,
-proves it with `solve` at the statement's pre-state, retains it as a `have`,
+proves it at the statement's pre-state, retains it as a `have`,
 and runs the statement again, which then keeps the element. It tries at most
-four dropped elements per statement. Bounds such as `2 <= m` or `1 <= j`, or
+four dropped elements per statement, and proves each only by the signed
+interval certificate over its variables' bounds, an order between the two
+indices by selected-premise arithmetic, or the disequality bridge of
+[`solve`'s arithmetic](#arithmetic-with-selected-premises) (a case split on the index
+equality), not by the rest of `solve`. Bounds such as `2 <= m` or `1 <= j`, or
 the Integer fact `m - 1 != 0`, suffice. Expansion writes the `have` before the
-statement's `step()`. A disequality `solve` misses leaves the statement as it
+statement's `step()`. A disequality it misses leaves the statement as it
 ran, and a later read of the element reports the store
 ([`a_store_at_the_last_heap_element_keeps_the_first.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_the_last_heap_element_keeps_the_first.md),
 [`a_store_at_another_symbolic_element_keeps_a_cached_one.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_another_symbolic_element_keeps_a_cached_one.md),

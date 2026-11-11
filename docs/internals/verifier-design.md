@@ -387,7 +387,9 @@ store. After a smart statement step (`try_statement_step_with_retries`),
 cell maps (`kernel::search::store_separation`, proportional to the changed
 cells, at most 64 pairs compared), pairs each dropped cell with a written cell
 of the same array, and spells the index disequality the store-time check
-reads. It proves at most four with `solve` at the pre-state, retains them as
+reads. It proves at most four at the pre-state with the narrow closure
+`try_index_disequality_closure` (signed interval certificate, order
+refutation, disequality bridge), retains them as
 `have`s and reruns the statement; expansion writes those `have`s and the
 expanded proof searches nothing. `solve`'s last strategy,
 `try_disequality_by_refuted_equality`, proves a disequality from a connected

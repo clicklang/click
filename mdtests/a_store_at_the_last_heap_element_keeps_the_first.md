@@ -8,7 +8,7 @@ read declares `r`, so a transition lies between the store and the read.
 
 The store keeps a cached element only on a stated disequality of the two
 `int32` index words. With no proof body, the implicit tail sees the store
-drop `q[0]`, proves `((m - 1) as int32) != 0` with `solve` before the store,
+drop `q[0]`, proves `((m - 1) as int32) != 0` by arithmetic before the store,
 and runs the store again. `click expand` writes that `have` before the
 store's `step()`.
 

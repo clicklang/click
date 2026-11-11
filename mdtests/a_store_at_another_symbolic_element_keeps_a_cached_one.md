@@ -2,8 +2,8 @@
 
 Each function stores `7` at one element, then `1` at an element whose index
 differs from it only by the contract's bounds, and reads the first back. No
-proof body states the index disequality: the implicit tail proves it with
-`solve` before the second store, from the bounds alone (`1 <= j`,
+proof body states the index disequality: the implicit tail proves it by
+arithmetic before the second store, from the bounds alone (`1 <= j`,
 `3 <= m`), in either store order, and for an automatic array as well as a
 heap allocation.
 
