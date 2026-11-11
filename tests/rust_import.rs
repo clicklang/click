@@ -5473,9 +5473,10 @@ fn library_iterators_prove_chunks_exact_by_its_contract() {
 /// The example's loop, which reads the first and last byte of each chunk,
 /// proved under `"iterators": "library"`: the chunk a pass binds is
 /// `iter.nth(0)`, placed in `bytes` by `nth_chunks_exact`, and each read
-/// owes its offset's bound as a machine value.
+/// owes its offset's bound as a machine value. The loop carries where its
+/// iterator stands as one invariant, `iter == start.after(iterations)`.
 #[test]
-#[ignore = "nightly: 75 s, over the gate's per-test budget (2026-11-11)"]
+#[ignore = "nightly: 25 s, over the gate's per-test budget (2026-11-11)"]
 fn library_iterators_prove_a_loop_that_reads_its_chunks() {
     let p =
         Project::with_library_iterators(include_str!("../examples/rust-chunks-exact/chunks.rs"));
@@ -5490,7 +5491,7 @@ fn library_iterators_prove_a_loop_that_reads_its_chunks() {
         ),
         // The second read is of the chunk's last byte: its bound is owed.
         sidecar.replace(
-            "                have to_integer((bytes.len() / 4u64 - at(taken, iter.len())) * 4u64 + 3u64) < to_integer(bytes.len());\n",
+            "                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64 + 3u64) < to_integer(bytes.len());\n",
             "",
         ),
     ] {
