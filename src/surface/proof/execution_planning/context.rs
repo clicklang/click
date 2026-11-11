@@ -851,6 +851,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
         Proposition(&'a Proposition, usize),
         Condition(&'a ConditionTerm),
         Bitvector(&'a MachineTerm),
+        Shared(&'a crate::kernel::KernelTerm),
         PointerOffset(&'a PointerOffsetTerm),
     }
     let mut work = vec![Work::Proposition(proposition, 0)];
@@ -931,6 +932,51 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
             Work::Condition(ConditionTerm::Variable(variable))
                 if !crate::kernel::is_load_variable(variable) => {}
             Work::Condition(_) => return Ok(false),
+            Work::Shared(root) => {
+                use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
+                if let Some(leaf) = root
+                    .machine_conversion_leaf()
+                    .or_else(|| root.machine_read_leaf())
+                {
+                    work.push(Work::Bitvector(leaf));
+                } else {
+                    match root.node() {
+                        N::MachineBinary {
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                            arguments,
+                            ..
+                        } => {
+                            work.push(Work::Shared(&arguments[1]));
+                            work.push(Work::Shared(&arguments[0]));
+                        }
+                        N::MachineUnary {
+                            format: MachineIntegerType::Int32,
+                            operator: crate::kernel::MachineUnaryOp::BitwiseNot,
+                            operand,
+                        } => work.push(Work::Shared(operand)),
+                        N::Variable(variable) if !crate::kernel::is_load_variable(variable) => {}
+                        N::Variable(variable)
+                            if quantified_external_range
+                                && crate::kernel::registered_load_for_variable(variable)
+                                    .is_some() => {}
+                        N::Variable(variable)
+                            if static_snapshot.is_some_and(|snapshot| {
+                                registered_static_load_matches_snapshot(variable, snapshot)
+                            }) =>
+                        {
+                            saw_static_load = true
+                        }
+                        N::MachineLiteral(_)
+                            if matches!(
+                                V::Shared(root).literal(),
+                                Some(
+                                    bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)
+                                )
+                            ) => {}
+                        _ => return Ok(false),
+                    }
+                }
+            }
             Work::Bitvector(bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)) => {}
             Work::Bitvector(MachineTerm::MemoryLoad(..)) if quantified_external_range => {}
             Work::Bitvector(term @ MachineTerm::MemoryLoad(_, _, _))
@@ -981,7 +1027,13 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
             }
             Work::PointerOffset(PointerOffsetTerm::Int32Scaled { value, .. })
             | Work::PointerOffset(PointerOffsetTerm::Int64Scaled { value, .. }) => {
-                work.push(Work::Bitvector(value));
+                if let Some(root) = value.shared_operand() {
+                    work.push(Work::Shared(root));
+                } else {
+                    work.push(Work::Bitvector(
+                        value.retained_written_operand().expect("native index"),
+                    ));
+                }
             }
         }
     }

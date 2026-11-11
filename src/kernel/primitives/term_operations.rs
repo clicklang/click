@@ -3059,16 +3059,19 @@ impl ConditionTerm {
     /// only when that index addition does not wrap. Each displacement is one
     /// scaled scalar or a representable constant. A shared pointer base may
     /// precede them; other nested sums and full-width indices are refused.
-    pub(crate) fn pointer_offset_association_guard(&self) -> Option<Self> {
-        fn scalar(offset: &PointerOffsetTerm, width: i64) -> Option<MachineTerm> {
+    pub(crate) fn pointer_offset_association_guard(&self) -> Option<[SharedMachineIntegerTerm; 2]> {
+        fn scalar(offset: &PointerOffsetTerm, width: i64) -> Option<SharedMachineIntegerTerm> {
             match offset {
                 PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width == width => {
-                    Some(value.as_ref().clone())
+                    Some(value.clone())
                 }
                 PointerOffsetTerm::Constant(value) if value % width == 0 => {
-                    i32::try_from(value / width)
-                        .ok()
-                        .map(|value| MachineTerm::constant(value as u32))
+                    i32::try_from(value / width).ok().map(|value| {
+                        SharedMachineIntegerTerm::index(
+                            MachineIntegerType::Int32,
+                            MachineTerm::constant(value as u32),
+                        )
+                    })
                 }
                 _ => None,
             }
@@ -3099,8 +3102,19 @@ impl ConditionTerm {
             else {
                 continue;
             };
-            if MachineTerm::add(left.clone(), right.clone()) == **value {
-                return Some(Self::signed_add_overflows(left, right));
+            let children = [left.operand_view(), right.operand_view()]
+                .map(|view| KernelTerm::retained_machine_operand(MachineIntegerType::Int32, view));
+            let raw = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                children.clone(),
+            );
+            let sum = crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node(
+                &raw, &children,
+            )?;
+            let expected = KernelTerm::retained_machine_operand(value.ty(), value.operand_view());
+            if crate::kernel::shared_machine_syntax_equal(&sum, &expected) {
+                return Some([left, right]);
             }
         }
         None
@@ -4749,10 +4763,9 @@ impl Pointer {
             let variable = match &base.offset {
                 PointerOffsetTerm::Variable(variable) => Some(*variable),
                 PointerOffsetTerm::Int32Scaled { value, .. }
-                | PointerOffsetTerm::Int64Scaled { value, .. } => match value.as_ref() {
-                    MachineTerm::Variable(variable) => Some(*variable),
-                    _ => None,
-                },
+                | PointerOffsetTerm::Int64Scaled { value, .. } => {
+                    value.operand_view().variable().copied()
+                }
                 PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Add(_, _) => None,
             };
             if let Some(variable) = variable {

@@ -5865,7 +5865,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_in(
     let candidate = !budget.machine_preparation_disabled
         && matches!(
             expression,
-            SpecExpression::Add(..) | SpecExpression::Subtract(..) | SpecExpression::Multiply(..)
+            SpecExpression::Add(..)
+                | SpecExpression::Subtract(..)
+                | SpecExpression::Multiply(..)
+                | SpecExpression::Divide(..)
+                | SpecExpression::Remainder(..)
+                | SpecExpression::ShiftLeft(..)
+                | SpecExpression::ShiftRight(..)
         );
     if candidate {
         if let Some(mut prepared) = shared_machine::prepare(expression, budget)? {

@@ -1352,7 +1352,7 @@ impl Printer<'_> {
                 value, byte_width, ..
             } => {
                 let value = self
-                    .bitvector(value, None, depth + 1)
+                    .bitvector(value.structural_value(), None, depth + 1)
                     .map_or_else(|| "…".into(), |value| operand(value, MULTIPLY));
                 if *byte_width == 1 {
                     value
@@ -1910,7 +1910,7 @@ impl Printer<'_> {
                 PointerOffsetTerm::Constant(0) => call,
                 PointerOffsetTerm::Int32Scaled { value, .. }
                 | PointerOffsetTerm::Int64Scaled { value, .. } => {
-                    let index = self.bitvector(value, None, depth + 1)?;
+                    let index = self.bitvector(value.structural_value(), None, depth + 1)?;
                     spelled(
                         format!("{} + {}", operand(call, ADD), operand(index, MULTIPLY)),
                         ADD,
@@ -2181,7 +2181,9 @@ impl Printer<'_> {
             PointerOffsetTerm::Int32Scaled { value, byte_width }
             | PointerOffsetTerm::Int64Scaled {
                 value, byte_width, ..
-            } if Some(*byte_width) == width => self.bitvector(value, None, depth + 1),
+            } if Some(*byte_width) == width => {
+                self.bitvector(value.structural_value(), None, depth + 1)
+            }
             _ => None,
         };
         Some(match index {

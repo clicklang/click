@@ -169,7 +169,7 @@ fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
         .expect("replacement load must retain its defining pointer");
     assert!(matches!(pointer.offset,
         PointerOffsetTerm::Int32Scaled { value, .. }
-            if matches!(value.as_ref(), MachineTerm::IntegerToMachine { value, .. }
+            if matches!(value.structural_value(), MachineTerm::IntegerToMachine { value, .. }
                 if matches!(value.as_ref(), IntegerTerm::Variable(variable)
                     if *variable == free_integer))));
 }
@@ -205,7 +205,7 @@ fn checked_c_substitution_reserves_free_c_in_registered_load_pointer() {
         .expect("replacement load must retain its defining pointer");
     assert!(matches!(pointer.offset,
         PointerOffsetTerm::Int32Scaled { value, .. }
-            if matches!(value.as_ref(), MachineTerm::Variable(variable)
+            if matches!(value.structural_value(), MachineTerm::Variable(variable)
                 if *variable == free_c)));
 }
 

@@ -1,6 +1,29 @@
 //! Checked equality substitution. Surface syntax is never evidence for a rewrite.
 
 mod shared;
+pub(in crate::kernel) use shared::canonical_index as canonical_pointer_index;
+
+fn rewrite_pointer_index(
+    value: &SharedMachineIntegerTerm,
+    from: &MachineTerm,
+    to: &MachineTerm,
+) -> SharedMachineIntegerTerm {
+    if let Some(root) = value.shared_operand() {
+        shared::rewrite(root, from, to, |leaf| rewrite_term(leaf, from, to))
+            .and_then(|root| SharedMachineIntegerTerm::from_shared(value.ty(), root))
+            .unwrap_or_else(|| value.clone())
+    } else {
+        SharedMachineIntegerTerm::index(
+            value.ty(),
+            rewrite_term(
+                value.retained_written_operand().expect("native index"),
+                from,
+                to,
+            ),
+        )
+    }
+}
+
 pub(in crate::kernel) use shared::clear as clear_shared_exact_rewrite_cache;
 pub(in crate::kernel) use shared::normalize_node as rebuild_normalized_machine_node;
 pub(in crate::kernel) use shared::transport_node as rebuild_transported_machine_node;
@@ -937,16 +960,20 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
                 rewrite_offset(right, from, to),
             ),
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                PointerOffsetTerm::scale_int32(rewrite_term(value, from, to), *byte_width)
+                crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                    rewrite_pointer_index(value, from, to),
+                    *byte_width,
+                    None,
+                )
             }
             PointerOffsetTerm::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
-            } => PointerOffsetTerm::scale_int64(
-                rewrite_term(value, from, to),
+            } => crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                rewrite_pointer_index(value, from, to),
                 *byte_width,
-                *unsigned,
+                Some(*unsigned),
             ),
             PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => offset.clone(),
         }
@@ -1449,11 +1476,22 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 // `p->q == r`): rewrite through it, as through the outer
                 // load. Each level is the registered address of one load.
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                    let rewritten = rewrite_term_offset(value, left, right);
-                    if &rewritten == value.as_ref() {
+                    let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index(
+                        value,
+                        |leaf| Some(rewrite_term_offset(leaf, left, right)),
+                        rebuild_transported_machine_node,
+                    )
+                    .unwrap_or_else(|| value.clone());
+                    if crate::kernel::memory_provenance::pointer_index_syntax_equal(
+                        value, &rewritten,
+                    ) {
                         offset.clone()
                     } else {
-                        PointerOffsetTerm::scale_int32(rewritten, *byte_width)
+                        crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                            rewritten,
+                            *byte_width,
+                            None,
+                        )
                     }
                 }
                 PointerOffsetTerm::Int64Scaled {
@@ -1461,11 +1499,22 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     byte_width,
                     unsigned,
                 } => {
-                    let rewritten = rewrite_term_offset(value, left, right);
-                    if &rewritten == value.as_ref() {
+                    let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index(
+                        value,
+                        |leaf| Some(rewrite_term_offset(leaf, left, right)),
+                        rebuild_transported_machine_node,
+                    )
+                    .unwrap_or_else(|| value.clone());
+                    if crate::kernel::memory_provenance::pointer_index_syntax_equal(
+                        value, &rewritten,
+                    ) {
                         offset.clone()
                     } else {
-                        PointerOffsetTerm::scale_int64(rewritten, *byte_width, *unsigned)
+                        crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                            rewritten,
+                            *byte_width,
+                            Some(*unsigned),
+                        )
                     }
                 }
                 PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => offset.clone(),
@@ -2080,16 +2129,20 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 rewrite_offset_term(right, from, to),
             ),
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                PointerOffsetTerm::scale_int32(rewrite_term(value, from, to), *byte_width)
+                crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                    rewrite_pointer_index(value, from, to),
+                    *byte_width,
+                    None,
+                )
             }
             PointerOffsetTerm::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
-            } => PointerOffsetTerm::scale_int64(
-                rewrite_term(value, from, to),
+            } => crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                rewrite_pointer_index(value, from, to),
                 *byte_width,
-                *unsigned,
+                Some(*unsigned),
             ),
             PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => offset.clone(),
         }
@@ -2456,6 +2509,63 @@ fn rewrite_atomic_proposition_by_exact_equality(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checked_pointer_index_rewrite_preserves_shared_arithmetic() {
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let _session = VerificationSession::enter();
+            let x = MachineTerm::Variable(Variable(1081001));
+            let y = MachineTerm::Variable(Variable(1081002));
+            let root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&x));
+            let root =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
+            let index = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+            let pointer = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: if ty == MachineIntegerType::Int32 {
+                    PointerOffsetTerm::Int32Scaled {
+                        value: index.clone(),
+                        byte_width: 4,
+                    }
+                } else {
+                    PointerOffsetTerm::Int64Scaled {
+                        value: index.clone(),
+                        byte_width: 4,
+                        unsigned: ty == MachineIntegerType::UInt64,
+                    }
+                },
+            };
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(pointer.clone(), Pointer::symbolic(Variable(1081003))),
+                true,
+            );
+            let equality = Proposition::ConditionIs(
+                ConditionTerm::machine_compare(ty, CompareRelation::Equal, x.clone(), y.clone()),
+                true,
+            );
+            let facts = ProofFacts::default().with_fact(equality.clone());
+            let exports = KernelTermExport::machine_export_count();
+            let checked = facts.check_equality_rewrite(&goal, &equality).unwrap();
+            assert_ne!(checked.proposition(), &goal);
+            assert!(
+                ProofFacts::default()
+                    .check_equality_rewrite(&goal, &equality)
+                    .is_err()
+            );
+            let substituted = crate::kernel::reasoning::substitute_bitvector_variable_in_pointer(
+                &pointer,
+                Variable(1081001),
+                &y,
+            );
+            assert_ne!(substituted, pointer);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(!index.has_boxed_operand());
+        }
+    }
 
     #[test]
     fn address_rewrite_preserves_the_registered_read_width_without_prior_target_reads() {

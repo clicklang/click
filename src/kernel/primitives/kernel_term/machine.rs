@@ -173,6 +173,11 @@ pub enum KernelMachineLiteral {
 }
 
 impl KernelMachineLiteral {
+    /// An atomic literal output, preserving its written carrier exactly.
+    pub(crate) fn value_at(&self, format: MachineIntegerType) -> CValue {
+        wrap_exact(format, self.legacy_term())
+    }
+
     pub(crate) fn legacy_term(&self) -> MachineTerm {
         match self {
             Self::Word32(bits) => MachineTerm::constant(*bits),

@@ -1936,19 +1936,25 @@ fn stored_value_at_equal_pointer(
         byte_width,
     } = &pointer.offset
         && let Some(value) = assumptions
-            .recorded_equality_class(index)
+            .recorded_equality_class_view(index.operand_view())
             .into_iter()
             .find_map(|member| {
                 memory
                     .known_value(&Pointer {
                         block: pointer.block.clone(),
-                        offset: PointerOffsetTerm::scaled_int32_node(member.clone(), *byte_width),
+                        offset: PointerOffsetTerm::Int32Scaled {
+                            value: member.clone(),
+                            byte_width: *byte_width,
+                        },
                     })
                     .or_else(|| {
                         memory.known_union_value(
                             &Pointer {
                                 block: pointer.block.clone(),
-                                offset: PointerOffsetTerm::scaled_int32_node(member, *byte_width),
+                                offset: PointerOffsetTerm::Int32Scaled {
+                                    value: member,
+                                    byte_width: *byte_width,
+                                },
                             },
                             CType::Int32,
                         )

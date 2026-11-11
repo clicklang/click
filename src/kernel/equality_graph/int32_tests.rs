@@ -832,3 +832,54 @@ fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
     let numeric = PureFactContext::new().assume_condition(eq(&var(941_001), &var(941_002)), true);
     assert!(!numeric.pointer_designations_match(&left, &right));
 }
+
+#[test]
+fn recorded_shared_index_members_keep_source_order_without_exporting() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, MachineBinaryOp as O, MachineIntegerType as T,
+        MachineOperandView as V, SharedMachineIntegerTerm as S,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let x = var(1081701);
+    let y = var(1081702);
+    let shared = |term: &MachineTerm| {
+        let root = KernelTerm::retained_machine_operand(T::Int32, V::Legacy(term));
+        S::from_shared(
+            T::Int32,
+            KernelTerm::machine_binary_shared(T::Int32, O::Add, [root.clone(), root]),
+        )
+        .unwrap()
+    };
+    let left = shared(&x);
+    let right = shared(&y);
+    let equality = ConditionTerm::PointerOffsetEqual(
+        Box::new(PointerOffsetTerm::Int32Scaled {
+            value: left.clone(),
+            byte_width: 4,
+        }),
+        Box::new(PointerOffsetTerm::Int32Scaled {
+            value: right.clone(),
+            byte_width: 4,
+        }),
+    );
+    let empty = PureFactContext::new();
+    let facts = empty.clone().assume_condition(equality.clone(), true);
+    let removed = facts.without_exact_fact(&Proposition::ConditionIs(equality, true));
+    let exports = KernelTermExport::machine_export_count();
+    let members = facts.recorded_equality_class_view(left.operand_view());
+    assert!(members.iter().any(|member| {
+        crate::kernel::machine_operand_syntax_cmp(member.operand_view(), right.operand_view())
+            .is_eq()
+    }));
+    assert!(
+        empty
+            .recorded_equality_class_view(left.operand_view())
+            .is_empty()
+    );
+    assert!(
+        removed
+            .recorded_equality_class_view(left.operand_view())
+            .is_empty()
+    );
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+}

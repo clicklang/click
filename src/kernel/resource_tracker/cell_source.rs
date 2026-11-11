@@ -8,6 +8,7 @@
 //! here because they read the same recorded edges under the same rules; see
 //! `docs/internals/resource-tracker.md` and `docs/internals/memory-dag.md`.
 
+#[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::memory_provenance::*;
 use crate::kernel::primitives::*;
@@ -239,7 +240,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
     /// below it), and `upper` — an exact fact of the context — keeps the
     /// index below the range's constant end ([`unsigned_index_in_range`]).
     UnsignedIndexed {
-        index: MachineTerm,
+        index: SharedMachineIntegerTerm,
         upper: ConditionTerm,
     },
 }
@@ -257,7 +258,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
 pub(in crate::kernel) fn unsigned_index_in_range(
     pointer: &Pointer,
     range: &CMemoryRange,
-) -> Option<(MachineTerm, Vec<ConditionTerm>)> {
+) -> Option<(SharedMachineIntegerTerm, Vec<ConditionTerm>)> {
     crate::instrumentation::record_deterministic_work(1);
     let (start, end) = range.int32_bounds()?;
     let start = i64::from(start.as_const()? as i32);
@@ -281,34 +282,48 @@ pub(in crate::kernel) fn unsigned_index_in_range(
     if byte_width != i64::from(range.element_width()) {
         return None;
     }
-    let index = value.as_ref().clone();
+    let index = value.clone();
     let end_term = MachineTerm::uint64_constant(end as u64);
     let last = MachineTerm::uint64_constant((end - 1) as u64);
+    let compare = |relation, bound: &MachineTerm, reverse| {
+        let atom = index.operand_view().literal().or_else(|| {
+            index
+                .operand_view()
+                .variable()
+                .copied()
+                .map(MachineTerm::Variable)
+        });
+        if let Some(atom) = atom {
+            let (left, right) = if reverse {
+                (bound.clone(), atom)
+            } else {
+                (atom, bound.clone())
+            };
+            return ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+        let mut operands = [
+            index.operand_view(),
+            crate::kernel::MachineOperandView::Legacy(bound),
+        ];
+        if reverse {
+            operands.swap(0, 1);
+        }
+        crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            MachineIntegerType::UInt64,
+            relation,
+            operands,
+        )
+    };
     let guards = vec![
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::LessThan,
-            left: Box::new(index.clone()),
-            right: Box::new(end_term.clone()),
-        },
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::GreaterThan,
-            left: Box::new(end_term),
-            right: Box::new(index.clone()),
-        },
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::LessEqual,
-            left: Box::new(index.clone()),
-            right: Box::new(last.clone()),
-        },
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt64,
-            relation: CompareRelation::GreaterEqual,
-            left: Box::new(last),
-            right: Box::new(index.clone()),
-        },
+        compare(CompareRelation::LessThan, &end_term, false),
+        compare(CompareRelation::GreaterThan, &end_term, true),
+        compare(CompareRelation::LessEqual, &last, false),
+        compare(CompareRelation::GreaterEqual, &last, true),
     ];
     Some((index, guards))
 }
@@ -1401,9 +1416,19 @@ impl PointerInRangeEvidence {
                 && membership.checks(alias, range, assumptions);
         }
         if let Self::UnsignedIndexed { index, upper } = self {
-            return unsigned_index_in_range(pointer, range)
-                .is_some_and(|(found, guards)| found == *index && guards.contains(upper))
-                && assumptions.exact_condition_value(upper) == Some(true);
+            return unsigned_index_in_range(pointer, range).is_some_and(|(found, guards)| {
+                (found == *index
+                    || crate::kernel::memory_provenance::pointer_index_syntax_equal(&found, index))
+                    && guards.iter().any(|guard| {
+                        if guard == upper {
+                            return true;
+                        }
+                        crate::kernel::proof::propositions_are_alpha_equal(
+                            &Proposition::ConditionIs(guard.clone(), true),
+                            &Proposition::ConditionIs(upper.clone(), true),
+                        )
+                    })
+            }) && assumptions.exact_condition_value(upper) == Some(true);
         }
         let Self::Indexed {
             index: retained_index,
@@ -2157,7 +2182,10 @@ mod unsigned_index_membership_tests {
         let context = PureFactContext::new().assume_condition(below(k, 5), true);
         assert!(PointerInRangeEvidence::for_pointer(&read, &range, &context).is_none());
         let retained = PointerInRangeEvidence::UnsignedIndexed {
-            index: MachineTerm::Variable(k),
+            index: SharedMachineIntegerTerm::index(
+                MachineIntegerType::UInt64,
+                MachineTerm::Variable(k),
+            ),
             upper: below(k, 5),
         };
         assert!(!retained.checks(&read, &range, &context));

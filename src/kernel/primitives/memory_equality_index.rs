@@ -1274,15 +1274,22 @@ impl MemoryFactEntries {
                     cursor = if available.wide_bounds().is_some() {
                         Some(aligned.end_pointer())
                     } else if requested.wide_bounds().is_some()
-                        && let Some((root, start, end)) =
+                        && let Some((root, _start, end)) =
                             super::resource_algebra::wide_normalization_form(available)
                     {
                         // A window at a 64-bit index ends where its wide
                         // neighbour starts, spelled as that neighbour is.
-                        Some(
-                            CMemoryRange::new_wide(root, start, end, available.element_width())
-                                .end_pointer(),
-                        )
+                        Some(Pointer {
+                            block: root.block,
+                            offset: PointerOffsetTerm::add(
+                                root.offset,
+                                crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                                    end,
+                                    i64::from(available.element_width()),
+                                    Some(true),
+                                ),
+                            ),
+                        })
                     } else {
                         memory_candidate_coordinate(available, available.end()).map(
                             |(base, end)| {

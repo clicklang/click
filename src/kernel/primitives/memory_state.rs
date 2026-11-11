@@ -293,7 +293,9 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             PointerOffsetTerm::Constant(byte_width),
                         ));
                         tasks.push(HavocIdentityTask::Text(","));
-                        tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
+                        tasks.push(HavocIdentityTask::Bitvector(
+                            value.structural_value().clone(),
+                        ));
                     }
                 }
             }
@@ -1845,39 +1847,109 @@ fn held_fingerprint(binding: &CLocalBinding) -> Option<u64> {
         .or_else(|| held_algebraic_value(binding).and_then(held_algebraic_fingerprint))
 }
 
+fn held_term_atom(term: &MachineTerm, hasher: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    std::mem::discriminant(term).hash(hasher);
+    // One variant spells every constant, so its format is part of the
+    // fingerprint, as the operators' is.
+    if let MachineTerm::Constant { format, .. } = term {
+        format.hash(hasher);
+    }
+    // So is a conversion's spelling: one variant spells every conversion.
+    if let MachineTerm::Cast { spelling, .. } = term {
+        spelling.hash(hasher);
+    }
+    match term {
+        MachineTerm::Variable(variable) => variable.hash(hasher),
+        bits32_constant!(value) => constant_u32(*value).hash(hasher),
+        MachineTerm::Binary { format, op, .. } => (format, op).hash(hasher),
+        MachineTerm::Unary { format, op, .. } => (format, op).hash(hasher),
+        _ => {}
+    }
+}
+
 /// A constant-time fingerprint of a term: its root's variant and, for a
 /// variable or constant, its payload, and for a format-carrying operator its
 /// format and operator, and the same of a binary node's two
 /// operands. Equal terms share a fingerprint; a lookup compares the terms
 /// it finds, so a shared fingerprint costs only a comparison.
 pub(crate) fn held_term_fingerprint(term: &MachineTerm) -> u64 {
-    use std::hash::{Hash, Hasher};
-    fn atom(term: &MachineTerm, hasher: &mut impl Hasher) {
-        std::mem::discriminant(term).hash(hasher);
-        // One variant spells every constant, so its format is part of the
-        // fingerprint, as the operators' is.
-        if let MachineTerm::Constant { format, .. } = term {
-            format.hash(hasher);
-        }
-        // So is a conversion's spelling: one variant spells every conversion.
-        if let MachineTerm::Cast { spelling, .. } = term {
-            spelling.hash(hasher);
-        }
-        match term {
-            MachineTerm::Variable(variable) => variable.hash(hasher),
-            bits32_constant!(value) => constant_u32(*value).hash(hasher),
-            MachineTerm::Binary { format, op, .. } => (format, op).hash(hasher),
-            MachineTerm::Unary { format, op, .. } => (format, op).hash(hasher),
-            _ => {}
-        }
-    }
+    use std::hash::Hasher;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    atom(term, &mut hasher);
+    held_term_atom(term, &mut hasher);
     if let Some((_, left, right)) = term.as_binary() {
-        atom(left, &mut hasher);
-        atom(right, &mut hasher);
+        held_term_atom(left, &mut hasher);
+        held_term_atom(right, &mut hasher);
     }
     hasher.finish()
+}
+
+/// The existing local-name index key, read from common roots and their two
+/// immediate binary children. Dummy children supply only a native variant tag;
+/// no expression subtree is exported or walked to select the index bucket.
+fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
+    use std::hash::Hasher;
+    fn atom(term: &KernelTerm, hash: &mut impl Hasher) -> Option<()> {
+        use KernelTermNode as N;
+        let zero = || Box::new(MachineTerm::constant(0));
+        let shape = match term.node() {
+            N::MachineLiteral(value) => value.legacy_term(),
+            N::Variable(value) => MachineTerm::Variable(*value),
+            N::MachineBinary {
+                format, operator, ..
+            } => MachineTerm::Binary {
+                format: *format,
+                op: *operator,
+                left: zero(),
+                right: zero(),
+            },
+            N::MachineUnary {
+                format, operator, ..
+            } => MachineTerm::Unary {
+                format: *format,
+                op: *operator,
+                operand: zero(),
+            },
+            N::MachineCast {
+                encoding,
+                source,
+                destination,
+                ..
+            } => MachineTerm::cast_node(*encoding, *source, *destination, *zero()),
+            N::BoolCast { destination, .. } => MachineTerm::BoolCast {
+                to: *destination,
+                value: Box::new(ConditionTerm::Constant(false)),
+            },
+            N::IntegerToMachine { destination, .. } => MachineTerm::IntegerToMachine {
+                destination: *destination,
+                value: IntegerTerm::constant_i64(0).into(),
+            },
+            N::MemoryLoad { .. } => {
+                held_term_atom(term.machine_read_leaf()?, hash);
+                return Some(());
+            }
+            N::Legacy(value) => {
+                let PureFunctionArgument::Value(value) = value.value() else {
+                    return None;
+                };
+                let (integer_c_value!(value)) = value else {
+                    return None;
+                };
+                held_term_atom(value, hash);
+                return Some(());
+            }
+            _ => return None,
+        };
+        held_term_atom(&shape, hash);
+        Some(())
+    }
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    atom(term, &mut hash)?;
+    if let KernelTermNode::MachineBinary { arguments, .. } = term.node() {
+        atom(&arguments[0], &mut hash)?;
+        atom(&arguments[1], &mut hash)?;
+    }
+    Some(hash.finish())
 }
 
 impl CLocalEnvironment {
@@ -1991,8 +2063,34 @@ impl CLocalEnvironment {
         &'a self,
         term: &'t MachineTerm,
     ) -> impl Iterator<Item = &'a str> + use<'a, 't> {
-        let fingerprint = held_term_fingerprint(term);
-        let mut at = Some((fingerprint, String::new()));
+        self.names_holding_integer_matching(Some(held_term_fingerprint(term)), move |held| {
+            held == term
+        })
+    }
+
+    /// Name a common arithmetic value using the same indexed candidates as
+    /// native spelling. Import only the selected candidate for exact matching.
+    pub(crate) fn names_holding_kernel_integer<'a, 't>(
+        &'a self,
+        term: &'t KernelTerm,
+    ) -> impl Iterator<Item = &'a str> + use<'a, 't> {
+        self.names_holding_integer_matching(held_kernel_term_fingerprint(term), move |held| {
+            let KernelType::C(ty) = term.ty() else {
+                return false;
+            };
+            let Some(format) = MachineIntegerType::from_c_type(*ty) else {
+                return false;
+            };
+            KernelTermImport::default().machine(format, held) == *term
+        })
+    }
+
+    fn names_holding_integer_matching<'a, 't, F: FnMut(&MachineTerm) -> bool + 't>(
+        &'a self,
+        fingerprint: Option<u64>,
+        mut matches: F,
+    ) -> impl Iterator<Item = &'a str> + use<'a, 't, F> {
+        let mut at = fingerprint.map(|fingerprint| (fingerprint, String::new()));
         let mut first = true;
         std::iter::from_fn(move || {
             loop {
@@ -2012,12 +2110,17 @@ impl CLocalEnvironment {
                         .map(|(found, _)| found)
                 };
                 let (found_fingerprint, name) = next?;
-                if *found_fingerprint != fingerprint {
+                if Some(*found_fingerprint) != fingerprint {
                     return None;
                 }
-                at = Some((fingerprint, name.clone()));
+                at = Some((*found_fingerprint, name.clone()));
                 crate::instrumentation::record_deterministic_work(1);
-                if self.bindings.get(name).and_then(held_integer_term) == Some(term) {
+                if self
+                    .bindings
+                    .get(name)
+                    .and_then(held_integer_term)
+                    .is_some_and(&mut matches)
+                {
                     return Some(name.as_str());
                 }
             }
@@ -6325,7 +6428,11 @@ impl CMemory {
         if *scale <= 0 {
             return false;
         }
-        let Some((low, high)) = assumptions.signed_interval(value) else {
+        let interval = match value.operand_view().read_source() {
+            Some(leaf) => assumptions.signed_interval(&leaf),
+            None => assumptions.signed_interval_view(value.operand_view()),
+        };
+        let Some((low, high)) = interval else {
             return false;
         };
         let (Some(start), Some(end)) = (

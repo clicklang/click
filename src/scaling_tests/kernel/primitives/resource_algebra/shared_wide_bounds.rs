@@ -48,3 +48,55 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn wide_normalization_candidates_keep_shared_endpoint_keys() {
+    let mut costs = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1081501));
+        for _ in 0..size {
+            root =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
+        }
+        let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int64);
+        let base = Pointer {
+            block: "normalization-shared-index".into(),
+            offset: PointerOffsetTerm::Add(
+                Box::new(PointerOffsetTerm::Constant(7)),
+                Box::new(PointerOffsetTerm::Int64Scaled {
+                    value: index.clone(),
+                    byte_width: 8,
+                    unsigned: true,
+                }),
+            ),
+        };
+        let fact = |start, end| {
+            CResourceFact::own_memory(CMemoryRange::new_wide(
+                base.clone(),
+                MachineTerm::uint64_constant(start),
+                MachineTerm::uint64_constant(end),
+                8,
+            ))
+        };
+        let first = fact(0, 1);
+        let next = fact(1, 2);
+        let gap = fact(3, 4);
+        let facts = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut index = ResourceNormalizationIndex::default();
+            index.insert(1, &next);
+            index.insert(2, &gap);
+            assert_eq!(index.candidates_after(0, &first, &facts), vec![1]);
+            index.remove(1, &next);
+            assert!(index.candidates_after(0, &first, &facts).is_empty());
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!index.has_boxed_operand());
+        costs.push(work);
+    }
+    assert!(costs[1] <= costs[0] * 5 + 100, "{costs:?}");
+    assert!(costs[2] <= costs[1] * 5 + 100, "{costs:?}");
+}

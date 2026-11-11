@@ -168,3 +168,53 @@ fn returned_symbolic_cell_rejoins_without_scanning_unrelated_ownership() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn shared_pointer_load_footprints_keep_depth_refusal_without_tree_expansion() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, MachineOperandView as V, SharedMachineIntegerTerm as S,
+    };
+    let mut costs = Vec::new();
+    for depth in [8, 16, 32, 65] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(1081401));
+        let memory = crate::kernel::intern_c_memory(
+            CMemory::new().store(address.clone(), crate::kernel::int32(7)),
+        );
+        let load = MachineTerm::MemoryLoad(
+            memory,
+            Box::new(address.clone()),
+            crate::kernel::LoadKind::Int32,
+        );
+        let mut root =
+            KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Legacy(&load));
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let offset = PointerOffsetTerm::Int32Scaled {
+            value: S::from_shared(MachineIntegerType::Int32, root).unwrap(),
+            byte_width: 4,
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let mut ranges = Vec::new();
+        let mut uncertain = false;
+        let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            collect_memory_load_ranges(&offset, &mut ranges, &mut uncertain, &mut None)
+        });
+        assert_eq!(uncertain, depth >= MAX_MEMORY_LOAD_FOOTPRINT_DEPTH);
+        if !uncertain {
+            assert_eq!(ranges.len(), 1);
+            assert_eq!(ranges[0].base(), &address);
+            assert_eq!(ranges[0].element_width(), 4);
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push(cost);
+    }
+    for pair in costs.windows(2) {
+        assert!(pair[1] <= pair[0] * 3 + 10, "{costs:?}");
+    }
+}

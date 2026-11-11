@@ -230,24 +230,24 @@ pub(in crate::kernel) fn offset_root_atom(offset: &PointerOffsetTerm) -> Option<
             PointerOffsetTerm::Constant(_) => {}
             PointerOffsetTerm::Variable(_) => return Some(offset.clone()),
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                if value.as_const().is_some() {
+                if value.operand_view().word32_constant().is_some() {
                     continue;
                 }
-                return Some(PointerOffsetTerm::scaled_int32_node(
-                    crate::kernel::eval::canonical_term(value),
-                    *byte_width,
-                ));
+                return Some(PointerOffsetTerm::Int32Scaled {
+                    value: crate::kernel::proof::equality_rewrite::canonical_pointer_index(value)?,
+                    byte_width: *byte_width,
+                });
             }
             PointerOffsetTerm::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
             } => {
-                return Some(PointerOffsetTerm::scaled_int64_node(
-                    crate::kernel::eval::canonical_term(value),
-                    *byte_width,
-                    *unsigned,
-                ));
+                return Some(PointerOffsetTerm::Int64Scaled {
+                    value: crate::kernel::proof::equality_rewrite::canonical_pointer_index(value)?,
+                    byte_width: *byte_width,
+                    unsigned: *unsigned,
+                });
             }
         }
     }
@@ -286,7 +286,7 @@ fn extend_related_memory_base_roots(
     base: &Pointer,
     assumptions: &PureFactContext,
     roots: &mut BTreeSet<MemoryBaseRoot>,
-    walked: &mut BTreeSet<(PointerBlock, IndexScale, MachineTerm)>,
+    walked: &mut BTreeSet<(PointerBlock, IndexScale, SharedMachineIntegerTerm)>,
 ) {
     let root = memory_base_root(base);
     roots.insert(root.clone());
@@ -294,13 +294,17 @@ fn extend_related_memory_base_roots(
         return;
     };
     let (value, scale, rescale): (
-        &MachineTerm,
+        &SharedMachineIntegerTerm,
         IndexScale,
-        &dyn Fn(MachineTerm) -> PointerOffsetTerm,
+        &dyn Fn(SharedMachineIntegerTerm) -> PointerOffsetTerm,
     ) = match &atom {
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             (value, (false, *byte_width, false), &|member| {
-                PointerOffsetTerm::scale_int32(member, *byte_width)
+                crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                    member,
+                    *byte_width,
+                    None,
+                )
             })
         }
         PointerOffsetTerm::Int64Scaled {
@@ -308,22 +312,26 @@ fn extend_related_memory_base_roots(
             byte_width,
             unsigned,
         } => (value, (true, *byte_width, *unsigned), &|member| {
-            PointerOffsetTerm::scale_int64(member, *byte_width, *unsigned)
+            crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                member,
+                *byte_width,
+                Some(*unsigned),
+            )
         }),
         _ => return,
     };
-    let image = |member: MachineTerm| {
+    let image = |member: SharedMachineIntegerTerm| {
         memory_base_root(&Pointer {
             block: block.clone(),
             offset: rescale(member),
         })
     };
-    let index = value.clone();
+    let index = value.operand_view().retain(MachineIntegerType::Int32);
     let root_is_own_image = image(index.clone()) == root;
     if root_is_own_image && walked.contains(&(block.clone(), scale, index.clone())) {
         return;
     }
-    for member in assumptions.recorded_equality_class(value) {
+    for member in assumptions.recorded_equality_class_view(value.operand_view()) {
         crate::instrumentation::record_deterministic_work(1);
         if root_is_own_image {
             walked.insert((block.clone(), scale, member.clone()));
@@ -349,7 +357,7 @@ fn memory_base_variable(base: &Pointer) -> Option<Variable> {
                 pending.push(left);
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width > 0 => {
-                let MachineTerm::Variable(candidate) = value.as_ref() else {
+                let Some(candidate) = value.operand_view().variable() else {
                     return None;
                 };
                 if variable.is_some() || crate::kernel::is_load_variable(candidate) {
@@ -1248,6 +1256,7 @@ fn collect_memory_load_ranges(
 const MAX_MEMORY_LOAD_FOOTPRINT_DEPTH: usize = 64;
 
 enum MemoryLoadFootprintWork<'a> {
+    Shared(&'a KernelTerm, usize),
     Offset(&'a PointerOffsetTerm, usize),
     Term(&'a MachineTerm, usize),
 }
@@ -1273,8 +1282,43 @@ fn collect_memory_load_work<'a>(
     source_snapshot: &mut Option<CMemorySnapshotIdentity>,
 ) {
     let mut work = initial.into_iter().collect::<Vec<_>>();
+    let mut shared_seen = std::collections::HashSet::new();
     while let Some(item) = work.pop() {
         match item {
+            MemoryLoadFootprintWork::Shared(node, depth) => {
+                // Footprints are unions. Repeated DAG occurrences at the same
+                // depth add no range or uncertainty; different depths retain
+                // the native depth refusal.
+                if !shared_seen.insert((node.id(), depth)) {
+                    continue;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                if depth > MAX_MEMORY_LOAD_FOOTPRINT_DEPTH {
+                    *uncertain = true;
+                    continue;
+                }
+                if let Some(leaf) = node
+                    .machine_conversion_leaf()
+                    .or_else(|| node.machine_read_leaf())
+                {
+                    work.push(MemoryLoadFootprintWork::Term(leaf, depth));
+                    continue;
+                }
+                match node.node() {
+                    crate::kernel::KernelTermNode::MachineBinary { arguments, .. } => {
+                        for child in arguments {
+                            work.push(MemoryLoadFootprintWork::Shared(child, depth + 1));
+                        }
+                    }
+                    crate::kernel::KernelTermNode::MachineUnary { operand, .. }
+                    | crate::kernel::KernelTermNode::MachineCast { operand, .. } => {
+                        work.push(MemoryLoadFootprintWork::Shared(operand, depth + 1));
+                    }
+                    crate::kernel::KernelTermNode::MachineLiteral(_)
+                    | crate::kernel::KernelTermNode::Variable(_) => {}
+                    _ => *uncertain = true,
+                }
+            }
             MemoryLoadFootprintWork::Offset(offset, depth) => {
                 if depth > MAX_MEMORY_LOAD_FOOTPRINT_DEPTH {
                     *uncertain = true;
@@ -1288,7 +1332,14 @@ fn collect_memory_load_work<'a>(
                     }
                     PointerOffsetTerm::Int32Scaled { value, .. }
                     | PointerOffsetTerm::Int64Scaled { value, .. } => {
-                        work.push(MemoryLoadFootprintWork::Term(value, depth + 1));
+                        if let Some(node) = value.shared_operand() {
+                            work.push(MemoryLoadFootprintWork::Shared(node, depth + 1));
+                        } else {
+                            work.push(MemoryLoadFootprintWork::Term(
+                                value.retained_written_operand().expect("native index"),
+                                depth + 1,
+                            ));
+                        }
                     }
                 }
             }
@@ -7991,6 +8042,23 @@ impl ResourceContext {
     }
 }
 
+/// Fixed literals retain the old constant-time key path; only compound
+/// endpoints need the memoized syntax fingerprint. Neither variant is evidence.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum WideNormalizationEndpointKey {
+    Constant(u64),
+    Syntax(u64),
+}
+
+fn wide_normalization_endpoint_key(view: MachineOperandView<'_>) -> WideNormalizationEndpointKey {
+    match view.uint64_constant() {
+        Some(value) => WideNormalizationEndpointKey::Constant(value),
+        None => WideNormalizationEndpointKey::Syntax(
+            crate::kernel::assumptions::machine_syntax_fingerprint(view),
+        ),
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum ResourceNormalizationKey {
     Instance(Variable),
@@ -8012,9 +8080,11 @@ enum ResourceNormalizationKey {
     ExactShapeRootedAll(ResourceFamily, String, usize),
     MemoryStart(MemoryBaseRoot, bool, SharedMachineIntegerTerm),
     MemoryEnd(MemoryBaseRoot, bool, SharedMachineIntegerTerm),
-    // Native adjacency retains the exact base, width and full endpoint.
-    MemoryNativeStart(Pointer, u32, bool, MachineTerm),
-    MemoryNativeEnd(Pointer, u32, bool, MachineTerm),
+    // Native adjacency retains the exact base and width plus a compact,
+    // snapshot-sensitive endpoint fingerprint. These keys only propose pairs;
+    // the existing merge rule remains authoritative (including collisions).
+    MemoryNativeStart(Pointer, u32, bool, WideNormalizationEndpointKey),
+    MemoryNativeEnd(Pointer, u32, bool, WideNormalizationEndpointKey),
     MemoryByteStart(MemoryBaseRoot, bool, i64),
     MemoryByteEnd(MemoryBaseRoot, bool, i64),
 }
@@ -8038,11 +8108,11 @@ enum ResourceNormalizationKey {
 /// [`merge_memory_ranges`] decides it exactly.
 fn memory_normalization_position(
     range: &CMemoryRange,
-    bound: &MachineTerm,
+    bound: MachineOperandView<'_>,
 ) -> SharedMachineIntegerTerm {
     let byte_position = || -> Option<SharedMachineIntegerTerm> {
         let base = range.base().offset.as_const()?;
-        let elements = signed_bitvector_constant(bound)?;
+        let elements = crate::kernel::assumptions::signed_index_constant(bound)?;
         let byte = base.checked_add(elements.checked_mul(i64::from(range.element_width()))?)?;
         Some(
             MachineOperandView::Legacy(&MachineTerm::constant(i32::try_from(byte).ok()? as u32))
@@ -8068,7 +8138,7 @@ fn memory_normalization_position(
             crate::kernel::assumptions::index_binary(
                 MachineBinaryOp::Add,
                 delta.index.operand_view(),
-                MachineOperandView::Legacy(bound),
+                bound,
             )
             .operand_view(),
             MachineOperandView::Legacy(&MachineTerm::constant(constant)),
@@ -8076,7 +8146,7 @@ fn memory_normalization_position(
     };
     byte_position()
         .or_else(root_position)
-        .unwrap_or_else(|| MachineOperandView::Legacy(bound).retain(MachineIntegerType::Int32))
+        .unwrap_or_else(|| bound.retain(MachineIntegerType::Int32))
 }
 
 /// Constant endpoints also meet in bytes relative to a symbolic object root.
@@ -8084,9 +8154,9 @@ fn memory_normalization_position(
 /// These keys only select candidates; merging still checks exact adjacency.
 fn memory_normalization_relative_byte_position(
     range: &CMemoryRange,
-    bound: &MachineTerm,
+    bound: MachineOperandView<'_>,
 ) -> Option<i64> {
-    let elements = signed_bitvector_constant(bound)?;
+    let elements = crate::kernel::assumptions::signed_index_constant(bound)?;
     let displacement = match memory_base_root(range.base()).1 {
         Some(offset) => {
             let root = Pointer {
@@ -8129,7 +8199,7 @@ impl ResourceNormalizationIndex {
             | CResource::MutexUse(_)
             | CResource::Publication(_) => {}
             CResource::Memory(range) if range.wide_bounds().is_some() => {
-                if let Some((base, start, end)) = wide_normalization_form(range) {
+                if let Some((base, start, end)) = native_wide_normalization_key(range) {
                     keys.push(ResourceNormalizationKey::MemoryNativeStart(
                         base.clone(),
                         range.element_width(),
@@ -8163,8 +8233,10 @@ impl ResourceNormalizationIndex {
                     ));
                 }
                 if self.byte_endpoints
-                    && let Some(start) =
-                        memory_normalization_relative_byte_position(range, range.start())
+                    && let Some(start) = memory_normalization_relative_byte_position(
+                        range,
+                        MachineOperandView::Legacy(range.start()),
+                    )
                 {
                     keys.push(ResourceNormalizationKey::MemoryByteStart(
                         memory_base_root(range.base()),
@@ -8173,8 +8245,10 @@ impl ResourceNormalizationIndex {
                     ));
                 }
                 if self.byte_endpoints
-                    && let Some(end) =
-                        memory_normalization_relative_byte_position(range, range.end())
+                    && let Some(end) = memory_normalization_relative_byte_position(
+                        range,
+                        MachineOperandView::Legacy(range.end()),
+                    )
                 {
                     keys.push(ResourceNormalizationKey::MemoryByteEnd(
                         memory_base_root(range.base()),
@@ -8185,12 +8259,12 @@ impl ResourceNormalizationIndex {
                 keys.push(ResourceNormalizationKey::MemoryStart(
                     memory_base_root(range.base()),
                     fact.is_own(),
-                    memory_normalization_position(range, range.start()),
+                    memory_normalization_position(range, MachineOperandView::Legacy(range.start())),
                 ));
                 keys.push(ResourceNormalizationKey::MemoryEnd(
                     memory_base_root(range.base()),
                     fact.is_own(),
-                    memory_normalization_position(range, range.end()),
+                    memory_normalization_position(range, MachineOperandView::Legacy(range.end())),
                 ));
             }
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
@@ -8277,7 +8351,7 @@ impl ResourceNormalizationIndex {
             | CResource::MutexUse(_)
             | CResource::Publication(_) => {}
             CResource::Memory(range) if range.wide_bounds().is_some() => {
-                if let Some((base, start, end)) = wide_normalization_form(range) {
+                if let Some((base, start, end)) = native_wide_normalization_key(range) {
                     keys.push(ResourceNormalizationKey::MemoryNativeEnd(
                         base.clone(),
                         range.element_width(),
@@ -8309,13 +8383,19 @@ impl ResourceNormalizationIndex {
                 }
                 let roots = related_pointer_roots(range.base(), assumptions);
                 let owned = fact.is_own();
-                for start in std::iter::once(range.start().clone())
-                    .chain(assumptions.bitvector_equality_class(range.start()))
-                {
+                let start_members = assumptions.bitvector_equality_class_view(range.start());
+                for start in std::iter::once(MachineOperandView::Legacy(range.start())).chain(
+                    start_members.iter().map(|member| {
+                        member
+                            .retained_written_operand()
+                            .map(MachineOperandView::Legacy)
+                            .unwrap_or_else(|| member.operand_view())
+                    }),
+                ) {
                     for root in &roots {
                         if self.byte_endpoints
                             && let Some(byte) =
-                                memory_normalization_relative_byte_position(range, &start)
+                                memory_normalization_relative_byte_position(range, start)
                         {
                             keys.push(ResourceNormalizationKey::MemoryByteEnd(
                                 root.clone(),
@@ -8326,17 +8406,23 @@ impl ResourceNormalizationIndex {
                         keys.push(ResourceNormalizationKey::MemoryEnd(
                             root.clone(),
                             owned,
-                            memory_normalization_position(range, &start),
+                            memory_normalization_position(range, start),
                         ));
                     }
                 }
-                for end in std::iter::once(range.end().clone())
-                    .chain(assumptions.bitvector_equality_class(range.end()))
-                {
+                let end_members = assumptions.bitvector_equality_class_view(range.end());
+                for end in std::iter::once(MachineOperandView::Legacy(range.end())).chain(
+                    end_members.iter().map(|member| {
+                        member
+                            .retained_written_operand()
+                            .map(MachineOperandView::Legacy)
+                            .unwrap_or_else(|| member.operand_view())
+                    }),
+                ) {
                     for root in &roots {
                         if self.byte_endpoints
                             && let Some(byte) =
-                                memory_normalization_relative_byte_position(range, &end)
+                                memory_normalization_relative_byte_position(range, end)
                         {
                             keys.push(ResourceNormalizationKey::MemoryByteStart(
                                 root.clone(),
@@ -8347,7 +8433,7 @@ impl ResourceNormalizationIndex {
                         keys.push(ResourceNormalizationKey::MemoryStart(
                             root.clone(),
                             owned,
-                            memory_normalization_position(range, &end),
+                            memory_normalization_position(range, end),
                         ));
                     }
                 }
@@ -11098,18 +11184,37 @@ fn exact_shifted_endpoint(
 /// only proposes a pair; [`merge_memory_ranges`] checks the merge.
 fn native_wide_normalization_key(
     range: &CMemoryRange,
-) -> Option<(Pointer, MachineTerm, MachineTerm)> {
-    if let Some(form) = wide_normalization_form(range) {
-        return Some(form);
+) -> Option<(
+    Pointer,
+    WideNormalizationEndpointKey,
+    WideNormalizationEndpointKey,
+)> {
+    let shifted = matches!(&range.base().offset, PointerOffsetTerm::Add(_, last)
+        if matches!(last.as_ref(), PointerOffsetTerm::Int64Scaled { byte_width, unsigned: true, .. }
+            if *byte_width == i64::from(range.element_width())));
+    if !shifted {
+        if let Some((start, end)) = range.wide_bounds() {
+            return Some((
+                range.base().clone(),
+                wide_normalization_endpoint_key(MachineOperandView::Legacy(start)),
+                wide_normalization_endpoint_key(MachineOperandView::Legacy(end)),
+            ));
+        }
+        let constant = |bound: &MachineTerm| {
+            let value = bound.as_const()?;
+            (value as i32 >= 0).then_some(WideNormalizationEndpointKey::Constant(u64::from(value)))
+        };
+        return Some((
+            range.base().clone(),
+            constant(range.start())?,
+            constant(range.end())?,
+        ));
     }
-    let constant = |bound: &MachineTerm| {
-        let value = bound.as_const()?;
-        (value as i32 >= 0).then(|| MachineTerm::uint64_constant(u64::from(value)))
-    };
+    let (base, start, end) = wide_normalization_form(range)?;
     Some((
-        range.base().clone(),
-        constant(range.start())?,
-        constant(range.end())?,
+        base,
+        wide_normalization_endpoint_key(start.operand_view()),
+        wide_normalization_endpoint_key(end.operand_view()),
     ))
 }
 
@@ -11130,7 +11235,7 @@ fn native_wide_normalization_key(
 /// a lookup key; the merge it proposes is checked by [`merge_memory_ranges`].
 pub(super) fn wide_normalization_form(
     range: &CMemoryRange,
-) -> Option<(Pointer, MachineTerm, MachineTerm)> {
+) -> Option<(Pointer, SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
     let width = i64::from(range.element_width());
     let (root, index) = match &range.base().offset {
         PointerOffsetTerm::Add(rest, last) => match last.as_ref() {
@@ -11143,19 +11248,27 @@ pub(super) fn wide_normalization_form(
                     block: range.base().block.clone(),
                     offset: rest.as_ref().clone(),
                 },
-                Some(value.as_ref().clone()),
+                Some(value.clone()),
             ),
             _ => (range.base().clone(), None),
         },
         _ => (range.base().clone(), None),
     };
     let (start, end) = match range.wide_bounds() {
-        Some((start, end)) => (start.clone(), end.clone()),
+        Some((start, end)) => (
+            SharedMachineIntegerTerm::index(MachineIntegerType::UInt64, start.clone()),
+            SharedMachineIntegerTerm::index(MachineIntegerType::UInt64, end.clone()),
+        ),
         None => {
             index.as_ref()?;
             let constant = |bound: &MachineTerm| {
                 let value = bound.as_const()?;
-                (value as i32 >= 0).then(|| MachineTerm::uint64_constant(u64::from(value)))
+                (value as i32 >= 0).then(|| {
+                    SharedMachineIntegerTerm::index(
+                        MachineIntegerType::UInt64,
+                        MachineTerm::uint64_constant(u64::from(value)),
+                    )
+                })
             };
             (constant(range.start())?, constant(range.end())?)
         }
@@ -11163,11 +11276,15 @@ pub(super) fn wide_normalization_form(
     let Some(index) = index else {
         return Some((root, start, end));
     };
-    let shifted = |bound: MachineTerm| {
-        if bound.uint64_as_const() == Some(0) {
+    let shifted = |bound: SharedMachineIntegerTerm| {
+        if bound.operand_view().uint64_constant() == Some(0) {
             index.clone()
         } else {
-            MachineTerm::uint64_add(index.clone(), bound)
+            wide_index_binary(
+                MachineBinaryOp::Add,
+                index.operand_view(),
+                bound.operand_view(),
+            )
         }
     };
     Some((root, shifted(start), shifted(end)))

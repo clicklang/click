@@ -2826,7 +2826,17 @@ fn index_bitvector_equality_fact(
                 (
                     PointerOffsetTerm::Int32Scaled { value: left, .. },
                     PointerOffsetTerm::Int32Scaled { value: right, .. },
-                ) => (left.as_ref(), right.as_ref()),
+                ) => {
+                    let mut atoms = BTreeSet::new();
+                    selected_atoms::collect(left, &mut atoms);
+                    selected_atoms::collect(right, &mut atoms);
+                    for atom in atoms {
+                        let mut bucket = index.get(&atom).cloned().unwrap_or_default();
+                        bucket.push(fact.clone());
+                        index = index.with_inserted(atom, bucket);
+                    }
+                    return index;
+                }
                 _ => return index,
             }
         }
@@ -3247,8 +3257,18 @@ fn collect_condition_bitvector_atoms(
         }
 
         ConditionTerm::AlgebraicEqual(left, right) => {
-            left.for_each_bitvector_term(|term| collect_bitvector_atoms(term, atoms));
-            right.for_each_bitvector_term(|term| collect_bitvector_atoms(term, atoms));
+            left.for_each_machine_operand(|view| match view {
+                MachineOperandView::Legacy(term) => collect_bitvector_atoms(term, atoms),
+                MachineOperandView::Shared(_) => {
+                    selected_atoms::collect(&view.retain(MachineIntegerType::Int32), atoms)
+                }
+            });
+            right.for_each_machine_operand(|view| match view {
+                MachineOperandView::Legacy(term) => collect_bitvector_atoms(term, atoms),
+                MachineOperandView::Shared(_) => {
+                    selected_atoms::collect(&view.retain(MachineIntegerType::Int32), atoms)
+                }
+            });
         }
         crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_atoms(left, atoms);

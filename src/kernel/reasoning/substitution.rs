@@ -3326,9 +3326,16 @@ fn collect_condition_bound_variables(
         }
 
         ConditionTerm::AlgebraicEqual(left, right) => {
-            left.for_each_bitvector_term(|term| collect_bitvector_bound_variables(term, variables));
-            right
-                .for_each_bitvector_term(|term| collect_bitvector_bound_variables(term, variables));
+            left.for_each_machine_operand(|view| {
+                visit_machine_operand_native_leaves(view, |term| {
+                    collect_bitvector_bound_variables(term, variables)
+                })
+            });
+            right.for_each_machine_operand(|view| {
+                visit_machine_operand_native_leaves(view, |term| {
+                    collect_bitvector_bound_variables(term, variables)
+                })
+            });
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
         crate::kernel::binary_bitvector_condition!(left, right) => {
@@ -5491,11 +5498,24 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
             }
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            let rewritten = substitute_bitvector_variable(value, from, to);
-            if rewritten == **value {
+            let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index(
+                value,
+                |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
+                crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
+            )
+            .unwrap_or_else(|| value.clone());
+            let unchanged =
+                crate::kernel::memory_provenance::pointer_index_syntax_equal(value, &rewritten);
+            if unchanged {
                 Cow::Borrowed(offset)
             } else {
-                Cow::Owned(PointerOffsetTerm::scale_int32(rewritten, *byte_width))
+                Cow::Owned(
+                    crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                        rewritten,
+                        *byte_width,
+                        None,
+                    ),
+                )
             }
         }
         PointerOffsetTerm::Int64Scaled {
@@ -5503,15 +5523,24 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
             byte_width,
             unsigned,
         } => {
-            let rewritten = substitute_bitvector_variable(value, from, to);
-            if rewritten == **value {
+            let rewritten = crate::kernel::memory_provenance::map_shared_pointer_index(
+                value,
+                |leaf| Some(substitute_bitvector_variable(leaf, from, to)),
+                crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
+            )
+            .unwrap_or_else(|| value.clone());
+            let unchanged =
+                crate::kernel::memory_provenance::pointer_index_syntax_equal(value, &rewritten);
+            if unchanged {
                 Cow::Borrowed(offset)
             } else {
-                Cow::Owned(PointerOffsetTerm::scale_int64(
-                    rewritten,
-                    *byte_width,
-                    *unsigned,
-                ))
+                Cow::Owned(
+                    crate::kernel::memory_provenance::rebuild_scaled_pointer_index(
+                        rewritten,
+                        *byte_width,
+                        Some(*unsigned),
+                    ),
+                )
             }
         }
     }
@@ -8105,7 +8134,7 @@ mod integer_mixed_quantifier_tests {
         assert!(matches!(
             rewritten_pointer.offset,
             PointerOffsetTerm::Int32Scaled { value, .. }
-                if matches!(value.as_ref(), MachineTerm::IntegerToMachine { value, .. }
+                if matches!(value.structural_value(), MachineTerm::IntegerToMachine { value, .. }
                     if matches!(value.as_ref(), IntegerTerm::Variable(variable)
                 if *variable == free_index))
         ));

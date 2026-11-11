@@ -3503,7 +3503,12 @@ impl PureFactContext {
                         byte_width: right_width,
                     },
                 ) if left_width == right_width => {
-                    collect_term_candidates(left, right, bound, candidates);
+                    collect_index_candidates(
+                        left.operand_view(),
+                        right.operand_view(),
+                        bound,
+                        candidates,
+                    );
                 }
                 (
                     PointerOffsetTerm::Int32Scaled {
@@ -3513,9 +3518,11 @@ impl PureFactContext {
                     PointerOffsetTerm::Constant(bytes),
                 ) if *byte_width != 0 && bytes % byte_width == 0 => {
                     let elements = bytes / byte_width;
-                    collect_term_candidates(
-                        left,
-                        &MachineTerm::constant((elements as i32) as u32),
+                    collect_index_candidates(
+                        left.operand_view(),
+                        MachineOperandView::Legacy(&MachineTerm::constant(
+                            (elements as i32) as u32,
+                        )),
                         bound,
                         candidates,
                     );
@@ -3532,7 +3539,12 @@ impl PureFactContext {
                         unsigned: right_unsigned,
                     },
                 ) if left_width == right_width && left_unsigned == right_unsigned => {
-                    collect_term_candidates(left, right, bound, candidates);
+                    collect_index_candidates(
+                        left.operand_view(),
+                        right.operand_view(),
+                        bound,
+                        candidates,
+                    );
                 }
                 (
                     PointerOffsetTerm::Int64Scaled {
@@ -3551,7 +3563,12 @@ impl PureFactContext {
                     } else {
                         MachineTerm::int64_constant(elements)
                     };
-                    collect_term_candidates(left, &value, bound, candidates);
+                    collect_index_candidates(
+                        left.operand_view(),
+                        MachineOperandView::Legacy(&value),
+                        bound,
+                        candidates,
+                    );
                 }
                 _ => {}
             }
@@ -3566,6 +3583,66 @@ impl PureFactContext {
                 collect_offset_candidates(&pattern.offset, &target.offset, bound, candidates);
             }
         }
+        fn collect_index_candidates(
+            pattern: MachineOperandView<'_>,
+            target: MachineOperandView<'_>,
+            bound: Variable,
+            candidates: &mut BTreeSet<MachineTerm>,
+        ) {
+            let mut pending = vec![(pattern, target)];
+            let mut seen = std::collections::HashSet::new();
+            while let Some((pattern, target)) = pending.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                if let (MachineOperandView::Shared(a), MachineOperandView::Shared(b)) =
+                    (pattern, target)
+                {
+                    if !seen.insert((a.id(), b.id())) {
+                        continue;
+                    }
+                }
+                if pattern.variable() == Some(&bound) {
+                    // Selected instantiation argument output. The remaining
+                    // universal-instantiation API owns a native argument.
+                    candidates.insert(
+                        target
+                            .retain(MachineIntegerType::Int32)
+                            .structural_value()
+                            .clone(),
+                    );
+                    continue;
+                }
+                if let (Some(a), Some(b)) = (pattern.read_source(), target.read_source()) {
+                    collect_term_candidates(&a, &b, bound, candidates);
+                } else if let (Some((af, ao, [al, ar])), Some((bf, bo, [bl, br]))) =
+                    (pattern.binary(), target.binary())
+                {
+                    if af == bf
+                        && ao == bo
+                        && matches!(af, MachineIntegerType::Int32 | MachineIntegerType::UInt32)
+                    {
+                        pending.push((al, bl));
+                        pending.push((ar, br));
+                    }
+                } else if let (Some((af, ao, av)), Some((bf, bo, bv))) =
+                    (pattern.unary(), target.unary())
+                {
+                    if af == bf
+                        && ao == bo
+                        && matches!(af, MachineIntegerType::Int32 | MachineIntegerType::UInt32)
+                        && ao == crate::kernel::MachineUnaryOp::BitwiseNot
+                    {
+                        pending.push((av, bv));
+                    }
+                } else if let (Some((ae, af, at, av)), Some((be, bf, bt, bv))) =
+                    (pattern.cast(), target.cast())
+                {
+                    if ae == MachineCastSpelling::Generic && (ae, af, at) == (be, bf, bt) {
+                        pending.push((av, bv));
+                    }
+                }
+            }
+        }
+
         fn collect_term_candidates(
             pattern: &MachineTerm,
             target: &MachineTerm,

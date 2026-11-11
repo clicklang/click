@@ -2305,7 +2305,7 @@ impl Renderer<'_> {
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                 self.push("int32(");
-                self.bitvector(value);
+                self.bitvector(value.structural_value());
                 self.fmt(format_args!(")*{byte_width} bytes"));
             }
             PointerOffsetTerm::Int64Scaled {
@@ -2314,7 +2314,7 @@ impl Renderer<'_> {
                 unsigned,
             } => {
                 self.push(if *unsigned { "uint64(" } else { "int64(" });
-                self.bitvector(value);
+                self.bitvector(value.structural_value());
                 self.fmt(format_args!(")*{byte_width} bytes"));
             }
         }

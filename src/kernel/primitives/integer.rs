@@ -21,7 +21,8 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use num_traits::{One, Zero};
 pub(crate) use operand_correspondence::{
-    shared_machine_syntax_equal, shared_operand_leaf_pairs, shared_snapshot_read_pairs,
+    machine_operand_syntax_cmp, shared_machine_syntax_equal, shared_operand_leaf_pairs,
+    shared_snapshot_read_pairs,
 };
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -481,6 +482,8 @@ impl SignedDefinedWidth {
     }
 }
 
+/// Retained machine operand. Deliberately has no native Deref/AsRef: checked
+/// consumers inspect `operand_view`; native output conversion is explicit.
 pub struct SharedMachineIntegerTerm(Arc<SharedMachineIntegerNode>);
 
 struct SharedMachineIntegerNode {
@@ -510,21 +513,6 @@ enum MachineIntegerOperand {
 impl Clone for SharedMachineIntegerTerm {
     fn clone(&self) -> Self {
         Self(self.0.clone())
-    }
-}
-
-// Pointer indices retain this shared value. Their compatibility view must
-// expose its structure, not a reserved name retained from a native import.
-impl std::ops::Deref for SharedMachineIntegerTerm {
-    type Target = MachineTerm;
-    fn deref(&self) -> &Self::Target {
-        self.structural_value()
-    }
-}
-
-impl AsRef<MachineTerm> for SharedMachineIntegerTerm {
-    fn as_ref(&self) -> &MachineTerm {
-        self.structural_value()
     }
 }
 
@@ -777,7 +765,8 @@ impl SharedMachineIntegerTerm {
     pub fn ty(&self) -> MachineIntegerType {
         self.0.ty
     }
-    /// Exact structural view at native address/checker boundaries. The
+    /// Explicit legacy structural output. May expand shared arithmetic; checked
+    /// consumers must use `operand_view` instead. The
     /// separate written-input cache can contain a registered read name.
     pub(crate) fn structural_value(&self) -> &MachineTerm {
         match &self.0.operand {

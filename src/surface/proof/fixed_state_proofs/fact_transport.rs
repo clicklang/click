@@ -999,7 +999,10 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
                 PointerOffsetTerm::Add(Box::new(erase_offset(left)), Box::new(erase_offset(right)))
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                PointerOffsetTerm::scaled_int32_node(erase_term(value), *byte_width)
+                PointerOffsetTerm::scaled_int32_node(
+                    erase_term(value.structural_value()),
+                    *byte_width,
+                )
             }
             other => other.clone(),
         }

@@ -416,3 +416,42 @@ fn cold_cell_source_lookup_does_not_search_older_stores() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn shared_pointer_resource_read_collection_visits_each_node_once() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, MachineBinaryOp, MachineOperandView as V,
+        SharedMachineIntegerTerm as S,
+    };
+    let mut costs = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::symbolic(crate::kernel::Variable(1081601));
+        let memory = intern_c_memory(CMemory::new().store(address.clone(), one()));
+        let read =
+            MachineTerm::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32);
+        let mut root =
+            KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Legacy(&read));
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let offset = PointerOffsetTerm::Int32Scaled {
+            value: S::from_shared(MachineIntegerType::Int32, root).unwrap(),
+            byte_width: 4,
+        };
+        let mut reads = Vec::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            collect_offset_reads(&offset, &mut reads)
+        });
+        assert_eq!(reads.len(), 1);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(costs[1] <= costs[0] * 5 + 10, "{costs:?}");
+    assert!(costs[2] <= costs[1] * 5 + 10, "{costs:?}");
+}

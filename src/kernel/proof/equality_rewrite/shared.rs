@@ -547,6 +547,30 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
     Some((values, loads))
 }
 
+pub(in crate::kernel) fn canonical_index(
+    value: &SharedMachineIntegerTerm,
+) -> Option<SharedMachineIntegerTerm> {
+    // Ordinary variables and literals are already canonical. Preserve the
+    // fixed-atom path without importing them through the arithmetic walker.
+    if value
+        .operand_view()
+        .variable()
+        .is_some_and(|variable| !crate::kernel::is_load_variable(variable))
+        || value.operand_view().literal().is_some()
+    {
+        return Some(value.clone());
+    }
+    if let Some(root) = value.shared_operand() {
+        let (mut nodes, _) = canonical(root)?;
+        SharedMachineIntegerTerm::from_shared(value.ty(), nodes.remove(&root.id())?)
+    } else {
+        Some(SharedMachineIntegerTerm::index(
+            value.ty(),
+            crate::kernel::eval::canonical_term(value.retained_written_operand()?),
+        ))
+    }
+}
+
 /// The only native callback receives an atomic leaf, including a retained
 /// Integer-conversion payload. Shared arithmetic is matched and rebuilt here.
 /// Opaque native replacements remain exact leaves beneath shared parents.

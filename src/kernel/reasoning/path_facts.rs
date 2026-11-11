@@ -1043,7 +1043,7 @@ pub(in crate::kernel) fn uint64_extent_in_elements(
 /// `ptrdiff_t` reading of the index, an unsigned one its `size_t` value.
 #[derive(Clone, Debug)]
 pub(in crate::kernel) struct ScaledElementOffset {
-    pub(in crate::kernel) index: MachineTerm,
+    pub(in crate::kernel) index: crate::kernel::SharedMachineIntegerTerm,
     pub(in crate::kernel) signed: bool,
     pub(in crate::kernel) stride: i64,
     pub(in crate::kernel) field: i64,
@@ -1067,31 +1067,38 @@ pub(in crate::kernel) fn scaled_element_offset(
         },
         scaled => (scaled, 0),
     };
+    use crate::kernel::{
+        KernelTerm, MachineBinaryOp, MachineIntegerType as Ty, SharedMachineIntegerTerm,
+    };
     let (index, signed, stride) = match scaled {
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => (
-            MachineTerm::int64_from_32(value.as_ref().clone()),
-            true,
-            *byte_width,
-        ),
+        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            let root = KernelTerm::retained_machine_operand(Ty::Int32, value.operand_view());
+            let wide = root.checking_legacy_machine_conversion(Ty::Int32, Ty::Int64);
+            (
+                SharedMachineIntegerTerm::from_shared(Ty::Int64, wide)?,
+                true,
+                *byte_width,
+            )
+        }
         PointerOffsetTerm::Int64Scaled {
             value,
             byte_width: 1,
             unsigned: false,
-        } => match value.as_ref() {
-            binary_term!(Int64, Multiply, left, right) => {
-                match (left.int64_as_const(), right.int64_as_const()) {
-                    (None, Some(stride)) => (left.as_ref().clone(), true, stride),
-                    (Some(stride), None) => (right.as_ref().clone(), true, stride),
-                    _ => (value.as_ref().clone(), true, 1),
+        } => match value.operand_view().binary() {
+            Some((Ty::Int64, MachineBinaryOp::Multiply, [left, right])) => {
+                match (left.int64_constant(), right.int64_constant()) {
+                    (None, Some(stride)) => (left.retain(Ty::Int64), true, stride),
+                    (Some(stride), None) => (right.retain(Ty::Int64), true, stride),
+                    _ => (value.clone(), true, 1),
                 }
             }
-            value => (value.clone(), true, 1),
+            _ => (value.clone(), true, 1),
         },
         PointerOffsetTerm::Int64Scaled {
             value,
             byte_width,
             unsigned,
-        } => (value.as_ref().clone(), !unsigned, *byte_width),
+        } => (value.clone(), !unsigned, *byte_width),
         _ => return None,
     };
     (stride > 0).then_some(ScaledElementOffset {
@@ -1111,28 +1118,40 @@ pub(in crate::kernel) fn scaled_element_offset(
 /// converted to `ptrdiff_t` keeps its `uint64` facts; a `long` one has
 /// signed facts.
 pub(in crate::kernel) fn wide_index_bound_conditions(
-    index: &MachineTerm,
+    index: &crate::kernel::SharedMachineIntegerTerm,
     signed: bool,
     count: &MachineTerm,
     strict: bool,
     assumptions: &PureFactContext,
 ) -> Vec<ConditionTerm> {
-    let unsigned = if strict {
-        ConditionTerm::uint64_less_than(index.clone(), count.clone())
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views as compare;
+    use crate::kernel::{MachineIntegerType as Ty, MachineOperandView as View};
+    let relation = if strict {
+        CompareRelation::LessThan
     } else {
-        ConditionTerm::uint64_less_equal(index.clone(), count.clone())
+        CompareRelation::LessEqual
     };
+    let unsigned = compare(
+        Ty::UInt64,
+        relation,
+        [index.operand_view(), View::Legacy(count)],
+    );
     if !signed || assumptions.decide(&unsigned) == Some(true) {
         return vec![unsigned];
     }
     let count = MachineTerm::int64_from_uint64_bits(count.clone());
+    let zero = MachineTerm::int64_constant(0);
     vec![
-        ConditionTerm::int64_signed_greater_equal(index.clone(), MachineTerm::int64_constant(0)),
-        if strict {
-            ConditionTerm::int64_signed_less_than(index.clone(), count)
-        } else {
-            ConditionTerm::int64_signed_less_equal(index.clone(), count)
-        },
+        compare(
+            Ty::Int64,
+            CompareRelation::GreaterEqual,
+            [index.operand_view(), View::Legacy(&zero)],
+        ),
+        compare(
+            Ty::Int64,
+            relation,
+            [index.operand_view(), View::Legacy(&count)],
+        ),
     ]
 }
 
@@ -1305,14 +1324,27 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
             return None;
         }
         let element = target.checked_div(*byte_width)?;
-        Some(if *unsigned {
-            ConditionTerm::uint64_equal(
-                index.as_ref().clone(),
+        let (format, constant) = if *unsigned {
+            (
+                MachineIntegerType::UInt64,
                 MachineTerm::uint64_constant(u64::try_from(element).ok()?),
             )
         } else {
-            ConditionTerm::int64_equal(index.as_ref().clone(), MachineTerm::int64_constant(element))
-        })
+            (
+                MachineIntegerType::Int64,
+                MachineTerm::int64_constant(element),
+            )
+        };
+        Some(
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format,
+                crate::kernel::CompareRelation::Equal,
+                [
+                    index.operand_view(),
+                    crate::kernel::MachineOperandView::Legacy(&constant),
+                ],
+            ),
+        )
     };
     if let Some(condition) =
         wide_index_condition(&left, &right).or_else(|| wide_index_condition(&right, &left))
@@ -2765,6 +2797,45 @@ mod shared_reconstruction_tests {
                 value,
                 byte_width: width,
             }
+        }
+    }
+
+    #[test]
+    fn shared_scaled_element_guards_preserve_signedness_and_stride() {
+        for ty in [T::Int32, T::Int64, T::UInt64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let variable = MachineTerm::Variable(Variable(1081101));
+            let root = KernelTerm::retained_machine_operand(ty, V::Legacy(&variable));
+            let root = KernelTerm::machine_binary_shared(
+                ty,
+                crate::kernel::MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+            let index = S::from_shared(ty, root).unwrap();
+            let offset = if ty == T::Int32 {
+                scaled(index.clone(), 8, false)
+            } else {
+                PointerOffsetTerm::Int64Scaled {
+                    value: index.clone(),
+                    byte_width: 8,
+                    unsigned: ty == T::UInt64,
+                }
+            };
+            let exports = KernelTermExport::machine_export_count();
+            let element = scaled_element_offset(&offset).unwrap();
+            assert_eq!(element.signed, ty != T::UInt64);
+            assert_eq!(element.stride, 8);
+            let count = MachineTerm::uint64_constant(10);
+            let guards = wide_index_bound_conditions(
+                &element.index,
+                element.signed,
+                &count,
+                true,
+                &PureFactContext::new(),
+            );
+            assert_eq!(guards.len(), if element.signed { 2 } else { 1 });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(!index.has_boxed_operand());
         }
     }
 

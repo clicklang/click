@@ -770,7 +770,7 @@ fn offsets_equal_by_cited_index_sum(
             _ => return None,
         };
         (width >= 1)
-            .then(|| IntegerTerm::from_machine(ty, value.as_ref().clone()))
+            .then(|| value.operand_view().observe(ty))
             .flatten()
             .map(|index| (index, width))
     }
@@ -1226,7 +1226,28 @@ fn expand_load_variables_shallow(bits: &MachineTerm) -> MachineTerm {
 fn expand_offset_load_variables_shallow(value: &PointerOffsetTerm) -> PointerOffsetTerm {
     match value {
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            PointerOffsetTerm::scaled_int32_node(expand_load_variables_shallow(value), *byte_width)
+            let next = crate::kernel::memory_provenance::map_shared_pointer_index_with_descent(
+                value,
+                |leaf| Some(expand_load_variables_shallow(leaf)),
+                crate::kernel::proof::equality_rewrite::rebuild_transported_machine_node,
+                |node| {
+                    matches!(
+                        node.node(),
+                        crate::kernel::KernelTermNode::MachineBinary {
+                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                            operator: crate::kernel::MachineBinaryOp::Add
+                                | crate::kernel::MachineBinaryOp::Subtract
+                                | crate::kernel::MachineBinaryOp::Multiply,
+                            ..
+                        }
+                    )
+                },
+            )
+            .unwrap_or_else(|| value.clone());
+            PointerOffsetTerm::Int32Scaled {
+                value: next,
+                byte_width: *byte_width,
+            }
         }
         PointerOffsetTerm::Add(left, right) => PointerOffsetTerm::Add(
             Box::new(expand_offset_load_variables_shallow(left)),
@@ -2732,7 +2753,7 @@ impl ScalarReadBridgeSide for PointerOffsetTerm {
         let PointerOffsetTerm::Int32Scaled { value, .. } = self else {
             return None;
         };
-        value.as_ref().scalar_read()
+        value.operand_view().read_source()?.scalar_read()
     }
 
     fn equality_sides(proposition: &Proposition) -> Option<(Self, Self)> {

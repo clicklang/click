@@ -3411,7 +3411,10 @@ pub(crate) fn pointer_load_offset_proven_equal(
     let PointerOffsetTerm::Int32Scaled { value, .. } = left else {
         return false;
     };
-    let load = match value.as_ref() {
+    let Some(source) = value.operand_view().read_source() else {
+        return false;
+    };
+    let load = match source.as_ref() {
         load @ MachineTerm::MemoryLoad(_, _, _) => Some(load.clone()),
         MachineTerm::Variable(variable) => {
             crate::kernel::eval::registered_load_origin_term_for_variable(variable)
@@ -6206,8 +6209,13 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
         }
 
         ConditionTerm::AlgebraicEqual(left, right) => {
-            left.for_each_bitvector_term(|term| collect_bitvector_memories(term, memories));
-            right.for_each_bitvector_term(|term| collect_bitvector_memories(term, memories));
+            let mut seen = BTreeSet::new();
+            left.for_each_machine_operand(|view| {
+                collect_operand_memories(view, memories, &mut seen)
+            });
+            right.for_each_machine_operand(|view| {
+                collect_operand_memories(view, memories, &mut seen)
+            });
         }
         crate::kernel::binary_bitvector_condition!(left, right) => collect_binary(left, right),
         ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
@@ -6263,12 +6271,22 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
 }
 
 fn collect_pointer_offset_memories(offset: &PointerOffsetTerm, memories: &mut Vec<SharedCMemory>) {
+    let mut seen = BTreeSet::new();
+    offset.for_each_scaled_operand(|value| {
+        collect_operand_memories(value.operand_view(), memories, &mut seen)
+    });
+}
+
+fn collect_operand_memories(
+    view: crate::kernel::MachineOperandView<'_>,
+    memories: &mut Vec<SharedCMemory>,
+    seen: &mut BTreeSet<u64>,
+) {
     use crate::kernel::MachineOperandView as V;
     // These memories are search candidates: retain the native walk's first
     // occurrence order, while visiting shared arithmetic nodes only once.
-    let mut seen = BTreeSet::new();
-    offset.for_each_scaled_operand(|value| {
-        let mut pending = vec![value.operand_view()];
+    {
+        let mut pending = vec![view];
         while let Some(operand) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             let V::Shared(root) = operand else {
@@ -6296,7 +6314,7 @@ fn collect_pointer_offset_memories(offset: &PointerOffsetTerm, memories: &mut Ve
                 pending.push(child);
             }
         }
-    });
+    }
 }
 
 fn collect_bitvector_memories(term: &MachineTerm, memories: &mut Vec<SharedCMemory>) {
@@ -6508,6 +6526,11 @@ fn transport_framed_atomic_pointer_offset(
 }
 
 mod shared_index_transport;
+pub(in crate::kernel) use shared_index_transport::{
+    index_syntax_equal as pointer_index_syntax_equal, map_index as map_shared_pointer_index,
+    map_index_with_descent as map_shared_pointer_index_with_descent,
+    transported_scaled_index as rebuild_scaled_pointer_index,
+};
 use shared_index_transport::{
     normalize_exact_index, transport_framed_index, transported_scaled_index,
 };

@@ -158,3 +158,65 @@ fn a_deferred_operand_rejects_one_preparation_without_importing_prefixes() {
         assert_eq!(work, 2 * (2 * size + 3));
     }
 }
+
+#[test]
+fn partial_division_production_retains_prefixes_and_debts() {
+    for defined in [false, true] {
+        let mut costs = Vec::new();
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut expression =
+                SpecExpression::Value(CValue::Int64(MachineTerm::Variable(Variable(991910))));
+            for _ in 0..size {
+                expression = SpecExpression::Divide(
+                    Box::new(expression),
+                    Box::new(SpecExpression::Value(CValue::Int64(MachineTerm::Variable(
+                        Variable(991911),
+                    )))),
+                );
+            }
+            let exports = KernelTermExport::machine_export_count();
+            let (prepared, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut execution = ExecutionBudget::new();
+                let mut budget = SpecEvaluation::logical(&mut execution);
+                budget.c_definedness = defined;
+                prepare(&expression, &mut budget).unwrap().unwrap()
+            });
+            assert_eq!(prepared.obligations.len(), size);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            costs.push(work);
+        }
+        assert!(costs[1] <= costs[0] * 5, "{costs:?}");
+        assert!(costs[2] <= costs[1] * 5, "{costs:?}");
+    }
+}
+
+#[test]
+fn signed_shift_production_retains_prefixes_and_debts() {
+    let mut costs = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut expression =
+            SpecExpression::Value(CValue::Int64(MachineTerm::Variable(Variable(991920))));
+        for _ in 0..size {
+            expression = SpecExpression::ShiftLeft(
+                Box::new(expression),
+                Box::new(SpecExpression::Value(CValue::Int64(MachineTerm::Variable(
+                    Variable(991921),
+                )))),
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (prepared, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut execution = ExecutionBudget::new();
+            prepare(&expression, &mut SpecEvaluation::logical(&mut execution))
+                .unwrap()
+                .unwrap()
+        });
+        assert_eq!(prepared.obligations.len(), size);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push(work);
+    }
+    assert!(costs[1] <= costs[0] * 5, "{costs:?}");
+    assert!(costs[2] <= costs[1] * 5, "{costs:?}");
+}

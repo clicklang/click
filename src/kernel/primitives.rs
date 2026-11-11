@@ -89,9 +89,10 @@ pub use integer::{
 };
 pub use integer::{MachineIntegerType, SharedMachineIntegerTerm, SignedDefinedWidth};
 pub(crate) use integer::{
-    MachineOperandView, clear_shared_machine_variable_cache, shared_machine_conversion_leaves,
-    shared_machine_read_leaves, shared_machine_read_uses, shared_machine_syntax_equal,
-    shared_machine_syntax_variables, shared_operand_leaf_pairs, shared_snapshot_read_pairs,
+    MachineOperandView, clear_shared_machine_variable_cache, machine_operand_syntax_cmp,
+    shared_machine_conversion_leaves, shared_machine_read_leaves, shared_machine_read_uses,
+    shared_machine_syntax_equal, shared_machine_syntax_variables, shared_operand_leaf_pairs,
+    shared_snapshot_read_pairs,
 };
 mod alias_candidates;
 pub(crate) use alias_candidates::{AliasCandidates, BlockKeyed};
@@ -1148,9 +1149,9 @@ impl PointerOffsetTerm {
         false
     }
 
-    /// Every bitvector term nested in this offset, for traversals that must
-    /// look through a pointer embedded in a term.
-    pub(crate) fn scaled_values(&self) -> Vec<&MachineTerm> {
+    /// Native scalar payloads for legacy rendering and test output. This can
+    /// expand shared arithmetic; checking uses `for_each_scaled_operand`.
+    pub(crate) fn native_scaled_values_for_output(&self) -> Vec<&MachineTerm> {
         let mut values = Vec::new();
         let mut pending = vec![self];
         while let Some(offset) = pending.pop() {
@@ -1161,7 +1162,7 @@ impl PointerOffsetTerm {
                     pending.push(right);
                 }
                 Self::Int32Scaled { value, .. } | Self::Int64Scaled { value, .. } => {
-                    values.push(value.as_ref());
+                    values.push(value.structural_value());
                 }
             }
         }
@@ -4659,7 +4660,7 @@ pub struct AlgebraicResultMatchArm {
 impl AlgebraicTerm {
     /// Visit scalar payload roots without expanding datatype schemas or copying
     /// terms. Callers decide how far to traverse each scalar expression.
-    pub(crate) fn for_each_bitvector_term(&self, mut visit: impl FnMut(&MachineTerm)) {
+    pub(crate) fn for_each_machine_operand(&self, mut visit: impl FnMut(MachineOperandView<'_>)) {
         enum Node<'a> {
             Algebraic(&'a AlgebraicTerm),
             Value(&'a CValue),
@@ -4707,7 +4708,9 @@ impl AlgebraicTerm {
                         }
                     }
                     AlgebraicTermNode::MemoryLoad { memory, pointer } => {
-                        visit(&AlgebraicTermNode::memory_load_carrier(memory, pointer));
+                        visit(MachineOperandView::Legacy(
+                            &AlgebraicTermNode::memory_load_carrier(memory, pointer),
+                        ));
                     }
                     AlgebraicTermNode::If {
                         condition,
@@ -4717,11 +4720,11 @@ impl AlgebraicTerm {
                         // The condition's terms are visited as the scalar
                         // conditional that carries them, so a caller walks
                         // them as it walks any condition.
-                        visit(&MachineTerm::If {
+                        visit(MachineOperandView::Legacy(&MachineTerm::If {
                             condition: condition.clone(),
                             then_term: Box::new(MachineTerm::constant(0)),
                             else_term: Box::new(MachineTerm::constant(0)),
-                        });
+                        }));
                         pending.push(Node::Algebraic(then_term));
                         pending.push(Node::Algebraic(else_term));
                     }
@@ -4730,9 +4733,9 @@ impl AlgebraicTerm {
                     CValue::PointerInteger(_) => unreachable!("numeric projection"),
                     CValue::Parameter(term) => pending.push(Node::Algebraic(term)),
                     CValue::Void => {}
-                    CValue::Bool(v) => visit(v),
+                    CValue::Bool(v) => visit(MachineOperandView::Legacy(v)),
                     CValue::Pointer(v) => pending.push(Node::Offset(&v.pointer().offset)),
-                    CValue::Int8(v) => visit(v),
+                    CValue::Int8(v) => visit(MachineOperandView::Legacy(v)),
                     CValue::Int16(v)
                     | CValue::UInt16(v)
                     | CValue::UInt8(v)
@@ -4743,7 +4746,7 @@ impl AlgebraicTerm {
                     | CValue::Int128(v)
                     | CValue::UInt128(v)
                     | CValue::Float32(v)
-                    | CValue::Float64(v) => visit(v),
+                    | CValue::Float64(v) => visit(MachineOperandView::Legacy(v)),
                 },
                 Node::Offset(offset) => match offset {
                     PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
@@ -4752,7 +4755,7 @@ impl AlgebraicTerm {
                         pending.push(Node::Offset(b));
                     }
                     PointerOffsetTerm::Int32Scaled { value, .. }
-                    | PointerOffsetTerm::Int64Scaled { value, .. } => visit(value),
+                    | PointerOffsetTerm::Int64Scaled { value, .. } => visit(value.operand_view()),
                 },
             }
         }

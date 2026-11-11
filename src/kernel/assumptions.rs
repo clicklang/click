@@ -1951,6 +1951,13 @@ impl OperandFingerprintPolicy {
         }
     }
 }
+/// Exact-syntax candidate fingerprint. Collisions are not proof authority.
+/// Arithmetic nodes are memoized; snapshots and native opaque payloads remain
+/// in the key, unlike the framed and memory-blind candidate policies.
+pub(in crate::kernel) fn machine_syntax_fingerprint(root: MachineOperandView<'_>) -> u64 {
+    operand_fingerprint(root, OperandFingerprintPolicy::Snapshot(false))
+}
+
 fn memory_blind_operand_fingerprint(root: MachineOperandView<'_>) -> u64 {
     operand_fingerprint(root, OperandFingerprintPolicy::MemoryBlind)
 }
@@ -2245,8 +2252,16 @@ fn collect_condition_memory_load_keys(
         }
 
         ConditionTerm::AlgebraicEqual(left, right) => {
-            left.for_each_bitvector_term(|term| collect_bitvector_memory_load_keys(term, keys));
-            right.for_each_bitvector_term(|term| collect_bitvector_memory_load_keys(term, keys));
+            left.for_each_machine_operand(|view| {
+                visit_machine_operand_native_leaves(view, |term| {
+                    collect_bitvector_memory_load_keys(term, keys)
+                })
+            });
+            right.for_each_machine_operand(|view| {
+                visit_machine_operand_native_leaves(view, |term| {
+                    collect_bitvector_memory_load_keys(term, keys)
+                })
+            });
         }
         crate::kernel::binary_bitvector_condition!(left, right) => collect_binary(left, right),
         ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
@@ -5655,6 +5670,7 @@ impl PureFactContext {
 
     /// The members of `term`'s recorded-equality class other than `term`:
     /// one walk over the indexed equality graph, bounded by the class.
+    #[cfg(test)]
     pub(in crate::kernel) fn recorded_equality_class(
         &self,
         term: &MachineTerm,
@@ -5663,6 +5679,13 @@ impl PureFactContext {
             .scalar_evidence_class(term)
             .into_iter()
             .collect()
+    }
+
+    pub(in crate::kernel) fn recorded_equality_class_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Vec<SharedMachineIntegerTerm> {
+        self.equality_graph.scalar_evidence_class_view(term)
     }
 
     /// Files or withdraws `condition` under each memory load it mentions.
@@ -11794,11 +11817,11 @@ fn aliased_operands(
     graph.decide(&itself)
 }
 
-/// `proposition` with each Integer comparison of exact observations replaced
-/// by the native comparison it holds exactly when, as specification lowering
-/// writes it: one fact, one form. A comparison whose native form folds to a
-/// constant, such as a type-range bound, keeps its Integer form. The walk
-/// visits each connective once.
+/// `proposition` with exact machine observations read in their native carrier.
+/// Shared operands remain retained comparisons; this does not export their
+/// arithmetic prefixes. A comparison whose native form folds to a constant,
+/// such as a type-range bound, keeps its Integer form. The walk visits each
+/// connective once and never consults facts.
 pub(crate) fn canonical_observation_form(proposition: &Proposition) -> Proposition {
     observation_comparison_form(proposition)
 }
@@ -11807,14 +11830,16 @@ fn observation_comparison_form(proposition: &Proposition) -> Proposition {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            match super::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition, *value) {
+            match super::machine_integer::comparison::structural_native_comparison_view(
+                condition, *value,
+            )
+            .map(|view| view.retained_condition())
+            {
                 Some((ConditionTerm::Constant(_), _)) | None => proposition.clone(),
                 Some((native, truth)) => Proposition::ConditionIs(native, truth),
             }
         }
-        Proposition::Not(inner) => {
-            Proposition::Not(Box::new(observation_comparison_form(inner)))
-        }
+        Proposition::Not(inner) => Proposition::Not(Box::new(observation_comparison_form(inner))),
         Proposition::And(left, right) => Proposition::And(
             Box::new(observation_comparison_form(left)),
             Box::new(observation_comparison_form(right)),
