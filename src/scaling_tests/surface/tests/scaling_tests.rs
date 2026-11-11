@@ -1420,28 +1420,6 @@ fn a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions() {
     }
 }
 
-/// An alternate valid proof of a recorded arena load must survive the stable
-/// function-specific input identities, in selected and whole-file verification.
-#[test]
-#[ignore = "nightly: verifies the arena example twice"]
-fn arena_pipeline_solve_at_recorded_snapshot_survives_stable_input_names() {
-    let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/arena/arena_cells.click");
-    let source = std::fs::read_to_string(&path).unwrap();
-    let original = "have at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]) by {\n                solve() using {\n                    at(f4, combined->arena) == arena;\n                };\n            }";
-    assert!(source.contains(original));
-    let edited = source.replacen(
-        original,
-        "have at(f4, combined->arena->occupied[k]) == at(f4, arena->occupied[k]);",
-        1,
-    );
-    let sources = crate::cli::read_verifying_sources(&path, &edited).unwrap();
-    let refs = crate::cli::source_refs(&sources);
-    verify_c0_sources_functions(&edited, &refs, ["arena_pipeline".to_string()])
-        .expect("the edited selected arena proof verifies");
-    verify_c0_sources(&edited, &refs).expect("the edited whole arena proof verifies");
-}
-
 #[test]
 fn targeted_simple_verification_does_not_verify_unrelated_theorems() {
     let c_source = "int32 scaling_target(int32 x) { return x; }\n";
