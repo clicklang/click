@@ -5409,7 +5409,7 @@ fn library_iterators_prove_chunks_exact_by_its_contract() {
         ensures result == bytes.len() % size;
     } by {
         step_until(function.exit);
-        apply(chunks_exact::remainder_chunks_exact(bytes, bytes.len(), size));
+        apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), size));
         solve();
     }
     fn count(bytes: &[u8]) -> usize {
@@ -5417,7 +5417,7 @@ fn library_iterators_prove_chunks_exact_by_its_contract() {
     } by {
         step_until(loop(0));
         have loop(0).iter.len() == bytes.len() / 4u64 by {
-            apply(chunks_exact::len_chunks_exact(bytes, bytes.len(), 4u64));
+            apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
             solve();
         }
         loop {
@@ -5468,6 +5468,35 @@ fn library_iterators_prove_chunks_exact_by_its_contract() {
     assert!(
         C0VerificationSession::new_program_prepared(sidecar, &hidden.prepared().unwrap()).is_err()
     );
+}
+
+/// The example's loop, which reads the first and last byte of each chunk,
+/// proved under `"iterators": "library"`: the chunk a pass binds is
+/// `iter.nth(0)`, placed in `bytes` by `nth_chunks_exact`, and each read
+/// owes its offset's bound as a machine value.
+#[test]
+#[ignore = "nightly: 75 s, over the gate's per-test budget (2026-11-11)"]
+fn library_iterators_prove_a_loop_that_reads_its_chunks() {
+    let p =
+        Project::with_library_iterators(include_str!("../examples/rust-chunks-exact/chunks.rs"));
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = include_str!("rust_import/library_chunks_loop.click");
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    for invalid in [
+        sidecar.replace(
+            "ensures result == bytes.len() % 4u64;",
+            "ensures result == bytes.len() % 4u64 + 1u64;",
+        ),
+        // The second read is of the chunk's last byte: its bound is owed.
+        sidecar.replace(
+            "                have to_integer((bytes.len() / 4u64 - at(taken, iter.len())) * 4u64 + 3u64) < to_integer(bytes.len());\n",
+            "",
+        ),
+    ] {
+        assert_ne!(invalid, sidecar, "negative proof must change the sidecar");
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
 }
 
 fn chunks_loop_project(by_reference: bool) -> (Project, String) {

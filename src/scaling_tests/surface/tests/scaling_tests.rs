@@ -7664,8 +7664,11 @@ fn check_early_return_execution_expansion(returns: usize) {
             let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n}\n";
             let c = early_return_fan_out(returns);
             let sources = [("fan_out.c", c.as_str())];
-            let expanded = expand_c0_tactic_source_at(click, &sources, 6, 5)
+            // This fixture has an implicit proof: select the function's claim,
+            // not the former execute() location beyond the end of its source.
+            let expanded = expand_function_proof_source(click, &sources, "g")
                 .unwrap_or_else(|error| panic!("{returns} returns expand: {}", error.message()));
+            assert_ne!(expanded, click, "the implicit proof must become explicit");
             assert!(!expanded.contains("execute()"));
             verify_c0_sources(&expanded, &sources)
                 .unwrap_or_else(|error| panic!("{returns} returns reverify: {}", error.message()));

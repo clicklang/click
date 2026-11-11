@@ -14,6 +14,10 @@ pub(super) enum Input {
     Pointer(Pointer, Pointer),
     Offset(PointerOffsetTerm, PointerOffsetTerm),
     Int32(MachineTerm, MachineTerm),
+    Int32Operands(
+        crate::kernel::SharedMachineIntegerTerm,
+        crate::kernel::SharedMachineIntegerTerm,
+    ),
     Algebraic(AlgebraicTerm, AlgebraicTerm),
     UInt64(MachineTerm, MachineTerm),
     Integer(
@@ -194,6 +198,9 @@ impl EqualityGraph {
                 Input::Int32(left, right) => {
                     self.add_int32_equality(left, right);
                 }
+                Input::Int32Operands(left, right) => {
+                    self.add_int32_equality_views(left.operand_view(), right.operand_view());
+                }
                 Input::CheckedRead(left, right) => self.add_checked_read_equality(left, right),
             }
         }
@@ -313,6 +320,22 @@ impl EqualityGraph {
                 ));
             }
             let scalar_condition = match &node.input {
+                Input::Int32Operands(left, right)
+                    if [left, right].iter().any(|term| {
+                        term.operand_view().read().is_some()
+                            || term.operand_view().variable().is_some_and(|v| {
+                                crate::kernel::registered_load_term_for_variable(v).is_some()
+                            })
+                    }) =>
+                {
+                    Some(
+                        crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                            MachineIntegerType::Int32,
+                            CompareRelation::Equal,
+                            [left.operand_view(), right.operand_view()],
+                        ),
+                    )
+                }
                 Input::Int32(left, right) if is_scalar_read(left) || is_scalar_read(right) => {
                     Some(ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -420,6 +443,41 @@ mod read_trace_tests {
             graph.read_equalities_since(&checkpoint).equalities,
             vec![equality(read, pointer(303_001))]
         );
+    }
+
+    #[test]
+    fn retained_scalar_inputs_replay_and_keep_the_read_delta_without_exports() {
+        use crate::kernel::{
+            KernelTerm, KernelTermExport, MachineBinaryOp, MachineOperandView as V,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut graph = EqualityGraph::default();
+        let mut replay = graph.input_root();
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let read = V::Legacy(&MachineTerm::MemoryLoad(
+            memory,
+            Box::new(pointer(305_000)),
+            LoadKind::Int32,
+        ))
+        .retain(MachineIntegerType::Int32);
+        let variable =
+            V::Legacy(&MachineTerm::Variable(Variable(305_001))).retain(MachineIntegerType::Int32);
+        let one = V::Legacy(&MachineTerm::constant(1)).retain(MachineIntegerType::Int32);
+        let sum = KernelTerm::machine_binary_shared(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Add,
+            [variable, one].map(|term| {
+                KernelTerm::retained_machine_operand(MachineIntegerType::Int32, term.operand_view())
+            }),
+        );
+        let checkpoint = graph.read_equality_checkpoint();
+        let exports = KernelTermExport::machine_export_count();
+        assert!(!replay.are_int32_equal_views(read.operand_view(), V::Shared(&sum)));
+        assert!(graph.add_int32_equality_views(read.operand_view(), V::Shared(&sum)));
+        assert_eq!(graph.read_equalities_since(&checkpoint).equalities.len(), 1);
+        assert!(replay.append_inputs_from(&graph));
+        assert!(replay.are_int32_equal_views(read.operand_view(), V::Shared(&sum)));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 
     #[test]

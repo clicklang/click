@@ -450,7 +450,9 @@ body of `half` unfolded, prints as its constructor at its element type,
 written in Click syntax, the library's calls print as calls,
 `slice::len(Slice<uint8>::Slice(p, n))`. `.len()` and `.as_ptr()` of a
 constructed slice, such as a subslice, reduce as they are read, so
-`bytes[k..].len()` is its length with no `unfold`. A subslice,
+`bytes[k..].len()` is its length with no `unfold`; the same holds for a
+slice a theorem's parameter is bound to, so a library axiom over a slice
+applies to `Slice<u8>::Slice(bytes, bytes.len())`. A subslice,
 `bytes[a..b]`, `bytes[a..]` or `bytes[..b]` of a slice parameter or a slice
 value, is the slice value with data `bytes.as_ptr() + a` and length `b - a`
 (`b` defaults to the length). It has no memory effect: `bytes[1..3][0]` reads
@@ -1460,7 +1462,8 @@ bytes.len()), size)`. A test for another chunk reads `it.len()`, and
 `next()` on an iterator that has one yields `it.nth(0u64)` and leaves
 `it.after_next()`. The proof cites the module's axioms: what `chunks_exact`
 builds (`len_chunks_exact`, `nth_chunks_exact`, `remainder_chunks_exact`,
-over the slice's pointer and length) and what one `next()` leaves
+applied to the slice, `Slice<u8>::Slice(bytes, bytes.len())`) and what one
+`next()` leaves
 (`len_after_next`, `nth_after_next`, `remainder_after_next`).
 
 In a loop's clauses and phases `iter` is the iterator value the loop
@@ -1482,12 +1485,14 @@ leaves by `break` when it is zero, so a `preserve` script that needs
 `0u64 < iter.len()` splits on it with a proof `if` after the header's steps;
 the empty arm takes the `break` with one `step()`.
 
-One limit remains. The chunk a pass binds is `iter.nth(0u64)`, whose data
-pointer is the library function's result, equal to `bytes + k * size` only
-by `nth_chunks_exact`. A read through it, `chunk[0]`, is refused: the read
-has to be placed in the `bytes` view, and a stated equality does not place a
-pointer in a view of symbolic length. A loop that reads its chunks therefore
-still needs the hidden-state model.
+The chunk a pass binds is `iter.nth(0u64)`: its data pointer is
+`bytes + k * size` by `nth_chunks_exact`, carried from pass to pass by an
+invariant over `iter.nth(j)`, and its length is `size`. A read through it,
+`chunk[0]`, is a read of `bytes`, and owes its offset's bound as the machine
+value the program computes: `to_integer(k * 4u64) < to_integer(bytes.len())`,
+not `k * 4u64 < bytes.len()`, which states the exact product. The same form
+is owed for `p[k * 4]` in C
+([proof](https://github.com/clicklang/click/blob/master/tests/rust_import/library_chunks_loop.click)).
 
 ## Moves and drops
 

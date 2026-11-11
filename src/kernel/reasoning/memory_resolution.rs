@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::CompareRelation;
 use crate::kernel::binary_term;
 
 /// A memory-resolution query in progress on this thread. The resolvers are
@@ -683,16 +684,25 @@ pub(in crate::kernel) fn pointers_directly_distinct_for_store(
         return true;
     }
     if let Some((left, right, _)) = common_base_element_indices(left, right)
-        && (assumptions.exact_condition_value(&ConditionTerm::equal(left.clone(), right.clone()))
-            == Some(false)
-            || assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
-                left.clone(),
-                right.clone(),
-            )) == Some(true)
-            || assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
-                right.clone(),
-                left.clone(),
-            )) == Some(true))
+        && (assumptions.selected_comparison_value(&crate::kernel::assumptions::index_comparison(
+            CompareRelation::Equal,
+            left.operand_view(),
+            right.operand_view(),
+        )) == Some(false)
+            || assumptions.selected_comparison_value(
+                &crate::kernel::assumptions::index_comparison(
+                    CompareRelation::LessThan,
+                    left.operand_view(),
+                    right.operand_view(),
+                ),
+            ) == Some(true)
+            || assumptions.selected_comparison_value(
+                &crate::kernel::assumptions::index_comparison(
+                    CompareRelation::LessThan,
+                    right.operand_view(),
+                    left.operand_view(),
+                ),
+            ) == Some(true))
     {
         return true;
     }
@@ -721,6 +731,10 @@ pub(in crate::kernel) fn pointers_proven_distinct_for_memory_resolution(
     {
         return true;
     }
+    // Establish the same context identity used by nested scalar resolution at
+    // the enclosing query boundary, so repeats reuse the whole answer. The
+    // existing memo still excludes active cell lookups and explicit DAG checks.
+    let _scope = assumptions.enter_id_scope();
     let key = resolution_query_memo_id(assumptions).map(|(id, bridging)| {
         let (left, right) = if left <= right {
             (left.clone(), right.clone())
@@ -1013,19 +1027,30 @@ fn pointer_offsets_with_common_base_proven_distinct_for_memory_resolution(
         return false;
     };
     let (Some(left_index), Some(right_index)) = (
-        element_index_from_offset_with_facts(left_index, element_width, assumptions),
-        element_index_from_offset_with_facts(right_index, element_width, assumptions),
+        shared_element_index_from_offset_with_facts(left_index, element_width, assumptions),
+        shared_element_index_from_offset_with_facts(right_index, element_width, assumptions),
     ) else {
         return false;
     };
 
-    assumptions.decide_bitvector_equality_shallow(&left_index, &right_index) == Some(false)
+    assumptions.decide_bitvector_equality_shallow_views(
+        left_index.operand_view(),
+        right_index.operand_view(),
+    ) == Some(false)
         || assumptions.proves_order_condition_for_memory_resolution(
-            &ConditionTerm::signed_less_than(left_index.clone(), right_index.clone()),
+            &crate::kernel::assumptions::index_comparison(
+                CompareRelation::LessThan,
+                left_index.operand_view(),
+                right_index.operand_view(),
+            ),
             true,
         )
         || assumptions.proves_order_condition_for_memory_resolution(
-            &ConditionTerm::signed_less_than(right_index, left_index),
+            &crate::kernel::assumptions::index_comparison(
+                CompareRelation::LessThan,
+                right_index.operand_view(),
+                left_index.operand_view(),
+            ),
             true,
         )
 }
@@ -1486,23 +1511,27 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
                 return Some(false);
             };
             let expected = MachineTerm::constant(expected as u32);
-            if delta.index == expected {
+            if delta.index.operand_view().word32_constant() == expected.as_const() {
                 return Some(true);
             }
-            if let Some(value) = assumptions
-                .exact_condition_value(&ConditionTerm::equal(delta.index.clone(), expected.clone()))
-            {
+            if let Some(value) = assumptions.exact_int32_equality_value_views(
+                delta.index.operand_view(),
+                MachineOperandView::Legacy(&expected),
+            ) {
                 return Some(value);
             }
-            if assumptions.int32_values_known_equal(&delta.index, &expected) {
+            if assumptions.equality_graph.are_int32_equal_views(
+                delta.index.operand_view(),
+                MachineOperandView::Legacy(&expected),
+            ) {
                 return Some(true);
             }
         }
     }
     if let Some(element_width) = common_pointer_offset_element_width(left, right)
         && let (Some(left_index), Some(right_index)) = (
-            element_index_from_offset_with_facts(left, element_width, assumptions),
-            element_index_from_offset_with_facts(right, element_width, assumptions),
+            shared_element_index_from_offset_with_facts(left, element_width, assumptions),
+            shared_element_index_from_offset_with_facts(right, element_width, assumptions),
         )
     {
         // The rebuilt indices are residues modulo 2^32. Unequal residues
@@ -1517,8 +1546,14 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
             })
         };
         if let (Some(left), Some(right)) = (
-            crate::kernel::assumptions::exact_signed_constant(&left_index, assumptions),
-            crate::kernel::assumptions::exact_signed_constant(&right_index, assumptions),
+            crate::kernel::assumptions::exact_signed_constant_view(
+                left_index.operand_view(),
+                assumptions,
+            ),
+            crate::kernel::assumptions::exact_signed_constant_view(
+                right_index.operand_view(),
+                assumptions,
+            ),
         ) {
             if left != right {
                 return Some(false);
@@ -1527,17 +1562,18 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
                 return Some(true);
             }
         }
-        if bitvector_terms_proven_equal_for_memory_resolution(
-            &left_index,
-            &right_index,
+        if int32_operand_values_equal_for_memory_resolution(
+            left_index.operand_view(),
+            right_index.operand_view(),
             assumptions,
         ) && exact()
         {
             return Some(true);
         }
-        if let Some(equal) =
-            assumptions.decide_bitvector_equality_shallow(&left_index, &right_index)
-            && (!equal || exact())
+        if let Some(equal) = assumptions.decide_bitvector_equality_shallow_views(
+            left_index.operand_view(),
+            right_index.operand_view(),
+        ) && (!equal || exact())
         {
             return Some(equal);
         }
@@ -1549,15 +1585,17 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
         // bounds are the ones filed under the index itself, one keyed lookup
         // (`indexed_constant_interval`): this comparison runs for every pair
         // of cells a store or load is placed against, so it may not search.
-        let excluded = |symbolic: &MachineTerm, constant: &MachineTerm| {
-            let Some(constant) = signed_bitvector_constant(constant) else {
+        let excluded = |symbolic: MachineOperandView<'_>, constant: MachineOperandView<'_>| {
+            let Some(constant) = crate::kernel::assumptions::signed_index_constant(constant) else {
                 return false;
             };
             assumptions
-                .indexed_constant_interval(symbolic)
+                .indexed_constant_interval_view(symbolic, false)
                 .is_some_and(|(low, high)| constant < low || high < constant)
         };
-        if excluded(&left_index, &right_index) || excluded(&right_index, &left_index) {
+        if excluded(left_index.operand_view(), right_index.operand_view())
+            || excluded(right_index.operand_view(), left_index.operand_view())
+        {
             return Some(false);
         }
     }
@@ -2188,26 +2226,33 @@ pub(in crate::kernel) fn int32_operand_values_equal_for_memory_resolution(
         return int32_values_proven_equal_for_memory_resolution(left, right, assumptions);
     }
     let _scope = assumptions.enter_id_scope();
-    if assumptions
-        .equality_graph
-        .are_int32_equal_views(left, right)
-    {
-        return true;
-    }
-    // Constants and selected reads are fixed-size leaves, not tree exports.
-    fn leaf(v: V<'_>) -> Option<std::borrow::Cow<'_, MachineTerm>> {
-        v.literal()
-            .map(std::borrow::Cow::Owned)
-            .or_else(|| v.read_source())
-    }
-    if let (Some(left), Some(right)) = (leaf(left), leaf(right)) {
-        return int32_values_proven_equal_for_memory_resolution(&left, &right, assumptions);
-    }
     let operands = [left.retain(T::Int32), right.retain(T::Int32)];
     let key = resolution_query_memo_id(assumptions).map(|(id, bridging)| {
         ResolutionQueryKey::OperandEqual(id, bridging, operands[0].clone(), operands[1].clone())
     });
     memoized_resolution_query(key, || {
+        if assumptions
+            .equality_graph
+            .are_int32_equal_views(left, right)
+        {
+            return true;
+        }
+        // Constants and selected reads are fixed-size leaves, not tree exports.
+        fn leaf(v: V<'_>) -> Option<std::borrow::Cow<'_, MachineTerm>> {
+            v.literal()
+                .or_else(|| v.variable().copied().map(MachineTerm::Variable))
+                .map(std::borrow::Cow::Owned)
+                .or_else(|| v.read_source())
+        }
+        if let (Some(left), Some(right)) = (leaf(left), leaf(right)) {
+            return int32_values_proven_equal_for_memory_resolution(&left, &right, assumptions);
+        }
+        if let (Some(a), Some(b)) = (
+            crate::kernel::assumptions::exact_signed_constant_view(left, assumptions),
+            crate::kernel::assumptions::exact_signed_constant_view(right, assumptions),
+        ) {
+            return a == b;
+        }
         if resolution_interrupted() {
             return false;
         }
@@ -2853,7 +2898,11 @@ pub(in crate::kernel) fn pointer_offsets_with_common_base_distinctness_condition
         return Some(ConditionTerm::Constant(left == right));
     }
     let (left_index, right_index, _) = element_indices_of(&left_index, &right_index)?;
-    Some(ConditionTerm::equal(left_index, right_index))
+    Some(crate::kernel::assumptions::index_comparison(
+        CompareRelation::Equal,
+        left_index.operand_view(),
+        right_index.operand_view(),
+    ))
 }
 
 /// The element indices the common-base ladder compares, counted in the
@@ -2868,7 +2917,7 @@ pub(in crate::kernel) fn pointer_offsets_with_common_base_distinctness_condition
 pub(in crate::kernel) fn common_base_element_indices(
     left: &Pointer,
     right: &Pointer,
-) -> Option<(MachineTerm, MachineTerm, u32)> {
+) -> Option<(SharedMachineIntegerTerm, SharedMachineIntegerTerm, u32)> {
     let (left_index, right_index) = common_base_index_offsets(left, right)?;
     element_indices_of(&left_index, &right_index)
 }
@@ -2880,10 +2929,10 @@ pub(in crate::kernel) fn common_base_element_indices(
 fn element_indices_of(
     left_index: &PointerOffsetTerm,
     right_index: &PointerOffsetTerm,
-) -> Option<(MachineTerm, MachineTerm, u32)> {
+) -> Option<(SharedMachineIntegerTerm, SharedMachineIntegerTerm, u32)> {
     let element_width = common_pointer_offset_element_width(left_index, right_index)?;
-    let left = element_index_from_offset(left_index, element_width)?;
-    let right = element_index_from_offset(right_index, element_width)?;
+    let left = shared_element_index_from_offset(left_index, element_width)?;
+    let right = shared_element_index_from_offset(right_index, element_width)?;
     Some((left, right, element_width))
 }
 
@@ -4491,13 +4540,17 @@ fn one_element_gap_separates_bytes(
     }
     // Only a known direction can separate them now. Ask for it in the order
     // that puts the narrower requirement first.
-    let strictly_below = |low: &MachineTerm, high: &MachineTerm| {
-        let condition = ConditionTerm::signed_less_than(low.clone(), high.clone());
+    let strictly_below = |low: &SharedMachineIntegerTerm, high: &SharedMachineIntegerTerm| {
+        let condition = crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessThan,
+            low.operand_view(),
+            high.operand_view(),
+        );
         // This preliminary byte-gap check runs inside memory-history walks.
         // Even a recorded-order graph walk grows with ambient facts. Read
         // one stated order only; a proof can establish that order explicitly
         // before requesting preservation across a store.
-        assumptions.exact_condition_value(&condition) == Some(true)
+        assumptions.selected_comparison_value(&condition) == Some(true)
     };
     let lower_access_bytes = if strictly_below(&left_index, &right_index) {
         left_bytes
@@ -4665,9 +4718,8 @@ fn exact_constant_byte_shift(pointer: &Pointer, base: &Pointer) -> Option<i64> {
 /// The constant byte distance from `base` to `pointer`, when the two
 /// addresses differ by a constant.
 fn constant_byte_shift_between(pointer: &Pointer, base: &Pointer) -> Option<i64> {
-    pointer_byte_offset_from_base(pointer, base)
-        .as_ref()
-        .and_then(signed_bitvector_constant)
+    shared_pointer_byte_offset_from_base(pointer, base)
+        .and_then(|index| crate::kernel::assumptions::signed_index_constant(index.operand_view()))
 }
 
 /// The bytes a store covers, as non-constant offset atoms plus a constant

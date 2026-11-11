@@ -277,6 +277,11 @@ impl CheckedOrderBounds {
         term: MachineOperandView<'_>,
         unsigned: bool,
     ) -> Option<(i64, i64)> {
+        // Intrinsic comparisons have no admitted bounds. Do not start a
+        // checking operation or retain an operand for an empty index.
+        if self.endpoints[usize::from(unsigned)].is_empty() {
+            return None;
+        }
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("read indexed order bounds", 1);
         crate::instrumentation::record_deterministic_work(1);
@@ -406,10 +411,6 @@ impl CheckedOrderBounds {
             lower.max(i64::from(i32::MIN) + i64::from(bounds.strict_lower > 0)),
             upper.min(i64::from(i32::MAX) - i64::from(bounds.strict_upper > 0)),
         ))
-    }
-
-    pub(super) fn strict_upper(&self, term: &MachineTerm) -> Option<Proposition> {
-        self.strict_upper_view(MachineOperandView::Legacy(term))
     }
 
     pub(super) fn strict_upper_view(&self, term: MachineOperandView<'_>) -> Option<Proposition> {

@@ -1591,12 +1591,21 @@ impl PureFactContext {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> Option<bool> {
-        if self.int32_values_known_equal(left, right) {
+        self.decide_bitvector_equality_shallow_views(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+        )
+    }
+
+    pub(in crate::kernel) fn decide_bitvector_equality_shallow_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Option<bool> {
+        if self.equality_graph.are_int32_equal_views(left, right) {
             return Some(true);
         }
-        if let Some(value) =
-            self.exact_condition_value(&ConditionTerm::equal(left.clone(), right.clone()))
-        {
+        if let Some(value) = self.exact_int32_equality_value_views(left, right) {
             return Some(value);
         }
         // Purely structural arithmetic: terms whose affine difference is a
@@ -1604,14 +1613,14 @@ impl PureFactContext {
         // (x + c wraps back to x only when c is a multiple of 2^32). No
         // facts are consulted, so the verdict is identical in smart
         // execution and pinned check.
-        if let Some(difference) = affine_bitvector_difference_constant(left, right)
+        if let Some(difference) = affine_bitvector_difference_constant_views(left, right)
             && difference.rem_euclid(1i64 << 32) != 0
         {
             return Some(false);
         }
         match (
-            self.bitvector_constant_from_direct_equalities(left),
-            self.bitvector_constant_from_direct_equalities(right),
+            self.equality_graph.direct_scalar_constant_view(left),
+            self.equality_graph.direct_scalar_constant_view(right),
         ) {
             (Some(left), Some(right)) => Some(left == right),
             _ => None,

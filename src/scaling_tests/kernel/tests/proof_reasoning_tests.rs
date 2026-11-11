@@ -1328,6 +1328,7 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
     );
     let mut prior = None;
     for count in [0, 4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
         let mut ambient = vec![defined.clone()];
         ambient.extend((0..count).map(|n| {
             Proposition::ConditionIs(

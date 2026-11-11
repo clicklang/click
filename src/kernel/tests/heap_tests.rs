@@ -2465,3 +2465,127 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
 }
 
 mod free_base_alias_tests;
+
+/// `p = malloc(n * 4)` with a `size_t` count `n`, under `facts`: its paths
+/// and, for its one pending outcome, the success state.
+fn size_t_heap_allocation(
+    facts: &[ConditionTerm],
+) -> (Vec<CStatementExecutionPath>, Option<CState>) {
+    let n = MachineTerm::Variable(Variable(1 << 40));
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_local("p", CValue::pointer(Pointer::null()))
+        .with_local("n", CValue::UInt64(n));
+    let assumptions = facts
+        .iter()
+        .fold(PureFactContext::new(), |assumptions, fact| {
+            assumptions.assume_proposition(Proposition::ConditionIs(fact.clone(), true))
+        });
+    let paths = execute_c_statement_paths(
+        &state,
+        &c_heap_allocate_sized(
+            "p",
+            CExpression::Multiply(Box::new(c_variable("n")), Box::new(c_uint64_literal(4))),
+        ),
+        &assumptions,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        &mut ExecutionBudget::default(),
+    )
+    .expect("a size_t allocation should execute");
+    let success = match paths.as_slice() {
+        [
+            CStatementExecutionPath {
+                outcome: CStatementOutcome::Normal(pending),
+                ..
+            },
+        ] => {
+            let Some(CValue::Pointer(pointer)) = pending.locals().get("p") else {
+                panic!("allocation should assign a pointer");
+            };
+            let not_null = assumptions.assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null()),
+                false,
+            ));
+            Some(resolve_pending_heap_allocations(pending, &not_null))
+        }
+        _ => None,
+    };
+    (paths, success)
+}
+
+/// A bounded `size_t` element count makes a 64-bit block: the exact `uint64`
+/// product is its extent, its token holds a `uint64`, and its owned range is
+/// wide, counted in elements (`design/heap-extents.md`, stage 2).
+#[test]
+fn a_bounded_size_t_element_count_makes_a_64_bit_block() {
+    let n = MachineTerm::Variable(Variable(1 << 40));
+    let (_, success) = size_t_heap_allocation(&[
+        ConditionTerm::uint64_greater_than(n.clone(), MachineTerm::uint64_constant(0)),
+        ConditionTerm::uint64_less_equal(n.clone(), MachineTerm::uint64_constant(100)),
+    ]);
+    let success = success.expect("a bounded count allocates");
+    let Some(CValue::Pointer(pointer)) = success.locals().get("p") else {
+        panic!("allocation should assign a pointer");
+    };
+    let extent = HeapExtent::new(
+        MachineTerm::uint64_multiply(n.clone(), MachineTerm::uint64_constant(4)),
+        HeapExtentKind::UInt64,
+    );
+    assert_eq!(
+        success.memory().live_heap_block_extent(pointer.pointer()),
+        Some(&extent)
+    );
+    let facts = success.resources().facts();
+    assert!(facts.contains(&CResourceFact::own_heap_allocation(
+        pointer.pointer().clone(),
+        &extent
+    )));
+    let range = extent.range(pointer.pointer().clone(), n, 4);
+    assert_eq!(range.kind(), RangeIndexKind::UInt64);
+    assert!(facts.contains(&CResourceFact::own_memory(range)));
+}
+
+/// A `size_t` count with no upper bound is refused, and so is one whose
+/// product the facts do not prove exact; neither is narrowed or wrapped.
+#[test]
+fn an_unbounded_size_t_element_count_is_refused() {
+    let n = MachineTerm::Variable(Variable(1 << 40));
+    for facts in [
+        vec![ConditionTerm::uint64_greater_than(
+            n.clone(),
+            MachineTerm::uint64_constant(0),
+        )],
+        vec![
+            ConditionTerm::uint64_greater_than(n.clone(), MachineTerm::uint64_constant(0)),
+            ConditionTerm::uint64_less_equal(n.clone(), MachineTerm::uint64_constant(1 << 62)),
+        ],
+    ] {
+        let (paths, _) = size_t_heap_allocation(&facts);
+        assert!(matches!(
+            paths.as_slice(),
+            [CStatementExecutionPath {
+                outcome: CStatementOutcome::RuntimeError(CRuntimeError::HeapAllocationSize),
+                ..
+            }]
+        ));
+    }
+}
+
+/// A count the facts fix where `n * 4` wraps is C's wrapped product: a
+/// 4-byte block, not `n` elements.
+#[test]
+fn a_wrapping_size_t_product_is_the_wrapped_block() {
+    let n = MachineTerm::Variable(Variable(1 << 40));
+    let (_, success) = size_t_heap_allocation(&[ConditionTerm::uint64_equal(
+        n,
+        MachineTerm::uint64_constant((1 << 62) + 1),
+    )]);
+    let success = success.expect("the wrapped product allocates");
+    let Some(CValue::Pointer(pointer)) = success.locals().get("p") else {
+        panic!("allocation should assign a pointer");
+    };
+    assert_eq!(
+        success.memory().live_heap_block_extent(pointer.pointer()),
+        Some(&HeapExtent::int32(4))
+    );
+}

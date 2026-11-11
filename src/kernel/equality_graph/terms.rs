@@ -2431,10 +2431,10 @@ impl TermClasses {
         &mut self,
         left: &crate::kernel::KernelTerm,
         right: &crate::kernel::KernelTerm,
-    ) {
+    ) -> bool {
         let left = self.shared_int32_class(left);
         let right = self.shared_int32_class(right);
-        self.close(vec![(left, right)]);
+        left != right && self.close(vec![(left, right)])
     }
 
     fn root(&self, mut id: u64) -> u64 {

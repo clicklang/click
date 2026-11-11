@@ -1633,7 +1633,8 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
     assert_eq!(
         ranges[1],
         RangeDisjointFromPointerEvidence::ForwardOffset {
-            offset: MachineTerm::Variable(Variable(203)),
+            offset: MachineOperandView::Legacy(&MachineTerm::Variable(Variable(203)))
+                .retain(MachineIntegerType::Int32),
             positive: PositiveTermEvidence::OneLowerBound(lower_bound),
         }
     );

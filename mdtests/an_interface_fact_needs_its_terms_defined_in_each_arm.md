@@ -96,6 +96,7 @@ int32 bubble_pass3(int32 p[3]) {
                         unfold(all_le_range);
                         intro(); intro();
                         have k == 0 by solve();
+                        rewrite(k == 0);
                         solve();
                     }
                 }

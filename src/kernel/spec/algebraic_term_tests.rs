@@ -688,6 +688,7 @@ fn pure_pointer_result_preserves_type_and_unsupported_results_are_explicit() {
             result_object_class: Some(crate::kernel::effective_type::CAccessClass::Struct(
                 crate::kernel::effective_type::CStructClass::opaque("node"),
             )),
+            projection: None,
         };
         let result = evaluate_spec_expression_paths_with_loop_entry_in(
             &CState::new(),
@@ -736,6 +737,7 @@ fn pure_function_application_is_not_eagerly_evaluated() {
         result_type: CType::Int32,
         pointer_result: None,
         result_object_class: None,
+        projection: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &CState::new(),
@@ -770,6 +772,7 @@ fn pure_function_application_retains_symbolic_algebraic_argument() {
         result_type: CType::Int32,
         pointer_result: None,
         result_object_class: None,
+        projection: None,
     };
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &CState::new(),

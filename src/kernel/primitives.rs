@@ -4,8 +4,7 @@ use super::api::{
 };
 use super::memory_provenance::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEqualityEvidence};
 use super::reasoning::{
-    bitvector_terms_proven_equal_for_memory_resolution, collect_or_cases,
-    instantiate_range_fold_step, memory_snapshots_proven_equal_at_pointer,
+    collect_or_cases, instantiate_range_fold_step, memory_snapshots_proven_equal_at_pointer,
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
     signed_bitvector_constant, signed_i64_bitvector_constant,
 };
@@ -3902,6 +3901,30 @@ pub struct PurePointerResult {
     pub(crate) arguments: BTreeSet<usize>,
 }
 
+/// A pure function that is one field of its argument: `match s {
+/// V(.., x, ..) => x }` over parameter `argument`. Applied to a value built
+/// with constructor `variant`, it is that value's field `field`.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct PureProjection {
+    pub(crate) argument: usize,
+    pub(crate) variant: String,
+    pub(crate) field: usize,
+}
+
+impl PureProjection {
+    pub(crate) fn argument_index(&self) -> usize {
+        self.argument
+    }
+
+    pub(crate) fn new(argument: usize, variant: String, field: usize) -> Self {
+        Self {
+            argument,
+            variant,
+            field,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecExpression {
     Value(CValue),
@@ -3975,6 +3998,9 @@ pub enum SpecExpression {
         /// The class of the object a pointer result designates, from the
         /// function's declared return type (`design/effective-types.md`).
         result_object_class: Option<crate::kernel::effective_type::CAccessClass>,
+        /// When the function is a field projection, the field a constructed
+        /// argument is built with is the result, by the function's definition.
+        projection: Option<PureProjection>,
     },
     LoopEntrySnapshot(Box<SpecExpression>),
     Subobject {
@@ -7441,9 +7467,10 @@ pub enum CRuntimeError {
     UnboundVariable(String),
     UnknownFunction(String),
     TypeMismatch,
-    /// A `malloc`, `calloc` or `realloc` size Click cannot use as a heap
-    /// block's extent: blocks have a checked 32-bit extent, and a symbolic
-    /// 64-bit size is not narrowed into one. Diagnostic only.
+    /// A 64-bit `malloc`, `calloc` or `realloc` size Click cannot use as a
+    /// heap block's extent: a symbolic `malloc` size the facts do not prove
+    /// exact and within `1..=PTRDIFF_MAX` bytes, or a symbolic `calloc` or
+    /// `realloc` size (`design/heap-extents.md`). Diagnostic only.
     HeapAllocationSize,
     /// A `uint32` heap allocation size, or element count, the facts do not
     /// bound to the checked signed 32-bit heap extent. Diagnostic only.
@@ -7785,7 +7812,7 @@ impl CRuntimeError {
 
     /// Why a heap allocation's size was refused, and which sizes are
     /// accepted ([`Self::HeapAllocationSize`]).
-    pub const HEAP_ALLOCATION_SIZE_MESSAGE: &'static str = "heap allocation size must be a 32-bit value or a known constant: Click models a heap block with a checked 32-bit extent and cannot yet narrow a symbolic 64-bit size into it; a 64-bit size is accepted where the facts fix it to a constant that fits, and an upper bound is not enough";
+    pub const HEAP_ALLOCATION_SIZE_MESSAGE: &'static str = "heap allocation size must be proved to fit a heap block: a symbolic 64-bit (`size_t`) `malloc` size is accepted where the facts prove it at least 1 and at most PTRDIFF_MAX (9223372036854775807) bytes, `malloc(n * w)` where they prove `1 <= n <= PTRDIFF_MAX / w`, and a product of two symbolic sizes not at all; `calloc` and `realloc` accept a 64-bit size only where the facts fix it to a constant that fits 32 bits";
 
     /// Why an unsigned 32-bit heap allocation size was refused
     /// ([`Self::HeapAllocationSizeAboveInt32`]).
@@ -8521,8 +8548,8 @@ impl PartialOrd for CMemory {
 /// and unsigned readings agree: every block but a heap block with a symbolic
 /// 64-bit (`size_t`) size. `UInt64` is an unsigned 64-bit byte count, at
 /// most `PTRDIFF_MAX` when admitted; its `allocation` token holds a `uint64`
-/// and its owned range is wide ([`RangeIndexKind::UInt64`]). No allocation
-/// creates a `UInt64` extent yet.
+/// and its owned range is wide ([`RangeIndexKind::UInt64`]). `malloc` of a
+/// symbolic 64-bit size proved to fit makes one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum HeapExtentKind {
     Int32,
@@ -8662,6 +8689,22 @@ impl HeapExtent {
             HeapExtentKind::UInt64 => {
                 CMemoryRange::new_wide(base, MachineTerm::uint64_constant(0), count, element_width)
             }
+        }
+    }
+
+    /// The number of `element_width`-byte elements this extent holds, in its
+    /// format, when its byte count spells it: an `int32` count through
+    /// [`crate::kernel::reasoning::element_count_from_bytes`], a `uint64` one
+    /// through [`crate::kernel::reasoning::uint64_element_count_from_bytes`].
+    pub(crate) fn element_count(&self, element_width: u32) -> Option<MachineTerm> {
+        match self.kind {
+            HeapExtentKind::Int32 => {
+                crate::kernel::reasoning::element_count_from_bytes(&self.bytes, element_width)
+            }
+            HeapExtentKind::UInt64 => crate::kernel::reasoning::uint64_element_count_from_bytes(
+                &self.bytes,
+                element_width,
+            ),
         }
     }
 

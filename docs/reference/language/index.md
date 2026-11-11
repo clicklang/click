@@ -1184,6 +1184,16 @@ Arithmetic may treat an opaque result as an unknown Integer without unfolding.
 A smart tactic may emit a checked unfold step; expansion makes that step visible.
 See [the function example](https://github.com/clicklang/click/blob/master/mdtests/integer_function_successor.md).
 
+One kind of call is not opaque. A library function whose body is exactly
+`match s { V(.., x, ..) => x }` is a field of its argument, and applied to a
+value built with that constructor it is the field:
+`slice::len(Slice<uint8>::Slice(p, n))` is `n`. This holds wherever the
+constructed value arrives, including a theorem parameter that `apply` binds
+to one, so a theorem stated over a slice applies to a slice built from its
+pointer and length. On any other argument the call stays opaque, and a
+program's own function always does
+([example](https://github.com/clicklang/click/blob/master/mdtests/a_library_field_function_of_a_constructed_value_is_the_field.md)).
+
 Machine-integer `forall` and `exists` binders retain their declared width and
 signedness, including `int64` and `uint8`. `intro`, `obtain`, and `witness`
 preserve that type; a witness must have the exact binder type. Narrow integer
@@ -3390,14 +3400,17 @@ range keeps the pointer's own element width. An `extern` allocator contract
 writes `produces allocation(result, bytes);`
 ([C allocation](c.md#heap-allocation)).
 
-The byte count is an `int32`: the kernel's heap blocks have a checked 32-bit
-extent, so a symbolic `size_t` size is refused and a 64-bit size is accepted
-only when its value is concrete or reduced by exact `owns`/`views` clauses.
-Stating it as `size_t`, as `malloc` takes it, needs a 64-bit block extent and is
-open in [the library roadmap](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md).
+The declared byte count is an `int32`. Inside one C function, `malloc` of a
+symbolic `size_t` size proved to fit `PTRDIFF_MAX` makes a block with a 64-bit
+extent, whose token holds a `uint64` byte count and is consumed by `free`
+([C allocation](c.md#heap-allocation)). A sidecar cannot yet state that
+`uint64` count, so such a block cannot be returned or handed to a callee;
+accepting `uint64` here is open in
+[the library roadmap](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md).
 
-**Verified use:** [`mdtests/heap_malloc_struct_null_check_free.md`](https://github.com/clicklang/click/blob/master/mdtests/heap_malloc_struct_null_check_free.md)
-and [`mdtests/external_allocator_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/external_allocator_contract.md).
+**Verified use:** [`mdtests/heap_malloc_struct_null_check_free.md`](https://github.com/clicklang/click/blob/master/mdtests/heap_malloc_struct_null_check_free.md),
+[`mdtests/external_allocator_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/external_allocator_contract.md),
+and [`mdtests/a_bounded_size_t_element_count_allocates_a_64_bit_block.md`](https://github.com/clicklang/click/blob/master/mdtests/a_bounded_size_t_element_count_allocates_a_64_bit_block.md).
 
 ### `__builtin_constant_p`
 

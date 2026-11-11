@@ -258,7 +258,8 @@ The traits cannot yet be deleted. In particular:
   and are removed. The retained alternatives are `for_each_scaled_operand` and
   `any_scaled_operand`. `scaled_values` remains at native diagnostic/test
   boundaries; checker root queries use `scaled_operands`.
-- Still live: native byte/element reconstruction in `reasoning/path_facts.rs`,
+- Live at the contract-certification checkpoint (superseded below): native
+  byte/element reconstruction in `reasoning/path_facts.rs`,
   exact-rebuild and selected-index order checks in `condition_reasoning/order_paths`,
   plus native consumers in `assumptions::{memory_reasoning,proposition_reasoning}`.
   `scalar_evidence_class` and `single_scaled_index_equal_to_constant` also retain
@@ -307,10 +308,83 @@ trait removal was restored byte-for-byte. The live exact-rebuild calls in
 `condition_reasoning/order_paths.rs` and the Integer carrier scope call in
 `spec.rs` are explicit next targets alongside the reconstruction services.
 
-**Next cleanup:** migrate the byte/element reconstruction and order-path
-consumers above, then repeat the compiler-assisted trait-removal check. Keep
-legitimate native output boundaries explicit; do not replace a hidden export
-with an explicit export inside a checker just to compile.
+**Byte/element reconstruction increment:** `shared_byte_offset_from_pointer_offset`
+and `shared_element_index_from_offset_with_facts` retain the index DAG while
+building the same residues. The existing shared element builder is also the
+implementation behind the native-output adapter. Full-width constants and
+range evidence still control wide-to-word projection; low-word evidence,
+unsupported widths and missing bounds do not suffice. The wide-equality
+adjacency index now accepts retained query keys while preserving the native
+syntax order of its source buckets.
+
+Offset equality decision, offset-derived scalar path facts and exact-rebuild
+checks consume those shared results. `single_scaled_index_equal_to_constant`
+returns the retained index. Add/multiply exactness uses the existing shared
+overflow query; accepting equal residues still requires exact rebuilds, while
+unequal residues can refute equality without that premise. The obsolete native
+signed-wide bound wrapper is removed. The difference-graph dispatcher routes
+retained machine-order comparisons through its existing shared order checker;
+this preserves full-width subtraction bounds and byte-array address proofs.
+Native literal outputs bypass the general exporter, preserving the existing
+per-cell store-work budget. Ambient-fact scaling tests use a fresh session per
+size so cold and warm syntax caches are not compared. The fork/join sidecar
+now proves its `range_filled` bridge by introducing the index and bounds,
+instantiating the returned range fact, then rewriting the job fields. Those
+simple steps pass on retained operands; the previous implicit closure exhausted
+its unchanged work budget after the comparison representation changed. The C
+program and claims are unchanged; no search fallback or budget increase was added.
+
+At this checkpoint the native-output adapters remained live in memory resolution
+and range checks, together with shallow scalar comparison/exact-constant queries
+and `ExactElementDelta`'s native index field. The following increment migrates
+those routes. The Integer carrier scope call in `spec.rs` remains separate work.
+
+Validation: `scripts/check.sh --no-fail-fast` passed: 7,094 unit/API tests,
+58 example projects, and 5,130 mdtests, including the scaling regressions.
+Focused coverage includes missing/withdrawn full-width bounds, low-word-only
+refusal, overflow refusal, and zero-export growing-DAG checks. The gate took
+10m08s and emitted its ten-minute-budget warning; no limits were increased.
+No nightly suite was run.
+
+**Memory-resolution and range-index increment:**
+`ExactElementDelta.index` and its single-index projection now retain shared int32
+operands; the separate exact `i64` constant and the refusal to combine two
+symbolic indices remain. Membership, exclusion, shifted-range coverage,
+byte-gap checks, and exact rebuild comparisons consume operand views. The
+literal-source index accepts retained input keys and preserves original premise
+order. Affine index comparison visits a shared DAG once, propagating coefficients
+without exporting or expanding repeated subexpressions.
+
+Resource coordinate keys, selected range evidence, pointer-formation bounds,
+and contract/loop range checks keep those operands. Range splitting retains
+shared intermediate endpoints through its checks and exports only when creating
+native `CMemoryRange` output bounds. Snapshot comparisons still enter the native
+memory machinery only through selected read leaves. The unused native byte-offset
+adapter and several obsolete checker wrappers are removed. Native pointer-index
+output APIs still serve native resource/value producers and Surface tools; this
+increment does not claim to remove every native carrier in the kernel.
+
+Shared scalar equality admission retains its own replayable graph input rather
+than reconstructing the equality through Integer observations. Read-equality
+deltas preserve those inputs too. Selected comparisons reuse original native
+bound sources; atomic read leaves enter their existing scalar comparison route.
+Empty bounds indexes return immediately, and pointer-distinctness queries share
+their existing resolution memo across the nested scalar checks.
+
+The negative branch-interface fixture now explicitly rewrites its established
+`k == 0` before combining the preserved-cell bounds. Its C, claims, and expected
+definedness rejection are unchanged; the original omitted proof reached its
+unchanged smart-search budget. No search fallback or limit increase was added.
+
+Validation after rebasing onto current master: `scripts/check.sh --no-fail-fast`
+passed: 7,109 unit/API tests, 58 example projects, and 5,146 mdtests. New tests cover exact-delta retention,
+missing and withdrawn bounds, large constants and wrap refusals, zero-export
+shared-DAG growth, and scalar-input replay with read-equality deltas. Existing
+scaling tests compare fresh verification sessions at each size, retaining their
+original limits. Focused fact-stability runs for the vector-prefix and negative
+branch-interface fixtures passed with zero report entries. The rebased gate took
+9m53s, within the ten-minute budget. No limits were increased and no nightly
+suite was run.
 
 #### Classified boundaries and retained coverage
 

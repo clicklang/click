@@ -300,15 +300,17 @@ Each step is a separate PR that leaves every example verifying:
      parameter ("quantifier type must be a concrete C, Integer, or
      algebraic type"). The library reference states the limit; a byte
      permutation is a file predicate over the generic count.
-   - Open: `size_t` sizes for `allocation`. The kernel holds the token's
-     byte count as an `int32` value and gives heap blocks a checked 32-bit
-     extent (`allocation_size_value` in `src/kernel/eval/statements.rs`): a
-     symbolic `size_t` `malloc(n)` is refused, and a 64-bit size is accepted
-     only when its value is concrete. Stating `allocation`'s byte count as
-     `size_t` needs a 64-bit heap-block extent in the kernel first. Design
-     and staged plan: [`design/heap-extents.md`](../design/heap-extents.md)
-     (a tagged 32/64-bit extent chosen by the size's C type; accepted
-     2026-11-10).
+   - Open: `size_t` sizes for `allocation`. Design and staged plan:
+     [`design/heap-extents.md`](../design/heap-extents.md) (a tagged
+     32/64-bit extent chosen by the size's C type; accepted 2026-11-10).
+     Kernel stages 1 and 2 are done: inside one C function, `malloc` of a
+     symbolic `size_t` size proved to fit `PTRDIFF_MAX` makes a 64-bit block
+     with a `uint64` token and a wide range, which `free` consumes
+     (`mdtests/a_bounded_size_t_element_count_allocates_a_64_bit_block.md`).
+     Still open: stage 3, `allocation`'s byte count as `uint64` in a sidecar
+     or contract (so a 64-bit block can cross a call), which closes this
+     item and its intended regression; stage 4, `calloc` and `realloc` of a
+     64-bit size.
    - Done, by decision (maintainer, 2026-11-09): the width-lemma
      families are not restated over a format. The width-uniformity fixture
      checks each family at every format; its gaps stay open

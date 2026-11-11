@@ -422,25 +422,33 @@ impl PureFactContext {
                             single_scaled_index_equal_to_constant(left, right)
                                 .or_else(|| single_scaled_index_equal_to_constant(right, left))
                         {
-                            return self.decide(&ConditionTerm::equal(
-                                index.clone(),
-                                MachineTerm::constant(element as u32),
+                            return self.decide(&crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                                MachineIntegerType::Int32, CompareRelation::Equal,
+                                [index.operand_view(), MachineOperandView::Legacy(&MachineTerm::constant(element as u32))],
                             ));
                         }
-                        let left_index = int32_element_index_from_offset(left);
-                        let right_index = int32_element_index_from_offset(right);
+                        let left_index =
+                            crate::kernel::reasoning::shared_element_index_from_offset(left, 4);
+                        let right_index =
+                            crate::kernel::reasoning::shared_element_index_from_offset(right, 4);
                         match (left_index, right_index) {
                             (Some(left_index), Some(right_index)) => exact_or_unequal(
-                                self.decide(&ConditionTerm::equal(left_index, right_index)),
+                                self.decide(&crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                                    MachineIntegerType::Int32, CompareRelation::Equal,
+                                    [left_index.operand_view(), right_index.operand_view()],
+                                )),
                                 self.rebuilt_offset_is_exact(left, 4, false)
                                     && self.rebuilt_offset_is_exact(right, 4, false),
                             ),
                             _ => {
-                                let left_bytes = byte_offset_from_pointer_offset(left);
-                                let right_bytes = byte_offset_from_pointer_offset(right);
+                                let left_bytes = crate::kernel::reasoning::shared_byte_offset_from_pointer_offset(left);
+                                let right_bytes = crate::kernel::reasoning::shared_byte_offset_from_pointer_offset(right);
                                 match (left_bytes, right_bytes) {
                                     (Some(left_bytes), Some(right_bytes)) => exact_or_unequal(
-                                        self.decide(&ConditionTerm::equal(left_bytes, right_bytes)),
+                                        self.decide(&crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                                    MachineIntegerType::Int32, CompareRelation::Equal,
+                                    [left_bytes.operand_view(), right_bytes.operand_view()],
+                                )),
                                         self.rebuilt_offset_is_exact(left, 4, true)
                                             && self.rebuilt_offset_is_exact(right, 4, true),
                                     ),
@@ -1002,7 +1010,14 @@ impl PureFactContext {
     /// `term < INT_MAX`, which is what discharges `term + 1` overflow
     /// is checked from exact facts alone.
     pub(in crate::kernel) fn has_exact_strict_upper_bound(&self, term: &MachineTerm) -> bool {
-        self.checked_order_bounds.strict_upper(term).is_some()
+        self.has_exact_strict_upper_bound_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(in crate::kernel) fn has_exact_strict_upper_bound_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> bool {
+        self.checked_order_bounds.strict_upper_view(term).is_some()
     }
 
     /// Whether the difference graph of these facts proves `left < right`
@@ -2205,6 +2220,19 @@ impl PureFactContext {
     /// imply equal offsets only when every rebuilt addition (and, on the byte
     /// path, every scaling by a width) is proved not to overflow under the
     /// current facts. Constants and single index terms are always exact.
+    fn rebuilt_offset_operation_is_exact(
+        &self,
+        operation: crate::kernel::machine_integer::Operation,
+        operands: [MachineOperandView<'_>; 2],
+    ) -> bool {
+        crate::kernel::machine_integer::definedness::OverflowQueryView::from_operands(
+            MachineIntegerType::Int32,
+            operation,
+            operands,
+        )
+        .is_some_and(|query| self.decide_overflow_query(&query) == Some(false))
+    }
+
     fn rebuilt_offset_is_exact(
         &self,
         offset: &crate::kernel::PointerOffsetTerm,
@@ -2214,9 +2242,9 @@ impl PureFactContext {
         use crate::kernel::PointerOffsetTerm;
         let rebuild = |offset: &PointerOffsetTerm| {
             if byte_path {
-                byte_offset_from_pointer_offset(offset)
+                crate::kernel::reasoning::shared_byte_offset_from_pointer_offset(offset)
             } else {
-                crate::kernel::reasoning::element_index_from_offset(offset, element_width)
+                crate::kernel::reasoning::shared_element_index_from_offset(offset, element_width)
             }
         };
         match offset {
@@ -2224,11 +2252,7 @@ impl PureFactContext {
             // Full-width constants or checked unsigned bounds make the
             // element projection exact. The byte projection below still
             // requires a constant whose scaled byte displacement fits.
-            PointerOffsetTerm::Int64Scaled {
-                value,
-                byte_width,
-                unsigned,
-            } => {
+            PointerOffsetTerm::Int64Scaled { byte_width, .. } => {
                 if !byte_path && *byte_width != i64::from(element_width) {
                     return false;
                 }
@@ -2236,7 +2260,7 @@ impl PureFactContext {
                     return true;
                 }
                 if !byte_path {
-                    return crate::kernel::reasoning::element_index_from_offset_with_facts(
+                    return crate::kernel::reasoning::shared_element_index_from_offset_with_facts(
                         offset,
                         element_width,
                         self,
@@ -2261,13 +2285,7 @@ impl PureFactContext {
                 // sixty-four-bit one: a thirty-two-bit fact names the low
                 // word and leaves the rest, which is the shape that made
                 // `0xFFFFFFFF` look like a clean `-1`.
-                let Some(value) = crate::kernel::assumptions::exact_sixty_four_bit_constant(
-                    value, *unsigned, self,
-                ) else {
-                    return false;
-                };
-                value
-                    .checked_mul(*byte_width)
+                crate::kernel::assumptions::exact_wide_scaled_offset_constant(offset, self)
                     .is_some_and(|bytes| i32::try_from(bytes).is_ok())
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
@@ -2277,10 +2295,13 @@ impl PureFactContext {
                 let Ok(width) = u32::try_from(*byte_width) else {
                     return false;
                 };
-                self.decide(&ConditionTerm::signed_multiply_overflows(
-                    value.as_ref().clone(),
-                    MachineTerm::constant(width),
-                )) == Some(false)
+                self.rebuilt_offset_operation_is_exact(
+                    crate::kernel::machine_integer::Operation::Multiply,
+                    [
+                        value.operand_view(),
+                        MachineOperandView::Legacy(&MachineTerm::constant(width)),
+                    ],
+                )
             }
             PointerOffsetTerm::Add(left, right)
                 if left.as_ref() == &PointerOffsetTerm::Constant(0) =>
@@ -2299,10 +2320,10 @@ impl PureFactContext {
                     return false;
                 }
                 match (rebuild(left), rebuild(right)) {
-                    (Some(left), Some(right)) => {
-                        self.decide(&ConditionTerm::signed_add_overflows(left, right))
-                            == Some(false)
-                    }
+                    (Some(left), Some(right)) => self.rebuilt_offset_operation_is_exact(
+                        crate::kernel::machine_integer::Operation::Add,
+                        [left.operand_view(), right.operand_view()],
+                    ),
                     _ => false,
                 }
             }
@@ -2381,9 +2402,18 @@ impl PureFactContext {
     /// This proves that taking its low word preserves its nonnegative signed
     /// value; a bound on the low word alone supplies no evidence here.
     pub(in crate::kernel) fn uint64_index_fits_int32(&self, term: &MachineTerm) -> bool {
-        let guard = ConditionTerm::uint64_less_equal(
-            term.clone(),
-            MachineTerm::uint64_constant(i32::MAX as u64),
+        self.uint64_index_fits_int32_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(in crate::kernel) fn uint64_index_fits_int32_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> bool {
+        let limit = MachineTerm::uint64_constant(i32::MAX as u64);
+        let guard = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            MachineIntegerType::UInt64,
+            CompareRelation::LessEqual,
+            [term, MachineOperandView::Legacy(&limit)],
         );
         // A maintained bound keyed by this exact value also handles exact
         // widening. Do not invoke the general decision fallbacks here: this
@@ -2400,15 +2430,26 @@ impl PureFactContext {
     /// The signed counterpart: the full signed value lies in `0..=INT_MAX`,
     /// by 64-bit signed order facts on the value itself, so its low word is
     /// the value.
-    pub(in crate::kernel) fn int64_index_fits_int32(&self, term: &MachineTerm) -> bool {
-        self.decide(&ConditionTerm::int64_signed_less_equal(
-            MachineTerm::int64_constant(0),
-            term.clone(),
-        )) == Some(true)
-            && self.decide(&ConditionTerm::int64_signed_less_equal(
-                term.clone(),
-                MachineTerm::int64_constant(i32::MAX as i64),
-            )) == Some(true)
+    pub(in crate::kernel) fn int64_index_fits_int32_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> bool {
+        let zero = MachineTerm::int64_constant(0);
+        let limit = MachineTerm::int64_constant(i32::MAX as i64);
+        [
+            [MachineOperandView::Legacy(&zero), term],
+            [term, MachineOperandView::Legacy(&limit)],
+        ]
+        .into_iter()
+        .all(|operands| {
+            self.decide(
+                &crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                    MachineIntegerType::Int64,
+                    CompareRelation::LessEqual,
+                    operands,
+                ),
+            ) == Some(true)
+        })
     }
 
     /// An unsigned 64-bit comparison of signed values read as unsigned,
@@ -4125,5 +4166,47 @@ mod shared_read_order_bridge_tests {
                 });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod shared_byte_rebuild_tests {
+    use super::*;
+    use crate::kernel::{KernelTermExport, SharedMachineIntegerTerm};
+
+    #[test]
+    fn byte_rebuild_uses_shared_overflow_query_without_losing_bounds() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(1018220));
+        let index = SharedMachineIntegerTerm::index(
+            MachineIntegerType::Int32,
+            MachineTerm::add(x, MachineTerm::constant(1)),
+        );
+        let limit = MachineTerm::constant(i32::MAX as u32 / 8);
+        let zero = MachineTerm::constant(0);
+        let bound = |left, right| {
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::LessEqual,
+                [left, right],
+            )
+        };
+        let upper = bound(index.operand_view(), MachineOperandView::Legacy(&limit));
+        let lower = bound(MachineOperandView::Legacy(&zero), index.operand_view());
+        let empty = PureFactContext::new();
+        let bounded = empty
+            .clone()
+            .assume_condition(upper.clone(), true)
+            .assume_condition(lower, true);
+        let withdrawn = bounded.without_exact_fact(&Proposition::ConditionIs(upper, true));
+        let offset = PointerOffsetTerm::Int32Scaled {
+            value: index,
+            byte_width: 8,
+        };
+        let exports = KernelTermExport::machine_export_count();
+        assert!(bounded.rebuilt_offset_is_exact(&offset, 4, true));
+        assert!(!empty.rebuilt_offset_is_exact(&offset, 4, true));
+        assert!(!withdrawn.rebuilt_offset_is_exact(&offset, 4, true));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

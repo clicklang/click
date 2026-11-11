@@ -51,7 +51,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (5)
+## P1: before launch (6)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -91,12 +91,21 @@ C++ and Rust front-end delivery were made P1: the delivered Bitcoin Core
 slices and adler2 Adler-32 checksum are sufficient demonstrations. The
 [Rust frontend milestone](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
 is complete for the agreed Linux x86-64 GNU launch scope. The remaining C++
-front-end work concerns the installed pipeline, not more examples. Broader
-language, synchronization, and graph coverage remain P2.
+front-end work concerns the installed pipeline, not more examples. By user
+direction (2026-11-10), the public claim is support for C, C++, and Rust
+with no ranking among them, and four gaps that contradict it are P1: the
+C++ front end is not installed with a release, a C++ project is limited to
+one translation unit, the Rust front end installs on one host only, and a
+Rust crate with third-party dependencies cannot be imported. The first two
+are in [cpp-support.md](cpp-support.md), the last two in
+[rust-support.md](rust-support.md); the Rust item supersedes the Linux-only
+launch scope. Broader language, synchronization, and graph coverage remain
+P2.
 
 Program import and execution:
 
 - [A well-designed C++ front end](cpp-support.md)
+- [Rust support on every release host and for crates with dependencies](rust-support.md)
 
 The generic stack is complete: a recursive `Stack<T>` with `push`, `pop` and
 `size`, verified once for every type and imported unchanged, in Rust

@@ -610,7 +610,18 @@ fn an_index_disequality_needs_the_folds_to_be_sums() {
     let summed = PointerOffsetTerm::Add(Box::new(scaled(&i)), Box::new(scaled(&j)));
     let single = scaled(&k);
     let index_fact = Proposition::ConditionIs(
-        ConditionTerm::equal(MachineTerm::add(i.clone(), j.clone()), k.clone()),
+        crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::CompareRelation::Equal,
+            [
+                crate::kernel::SharedMachineIntegerTerm::index(
+                    crate::kernel::MachineIntegerType::Int32,
+                    MachineTerm::add(i.clone(), j.clone()),
+                )
+                .operand_view(),
+                crate::kernel::MachineOperandView::Legacy(&k),
+            ],
+        ),
         false,
     );
 
@@ -635,10 +646,23 @@ fn an_index_disequality_needs_the_folds_to_be_sums() {
     assert!(!recorded(&empty, false).contains(&index_fact));
     // The equality is arithmetic and needs no premise: equal offsets have
     // equal residues however either side wrapped.
-    assert!(recorded(&empty, true).contains(&Proposition::ConditionIs(
-        ConditionTerm::equal(MachineTerm::add(i.clone(), j.clone()), k.clone()),
-        true,
-    )));
+    assert!(
+        recorded(&empty, true).contains(&Proposition::ConditionIs(
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::CompareRelation::Equal,
+                [
+                    crate::kernel::SharedMachineIntegerTerm::index(
+                        crate::kernel::MachineIntegerType::Int32,
+                        MachineTerm::add(i.clone(), j.clone())
+                    )
+                    .operand_view(),
+                    crate::kernel::MachineOperandView::Legacy(&k)
+                ],
+            ),
+            true,
+        ))
+    );
 
     // The premise is exactly that the one modular add does not carry, which
     // is the condition C's own `+` publishes.
@@ -6845,7 +6869,7 @@ mod membership_needs_an_unwrapped_difference {
 
         let index = MachineTerm::Variable(Variable(93_955));
         let delta = |term: MachineTerm, constant: i64| ExactElementDelta {
-            index: term,
+            index: MachineOperandView::Legacy(&term).retain(MachineIntegerType::Int32),
             constant,
         };
         let start = index.clone();

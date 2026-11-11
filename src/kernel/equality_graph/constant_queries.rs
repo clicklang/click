@@ -141,7 +141,7 @@ impl EqualityGraph {
                             .equality_graph
                             .admitted
                             .bitvector64_equality_facts
-                            .get(term)
+                            .get(&crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(MachineIntegerType::UInt64, crate::kernel::MachineOperandView::Legacy(term)))
                         {
                             for (equal, fact) in neighbors.iter() {
                                 value = evaluate(context, V::Legacy(equal), active, memo);

@@ -7496,7 +7496,40 @@ struct ClickFunctionEnvironment {
     /// See [`memory_independent_click_functions`].
     memory_independent: BTreeSet<String>,
     pointer_results: BTreeMap<String, Option<std::sync::Arc<crate::kernel::PurePointerResult>>>,
+    /// Library functions that are one field of an argument. See
+    /// [`field_projection`].
+    projections: BTreeMap<String, crate::kernel::PureProjection>,
     pointer_type_error: Option<(String, String)>,
+}
+
+/// The field a function's body selects, when the body is exactly `match
+/// parameter { Variant(.., field, ..) => field }`. Applied to a value built
+/// with that constructor, such a function is the field, by its definition.
+fn field_projection(definition: &ClickFunctionDefinition) -> Option<crate::kernel::PureProjection> {
+    let names = |expression: &ContractExpression| match expression {
+        ContractExpression::Binding(name)
+        | ContractExpression::AlgebraicVariable { name, .. }
+        | ContractExpression::CFragment(CExpression::Variable(name)) => Some(name.clone()),
+        _ => None,
+    };
+    let ContractExpression::AlgebraicMatch { scrutinee, arms } = definition.body()? else {
+        return None;
+    };
+    let [arm] = arms.as_slice() else {
+        return None;
+    };
+    let scrutinee = names(scrutinee)?;
+    let selected = names(&arm.body)?;
+    Some(crate::kernel::PureProjection::new(
+        definition
+            .parameters()
+            .iter()
+            .position(|parameter| parameter.name() == scrutinee)?,
+        arm.variant.clone(),
+        arm.bindings
+            .iter()
+            .position(|binding| binding == &selected)?,
+    ))
 }
 
 impl ClickFunctionEnvironment {
@@ -7520,6 +7553,15 @@ impl ClickFunctionEnvironment {
                 .map(|definition| (definition.name().to_string(), definition.clone()))
                 .collect(),
             memory_independent: memory_independent_click_functions(definitions),
+            // Only the library's: a program's own function stays the call
+            // its proofs wrote, which they rewrite under and unfold.
+            projections: definitions
+                .iter()
+                .filter(|definition| definition.name().starts_with("click::"))
+                .filter_map(|definition| {
+                    Some((definition.name().to_string(), field_projection(definition)?))
+                })
+                .collect(),
             pointer_results,
             pointer_type_error,
         }

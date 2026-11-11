@@ -165,6 +165,11 @@ Preview the guide with `scripts/guide-serve.sh`, which needs Node.js and serves
 pages are the Markdown files in `guide/`, with `guide/index.md` as the home
 page.
 
+The `pages` workflow publishes both to GitHub Pages on each change to
+`master`: the guide at the site root and the reference under `reference/`.
+`scripts/build-site.sh` builds that same tree locally into
+`target/click-pages`.
+
 ## Contributing
 
 Click verifies existing C as written: a proof failure is not permission to
