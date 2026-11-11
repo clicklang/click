@@ -2004,13 +2004,16 @@ fn run_value_at_equal_displaced_pointer(
             scale,
             shift,
         } => {
-            let pinned = crate::kernel::assumptions::exact_signed_constant(&index, assumptions)
-                .or_else(|| {
-                    assumptions
-                        .signed_interval(&index)
-                        .filter(|(low, high)| low == high)
-                        .map(|(low, _)| low)
-                });
+            let pinned = crate::kernel::assumptions::exact_signed_constant_view(
+                index.operand_view(),
+                assumptions,
+            )
+            .or_else(|| {
+                assumptions
+                    .signed_interval_view(index.operand_view())
+                    .filter(|(low, high)| low == high)
+                    .map(|(low, _)| low)
+            });
             let pinned = pinned?;
             pinned
                 .checked_mul(scale)
@@ -2022,8 +2025,8 @@ fn run_value_at_equal_displaced_pointer(
             scale,
             shift,
         } => {
-            let pinned = crate::kernel::assumptions::exact_sixty_four_bit_constant(
-                &index,
+            let pinned = crate::kernel::assumptions::exact_sixty_four_bit_constant_view(
+                index.operand_view(),
                 true,
                 assumptions,
             )?;
@@ -3905,7 +3908,10 @@ pub(in crate::kernel) fn offset_atoms_and_constant(
                 collect(right, atoms, shift);
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                match signed_bitvector_constant(value)
+                match value
+                    .operand_view()
+                    .word32_constant()
+                    .map(|value| i64::from(value as i32))
                     .and_then(|value| value.checked_mul(*byte_width))
                 {
                     Some(bytes) => *shift += bytes,
@@ -3937,14 +3943,14 @@ pub(in crate::kernel) enum RunAccess {
     /// The access has the run base's atoms plus one scaled index, and this
     /// constant byte shift from element 0.
     Scaled {
-        index: MachineTerm,
+        index: crate::kernel::SharedMachineIntegerTerm,
         scale: i64,
         shift: i64,
     },
     /// The same with an unsigned 64-bit index, which is not read as a
     /// signed word.
     ScaledWide {
-        index: MachineTerm,
+        index: crate::kernel::SharedMachineIntegerTerm,
         scale: i64,
         shift: i64,
     },
@@ -3977,7 +3983,7 @@ pub(in crate::kernel) fn run_access(run: &CellRun, pointer: &Pointer) -> RunAcce
     match rest.as_slice() {
         [PointerOffsetTerm::Int32Scaled { value, byte_width }] if *byte_width > 0 => {
             RunAccess::Scaled {
-                index: value.as_ref().clone(),
+                index: value.clone(),
                 scale: *byte_width,
                 shift: shift - base_shift,
             }
@@ -3989,7 +3995,7 @@ pub(in crate::kernel) fn run_access(run: &CellRun, pointer: &Pointer) -> RunAcce
                 unsigned: true,
             },
         ] if *byte_width > 0 => RunAccess::ScaledWide {
-            index: value.as_ref().clone(),
+            index: value.clone(),
             scale: *byte_width,
             shift: shift - base_shift,
         },
@@ -4200,7 +4206,7 @@ pub(in crate::kernel) fn run_slots_kept_by_store(
                 scale,
                 shift,
             } = run_access(run, pointer)
-                && let Some((low, high)) = assumptions.signed_interval(&index)
+                && let Some((low, high)) = assumptions.signed_interval_view(index.operand_view())
                 && let (Some(first), Some(extent)) = (
                     low.checked_mul(scale)
                         .and_then(|bytes| bytes.checked_add(shift)),
@@ -4620,7 +4626,11 @@ fn offset_difference_stride(left: &PointerOffsetTerm, right: &PointerOffsetTerm)
             }
             PointerOffsetTerm::Variable(_) => return None,
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                match signed_bitvector_constant(value) {
+                match value
+                    .operand_view()
+                    .word32_constant()
+                    .map(|value| i64::from(value as i32))
+                {
                     Some(index) => {
                         constant = constant
                             .checked_add(sign.checked_mul(index.checked_mul(*byte_width)?)?)?;
@@ -4638,10 +4648,11 @@ fn offset_difference_stride(left: &PointerOffsetTerm, right: &PointerOffsetTerm)
             } => {
                 let index = if *unsigned {
                     value
-                        .uint64_as_const()
+                        .operand_view()
+                        .uint64_constant()
                         .and_then(|index| i64::try_from(index).ok())
                 } else {
-                    value.int64_as_const()
+                    value.operand_view().int64_constant()
                 };
                 match index {
                     Some(index) => {
@@ -4690,7 +4701,11 @@ fn exact_constant_byte_shift(pointer: &Pointer, base: &Pointer) -> Option<i64> {
                 *shift = shift.and_then(|shift| shift.checked_add(*value));
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                match signed_bitvector_constant(value) {
+                match value
+                    .operand_view()
+                    .word32_constant()
+                    .map(|value| i64::from(value as i32))
+                {
                     Some(value) => {
                         *shift = shift
                             .zip(value.checked_mul(*byte_width))
@@ -5292,6 +5307,119 @@ mod retained_endpoint_tests {
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod retained_run_access_tests {
+    use super::*;
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, MachineOperandView,
+        VerificationSession,
+    };
+
+    #[test]
+    fn retained_index_constant_walkers_preserve_signed_word_values() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let base = Pointer {
+            block: "retained_index_constants".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        for bits in [0, 1, 0x8000_0000, u32::MAX] {
+            let literal =
+                KernelTerm::retained_native_machine_operand(ty, &MachineTerm::constant(bits));
+            let zero = KernelTerm::retained_native_machine_operand(ty, &MachineTerm::constant(0));
+            let root =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Subtract, [literal, zero]);
+            let pointer = Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::Int32Scaled {
+                    value: MachineOperandView::Shared(&root).retain(ty),
+                    byte_width: 4,
+                },
+            };
+            let expected = i64::from(bits as i32) * 4;
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(
+                offset_atoms_and_constant(&pointer.offset),
+                (Vec::new(), expected)
+            );
+            assert_eq!(exact_constant_byte_shift(&pointer, &base), Some(expected));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    #[test]
+    fn retained_run_lookup_preserves_pinned_slots_and_holes() {
+        for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let _session = VerificationSession::enter();
+            let atom = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018602));
+            let root =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [atom.clone(), atom]);
+            let index = MachineOperandView::Shared(&root).retain(ty);
+            let base = Pointer {
+                block: "retained_run_lookup".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let run = CellRun::new_with_mode(
+                base.clone(),
+                4,
+                CType::Int32,
+                8,
+                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::primitives::RunValueMode::Constant(CValue::Int32(7u32.into())),
+                Default::default(),
+            );
+            let pointer = Pointer {
+                block: base.block.clone(),
+                offset: if ty == MachineIntegerType::Int32 {
+                    PointerOffsetTerm::Int32Scaled {
+                        value: index.clone(),
+                        byte_width: 4,
+                    }
+                } else {
+                    PointerOffsetTerm::Int64Scaled {
+                        value: index.clone(),
+                        byte_width: 4,
+                        unsigned: true,
+                    }
+                },
+            };
+            let literal = if ty == MachineIntegerType::Int32 {
+                MachineTerm::constant(2)
+            } else {
+                MachineTerm::uint64_constant(2)
+            };
+            let equality = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                ty,
+                CompareRelation::Equal,
+                [index.operand_view(), MachineOperandView::Legacy(&literal)],
+            );
+            let empty = PureFactContext::new();
+            let pinned = empty.clone().assume_condition(equality, true);
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(
+                run_value_at_equal_displaced_pointer(&run, &pointer, &base.offset, &empty),
+                None
+            );
+            assert_eq!(
+                run_value_at_equal_displaced_pointer(&run, &pointer, &base.offset, &pinned),
+                Some(CValue::Int32(7u32.into()))
+            );
+            let mut holes = run.holes().clone();
+            holes.insert(2);
+            assert_eq!(
+                run_value_at_equal_displaced_pointer(
+                    &run.with_holes(holes),
+                    &pointer,
+                    &base.offset,
+                    &pinned
+                ),
+                None
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
     }
 }
