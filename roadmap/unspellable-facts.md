@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `bc10774c8`, including merged PR #2557.
+Baseline for this revision: `16b5a3b0a`, including merged PR #2560.
 
 Already landed:
 
@@ -511,9 +511,9 @@ The production compiler audit after this increment reports 157 primary error
 locations with the two implicit conversion traits disabled, versus 178 at the
 previous checkpoint. These are caller locations, not distinct checker defects;
 output, diagnostics and native payload construction also depend on the traits.
-The traits were restored after the audit. After the cell-run closure below, remaining checker examples include stepped
-wide offset equality, read-address/snapshot reasoning, pointer fact keys and
-native range normalization.
+The traits were restored after the audit. After the cell-run and wide-offset closures below, remaining checker examples
+include read-address/snapshot reasoning, pointer fact keys and native range
+normalization.
 
 #### Retained cell-run access indices
 
@@ -527,13 +527,35 @@ and exact byte shifts also inspect retained operands.
 
 Controls cover pinned and unknown slots, holes, signed 32-bit constant
 interpretation, and cold repeated-child DAGs at 16, 64 and 256 levels without
-machine exports. This does not close stepped wide-offset equality or native
-read-address normalization.
+machine exports. Native read-address normalization remains separate; the
+stepped wide-offset equality route is closed below.
 
 Validation: six focused tests passed. `scripts/check.sh --no-fail-fast` exited
 0 in 9m24s: 7,132 unit/API tests, 58 examples and 5,160 mdtests passed. Both
 wide-range transport fixtures passed with zero fact-stability entries. No
 nightly suite ran.
+
+#### Retained wide offset equality
+
+The unsigned-64-bit constant and stepped-index routes in
+`pointer_offsets_equal_for_memory_resolution` now retain their index operands.
+The stepped route constructs its addition with `wide_index_binary` and uses
+shared comparisons, preserving its complete-width no-wrap guard. Exact
+constant evidence is read through `wide_constant_from_equalities_view`, with
+the same equality directions and query order. A matching low word alone cannot
+pin the full index.
+
+Controls preserve the full high word, signed byte-offset refusals, misalignment,
+missing no-wrap premises and wrapping increments. Cold shared DAGs and unrelated
+fact populations exercise the same selected equality route without exporting
+index trees. Read-address/snapshot reasoning, pointer fact keys and native range
+normalization remain separate checker boundaries.
+
+Validation: the full `scripts/check.sh --no-fail-fast` gate exited 0 in 9m01s:
+7,135 unit/API tests, 58 examples and 5,160 mdtests passed. After rebasing onto
+current master and reducing only the unrelated-fact test multiplier, all six
+focused tests passed. The final growth test took 0.184s, retaining its three
+DAG sizes and work/export assertions. No nightly suite ran.
 
 #### Classified boundaries and retained coverage
 
