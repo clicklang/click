@@ -45,5 +45,5 @@ int32 difference(int32 a, int32 b) {
 ```
 
 ```expect
-fail: undefined behavior: signed overflow
+fail: requires proof excluding signed overflow
 ```

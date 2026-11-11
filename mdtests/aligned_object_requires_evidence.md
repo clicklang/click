@@ -45,5 +45,5 @@ int32 forward(struct pair* p) {
 ```
 
 ```expect
-fail: unproved obligation: `aligned(p, 8)`
+fail: missing resource fact `views *p`
 ```

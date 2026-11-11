@@ -78,5 +78,5 @@ void object_retain(struct object *obj) {
 ```
 
 ```expect
-fail: unproved obligation: `to_integer((slack - 1)) == to_integer(count(permit(obj)))`
+fail: unproved obligation: `to_integer(((slack - 1) as int32)) == to_integer(count(permit(obj)))`
 ```

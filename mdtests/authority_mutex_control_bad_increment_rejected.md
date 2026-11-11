@@ -61,5 +61,5 @@ int32 run() {
 ```
 
 ```expect
-fail: unproved obligation: `to_integer(1) == to_integer(count(reference(obj)))`
+fail: unproved obligation: `to_integer((1 as int32)) == to_integer(count(reference(obj)))`
 ```

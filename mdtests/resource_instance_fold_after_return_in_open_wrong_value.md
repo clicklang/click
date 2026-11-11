@@ -33,5 +33,5 @@ int32 f(int32* p, int32* q) {
 ```
 
 ```expect
-fail: unproved obligation: `*q == 8`
+fail: unproved obligation: `*q == (8 as int32)`
 ```

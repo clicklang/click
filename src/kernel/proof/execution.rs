@@ -714,7 +714,8 @@ struct PreparedResourceFold {
 #[derive(Clone)]
 struct PreparedReturnFold {
     path_index: usize,
-    fold: PreparedResourceFold,
+    rewrite: Option<CheckedResourceRewrite>,
+    semantic_facts: Vec<Proposition>,
 }
 
 /// A composite exchange independently checked at the published snapshot.
@@ -10344,6 +10345,26 @@ impl ExecutionProofCore {
         self.prepared_return_fold.is_some()
     }
 
+    /// A definition-law fold changes the selected outcome presentation without
+    /// an operational C-state exchange. Its premises are still proved at the
+    /// original outcome; completing it retains those proofs on that path.
+    pub(crate) fn prepare_return_definition_fold(
+        &mut self,
+        path_index: usize,
+        before: &ProofFacts,
+        after: &ProofFacts,
+    ) {
+        if self.prepared_return_fold.is_none() {
+            self.prepared_return_fold = Some(Arc::new(PreparedReturnFold {
+                path_index,
+                rewrite: None,
+                semantic_facts: after
+                    .introduced_since(before)
+                    .expect("a definition fold extends its input facts"),
+            }));
+        }
+    }
+
     pub(crate) fn finish_prepared_return_fold(
         &mut self,
         proved: &Self,
@@ -10371,22 +10392,23 @@ impl ExecutionProofCore {
                 .return_pending_propositions
                 .with_inserted(path, pending.clone());
         }
-        self.flush_return_propositions(path)?;
-        let mut rewrite = prepared.fold.rewrite;
-        rewrite.before_facts = proved_facts.clone();
-        rewrite.after_facts = prepared
-            .fold
+        let facts = prepared
             .semantic_facts
             .into_iter()
             .fold(proved_facts.clone(), |facts, fact| {
                 facts.with_kernel_checked_fact(fact)
             });
+        let Some(mut rewrite) = prepared.rewrite else {
+            return Ok(facts);
+        };
+        self.flush_return_propositions(path)?;
+        rewrite.before_facts = proved_facts.clone();
+        rewrite.after_facts = facts.clone();
         if let Some(presentation) = &mut rewrite.return_presentation {
             let presentation = Arc::make_mut(presentation);
             presentation.rewrite.before_facts = proved_facts.clone();
             presentation.rewrite.after_facts = rewrite.after_facts.clone();
         }
-        let facts = rewrite.after_facts.clone();
         let mut trace = self
             .return_resource_rewrites
             .get(&path)
@@ -10832,14 +10854,12 @@ impl ExecutionProofCore {
         if defer {
             self.prepared_return_fold = Some(Arc::new(PreparedReturnFold {
                 path_index,
-                fold: PreparedResourceFold {
-                    semantic_facts: observed
-                        .expect("a prepared fold has a constructed exchange")
-                        .1
-                        .semantic_facts
-                        .clone(),
-                    rewrite,
-                },
+                semantic_facts: observed
+                    .expect("a prepared fold has a constructed exchange")
+                    .1
+                    .semantic_facts
+                    .clone(),
+                rewrite: Some(rewrite),
             }));
             return Ok(());
         }
@@ -10995,12 +11015,10 @@ impl ExecutionProofCore {
         if defer {
             self.prepared_return_fold = Some(Arc::new(PreparedReturnFold {
                 path_index,
-                fold: PreparedResourceFold {
-                    semantic_facts: after_facts
-                        .introduced_since(before_facts)
-                        .expect("a checked return fold extends its input facts"),
-                    rewrite,
-                },
+                semantic_facts: after_facts
+                    .introduced_since(before_facts)
+                    .expect("a checked return fold extends its input facts"),
+                rewrite: Some(rewrite),
             }));
             return Ok(());
         }
@@ -11237,27 +11255,6 @@ impl ExecutionProofCore {
             reason: "return fold selected an unknown path",
             unjustified_fact: None,
         })
-    }
-
-    /// Whether this path's retained trace, return exchanges included,
-    /// certifies under the function's entry premises. A caller that retains
-    /// an optional exchange uses this to keep it only when the path theorem
-    /// it extends still checks.
-    pub(crate) fn return_path_certifies(&self, function: &CFunction, path_index: usize) -> bool {
-        let Some(candidates) = self.frontier.execution() else {
-            return false;
-        };
-        self.checked_return_path(candidates, function, &self.entry_assumptions(), path_index)
-            .is_ok()
-    }
-
-    /// The premises the proof assumed at the function's entry, or none when
-    /// it recorded no checked entry.
-    pub(crate) fn entry_assumptions(&self) -> PureFactContext {
-        self.function_entry
-            .as_ref()
-            .map(|entry| entry.assumptions().clone())
-            .unwrap_or_default()
     }
 
     /// Whether this path retains a kernel-checked exchange after its C return.

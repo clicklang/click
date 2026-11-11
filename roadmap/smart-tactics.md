@@ -121,10 +121,17 @@ append it with the proved context. Operational composite wrapper folds retain
 their checked exchanges too. Both execution-frontier and completed-return
 paths use this completion boundary. Return paths retain their state endpoints
 as evidence is appended, so folds no longer recover them by walking history.
-Failed preparations still retry after prerequisite proofs. Legacy outcome folds
-that use only the contract-definition law (rather than an operational exchange)
-also retain their retry; inspect that route separately. Keep the constructor-count
-and history controls in `prepared_named_fold_constructs_once`,
+Preparation must either retain a conditional successor and its obligations or
+return a final refusal. Completion must never rerun the operation. Legacy
+outcome folds retain their definition-law presentation and attach the proved
+facts to the selected return path; they do not probe whole-path certification
+to choose a fallback exchange. Keep the constructor-count and history controls
+in `prepared_legacy_outcome_fold_applies_once`,
+`prepared_view_call_does_not_retry_loan_recovery`,
+`prepared_guarded_statement_does_not_retry_execution`,
+`prepared_fold_snapshot_pointer_reads_current_memory`,
+`prepared_fold_arithmetic_field_replays`,
+`prepared_named_fold_constructs_once`,
 `prepared_named_fold_completion_does_not_walk_history`,
 `prepared_return_fold_constructs_once_without_recovering_history`, and
 `prepared_population_fold_constructs_once`. The population control covers named

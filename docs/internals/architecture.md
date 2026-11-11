@@ -58,7 +58,14 @@ solving for obligations without written proof blocks. Omitted obligation proofs
 invoke the same solver as explicit `solve()`; only scheduling and source
 attribution differ. `Proof::prepare_step`
 produces the existing candidate and obligations; the driver proves them at the
-original frontier and resumes through `finish_prepared_step`. This is one
+original frontier and publishes the retained result through `finish_prepared_step`.
+Completion never reruns the operation. A preparation refusal is final; code that
+needs a premise must emit an obligation while retaining its conditional result.
+Assertion failure obligations retain their producer tag, so preparation can
+select the sole successful assertion arm without reconstructing its Boolean
+meaning. Definedness preparation retains the sole defined arm and emits its
+path guard. Neither candidate supplies evidence for its own prerequisites.
+This is one
 engine switching between operations and search as it interprets the proof. Remaining operation calls
 back into the driver are frozen in the
 [dependency inventory](https://github.com/clicklang/click/blob/master/build_support/proof_search_edges.tsv); the split

@@ -811,9 +811,10 @@ fn recover_candidate_stable_view_resources(
     // Do not use the path assumptions to decide this: they intentionally
     // include the obligation list for later proof discharge, which would
     // make an unresolved return condition appear already proved. Candidate
-    // recovery is therefore fail-closed until the return path has no pending
-    // obligations at all.
-    if !obligations.is_empty() {
+    // recovery remains fail-closed for ordinary calls. Preparation alone may
+    // retain a conditional successor: its obligations stay attached, and the
+    // proof driver cannot publish it until it has proved every one at input.
+    if !obligations.is_empty() && !assumptions.retains_required_obligations() {
         return Err(CRuntimeError::PendingCallObligations(obligations.into()));
     }
     // Escaping borrows (step 7). Every viewed piece a produced or returned
@@ -3116,13 +3117,18 @@ fn execute_verified_function_applications_with_suspension(
         let mut first_failure = None;
         let mut selected_position = None;
         for (index, application) in applications.iter().enumerate() {
+            // The written selector fixes the transition before its premises
+            // are proved. Other interfaces must establish applicability at
+            // entry; they cannot borrow the selected call's pending premises.
+            let retain_selected =
+                assumptions.retains_required_obligations() && selected_contract == Some(index);
             let prepared = prepare_verified_function_call(
                 caller_state,
                 *application,
                 index,
                 arguments,
                 arguments_path.clone(),
-                applications.len() > 1 || selected_contract.is_some(),
+                (applications.len() > 1 || selected_contract.is_some()) && !retain_selected,
                 assumptions,
                 environment,
                 budget,

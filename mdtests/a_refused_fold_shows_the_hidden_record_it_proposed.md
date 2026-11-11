@@ -42,5 +42,5 @@ void clear(struct pair* p) {
 ```
 
 ```expect
-fail: unproved obligation: `p->n == c.v`
+fail: unproved obligation: `p->n == (c.v as int32)`
 ```

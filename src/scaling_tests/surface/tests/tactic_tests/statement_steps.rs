@@ -529,3 +529,255 @@ void make(struct pool* pool) {{
     eprintln!("population fold constructions: {samples:?}");
     assert!(samples.iter().all(|(_, _, _, n)| *n == 1), "{samples:?}");
 }
+
+#[test]
+#[ignore = "nightly: legacy outcome fold preparation and replay"]
+fn prepared_legacy_outcome_fold_applies_once() {
+    let mut samples = Vec::new();
+    for opaque in [false, true] {
+        for size in [1, 8, 32] {
+            let history = "have x == x by { normalize(); }\n".repeat(size);
+            let source = format!(
+                r#"
+verifying "legacy.c";
+resource positive(x: int32) {{ fact x > 0; }}
+void make(int32 x) {{ requires x > 0; produces positive(x); }} by {{
+    step_until(function.exit);
+    {history}
+    fold(positive(x)) by {{ assumption(); }}
+    solve();
+}}
+"#
+            );
+            let source = if opaque {
+                source.replace("resource positive", "predicate positive_value(x: int32) { x > 0 }\nresource positive")
+                .replace("fact x > 0;", "fact positive_value(x);")
+                .replace("by { assumption(); }", "by { have positive_value(x) by { unfold(positive_value); assumption(); } assumption(); }")
+            } else {
+                source
+            };
+            let sources = [("legacy.c", "void make(int32 x) {}")];
+            let (result, events) =
+                crate::instrumentation::collect(|| verify_c0_sources(&source, &sources));
+            result.unwrap();
+            let count = events
+                .iter()
+                .filter(|event| {
+                    matches!(event,
+            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+            if name == "resource fold: apply selected fold")
+                })
+                .count();
+            samples.push((opaque, size, count));
+            if size == 1 {
+                let expanded = expand_function_proof_source(&source, &sources, "make").unwrap();
+                without_implicit_solve_for_claim("make.contract", || {
+                    verify_c0_sources(&expanded, &sources).map_err(|e| e.report())
+                })
+                .unwrap();
+                assert!(
+                    verify_c0_sources(&source.replace("requires x > 0;", ""), &sources).is_err()
+                );
+            }
+        }
+    }
+    eprintln!("legacy outcome fold applications: {samples:?}");
+    assert!(samples.iter().all(|(_, _, n)| *n == 1), "{samples:?}");
+}
+
+#[test]
+#[ignore = "nightly: loan-backed call preparation and replay"]
+fn prepared_view_call_does_not_retry_loan_recovery() {
+    let mut samples = Vec::new();
+    for callback in [false, true] {
+        for size in [1, 8, 32] {
+            let history = "have a == a by { normalize(); }\n".repeat(size);
+            let source = format!(
+                r#"
+verifying "call.c";
+extern int32 read(int32 x, int32* p) {{
+    views *p;
+    requires x > 0;
+    ensures result == x;
+}}
+int32 caller(int32 a, int32* p) {{
+    owns *p;
+    requires a > 0;
+    ensures result == a;
+}} by {{
+    {history}
+    step() by {{ assumption(); }}
+    step(); solve();
+}}
+"#
+            );
+            let source = if callback {
+                source
+                    .replace("extern int32 read", "contract int32 Read")
+                    .replace(
+                        "int32 caller(int32 a, int32* p)",
+                        "int32 caller(int32 (*f)(int32, int32*), int32 a, int32* p)",
+                    )
+                    .replace("    owns *p;", "    requires Read(f);\n    owns *p;")
+                    .replace("step() by", "step(Read) by")
+            } else {
+                source
+            };
+            let c = if callback {
+                "int32 caller(int32 (*f)(int32, int32*), int32 a, int32* p) { return f(a, p); }"
+            } else {
+                "int32 caller(int32 a, int32* p) { return read(a, p); }"
+            };
+            let sources = [("call.c", c)];
+            let (result, events) =
+                crate::instrumentation::collect(|| verify_c0_sources(&source, &sources));
+            result.unwrap();
+            let calls = events
+                .iter()
+                .filter(|event| {
+                    matches!(event,
+            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+            if name == "verification statement: call assign")
+                })
+                .count();
+            samples.push((callback, size, calls));
+            if size == 1 {
+                let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+                without_implicit_solve_for_claim("caller.contract", || {
+                    verify_c0_sources(&expanded, &sources).map_err(|e| e.report())
+                })
+                .unwrap();
+                assert!(
+                    verify_c0_sources(&source.replace("requires a > 0;", ""), &sources).is_err()
+                );
+            }
+        }
+    }
+    eprintln!("view call preparations: {samples:?}");
+    assert!(samples.iter().all(|(_, _, n)| *n == 1), "{samples:?}");
+}
+
+#[test]
+#[ignore = "nightly: guarded statement preparation and expansion replay"]
+fn prepared_guarded_statement_does_not_retry_execution() {
+    let mut samples = Vec::new();
+    for assertion in [false, true] {
+        for size in [1, 8, 32] {
+            let history = "have x == x by { normalize(); }\n".repeat(size);
+            let (c, contract, steps, operation) = if assertion {
+                (
+                    "int32 values[4]; int32 f(int32 x) { int32 r; r = values[x]; return r; }",
+                    "owns values[0..4]; requires x == 1 or x == 2;",
+                    "step(); step() { requires x >= 0 and x < 4 by { cases { x == 1 => { solve(); } x == 2 => { solve(); } } } } step(); step(); solve();",
+                    "verification statement: assert",
+                )
+            } else {
+                (
+                    "int32 f(int32 x) { return x + 1; }",
+                    "requires x == 5 or x == 7;",
+                    "step() by { cases { x == 5 => { solve(); } x == 7 => { solve(); } } } solve();",
+                    "verification statement: return",
+                )
+            };
+            let source = format!(
+                "verifying \"guard.c\";\nint32 f(int32 x) {{ {contract} ensures result == result; }} by {{ {history} {steps} }}"
+            );
+            let sources = [("guard.c", c)];
+            let (result, events) =
+                crate::instrumentation::collect(|| verify_c0_sources(&source, &sources));
+            result.unwrap_or_else(|e| panic!("assertion={assertion}: {e}"));
+            let count = events.iter().filter(|event| matches!(event,
+                crate::instrumentation::VerificationEvent::OperationFinished { name, .. } if name == operation
+            )).count();
+            samples.push((assertion, size, count));
+            if size == 1 {
+                let expanded = expand_function_proof_source(&source, &sources, "f").unwrap();
+                without_implicit_solve_for_claim("f.contract", || {
+                    verify_c0_sources(&expanded, &sources).map_err(|e| e.report())
+                })
+                .unwrap();
+                let bad = source
+                    .replace("requires x == 5 or x == 7;", "")
+                    .replace("requires x == 1 or x == 2;", "");
+                assert!(
+                    verify_c0_sources(&bad, &sources).is_err(),
+                    "the retained arm cannot prove its own guard"
+                );
+            }
+        }
+    }
+    eprintln!("guarded statement constructions: {samples:?}");
+    assert!(samples.iter().all(|(_, _, n)| *n == 1), "{samples:?}");
+}
+
+#[test]
+#[ignore = "focused audit: snapshot-valued fold prerequisites expand and cold-replay"]
+fn prepared_fold_snapshot_pointer_reads_current_memory() {
+    for element in ["int32", "uint8"] {
+        let c = format!(
+            "struct holder {{ {element}* data; }}; void make(struct holder* h) {{ h->data[0] = 1; }}"
+        );
+        let source = format!(
+            r#"
+verifying "fold.c";
+resource cells(p: {element}*) {{
+    field next: int32;
+    owns p[0..1];
+    fact 0 <= next;
+    fact forall(k: int32) {{ next <= k and k < 1 implies p[k] == 1 }};
+}}
+void make(struct holder* h) {{
+    views *h;
+    consumes h->data[0..1];
+    requires h->data[0] == 0;
+    produces z: cells(old(h->data));
+}} by {{
+    step();
+    let z = fold(cells(old(h->data)), {{next: 0}});
+    step_until(function.exit);
+    solve();
+}}
+"#
+        );
+        let sources = [("fold.c", c.as_str())];
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_function_proof_source(&source, &sources, "make").unwrap();
+        without_implicit_solve_for_claim("make.contract", || {
+            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+        let wrong = source.replace("implies p[k] == 1", "implies p[k] == 0");
+        assert!(verify_c0_sources(&wrong, &sources).is_err());
+    }
+}
+
+#[test]
+#[ignore = "focused audit: arithmetic fold fields retain their type in expansion"]
+fn prepared_fold_arithmetic_field_replays() {
+    let source = r#"
+verifying "fold.c";
+resource cell(p: int32*) {
+    field value: int32;
+    owns *p;
+    fact *p == value;
+    fact 0 <= value;
+}
+void make(int32* p, int32 n) {
+    consumes *p;
+    requires 0 <= n and n <= 100;
+    produces r: cell(p);
+} by {
+    step();
+    let r = fold(cell(p), { value: n + 1 });
+    step_until(function.exit);
+    solve();
+}
+"#;
+    let sources = [("fold.c", "void make(int32* p, int32 n) { *p = n + 1; }")];
+    verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_function_proof_source(source, &sources, "make").unwrap();
+    without_implicit_solve_for_claim("make.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}

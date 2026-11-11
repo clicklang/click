@@ -28,5 +28,5 @@ int32 inside(int32 x) {
 ```
 
 ```expect
-fail: undefined behavior: read of uninitialized storage
+fail: requires proof excluding read of uninitialized storage
 ```

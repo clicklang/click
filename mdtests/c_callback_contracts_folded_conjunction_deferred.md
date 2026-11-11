@@ -33,5 +33,5 @@ int32 invoke(void (*callback)(int32*, int32), int32* data, int32 count) {
 ```
 
 ```expect
-fail: ambiguous callback resource transition; use step(Contract)
+fail: no callback contract has established preconditions
 ```

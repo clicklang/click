@@ -4588,7 +4588,8 @@ pub(in crate::kernel) fn assertion_truthiness_obligation(
     let obligation = ProofObligation::verification_condition(Proposition::Equal(
         Term::CValue(value.clone()),
         Term::CValue(int32(1)),
-    ));
+    ))
+    .with_assertion_failure();
     match label {
         Some(label) => obligation.with_context(label),
         None => obligation,

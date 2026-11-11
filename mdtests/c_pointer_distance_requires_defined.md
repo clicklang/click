@@ -20,5 +20,5 @@ int32 distance(int32* left, int32* right) {
 ```
 
 ```expect
-fail: undefined behavior: signed overflow
+fail: requires proof excluding signed overflow
 ```

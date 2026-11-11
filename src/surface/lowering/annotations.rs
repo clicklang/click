@@ -8934,6 +8934,18 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> CType {
         match expression {
+            ContractExpression::Let {
+                value,
+                body,
+                name,
+                click_type,
+            } if matches!(body.as_ref(), ContractExpression::Binding(binding) if binding == name) => {
+                click_type
+                    .as_ref()
+                    .and_then(ClickType::c_type)
+                    .and_then(|ty| ty.to_kernel_type().pointee_type())
+                    .unwrap_or_else(|| self.contract_array_element_type(value, environment))
+            }
             ContractExpression::CBinding(name) => self
                 .declared_pointer_element_type(name)
                 .or_else(|| self.entry_state.global_array_element_type(name))

@@ -17,5 +17,5 @@ int32 negate(int32 x) {
 ```
 
 ```expect
-fail: undefined behavior: signed overflow
+fail: requires proof excluding signed overflow
 ```

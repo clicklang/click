@@ -111,7 +111,7 @@ pub(in crate::surface) fn without_open_obligation_probe<R>(operation: impl FnOnc
 /// not a checked step. A caller may retain it privately and publish it only
 /// after proving every recorded obligation against the original input state.
 /// It must never use the candidate's facts to discharge those obligations.
-/// Failed preparations have no successor to retain and may require recovery.
+/// Failed preparations have no successor to retain and are final refusals.
 pub(in crate::surface) fn probe_open_obligations<R>(
     operation: impl FnOnce() -> R,
 ) -> (R, OpenObligationProbe) {
@@ -921,11 +921,10 @@ fn certified_transitions_from_execution(
                             )
                             || directly_matching_separation_fact(proposition, pure_facts).is_some()
                             || directly_covering_loadability_fact(proposition, pure_facts).is_some()
-                            // Stable-view recovery requires the kernel to see
-                            // the precondition already proved. A probe must
-                            // retain even a trivially true pending clause so
-                            // implicit solve proves it at the pre-state, then
-                            // retries the call with that checked evidence.
+                            // A rejected contract candidate must not erase its
+                            // pending clause merely because that clause is
+                            // trivially true. Preparation reports requirements
+                            // separately from whether a successor was produced.
                             || (matches!(normalize_proposition(proposition), NormalizedProposition::True)
                                 && !(matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
                                     && obligation.call_requirement_site().is_some()

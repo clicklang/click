@@ -29,5 +29,5 @@ int32 global_past(int32 x) {
 ```
 
 ```expect
-fail: unproved obligation: `x >= 0 and x < 4`
+fail: array subobject index must be at least 0 and less than 4
 ```

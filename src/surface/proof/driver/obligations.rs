@@ -86,10 +86,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let (probe, recorded) = driver_proof.prepare_step(&step);
         // A successful preparation is conditional on every recorded requirement.
         // Keep it private while those requirements are proved at `self`, never
-        // in the candidate's post-state. A failed preparation needs recovery.
-        if recorded.recorded.is_empty() {
-            probe.as_ref().map_err(Clone::clone)?;
-        }
+        // in the candidate's post-state. A refusal is not a resumable result.
+        probe.as_ref().map_err(Clone::clone)?;
         let refusals = recorded.refusals;
         let recorded_requirements = recorded.recorded;
         let open = distinct_requirements(recorded_requirements.clone());
@@ -237,8 +235,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             }
         };
         // Both written and unwritten obligation slots have been discharged.
-        let stepped =
-            driver_proof.finish_prepared_step(probe, &current, &step, &recorded_requirements)?;
+        let stepped = driver_proof.finish_prepared_step(probe, &current, &recorded_requirements)?;
         Ok(driver_proof.step_proved_successor(stepped, step, proof))
     }
 
@@ -255,13 +252,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // An obligation the implicit `solve` cannot spell or prove refuses the
         // step with the fast path's own diagnostic, naming that obligation.
         let (probe, recorded) = driver_proof.prepare_step(&step);
+        probe.as_ref().map_err(Clone::clone)?;
         if recorded.recorded.is_empty() {
             if probe.as_ref().is_ok_and(|candidate| {
                 candidate
                     .execution()
                     .is_some_and(|execution| execution.core.has_prepared_fold())
             }) {
-                return driver_proof.finish_prepared_step(probe, driver_proof, &step, &[]);
+                return driver_proof.finish_prepared_step(probe, driver_proof, &[]);
             }
             // With nothing recorded, the probe ran the ordinary checked step.
             return probe;
@@ -304,7 +302,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 )?);
             }
         };
-        let stepped = driver_proof.finish_prepared_step(probe, &proved, &step, &recorded)?;
+        let stepped = driver_proof.finish_prepared_step(probe, &proved, &recorded)?;
         let proof = if entries.len() == 1 {
             StepProofCertificate::By(Box::new(entries.pop().expect("one entry").proof))
         } else {
@@ -1027,7 +1025,14 @@ fn unproved_step_requirement(
             &execution.core.state,
         );
         return Ok(error
-            .with_rewritten_place(|reason| Some(format!("{reason}; could not show `{spelling}`")))
+            .with_rewritten_place(|reason| {
+                let (head, rest) = reason.split_once('\n').unwrap_or((reason, ""));
+                Some(if rest.is_empty() {
+                    format!("{head}; could not show `{spelling}`")
+                } else {
+                    format!("{head}; could not show `{spelling}`\n{rest}")
+                })
+            })
             .with_reported_assertion_goal(Some(goal)));
     }
     // Keep the existing concrete-refinement diagnostic when the ordinary

@@ -31,5 +31,5 @@ int32 frame(int32 w, int32 h) {
 ```
 
 ```expect
-fail: produced undefined behavior: signed overflow
+fail: requires proof excluding signed overflow
 ```

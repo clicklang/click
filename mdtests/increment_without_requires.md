@@ -18,5 +18,5 @@ int32 increment(int32 x) {
 ```
 
 ```expect
-fail: undefined behavior: signed overflow
+fail: requires proof excluding signed overflow
 ```

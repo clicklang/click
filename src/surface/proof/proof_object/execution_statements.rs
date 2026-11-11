@@ -1208,27 +1208,20 @@ impl<'a> Proof<'a> {
 
     /// Publish a prepared operation after its caller has proved
     /// every recorded obligation at this original frontier. The candidate must
-    /// never be used as the context for those proofs. A failed preparation (for
-    /// example pending loan recovery) has no successor and still needs retry.
+    /// never be used as the context for those proofs. A refused operation has
+    /// no retained successor and cannot be completed by re-executing it.
     fn finish_prepared_step(
         &self,
         prepared: Result<Self, ClickError>,
         proved: &Self,
-        step: &ProofStep,
         discharged: &[UnresolvedRequirement],
     ) -> Result<Self, ClickError> {
-        let mut candidate = match prepared {
-            Ok(candidate) => candidate,
-            Err(_) => return proved.apply_primitive_step(step),
-        };
-        // Named folds and operational composite folds retain their selected exchange.
-        // Folds using only a contract-definition law still need their legacy retry.
+        let mut candidate = prepared?;
+        // Every successful fold retains either its exchange or its outcome
+        // definition-law presentation while the driver proves its premises.
         let prepared_fold = candidate
             .execution()
             .is_some_and(|execution| execution.core.has_prepared_fold());
-        if matches!(step, ProofStep::FoldResource(_)) && !prepared_fold {
-            return proved.apply_primitive_step(step);
-        }
         let mut introduced = proved
             .facts()
             .introduced_since(self.facts())
@@ -1375,8 +1368,8 @@ impl<'a> Proof<'a> {
     }
 
     /// Construct one primitive transition. Preparation collects its required
-    /// propositions; only the driver supplies their proofs. Recovery retries
-    /// use the established input facts without starting another solve.
+    /// propositions; only the driver supplies their proofs and publishes the
+    /// retained successor. A refusal is returned without re-execution.
     fn apply_primitive_step(&self, step: &ProofStep) -> Result<Self, ClickError> {
         match step {
             ProofStep::FoldResource(resource) => self.apply_primitive_fold(resource),

@@ -797,6 +797,23 @@ impl<'a> Proof<'a> {
                             value: Box::new(value.clone()),
                             body: Box::new(ContractExpression::Binding("field_value".to_owned())),
                         };
+                    } else if let Some(value) = written.get_mut(field.name()) {
+                        // The kernel evaluates the initializer at the field's
+                        // declared type. Keep that same conversion in the
+                        // independently printed prerequisite: n + 1 for an
+                        // int32 field must not become Integer arithmetic.
+                        *value = crate::surface::lowering::pure_function_parameter_argument(
+                            &FunctionParameter {
+                                name: field.name().to_owned(),
+                                click_type: field.click_type().clone(),
+                                struct_name: None,
+                                function_pointer_signature: None,
+                                constant: false,
+                                pointee_constant: false,
+                                reference: false,
+                            },
+                            value,
+                        );
                     }
                 }
                 match &body.matched {
@@ -3097,31 +3114,6 @@ impl<'a> Proof<'a> {
                 }),
             _ => false,
         };
-        // Certification reads an ordinary fold's composite back from the
-        // exit's pieces by its definition law, which assembles a composite
-        // only where its body facts hold under the path's own premises. A
-        // fact this proof established after execution (a predicate it
-        // unfolded, say) is not among them. When the entry premises alone do
-        // not give the law this fold's facts, the fold is also offered as a
-        // checked return exchange, which carries the proof's post-return
-        // facts into the certified trace. The exchange is kept only when the
-        // path still certifies with it; otherwise the fold stays with the
-        // definition law, which checks its facts itself.
-        let fact_bearing_exchange = match checked.selected.resource() {
-            CResource::Composite { name, .. } => {
-                context
-                    .function
-                    .composite_resource_definition(name)
-                    .is_some_and(|definition| !definition.facts().is_empty())
-                    && !crate::kernel::c_resource_definitionally_established(
-                        &goal.data.core.state,
-                        &checked.selected,
-                        context.function.composite_resource_definitions(),
-                        &execution.core.entry_assumptions(),
-                    )
-            }
-            _ => false,
-        };
         // The checked contract transition has its own resource evidence and
         // may bind outputs to their interface identities. A later scope close
         // still checks its body law, but does not exchange that final contract
@@ -3167,29 +3159,13 @@ impl<'a> Proof<'a> {
                     crate::surface::proof::execution_planning::collecting_step_requirements(),
                 )
                 .map_err(|message| self.step_error(message))?;
-        } else if retain_return_exchange && fact_bearing_exchange && *state != *goal.data.core.state
-        {
-            let mut offered = execution.clone();
-            if offered
-                .core
-                .record_return_composite_resource_rewrite(
-                    context.function,
-                    goal.path_index,
-                    self.facts(),
-                    &checked.selected,
-                    &goal.data.core,
-                    &state,
-                    &checked.facts,
-                    &[],
-                    false,
-                )
-                .is_ok()
-                && offered
-                    .core
-                    .return_path_certifies(context.function, goal.path_index)
-            {
-                execution = offered;
-            }
+        }
+        if crate::surface::proof::execution_planning::collecting_step_requirements() {
+            execution.core.prepare_return_definition_fold(
+                goal.path_index,
+                self.facts(),
+                &checked.facts,
+            );
         }
         let mut data = (*goal.data).clone();
         data.core.result = Arc::new(value);

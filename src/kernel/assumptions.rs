@@ -10505,6 +10505,7 @@ impl ProofObligation {
             context: None,
             assumable: true,
             evaluation_domain: false,
+            assertion_failure: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10519,6 +10520,7 @@ impl ProofObligation {
             context: None,
             assumable: false,
             evaluation_domain: false,
+            assertion_failure: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10528,6 +10530,15 @@ impl ProofObligation {
         let mut obligation = Self::verification_condition(proposition);
         obligation.evaluation_domain = true;
         obligation
+    }
+
+    pub(in crate::kernel) fn with_assertion_failure(mut self) -> Self {
+        self.assertion_failure = true;
+        self
+    }
+
+    pub(crate) fn is_assertion_failure(&self) -> bool {
+        self.assertion_failure
     }
 
     pub fn with_context(mut self, context: impl Into<String>) -> Self {
@@ -10631,6 +10642,7 @@ impl ProofObligation {
             context: self.context,
             assumable: self.assumable,
             evaluation_domain: self.evaluation_domain,
+            assertion_failure: self.assertion_failure,
             call_requirement_site: None,
             // The chain describes the head nodes of the proposition it was
             // recorded for. A rewrite adds or removes head nodes, so the

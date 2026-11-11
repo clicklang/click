@@ -3985,7 +3985,10 @@ mod tests {
             .err()
             .expect("loop lost its storage-lifetime prerequisite");
         assert!(
-            error.message().contains("__rust_owned_live_"),
+            error
+                .message()
+                .contains("requires an explicit prerequisite proof")
+                && error.message().contains("== 0"),
             "{}",
             error.message()
         );

@@ -45,5 +45,5 @@ void forget_reference(struct child* obj) {
 ```
 
 ```expect
-fail: unproved obligation: `to_integer(obj->refs) == to_integer(count(child_ref(obj)))`
+fail: Requires to_integer(obj->refs) == to_integer(count(child_ref(obj)))
 ```

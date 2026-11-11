@@ -75,5 +75,5 @@ void* increment_counter(void* argument) {
 ```
 
 ```expect
-fail: unproved obligation: `(n + 1) <= 2`
+fail: unproved obligation: `((n + 1) as int32) <= 2`
 ```

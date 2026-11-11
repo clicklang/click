@@ -14249,6 +14249,9 @@ pub struct ProofObligation {
     /// a contract precondition assumed at function entry. Its caller must
     /// establish this same obligation before applying the contract.
     pub(super) evaluation_domain: bool,
+    /// Producer metadata: emitted on the false arm of a C assertion.
+    /// This tags the existing truthiness obligation, not a new proposition.
+    pub(super) assertion_failure: bool,
     /// Source identity for a required call precondition, when this
     /// obligation was emitted while applying a selected callee contract.
     /// This is planning metadata only and is excluded from obligation

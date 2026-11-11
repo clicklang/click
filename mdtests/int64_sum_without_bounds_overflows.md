@@ -21,5 +21,5 @@ int64 unbounded_sum(int64 a, int64 b) {
 ```
 
 ```expect
-fail: `step()` produced undefined behavior: signed overflow
+fail: `step()` requires proof excluding signed overflow
 ```

@@ -13,5 +13,5 @@ int32 f(int32 x, int32 y) {
 ```
 
 ```expect
-fail: undefined behavior: signed overflow
+fail: requires proof excluding signed overflow
 ```

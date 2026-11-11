@@ -28,5 +28,5 @@ int32 unwritten_neighbour(int32 u) {
 ```
 
 ```expect
-fail: undefined behavior: read of uninitialized storage
+fail: requires proof excluding read of uninitialized storage
 ```
