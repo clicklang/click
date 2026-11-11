@@ -1248,7 +1248,7 @@ fn mixed_index_offsets_equal(
     right: &PointerOffsetTerm,
     assumptions: &PureFactContext,
 ) -> Option<bool> {
-    use crate::kernel::{IntegerTerm, MachineIntegerType};
+    use crate::kernel::MachineIntegerType;
     let (wide, narrow, wide_width, narrow_width) = match (left, right) {
         (
             PointerOffsetTerm::Int64Scaled {
@@ -1277,8 +1277,8 @@ fn mixed_index_offsets_equal(
     if wide_width != narrow_width || *wide_width < 1 {
         return None;
     }
-    let wide = IntegerTerm::from_machine(MachineIntegerType::UInt64, wide.as_ref().clone())?;
-    let narrow = IntegerTerm::from_machine(MachineIntegerType::Int32, narrow.as_ref().clone())?;
+    let wide = wide.operand_view().observe(MachineIntegerType::UInt64)?;
+    let narrow = narrow.operand_view().observe(MachineIntegerType::Int32)?;
     for (left, right) in [(wide.clone(), narrow.clone()), (narrow, wide)] {
         crate::instrumentation::record_deterministic_work(1);
         if assumptions
@@ -1331,10 +1331,13 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
         && left_width == right_width
         && *left_width > 0
     {
-        let equal = assumptions.decide(&ConditionTerm::uint64_equal(
-            left_index.as_ref().clone(),
-            right_index.as_ref().clone(),
-        ));
+        let equal = assumptions.decide(
+            &crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::UInt64,
+                CompareRelation::Equal,
+                [left_index.operand_view(), right_index.operand_view()],
+            ),
+        );
         match equal {
             Some(true) => return Some(true),
             Some(false) => return Some(false),
