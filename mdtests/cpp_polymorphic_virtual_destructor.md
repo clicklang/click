@@ -59,6 +59,11 @@ int total(const Shape& shape, int scale) {
 int caller(int scale) {
     requires 0 <= scale and scale <= 100;
     ensures result == 3;
+} by {
+    step();
+    step();
+    step();
+    let { __object_object: packed } = step(Square__click_pack_const__Shape, {});
 }
 ```
 

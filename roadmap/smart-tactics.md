@@ -109,18 +109,14 @@ The step/fold migration on `codex/solve-exact-first` remains a **local,
 unlanded checkpoint**, not ready to push. It is reconciled with upstream
 `cd487e087`. The remaining work is not just diagnostic expectations:
 
-- **Produced-instance naming:** the C++ object-state reproduction does not
-  require a new preparation context. Pack, call, and unpack already execute
-  as separate statements. In `cpp_class_object_state.md`, binding the pack's
-  output with `let { __object_object: packed } =
-  step(Square__click_pack_const__Shape, {});` suffices: ordinary implicit
-  `solve` proves the next call's model-field bounds without an extra `have`.
-  Removing that binding reproduces the unnamed-instance failure. The focused
-  `bound_class_object_call_obligations_expand_and_cold_replay` regression
-  passes expansion, retained verification, and cold replay of the explicit
-  binding. Automatically generate these bindings before generalizing to the
-  other nine C++ class failures. Do not
-  expose successor facts to discharge preconditions.
+- **Generic C++ object proof:** `cpp_generic_class_state_in_a_resource.md`
+  still needs explicit produced-instance bindings. Binding the pack in
+  `caller` gets that proof past its original refusal; `local_round_trip`
+  still needs the pack selected at the correct frontier. Repair the written
+  proofs with existing syntax; automatic binding generation is outside this
+  refactor's scope. Pack, call, and unpack already execute separately, so this
+  is not evidence that a new preparation context is needed. Do not expose
+  successor facts to discharge preconditions.
 - **Suspended worker prerequisites:**
   `modeled_pthread_local_job_external_output.md` stops before the driver can
   discharge the suspended worker's prerequisites. Investigate separately;
@@ -154,8 +150,12 @@ unlanded checkpoint**, not ready to push. It is reconciled with upstream
   as the intended refusal.
 
 The integrated retest of the previous corpus failures left fifteen
-expected-pass fixtures in the families above; the explicit output binding
-repairs one of them. A fresh complete corpus run is
+expected-pass fixtures in the families above; explicit output bindings now
+repair nine of them, leaving six known expected-pass failures. The focused
+`bound_class_object_call_obligations_expand_and_cold_replay` regression passes
+expansion, retained verification, and cold replay for all nine repaired C++
+fixtures. The construction overclaim fixture again reaches and rejects its
+intended false postcondition. A fresh complete corpus run is
 still required after repairing them. Validation logs for this checkpoint are
 `/tmp/step-fold-integrated-checks-2.log`,
 `/tmp/step-fold-integrated-retests/`, and
