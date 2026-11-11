@@ -16,10 +16,8 @@ Expensive discovery belongs in budgeted, expandable search, whose expanded
 steps satisfy the same checking rule. A fast special case does not establish
 this guarantee for an operation's other routes.
 
-This operation inventory is reconciled against `c53645952` on 2026-11-11
-(the completed head of PR #2520), with the subsequent diagnostic-stepping
-removal, match-arm dispatch relocation and signed-definedness/unsigned-order search extraction
-reflected in the dependency counts below.
+The operation inventory starts from the `c53645952` baseline (2026-11-11,
+PR #2520); the frozen dependency counts below reflect the current interface split.
 It organizes the next measurements; it is not a claim that all checking paths
 have been audited, or that every candidate below is a reproduced defect.
 The interface refactor now exposes discovery through `kernel::search::ProofSearch`
@@ -27,8 +25,8 @@ without changing its behavior. The frozen
 [dependency inventory](../build_support/proof_search_edges.tsv) records existing
 callers and separates operation dependencies from the explicit `ProofDriver`
 and mixed callers classified in the [caller audit](../design/proof-boundary-classification.md). The driver owns proof interpretation and the
-choice between explicit obligation proofs and implicit solving. The remaining
-operation-to-driver reference records form a separate migration list;
+choice between explicit obligation proofs and implicit solving. The
+operation-to-driver migration list is now empty;
 implicit solving by the driver is legitimate expandable work. No new scaling measurements accompany that split.
 Existing test names below identify evidence to retain and inspect, not new
 measurements. The contract lives in [Verifier design](../docs/internals/verifier-design.md)
@@ -66,12 +64,12 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **622 reference records**: 7 legacy bridges, 22 callers
-of those bridges, 13 operation references, 1 operation-to-driver reference,
-19 mixed references, 116 driver references, 436 search references, 6 presentation
+The frozen inventory has **632 reference records**: 7 legacy bridges, 22 callers
+of those bridges, 12 operation references, 0 operation-to-driver references,
+19 mixed references, 120 driver references, 444 search references, 6 presentation
 references and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
-classifies every mixed and operation-to-driver record and groups all 13
+classifies every mixed and operation-to-driver record and groups all 12
 operation references. Registering the signed-definedness and unsigned-order
 helpers exposes four existing search-only caller records; it adds no runtime work.
 
@@ -92,9 +90,10 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   with scalar leaves have ordinary expansion coverage. They do not settle
   non-scalar leaves, binders, other proof contexts or legacy retirement.
 - **Separate owners:** the representation split in
-  [unspellable facts](unspellable-facts.md) owns live shared-term export groups
-  R4–R7; its R1–R3 are closed. These identifiers are local to that document,
-  not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
+  [unspellable facts](unspellable-facts.md) owns the remaining shared-term
+  migration boundaries. Its original R1–R7 reproductions are closed; use its
+  current closure checklist for remaining work. Those identifiers are local to
+  that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
 - **Enforcement gap:** lexical dependency freezing and selected work counters
   do not prohibit every search call during expanded replay or detect arbitrary
   loops, shared-term export and copying. No global fast-proof guarantee yet.
@@ -102,7 +101,7 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
 Resource-scope completion now reports obligations to the driver, including
 nested opens; function-exit deferral is unchanged. C-branch and proof-case script
 interpretation now also lives in the driver; primitive split/focus/join operations
-do not run arm-script callbacks. One operation-to-driver record remains.
+do not run arm-script callbacks. No operation-to-driver records remain in the frozen inventory.
 For a new scaling experiment, L1 through an actual write remains a bounded
 candidate. Boundary cleanup and enforcement are alternative next slices below.
 Transport work should target a named T1–T5 route and its retirement criterion,
@@ -173,7 +172,7 @@ becoming a new roadmap item. Paths below are relative to `src/`.
 | T2: logical structure and quantifiers | `certified_fact_transport_reaches`: top-level conjunctions with non-scalar leaves, top-level disjunction, implications with non-comparison leaves or binders, and universal-body recursion; `check_fixed_state_fact_transport_using_facts_inner`: `frame_quantified_transport`. | Decompose into ordinary logical steps and the already supported leaf proofs. Handle logical forms beyond scalar conjunction selection/regrouping and matching propositional trees under implications with scalar comparison leaves; give non-scalar leaves, guards and binders their own replay/refusal fixtures. |
 | T3: resource, range, and definedness facts | `certified_fact_transport_reaches`: separation/containment descriptor matching and atomic derivation of `CMemoryLoadable` / `CMemoryReadDefined`. | Replace each surviving route with named resource laws or explicit observations and guards. Do not count already converted current-snapshot viewability restrictions as outstanding. |
 | T4: proof-context adapters | `surface/proof/proof_object/fixed_state_steps.rs`: `apply_transport_using`, `apply_pure_transport_using`, `apply_fixed_state_transport_using`, `apply_execution_transport_using`; post-execution handling in `surface/proof/driver/claims.rs`. | The same supported derivation expands at a focused execution goal, a pure/fixed-state proof, and a completed outcome. No adapter may retain an opaque transport simply because the proof phase differs. |
-| T5: discovery and legacy dispatcher retirement | `plan_explicit_fact_transport`, transition/effect collection in `check_fixed_state_fact_transport_using_facts_inner`, and `surface/proof/proof_object/execution_statements.rs`'s planned transport/outcome adapters. | Budgeted discovery emits ordinary steps, including selected footprint evidence. Remove search from the explicit-operation path and retire the legacy dispatcher once its supported cases have ordinary expansions or deliberate bounded refusals. |
+| T5: discovery and legacy dispatcher retirement | `plan_explicit_fact_transport`, transition/effect collection in `check_fixed_state_fact_transport_using_facts_inner`, and `surface/proof/proof_object/execution_statements/search.rs`'s bare transport planners. | Budgeted discovery emits ordinary steps, including selected footprint evidence. Remove search from the explicit-operation path and retire the legacy dispatcher once its supported cases have ordinary expansions or deliberate bounded refusals. |
 
 T5 includes an explicit known cost violation: the legacy fixed-state route
 rebuilds transition assumptions with `assume_proposition_uncharged`, and its
@@ -350,15 +349,16 @@ authorize a new primitive or a verifier behavior change.
 
 | Candidate | First concrete step | What completing it would establish |
 | --- | --- | --- |
-| Boundary enforcement / interface cleanup | Move the remaining search/support adapters behind the search interface. Separately design an operation-scoped discovery guard, with named existing exceptions. | Clear ownership of discovery; eventual guards must distinguish allowed driver solve from search inside primitives, even when invoked by solve. No claim to detect arbitrary loops. |
+| Boundary enforcement / interface cleanup | Design an operation-scoped discovery guard, with named existing exceptions. The inventoried search/support adapters have been extracted. | Clear ownership of discovery; eventual guards must distinguish allowed driver solve from search inside primitives, even when invoked by solve. No claim to detect arbitrary loops. |
 | Arithmetic obligation generation | Reduce one operator's inline safety decision; reproduce the spelling and position-drift controls above before designing a retained result plus obligation. | That operator generates and publishes bounded work while the driver alone solves its safety goal; no promise to migrate all arithmetic in one patch. |
 | L1 active-loan write | Fix one write and owner, grow aliases with one active loan, then symbolic loans with fixed aliases. Write the complete-operation red scaling test first. | Evidence of a concrete remaining scan, or a closed coverage gap if flat. Choose an index or explicit-proof repair only after the result. |
 
 F2 and C1 remain subsequent measurement candidates, followed by R2, R1
 reachability, and J1/M1/lifecycle coverage. Declaration-validation search and
 legacy transport T1–T5 remain separate design tracks; preparation completion did
-not remove either. The remaining operation/driver record is a search/support
-adapter on the wrong interface, not six newly measured hidden solver bugs.
+not remove either. The inventoried operation/driver adapters have been extracted. This clears
+that migration list; it does not remove the direct operation/search dependencies
+or prove that all generated operations are fast.
 
 For whichever slice is selected:
 

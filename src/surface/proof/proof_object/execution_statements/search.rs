@@ -46,7 +46,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let claim_label = context.claim_label;
         if search_input.focused_outcome_data().is_some() {
-            return search_input.apply_planned_outcome_fact_transport(
+            return Self::apply_planned_outcome_fact_transport(
+                search_input,
                 surface_source,
                 surface_target,
                 tactic_index,
@@ -142,6 +143,78 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {reason}"))
             })?
         };
+        search_input.driver().apply_step(ProofStep::TransportUsing {
+            source: surface_source.clone(),
+            target: surface_target.clone(),
+            premises,
+        })
+    }
+    /// The live-state search planner on a focused function outcome:
+    /// the same premise planner, reading the path's effects, the returned
+    /// state and the outcome's facts.
+    fn apply_planned_outcome_fact_transport(
+        search_input: &Proof<'a>,
+        surface_source: &ClickProposition,
+        surface_target: &ClickProposition,
+        tactic_index: usize,
+        source_refusal: Option<&ClickError>,
+    ) -> Result<Proof<'a>, ClickError> {
+        let ProofContext::Execution(context) = search_input.context.as_ref() else {
+            return Err(search_input.step_error("`transport` requires an execution proof"));
+        };
+        let claim_label = context.claim_label;
+        let (Some(data), Some(execution)) = (
+            search_input.focused_outcome_data(),
+            search_input.execution(),
+        ) else {
+            return Err(search_input.step_error("`transport` lost its focused function outcome"));
+        };
+        let source =
+            search_input.lower_surface_proposition_direct(surface_source, "`transport` source")?;
+        if crate::kernel::search::ProofSearch::derive_proposition(
+            search_input.facts().assumptions(),
+            &source,
+        )
+        .is_none()
+        {
+            let facts = search_input.facts().to_vec();
+            return Err(ClickError::new(format!(
+                "`{claim_label}` tactic {tactic_index}: `transport` requires a source derivable from its ambient facts: {}",
+                describe_missing_pure_fact(
+                    &source,
+                    &facts,
+                    data.core.state.resources().facts(),
+                    context.parameter_binding(),
+                    &*data.core.effect_facts,
+                )
+            )));
+        }
+        let target =
+            search_input.lower_surface_proposition_direct(surface_target, "`transport` target")?;
+        let transition_facts =
+            crate::surface::proof::cursor_execution::fact_transport_transition_facts(
+                &*data.core.effect_facts,
+                &source,
+            );
+        let premises = plan_explicit_fact_transport(
+            surface_source,
+            &source,
+            &target,
+            search_input.facts(),
+            &transition_facts,
+            context.parameter_binding(),
+            &data.core.state,
+        )
+        .map_err(|error| {
+            let reason = fact_transport_planning_failure(
+                surface_source,
+                surface_target,
+                &execution.core.unfolded_predicates,
+                &error,
+                source_refusal,
+            );
+            ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {reason}"))
+        })?;
         search_input.driver().apply_step(ProofStep::TransportUsing {
             source: surface_source.clone(),
             target: surface_target.clone(),
