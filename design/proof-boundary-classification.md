@@ -2,12 +2,14 @@
 
 Source reconciliation at `c53645952` (2026-11-11), the completed head of
 PR #2520. Queue/merge status is separate from this source baseline. This
-classifies all 19 `mixed` and 8 `operation-to-driver` records in
+classifies all 19 `mixed` and 7 `operation-to-driver` records in
 `build_support/proof_search_edges.tsv` and groups the operation references.
 A record is one caller/target pair, not one runtime call or one slow walk.
 A classified call is not a complexity proof for its callee. This documentation
 pass adds no measurements; preparation evidence below is from the completed
-implementation's tests.
+implementation's tests. The subsequent diagnostic cleanup removes one
+operation-to-driver record: an exhausted callback script now reports its actual
+frontier without speculative execution or solving.
 
 ## Current boundary
 
@@ -57,10 +59,9 @@ Two separate limits remain:
 ## Findings
 
 The old categories describe code placement, not the reason search runs. Most
-ambiguous references are expected orchestration or discovery helpers. Three
+ambiguous references are expected orchestration or discovery helpers. Two
 other concerns need separate treatment: remaining orchestration adapters on
-operations, declaration validation that searches outside proof scripts, and
-failure diagnostics that execute more operations.
+operations and declaration validation that searches outside proof scripts.
 
 The known direct operation/search dependencies remain: this classification does
 not eliminate the seven kernel bridges, their 22 caller records, or the 14
@@ -98,7 +99,7 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 8 operation-to-driver reference records
+## The 7 operation-to-driver reference records
 
 Methods below are on `Proof`.
 
@@ -111,10 +112,8 @@ Methods below are on `Proof`.
 | `apply_planned_fact_transport_inner` | Bare-transport search adapter, not a primitive despite its location. Plans premises, then dispatches `TransportUsing`. |
 | `apply_planned_outcome_fact_transport` | The same bare-transport adapter at a completed execution outcome. |
 | `exclude_execution_match_arm_after_bridge` | Dispatch adapter for a specific explicit contradiction step, with source-site/certificate recording. No search selection at this call; use direct operation plus recording instead of the general driver. |
-| `unfinished_callback_diagnostic` | Failure-path execution. On an incomplete script, speculatively runs up to six ordinary driver steps to improve the error. Each can invoke implicit solving. Six steps is not a work bound; this is ordinary error reporting, not opt-in tracing. |
 
-Totals: 6 search/support adapters, 1 specific-operation dispatch adapter, and 1 diagnostic
-execution callback. Some categories overlap semantically; each record is counted
+Totals: 6 search/support adapters and 1 specific-operation dispatch adapter. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
 
 ## Why accidental search remains possible
@@ -175,8 +174,9 @@ No second checker or producer/rechecker layer is needed.
 Have/claim opening and resource-scope completion no longer schedule proofs
 from the primitive interface. Branch script interpretation now also lives in the driver, including the
 proof-level `if` path that formerly ran script callbacks inside a primitive.
-The other adapters above remain to extract. Definition-validation proof support and normal diagnostic search
-need separate design review; this audit does not authorize behavior changes.
+The other adapters above remain to extract. Definition-validation proof support
+needs separate design review. Callback failure reporting now uses the actual
+frontier; it performs no speculative continuation.
 
 ## Reconciled operation dependencies
 
@@ -200,9 +200,8 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
 
 ## Evidence and ownership
 
-- **Confirmed boundary problems:** legacy simple transport can access search;
-  normal failure diagnostics speculatively execute driver steps. These are
-  source-established architectural findings, not newly measured scaling curves.
+- **Confirmed boundary problems:** legacy simple transport can access search.
+  This is a source-established architectural finding, not a newly measured scaling curve.
 - **Known cost violation:** T5 reconstructs transition assumptions using
   `assume_proposition_uncharged`. Ordinary transport expansions cover selected
   cases but do not make the surviving legacy route bounded.
@@ -219,7 +218,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 614 reference records, not 614 obligations to remove.
+The inventory contains 613 reference records, not 613 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this

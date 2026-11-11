@@ -16,6 +16,62 @@ const LOCAL_PROOF_FACT_SIZES: [u32; 4] = [16, 64, 256, 1024];
 // original allocation guard needs more headroom to reject a linear index copy.
 const STRUCTURAL_PROOF_FACT_SIZES: [u32; 5] = [16, 64, 256, 1024, 2048];
 
+#[test]
+fn unfinished_callback_error_does_not_execute_the_next_statement() {
+    let click_file =
+        crate::surface::parse("void invoke(struct callbacks* cb) { ensures 0 == 0; }").unwrap();
+    let parsed = syntax::parse_functions_for_source(
+        "struct callbacks { void (*call)(int32 x); }; void invoke(struct callbacks* cb) { cb->call(0); }",
+        "callback.c",
+    ).unwrap().remove(0);
+    assert!(!parsed.callback_statement_sources().is_empty());
+    let function = parsed.to_kernel_function();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let resources = ResourceEnvironment::new(&[]);
+    let environment = CExecutionEnvironment::new();
+    let root = Proof::for_execution_frontier(
+        "unfinished callback",
+        0,
+        ExecutionProofState::at_entry(
+            CState::new(),
+            ExecutionFrontier::default(),
+            RecordedSnapshots::new(),
+            SurfacePropositionMap::default(),
+            PersistentSequence::default(),
+        ),
+        vec![],
+        ExecutionProofConstants {
+            source_layout: SourceExecutionLayout::new(parsed.body()),
+            ..ExecutionProofConstants::default()
+        },
+        &click_file.function_blocks()[0],
+        &function,
+        &parsed,
+        &[],
+        &environment,
+        &resources,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+    );
+    // The next statement cannot run without a callback value/contract. Error
+    // reporting must describe the current frontier without attempting that call.
+    let report = root
+        .unfinished_callback_script_error()
+        .unwrap()
+        .concise_report();
+    assert!(
+        report.contains("the proof stops before function exit"),
+        "{report}"
+    );
+    assert!(
+        !report.contains("continuing its checked operations"),
+        "{report}"
+    );
+    assert!(root.certificate().steps().is_empty());
+}
+
 fn indexed_fact(index: u32) -> Proposition {
     Proposition::ConditionIs(
         ConditionTerm::Compare {

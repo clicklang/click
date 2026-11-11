@@ -17,7 +17,8 @@ steps satisfy the same checking rule. A fast special case does not establish
 this guarantee for an operation's other routes.
 
 This operation inventory is reconciled against `c53645952` on 2026-11-11
-(the completed head of PR #2520, independently of queue/merge status).
+(the completed head of PR #2520), with the subsequent diagnostic-stepping
+removal reflected in the dependency counts below.
 It organizes the next measurements; it is not a claim that all checking paths
 have been audited, or that every candidate below is a reproduced defect.
 The interface refactor now exposes discovery through `kernel::search::ProofSearch`
@@ -64,8 +65,8 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **614 reference records**: 7 legacy bridges, 22 callers
-of those bridges, 14 operation references, 8 operation-to-driver references,
+The frozen inventory has **613 reference records**: 7 legacy bridges, 22 callers
+of those bridges, 14 operation references, 7 operation-to-driver references,
 19 mixed references, 110 driver references, 425 search references, 6 presentation
 references, 1 dispatch and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
@@ -73,7 +74,7 @@ classifies every mixed and operation-to-driver record and groups all 14
 operation references.
 
 - **Confirmed architectural exceptions:** explicit legacy transport invokes
-  discovery; ordinary failure diagnostics can execute and implicitly solve more steps.
+  discovery.
   T5 also retains uncharged transition-assumption reconstruction. No fresh
   scaling curve was run for this reconciliation.
 - **Unmeasured candidates:** seven kernel bridges map to five groups, L1, R2,
@@ -99,7 +100,7 @@ operation references.
 Resource-scope completion now reports obligations to the driver, including
 nested opens; function-exit deferral is unchanged. C-branch and proof-case script
 interpretation now also lives in the driver; primitive split/focus/join operations
-do not run arm-script callbacks. Eight operation-to-driver records remain.
+do not run arm-script callbacks. Seven operation-to-driver records remain.
 For a new scaling experiment, L1 through an actual write remains a bounded
 candidate. Boundary cleanup and enforcement are alternative next slices below.
 Transport work should target a named T1–T5 route and its retirement criterion,
@@ -347,7 +348,6 @@ authorize a new primitive or a verifier behavior change.
 
 | Candidate | First concrete step | What completing it would establish |
 | --- | --- | --- |
-| Normal failure diagnostics (recommended bounded behavior slice) | Reduce an unfinished callback proof that reaches `unfinished_callback_diagnostic`; count driver/solver invocations caused solely by reporting failure. Design a refusal using the retained frontier/error evidence. | Normal failure reporting does not silently execute six more steps or invoke solve. Any deeper diagnostic search must be explicit. |
 | Boundary enforcement / interface cleanup | Move the specific contradiction dispatch in `exclude_execution_match_arm_after_bridge` out of the primitive interface, retaining its certificate/source site; require the inventory to lose that one edge. Separately design an operation-scoped discovery guard, with named existing exceptions. | One smaller, exact boundary migration; eventual guards must distinguish allowed driver solve from search inside primitives, even when invoked by solve. No claim to detect arbitrary loops. |
 | Arithmetic obligation generation | Reduce one operator's inline safety decision; reproduce the spelling and position-drift controls above before designing a retained result plus obligation. | That operator generates and publishes bounded work while the driver alone solves its safety goal; no promise to migrate all arithmetic in one patch. |
 | L1 active-loan write | Fix one write and owner, grow aliases with one active loan, then symbolic loans with fixed aliases. Write the complete-operation red scaling test first. | Evidence of a concrete remaining scan, or a closed coverage gap if flat. Choose an index or explicit-proof repair only after the result. |
@@ -355,9 +355,9 @@ authorize a new primitive or a verifier behavior change.
 F2 and C1 remain subsequent measurement candidates, followed by R2, R1
 reachability, and J1/M1/lifecycle coverage. Declaration-validation search and
 legacy transport T1–T5 remain separate design tracks; preparation completion did
-not remove either. In particular, count the six search adapters, one explicit
-dispatch adapter and one diagnostic callback separately rather than calling all
-eight operation/driver records hidden solver bugs.
+not remove either. In particular, count the six search adapters and one explicit
+dispatch adapter separately rather than calling all seven operation/driver
+records hidden solver bugs.
 
 For whichever slice is selected:
 

@@ -1477,7 +1477,7 @@ fn try_check_flat_function_proof_inner<'a>(
     check_verification_deadline()?;
     if !proof.is_at_function_exit() {
         if remaining.is_empty()
-            && let Some(error) = proof.unfinished_callback_diagnostic()?
+            && let Some(error) = proof.unfinished_callback_script_error()
         {
             return Err(error);
         }
@@ -2228,7 +2228,7 @@ fn try_check_structural_function_proof_inner<'a>(
     check_verification_deadline()?;
     if !proof.is_at_function_exit() {
         if remaining.is_empty()
-            && let Some(error) = proof.unfinished_callback_diagnostic()?
+            && let Some(error) = proof.unfinished_callback_script_error()
         {
             return Err(error);
         }

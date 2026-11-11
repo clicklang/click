@@ -1254,3 +1254,24 @@ fn branch_primitives_cannot_interpret_scripts_or_schedule_search() {
         );
     }
 }
+
+#[test]
+fn callback_error_reporting_cannot_reenter_the_driver() {
+    let path = "src/surface/proof/proof_object/execution_statements.rs";
+    let source = r#"impl Proof {
+        fn unfinished_callback_script_error(&self) {
+            let mut pending = self.clone();
+            for _ in 0..6 {
+                pending = pending.driver().apply_step(ProofStep::Step);
+            }
+        }
+    }"#;
+    let file = syn::parse_file(source).unwrap();
+    let records = proof_search_boundary::inventory(path, &file);
+    assert!(
+        records
+            .keys()
+            .any(|key| key.contains("unfinished_callback_script_error"))
+    );
+    assert!(proof_search_boundary::check(path, &file).is_err());
+}

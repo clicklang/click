@@ -211,7 +211,6 @@ src/surface/proof/proof_object/execution_statements.rs	operation	Proof::apply_pl
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_fact_transport_inner	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_outcome_fact_transport	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::plan_invariant_bundle_closure	driver	1
-src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::unfinished_callback_diagnostic	driver	1
 src/surface/proof/proof_object/fixed_state_steps.rs	operation	Proof::apply_pure_transport_using	derive_atomic_proposition	1
 src/surface/proof/proof_object/match_cases.rs	operation-to-driver	Proof::exclude_execution_match_arm_after_bridge	driver	1
 src/surface/proof/proof_object/resource_steps.rs	operation-to-driver	Proof::solve_open_for_missing_resource	driver	1
