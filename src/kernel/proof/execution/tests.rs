@@ -1146,7 +1146,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     let (function, events) = returned_proposition_trace(&before, &facts);
     let function = function.with_composite_resource_definitions(vec![definition]);
     let mut core = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
-    let mut trace = PersistentSequence::default();
+    let mut trace = ExecutionEvidence::default();
     for event in &events {
         trace.push(event.clone());
     }
@@ -1155,22 +1155,8 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     core.return_proof_contexts = core
         .return_proof_contexts
         .with_inserted(0, returned_proposition_context(&before));
-    let mut unrelated = before.clone();
-    unrelated.memory = unrelated
-        .memory()
-        .clone()
-        .store(Pointer::symbolic(Variable(42)), int32(9));
-    assert!(
-        core.clone()
-            .rewrite_return_resource_instance_with_children(
-                &function, 0, &facts, &unrelated, &instance, true, None,
-            )
-            .is_err()
-    );
     let (produced, produced_facts) = core
-        .rewrite_return_resource_instance_with_children(
-            &function, 0, &facts, &before, &instance, true, None,
-        )
+        .rewrite_return_resource_instance_with_children(&function, 0, &facts, &instance, true, None)
         .unwrap();
     assert_eq!(produced.state, after);
     assert_eq!(
@@ -1292,7 +1278,7 @@ fn return_exchange_keeps_the_published_body_snapshot() {
     let (function, events) = returned_proposition_trace(&physical, &facts);
     let function = function.with_composite_resource_definitions(vec![definition]);
     let mut core = ExecutionProofCore::at_entry(physical.clone(), ExecutionFrontier::default());
-    let mut trace = PersistentSequence::default();
+    let mut trace = ExecutionEvidence::default();
     for event in events {
         trace.push(event);
     }
@@ -1306,7 +1292,7 @@ fn return_exchange_keeps_the_published_body_snapshot() {
     core.return_proof_contexts = core.return_proof_contexts.with_inserted(0, context);
     let (produced, _) = core
         .rewrite_return_resource_instance_with_children(
-            &function, 0, &facts, &published, &instance, false, None,
+            &function, 0, &facts, &instance, false, None,
         )
         .unwrap();
     let events = core.return_resource_rewrites.get(&0).unwrap().to_vec();
@@ -1444,7 +1430,7 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
         let function = c_function(CType::Int32, "test", vec![], statement.clone())
             .with_composite_resource_definitions(vec![definition]);
         let mut core = ExecutionProofCore::at_entry(before, ExecutionFrontier::default());
-        let mut trace = PersistentSequence::default();
+        let mut trace = ExecutionEvidence::default();
         trace.push(CheckedExecutionEvent::Statement(Theorem::new(
             Proposition::CStatementVerifies {
                 state: Box::new(open.clone()),

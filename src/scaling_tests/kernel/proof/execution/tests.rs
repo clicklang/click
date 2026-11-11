@@ -452,7 +452,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
     )
     .unwrap();
     let trace = |state: CState| {
-        let mut trace = PersistentSequence::default();
+        let mut trace = ExecutionEvidence::default();
         trace.push(CheckedExecutionEvent::Statement(Theorem::new(
             Proposition::CStatementVerifies {
                 state: Box::new(state.clone()),
@@ -505,7 +505,6 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
                 &function,
                 size / 2,
                 &facts,
-                &open,
                 &instance,
                 false,
                 None,
@@ -591,23 +590,20 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
             "a fold must not publish unrelated snapshot assumptions"
         );
         let mut repeated = base.clone();
-        let mut presented = open.clone();
         let mut repeated_facts = facts.clone();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 for unfold in [false, true] {
-                    let (result, next_facts) = repeated
+                    let (_, next_facts) = repeated
                         .rewrite_return_resource_instance_with_children(
                             &function,
                             size / 2,
                             &repeated_facts,
-                            &presented,
                             &instance,
                             unfold,
                             None,
                         )
                         .unwrap();
-                    presented = result.state;
                     repeated_facts = next_facts;
                 }
             }

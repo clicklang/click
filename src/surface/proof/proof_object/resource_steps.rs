@@ -621,7 +621,6 @@ impl<'a> Proof<'a> {
                     context.function,
                     goal.path_index,
                     self.facts(),
-                    &goal.data.core.state,
                     instance,
                     unfold,
                     selected_children.clone(),

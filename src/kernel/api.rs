@@ -5724,9 +5724,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
 /// proof object assumes on each path; no restatement of the cases from outside
 /// the traces is consulted.
 pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
-    evidence: &[crate::kernel::proof::PersistentSequence<
-        crate::kernel::proof::CheckedExecutionEvent,
-    >],
+    evidence: &[crate::kernel::proof::ExecutionEvidence],
 ) -> bool {
     use crate::kernel::proof::CheckedExecutionEvent;
 

@@ -3839,7 +3839,7 @@ fn early_return_inputs(
 ) -> (
     CFunctionExecutionCandidates,
     CFunction,
-    crate::kernel::proof::PersistentSequence<crate::kernel::proof::CheckedExecutionEvent>,
+    crate::kernel::proof::ExecutionEvidence,
 ) {
     let branch = c_if(
         c_less_than(c_int32_literal(0), c_int32_literal(1)),
@@ -3873,7 +3873,7 @@ fn early_return_inputs(
         statement: Box::new(branch),
         outcome,
     });
-    let mut trace = crate::kernel::proof::PersistentSequence::default();
+    let mut trace = crate::kernel::proof::ExecutionEvidence::default();
     trace.push(crate::kernel::proof::CheckedExecutionEvent::Statement(
         theorem,
     ));
@@ -3888,7 +3888,7 @@ fn early_return_inputs(
 fn complete_early_return(
     candidates: &CFunctionExecutionCandidates,
     function: &CFunction,
-    trace: crate::kernel::proof::PersistentSequence<crate::kernel::proof::CheckedExecutionEvent>,
+    trace: crate::kernel::proof::ExecutionEvidence,
 ) -> Result<CCheckedFunctionExecution, &'static str> {
     use crate::kernel::proof::CheckedExecutionEvent;
     let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
@@ -4013,7 +4013,7 @@ fn skip_inputs(
 ) -> (
     CFunctionExecutionCandidates,
     CFunction,
-    crate::kernel::proof::PersistentSequence<crate::kernel::proof::CheckedExecutionEvent>,
+    crate::kernel::proof::ExecutionEvidence,
 ) {
     let function = c_function(
         CType::Int32,
@@ -4039,7 +4039,7 @@ fn skip_inputs(
         Vec::new(),
         vec![(function_outcome, Vec::new(), obligations)],
     );
-    let mut trace = crate::kernel::proof::PersistentSequence::default();
+    let mut trace = crate::kernel::proof::ExecutionEvidence::default();
     for event in events {
         trace.push(event);
     }

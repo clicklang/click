@@ -1221,11 +1221,11 @@ impl<'a> Proof<'a> {
             Ok(candidate) => candidate,
             Err(_) => return proved.apply_primitive_step(step),
         };
-        // Ordinary named folds retain their selected exchange. Population and
-        // completed-outcome folds still use their existing preparation retry.
+        // Named folds retain their selected exchange on live and returned paths.
+        // Population folds still use their existing preparation retry.
         let prepared_fold = candidate
             .execution()
-            .is_some_and(|execution| execution.core.has_prepared_instance_fold());
+            .is_some_and(|execution| execution.core.has_prepared_fold());
         if matches!(step, ProofStep::FoldResource(_)) && !prepared_fold {
             return proved.apply_primitive_step(step);
         }
@@ -1254,7 +1254,12 @@ impl<'a> Proof<'a> {
             .execution()
             .expect("prepared statement has a successor")
             .clone();
-        let facts = if prepared_fold {
+        let facts = if execution.core.has_prepared_return_fold() {
+            execution
+                .core
+                .finish_prepared_return_fold(&proven.core, proved.facts())
+                .map_err(|error| self.step_error(error))?
+        } else if prepared_fold {
             execution.core.finish_prepared_instance_fold(proved.facts())
         } else {
             introduced
@@ -1285,6 +1290,22 @@ impl<'a> Proof<'a> {
                 .surface_record
                 .retained_have_facts
                 .with_kernel_checked_fact(fact);
+        }
+        if prepared_fold {
+            candidate.state = candidate
+                .state
+                .publish_checked_focused_transition(
+                    candidate
+                        .focused_obligation()
+                        .expect("prepared fold retains its goal")
+                        .clone(),
+                    facts,
+                    Some(Arc::new(execution)),
+                    candidate.state().added_facts().to_vec(),
+                    candidate.state().checked_facts().to_vec(),
+                )
+                .map_err(|_| self.step_error("prepared fold lost its selected goal"))?;
+            return Ok(candidate);
         }
         // A completing statement also saved its conditional obligations in
         // the function outcome. Publish the proved input delta on those new

@@ -351,3 +351,52 @@ void make(int32 x) {{ requires x > 0; produces p: positive_value(x); }} by {{
         "{samples:?}"
     );
 }
+
+#[test]
+#[ignore = "nightly: return-fold construction and history controls"]
+fn prepared_return_fold_constructs_once_without_recovering_history() {
+    let mut samples = Vec::new();
+    for count in [1, 8, 32] {
+        let facts = "have x == x by { normalize(); }\n".repeat(count);
+        let source = format!(
+            r#"
+verifying "fold.c";
+resource positive(x: int32) {{ field value: int32; fact value > 0; }}
+void make(int32 x) {{ requires x > 0; produces p: positive(x); }} by {{
+    step_until(function.exit);
+    {facts}
+    let p = fold(positive(x), {{ value: x }}) by {{ assumption(); }}
+}}
+"#
+        );
+        let (result, events) = crate::instrumentation::collect(|| {
+            verify_c0_sources(&source, &[("fold.c", "void make(int32 x) {}")])
+        });
+        result.unwrap_or_else(|error| panic!("{count}: {error}"));
+        let mut constructions = 0;
+        let mut recovery = 0;
+        for event in events {
+            if let crate::instrumentation::VerificationEvent::OperationFinished {
+                name, work, ..
+            } = event
+            {
+                if name == "return fold: construct selected instance" {
+                    constructions += 1;
+                }
+                if name == "return fold: recover state" {
+                    recovery += work;
+                }
+            }
+        }
+        eprintln!(
+            "return fold: {count} preceding proofs, {constructions} constructions, {recovery} recovery work"
+        );
+        samples.push((count, constructions, recovery));
+    }
+    assert!(
+        samples
+            .iter()
+            .all(|(_, constructions, recovery)| *constructions == 1 && *recovery <= 8),
+        "{samples:?}"
+    );
+}

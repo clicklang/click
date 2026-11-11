@@ -120,6 +120,77 @@ pub(crate) enum CheckedExecutionEvent {
     CompletedContext(Arc<CheckedPathContext>),
 }
 
+/// Append-only evidence with the states its producers most recently constructed.
+/// Cloning or extending a path never searches its history for an endpoint.
+#[derive(Clone, Default)]
+pub(crate) struct ExecutionEvidence {
+    events: PersistentSequence<CheckedExecutionEvent>,
+    origin: Option<Arc<CStatementOutcome>>,
+    retained: Option<Arc<CState>>,
+    presented: Option<Arc<CState>>,
+}
+
+impl Deref for ExecutionEvidence {
+    type Target = PersistentSequence<CheckedExecutionEvent>;
+    fn deref(&self) -> &Self::Target {
+        &self.events
+    }
+}
+
+impl ExecutionEvidence {
+    pub(crate) fn push(&mut self, event: CheckedExecutionEvent) {
+        match &event {
+            CheckedExecutionEvent::Statement(theorem) => {
+                if let Proposition::CStatementVerifies { outcome, .. } =
+                    checked_evidence_conclusion(theorem)
+                {
+                    self.origin = Some(Arc::new(outcome.clone()));
+                    self.retained = match outcome {
+                        CStatementOutcome::Normal(state)
+                        | CStatementOutcome::Return { state, .. }
+                        | CStatementOutcome::Throw { state, .. }
+                        | CStatementOutcome::Break(state)
+                        | CStatementOutcome::Continue(state)
+                        | CStatementOutcome::Jump { state, .. } => Some(Arc::new(*state.clone())),
+                        _ => None,
+                    };
+                    self.presented = None;
+                }
+            }
+            CheckedExecutionEvent::AutomaticLifetimeEnd(end) => {
+                self.retained = Some(Arc::new(end.after_state.clone()));
+            }
+            CheckedExecutionEvent::ResourceRewrite(rewrite) => {
+                self.retained = Some(Arc::new(rewrite.after_state.clone()));
+                self.presented = rewrite
+                    .return_observation
+                    .as_ref()
+                    .map(|observation| Arc::new(observation.after.clone()))
+                    .or_else(|| {
+                        rewrite
+                            .return_presentation
+                            .as_ref()
+                            .map(|presentation| Arc::new(presentation.rewrite.after_state.clone()))
+                    });
+            }
+            _ => {}
+        }
+        self.events.push(event);
+    }
+
+    fn retained_state(&self) -> Result<&CState, String> {
+        let _timing = crate::instrumentation::OperationTiming::new(
+            "fold",
+            "resource fold",
+            "return fold: recover state",
+        );
+        crate::instrumentation::record_deterministic_work(1);
+        self.retained
+            .as_deref()
+            .ok_or_else(|| "return resource rewrite has no retained state".into())
+    }
+}
+
 /// What the kernel established along one open trace: every fact of each
 /// context recorded on it, every case fact it admitted, and every effect it
 /// retained. It is extended at each recorded transition by what that
@@ -638,6 +709,12 @@ pub(crate) struct CheckedResourceRewrite {
 struct PreparedInstanceFold {
     rewrite: CheckedResourceRewrite,
     semantic_facts: Vec<Proposition>,
+}
+
+#[derive(Clone)]
+struct PreparedReturnFold {
+    path_index: usize,
+    fold: PreparedInstanceFold,
 }
 
 /// A composite exchange independently checked at the published snapshot.
@@ -5814,7 +5891,7 @@ pub(crate) struct ExceptionalContinuation {
 pub(crate) struct PendingLoopReturnPath {
     /// Position among the return outcomes exported by this loop rule.
     pub(crate) return_index: usize,
-    trace: PersistentSequence<CheckedExecutionEvent>,
+    trace: ExecutionEvidence,
     /// The source loop whose rule returned this path, for the point its
     /// premises are read at.
     pub(crate) loop_index: Option<usize>,
@@ -5885,9 +5962,9 @@ pub(crate) struct ExecutionProofCore {
     /// this frontier. Ordinary in-flight execution has one trace; a single C
     /// operation with several return outcomes can complete several traces at
     /// once. Forked proofs share every unchanged trace prefix.
-    pub(crate) execution_evidence:
-        super::PersistentVector<PersistentSequence<CheckedExecutionEvent>>,
+    pub(crate) execution_evidence: super::PersistentVector<ExecutionEvidence>,
     prepared_instance_fold: Option<Arc<PreparedInstanceFold>>,
+    prepared_return_fold: Option<Arc<PreparedReturnFold>>,
     /// Returned paths of summarized loops, already proved while each loop's
     /// continuing successor keeps advancing. They are appended to the
     /// completed trace set only at the function boundary, so ordinary
@@ -5910,8 +5987,7 @@ pub(crate) struct ExecutionProofCore {
     >,
     /// Post-return exchanges indexed by the selected outcome. Forking a
     /// focused outcome must not copy or modify its sibling traces.
-    return_resource_rewrites:
-        crate::persistent::PersistentMap<usize, PersistentSequence<CheckedExecutionEvent>>,
+    return_resource_rewrites: crate::persistent::PersistentMap<usize, ExecutionEvidence>,
     /// Events on the current unjoined path. A branch join restores its
     /// parent's set; finalization collects all retained arm events by walking
     /// the output trace once.
@@ -7774,8 +7850,9 @@ impl ExecutionProofCore {
             evidence_try_stack: Vec::new(),
             frontier,
             effect_facts: Default::default(),
-            execution_evidence: vec![PersistentSequence::default()].into(),
+            execution_evidence: vec![ExecutionEvidence::default()].into(),
             prepared_instance_fold: None,
+            prepared_return_fold: None,
             pending_loop_returns: Default::default(),
             completed_pending_loop_returns: None,
             pending_loop_return_start: None,
@@ -9778,9 +9855,9 @@ impl ExecutionProofCore {
         }
         let mut traces = Vec::with_capacity(plan.len() * 2);
         fn append(
-            trace: &PersistentSequence<CheckedExecutionEvent>,
+            trace: &ExecutionEvidence,
             fork: &OutcomeEvidenceFork,
-            traces: &mut Vec<PersistentSequence<CheckedExecutionEvent>>,
+            traces: &mut Vec<ExecutionEvidence>,
         ) -> Result<(), &'static str> {
             match fork {
                 OutcomeEvidenceFork::Keep => traces.push(trace.clone()),
@@ -10260,8 +10337,60 @@ impl ExecutionProofCore {
         Ok((result, after_facts))
     }
 
-    pub(crate) fn has_prepared_instance_fold(&self) -> bool {
-        self.prepared_instance_fold.is_some()
+    pub(crate) fn has_prepared_fold(&self) -> bool {
+        self.prepared_instance_fold.is_some() || self.prepared_return_fold.is_some()
+    }
+
+    pub(crate) fn has_prepared_return_fold(&self) -> bool {
+        self.prepared_return_fold.is_some()
+    }
+
+    pub(crate) fn finish_prepared_return_fold(
+        &mut self,
+        proved: &Self,
+        proved_facts: &ProofFacts,
+    ) -> Result<ProofFacts, String> {
+        let _timing = crate::instrumentation::OperationTiming::new(
+            "fold",
+            "resource fold",
+            "return fold: finish prepared instance",
+        );
+        let prepared = Arc::unwrap_or_clone(
+            self.prepared_return_fold
+                .take()
+                .expect("completion consumes the selected prepared return fold"),
+        );
+        let path = prepared.path_index;
+        // Only the selected outcome's new proof evidence is transferred.
+        if let Some(trace) = proved.return_resource_rewrites.get(&path) {
+            self.return_resource_rewrites = self
+                .return_resource_rewrites
+                .with_inserted(path, trace.clone());
+        }
+        if let Some(pending) = proved.return_pending_propositions.get(&path) {
+            self.return_pending_propositions = self
+                .return_pending_propositions
+                .with_inserted(path, pending.clone());
+        }
+        self.flush_return_propositions(path)?;
+        let mut rewrite = prepared.fold.rewrite;
+        rewrite.before_facts = proved_facts.clone();
+        rewrite.after_facts = prepared
+            .fold
+            .semantic_facts
+            .into_iter()
+            .fold(proved_facts.clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact)
+            });
+        let facts = rewrite.after_facts.clone();
+        let mut trace = self
+            .return_resource_rewrites
+            .get(&path)
+            .unwrap_or(&self.execution_evidence[path])
+            .clone();
+        trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(rewrite)));
+        self.return_resource_rewrites = self.return_resource_rewrites.with_inserted(path, trace);
+        Ok(facts)
     }
 
     /// The driver has discharged the body obligations at the original
@@ -10390,6 +10519,7 @@ impl ExecutionProofCore {
             false,
             None,
             None,
+            false,
         )
         .map_err(|error| error.message)
     }
@@ -10435,30 +10565,11 @@ impl ExecutionProofCore {
                 .paths()
                 .get(path_index)
                 .ok_or("return proof selected an unknown path")?;
-            let mut source = self.execution_evidence[path_index].clone();
-            let origin = loop {
-                match source.pop() {
-                    Some(CheckedExecutionEvent::Statement(theorem)) => {
-                        let Proposition::CStatementVerifies { outcome, .. } =
-                            checked_evidence_conclusion(&theorem)
-                        else {
-                            return Err("return proof has no completing statement".into());
-                        };
-                        break outcome.clone();
-                    }
-                    // A `return` inside a block ends the block's automatic
-                    // locals after the return statement.
-                    Some(
-                        CheckedExecutionEvent::Context(_)
-                        | CheckedExecutionEvent::CompletedContext(_)
-                        | CheckedExecutionEvent::StatementEffects(_)
-                        | CheckedExecutionEvent::Call(_)
-                        | CheckedExecutionEvent::ProofCase(_)
-                        | CheckedExecutionEvent::AutomaticLifetimeEnd(_),
-                    ) => {}
-                    _ => return Err("return proof has no completing statement".into()),
-                }
-            };
+            let origin = self.execution_evidence[path_index]
+                .origin
+                .as_deref()
+                .ok_or("return proof has no completing statement")?
+                .clone();
             let context = Arc::new(CheckedReturnContext::from_candidate(origin, candidate));
             self.return_proof_contexts = self
                 .return_proof_contexts
@@ -10491,15 +10602,14 @@ impl ExecutionProofCore {
         Ok(())
     }
 
-    /// Construct the published exchange and retain its exact output. The
-    /// surface supplies a checked outcome, never a proposed successor or facts.
+    /// Construct the published exchange from the selected path's retained
+    /// presentation. Callers cannot substitute an unrelated input state.
     #[cfg(test)]
     pub(crate) fn rewrite_return_resource_instance_with_children(
         &mut self,
         function: &CFunction,
         path_index: usize,
         before_facts: &ProofFacts,
-        before: &CState,
         instance: &crate::kernel::ResourceInstance,
         unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
@@ -10514,7 +10624,6 @@ impl ExecutionProofCore {
             function,
             path_index,
             before_facts,
-            before,
             instance,
             unfold,
             selected_children,
@@ -10528,7 +10637,6 @@ impl ExecutionProofCore {
         function: &CFunction,
         path_index: usize,
         before_facts: &ProofFacts,
-        before: &CState,
         instance: &crate::kernel::ResourceInstance,
         unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
@@ -10540,14 +10648,34 @@ impl ExecutionProofCore {
         ),
         crate::kernel::ResourceRewriteRefusal,
     > {
+        let _timing = crate::instrumentation::OperationTiming::new(
+            instance.name(),
+            "resource fold",
+            "return fold: construct selected instance",
+        );
         let definition = function
             .proof_composite_resource_definition(instance.name())
             .ok_or("instance definition is not registered on the function")?;
+        let context = self
+            .return_context_for_path(path_index)
+            .map_err(crate::kernel::ResourceRewriteRefusal::OwnedMessage)?;
+        let trace = self
+            .return_resource_rewrites
+            .get(&path_index)
+            .or_else(|| self.execution_evidence.get(path_index))
+            .ok_or("return rewrite selected an unknown path")?;
+        let before = match trace.presented.as_deref() {
+            Some(state) => state.clone(),
+            None => match &context.published {
+                CFunctionOutcome::Return { state, .. } => *state.clone(),
+                _ => return Err("return observation requires a returning path".into()),
+            },
+        };
         let _capture = crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
             &self.checked_call_events,
         );
         let result = crate::kernel::rewrite_resource_instance_selecting_children(
-            before,
+            &before,
             instance,
             definition,
             function.composite_resource_definitions(),
@@ -10569,7 +10697,10 @@ impl ExecutionProofCore {
             &facts,
             unfold,
             selected_children,
-            Some((before, &result)),
+            Some((&before, &result)),
+            !unfold
+                && assumptions.retains_required_obligations()
+                && !definition.reaches_population(),
         )
         .map_err(|error| crate::kernel::ResourceRewriteRefusal::OwnedMessage(error.message))?;
         Ok((result, facts))
@@ -10588,8 +10719,11 @@ impl ExecutionProofCore {
             &CState,
             &crate::kernel::functions::ResourceInstanceRewriteResult,
         )>,
+        defer: bool,
     ) -> Result<(), ResourceRewriteCheckError> {
-        self.flush_return_propositions(path_index)?;
+        if !defer {
+            self.flush_return_propositions(path_index)?;
+        }
         if !self.evidence_completed {
             return Err("return resource rewrite requires completed execution"
                 .to_string()
@@ -10603,43 +10737,14 @@ impl ExecutionProofCore {
         let definition = function
             .proof_composite_resource_definition(instance.name())
             .ok_or_else(|| "instance definition is not registered on the function".to_string())?;
-        let mut trace = self
+        let trace = self
             .return_resource_rewrites
             .get(&path_index)
             .or_else(|| self.execution_evidence.get(path_index))
             .cloned()
             .ok_or_else(|| "return resource rewrite selected an unknown path".to_string())?;
-        let observation = if let Some((before, after)) = observed {
+        let observation = if let Some((_, after)) = observed {
             let context = self.return_context_for_path(path_index)?;
-            let CFunctionOutcome::Return {
-                state: published, ..
-            } = &context.published
-            else {
-                return Err("return observation requires a returning path".into());
-            };
-            let mut previous = trace.clone();
-            let expected = loop {
-                match previous.pop() {
-                    Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
-                        break match rewrite.return_observation {
-                            Some(observation) => observation.after.clone(),
-                            None => rewrite
-                                .return_presentation
-                                .map(|presentation| presentation.rewrite.after_state.clone())
-                                .ok_or("return observation lost its preceding exchange")?,
-                        };
-                    }
-                    Some(CheckedExecutionEvent::ReturnProposition(_)) => {}
-                    _ => break *published.clone(),
-                }
-            };
-            if *before != expected {
-                let difference = before.first_difference(&expected).unwrap_or_default();
-                return Err(format!(
-                    "return observation has a different published state: {difference}"
-                )
-                .into());
-            }
             Some(Arc::new(ReturnResourceObservation {
                 context,
                 after: after.state.clone(),
@@ -10648,54 +10753,7 @@ impl ExecutionProofCore {
         } else {
             None
         };
-        // Read only the completing suffix. Persistent pop does not copy the
-        // path's earlier history, and no sibling path is inspected.
-        let mut ended = None;
-        let before_state = loop {
-            match trace.pop() {
-                Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
-                    break ended.take().unwrap_or(rewrite.after_state);
-                }
-                Some(CheckedExecutionEvent::Statement(theorem)) => {
-                    let Proposition::CStatementVerifies { outcome, .. } =
-                        checked_evidence_conclusion(&theorem)
-                    else {
-                        return Err("return resource rewrite requires a returning path".into());
-                    };
-                    let state = match outcome {
-                        CStatementOutcome::Return { state, .. } => state,
-                        CStatementOutcome::Normal(state)
-                            if function.return_type() == crate::kernel::CType::Void
-                                && self.evidence_source.is_none()
-                                && self.frontier.region == ExecutionRegionKind::Function =>
-                        {
-                            state
-                        }
-                        _ => return Err("return resource rewrite requires a returning path".into()),
-                    };
-                    break ended.take().unwrap_or_else(|| *state.clone());
-                }
-                // A `return` inside a block ends the block's automatic locals
-                // after the return statement: the path's state is the latest
-                // lifetime end's.
-                Some(CheckedExecutionEvent::AutomaticLifetimeEnd(end)) => {
-                    ended.get_or_insert(end.after_state);
-                }
-                Some(
-                    CheckedExecutionEvent::Context(_)
-                    | CheckedExecutionEvent::CompletedContext(_)
-                    | CheckedExecutionEvent::StatementEffects(_)
-                    | CheckedExecutionEvent::Call(_)
-                    | CheckedExecutionEvent::ProofCase(_)
-                    | CheckedExecutionEvent::ReturnProposition(_),
-                ) => {}
-                _ => {
-                    return Err("return resource rewrite has no completing theorem"
-                        .to_string()
-                        .into());
-                }
-            }
-        };
+        let before_state = trace.retained_state()?.clone();
         CheckedResourceRewrite::check_instance_definition(function, definition)?;
         let retained_after = if let Some((presented_before, produced)) = observed {
             // The producer already applied the selected body at the logical
@@ -10758,6 +10816,20 @@ impl ExecutionProofCore {
         if self.frontier.execution().is_some() {
             rewrite.return_context = Some(self.return_context_for_path(path_index)?);
         }
+        if defer {
+            self.prepared_return_fold = Some(Arc::new(PreparedReturnFold {
+                path_index,
+                fold: PreparedInstanceFold {
+                    semantic_facts: observed
+                        .expect("a prepared fold has a constructed exchange")
+                        .1
+                        .semantic_facts
+                        .clone(),
+                    rewrite,
+                },
+            }));
+            return Ok(());
+        }
         let mut trace = self
             .return_resource_rewrites
             .get(&path_index)
@@ -10790,58 +10862,13 @@ impl ExecutionProofCore {
         if !self.evidence_completed {
             return Err("return resource rewrite requires completed execution".into());
         }
-        let mut trace = self
+        let trace = self
             .return_resource_rewrites
             .get(&path_index)
             .or_else(|| self.execution_evidence.get(path_index))
             .cloned()
             .ok_or_else(|| "return resource rewrite selected an unknown path".to_string())?;
-        // Read only the completing suffix. Persistent pop does not copy the
-        // path's earlier history, and no sibling path is inspected.
-        let mut ended = None;
-        let before_state = loop {
-            match trace.pop() {
-                Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
-                    break ended.take().unwrap_or(rewrite.after_state);
-                }
-                Some(CheckedExecutionEvent::Statement(theorem)) => {
-                    let Proposition::CStatementVerifies { outcome, .. } =
-                        checked_evidence_conclusion(&theorem)
-                    else {
-                        return Err("return resource rewrite requires a returning path".into());
-                    };
-                    let state = match outcome {
-                        CStatementOutcome::Return { state, .. } => state,
-                        CStatementOutcome::Normal(state)
-                            if function.return_type() == crate::kernel::CType::Void
-                                && self.evidence_source.is_none()
-                                && self.frontier.region == ExecutionRegionKind::Function =>
-                        {
-                            state
-                        }
-                        _ => return Err("return resource rewrite requires a returning path".into()),
-                    };
-                    break ended.take().unwrap_or_else(|| *state.clone());
-                }
-                // A `return` inside a block ends the block's automatic locals
-                // after the return statement: the path's state is the latest
-                // lifetime end's.
-                Some(CheckedExecutionEvent::AutomaticLifetimeEnd(end)) => {
-                    ended.get_or_insert(end.after_state);
-                }
-                Some(
-                    CheckedExecutionEvent::Context(_)
-                    | CheckedExecutionEvent::CompletedContext(_)
-                    | CheckedExecutionEvent::StatementEffects(_)
-                    | CheckedExecutionEvent::Call(_)
-                    | CheckedExecutionEvent::ProofCase(_)
-                    | CheckedExecutionEvent::ReturnProposition(_),
-                ) => {}
-                _ => {
-                    return Err("return resource rewrite has no completing theorem".to_string());
-                }
-            }
-        };
+        let before_state = trace.retained_state()?.clone();
         // An ordinary macro refold may exist only in the visible outcome;
         // unfolding it again does not change the retained C path's body.
         if matches!(selected.resource(), CResource::Composite { name, .. }

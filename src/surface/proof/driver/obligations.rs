@@ -259,7 +259,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             if probe.as_ref().is_ok_and(|candidate| {
                 candidate
                     .execution()
-                    .is_some_and(|execution| execution.core.has_prepared_instance_fold())
+                    .is_some_and(|execution| execution.core.has_prepared_fold())
             }) {
                 return driver_proof.finish_prepared_step(probe, driver_proof, &step, &[]);
             }

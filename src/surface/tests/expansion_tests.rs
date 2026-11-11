@@ -21054,16 +21054,31 @@ void make(int32 x) { requires x > 0; produces p: positive(x); } by {
     solve();
 }
 "#;
-    verify_c0_sources(source, &sources).expect("a named fold exposes its body fact too");
-    assert!(
-        verify_c0_sources(&source.replace("requires x > 0;", ""), &sources).is_err(),
-        "the proposed folded resource cannot prove its own body fact",
-    );
-    let expanded = expand_function_proof_source(source, &sources, "make").unwrap();
-    without_implicit_solve_for_claim("make.contract", || {
-        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
-    })
-    .unwrap();
+    for source in [
+        source.to_string(),
+        source
+            .replace(
+                "    let p = fold",
+                "    step_until(function.exit);\n    let p = fold",
+            )
+            .replace(
+                "    step_until(function.exit);\n    solve();",
+                "    solve();",
+            ),
+    ] {
+        for source in [source.clone(), source.replace(" by { assumption(); }", ";")] {
+            verify_c0_sources(&source, &sources).expect("a named fold exposes its body fact too");
+            assert!(
+                verify_c0_sources(&source.replace("requires x > 0;", ""), &sources).is_err(),
+                "the proposed folded resource cannot prove its own body fact",
+            );
+            let expanded = expand_function_proof_source(&source, &sources, "make").unwrap();
+            without_implicit_solve_for_claim("make.contract", || {
+                verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap();
+        }
+    }
 }
 
 #[cfg(feature = "fast-gate")]
