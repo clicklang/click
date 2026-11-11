@@ -1345,21 +1345,32 @@ fn charon_slice_failure_has_a_focused_trace() {
     // Frozen Rust inputs must use the same checked trace and proof selection
     // as C. Tracing one proof must not execute a failing sibling contract.
     let p = charon_slice_project();
-    fs::write(
-        p.root.join("borrow.click"),
-        "verifying \"slices.rs\";\nfn length(bytes: &[u8]) -> usize { ensures result == 0u64; }\ntheorem good(x: int32) { ensures x == x by { normalize(); } }\n",
-    ).unwrap();
+    let source = concat!(
+        "verifying \"slices.rs\";\n",
+        "fn length(bytes: &[u8]) -> usize { ensures result == 0u64; } by {\n",
+        "    step_until(function.exit);\n",
+        "    solve();\n",
+        "}\n",
+        "theorem good(x: int32) { ensures x == x by { normalize(); } }\n",
+    );
+    fs::write(p.root.join("borrow.click"), source).unwrap();
+    let (line, column) = source
+        .lines()
+        .enumerate()
+        .find_map(|(line, text)| text.find("solve();").map(|column| (line + 1, column + 1)))
+        .expect("the failing proof must contain a written closer");
+    let trace_to = format!("{line}:{column}");
     let output = p.cli(&["verify"]);
     assert!(!output.status.success());
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(error.contains("proof error:"), "{error}");
     assert!(error.contains("--trace-proof length"), "{error}");
-    let output = p.cli(&["verify", "--trace-proof", "length", "--trace-to", "2:78"]);
+    let output = p.cli(&["verify", "--trace-proof", "length", "--trace-to", &trace_to]);
     assert!(!output.status.success());
     let trace = String::from_utf8(output.stderr).unwrap();
     assert!(!trace.contains("typed compiler inputs"), "{trace}");
     assert!(trace.contains("proof trace"), "{trace}");
-    assert!(trace.contains("tactic@2"), "{trace}");
+    assert!(trace.contains(&format!("tactic@{line}")), "{trace}");
     let output = p.cli(&["verify", "--trace-proof", "good"]);
     assert!(
         output.status.success(),
