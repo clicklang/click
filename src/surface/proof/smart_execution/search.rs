@@ -532,7 +532,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         application: &TheoremApplication,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let selected = crate::kernel::search::ProofSearch::select_theorem_application_step(
-            &(search_input),
+            search_input,
             application,
         );
         let step = match selected {
