@@ -7812,7 +7812,7 @@ impl CRuntimeError {
 
     /// Why a heap allocation's size was refused, and which sizes are
     /// accepted ([`Self::HeapAllocationSize`]).
-    pub const HEAP_ALLOCATION_SIZE_MESSAGE: &'static str = "heap allocation size must be proved to fit a heap block: a symbolic 64-bit (`size_t`) `malloc` size is accepted where the facts prove it at least 1 and at most PTRDIFF_MAX (9223372036854775807) bytes, `malloc(n * w)` where they prove `1 <= n <= PTRDIFF_MAX / w`, and a product of two symbolic sizes not at all; `calloc` and `realloc` accept a 64-bit size only where the facts fix it to a constant that fits 32 bits";
+    pub const HEAP_ALLOCATION_SIZE_MESSAGE: &'static str = "heap allocation size must be proved to fit a heap block: a symbolic 64-bit (`size_t`) `malloc` or `realloc` size is accepted where the facts prove it at least 1 and at most PTRDIFF_MAX (9223372036854775807) bytes, `malloc(n * w)`, `realloc(p, n * w)` and `calloc(n, w)` where they prove `1 <= n <= PTRDIFF_MAX / w`, and a product of two symbolic sizes not at all";
 
     /// Why an unsigned 32-bit heap allocation size was refused
     /// ([`Self::HeapAllocationSizeAboveInt32`]).

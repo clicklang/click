@@ -1327,7 +1327,17 @@ pub(super) fn execute_c_heap_allocate_paths(
         .expect("heap allocation target has a pointee type")
         .byte_width();
 
-    let element_count_expression = heap_element_count_expression(bytes_expression, element_width);
+    // calloc's size is its count of `count_width`-byte elements: the count
+    // alone is evaluated, never the product (`design/heap-extents.md`,
+    // stage 4).
+    let (element_count_expression, count_width) =
+        match zeroed.then(|| calloc_operands(bytes_expression)).flatten() {
+            Some((count, width)) => (Some(count), width),
+            None => (
+                heap_element_count_expression(bytes_expression, element_width),
+                element_width,
+            ),
+        };
     let evaluated_size_expression = element_count_expression.unwrap_or(bytes_expression);
     let mut paths = Vec::new();
     for size_path in
@@ -1364,22 +1374,24 @@ pub(super) fn execute_c_heap_allocate_paths(
         };
         // calloc's `n * w` is not a `size_t` product (it returns null when
         // the product is not representable), so it is never evaluated as
-        // one; a 64-bit calloc size waits for stage 4.
-        let (bytes, size_refusal) = if zeroed && size.kind == HeapExtentKind::UInt64 {
+        // one: its count must be decided `1 <= n <= PTRDIFF_MAX / w`, and a
+        // 64-bit size calloc does not split into its operands is refused.
+        let (bytes, size_refusal) = if zeroed
+            && element_count_expression.is_none()
+            && size.kind == HeapExtentKind::UInt64
+        {
             (size.into_extent(), Some(CRuntimeError::HeapAllocationSize))
         } else if element_count_expression.is_some() {
-            let refusal = allocation_size_validity_refusal(
-                &size,
-                element_width,
-                true,
-                &effective_assumptions,
-            );
-            match (
-                refusal,
-                size.wrapped_product(element_width, &effective_assumptions),
-            ) {
-                // An inexact `size_t` product is the block C allocates:
-                // its wrapped value, admitted as a raw byte count.
+            let refusal =
+                allocation_size_validity_refusal(&size, count_width, true, &effective_assumptions);
+            let wrapped = if zeroed {
+                None
+            } else {
+                size.wrapped_product(count_width, &effective_assumptions)
+            };
+            match (refusal, wrapped) {
+                // An inexact `size_t` product is the block `malloc`
+                // allocates: its wrapped value, admitted as a raw byte count.
                 (Some(_), Some(product)) => {
                     let refusal = allocation_size_validity_refusal(
                         &product,
@@ -1389,7 +1401,7 @@ pub(super) fn execute_c_heap_allocate_paths(
                     );
                     (product.into_extent(), refusal)
                 }
-                (refusal, _) => (size.scaled(element_width).into_extent(), refusal),
+                (refusal, _) => (size.scaled(count_width).into_extent(), refusal),
             }
         } else {
             // Heap blocks are byte-addressed even when the receiving pointer
@@ -1624,6 +1636,108 @@ impl AllocationSize {
     fn into_extent(self) -> HeapExtent {
         HeapExtent::new(self.term, self.kind)
     }
+
+    /// The size as a constant byte count, in either format.
+    fn constant_bytes(&self) -> Option<u64> {
+        match self.kind {
+            HeapExtentKind::Int32 => self.term.as_const().map(u64::from),
+            HeapExtentKind::UInt64 => self.term.uint64_as_const(),
+        }
+    }
+
+    /// `bytes <= self`, compared in the size's format and signedness.
+    fn at_least(&self, bytes: u32) -> ConditionTerm {
+        match (self.kind, self.unsigned) {
+            (HeapExtentKind::UInt64, _) => uint64_extent_at_least(&self.term, u64::from(bytes)),
+            (HeapExtentKind::Int32, true) => {
+                ConditionTerm::unsigned_less_equal(MachineTerm::constant(bytes), self.term.clone())
+            }
+            (HeapExtentKind::Int32, false) => {
+                ConditionTerm::signed_less_equal(MachineTerm::constant(bytes), self.term.clone())
+            }
+        }
+    }
+
+    /// `self < bytes`, compared in the size's format and signedness.
+    fn less_than(&self, bytes: u32) -> ConditionTerm {
+        match (self.kind, self.unsigned) {
+            (HeapExtentKind::UInt64, _) => {
+                let (count, bound) = uint64_extent_in_elements(&self.term, u64::from(bytes));
+                ConditionTerm::uint64_less_than(count.clone(), bound)
+            }
+            (HeapExtentKind::Int32, true) => {
+                ConditionTerm::unsigned_less_than(self.term.clone(), MachineTerm::constant(bytes))
+            }
+            (HeapExtentKind::Int32, false) => {
+                ConditionTerm::signed_less_than(self.term.clone(), MachineTerm::constant(bytes))
+            }
+        }
+    }
+}
+
+/// `bytes <= extent` for an admitted 64-bit heap extent. An extent `n * k`
+/// with a constant `k` is exact ([`uint64_heap_extent_bytes_are_exact`]), so
+/// the comparison is `ceil(bytes / k) <= n` over its element count, which
+/// the facts about `n` decide where the wrapping product would not.
+fn uint64_extent_at_least(extent: &MachineTerm, bytes: u64) -> ConditionTerm {
+    let (count, bound) = uint64_extent_in_elements(extent, bytes);
+    ConditionTerm::uint64_less_equal(bound, count.clone())
+}
+
+/// An admitted 64-bit extent and a byte count `bytes` in the extent's
+/// elements: `(n, ceil(bytes / k))` for `n * k` with a constant `k`, else
+/// `(extent, bytes)`. Then `bytes <= extent` iff `ceil(bytes / k) <= n`, and
+/// `extent < bytes` iff `n < ceil(bytes / k)`.
+fn uint64_extent_in_elements(extent: &MachineTerm, bytes: u64) -> (&MachineTerm, MachineTerm) {
+    if let binary_term!(UInt64, Multiply, left, right) = extent {
+        match (left.uint64_as_const(), right.uint64_as_const()) {
+            (_, Some(width)) if width > 0 => {
+                return (left, MachineTerm::uint64_constant(bytes.div_ceil(width)));
+            }
+            (Some(width), _) if width > 0 => {
+                return (right, MachineTerm::uint64_constant(bytes.div_ceil(width)));
+            }
+            _ => {}
+        }
+    }
+    (extent, MachineTerm::uint64_constant(bytes))
+}
+
+/// The constant zeroed prefix of a reallocated block: the smaller of the old
+/// zeroed bytes and the new size, when that is a constant. Both constant, it
+/// is their minimum; one constant, it is that one where the facts decide it
+/// is the smaller. A prefix that is not a 32-bit constant is not modeled.
+fn realloc_zeroed_prefix(
+    old_prefix: &HeapExtent,
+    new_size: &AllocationSize,
+    assumptions: &PureFactContext,
+) -> Option<u32> {
+    let old_constant = match old_prefix.kind() {
+        HeapExtentKind::Int32 => old_prefix.bytes().as_const().map(u64::from),
+        HeapExtentKind::UInt64 => old_prefix.bytes().uint64_as_const(),
+    };
+    let prefix = match (old_constant, new_size.constant_bytes()) {
+        (Some(old), Some(new)) => old.min(new),
+        (Some(old), None) => {
+            let old = u32::try_from(old).ok()?;
+            (assumptions.decide(&new_size.at_least(old)) == Some(true)).then_some(u64::from(old))?
+        }
+        (None, Some(new)) => {
+            let new = u32::try_from(new).ok()?;
+            let shrinks = match old_prefix.kind() {
+                HeapExtentKind::Int32 => ConditionTerm::unsigned_less_equal(
+                    MachineTerm::constant(new),
+                    old_prefix.bytes().clone(),
+                ),
+                HeapExtentKind::UInt64 => {
+                    uint64_extent_at_least(old_prefix.bytes(), u64::from(new))
+                }
+            };
+            (assumptions.decide(&shrinks) == Some(true)).then_some(u64::from(new))?
+        }
+        (None, None) => return None,
+    };
+    u32::try_from(prefix).ok()
 }
 
 /// The refusal for a size [`allocation_size_value`] does not accept, or
@@ -1685,6 +1799,23 @@ fn uint64_size_value(
         },
         None => AllocationSize::uint64(term, wraps),
     }
+}
+
+/// `calloc(n, w)`'s count `n` and constant element size `w`: the C front end
+/// lowers the call to `n * w` with `w` the target's element or struct size.
+fn calloc_operands(bytes_expression: &CExpression) -> Option<(&CExpression, u32)> {
+    let CExpression::Multiply(count, width) = bytes_expression else {
+        return None;
+    };
+    let CExpression::Value(width) = width.as_ref() else {
+        return None;
+    };
+    let width = match width {
+        CValue::Int32(width) => width.as_const()?,
+        CValue::UInt64(width) => u32::try_from(width.uint64_as_const()?).ok()?,
+        _ => return None,
+    };
+    (width > 0).then_some((count.as_ref(), width))
 }
 
 fn heap_element_count_expression(
@@ -2103,11 +2234,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 &size_obligations,
             );
             let refusal = allocation_size_refusal(&new_size_value);
-            let Some(size) = allocation_size_value(new_size_value, &size_assumptions)
-                // Resizing to a 64-bit extent waits for stage 4
-                // (`design/heap-extents.md`).
-                .filter(|size| size.kind == HeapExtentKind::Int32)
-            else {
+            let Some(size) = allocation_size_value(new_size_value, &size_assumptions) else {
                 paths.push(CStatementExecutionPath::new(
                     CStatementOutcome::RuntimeError(refusal),
                     size_facts,
@@ -2151,32 +2278,23 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 ));
                 continue;
             }
-            // The fit conditions below compare 32-bit extents only
-            // (`design/heap-extents.md`, stage 4).
-            if old_bytes.kind() != HeapExtentKind::Int32 || new_bytes.kind != HeapExtentKind::Int32
-            {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::HeapAllocationSize),
-                    all_facts,
-                    all_obligations,
-                ));
-                continue;
-            }
+            // The bytes that stay zero: the whole old block of a calloc, or
+            // the constant prefix an earlier realloc kept, in its format.
             let zeroed_source = if state.memory.heap.zeroed_allocations.contains(&old_pointer) {
-                Some(old_bytes.bytes().clone())
+                Some(old_bytes.clone())
             } else {
                 state
                     .memory
                     .heap
                     .zeroed_prefix_allocations
                     .get(&old_pointer)
-                    .cloned()
+                    .map(|prefix| HeapExtent::int32(prefix.clone()))
             };
             let zeroed_prefix = match zeroed_source {
                 None => None,
                 Some(old_prefix) => {
-                    let (Some(old_prefix), Some(new_size)) =
-                        (old_prefix.as_const(), new_bytes.term.as_const())
+                    let Some(prefix) =
+                        realloc_zeroed_prefix(&old_prefix, &new_bytes, &effective_assumptions)
                     else {
                         paths.push(CStatementExecutionPath::new(
                             CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -2185,7 +2303,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                         ));
                         continue;
                     };
-                    Some(MachineTerm::constant(old_prefix.min(new_size)))
+                    Some(MachineTerm::constant(prefix))
                 }
             };
 
@@ -2295,28 +2413,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 let Some(end) = offset.checked_add(value.byte_width()) else {
                     continue;
                 };
-                let fits_condition = if new_bytes.unsigned {
-                    ConditionTerm::unsigned_less_equal(
-                        MachineTerm::constant(end),
-                        new_bytes.term.clone(),
-                    )
-                } else {
-                    ConditionTerm::signed_less_equal(
-                        MachineTerm::constant(end),
-                        new_bytes.term.clone(),
-                    )
-                };
-                let truncated_condition = if new_bytes.unsigned {
-                    ConditionTerm::unsigned_less_than(
-                        new_bytes.term.clone(),
-                        MachineTerm::constant(end),
-                    )
-                } else {
-                    ConditionTerm::signed_less_than(
-                        new_bytes.term.clone(),
-                        MachineTerm::constant(end),
-                    )
-                };
+                let fits_condition = new_bytes.at_least(end);
+                let truncated_condition = new_bytes.less_than(end);
                 let fits = effective_assumptions.decide(&fits_condition);
                 if fits == Some(true) {
                     copied_cells.push((offset, value));
@@ -2341,25 +2439,16 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 let Ok(end_constant) = u32::try_from(end) else {
                     continue;
                 };
-                let fits_condition = if new_bytes.unsigned {
-                    ConditionTerm::unsigned_less_equal(
-                        MachineTerm::constant(end_constant),
-                        new_bytes.term.clone(),
-                    )
-                } else {
-                    ConditionTerm::signed_less_equal(
-                        MachineTerm::constant(end_constant),
-                        new_bytes.term.clone(),
-                    )
-                };
-                if effective_assumptions.decide(&fits_condition) == Some(true) {
+                if effective_assumptions.decide(&new_bytes.at_least(end_constant)) == Some(true) {
                     initialized_prefix.push((start, length));
-                } else if let Some(new_size) = new_bytes.term.as_const()
-                    && i64::from(new_size) > start
+                } else if let Some(new_size) = new_bytes
+                    .constant_bytes()
+                    .and_then(|new_size| i64::try_from(new_size).ok())
+                    && new_size > start
                     && start >= 0
                 {
-                    let kept = u32::try_from(i64::from(new_size) - start)
-                        .map_or(length, |kept| kept.min(length));
+                    let kept =
+                        u32::try_from(new_size - start).map_or(length, |kept| kept.min(length));
                     initialized_prefix.push((start, kept));
                 }
             }

@@ -2471,6 +2471,16 @@ mod free_base_alias_tests;
 fn size_t_heap_allocation(
     facts: &[ConditionTerm],
 ) -> (Vec<CStatementExecutionPath>, Option<CState>) {
+    size_t_heap_allocation_with_zeroed(facts, false)
+}
+
+/// `p = malloc(n * 4u64)`, or `p = calloc(n, 4u64)` when `zeroed`, for a
+/// `size_t` `n` under `facts`; with its success resolved when it has one
+/// normal path.
+fn size_t_heap_allocation_with_zeroed(
+    facts: &[ConditionTerm],
+    zeroed: bool,
+) -> (Vec<CStatementExecutionPath>, Option<CState>) {
     let n = MachineTerm::Variable(Variable(1 << 40));
     let state = CState::new()
         .with_population_creation_tracking()
@@ -2483,9 +2493,10 @@ fn size_t_heap_allocation(
         });
     let paths = execute_c_statement_paths(
         &state,
-        &c_heap_allocate_sized(
+        &c_heap_allocate_sized_with_zeroed(
             "p",
             CExpression::Multiply(Box::new(c_variable("n")), Box::new(c_uint64_literal(4))),
+            zeroed,
         ),
         &assumptions,
         CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
@@ -2588,4 +2599,171 @@ fn a_wrapping_size_t_product_is_the_wrapped_block() {
         success.memory().live_heap_block_extent(pointer.pointer()),
         Some(&HeapExtent::int32(4))
     );
+}
+
+/// `calloc(n, 4)` with a bounded `size_t` count makes a zeroed 64-bit block:
+/// the exact `uint64` product is its extent and it reads as zero
+/// (`design/heap-extents.md`, stage 4).
+#[test]
+fn a_bounded_size_t_calloc_count_makes_a_zeroed_64_bit_block() {
+    let n = MachineTerm::Variable(Variable(1 << 40));
+    let (_, success) = size_t_heap_allocation_with_zeroed(
+        &[
+            ConditionTerm::uint64_greater_than(n.clone(), MachineTerm::uint64_constant(0)),
+            ConditionTerm::uint64_less_equal(n.clone(), MachineTerm::uint64_constant(100)),
+        ],
+        true,
+    );
+    let success = success.expect("a bounded calloc count allocates");
+    let Some(CValue::Pointer(pointer)) = success.locals().get("p") else {
+        panic!("calloc should assign a pointer");
+    };
+    let extent = HeapExtent::new(
+        MachineTerm::uint64_multiply(n, MachineTerm::uint64_constant(4)),
+        HeapExtentKind::UInt64,
+    );
+    assert_eq!(
+        success.memory().live_heap_block_extent(pointer.pointer()),
+        Some(&extent)
+    );
+    assert!(
+        success
+            .resources()
+            .facts()
+            .contains(&CResourceFact::own_heap_allocation(
+                pointer.pointer().clone(),
+                &extent
+            ))
+    );
+    assert!(
+        success
+            .memory()
+            .is_zeroed_heap_address(pointer.pointer(), 4, &PureFactContext::new())
+    );
+}
+
+/// calloc never forms its product: a count the facts fix where `n * 4`
+/// would wrap is refused, not the wrapped block `malloc` makes, and so is
+/// a count with no upper bound.
+#[test]
+fn a_size_t_calloc_count_whose_product_may_wrap_is_refused() {
+    let n = MachineTerm::Variable(Variable(1 << 40));
+    for facts in [
+        vec![ConditionTerm::uint64_equal(
+            n.clone(),
+            MachineTerm::uint64_constant((1 << 62) + 1),
+        )],
+        vec![ConditionTerm::uint64_greater_than(
+            n.clone(),
+            MachineTerm::uint64_constant(0),
+        )],
+    ] {
+        let (paths, _) = size_t_heap_allocation_with_zeroed(&facts, true);
+        assert!(
+            matches!(
+                paths.as_slice(),
+                [CStatementExecutionPath {
+                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::HeapAllocationSize),
+                    ..
+                }]
+            ),
+            "{paths:?}"
+        );
+    }
+}
+
+/// `realloc(p, m * 4u64)` of a 64-bit block to a bounded `size_t` count:
+/// the old token and wide range are consumed, and the new block has the
+/// exact 64-bit extent `m * 4u64` and a wide range.
+#[test]
+fn a_64_bit_block_reallocates_to_a_64_bit_size() {
+    let n = MachineTerm::Variable(Variable(1 << 40));
+    let m = MachineTerm::Variable(Variable((1 << 40) + 1));
+    let facts = [
+        ConditionTerm::uint64_greater_than(n.clone(), MachineTerm::uint64_constant(0)),
+        ConditionTerm::uint64_less_equal(n.clone(), MachineTerm::uint64_constant(100)),
+        ConditionTerm::uint64_greater_than(m.clone(), MachineTerm::uint64_constant(0)),
+        ConditionTerm::uint64_less_equal(m.clone(), MachineTerm::uint64_constant(200)),
+    ];
+    let (_, allocated) = size_t_heap_allocation(&facts);
+    let allocated = allocated
+        .expect("a bounded count allocates")
+        .with_local("q", CValue::pointer(Pointer::null()))
+        .with_local("m", CValue::UInt64(m.clone()));
+    let Some(CValue::Pointer(old_pointer)) = allocated.locals().get("p") else {
+        panic!("malloc should assign a pointer");
+    };
+    let old_pointer = old_pointer.pointer().clone();
+    let assumptions = facts
+        .iter()
+        .fold(PureFactContext::new(), |assumptions, fact| {
+            assumptions.assume_proposition(Proposition::ConditionIs(fact.clone(), true))
+        });
+    let paths = execute_c_statement_paths(
+        &allocated,
+        &c_call_assign(
+            "q",
+            "realloc",
+            vec![
+                c_variable("p"),
+                CExpression::Multiply(Box::new(c_variable("m")), Box::new(c_uint64_literal(4))),
+            ],
+        ),
+        &assumptions,
+        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        &mut ExecutionBudget::default(),
+    )
+    .expect("a 64-bit realloc should execute");
+    let [
+        CStatementExecutionPath {
+            outcome: CStatementOutcome::Normal(pending),
+            ..
+        },
+    ] = paths.as_slice()
+    else {
+        panic!("realloc should produce one pending path: {paths:?}");
+    };
+    let Some(CValue::Pointer(pending_pointer)) = pending.locals().get("q") else {
+        panic!("realloc should assign a pending pointer");
+    };
+    let success = resolve_pending_heap_allocations(
+        pending,
+        &assumptions.assume_proposition(Proposition::ConditionIs(
+            pointer_is_null_condition(pending_pointer.pointer().clone()),
+            false,
+        )),
+    );
+    let Some(CValue::Pointer(resized)) = success.locals().get("q") else {
+        panic!("successful realloc should assign a heap pointer");
+    };
+    let extent = HeapExtent::new(
+        MachineTerm::uint64_multiply(m.clone(), MachineTerm::uint64_constant(4)),
+        HeapExtentKind::UInt64,
+    );
+    assert_eq!(
+        success.memory().live_heap_block_extent(resized.pointer()),
+        Some(&extent)
+    );
+    assert_eq!(success.memory().live_heap_block_extent(&old_pointer), None);
+    let old_extent = HeapExtent::new(
+        MachineTerm::uint64_multiply(n.clone(), MachineTerm::uint64_constant(4)),
+        HeapExtentKind::UInt64,
+    );
+    let facts = success.resources().facts();
+    assert!(!facts.contains(&CResourceFact::own_heap_allocation(
+        old_pointer.clone(),
+        &old_extent
+    )));
+    assert!(!facts.contains(&CResourceFact::own_memory(old_extent.range(
+        old_pointer,
+        n,
+        4
+    ))));
+    assert!(facts.contains(&CResourceFact::own_heap_allocation(
+        resized.pointer().clone(),
+        &extent
+    )));
+    let range = extent.range(resized.pointer().clone(), m, 4);
+    assert_eq!(range.kind(), RangeIndexKind::UInt64);
+    assert!(facts.contains(&CResourceFact::own_memory(range)));
 }
