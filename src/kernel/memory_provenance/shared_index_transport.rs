@@ -1,0 +1,489 @@
+//! Framed index reconstruction. Only selected native leaves enter the existing
+//! memory authority checks; shared arithmetic is walked once per distinct node.
+use super::*;
+use crate::kernel::{
+    KernelTerm, KernelTermNode, KernelType, MachineBinaryOp, MachineOperandView,
+    SharedMachineIntegerTerm,
+};
+use std::collections::HashMap;
+
+pub(super) fn transport_framed_index(
+    value: &SharedMachineIntegerTerm,
+    after: &CMemory,
+    assumptions: Option<(&PureFactContext, bool)>,
+) -> Option<SharedMachineIntegerTerm> {
+    let Some(root) = value.shared_operand() else {
+        return Some(SharedMachineIntegerTerm::index(
+            value.ty(),
+            transport_framed_atomic_bitvector(
+                value.retained_written_operand()?,
+                after,
+                assumptions,
+            )?,
+        ));
+    };
+    // Authority is local to this invocation: no answer survives a changed
+    // snapshot, fact context, registry, or direct-versus-general frame policy.
+    let mut results = HashMap::<u64, KernelTerm>::new();
+    let mut pending = vec![(root, false)];
+    while let Some((node, finish)) = pending.pop() {
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return None;
+        }
+        if results.contains_key(&node.id()) {
+            continue;
+        }
+        let children: Vec<_> = match node.node() {
+            KernelTermNode::MachineBinary { arguments, .. } => arguments.iter().collect(),
+            KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => vec![operand],
+            _ => vec![],
+        };
+        if !finish && !children.is_empty() {
+            pending.push((node, true));
+            pending.extend(children.into_iter().rev().map(|child| (child, false)));
+            continue;
+        }
+        let rewritten = if children.is_empty() {
+            let view = MachineOperandView::Shared(node);
+            let leaf = view
+                .literal()
+                .map(std::borrow::Cow::Owned)
+                .or_else(|| view.read_source())?;
+            let next = transport_framed_atomic_bitvector(&leaf, after, assumptions)?;
+            if matches!(node.node(), KernelTermNode::Legacy(_)) && next == *leaf {
+                node.clone()
+            } else {
+                let KernelType::C(ty) = node.ty() else {
+                    return None;
+                };
+                KernelTerm::retained_machine_operand(
+                    MachineIntegerType::from_c_type(*ty)?,
+                    MachineOperandView::Legacy(&next),
+                )
+            }
+        } else {
+            let children: Vec<_> = children
+                .iter()
+                .map(|child| results[&child.id()].clone())
+                .collect();
+            crate::kernel::proof::equality_rewrite::rebuild_transported_machine_node(
+                node, &children,
+            )?
+        };
+        results.insert(node.id(), rewritten);
+    }
+    SharedMachineIntegerTerm::from_shared(value.ty(), results.remove(&root.id())?)
+}
+
+// Preserve scale_int32/scale_int64's literal and signed-extension rules.
+// The destination already accepts a retained operand; it is not a native
+// output boundary.
+pub(super) fn transported_scaled_index(
+    value: SharedMachineIntegerTerm,
+    byte_width: i64,
+    wide: Option<bool>,
+) -> PointerOffsetTerm {
+    let view = value.operand_view();
+    if let Some(native) = view
+        .literal()
+        .map(std::borrow::Cow::Owned)
+        .or_else(|| view.read_source())
+    {
+        return match wide {
+            None => PointerOffsetTerm::scale_int32(native.into_owned(), byte_width),
+            Some(unsigned) => {
+                PointerOffsetTerm::scale_int64(native.into_owned(), byte_width, unsigned)
+            }
+        };
+    }
+    if wide == Some(false) {
+        let widened = |v: MachineOperandView<'_>| match v.cast() {
+            Some((MachineCastSpelling::Int64From32, _, _, child)) => {
+                Some(child.retain(MachineIntegerType::Int32))
+            }
+            _ => None,
+        };
+        if u32::try_from(byte_width).is_ok()
+            && let Some(child) = widened(view)
+        {
+            return transported_scaled_index(child, byte_width, None);
+        }
+        if let Some((MachineIntegerType::Int64, MachineBinaryOp::Multiply, [left, right])) =
+            view.binary()
+        {
+            for (index, stride) in [(left, right), (right, left)] {
+                if let (Some(index), Some(stride)) = (
+                    widened(index),
+                    stride.literal().and_then(|v| match v {
+                        int64_constant!(v) => Some(crate::kernel::constant_i64(v)),
+                        _ => None,
+                    }),
+                ) && let Ok(stride) = u32::try_from(stride)
+                    && let Some(width) = i64::from(stride).checked_mul(byte_width)
+                    && u32::try_from(width).is_ok()
+                {
+                    return transported_scaled_index(index, width, None);
+                }
+            }
+        }
+    }
+    if wide.is_none()
+        && let Some(v) = view.word32_constant()
+    {
+        return PointerOffsetTerm::Constant(i64::from(v as i32) * byte_width);
+    }
+    let constant = match wide {
+        Some(true) => view.uint64_constant().and_then(|v| i64::try_from(v).ok()),
+        Some(false) => view.int64_constant(),
+        None => None,
+    }
+    .and_then(|v| v.checked_mul(byte_width));
+    if let Some(constant) = constant {
+        return PointerOffsetTerm::Constant(constant);
+    }
+    // The existing offset representation observes both signed and unsigned
+    // wide indices through its Int64 carrier; `unsigned` carries the reading.
+    let value = view.retain(if wide.is_some() {
+        MachineIntegerType::Int64
+    } else {
+        MachineIntegerType::Int32
+    });
+    match wide {
+        None => PointerOffsetTerm::Int32Scaled { value, byte_width },
+        Some(unsigned) => PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width,
+            unsigned,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::{KernelTermExport, VerificationSession};
+
+    fn retained(ty: MachineIntegerType, term: &MachineTerm) -> SharedMachineIntegerTerm {
+        let root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(term));
+        SharedMachineIntegerTerm::from_shared(ty, root).unwrap()
+    }
+
+    fn parity(
+        ty: MachineIntegerType,
+        term: &MachineTerm,
+        after: &CMemory,
+        facts: Option<(&PureFactContext, bool)>,
+    ) {
+        let value = retained(ty, term);
+        let before = KernelTermExport::machine_export_count();
+        let result = transport_framed_index(&value, after, facts);
+        assert_eq!(before, KernelTermExport::machine_export_count());
+        // Deref on the old offset path read the structural operand, including
+        // registered names already imported as read descriptors.
+        let expected = transport_framed_atomic_bitvector(value.structural_value(), after, facts);
+        assert_eq!(result.is_some(), expected.is_some(), "{term:?}");
+        if let (Some(result), Some(expected)) = (result, expected) {
+            assert_eq!(
+                result.structural_value(),
+                retained(ty, &expected).structural_value(),
+                "{term:?}"
+            );
+            for width in [-4, 0, 1, 4] {
+                let wide = match ty {
+                    MachineIntegerType::Int32 => None,
+                    MachineIntegerType::Int64 => Some(false),
+                    MachineIntegerType::UInt64 => Some(true),
+                    _ => continue,
+                };
+                let exports = KernelTermExport::machine_export_count();
+                let offset = transported_scaled_index(result.clone(), width, wide);
+                assert_eq!(exports, KernelTermExport::machine_export_count());
+                let expected_offset = match wide {
+                    None => PointerOffsetTerm::scale_int32(expected.clone(), width),
+                    Some(unsigned) => {
+                        PointerOffsetTerm::scale_int64(expected.clone(), width, unsigned)
+                    }
+                };
+                match (&offset, &expected_offset) {
+                    (
+                        PointerOffsetTerm::Int32Scaled {
+                            value: a,
+                            byte_width: aw,
+                        },
+                        PointerOffsetTerm::Int32Scaled {
+                            value: b,
+                            byte_width: bw,
+                        },
+                    ) => {
+                        assert_eq!(aw, bw);
+                        assert_eq!(a.ty(), b.ty());
+                        assert_eq!(a.structural_value(), b.structural_value(), "{term:?}");
+                    }
+                    (
+                        PointerOffsetTerm::Int64Scaled {
+                            value: a,
+                            byte_width: aw,
+                            unsigned: au,
+                        },
+                        PointerOffsetTerm::Int64Scaled {
+                            value: b,
+                            byte_width: bw,
+                            unsigned: bu,
+                        },
+                    ) => {
+                        assert_eq!((aw, au, a.ty()), (bw, bu, b.ty()));
+                        assert_eq!(a.structural_value(), b.structural_value(), "{term:?}");
+                    }
+                    _ => assert_eq!(offset, expected_offset, "{term:?}, stride {width}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn framed_index_transport_preserves_native_constructor_rules() {
+        let _session = VerificationSession::enter();
+        let after = CMemory::new();
+        let x = MachineTerm::Variable(Variable(1018901));
+        for ty in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let constants: Vec<_> = [0, 1, 3]
+                .map(|v| {
+                    ty.constant_term(
+                        crate::kernel::MachineIntegerConstant::from_bits(ty.format(), v).unwrap(),
+                    )
+                    .unwrap()
+                })
+                .into_iter()
+                .collect();
+            for op in [
+                MachineBinaryOp::Add,
+                MachineBinaryOp::Subtract,
+                MachineBinaryOp::Multiply,
+                MachineBinaryOp::BitwiseAnd,
+                MachineBinaryOp::BitwiseOr,
+                MachineBinaryOp::ShiftLeft,
+            ] {
+                for a in std::iter::once(&x).chain(constants.iter()) {
+                    for b in std::iter::once(&x).chain(constants.iter()) {
+                        let term = MachineTerm::Binary {
+                            format: ty,
+                            op,
+                            left: Box::new(a.clone()),
+                            right: Box::new(b.clone()),
+                        };
+                        parity(ty, &term, &after, None);
+                    }
+                }
+            }
+        }
+        for (spelling, source, destination) in [
+            (
+                MachineCastSpelling::Int64From32,
+                MachineIntegerType::Int32,
+                MachineIntegerType::Int64,
+            ),
+            (
+                MachineCastSpelling::UInt64From32,
+                MachineIntegerType::UInt32,
+                MachineIntegerType::UInt64,
+            ),
+            (
+                MachineCastSpelling::Generic,
+                MachineIntegerType::Int32,
+                MachineIntegerType::UInt64,
+            ),
+        ] {
+            for operand in [
+                x.clone(),
+                MachineTerm::constant(3),
+                MachineTerm::add(x.clone(), x.clone()),
+            ] {
+                let term = MachineTerm::Cast {
+                    spelling,
+                    from: source,
+                    to: destination,
+                    value: Box::new(operand),
+                };
+                parity(destination, &term, &after, None);
+                parity(
+                    destination,
+                    &MachineTerm::Binary {
+                        format: destination,
+                        op: MachineBinaryOp::Multiply,
+                        left: Box::new(term),
+                        right: Box::new(MachineTerm::int64_constant(4)),
+                    },
+                    &after,
+                    None,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn framed_index_transport_retains_read_authority_at_each_snapshot() {
+        let _session = VerificationSession::enter();
+        let pointer = Pointer {
+            block: "transport-index".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new()
+            .with_block("transport-index", 16)
+            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
+        let load = MachineTerm::MemoryLoad(
+            crate::kernel::intern_c_memory(before.clone()),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        );
+        let term = MachineTerm::add(load.clone(), load.clone());
+        let facts = PureFactContext::new();
+        for after in [
+            before.clone(),
+            before.clone().store(
+                pointer.offset_by_bytes(8),
+                CValue::Int32(MachineTerm::constant(9)),
+            ),
+            before
+                .clone()
+                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9))),
+            before.clone().with_loop_memory_havoc_preserving_loans(
+                Variable(1018911),
+                &BTreeSet::new(),
+                None,
+                None,
+            ),
+            CMemory::new(),
+        ] {
+            for policy in [None, Some((&facts, true)), Some((&facts, false))] {
+                parity(MachineIntegerType::Int32, &term, &after, policy);
+            }
+        }
+        let unchanged = transport_framed_index(
+            &retained(MachineIntegerType::Int32, &term),
+            &CMemory::new(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(unchanged.structural_value(), &term);
+    }
+
+    #[test]
+    fn framed_index_transport_moves_registered_read_variables() {
+        let _session = VerificationSession::enter();
+        let pointer = Pointer {
+            block: "registered-index".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new().with_block("registered-index", 16);
+        let load = MachineTerm::MemoryLoad(
+            crate::kernel::intern_c_memory(before.clone()),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        );
+        let (variable, _) = crate::kernel::eval::load_variable_for_term(&load).unwrap();
+        let term = MachineTerm::add(
+            MachineTerm::Variable(variable),
+            MachineTerm::Variable(variable),
+        );
+        let after = before.clone().store(
+            pointer.offset_by_bytes(8),
+            CValue::Int32(MachineTerm::constant(9)),
+        );
+        let facts = PureFactContext::new();
+        parity(
+            MachineIntegerType::Int32,
+            &term,
+            &after,
+            Some((&facts, true)),
+        );
+    }
+
+    #[test]
+    fn framed_index_transport_keeps_opaque_refusals() {
+        let _session = VerificationSession::enter();
+        let term = MachineTerm::If {
+            condition: Box::new(ConditionTerm::Constant(true)),
+            then_term: Box::new(MachineTerm::constant(1)),
+            else_term: Box::new(MachineTerm::constant(2)),
+        };
+        let term = MachineTerm::add(term, MachineTerm::Variable(Variable(1018902)));
+        parity(MachineIntegerType::Int32, &term, &CMemory::new(), None);
+        assert!(
+            transport_framed_index(
+                &retained(MachineIntegerType::Int32, &term),
+                &CMemory::new(),
+                None
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn framed_index_transport_keeps_opaque_constant_readings() {
+        let _session = VerificationSession::enter();
+        let after = CMemory::new();
+        let null = MachineTerm::PointerAddress(
+            Box::new(Pointer::null()),
+            crate::kernel::AddressObjectClass::NONE,
+        );
+        let x = MachineTerm::Variable(Variable(1018912));
+        for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+            let one = if ty == MachineIntegerType::Int64 {
+                MachineTerm::int64_constant(1)
+            } else {
+                MachineTerm::uint64_constant(1)
+            };
+            let compound = MachineTerm::Binary {
+                format: ty,
+                op: MachineBinaryOp::Add,
+                left: Box::new(x.clone()),
+                right: Box::new(x.clone()),
+            };
+            for op in [
+                MachineBinaryOp::Add,
+                MachineBinaryOp::Subtract,
+                MachineBinaryOp::Multiply,
+                MachineBinaryOp::BitwiseAnd,
+                MachineBinaryOp::BitwiseOr,
+            ] {
+                for other in [one.clone(), compound.clone()] {
+                    parity(
+                        ty,
+                        &MachineTerm::Binary {
+                            format: ty,
+                            op,
+                            left: Box::new(null.clone()),
+                            right: Box::new(other.clone()),
+                        },
+                        &after,
+                        None,
+                    );
+                    parity(
+                        ty,
+                        &MachineTerm::Binary {
+                            format: ty,
+                            op,
+                            left: Box::new(other),
+                            right: Box::new(null.clone()),
+                        },
+                        &after,
+                        None,
+                    );
+                }
+            }
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/memory_provenance/shared_index_transport.rs");
+    }
+}

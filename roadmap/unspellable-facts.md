@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `f82fe90ac`, including merged PR #2573.
+Baseline for this revision: `0ddd7c65a`, including merged PR #2574.
 
 Already landed:
 
@@ -397,7 +397,7 @@ The remaining locations divide into these concrete groups:
 
 | Group | Remaining routes | Disposition |
 | --- | --- | --- |
-| Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_provenance` offset evidence and framed transport | Live checker migration; shared outer arithmetic does not eliminate native address children |
+| Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_provenance` exact-load normalization (framed transport is closed below) | Live checker migration; shared outer arithmetic does not eliminate native address children |
 | Wide indices and shallow pointer checks | Wide access reconstruction, strided-region membership, offset transport and fold-read summaries are closed below; snapshot equivalence and `pointer_block_bounds` remain | Retain width, signedness and exactness rules while closing the remaining callers |
 | Pointer fact/rewrite payloads | `arithmetic_special`, `equality_rewrite`, `fact_keys`, `fact_reasoning`, pointer-offset substitution and execution facts | Mixed construction/checking boundaries; migrate expression children without changing pointer semantics |
 | Resource and snapshot construction | quantified cells, memory-base roots, initialized-byte spelling, havoc identity, memory-load range collection | Mixed producer/checker boundaries, not merely printing |
@@ -568,8 +568,8 @@ width and exact-snapshot requirements; this does not broaden its rule family.
 
 Controls compare native/shared value answers, preserve changed-cell and width
 refusals, and reject cold arithmetic DAGs at 16, 64 and 256 levels with constant
-root-inspection work and zero exports. Framed pointer-offset transport and
-exact-load normalization remain open, as do the remaining implicit traits and
+root-inspection work and zero exports. Framed pointer-offset transport is
+closed below. Exact-load normalization remains open, as do the implicit traits and
 live checker migrations listed above.
 
 Validation: five focused tests passed. The full `scripts/check.sh --no-fail-fast`
@@ -583,7 +583,7 @@ The four canonicalization/read-selection walkers explicitly borrow retained
 native inputs after their shared-index guard. These eight call sites no longer
 depend on implicit `Deref`. Shared indices retain their exact structure and
 snapshots without entering the native walkers. This classifies existing native
-input paths; it does not close the live framed-transport or normalization exports.
+input paths. Framed transport is closed below; normalization exports remain open.
 
 Validation: `scripts/check.sh --no-fail-fast` exited 0 with 7,142 unit/API tests
 and the complete regular examples/mdtests. The cold run took 14m07s, including
@@ -624,8 +624,8 @@ precompiled test binary: 7,150 unit/API tests, 58 example projects and 5,180
 mdtests. The focused eight-test run includes deterministic 16/64/256-prefix
 scaling and zero-export checks. No nightly run.
 
-The distinct cumulative pointer-index producer, framed transport, exact-load
-normalization and the remaining compiler-audit groups are still open.
+The distinct cumulative pointer-index producer, exact-load normalization and
+the remaining compiler-audit groups are still open. Framed transport is closed below.
 
 #### Retained snapshot-equivalent pointer indices
 
@@ -706,8 +706,32 @@ tests, 58 example projects and 5,180 mdtests. Its precompiled-binary run took
 10m09s and emitted the ten-minute budget warning (preceding run: 9m41s). The
 extra wall time was distributed across existing tests; the five focused tests
 took 0.043s. This does not establish a cause for the variation. No limits were
-changed and no nightly suite was run. Framed transport and full exact-load
-normalization still use native reconstruction and remain open boundaries.
+changed and no nightly suite was run. Full exact-load normalization still uses
+native reconstruction and remains an open boundary.
+
+#### Framed pointer-index transport — closed
+
+Framed transport retains shared scaled indices through memory updates. An
+iterative, query-local walk visits each distinct arithmetic node once and
+rebuilds shared children. Only selected native leaves enter the existing
+memory-framing checks; no proof authority is cached across contexts or snapshots.
+Native inputs still use the native walker. Raw 32-bit operators, wide constructor
+constant readings, casts, stride simplification and the offset carrier convention
+retain their existing rules. Opaque leaves retain their existing transport
+refusals; this does not add a new memory equality rule.
+
+Six focused tests pass, covering constructor parity, opaque constant readings,
+registered load names, changed and unknown snapshots, overlapping stores, havoc,
+and refusal paths. Cold repeated-child DAGs at 16, 64 and 256 nodes retain
+near-linear deterministic work with zero machine-tree exports through the actual
+pointer-offset entry point, for signed 32-bit and signed/unsigned wide indices.
+The broader selected run passed 1,713 tests, including all nonignored scaling
+tests, memory provenance, rewriting, transport API, documentation and search
+boundaries, using the gate's existing 8 MiB test-thread stack. Formatting and
+documentation rendering passed; advisory Vale lint was unavailable. The full
+integration gate and nightly suite were not run locally; CI and the merge queue
+run the full gate. The complete split remains open; exact-load normalization is
+the next remaining reconstruction boundary.
 
 #### Classified boundaries and retained coverage
 

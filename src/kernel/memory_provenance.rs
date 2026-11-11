@@ -6490,21 +6490,25 @@ fn transport_framed_atomic_pointer_offset(
             transport_framed_atomic_pointer_offset(left, after, assumptions)?,
             transport_framed_atomic_pointer_offset(right, after, assumptions)?,
         ),
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => PointerOffsetTerm::scale_int32(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
+        PointerOffsetTerm::Int32Scaled { value, byte_width } => transported_scaled_index(
+            transport_framed_index(value, after, assumptions)?,
             *byte_width,
+            None,
         ),
         PointerOffsetTerm::Int64Scaled {
             value,
             byte_width,
             unsigned,
-        } => PointerOffsetTerm::scale_int64(
-            transport_framed_atomic_bitvector(value, after, assumptions)?,
+        } => transported_scaled_index(
+            transport_framed_index(value, after, assumptions)?,
             *byte_width,
-            *unsigned,
+            Some(*unsigned),
         ),
     })
 }
+
+mod shared_index_transport;
+use shared_index_transport::{transport_framed_index, transported_scaled_index};
 
 fn transport_framed_atomic_bitvector(
     term: &MachineTerm,
