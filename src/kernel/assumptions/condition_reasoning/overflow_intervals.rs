@@ -1204,7 +1204,6 @@ impl PureFactContext {
     /// one and lies in the range. Unlike [`Self::signed_interval`], it never
     /// reads bounds recorded on `term` itself, which bound only the wrapped
     /// value, so this is the question an overflow decision asks.
-
     pub(in crate::kernel) fn signed_interval_from_operands_view(
         &self,
         term: MachineOperandView<'_>,
