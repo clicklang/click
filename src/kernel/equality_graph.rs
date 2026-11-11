@@ -1658,6 +1658,21 @@ impl EqualityGraph {
         if let (V::Legacy(a), V::Legacy(b)) = (left, right) {
             return self.are_int32_equal(a, b);
         }
+        // Fixed-size leaves already have a native spelling. Preserve the
+        // direct scalar route without constructing Integer observations or
+        // exporting any shared expression.
+        let atoms = [left, right].map(|v| match v {
+            V::Legacy(term) => Some(std::borrow::Cow::Borrowed(term)),
+            V::Shared(_) => v
+                .literal()
+                .or_else(|| v.variable().copied().map(MachineTerm::Variable))
+                .map(std::borrow::Cow::Owned)
+                .or_else(|| v.read_source()),
+        });
+        if let [Some(left), Some(right)] = &atoms {
+            return self.are_int32_equal(left, right);
+        }
+
         let written = [left, right].map(|operand| match operand {
             V::Legacy(term) => Some(exact_read_comparison_input(term)),
             V::Shared(_) => None,
@@ -2072,6 +2087,52 @@ impl EqualityGraph {
         let node = state.terms.shared_int32_class(term);
         state.close(Vec::new());
         state.terms.signed_int32_interval(node)
+    }
+
+    pub(in crate::kernel) fn add_int32_equality_views(
+        &mut self,
+        left: crate::kernel::MachineOperandView<'_>,
+        right: crate::kernel::MachineOperandView<'_>,
+    ) -> bool {
+        use crate::kernel::MachineOperandView as V;
+        if let (V::Legacy(left), V::Legacy(right)) = (left, right) {
+            return self.add_int32_equality(left, right);
+        }
+        // Fixed-size leaves already have a native spelling. Preserve the
+        // direct scalar route without constructing Integer observations or
+        // exporting any shared expression.
+        let atoms = [left, right].map(|v| match v {
+            V::Legacy(term) => Some(std::borrow::Cow::Borrowed(term)),
+            V::Shared(_) => v
+                .literal()
+                .or_else(|| v.variable().copied().map(MachineTerm::Variable))
+                .map(std::borrow::Cow::Owned)
+                .or_else(|| v.read_source()),
+        });
+        if let [Some(left), Some(right)] = &atoms {
+            return self.add_int32_equality(left, right);
+        }
+
+        // Retain the scalar admission itself, rather than admitting a second
+        // Integer equality and reconstructing its scalar consequence.
+        let operands = [left, right].map(|v| v.retain(crate::kernel::MachineIntegerType::Int32));
+        let observations = operands.clone().map(crate::kernel::IntegerTerm::Machine);
+        let roots = [left, right].map(|v| {
+            crate::kernel::KernelTerm::retained_machine_operand(
+                crate::kernel::MachineIntegerType::Int32,
+                v,
+            )
+        });
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_expression_operands(&mut state, [], [], observations.iter());
+        state.has_scalar_inputs = true;
+        let changed = state.terms.add_shared_word_identity(&roots[0], &roots[1]);
+        state.close(Vec::new());
+        if changed {
+            let [left, right] = operands;
+            state.remember_input(inputs::Input::Int32Operands(left, right));
+        }
+        changed
     }
 
     /// Admit an already established int32 equality in this proof context.

@@ -9,7 +9,6 @@
 //! `docs/internals/resource-tracker.md` and `docs/internals/memory-dag.md`.
 
 use crate::kernel::binary_node;
-use crate::kernel::binary_term;
 use crate::kernel::memory_provenance::*;
 use crate::kernel::primitives::*;
 use crate::kernel::reasoning::*;
@@ -230,7 +229,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
     /// form keeps ordinary store edges out of the symbolic bound producer.
     Shallow,
     Indexed {
-        index: MachineTerm,
+        index: SharedMachineIntegerTerm,
         lower: RangeBoundEvidence,
         upper: RangeBoundEvidence,
     },
@@ -401,7 +400,7 @@ pub(in crate::kernel) enum RangeDisjointFromPointerEvidence {
         end: i64,
     },
     ForwardOffset {
-        offset: MachineTerm,
+        offset: SharedMachineIntegerTerm,
         positive: PositiveTermEvidence,
     },
 }
@@ -832,34 +831,51 @@ impl MemoryDagHopJustification {
 }
 
 impl PositiveTermEvidence {
-    pub(in crate::kernel) fn for_term(
-        term: &MachineTerm,
+    pub(in crate::kernel) fn for_view(
+        term: MachineOperandView<'_>,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
-        if signed_bitvector_constant(term).is_some_and(|value| value > 0) {
+        if crate::kernel::assumptions::signed_index_constant(term).is_some_and(|value| value > 0) {
             return Some(Self::Constant);
         }
-        let exact = ConditionTerm::signed_less_than(MachineTerm::constant(0), term.clone());
-        if assumptions.exact_condition_value(&exact) == Some(true) {
+        let exact = crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessThan,
+            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+            term,
+        );
+        if assumptions.selected_comparison_value(&exact) == Some(true) {
             return Some(Self::ExactCondition(exact));
         }
-        let lower_bound = ConditionTerm::signed_less_equal(MachineTerm::constant(1), term.clone());
-        (assumptions.exact_condition_value(&lower_bound) == Some(true))
+        let lower_bound = crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessEqual,
+            MachineOperandView::Legacy(&MachineTerm::constant(1)),
+            term,
+        );
+        (assumptions.selected_comparison_value(&lower_bound) == Some(true))
             .then_some(Self::OneLowerBound(lower_bound))
     }
 
-    fn checks(&self, term: &MachineTerm, assumptions: &PureFactContext) -> bool {
+    fn checks_view(&self, term: MachineOperandView<'_>, assumptions: &PureFactContext) -> bool {
         match self {
-            Self::Constant => signed_bitvector_constant(term).is_some_and(|value| value > 0),
+            Self::Constant => crate::kernel::assumptions::signed_index_constant(term)
+                .is_some_and(|value| value > 0),
             Self::ExactCondition(condition) => {
                 condition
-                    == &ConditionTerm::signed_less_than(MachineTerm::constant(0), term.clone())
-                    && assumptions.exact_condition_value(condition) == Some(true)
+                    == &crate::kernel::assumptions::index_comparison(
+                        CompareRelation::LessThan,
+                        MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                        term,
+                    )
+                    && assumptions.selected_comparison_value(condition) == Some(true)
             }
             Self::OneLowerBound(condition) => {
                 condition
-                    == &ConditionTerm::signed_less_equal(MachineTerm::constant(1), term.clone())
-                    && assumptions.exact_condition_value(condition) == Some(true)
+                    == &crate::kernel::assumptions::index_comparison(
+                        CompareRelation::LessEqual,
+                        MachineOperandView::Legacy(&MachineTerm::constant(1)),
+                        term,
+                    )
+                    && assumptions.selected_comparison_value(condition) == Some(true)
             }
         }
     }
@@ -912,8 +928,13 @@ impl RangeDisjointFromPointerEvidence {
                 range.int32_bounds().is_some()
                     && bytes <= range.element_width()
                     && forward_range_offset_from_pointer(range, pointer) == Some(offset.clone())
-                    && positive.checks(
-                        &MachineTerm::add(offset.clone(), range.start().clone()),
+                    && positive.checks_view(
+                        crate::kernel::assumptions::index_binary(
+                            MachineBinaryOp::Add,
+                            offset.operand_view(),
+                            MachineOperandView::Legacy(range.start()),
+                        )
+                        .operand_view(),
                         assumptions,
                     )
             }
@@ -1196,8 +1217,9 @@ impl PointerInRangeEvidence {
                     .exact_pointer_aliases(range.base())
                     .find_map(|base| {
                         let bytes = pointer
-                            .element_index_from_base_with_width(base, 1)?
-                            .as_const()?;
+                            .shared_element_index_from_base_with_width(base, 1)?
+                            .operand_view()
+                            .word32_constant()?;
                         if *pointer != base.offset_by_bytes(bytes) {
                             return None;
                         }
@@ -1246,22 +1268,34 @@ impl PointerInRangeEvidence {
         // align only this selected access through checked address
         // equality; the spelling supplies no range authority.
         let (start, _) = range.int32_bounds()?;
-        let index =
-            pointer.element_index_from_base_with_width(range.base(), range.element_width())?;
-        let binary_term!(Int32, Add, left, right) = &index else {
+        let index = pointer
+            .shared_element_index_from_base_with_width(range.base(), range.element_width())?;
+        let Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [left, right])) =
+            index.operand_view().binary()
+        else {
             return None;
         };
-        let candidates = [
-            binary_node!(Int32, Add, Box::new(start.clone()), right.clone()),
-            binary_node!(Int32, Add, left.clone(), Box::new(start.clone())),
-        ];
+        let start = MachineOperandView::Legacy(start);
+        let candidates = [[start, right], [left, start]].map(|operands| {
+            MachineOperandView::Shared(&crate::kernel::KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                operands.map(|v| {
+                    crate::kernel::KernelTerm::retained_machine_operand(
+                        MachineIntegerType::Int32,
+                        v,
+                    )
+                }),
+            ))
+            .retain(MachineIntegerType::Int32)
+        });
         for candidate in candidates {
             if candidate == index {
                 continue;
             }
             let alias = range
                 .base()
-                .offset_by_elements(candidate, range.element_width());
+                .offset_by_shared_elements(candidate, range.element_width());
             if pointer.blocks_proven_distinct(&alias)
                 || !assumptions.pointers_known_equal(pointer, &alias)
             {
@@ -1300,11 +1334,18 @@ impl PointerInRangeEvidence {
                 .find(|guard| assumptions.exact_condition_value(guard) == Some(true))
                 .map(|upper| Self::UnsignedIndexed { index, upper });
         }
-        let index =
-            pointer.element_index_from_base_with_width(range.base(), range.element_width())?;
-        let lower_condition =
-            ConditionTerm::signed_less_equal(range.start().clone(), index.clone());
-        let upper_condition = ConditionTerm::signed_less_than(index.clone(), range.end().clone());
+        let index = pointer
+            .shared_element_index_from_base_with_width(range.base(), range.element_width())?;
+        let lower_condition = crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessEqual,
+            MachineOperandView::Legacy(&range.start()),
+            index.operand_view(),
+        );
+        let upper_condition = crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessThan,
+            index.operand_view(),
+            MachineOperandView::Legacy(&range.end()),
+        );
         Some(Self::Indexed {
             index,
             lower: RangeBoundEvidence::for_true_condition(&lower_condition, assumptions)?,
@@ -1381,7 +1422,7 @@ impl PointerInRangeEvidence {
             return false;
         }
         let Some(index) =
-            pointer.element_index_from_base_with_width(range.base(), range.element_width())
+            pointer.shared_element_index_from_base_with_width(range.base(), range.element_width())
         else {
             return false;
         };
@@ -1389,10 +1430,18 @@ impl PointerInRangeEvidence {
             return false;
         }
         lower.checks(
-            &ConditionTerm::signed_less_equal(range.start().clone(), index.clone()),
+            &crate::kernel::assumptions::index_comparison(
+                CompareRelation::LessEqual,
+                MachineOperandView::Legacy(&range.start()),
+                index.operand_view(),
+            ),
             assumptions,
         ) && upper.checks(
-            &ConditionTerm::signed_less_than(index, range.end().clone()),
+            &crate::kernel::assumptions::index_comparison(
+                CompareRelation::LessThan,
+                index.operand_view(),
+                MachineOperandView::Legacy(&range.end()),
+            ),
             assumptions,
         )
     }
@@ -1876,13 +1925,15 @@ mod wide_range_reader_tests {
             &MachineTerm::constant(4)
         ));
         let indexed = PointerInRangeEvidence::Indexed {
-            index: 0u32.into(),
+            index: MachineOperandView::Legacy(&MachineTerm::constant(0))
+                .retain(MachineIntegerType::Int32),
             lower: RangeBoundEvidence::Intrinsic,
             upper: RangeBoundEvidence::Intrinsic,
         };
         assert!(!indexed.checks(&base, &wide, &facts));
         let forward = RangeDisjointFromPointerEvidence::ForwardOffset {
-            offset: 1u32.into(),
+            offset: MachineOperandView::Legacy(&MachineTerm::constant(1))
+                .retain(MachineIntegerType::Int32),
             positive: PositiveTermEvidence::Constant,
         };
         assert!(!forward.checks(&wide, &base, 4, &facts));

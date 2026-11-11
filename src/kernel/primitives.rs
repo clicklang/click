@@ -4,8 +4,7 @@ use super::api::{
 };
 use super::memory_provenance::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEqualityEvidence};
 use super::reasoning::{
-    bitvector_terms_proven_equal_for_memory_resolution, collect_or_cases,
-    instantiate_range_fold_step, memory_snapshots_proven_equal_at_pointer,
+    collect_or_cases, instantiate_range_fold_step, memory_snapshots_proven_equal_at_pointer,
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
     signed_bitvector_constant, signed_i64_bitvector_constant,
 };

@@ -1209,7 +1209,6 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
 
 #[test]
 fn indexed_byte_separation_ignores_unrelated_external_ranges() {
-    let _session = crate::kernel::VerificationSession::enter();
     let pointer = |id| Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Variable(Variable(id)),
@@ -1222,6 +1221,7 @@ fn indexed_byte_separation_ignores_unrelated_external_ranges() {
     let q = pointer(970_122);
     let mut previous = None;
     for size in [16, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context

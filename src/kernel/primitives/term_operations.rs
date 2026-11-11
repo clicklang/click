@@ -5001,6 +5001,26 @@ impl Pointer {
         }
     }
 
+    pub(in crate::kernel) fn offset_by_shared_elements(
+        &self,
+        elements: SharedMachineIntegerTerm,
+        byte_width: u32,
+    ) -> Self {
+        let displacement = match elements.operand_view().word32_constant() {
+            Some(value) => {
+                PointerOffsetTerm::Constant(i64::from(value as i32) * i64::from(byte_width))
+            }
+            None => PointerOffsetTerm::Int32Scaled {
+                value: elements,
+                byte_width: i64::from(byte_width),
+            },
+        };
+        Self {
+            block: self.block.clone(),
+            offset: PointerOffsetTerm::add(self.offset.clone(), displacement),
+        }
+    }
+
     pub(in crate::kernel) fn offset_by_elements(
         &self,
         elements: MachineTerm,
@@ -5098,7 +5118,7 @@ impl Pointer {
             }
             _ => {
                 if let Some(rest) = offset_less_base(&self.offset, &base.offset)
-                    && let Some(index) = element_index_of_difference(&rest, byte_width)
+                    && let Some(index) = native_element_index_of_difference(&rest, byte_width)
                 {
                     return Some(index);
                 }
@@ -5107,6 +5127,64 @@ impl Pointer {
                     crate::kernel::reasoning::element_index_from_offset(&base.offset, byte_width),
                 ) {
                     Some(MachineTerm::subtract(pointer_index, base_index))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    pub(in crate::kernel) fn shared_element_index_from_base_with_width(
+        &self,
+        base: &Self,
+        byte_width: u32,
+    ) -> Option<SharedMachineIntegerTerm> {
+        if self.block != base.block {
+            return None;
+        }
+
+        if self.offset == base.offset {
+            return Some(
+                MachineOperandView::Legacy(&MachineTerm::constant(0))
+                    .retain(MachineIntegerType::Int32),
+            );
+        }
+
+        if base.offset == PointerOffsetTerm::Constant(0) {
+            return crate::kernel::reasoning::shared_element_index_from_offset(
+                &self.offset,
+                byte_width,
+            );
+        }
+
+        match &self.offset {
+            PointerOffsetTerm::Add(left, right) if left.as_ref() == &base.offset => {
+                crate::kernel::reasoning::shared_element_index_from_offset(right, byte_width)
+            }
+            PointerOffsetTerm::Add(left, right) if right.as_ref() == &base.offset => {
+                crate::kernel::reasoning::shared_element_index_from_offset(left, byte_width)
+            }
+            _ => {
+                if let Some(rest) = offset_less_base(&self.offset, &base.offset)
+                    && let Some(index) = element_index_of_difference(&rest, byte_width)
+                {
+                    return Some(index);
+                }
+                if let (Some(pointer_index), Some(base_index)) = (
+                    crate::kernel::reasoning::shared_element_index_from_offset(
+                        &self.offset,
+                        byte_width,
+                    ),
+                    crate::kernel::reasoning::shared_element_index_from_offset(
+                        &base.offset,
+                        byte_width,
+                    ),
+                ) {
+                    Some(crate::kernel::assumptions::index_binary(
+                        MachineBinaryOp::Subtract,
+                        pointer_index.operand_view(),
+                        base_index.operand_view(),
+                    ))
                 } else {
                     None
                 }
@@ -5136,10 +5214,7 @@ impl Pointer {
             return None;
         }
         if self.offset == base.offset {
-            return Some(ExactElementDelta {
-                index: MachineTerm::constant(0),
-                constant: 0,
-            });
+            return Some(ExactElementDelta::zero());
         }
         if base.offset == PointerOffsetTerm::Constant(0) {
             return exact_element_delta_from_offset(&self.offset, byte_width);
@@ -5170,7 +5245,7 @@ impl Pointer {
 /// as the kernel spells an index less a constant: a negative trailing
 /// constant is `index - c`, the form [`MachineTerm::subtract`] gives
 /// `(b + i) - (b + c)`, rather than the residue `index + (2^32 - c)`.
-fn element_index_of_difference(
+fn native_element_index_of_difference(
     difference: &PointerOffsetTerm,
     byte_width: u32,
 ) -> Option<MachineTerm> {
@@ -5188,6 +5263,28 @@ fn element_index_of_difference(
         ));
     }
     crate::kernel::reasoning::element_index_from_offset(difference, byte_width)
+}
+
+fn element_index_of_difference(
+    difference: &PointerOffsetTerm,
+    byte_width: u32,
+) -> Option<SharedMachineIntegerTerm> {
+    if let PointerOffsetTerm::Add(symbolic, constant) = difference
+        && let PointerOffsetTerm::Constant(bytes) = constant.as_ref()
+        && *bytes < 0
+    {
+        let elements = crate::kernel::reasoning::shared_element_index_from_offset(
+            &PointerOffsetTerm::Constant(-bytes),
+            byte_width,
+        )?;
+        return Some(crate::kernel::assumptions::index_binary(
+            MachineBinaryOp::Subtract,
+            crate::kernel::reasoning::shared_element_index_from_offset(symbolic, byte_width)?
+                .operand_view(),
+            elements.operand_view(),
+        ));
+    }
+    crate::kernel::reasoning::shared_element_index_from_offset(difference, byte_width)
 }
 
 /// `offset - base`, exactly, as the summands of `offset` that `base` does not
