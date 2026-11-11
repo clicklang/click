@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `16b5a3b0a`, including merged PR #2560.
+Baseline for this revision: `472fdd1fe`, including merged PR #2562.
 
 Already landed:
 
@@ -556,6 +556,27 @@ Validation: the full `scripts/check.sh --no-fail-fast` gate exited 0 in 9m01s:
 current master and reducing only the unrelated-fact test multiplier, all six
 focused tests passed. The final growth test took 0.184s, retaining its three
 DAG sizes and work/export assertions. No nightly suite ran.
+
+#### Retained pointer-index memory evidence
+
+`pointer_offsets_match_from_memory_derivations` uses the existing shared int32
+value-equality and explicit memory-derivation queries for scaled indices.
+`pointer_offset_equality_evidence` and its typed checker select read sources
+through operand views instead of exporting shared arithmetic merely to inspect
+its root. The native atomic evidence checker still enforces its read-root,
+width and exact-snapshot requirements; this does not broaden its rule family.
+
+Controls compare native/shared value answers, preserve changed-cell and width
+refusals, and reject cold arithmetic DAGs at 16, 64 and 256 levels with constant
+root-inspection work and zero exports. Framed pointer-offset transport and
+exact-load normalization remain open; canonicalization's already-guarded native
+input branches still need explicit conversion classification before removing
+the implicit traits.
+
+Validation: five focused tests passed. The full `scripts/check.sh --no-fail-fast`
+gate exited 0 in 9m17s: 7,138 unit/API tests, 58 examples and 5,160 mdtests
+passed. The subsequent rebase adds only an unrelated CLI change; no tested
+kernel source changed. No nightly suite ran.
 
 #### Classified boundaries and retained coverage
 
