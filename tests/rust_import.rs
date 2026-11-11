@@ -5470,36 +5470,6 @@ fn library_iterators_prove_chunks_exact_by_its_contract() {
     );
 }
 
-/// The example's loop, which reads the first and last byte of each chunk,
-/// proved under `"iterators": "library"`: the chunk a pass binds is
-/// `iter.nth(0)`, placed in `bytes` by `nth_chunks_exact`, and each read
-/// owes its offset's bound as a machine value. The loop carries where its
-/// iterator stands as one invariant, `iter == start.after(iterations)`.
-#[test]
-#[ignore = "nightly: 25 s, over the gate's per-test budget (2026-11-11)"]
-fn library_iterators_prove_a_loop_that_reads_its_chunks() {
-    let p =
-        Project::with_library_iterators(include_str!("../examples/rust-chunks-exact/chunks.rs"));
-    p.refresh().unwrap();
-    let prepared = p.prepared().unwrap();
-    let sidecar = include_str!("rust_import/library_chunks_loop.click");
-    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
-    for invalid in [
-        sidecar.replace(
-            "ensures result == bytes.len() % 4u64;",
-            "ensures result == bytes.len() % 4u64 + 1u64;",
-        ),
-        // The second read is of the chunk's last byte: its bound is owed.
-        sidecar.replace(
-            "                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64 + 3u64) < to_integer(bytes.len());\n",
-            "",
-        ),
-    ] {
-        assert_ne!(invalid, sidecar, "negative proof must change the sidecar");
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
-    }
-}
-
 fn chunks_loop_project(by_reference: bool) -> (Project, String) {
     let source = include_str!("../examples/rust-chunks-exact/chunks.rs");
     let source = if by_reference {
@@ -5512,19 +5482,16 @@ fn chunks_loop_project(by_reference: bool) -> (Project, String) {
     };
     let sidecar = include_str!("../examples/rust-chunks-exact/chunks.click")
         .replace("chunks.rs", "borrow.rs");
-    let p = Project::new(&source);
+    // The proof names the loop's iterator as `iter` and the library's
+    // contract, so it is the same proof whether the loop consumes the
+    // iterator or borrows it.
+    let p = Project::with_library_iterators(&source);
     p.refresh().unwrap();
-    let sidecar = if by_reference {
-        sidecar.replace("iter_", "chunks_")
-    } else {
-        sidecar
-    };
     (p, sidecar)
 }
 
 fn check_chunks_loop_claims(by_reference: bool) {
     let (p, sidecar) = chunks_loop_project(by_reference);
-    let iterator = if by_reference { "chunks" } else { "iter" };
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     for invalid in [
@@ -5534,10 +5501,15 @@ fn check_chunks_loop_claims(by_reference: bool) {
         ),
         sidecar.replace("views bytes[0..bytes.len()];", ""),
         sidecar.replace(
-            &format!("invariant to_integer({iterator}_remaining % 4u64) == to_integer(0u64);"),
-            &format!("invariant to_integer({iterator}_remaining % 4u64) == to_integer(1u64);"),
+            "invariant to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);",
+            "invariant to_integer(iter.len()) + iterations + 1 == to_integer(bytes.len() / 4u64);",
         ),
         sidecar.replace("bytes[k] == old(bytes[k])", "bytes[k] != old(bytes[k])"),
+        // The second read is of the chunk's last byte: its bound is owed.
+        sidecar.replace(
+            "                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64 + 3u64) < to_integer(bytes.len());\n",
+            "",
+        ),
     ] {
         assert_ne!(invalid, sidecar, "negative proof must change the sidecar");
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());

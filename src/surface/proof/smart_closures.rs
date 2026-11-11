@@ -2625,7 +2625,16 @@ impl<'a> Proof<'a> {
         // reified every earlier member first, and the binary descent that
         // follows a refusal repeated that at each level. The result does not
         // depend on the order.
-        let surfaces = if let Some(surface) = self.surface_goal() {
+        // A member is spelled as its loop head writes it, the way an
+        // `ensures` is: each invariant guarded by the ones declared before
+        // it, one pass on where it reads `iterations`, then the `decreases`
+        // members. A written form is kept only when it lowers back to its
+        // leaf. A leaf no written form matches, such as a guard lowering
+        // adds, takes the goal's own spelling when the goal has one, and is
+        // otherwise synthesized from the kernel goal; either is likewise
+        // kept only when it lowers back. Written text comes first because it
+        // prints as it was read, which a synthesized form need not.
+        let goal_surfaces = self.surface_goal().and_then(|surface| {
             let mut pending = vec![surface];
             let mut surfaces = Vec::new();
             while let Some(surface) = pending.pop() {
@@ -2636,50 +2645,67 @@ impl<'a> Proof<'a> {
                     surfaces.push(surface.clone());
                 }
             }
-            if surfaces.len() != leaves.len() {
+            (surfaces.len() == leaves.len()).then_some(surfaces)
+        });
+        if self.surface_goal().is_some() && goal_surfaces.is_none() {
+            return None;
+        }
+        // A goal that carries its own spelling keeps it for the ranking
+        // members, which are compared with the iteration's entry value.
+        let written = self
+            .written_bundle_member_surfaces(goal_surfaces.is_none())
+            .unwrap_or_default();
+        // Each written form is lowered at most once, on first use.
+        let mut lowered: Vec<Option<Option<Proposition>>> = vec![None; written.len()];
+        let mut surfaces = vec![None; leaves.len()];
+        // A written form for `goal`: one that lowers to it, or, for a member
+        // behind guards, the implication of its guard's and its body's
+        // written forms. The closer drops a guard it has already decided, so
+        // a guarded member is matched part by part, not as one whole.
+        fn written_form(
+            proof: &Proof<'_>,
+            goal: &Proposition,
+            written: &[ClickProposition],
+            lowered: &mut [Option<Option<Proposition>>],
+        ) -> Option<ClickProposition> {
+            for (index, surface) in written.iter().enumerate() {
+                let candidate = lowered[index].get_or_insert_with(|| {
+                    proof
+                        .lower_surface_goal(surface, "loop invariant bundle member")
+                        .ok()
+                });
+                if candidate.as_ref().is_some_and(|candidate| {
+                    crate::kernel::proof::propositions_are_alpha_equal(candidate, goal)
+                }) {
+                    return Some(surface.clone());
+                }
+            }
+            let Proposition::Implies(guard, body) = goal else {
                 return None;
-            }
-            for (surface, goal) in surfaces.iter().zip(&leaves).rev() {
-                let lowered = self
-                    .lower_surface_goal(surface, "conjunction certificate leaf")
-                    .ok()?;
-                if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal) {
-                    return None;
-                }
-            }
-            surfaces
-        } else {
-            // A member is spelled as its loop head writes it, the way an
-            // `ensures` is: each invariant guarded by the ones declared
-            // before it, then the `decreases` members. A written form is kept
-            // only when it lowers back to its leaf; a leaf it does not match,
-            // such as a guard lowering adds, is synthesized from the kernel
-            // goal instead, which is likewise kept only when it lowers back.
-            let written = self.written_bundle_member_surfaces().unwrap_or_default();
-            // Each written form is lowered at most once, on first use.
-            let mut lowered: Vec<Option<Option<Proposition>>> = vec![None; written.len()];
-            let mut surfaces = Vec::with_capacity(leaves.len());
-            for goal in &leaves {
-                let mut matched = None;
-                for (index, surface) in written.iter().enumerate() {
-                    let candidate = lowered[index].get_or_insert_with(|| {
-                        self.lower_surface_goal(surface, "loop invariant bundle member")
-                            .ok()
-                    });
-                    if candidate.as_ref().is_some_and(|candidate| {
-                        crate::kernel::proof::propositions_are_alpha_equal(candidate, goal)
-                    }) {
-                        matched = Some(surface.clone());
-                        break;
+            };
+            Some(ClickProposition::Implies(
+                Box::new(written_form(proof, guard, written, lowered)?),
+                Box::new(written_form(proof, body, written, lowered)?),
+            ))
+        }
+        for (position, goal) in leaves.iter().enumerate().rev() {
+            let matched = written_form(self, goal, &written, &mut lowered);
+            surfaces[position] = Some(match (matched, &goal_surfaces) {
+                (Some(surface), _) => surface,
+                (None, Some(goal_surfaces)) => {
+                    let surface = &goal_surfaces[position];
+                    let lowered = self
+                        .lower_surface_goal(surface, "conjunction certificate leaf")
+                        .ok()?;
+                    if !crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal) {
+                        return None;
                     }
+                    surface.clone()
                 }
-                match matched {
-                    Some(surface) => surfaces.push(surface),
-                    None => surfaces.push(self.synthesized_bundle_member_surface(goal)?),
-                }
-            }
-            surfaces
-        };
+                (None, None) => self.synthesized_bundle_member_surface(goal)?,
+            });
+        }
+        let surfaces = surfaces.into_iter().collect::<Option<Vec<_>>>()?;
         Some(surfaces)
     }
 

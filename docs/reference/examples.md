@@ -19,8 +19,9 @@ project's README gives the pinned compiler-import setup and ordinary
 verification commands.
 
 `examples/rust-chunks-exact/` verifies stored shared byte-chunk iteration and
-its fixed remainder. The proof tracks the cursor and remaining complete range
-without a generated processed count; chunk reads use the original byte views.
+its fixed remainder. The iterator is a value of the library's `ChunksExact`
+type and the proof cites that type's contract; chunk reads use the original
+byte views.
 
 `examples/multifile-registry/` specifies a registry across four C translation
 units and two headers. It covers shared updates, independent same-named private

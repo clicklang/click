@@ -5612,6 +5612,33 @@ fn synthesize_surface_algebraic(
             {
                 return Some(ContractExpression::RegionResult(region));
             }
+            // A value a local holds, a Rust local of an enum, a `Vec` or a
+            // library iterator, is spelled by that local: now, or at the
+            // snapshot the goal reads.
+            let held_by = |state: &CState| {
+                state
+                    .locals()
+                    .names_holding_algebraic(term)
+                    .first()
+                    .map(|name| {
+                        ContractExpression::CFragment(CExpression::Variable(
+                            surface_local_name(name).to_string(),
+                        ))
+                    })
+            };
+            if let Some(local) = held_by(state) {
+                return Some(local);
+            }
+            if let Some(local) = SYNTHESIS_SNAPSHOT_STATE.with(|slot| {
+                let slot = slot.borrow();
+                let (state, selector) = slot.as_ref()?;
+                Some(ContractExpression::At {
+                    selector: selector.clone(),
+                    expression: Box::new(held_by(state)?),
+                })
+            }) {
+                return Some(local);
+            }
             let origin = crate::kernel::model_fields::registered_model_field_origin(*variable)?;
             let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
             let field_at = |state: &CState| {
