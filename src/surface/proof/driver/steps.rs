@@ -334,49 +334,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         step: ProofStep,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
-        // A goal one step of wrapping uint32 arithmetic away from a listed
-        // premise (a predecessor, a successor under a strict bound, the
-        // descent of a difference) is closed by the uint32 lemma for that
-        // step, recorded as the `apply` step it is.
-        if let ProofStep::ArithmeticUsing(premises) = &step
-            && let Some(proof) = crate::kernel::search::ProofSearch::try_unsigned_order_step_using(
-                driver_proof,
-                premises,
-            )
-        {
-            return Ok(proof);
-        }
-        // A 64-bit order or equality is proved through its Integer
-        // observations. A comparison of exact observations is its native
-        // comparison, so the ordinary certificates read 64-bit premises as
-        // Integer facts directly, and go first; the bridge route, which
-        // restates each premise, runs only when they fail, and its reason
-        // is the one reported.
         if let ProofStep::ArithmeticUsing(premises) = &step {
-            let ordinary = driver_proof
-                .driver()
-                .apply_step_without_outcome_wrapping_after_wide(step.clone());
-            if ordinary.is_ok() {
-                return ordinary;
-            }
-            // A disequality `a != b` holds when the listed premises refute
-            // `a == b`; its refutation's reason is the one reported.
-            if let Some(refuted) = crate::kernel::search::ProofSearch::disequality_by_refutation(
+            return crate::kernel::search::ProofSearch::apply_arithmetic_using(
                 driver_proof,
                 premises,
-            ) {
-                return refuted;
-            }
-            return match crate::kernel::search::ProofSearch::try_wide_arithmetic_using(
-                driver_proof,
-                premises,
-            ) {
-                Ok(proof) => Ok(proof),
-                Err(Some(reason)) => Err(driver_proof.step_error(format!(
-                    "arithmetic read the current goal as a 64-bit comparison: {reason}"
-                ))),
-                Err(None) => ordinary,
-            };
+            );
         }
         driver_proof
             .driver()
