@@ -604,7 +604,7 @@ fn collect_proposition_bitvector_variables_one(
             collect_memory_bitvector_variables(before, variables);
             collect_memory_bitvector_variables(after, variables);
             collect_pointer_bitvector_variables(allocation_base, variables);
-            collect_bitvector_variables(bytes, variables);
+            collect_bitvector_variables(bytes.bytes(), variables);
         }
         Proposition::And(left, right)
         | Proposition::Or(left, right)

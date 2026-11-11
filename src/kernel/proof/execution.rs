@@ -4945,7 +4945,7 @@ fn checked_interface_effect_facts_along(
 
 fn conditional_heap_frees(
     arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
-) -> [Vec<(Pointer, MachineTerm)>; 2] {
+) -> [Vec<(Pointer, crate::kernel::HeapExtent)>; 2] {
     std::array::from_fn(|arm_index| {
         arm_effect_facts[arm_index]
             .fact_iter()
@@ -4966,14 +4966,14 @@ fn interface_resources_guard_heap_frees(
     arm_resources: &[Vec<CResourceFact>; 2],
     arm_states: [&CState; 2],
     arm_facts: [&ProofFacts; 2],
-    heap_frees: &[Vec<(Pointer, MachineTerm)>; 2],
+    heap_frees: &[Vec<(Pointer, crate::kernel::HeapExtent)>; 2],
 ) -> bool {
-    let has_allocation = |arm_index: usize, base: &Pointer, bytes: &MachineTerm| {
+    let has_allocation = |arm_index: usize, base: &Pointer, bytes: &crate::kernel::HeapExtent| {
         arm_resources[arm_index].iter().any(|resource| {
             if resource
-                .allocation()
+                .allocation_extent()
                 .is_some_and(|(candidate_base, candidate_bytes)| {
-                    candidate_base == base && candidate_bytes == bytes
+                    candidate_base.pointer() == base && &candidate_bytes == bytes
                 })
             {
                 return true;
@@ -4991,9 +4991,9 @@ fn interface_resources_guard_heap_frees(
             )
             .is_some_and(|expanded| {
                 expanded.facts().iter().any(|fact| {
-                    fact.allocation()
+                    fact.allocation_extent()
                         .is_some_and(|(candidate_base, candidate_bytes)| {
-                            candidate_base == base && candidate_bytes == bytes
+                            candidate_base.pointer() == base && &candidate_bytes == bytes
                         })
                 })
             })

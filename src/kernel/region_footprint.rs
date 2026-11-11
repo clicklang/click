@@ -103,12 +103,7 @@ impl RegionFootprint {
                     ..
                 } => {
                     extra_effect = true;
-                    members.push_back(CResource::Memory(CMemoryRange::new_with_element_width(
-                        allocation_base.clone(),
-                        0u32.into(),
-                        bytes.clone(),
-                        1,
-                    )));
+                    members.push_back(CResource::Memory(bytes.byte_range(allocation_base.clone())));
                 }
                 _ => {}
             }

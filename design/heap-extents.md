@@ -2,7 +2,9 @@
 
 Status: option (a) accepted by the maintainer, 2026-11-10 (decisions D1-D6
 below). PR 0 (this note and a bug fix) has landed; PR 1 (the tagged extent,
-stage 1) and PR 2 (kernel 64-bit `malloc` and `free`, stage 2) are done. Line numbers in section 1 are at `origin/master` e01ca8136
+stage 1), PR 2 (kernel 64-bit `malloc` and `free`, stage 2) and PR 3 (the
+sidecar and contract `uint64` byte count, stage 3) are done; stage 4
+(`calloc` and `realloc`) is open. Line numbers in section 1 are at `origin/master` e01ca8136
 plus PR 0's changes (`statements.rs`, `primitives.rs`); stage 1 names its
 sites by function.
 
@@ -339,18 +341,79 @@ the `UInt64` kind.
    `normalizing_64_bit_allocation_tokens_in_distinct_heap_blocks_is_linear`.
    The surface `stores_beside_many_owned_ranges` and `allocation_continuity`
    copies need a 64-bit block to cross a call, so they move to stage 3.
-3. **Sidecar and contract 64-bit byte count, and docs.** `allocation` argument 1
-   accepts `uint64` (D4: `primitives.click`, `declaration_expansion.rs:926`,
-   `type_validation.rs:3055-3090`); `functions.rs:19235` accepts `n * 8u64` and
-   a `CValue::UInt64` count under the same no-wrap decision. Docs: `c.md` heap
-   and extern-allocator sections, the language-reference primitive entry, the
-   library reference. Regressions: extern `produces allocation(result, bytes)`
-   with `size_t bytes` and `result[0..bytes]` passes (replaces
-   `an_extern_allocator_with_a_64_bit_extent_names_the_32_bit_heap_extent.md`);
-   a callee `consumes allocation(p, n)` over a malloc'd wide block passes; an
-   `int32` spelling against a `uint64` token is refused naming the kinds (D5);
-   `an_extern_allocator_states_a_bounded_64_bit_extent_as_int32.md` unchanged.
-   Closes the step 7 item and its intended regression.
+3. **Done: sidecar and contract 64-bit byte count, and docs.** `allocation`
+   argument 1 stays declared `int32` (`primitives.click`,
+   `declaration_expansion.rs`) and also accepts `uint64` (D4):
+   `resource_types_compatible` in `type_validation.rs` (its type message now
+   names both formats, and refuses a signed 64-bit count),
+   `c_value_matches_allocation_extent` in surface lowering, and the kernel's
+   argument type check in `evaluate_function_declared_resource_spec`
+   (`functions.rs`). There a `uint64` count goes through
+   `uint64_allocation_extent_argument`: a constant in `1..=INT32_MAX` is the
+   32-bit extent (`16u64` is `16`, as `malloc` makes it, D2); any other value
+   is a 64-bit extent only under `malloc`'s decision, now shared as
+   `uint64_heap_extent_bytes_are_exact` (`eval/statements.rs`):
+   `1 <= E <= PTRDIFF_MAX`, and for a top-level product with a constant `k`,
+   `1 <= n <= PTRDIFF_MAX / k`; a product of two symbolic factors is refused.
+   The ordinary evaluator gives `n * 4u64` the same `uint64` product term as
+   `AllocationSize::scaled`, so no `e * 4` shortcut is needed. The decision
+   is made wherever a token is formed (a requirement at a call, a clause
+   produced at an exit, a clause an opaque or `extern` call returns to its
+   caller) and assumed where the clause was established elsewhere: a
+   contract's own entry clauses and a held body
+   (`assume_entry_clause_extents`). Soundness: every `uint64` token in a
+   context was formed under the decision, by `malloc` or by such an
+   evaluation, so `uint64_element_count_from_bytes` still reads only exact
+   products; an entry clause is established by every caller, which decides
+   the clause instantiated with its arguments, so a caller cannot pass
+   `allocation(p, k * 4u64)` for a `k` whose product wrapped onto its own
+   block's extent.
+   D5: `allocation_extent_kind_refusal` (`functions.rs`), on a call's
+   missing `allocation` requirement, finds the caller's token at the same
+   base by the context's argument index and, when its format differs,
+   refuses naming both formats. `allocation_continuity` takes the two
+   `HeapExtent`s and compares same-format extents in their format
+   (`c_values_proven_equal_for_memory_resolution`, `uint64` equality for two
+   64-bit ones); a cross-format pair at bases not proven distinct is
+   `AllocationContinuity::CrossKind`, refused at the call.
+   Readers left conservative by stage 2 that a crossing block reaches:
+   `Proposition::CHeapAllocationFreed.bytes` is now a `HeapExtent`, so
+   `heap_free_effect_is_valid` reinstates a claimed block's extent in its own
+   format, the region footprint of a free uses the extent's byte range (it
+   built an `Int32` range from a `uint64` term), the join guard of
+   conditional frees (`interface_resources_guard_heap_frees`) compares
+   extents, and `heap_allocation_proven_separate_from_pointer` reads the
+   extent's element count in its kind. The `CMemoryDerivation` byte terms
+   stay untyped and are read as 32-bit there (a 64-bit block's term spells
+   no 32-bit element count, so the separation is not proved), as are
+   `pointer_at_block_end_condition`, `proves_access_from_memory_block` and
+   zeroed prefixes. Regressions (mdtests):
+   `an_extern_allocator_states_a_size_t_extent` (replaces
+   `an_extern_allocator_with_a_64_bit_extent_names_the_32_bit_heap_extent.md`),
+   `an_extern_size_t_extent_whose_product_may_wrap_is_refused`,
+   `a_callee_frees_a_64_bit_block_it_consumes`,
+   `a_store_after_a_callee_frees_a_64_bit_block_is_refused`,
+   `a_64_bit_allocation_requirement_is_assumed_at_entry`,
+   `a_call_naming_a_64_bit_extent_with_an_unbounded_count_is_refused`,
+   `a_callee_keeps_a_64_bit_block_its_caller_frees`,
+   `a_function_returns_a_bounded_64_bit_malloc_block` (the case the removed
+   `a_symbolic_64_bit_malloc_size_names_the_32_bit_heap_extent.md` covered),
+   `a_32_bit_allocation_spelling_of_a_64_bit_block_is_refused`,
+   `a_64_bit_allocation_spelling_of_a_32_bit_block_is_refused`,
+   `a_returned_allocation_of_the_other_extent_format_is_refused`,
+   `a_signed_64_bit_allocation_byte_count_is_refused`;
+   `an_extern_allocator_states_a_bounded_64_bit_extent_as_int32.md`
+   unchanged (D6). Kernel unit tests: the contract extent decision and
+   cross-format continuity (`functions/allocation_continuity_tests.rs`), a
+   free effect's 64-bit reinstatement (`heap_free_effect_tests` in
+   `contract_claims.rs`). Scaling: the kernel
+   `uint64_allocation_size_graph_queries_scale_without_fact_index`, and the
+   surface `stores_beside_many_owned_64_bit_blocks_scale_near_linearly` and
+   `calls_borrowing_a_64_bit_block_scale_near_linearly` (nightly). Closes the
+   step 7 item and its intended regression. Not changed: a `size_t` count the
+   facts fix to a constant still makes a 32-bit block (D2), so a contract
+   states its token with the constant (`allocation(p, 8)`), not with
+   `n * 4u64`, which is of the other format and refused (D5).
 4. **calloc and realloc.** calloc decides the guard and never evaluates its
    product; an undecided guard is refused. realloc: kind-aware fit conditions
    (`uint64_less_equal`) and a wide old range for removal; a constant zeroed

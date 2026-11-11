@@ -2252,22 +2252,20 @@ fn heap_free_effect_is_valid(
     before: &CMemory,
     after: &CMemory,
     allocation_base: &Pointer,
-    bytes: &MachineTerm,
+    bytes: &HeapExtent,
 ) -> bool {
-    // The effect states a byte term only; a claim it reinstates is 32-bit,
-    // so a 64-bit block's free is not matched here (`design/heap-extents.md`).
+    // The effect states the freed extent with its format, so the claim it
+    // reinstates is the block's own, 32-bit or 64-bit.
     let Some(live) = (if before.live_heap_block_extent(allocation_base).is_some() {
         Some(before.clone())
     } else {
         before
             .clone()
-            .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(bytes.clone()))
+            .with_heap_allocation_claim(allocation_base.clone(), bytes.clone())
     }) else {
         return false;
     };
-    live.live_heap_block_extent(allocation_base)
-        .map(HeapExtent::bytes)
-        == Some(bytes)
+    live.live_heap_block_extent(allocation_base) == Some(bytes)
         && live
             .free_heap_block(allocation_base, &PureFactContext::new())
             .is_ok_and(|expected| expected == *after)
@@ -3367,6 +3365,42 @@ fn missing_function_contract_claim_keys(function: &CFunction) -> Vec<CFunctionCo
         missing.push(CFunctionContractClaimKey::Effect(0));
     }
     missing
+}
+
+#[cfg(test)]
+mod heap_free_effect_tests {
+    use super::*;
+
+    /// A free effect reinstates the freed block's claim in the extent's own
+    /// format: a 64-bit block whose claim was not live before the free (a
+    /// contract-imported allocation) is matched by its `uint64` extent, and
+    /// a 32-bit reading of the same byte term is not that block's free.
+    #[test]
+    fn a_free_effect_reinstates_a_64_bit_claim_in_its_format() {
+        let base = Pointer {
+            block: PointerBlock::Heap(940_100),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let bytes = MachineTerm::uint64_multiply(
+            MachineTerm::Variable(Variable(940_101)),
+            MachineTerm::uint64_constant(4),
+        );
+        let wide = HeapExtent::new(bytes.clone(), HeapExtentKind::UInt64);
+        let before = CMemory::new();
+        let after = before
+            .clone()
+            .with_heap_allocation_claim(base.clone(), wide.clone())
+            .expect("a fresh claim")
+            .free_heap_block(&base, &PureFactContext::new())
+            .expect("a free of the claimed block");
+        assert!(heap_free_effect_is_valid(&before, &after, &base, &wide));
+        assert!(!heap_free_effect_is_valid(
+            &before,
+            &after,
+            &base,
+            &HeapExtent::int32(bytes),
+        ));
+    }
 }
 
 #[cfg(test)]

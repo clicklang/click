@@ -3458,7 +3458,7 @@ fn stored_write_reaching(
 
 pub(super) fn heap_allocation_proven_separate_from_pointer(
     allocation_base: &Pointer,
-    bytes: &MachineTerm,
+    bytes: &HeapExtent,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -3473,12 +3473,10 @@ pub(super) fn heap_allocation_proven_separate_from_pointer(
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
-    int32_element_count_from_bytes(bytes).is_some_and(|count| {
-        let allocation_memory = CResource::Memory(CMemoryRange::new(
-            allocation_base.clone(),
-            MachineTerm::constant(0),
-            count,
-        ));
+    // The allocation's memory in its own index kind, read through the
+    // extent's element count as the heap reads its blocks.
+    bytes.element_count(4).is_some_and(|count| {
+        let allocation_memory = CResource::Memory(bytes.range(allocation_base.clone(), count, 4));
         assumptions.proves_resource_separate(&allocation_memory, &cell)
     })
 }

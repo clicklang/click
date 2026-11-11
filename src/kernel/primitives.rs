@@ -12672,11 +12672,13 @@ pub enum Proposition {
         after: CMemory,
         mutable_ranges: Vec<CMemoryRange>,
     },
+    /// A free of the block at `allocation_base` with extent `bytes`, which
+    /// keeps its format, so a 64-bit block's free reinstates a 64-bit claim.
     CHeapAllocationFreed {
         before: CMemory,
         after: CMemory,
         allocation_base: Pointer,
-        bytes: MachineTerm,
+        bytes: HeapExtent,
     },
     And(Box<Proposition>, Box<Proposition>),
     Or(Box<Proposition>, Box<Proposition>),
