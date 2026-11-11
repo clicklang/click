@@ -3885,6 +3885,15 @@ at(region(0).entry, p[0] == 7)
 at(region(0).entry, viewable(p[0..n]))
 ```
 
+Where a resource is expected, in `separate(...)`, `contains(...)` or a
+`Resource` theorem argument, `at(selector, name)` names the bound resource
+instance `name` as it was held at that visit. It is how a proof names an
+instance a call has since consumed, which the current state no longer holds.
+A visit that does not hold `name` is refused with "resource instance `name`
+is not owned at this snapshot"
+(`mdtests/a_consumed_resource_instance_is_named_at_a_mark.md`,
+`mdtests/a_resource_instance_is_not_named_at_a_mark_where_it_is_not_held.md`).
+
 Every selector names a region: a stretch of the program with an `.entry` and
 an `.exit`. `function` is the whole body and `loop(i)` is a loop. The regions
 `step()` crosses one at a time are the *atomic* regions, and `region(N)` is the

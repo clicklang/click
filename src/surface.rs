@@ -2239,6 +2239,9 @@ pub enum ResourceSubject {
     Instance {
         name: String,
         identity: crate::kernel::Variable,
+        /// `at(point, name)`: the instance as it was held at that recorded
+        /// state, for an instance the current state no longer holds.
+        at: Option<SnapshotSelector>,
     },
     Footprint(CodeRegionRef),
     Parameter {

@@ -1373,9 +1373,12 @@ fn transport_read_subject(read: &ContractExpression) -> Option<TransportReadSubj
 
 fn transport_separation_subject(subject: &ResourceSubject) -> Option<TransportReadSubject> {
     match subject {
-        ResourceSubject::Instance { identity, .. } => {
-            Some(TransportReadSubject::Resource(*identity))
-        }
+        ResourceSubject::Instance {
+            identity, at: None, ..
+        } => Some(TransportReadSubject::Resource(*identity)),
+        // An instance named at an earlier state is not held now, so it is
+        // not a subject whose field a transport reads.
+        ResourceSubject::Instance { at: Some(_), .. } => None,
         ResourceSubject::Memory(segment)
             if segment.state == ContractSegmentState::Current
                 && segment.start == CExpression::Value(crate::kernel::int32(0))
