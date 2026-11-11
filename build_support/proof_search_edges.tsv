@@ -114,12 +114,12 @@ src/surface/proof/driver/execution.rs	driver	::solve_nested_have	try_solve_closu
 src/surface/proof/driver/execution.rs	driver	::try_check_structural_function_proof_inner	driver	4
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_steps_within	driver	2
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_bare_statement_step	driver	1
-src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_close_invariants_body	driver	1
+src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_close_invariants_body	driver	2
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_execution_statement_step	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_step_with_obligation_proofs	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::close_scope_with_body_fact_proof	driver	3
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::discharge_entry_requirements	driver	1
-src/surface/proof/driver/obligations.rs	driver	ProofDriver::plan_invariant_bundle_member_closure	driver	4
+src/surface/proof/driver/obligations.rs	driver	ProofDriver::plan_invariant_bundle_member_closure	driver	9
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::prepare_loop_invariant_bundle	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::prove_cases_disjunction	driver	2
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::prove_cases_disjunction	try_solve_closure	1
@@ -205,12 +205,11 @@ src/surface/proof/proof_object.rs	presentation	Proof::spelled_goal	available_sur
 src/surface/proof/proof_object/execution_joins.rs	mixed	Proof::execute_enum_match_group	try_focused_execute_to_exit_within	1
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try_focused_execute_to_exit_within	driver	2
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try_focused_execute_to_exit_within	try_smart_statement_step	1
-src/surface/proof/proof_object/execution_statements.rs	dispatch	Proof::close_bundle_member_by_solve	try_solve_closure	1
+src/surface/proof/driver/obligations.rs	driver	ProofDriver::close_bundle_member_by_solve	try_solve_closure	1
 src/surface/proof/proof_object/execution_statements.rs	operation	Proof::apply_planned_fact_transport_inner	derive_proposition	1
 src/surface/proof/proof_object/execution_statements.rs	operation	Proof::apply_planned_outcome_fact_transport	derive_proposition	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_fact_transport_inner	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_outcome_fact_transport	driver	1
-src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::plan_invariant_bundle_closure	driver	1
 src/surface/proof/proof_object/fixed_state_steps.rs	operation	Proof::apply_pure_transport_using	derive_atomic_proposition	1
 src/surface/proof/proof_object/resource_steps.rs	operation-to-driver	Proof::solve_open_for_missing_resource	driver	1
 src/surface/proof/proof_object/step_application.rs	presentation	Proof::record_spellability_census	resolve_solve_premises	1
@@ -615,3 +614,4 @@ src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_de
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_with_operand_definedness	try_signed_definedness_certificate	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_restricted_signed_definedness_closure	try_signed_definedness_certificate	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_unsigned_order_step_from	try_unsigned_strict_fact	4
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::plan_invariant_bundle_closure	driver	1

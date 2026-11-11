@@ -150,49 +150,6 @@ impl<'a> Proof<'a> {
         ))
     }
 
-    /// Closes the back-edge bundle as `close_invariants() by { ... }` with
-    /// `solve()` on each member. The bundle conjoins its members, balanced for
-    /// wide bundles, and each member may open with a spine of guards from
-    /// earlier declarations; that fixed structure is descended by checked
-    /// `both` and `intro` steps, and every member below it is closed by
-    /// `solve()` and nothing else. Every step advances this same `Proof`, so
-    /// the retained certificate is the explicit proof `click expand` prints
-    /// and re-verifies.
-    pub(in crate::surface::proof) fn plan_invariant_bundle_closure(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        let result = self.driver().plan_invariant_bundle_member_closure();
-        // A search refusal must retain the member it was checking, too. Keep
-        // the innermost member: enclosing implication/quantifier scopes must
-        // not replace it with the entire guarded bundle.
-        if result.is_err() && !matches!(self.goal(), Some(Proposition::And(_, _))) {
-            UNCLOSED_BUNDLE_MEMBER.with(|member| {
-                if member.borrow().is_none() {
-                    *member.borrow_mut() = self.bundle_member_spelling();
-                }
-            });
-        }
-        let result = result?;
-        // A conjunction passes its open child's record up unchanged; any
-        // other member that stays open is the one a refusal names, replacing
-        // whatever leaf inside it was recorded first.
-        if result.is_none() && !matches!(self.goal(), Some(Proposition::And(_, _))) {
-            record_unclosed_bundle_member(self.bundle_member_spelling());
-        }
-        Ok(result)
-    }
-
-    /// One bundle member, closed by `solve()` as the member is spelled: a
-    /// declared invariant as written, read at the back edge, and a ranking
-    /// member as its `decreases` clause writes it
-    /// ([`ranking_descent_surface`]), as a function's exit closes each
-    /// `ensures` as written.
-    fn close_bundle_member_by_solve(&self) -> Result<Option<Self>, ClickError> {
-        crate::kernel::search::ProofSearch::try_solve_closure(
-            &(self.with_synthesized_bundle_member_surface()),
-        )
-    }
-
     /// Restores presentation metadata for one generated bundle leaf from the
     /// two program points the loop rule itself owns. The candidate must lower
     /// alpha-equivalently to the focused kernel goal; attaching it changes no

@@ -3,6 +3,50 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
+    /// Closes the back-edge bundle as `close_invariants() by { ... }` with
+    /// `solve()` on each member. The bundle conjoins its members, balanced for
+    /// wide bundles, and each member may open with a spine of guards from
+    /// earlier declarations; that fixed structure is descended by checked
+    /// `both` and `intro` steps, and every member below it is closed by
+    /// `solve()` and nothing else. Every step advances this same `Proof`, so
+    /// the retained certificate is the explicit proof `click expand` prints
+    /// and re-verifies.
+    pub(in crate::surface::proof) fn plan_invariant_bundle_closure(
+        &self,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        let proof = self.proof;
+        let result = self.plan_invariant_bundle_member_closure();
+        // A search refusal must retain the member it was checking, too. Keep
+        // the innermost member: enclosing implication/quantifier scopes must
+        // not replace it with the entire guarded bundle.
+        if result.is_err() && !matches!(proof.goal(), Some(Proposition::And(_, _))) {
+            UNCLOSED_BUNDLE_MEMBER.with(|member| {
+                if member.borrow().is_none() {
+                    *member.borrow_mut() = proof.bundle_member_spelling();
+                }
+            });
+        }
+        let result = result?;
+        // A conjunction passes its open child's record up unchanged; any
+        // other member that stays open is the one a refusal names, replacing
+        // whatever leaf inside it was recorded first.
+        if result.is_none() && !matches!(proof.goal(), Some(Proposition::And(_, _))) {
+            record_unclosed_bundle_member(proof.bundle_member_spelling());
+        }
+        Ok(result)
+    }
+
+    /// One bundle member, closed by `solve()` as the member is spelled: a
+    /// declared invariant as written, read at the back edge, and a ranking
+    /// member as its `decreases` clause writes it
+    /// ([`ranking_descent_surface`]), as a function's exit closes each
+    /// `ensures` as written.
+    fn close_bundle_member_by_solve(&self) -> Result<Option<Proof<'a>>, ClickError> {
+        crate::kernel::search::ProofSearch::try_solve_closure(
+            &(self.proof.with_synthesized_bundle_member_surface()),
+        )
+    }
+
     /// Establish the alternatives before a source `cases` splits. This is an
     /// ordinary nested proposition proof; the exact kernel split remains a
     /// simple operation and expansion retains the completed `have` body.
@@ -524,7 +568,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     "surface",
                     "close invariants",
                     "close invariants: members",
-                    || root.plan_invariant_bundle_closure(),
+                    || root.driver().plan_invariant_bundle_closure(),
                 )
             } else {
                 // A written body that ran every step and still left a goal open
@@ -650,7 +694,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             for surface in surfaces {
                 let nested = proof.driver().open_have(surface)?;
                 let previous = IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.replace(true));
-                let closed = nested.plan_invariant_bundle_closure();
+                let closed = nested.driver().plan_invariant_bundle_closure();
                 IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.set(previous));
                 let Some(closed) = closed? else {
                     return Ok(None);
@@ -667,7 +711,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             // quantified read projected at the back edge does. The bundle
             // then closes member by member from those facts.
             let previous = IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.replace(true));
-            let closed = proof.plan_invariant_bundle_closure();
+            let closed = proof.driver().plan_invariant_bundle_closure();
             IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.set(previous));
             return closed;
         }
@@ -676,11 +720,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let marker = split_proof.checkpoint();
             let Some(left) = split_proof
                 .focus_branch(ids[0])?
+                .driver()
                 .plan_invariant_bundle_closure()?
             else {
                 return Ok(None);
             };
-            let Some(right) = left.focus_branch(ids[1])?.plan_invariant_bundle_closure()? else {
+            let Some(right) = left
+                .focus_branch(ids[1])?
+                .driver()
+                .plan_invariant_bundle_closure()?
+            else {
                 return Ok(None);
             };
             let result = attempt::candidate_outcome(right.join_focused_both(&marker, split, ids));
@@ -703,7 +752,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 };
                 introduced = next;
             }
-            let result = introduced.plan_invariant_bundle_closure()?;
+            let result = introduced.driver().plan_invariant_bundle_closure()?;
             if result.is_some() {
                 scope.succeed();
                 return Ok(result);
@@ -712,13 +761,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             // `done implies ...` is on a path whose test said `!done`: the
             // contradiction is between a premise and the context, so the
             // member closes whole, as `have` would close it.
-            let whole = driver_proof.close_bundle_member_by_solve()?;
+            let whole = self.close_bundle_member_by_solve()?;
             if whole.is_some() {
                 scope.succeed();
             }
             return Ok(whole);
         }
-        let result = driver_proof.close_bundle_member_by_solve()?;
+        let result = self.close_bundle_member_by_solve()?;
         if result.is_none() {
             // Keep one bounded, lazy diagnostic for the actual kernel leaf.
             // It is recorded only after `solve()` has declined; it does not
