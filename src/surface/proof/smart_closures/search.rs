@@ -9154,7 +9154,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// fact states that the two element indices differ: the store-time check
     /// reads that exact fact and derives nothing. When the statement just run
     /// forgot such a cell, prove the index disequality at the statement's
-    /// pre-state with `solve`, retain it as a `have`, and run the same
+    /// pre-state by selected-premise arithmetic or the disequality bridge
+    /// (`try_index_disequality_closure`), retain it as a `have`, and run the same
     /// statement again, which now keeps the cell. The certificate records the
     /// `have` before the step, so expansion writes it and the expanded proof
     /// searches nothing. A disequality `solve` cannot prove leaves the
@@ -9198,7 +9199,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            let Some(closed) = have.driver().try_solve_closure()? else {
+            let Some(closed) = have.driver().try_index_disequality_closure()? else {
                 continue;
             };
             let Some(joined) = attempt::candidate_outcome(closed.join())? else {

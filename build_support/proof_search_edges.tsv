@@ -141,6 +141,10 @@ src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_direct_structural_clo
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_execute_to_exit	try_execute_to_exit_descendant	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_execute_until	try_execute_until_descendant	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_fact_transport	try_execution_fact_transport	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_index_disequality_closure	try_disequality_by_refuted_equality	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_index_disequality_closure	try_disequality_by_selected_refutation	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_index_disequality_closure	try_execution_signed_arithmetic	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_index_disequality_closure	try_pure_signed_arithmetic	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_restricted_solve_closure	try_restricted_solve_closure	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_selected_arithmetic	try_selected_arithmetic	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_selected_arithmetic_without_identities	selected_arithmetic	1
@@ -311,7 +315,6 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::retry_statement_a
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::retry_statement_after_solve_open	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::retry_statement_after_solve_open	retry_statement_after_refusal	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::retry_statement_keeping_store_cells	driver	3
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::retry_statement_keeping_store_cells	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::scalar_equality_goal_is_refuted	scalar_offset_goal_is_refuted	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::selected_arithmetic	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::selected_arithmetic	try_direct_operation_identity	1

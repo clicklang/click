@@ -21,7 +21,8 @@ const MAX_COMPARED_PAIRS: usize = 64;
 /// The cells `before` caches that `after` no longer holds, paired with each
 /// cell `after` gained or changed in the same block at another element index
 /// of a common base. Only the cells on which the two memories differ are
-/// visited (the persistent maps' diff skips shared subtrees), at most
+/// visited (the persistent concrete maps' diff skips shared subtrees; run
+/// slots are not inspected), at most
 /// [`MAX_COMPARED_PAIRS`] pairs are compared, and at most `limit` returned.
 pub(crate) fn cells_forgotten_beside_stores(
     before: &CMemory,
@@ -30,7 +31,9 @@ pub(crate) fn cells_forgotten_beside_stores(
 ) -> Vec<ForgottenStoreCell> {
     let mut forgotten = Vec::new();
     let mut written = Vec::new();
-    for change in before.cells.diff(&after.cells) {
+    // Only concrete cells: a seeded run's slots are never laid out here, so
+    // a store into a long run costs its concrete changes alone.
+    for change in before.cells.concrete().diff(after.cells.concrete()) {
         crate::instrumentation::record_deterministic_work(1);
         match change {
             SnapshotMapChange::Removed(pointer) => forgotten.push(pointer),

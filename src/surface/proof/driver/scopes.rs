@@ -330,6 +330,46 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    /// The narrow closure of a store's index disequality: a signed interval
+    /// certificate over the indexed bounds of its variables, one side of the
+    /// other by selected-premise arithmetic over the connected facts, then
+    /// the case split that carries a connected disequality across an
+    /// equality (the Integer/word bridge). It runs none of `solve`'s other
+    /// strategies, so a miss at each store costs those bounded searches.
+    pub(in crate::surface::proof) fn try_index_disequality_closure(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let signed = crate::kernel::search::ProofSearch::try_execution_signed_arithmetic(
+            &(driver_proof.body),
+        )
+        .or_else(|| {
+            crate::kernel::search::ProofSearch::try_pure_signed_arithmetic(&(driver_proof.body))
+        });
+        let selected = match signed {
+            Some(body) => Some(body),
+            None => crate::kernel::search::ProofSearch::try_disequality_by_selected_refutation(
+                &(driver_proof.body),
+            )?,
+        };
+        let body = match selected {
+            Some(body) => body,
+            None => {
+                let Some(body) =
+                    crate::kernel::search::ProofSearch::try_disequality_by_refuted_equality(
+                        &(driver_proof.body),
+                    )?
+                else {
+                    return Ok(None);
+                };
+                body
+            }
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     pub(in crate::surface::proof) fn try_selected_arithmetic(
         &self,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
