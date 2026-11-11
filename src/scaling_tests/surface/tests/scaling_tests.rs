@@ -2758,6 +2758,59 @@ fn smart_guarded_member_bundle_scales_near_linearly_with_conjuncts() {
     assert!(closer.last().unwrap().work < 20_000, "{closer:?}");
 }
 
+/// [`guarded_member_bundle`] with each member in an `invariant` declaration
+/// of its own, so the back-edge bundle guards each member by every earlier
+/// declaration.
+fn separately_declared_member_bundle(declarations: usize) -> (String, String) {
+    let (c_source, click_source) = guarded_member_bundle(declarations);
+    let joined = (1..=declarations)
+        .map(|k| format!("(i <= n or {k} + i == 0)"))
+        .collect::<Vec<_>>()
+        .join(" and\n            ");
+    let separate = (1..=declarations)
+        .map(|k| format!("i <= n or {k} + i == 0"))
+        .collect::<Vec<_>>()
+        .join(";\n        invariant ");
+    assert!(click_source.contains(&joined));
+    (c_source, click_source.replace(&joined, &separate))
+}
+
+/// A bundle of separately declared invariants is a chain of guards per
+/// member, quadratic in the declarations by construction. Spelling its
+/// members keys each written invariant and each distinct guard once, so the
+/// closer's work stays within that size. Before, every member compared every
+/// suffix of its guard chain with every written form, rebuilding both keys
+/// each time, and 28 declarations of a real proof exhausted the smart budget
+/// with every member already an available fact.
+#[test]
+fn back_edge_closure_over_separately_declared_invariants_is_bounded_by_the_bundle() {
+    let closer = [8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = separately_declared_member_bundle(size);
+            let sources = [("guarded_bundle.c", c_source.as_str())];
+            let (verified, sample) =
+                scaling_sample(size, || verify_c0_sources(&click_source, &sources));
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} separately declared bundle fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+                .named_work
+                .get("operation `close invariants: members`")
+                .copied()
+                .unwrap_or(0)
+        })
+        .collect::<Vec<_>>();
+    assert!(closer.iter().all(|work| *work > 0), "{closer:?}");
+    // Each doubling adds work in proportion to the declarations it adds;
+    // the per-suffix comparison added several times that.
+    let (first, second) = (closer[1] - closer[0], closer[2] - closer[1]);
+    assert!(second < first * 3, "{closer:?}");
+}
+
 /// A caller with growing unrelated facts calling a callee whose precondition
 /// has logical structure.
 ///
