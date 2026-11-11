@@ -1,3 +1,6 @@
+import click::rust::slice;
+import click::rust::chunks_exact;
+import click::integer;
 verifying "quad.rs";
 fn quad::load(bytes: &[u8]) -> quad::Quad {
  requires bytes.len() == 4u64; views bytes[0..4];
@@ -12,73 +15,88 @@ fn quad::walk(bytes: &[u8]) -> u32 {
     ensures result == 0u32;
 } by {
     step_until(loop(0));
-    have viewable(bytes[0..16]) by {
-        transport(at(function.entry, viewable(bytes[0..16])), viewable(bytes[0..16])) using { at(function.entry, viewable(bytes[0..16])); };
+    have loop(0).iter == chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64);
+    have loop(0).iter.len() == bytes.len() / 4u64 by {
+        apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
+        solve();
     }
-    have __rust_mir_6_remaining == 16;
-    have __rust_mir_6_cursor == bytes + (16 - __rust_mir_6_remaining) by { rewrite(__rust_mir_6_remaining == 16); solve(); }
     loop {
-        decreases __rust_mir_6_remaining;
+        decreases iter.len();
         views bytes[0..16];
         invariant bytes.len() == 16u64;
-        invariant viewable(bytes[0..16]);
-        invariant __rust_mir_6_size == 4u64;
-        invariant 0 <= __rust_mir_6_remaining and __rust_mir_6_remaining <= 16;
-        invariant __rust_mir_6_remaining % 4 == 0;
-        invariant __rust_mir_6_cursor == bytes + (16 - __rust_mir_6_remaining);
+        invariant iter == chunks_exact::after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations);
+        invariant to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
+        initialize by {
+            have bytes.len() == 16u64;
+            have iter == chunks_exact::after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations) by {
+                apply(chunks_exact::after_zero(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64)));
+                have iter == chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64);
+                solve();
+            }
+            have to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
+        }
         preserve by {
-            have 4 <= __rust_mir_6_remaining;
-            have 0 <= 16 - __rust_mir_6_remaining by { solve() using { 0 <= __rust_mir_6_remaining; __rust_mir_6_remaining <= 16; 4 <= __rust_mir_6_remaining; }; }
-            have (16 - __rust_mir_6_remaining) + 4 <= 16 by { solve() using { 0 <= __rust_mir_6_remaining; __rust_mir_6_remaining <= 16; 4 <= __rust_mir_6_remaining; }; }
-            have 16 - __rust_mir_6_remaining <= 12 by { solve() using { 4 <= __rust_mir_6_remaining; __rust_mir_6_remaining <= 16; }; }
-            mark iteration;
-            step_until(assignment(chunk, 0)); step();
-            step_until(assignment(_byte, 0));
-            have lanes.lanes[0] == chunk[0];
-            have lanes.lanes[1] == chunk[1];
-            have lanes.lanes[2] == chunk[2];
-            have lanes.lanes[3] == chunk[3];
+            step(); step(); step(); step();
+            if 0u64 < iter.len() {
+                have chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).len() == bytes.len() / 4u64 by {
+                    apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
+                }
+                have iter.len() <= bytes.len() / 4u64;
+                have to_integer((bytes.len() / 4u64 - iter.len())) == iterations;
+                have (bytes.len() / 4u64 - iter.len()) < chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).len();
+                have iter.nth(0u64) == chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).nth((bytes.len() / 4u64 - iter.len())) by {
+                    apply(chunks_exact::nth_after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations, 0u64, (bytes.len() / 4u64 - iter.len())));
+                    solve();
+                }
+                have iter.nth(0u64).len() == 4u64 by {
+                    apply(chunks_exact::nth_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64, (bytes.len() / 4u64 - iter.len())));
+                    solve();
+                }
+                have iter.nth(0u64).as_ptr() == bytes + (bytes.len() / 4u64 - iter.len()) * 4u64 by {
+                    apply(chunks_exact::nth_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64, (bytes.len() / 4u64 - iter.len())));
+                    solve();
+                }
+                have iter.after_next() == chunks_exact::after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations + 1) by {
+                    apply(chunks_exact::after_next_after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations));
+                    solve();
+                }
+                have iter.after_next().len() == iter.len() - 1u64 by {
+                    apply(chunks_exact::len_after_next(iter));
+                }
+                have (bytes.len() / 4u64 - iter.len()) <= 3u64;
+                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64) == to_integer((bytes.len() / 4u64 - iter.len())) * 4;
+                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64) <= 12;
+                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64 + 4u64) <= 16;
+                mark taken;
+                step_until(assignment(chunk, 0)); step(); step();
+                have chunk == bytes + (bytes.len() / 4u64 - at(taken, iter.len())) * 4u64;
+                have chunk_len == 4u64;
+                mark before;
+                step_until(assignment(_byte, 0));
+                have lanes.lanes[0] == at(before, chunk[0]);
+                have lanes.lanes[0] == chunk[0];
+                have lanes.lanes[1] == at(before, chunk[1]);
+                have lanes.lanes[1] == chunk[1];
+                have lanes.lanes[2] == at(before, chunk[2]);
+                have lanes.lanes[2] == chunk[2];
+                have lanes.lanes[3] == at(before, chunk[3]);
+                have lanes.lanes[3] == chunk[3];
 
-            have array[0] == chunk[0];
-            have array[1] == chunk[1];
-            have array[2] == chunk[2];
-            have array[3] == chunk[3];
-            step_until(back_edge());
-            have viewable(bytes[0..16]) by {
-                transport(at(iteration, viewable(bytes[0..16])), viewable(bytes[0..16])) using { at(iteration, viewable(bytes[0..16])); };
-            }
-            have __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4;
-            have (at(iteration, __rust_mir_6_remaining) - 4) % 4 == at(iteration, __rust_mir_6_remaining % 4) by {
-                normalize() using { at(iteration, 4 <= __rust_mir_6_remaining); };
-            }
-            have __rust_mir_6_remaining % 4 == 0 by {
-                rewrite(__rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4);
-                rewrite((at(iteration, __rust_mir_6_remaining) - 4) % 4 == at(iteration, __rust_mir_6_remaining % 4)); solve();
-            }
-            have 0 <= __rust_mir_6_remaining by {
-                solve() using { at(iteration, 4 <= __rust_mir_6_remaining); at(iteration, __rust_mir_6_remaining <= 16); __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4; };
-            }
-            have __rust_mir_6_remaining <= 16 by {
-                solve() using { at(iteration, 4 <= __rust_mir_6_remaining); at(iteration, __rust_mir_6_remaining <= 16); __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4; };
-            }
-            have __rust_mir_6_cursor == at(iteration, __rust_mir_6_cursor) + 4;
-            have 16 - __rust_mir_6_remaining == at(iteration, 16 - __rust_mir_6_remaining) + 4 by {
-                solve() using {
-                    __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4;
-                    at(iteration, 4 <= __rust_mir_6_remaining);
-                    at(iteration, __rust_mir_6_remaining <= 16);
-                };
-            }
-            have at(iteration, __rust_mir_6_cursor) + 4 == bytes + (at(iteration, 16 - __rust_mir_6_remaining) + 4) by {
-                solve() using {
-                    at(iteration, __rust_mir_6_cursor == bytes + (16 - __rust_mir_6_remaining));
-                    at(iteration, 0 <= 16 - __rust_mir_6_remaining);
-                    at(iteration, 16 - __rust_mir_6_remaining <= 12);
-                };
-            }
-            have __rust_mir_6_cursor == bytes + (16 - __rust_mir_6_remaining) by {
-                rewrite(16 - __rust_mir_6_remaining == at(iteration, 16 - __rust_mir_6_remaining) + 4); solve();
+                have array[0] == chunk[0];
+                have array[1] == chunk[1];
+                have array[2] == chunk[2];
+                have array[3] == chunk[3];
+                step_until(loop(0).back_edge());
+                have iter == at(taken, iter.after_next());
+                have iter.len() == at(taken, iter.len()) - 1u64;
+                have 0u64 < at(taken, iter.len());
+                have iter.len() < at(taken, iter.len());
+            } else {
+                step();
             }
         }
     }
+    have loop(0).iter.len() == 0u64;
+    step_until(function.exit);
+    solve();
 }
