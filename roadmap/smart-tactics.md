@@ -115,8 +115,13 @@ arithmetic migration fails `struct_array_element_expands_with_its_subscript`
 (the initialized-global sum has no round-tripping overflow-goal spelling) and
 `straight_line_assignments_cost_the_same_at_every_position` (work grows from
 2765 to 2885 across twelve assignments). Retain those controls for that slice.
-Folds and failed statement preparations also retain the existing retry after
-prerequisite proofs; remove that recomputation separately.
+Ordinary named-resource folds at an execution frontier retain the selected
+exchange while the driver proves body obligations, then append that exchange
+with the proved context. Population/authority folds, completed-outcome folds,
+and failed preparations still retry after prerequisite proofs; remove that
+remaining recomputation separately. Keep the constructor-count and
+history-size completion controls in `prepared_named_fold_constructs_once` and
+`prepared_named_fold_completion_does_not_walk_history`.
 
 ## Operation map
 

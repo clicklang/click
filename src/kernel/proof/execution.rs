@@ -632,6 +632,14 @@ pub(crate) struct CheckedResourceRewrite {
     return_presentation: Option<Arc<CheckedReturnPresentation>>,
 }
 
+/// A selected fold whose body obligations are being proved at its input
+/// frontier. Completion publishes this construction without selecting again.
+#[derive(Clone)]
+struct PreparedInstanceFold {
+    rewrite: CheckedResourceRewrite,
+    semantic_facts: Vec<Proposition>,
+}
+
 /// A composite exchange independently checked at the published snapshot.
 /// Its facts retain that snapshot rather than pretending to be C-body reads.
 #[derive(Clone)]
@@ -5879,6 +5887,7 @@ pub(crate) struct ExecutionProofCore {
     /// once. Forked proofs share every unchanged trace prefix.
     pub(crate) execution_evidence:
         super::PersistentVector<PersistentSequence<CheckedExecutionEvent>>,
+    prepared_instance_fold: Option<Arc<PreparedInstanceFold>>,
     /// Returned paths of summarized loops, already proved while each loop's
     /// continuing successor keeps advancing. They are appended to the
     /// completed trace set only at the function boundary, so ordinary
@@ -7766,6 +7775,7 @@ impl ExecutionProofCore {
             frontier,
             effect_facts: Default::default(),
             execution_evidence: vec![PersistentSequence::default()].into(),
+            prepared_instance_fold: None,
             pending_loop_returns: Default::default(),
             completed_pending_loop_returns: None,
             pending_loop_return_start: None,
@@ -10178,6 +10188,11 @@ impl ExecutionProofCore {
         ),
         crate::kernel::ResourceRewriteRefusal,
     > {
+        let _timing = crate::instrumentation::OperationTiming::new(
+            instance.name(),
+            "resource fold",
+            "resource fold: construct selected instance",
+        );
         if self.evidence_completed {
             return Err("a resource rewrite was recorded after the trace completed".into());
         }
@@ -10229,13 +10244,56 @@ impl ExecutionProofCore {
         if self.evidence_state.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
+        if assumptions.retains_required_obligations() {
+            self.prepared_instance_fold = Some(Arc::new(PreparedInstanceFold {
+                rewrite,
+                semantic_facts: result.semantic_facts.clone(),
+            }));
+        } else {
+            for trace in self.execution_evidence.iter_mut() {
+                trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(
+                    rewrite.clone(),
+                )));
+            }
+        }
+        self.state = result.state.clone().into();
+        Ok((result, after_facts))
+    }
+
+    pub(crate) fn has_prepared_instance_fold(&self) -> bool {
+        self.prepared_instance_fold.is_some()
+    }
+
+    /// The driver has discharged the body obligations at the original
+    /// frontier. Attach that context and append only the retained exchange.
+    pub(crate) fn finish_prepared_instance_fold(&mut self, proved: &ProofFacts) -> ProofFacts {
+        let _timing = crate::instrumentation::OperationTiming::new(
+            "fold",
+            "resource fold",
+            "resource fold: finish prepared instance",
+        );
+        let prepared = Arc::unwrap_or_clone(
+            self.prepared_instance_fold
+                .take()
+                .expect("completion consumes a prepared instance fold"),
+        );
+        let mut rewrite = prepared.rewrite;
+        crate::instrumentation::record_deterministic_work(prepared.semantic_facts.len());
+        rewrite.before_facts = proved.clone();
+        rewrite.after_facts = prepared
+            .semantic_facts
+            .into_iter()
+            .fold(proved.clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact)
+            });
+        let facts = rewrite.after_facts.clone();
         for trace in self.execution_evidence.iter_mut() {
+            crate::instrumentation::record_deterministic_work(1);
             trace.push(CheckedExecutionEvent::ResourceRewrite(Box::new(
                 rewrite.clone(),
             )));
         }
-        self.state = result.state.clone().into();
-        Ok((result, after_facts))
+        facts
     }
 
     pub(crate) fn record_resource_rewrite_with_children(

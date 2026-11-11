@@ -256,6 +256,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // step with the fast path's own diagnostic, naming that obligation.
         let (probe, recorded) = driver_proof.prepare_step(&step);
         if recorded.recorded.is_empty() {
+            if probe.as_ref().is_ok_and(|candidate| {
+                candidate
+                    .execution()
+                    .is_some_and(|execution| execution.core.has_prepared_instance_fold())
+            }) {
+                return driver_proof.finish_prepared_step(probe, driver_proof, &step, &[]);
+            }
             // With nothing recorded, the probe ran the ordinary checked step.
             return probe;
         }
@@ -1005,6 +1012,24 @@ fn unproved_step_requirement(
     requirement: &UnresolvedRequirement,
     error: ClickError,
 ) -> Result<ClickError, ClickError> {
+    // Assertion obligations describe the rejected path internally. On failure,
+    // retain the assertion's positive source goal, just as direct execution
+    // diagnostics do. This rendering runs only after obligation solving fails.
+    if let Some(condition) = &requirement.assertion_condition
+        && let Some(execution) = proof.execution()
+        && let Some(goal) = crate::surface::proof::fact_reasoning::asserted_condition_goal(
+            &execution.core.state,
+            condition,
+        )
+    {
+        let spelling = crate::surface::diagnostics::describe_stated_fact_over_locals(
+            &goal,
+            &execution.core.state,
+        );
+        return Ok(error
+            .with_rewritten_place(|reason| Some(format!("{reason}; could not show `{spelling}`")))
+            .with_reported_assertion_goal(Some(goal)));
+    }
     // Keep the existing concrete-refinement diagnostic when the ordinary
     // obligation solver cannot establish a named callback contract.
     if crate::surface::diagnostics::concrete_named_contract_fact(&requirement.proposition).is_some()

@@ -1206,7 +1206,7 @@ impl<'a> Proof<'a> {
             .map_err(|error| self.execution_update_error("`mark`", error))
     }
 
-    /// Publish a completed conditional statement after its caller has proved
+    /// Publish a prepared operation after its caller has proved
     /// every recorded obligation at this original frontier. The candidate must
     /// never be used as the context for those proofs. A failed preparation (for
     /// example pending loan recovery) has no successor and still needs retry.
@@ -1217,15 +1217,18 @@ impl<'a> Proof<'a> {
         step: &ProofStep,
         discharged: &[UnresolvedRequirement],
     ) -> Result<Self, ClickError> {
-        // Folds also use obligation probing, but have their own resource-scope
-        // publication rather than a statement frontier.
-        if matches!(step, ProofStep::FoldResource(_)) {
-            return proved.apply_primitive_step(step);
-        }
         let mut candidate = match prepared {
             Ok(candidate) => candidate,
             Err(_) => return proved.apply_primitive_step(step),
         };
+        // Ordinary named folds retain their selected exchange. Population and
+        // completed-outcome folds still use their existing preparation retry.
+        let prepared_fold = candidate
+            .execution()
+            .is_some_and(|execution| execution.core.has_prepared_instance_fold());
+        if matches!(step, ProofStep::FoldResource(_)) && !prepared_fold {
+            return proved.apply_primitive_step(step);
+        }
         let mut introduced = proved
             .facts()
             .introduced_since(self.facts())
@@ -1241,10 +1244,6 @@ impl<'a> Proof<'a> {
                 .filter(|requirement| requirement.call_site.is_some())
                 .map(|requirement| requirement.proposition.clone()),
         );
-        let mut facts = candidate.facts().clone();
-        for fact in &introduced {
-            facts = facts.with_kernel_checked_fact(fact.clone());
-        }
         let original = self
             .execution()
             .expect("statement preparation has a frontier");
@@ -1255,6 +1254,15 @@ impl<'a> Proof<'a> {
             .execution()
             .expect("prepared statement has a successor")
             .clone();
+        let facts = if prepared_fold {
+            execution.core.finish_prepared_instance_fold(proved.facts())
+        } else {
+            introduced
+                .iter()
+                .fold(candidate.facts().clone(), |facts, fact| {
+                    facts.with_kernel_checked_fact(fact.clone())
+                })
+        };
         // `have` publication keeps its source spelling and certificate facts
         // beside the logical context. Carry only the appended suffix, preserving
         // the candidate's new call bindings, snapshots, and typed read evidence.

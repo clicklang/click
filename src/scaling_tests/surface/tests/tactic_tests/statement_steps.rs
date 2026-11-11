@@ -269,3 +269,85 @@ void pack(int32* p) {{
         "{samples:?}"
     );
 }
+
+#[test]
+#[ignore = "nightly: three fold preparation forms"]
+fn prepared_named_fold_constructs_once() {
+    for suffix in [
+        ";",
+        " by { assumption(); }",
+        " { requires x > 0 by assumption(); }",
+    ] {
+        let source = format!(
+            r#"
+verifying "fold.c";
+resource positive(x: int32) {{ field value: int32; fact value > 0; }}
+void make(int32 x) {{ requires x > 0; produces p: positive(x); }} by {{
+    let p = fold(positive(x), {{ value: x }}){suffix}
+}}
+"#
+        );
+        let (result, events) = crate::instrumentation::collect(|| {
+            verify_c0_sources(&source, &[("fold.c", "void make(int32 x) {}")])
+        });
+        result.unwrap_or_else(|error| panic!("{suffix}: {error}"));
+        let constructions = events
+            .iter()
+            .filter(|event| {
+                matches!(event,
+                    crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                        if name == "resource fold: construct selected instance"
+                )
+            })
+            .count();
+        assert_eq!(
+            constructions, 1,
+            "{suffix}: completing obligations must not reconstruct the fold"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: prepared folds after growing execution histories"]
+fn prepared_named_fold_completion_does_not_walk_history() {
+    let mut samples = Vec::new();
+    for size in [1, 8, 32] {
+        let statements = "scratch = 0;\n".repeat(size);
+        let steps = "step();\n".repeat(size + 1);
+        let source = format!(
+            r#"
+verifying "fold.c";
+function positive(x: int32) -> int32 {{ if x > 0 {{ 1 }} else {{ 0 }} }}
+resource positive_value(x: int32) {{ field value: int32; fact positive(value) == 1; }}
+void make(int32 x) {{ requires x > 0; produces p: positive_value(x); }} by {{
+    {steps}
+    let p = fold(positive_value(x), {{ value: x }}) by {{
+        have positive(x) == 1 by {{ unfold(positive(x)); normalize() using {{ x > 0; }}; }}
+        assumption();
+    }}
+    have positive(x) == 1 by assumption();
+    step(); solve();
+}}
+"#
+        );
+        let c = format!("void make(int32 x) {{ int scratch; {statements} }}");
+        let (result, events) =
+            crate::instrumentation::collect(|| verify_c0_sources(&source, &[("fold.c", &c)]));
+        result.unwrap_or_else(|error| panic!("size {size}: {error}"));
+        let completions = events
+            .iter()
+            .filter_map(|event| match event {
+                crate::instrumentation::VerificationEvent::OperationFinished {
+                    name, work, ..
+                } if name == "resource fold: finish prepared instance" => Some(*work),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(completions.len(), 1, "size {size}: {completions:?}");
+        samples.push(completions[0]);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "{samples:?}"
+    );
+}
