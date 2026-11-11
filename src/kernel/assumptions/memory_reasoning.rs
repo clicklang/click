@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{MachineCastSpelling, MachineTerm};
-use crate::kernel::{bits32_constant, constant_i64, constant_u32, int32_constant, int64_constant};
+use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 #[cfg(test)]
 thread_local! {
@@ -494,40 +494,44 @@ impl PureFactContext {
         // The source is selected already. Align these two addresses through
         // the maintained graph instead of trying every spelling of the query.
         let aligned = self.loadable_query_at_source(base, source);
-        let Some(delta) = self.wide_element_index_of_access(&aligned, source, 1) else {
+        let Some(delta) = self.shared_wide_element_index_of_access(&aligned, source, 1) else {
             return false;
         };
-        // The signed pointer displacement must represent this exact
-        // nonnegative byte offset, and subtraction must not underflow.
-        self.decide(&ConditionTerm::uint64_less_equal(
-            delta.clone(),
-            MachineTerm::uint64_constant(i64::MAX as u64),
+        self.decide(&wide_index_comparison(
+            CompareRelation::LessEqual,
+            delta.operand_view(),
+            MachineOperandView::Legacy(&MachineTerm::uint64_constant(i64::MAX as u64)),
         )) == Some(true)
-            && self.decide(&ConditionTerm::uint64_less_equal(
-                delta.clone(),
-                held.clone(),
+            && self.decide(&wide_index_comparison(
+                CompareRelation::LessEqual,
+                delta.operand_view(),
+                MachineOperandView::Legacy(held),
             )) == Some(true)
-            && self.window_fits_after(&delta, bytes, held)
+            && self.window_fits_after(delta.operand_view(), bytes, held)
             && before.read_region_identity(source) == memory.read_region_identity(source)
             && memory_range_still_available(before, memory, source, self)
     }
 
-    /// Whether `bytes` from `delta` stay inside `held`, given `delta <=
-    /// held`: `bytes <= held - delta`. A window `p[a..b]` is `b - a` bytes
-    /// from `a`; when `a` is itself a sum that comparison is not decided
-    /// directly, so its own bounds decide it: `a <= b` (no underflow) and
-    /// `b <= held`, as a proof lists them.
+    /// Whether `bytes` from `delta` stay inside `held`, given `delta <= held`.
+    /// A window `p[a..b]` can instead use its own bounds `a <= b <= held`
+    /// when the direct subtraction comparison is not decided.
     fn window_fits_after(
         &self,
-        delta: &MachineTerm,
+        delta: MachineOperandView<'_>,
         bytes: &MachineTerm,
         held: &MachineTerm,
     ) -> bool {
-        let holds = |condition: ConditionTerm| self.decide(&condition) == Some(true);
-        if holds(ConditionTerm::uint64_less_equal(
-            bytes.clone(),
-            MachineTerm::uint64_subtract(held.clone(), delta.clone()),
-        )) {
+        let remaining = wide_index_binary(
+            MachineBinaryOp::Subtract,
+            MachineOperandView::Legacy(held),
+            delta,
+        );
+        if self.decide(&wide_index_comparison(
+            CompareRelation::LessEqual,
+            MachineOperandView::Legacy(bytes),
+            remaining.operand_view(),
+        )) == Some(true)
+        {
             return true;
         }
         let MachineTerm::Binary {
@@ -539,15 +543,17 @@ impl PureFactContext {
         else {
             return false;
         };
-        start.as_ref() == delta
-            && holds(ConditionTerm::uint64_less_equal(
-                delta.clone(),
-                end.as_ref().clone(),
-            ))
-            && holds(ConditionTerm::uint64_less_equal(
+        MachineOperandView::Legacy(start).retain(MachineIntegerType::UInt64)
+            == delta.retain(MachineIntegerType::UInt64)
+            && self.decide(&wide_index_comparison(
+                CompareRelation::LessEqual,
+                delta,
+                MachineOperandView::Legacy(end),
+            )) == Some(true)
+            && self.decide(&ConditionTerm::uint64_less_equal(
                 end.as_ref().clone(),
                 held.clone(),
-            ))
+            )) == Some(true)
     }
 
     pub(crate) fn proves_memory_loadable(
@@ -670,13 +676,17 @@ impl PureFactContext {
                 else {
                     return false;
                 };
-                let Some(index) = self.wide_element_index_of_access(base, range_base, width) else {
+                let Some(index) = self.shared_wide_element_index_of_access(base, range_base, width)
+                else {
                     return false;
                 };
                 let limit = MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width));
                 memory_range_still_available(range_memory, memory, range_base, self)
-                    && self.decide(&ConditionTerm::uint64_less_than(index, elements.clone()))
-                        == Some(true)
+                    && self.decide(&wide_index_comparison(
+                        CompareRelation::LessThan,
+                        index.operand_view(),
+                        MachineOperandView::Legacy(&elements),
+                    )) == Some(true)
                     && self.decide(&ConditionTerm::uint64_less_equal(elements.clone(), limit))
                         == Some(true)
             })
@@ -4189,23 +4199,39 @@ impl PureFactContext {
 
     /// The unsigned 64-bit element index of an access at `pointer` from
     /// `base`. Beside the exact wide forms
-    /// ([`Pointer::wide_element_index_from_base`]), an offset already
+    /// ([`Pointer::shared_wide_element_index_from_base`]), an offset already
     /// rewritten to a signed 32-bit index is read back: `(int32)i` scaled,
     /// or `(int32)i + c`, is the offset of `i` or `i + c` when that 64-bit
     /// value is decided to be at most `INT_MAX`, since truncation commutes
     /// with the addition and is then exact and nonnegative. Any other `int32`
     /// index is read as its sign extension.
-    pub(in crate::kernel) fn wide_element_index_of_access(
+    pub(in crate::kernel) fn shared_wide_element_index_of_access(
         &self,
         pointer: &Pointer,
         base: &Pointer,
         element_width: u32,
-    ) -> Option<MachineTerm> {
-        if let Some(index) = pointer.wide_element_index_from_base(base, element_width) {
+    ) -> Option<SharedMachineIntegerTerm> {
+        let literal = |value| {
+            let root = KernelTerm::retained_native_machine_operand(
+                MachineIntegerType::UInt64,
+                &MachineTerm::uint64_constant(value),
+            );
+            MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64)
+        };
+        let cast = |value: MachineOperandView<'_>, source, encoding| {
+            let root = KernelTerm::machine_cast_shared(
+                encoding,
+                source,
+                MachineIntegerType::UInt64,
+                KernelTerm::retained_machine_operand(source, value),
+            );
+            MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64)
+        };
+        if let Some(index) = pointer.shared_wide_element_index_from_base(base, element_width) {
             return Some(index);
         }
-        // A signed 64-bit index is read as the same bits unsigned: a negative
-        // one is then at least 2^63, beyond every wide range's end.
+        // A negative signed index has its high bit set when read unsigned,
+        // placing it beyond every permitted wide range endpoint.
         if let Some(PointerOffsetTerm::Int64Scaled {
             value,
             byte_width,
@@ -4213,19 +4239,16 @@ impl PureFactContext {
         }) = pointer.offset_from_base(base)
             && byte_width == i64::from(element_width)
         {
-            return Some(match value.as_ref().clone() {
-                int64_constant!(constant) => {
-                    MachineTerm::uint64_constant(constant_i64(constant) as u64)
-                }
-                value => {
-                    MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt64, Box::new(value))
-                }
+            return Some(if let Some(value) = value.operand_view().int64_constant() {
+                literal(value as u64)
+            } else {
+                cast(
+                    value.operand_view(),
+                    MachineIntegerType::Int64,
+                    MachineCastSpelling::UInt64FromInt64,
+                )
             });
         }
-        // An index advanced by whole elements, `base[i]` then `+ k`: the
-        // access is at index `i + k` when that sum does not wrap, which is
-        // decided here as `i <= u64::MAX - k`. A chunk read `chunk[3]`
-        // through a cursor at `base[i]` has this form.
         if let Some(PointerOffsetTerm::Add(first, second)) = pointer.offset_from_base(base) {
             let width = i64::from(element_width);
             let whole_elements = |offset: &PointerOffsetTerm| match offset {
@@ -4236,7 +4259,7 @@ impl PureFactContext {
                     value,
                     byte_width,
                     unsigned: true,
-                } if *byte_width == width => value.uint64_as_const(),
+                } if *byte_width == width => value.operand_view().uint64_constant(),
                 _ => None,
             };
             let symbolic_index = |offset: &PointerOffsetTerm| match offset {
@@ -4244,37 +4267,42 @@ impl PureFactContext {
                     value,
                     byte_width,
                     unsigned: true,
-                } if *byte_width == width && value.uint64_as_const().is_none() => {
-                    Some(value.as_ref().clone())
+                } if *byte_width == width && value.operand_view().uint64_constant().is_none() => {
+                    Some(value.clone())
                 }
                 _ => None,
             };
             let stepped = symbolic_index(&first)
                 .zip(whole_elements(&second))
                 .or_else(|| symbolic_index(&second).zip(whole_elements(&first)));
+            // Advancing a native index requires the same complete no-wrap bound.
             if let Some((index, elements)) = stepped
-                && self.decide(&ConditionTerm::uint64_less_equal(
-                    index.clone(),
-                    MachineTerm::uint64_constant(u64::MAX - elements),
+                && self.decide(&wide_index_comparison(
+                    CompareRelation::LessEqual,
+                    index.operand_view(),
+                    literal(u64::MAX - elements).operand_view(),
                 )) == Some(true)
             {
-                return Some(MachineTerm::uint64_add(
-                    index,
-                    MachineTerm::uint64_constant(elements),
+                return Some(wide_index_binary(
+                    MachineBinaryOp::Add,
+                    index.operand_view(),
+                    literal(elements).operand_view(),
                 ));
             }
-            // Two symbolic indices, `base[i]` then `[j]` from there: a chunk
-            // of a chunk. The access is at index `i + j` when the sum does
-            // not wrap, decided here as both being at most `i64::MAX`.
             if let (Some(outer), Some(inner)) = (symbolic_index(&first), symbolic_index(&second)) {
-                let small = |index: &MachineTerm| {
-                    self.decide(&ConditionTerm::uint64_less_equal(
-                        index.clone(),
-                        MachineTerm::uint64_constant(i64::MAX as u64),
+                let small = |index: &SharedMachineIntegerTerm| {
+                    self.decide(&wide_index_comparison(
+                        CompareRelation::LessEqual,
+                        index.operand_view(),
+                        literal(i64::MAX as u64).operand_view(),
                     )) == Some(true)
                 };
                 if small(&outer) && small(&inner) {
-                    return Some(MachineTerm::uint64_add(outer, inner));
+                    return Some(wide_index_binary(
+                        MachineBinaryOp::Add,
+                        outer.operand_view(),
+                        inner.operand_view(),
+                    ));
                 }
             }
         }
@@ -4286,16 +4314,19 @@ impl PureFactContext {
         if byte_width != i64::from(element_width) {
             return None;
         }
-        // Otherwise the index is the `int32` value itself, read as its sign
-        // extension, the spelling a range bound of that type is given
-        // ([`crate::kernel::wide_range_bounds`]). A negative index becomes at
-        // least 2^63, beyond every wide range's end, so no caller places it.
-        crate::kernel::primitives::checked_native_range_endpoint(&value, self).or(Some(
-            MachineTerm::legacy_cast(
-                MachineCastSpelling::UInt64FromInt32,
-                Box::new(value.as_ref().clone()),
-            ),
-        ))
+        Some(
+            crate::kernel::primitives::checked_shared_native_range_endpoint(
+                value.operand_view(),
+                self,
+            )
+            .unwrap_or_else(|| {
+                cast(
+                    value.operand_view(),
+                    MachineIntegerType::Int32,
+                    MachineCastSpelling::UInt64FromInt32,
+                )
+            }),
+        )
     }
 
     /// A complete aligned access lies outside a native range. Both byte
@@ -4319,24 +4350,36 @@ impl PureFactContext {
             .equality_graph
             .pointer_at_base(pointer, range.base())
             .unwrap_or_else(|| pointer.clone());
-        let Some(index) = self.wide_element_index_of_access(&selected, range.base(), width) else {
+        let Some(index) = self.shared_wide_element_index_of_access(&selected, range.base(), width)
+        else {
             return false;
         };
         let limit = i64::MAX as u64 / u64::from(width);
         let Some(last_start) = limit.checked_sub(span) else {
             return false;
         };
-        let holds = |lower: MachineTerm, upper: MachineTerm| {
-            lower == upper
-                || self.decide(&ConditionTerm::uint64_less_equal(lower, upper)) == Some(true)
+        let holds = |lower: MachineOperandView<'_>, upper: MachineOperandView<'_>| {
+            lower.retain(MachineIntegerType::UInt64) == upper.retain(MachineIntegerType::UInt64)
+                || self.decide(&wide_index_comparison(
+                    CompareRelation::LessEqual,
+                    lower,
+                    upper,
+                )) == Some(true)
         };
-        holds(end.clone(), MachineTerm::uint64_constant(limit))
-            && holds(index.clone(), MachineTerm::uint64_constant(last_start))
-            && (holds(end.clone(), index.clone())
-                || holds(
-                    MachineTerm::uint64_add(index, MachineTerm::uint64_constant(span)),
-                    start.clone(),
-                ))
+        holds(
+            MachineOperandView::Legacy(end),
+            MachineOperandView::Legacy(&MachineTerm::uint64_constant(limit)),
+        ) && holds(
+            index.operand_view(),
+            MachineOperandView::Legacy(&MachineTerm::uint64_constant(last_start)),
+        ) && (holds(MachineOperandView::Legacy(end), index.operand_view()) || {
+            let access_end = wide_index_binary(
+                MachineBinaryOp::Add,
+                index.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::uint64_constant(span)),
+            );
+            holds(access_end.operand_view(), MachineOperandView::Legacy(start))
+        })
     }
 
     /// Whether an access of `byte_width` bytes at `pointer` lies in the wide
@@ -4393,80 +4436,68 @@ impl PureFactContext {
                 .pointer_at_base(pointer, base)
                 .unwrap_or_else(|| pointer.clone())
         };
-        let Some(index) = self.wide_element_index_of_access(&resolved, base, element_width) else {
+        let Some(index) = self.shared_wide_element_index_of_access(&resolved, base, element_width)
+        else {
             return false;
         };
         let limit = i64::MAX as u64 / u64::from(element_width);
-        let holds = |condition: ConditionTerm| self.decide(&condition) == Some(true);
-        // `x - c < end` where `x` is another spelling of `end`: a count a
-        // call returned, held equal to the field that bounds the range. The
-        // comparison is then `x - c < x`, which the order rules decide.
-        let below_equal_spelling = |index: &MachineTerm| {
-            let MachineTerm::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Subtract,
-                left: whole,
-                right: taken,
-            } = index
-            else {
-                return false;
-            };
-            let equal = |left: &MachineTerm, right: &MachineTerm| {
-                self.decide(&ConditionTerm::uint64_equal(left.clone(), right.clone())) == Some(true)
-            };
-            (equal(whole, end) || equal(end, whole))
-                && (holds(ConditionTerm::uint64_less_than(
-                    MachineTerm::uint64_subtract(end.clone(), taken.as_ref().clone()),
-                    end.clone(),
-                )) || (holds(ConditionTerm::uint64_less_equal(
-                    MachineTerm::uint64_constant(1),
-                    taken.as_ref().clone(),
-                )) && holds(ConditionTerm::uint64_less_equal(
-                    taken.as_ref().clone(),
-                    end.clone(),
-                ))))
+        let holds = |relation, left: MachineOperandView<'_>, right: MachineOperandView<'_>| {
+            self.decide(&wide_index_comparison(relation, left, right)) == Some(true)
         };
-        // `i < x + c` for a constant `c >= 1` whose sum does not wrap: an
-        // index below `c`, at most `x`, or equal to `x` is below the end. A C string's
-        // `[0..len + 1]` footprint has this end.
-        let below_unwrapped_successor = |index: &MachineTerm| {
-            let MachineTerm::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Add,
-                left: whole,
-                right: added,
-            } = end
+        let end_view = MachineOperandView::Legacy(end);
+        let below_equal_spelling = || {
+            let Some((MachineIntegerType::UInt64, MachineBinaryOp::Subtract, [whole, taken])) =
+                index.operand_view().binary()
             else {
                 return false;
             };
-            let Some(added) = added.uint64_as_const().filter(|added| *added >= 1) else {
+            (holds(CompareRelation::Equal, whole, end_view)
+                || holds(CompareRelation::Equal, end_view, whole))
+                && (holds(
+                    CompareRelation::LessThan,
+                    wide_index_binary(MachineBinaryOp::Subtract, end_view, taken).operand_view(),
+                    end_view,
+                ) || (holds(
+                    CompareRelation::LessEqual,
+                    MachineOperandView::Legacy(&MachineTerm::uint64_constant(1)),
+                    taken,
+                ) && holds(CompareRelation::LessEqual, taken, end_view)))
+        };
+        // A successor endpoint must still owe its original no-wrap guard.
+        let below_unwrapped_successor = || {
+            let Some((MachineIntegerType::UInt64, MachineBinaryOp::Add, [whole, added])) =
+                end_view.binary()
+            else {
                 return false;
             };
-            holds(ConditionTerm::uint64_less_equal(
-                whole.as_ref().clone(),
-                MachineTerm::uint64_constant(u64::MAX - added),
-            )) && (index.uint64_as_const().is_some_and(|value| value < added)
-                || holds(ConditionTerm::uint64_less_equal(
-                    index.clone(),
-                    whole.as_ref().clone(),
-                ))
-                || holds(ConditionTerm::uint64_equal(
-                    index.clone(),
-                    whole.as_ref().clone(),
-                )))
+            let Some(added) = added.uint64_constant().filter(|value| *value >= 1) else {
+                return false;
+            };
+            holds(
+                CompareRelation::LessEqual,
+                whole,
+                MachineOperandView::Legacy(&MachineTerm::uint64_constant(u64::MAX - added)),
+            ) && (index
+                .operand_view()
+                .uint64_constant()
+                .is_some_and(|value| value < added)
+                || holds(CompareRelation::LessEqual, index.operand_view(), whole)
+                || holds(CompareRelation::Equal, index.operand_view(), whole))
         };
         (start.uint64_as_const() == Some(0)
-            || holds(ConditionTerm::uint64_less_equal(
-                start.clone(),
-                index.clone(),
-            )))
-            && (holds(ConditionTerm::uint64_less_than(index.clone(), end.clone()))
-                || below_equal_spelling(&index)
-                || below_unwrapped_successor(&index))
-            && holds(ConditionTerm::uint64_less_equal(
-                end.clone(),
-                MachineTerm::uint64_constant(limit),
+            || holds(
+                CompareRelation::LessEqual,
+                MachineOperandView::Legacy(start),
+                index.operand_view(),
             ))
+            && (holds(CompareRelation::LessThan, index.operand_view(), end_view)
+                || below_equal_spelling()
+                || below_unwrapped_successor())
+            && holds(
+                CompareRelation::LessEqual,
+                end_view,
+                MachineOperandView::Legacy(&MachineTerm::uint64_constant(limit)),
+            )
     }
 
     /// Check an access in the range's declared index domain.
@@ -6080,6 +6111,58 @@ mod shared_range_index_tests {
             ],
         ))
         .retain(MachineIntegerType::Int32)
+    }
+
+    #[test]
+    fn shared_wide_coordinates_require_full_width_bounds() {
+        let _session = VerificationSession::enter();
+        let wide = MachineTerm::Variable(Variable(1018320));
+        let narrow = MachineTerm::add(
+            MachineTerm::uint32_from_64(wide.clone()),
+            MachineTerm::constant(1),
+        );
+        let root =
+            crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &narrow);
+        let empty = PureFactContext::new();
+        let bounded = empty.clone().assume_condition(
+            ConditionTerm::uint64_less_equal(
+                wide.clone(),
+                MachineTerm::uint64_constant(i32::MAX as u64 - 1),
+            ),
+            true,
+        );
+        let truncated = empty.clone().assume_condition(
+            ConditionTerm::unsigned_less_equal(
+                MachineTerm::uint32_from_64(wide.clone()),
+                MachineTerm::constant(i32::MAX as u32 - 1),
+            ),
+            true,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        assert!(
+            crate::kernel::primitives::checked_shared_native_range_endpoint(
+                MachineOperandView::Shared(&root),
+                &empty
+            )
+            .is_none()
+        );
+        assert!(
+            crate::kernel::primitives::checked_shared_native_range_endpoint(
+                MachineOperandView::Shared(&root),
+                &truncated
+            )
+            .is_none()
+        );
+        let result = crate::kernel::primitives::checked_shared_native_range_endpoint(
+            MachineOperandView::Shared(&root),
+            &bounded,
+        )
+        .unwrap();
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(
+            result.structural_value(),
+            &MachineTerm::uint64_add(wide, MachineTerm::uint64_constant(1))
+        );
     }
 
     #[test]

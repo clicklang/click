@@ -1,10 +1,10 @@
 use super::*;
+use crate::kernel::assumptions::{wide_index_binary, wide_index_comparison};
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
-use crate::kernel::cast_term;
-use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
-use crate::kernel::{bits32_constant, constant_u32, int32_constant};
+use crate::kernel::int32_constant;
+use crate::kernel::{CompareRelation, MachineCastSpelling, MachineIntegerType, OverflowOperation};
 mod observable;
 
 /// A proof-aware composition query in progress on this thread. Bridging a
@@ -10417,43 +10417,80 @@ pub(in crate::kernel) fn checked_native_range_endpoint(
     term: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Option<MachineTerm> {
-    let wide = match term {
-        bits32_constant!(value) if constant_u32(*value) <= i32::MAX as u32 => {
-            return Some(MachineTerm::uint64_constant(u64::from(constant_u32(
-                *value,
-            ))));
+    checked_shared_native_range_endpoint(MachineOperandView::Legacy(term), assumptions).map(
+        |value| {
+            value
+                .operand_view()
+                .literal()
+                .unwrap_or_else(|| value.structural_value().clone())
+        },
+    )
+}
+
+/// The same exact-coordinate judgment over a retained operand. Only the
+/// selected root and one addition/cast layer are inspected.
+pub(in crate::kernel) fn checked_shared_native_range_endpoint(
+    term: MachineOperandView<'_>,
+    assumptions: &PureFactContext,
+) -> Option<SharedMachineIntegerTerm> {
+    fn base(term: MachineOperandView<'_>) -> Option<MachineOperandView<'_>> {
+        if term.variable().is_some() {
+            Some(term)
+        } else if let Some((MachineCastSpelling::UInt32From64, _, _, value)) = term.cast() {
+            Some(value)
+        } else {
+            None
         }
-        MachineTerm::Variable(_) => term.clone(),
-        cast_term!(UInt32From64, value) => value.as_ref().clone(),
-        binary_term!(Int32, Add, left, right) => {
-            let (value, constant) = match (left.as_ref(), right.as_ref()) {
-                (value, bits32_constant!(constant)) | (int32_constant!(constant), value)
-                    if constant_u32(*constant) <= i32::MAX as u32 =>
-                {
-                    let value = match value {
-                        MachineTerm::Variable(_) => value.clone(),
-                        cast_term!(UInt32From64, inner) => inner.as_ref().clone(),
-                        _ => return None,
-                    };
-                    (value, constant_u32(*constant))
-                }
-                _ => return None,
-            };
-            // Check the operand too: an overflowing native sum can be small.
-            if assumptions.decide(&ConditionTerm::uint64_less_equal(
-                value.clone(),
-                MachineTerm::uint64_constant(i32::MAX as u64 - u64::from(constant)),
-            )) != Some(true)
-            {
-                return None;
-            }
-            MachineTerm::uint64_add(value, MachineTerm::uint64_constant(u64::from(constant)))
-        }
-        _ => return None,
+    }
+    let literal = |value| {
+        let root = KernelTerm::retained_native_machine_operand(
+            MachineIntegerType::UInt64,
+            &MachineTerm::uint64_constant(value),
+        );
+        MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64)
     };
-    (assumptions.decide(&ConditionTerm::uint64_less_equal(
-        wide.clone(),
-        MachineTerm::uint64_constant(i32::MAX as u64),
+    let small = |value: MachineOperandView<'_>| {
+        value
+            .word32_constant()
+            .filter(|value| *value <= i32::MAX as u32)
+    };
+    if let Some(value) = small(term) {
+        return Some(literal(u64::from(value)));
+    }
+    let wide = if let Some(value) = base(term) {
+        value.retain(MachineIntegerType::UInt64)
+    } else if let Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [left, right])) =
+        term.binary()
+    {
+        let (value, constant) = if let Some(constant) = small(right) {
+            (base(left)?, constant)
+        } else if matches!(left.literal(), Some(int32_constant!(_))) {
+            (base(right)?, small(left)?)
+        } else {
+            return None;
+        };
+        if assumptions.decide(&wide_index_comparison(
+            CompareRelation::LessEqual,
+            value,
+            MachineOperandView::Legacy(&MachineTerm::uint64_constant(
+                i32::MAX as u64 - u64::from(constant),
+            )),
+        )) != Some(true)
+        {
+            return None;
+        }
+        wide_index_binary(
+            MachineBinaryOp::Add,
+            value,
+            literal(u64::from(constant)).operand_view(),
+        )
+    } else {
+        return None;
+    };
+    (assumptions.decide(&wide_index_comparison(
+        CompareRelation::LessEqual,
+        wide.operand_view(),
+        literal(i32::MAX as u64).operand_view(),
     )) == Some(true))
     .then_some(wide)
 }
@@ -10532,21 +10569,31 @@ fn wide_memory_range_covers_window(
             )
         }
     };
-    let holds = |lower: MachineTerm, upper: MachineTerm| {
-        lower == upper
-            || assumptions.decide(&ConditionTerm::uint64_less_equal(lower, upper)) == Some(true)
+    let holds = |lower: MachineOperandView<'_>, upper: MachineOperandView<'_>| {
+        lower.retain(MachineIntegerType::UInt64) == upper.retain(MachineIntegerType::UInt64)
+            || assumptions.decide(&wide_index_comparison(
+                CompareRelation::LessEqual,
+                lower,
+                upper,
+            )) == Some(true)
     };
+    let start_view = MachineOperandView::Legacy(start);
+    let end_view = MachineOperandView::Legacy(end);
+    let first_view = MachineOperandView::Legacy(&first);
+    let last_view = MachineOperandView::Legacy(&last);
     // Native translated windows require a non-wrapping byte extent. Keep
     // the existing constant-int32 window path unchanged.
     if required.wide_bounds().is_some()
         && !holds(
-            end.clone(),
-            MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(available.element_width())),
+            end_view,
+            MachineOperandView::Legacy(&MachineTerm::uint64_constant(
+                i64::MAX as u64 / u64::from(available.element_width()),
+            )),
         )
     {
         return false;
     }
-    if !holds(first.clone(), last.clone()) {
+    if !holds(first_view, last_view) {
         return false;
     }
     let mut selected = required.base().clone();
@@ -10561,56 +10608,48 @@ fn wide_memory_range_covers_window(
     let aligned = assumptions
         .pointer_at_known_base_with_wide_index(&selected, available.base())
         .unwrap_or_else(|| selected.clone());
-    let covers_index = |index: MachineTerm| {
-        if let MachineTerm::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::Subtract,
-            left: whole,
-            right: taken,
-        } = &index
-            && (assumptions.decide(&ConditionTerm::uint64_equal(
-                last.clone(),
-                taken.as_ref().clone(),
+    let covers_index = |index: SharedMachineIntegerTerm| {
+        let index = index.operand_view();
+        if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Subtract, [whole, taken])) =
+            index.binary()
+            && (assumptions.decide(&wide_index_comparison(
+                CompareRelation::Equal,
+                last_view,
+                taken,
             )) == Some(true)
-                || holds(last.clone(), taken.as_ref().clone()))
-            && assumptions.uint64_values_equal_for_range_resolution(end, whole)
-            && holds(taken.as_ref().clone(), end.clone())
+                || holds(last_view, taken))
+            && assumptions.uint64_values_equal_for_range_resolution_views(end_view, whole)
+            && holds(taken, end_view)
         {
-            // count <= whole prevents underflow; requesting at most count
-            // elements stays within the suffix starting at whole - count.
-            // Both comparisons retain the complete native-width values.
-            return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
+            // The full-width underflow guard keeps the requested suffix in bounds.
+            return start_view.uint64_constant() == Some(0) || holds(start_view, index);
         }
-        if let MachineTerm::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::Subtract,
-            left: whole,
-            right: skipped,
-        } = &last
-            && first.uint64_as_const() == Some(0)
-            && assumptions.uint64_values_equal_for_range_resolution(&index, skipped)
-            && assumptions.uint64_values_equal_for_range_resolution(end, whole)
-            && holds(index.clone(), end.clone())
+        if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Subtract, [whole, skipped])) =
+            last_view.binary()
+            && first_view.uint64_constant() == Some(0)
+            && assumptions.uint64_values_equal_for_range_resolution_views(index, skipped)
+            && assumptions.uint64_values_equal_for_range_resolution_views(end_view, whole)
+            && holds(index, end_view)
         {
-            // A native suffix keeps its complete endpoint and underflow guard.
-            return start.uint64_as_const() == Some(0) || holds(start.clone(), index);
+            return start_view.uint64_constant() == Some(0) || holds(start_view, index);
         }
-        (start.uint64_as_const() == Some(0) || holds(start.clone(), index.clone()))
-            && ((holds(index.clone(), end.clone())
+        (start_view.uint64_constant() == Some(0) || holds(start_view, index))
+            && ((holds(index, end_view)
                 && holds(
-                    last.clone(),
-                    MachineTerm::uint64_subtract(end.clone(), index.clone()),
+                    last_view,
+                    wide_index_binary(MachineBinaryOp::Subtract, end_view, index).operand_view(),
                 ))
-                || (holds(last.clone(), end.clone())
+                || (holds(last_view, end_view)
                     && holds(
                         index,
-                        MachineTerm::uint64_subtract(end.clone(), last.clone()),
+                        wide_index_binary(MachineBinaryOp::Subtract, end_view, last_view)
+                            .operand_view(),
                     )))
     };
     // The supplied address can already carry the complete native coordinate.
     // Use it before alignment can choose another spelling of the same address.
     if assumptions
-        .wide_element_index_of_access(&selected, available.base(), available.element_width())
+        .shared_wide_element_index_of_access(&selected, available.base(), available.element_width())
         .is_some_and(&covers_index)
     {
         return true;
@@ -10627,7 +10666,7 @@ fn wide_memory_range_covers_window(
                 return false;
             }
             assumptions
-                .wide_element_index_of_access(
+                .shared_wide_element_index_of_access(
                     &candidate,
                     available.base(),
                     available.element_width(),
@@ -11132,7 +11171,7 @@ fn wide_range_bound_pair(
 
 /// `range` restated as a wide range at `base`, when its own base is `base`
 /// advanced by an unsigned 64-bit element index `i`
-/// ([`PureFactContext::wide_element_index_of_access`]): `(base + i)[s..e]`
+/// ([`PureFactContext::shared_wide_element_index_of_access`]): `(base + i)[s..e]`
 /// is `base[i + s..i + e]`. The sums do not wrap for a range the context
 /// holds: `i` and `e` are each at most `i64::MAX / width`, the extent guard
 /// of a held wide range, so their sum is below 2^64.
@@ -11142,16 +11181,25 @@ fn wide_range_rebased(
     assumptions: &PureFactContext,
 ) -> Option<CMemoryRange> {
     let width = range.element_width();
-    let index = assumptions.wide_element_index_of_access(range.base(), base, width)?;
+    let index = assumptions.shared_wide_element_index_of_access(range.base(), base, width)?;
     let (start, end) = wide_range_bound_pair(range, assumptions)?;
     let shifted = |bound: MachineTerm| {
-        if bound.uint64_as_const() == Some(0) {
+        let shifted = if bound.uint64_as_const() == Some(0) {
             index.clone()
-        } else if index.uint64_as_const() == Some(0) {
-            bound
+        } else if index.operand_view().uint64_constant() == Some(0) {
+            return bound;
         } else {
-            MachineTerm::uint64_add(index.clone(), bound)
-        }
+            wide_index_binary(
+                MachineBinaryOp::Add,
+                index.operand_view(),
+                MachineOperandView::Legacy(&bound),
+            )
+        };
+        // CMemoryRange still owns native endpoints; export only this output.
+        shifted
+            .operand_view()
+            .literal()
+            .unwrap_or_else(|| shifted.structural_value().clone())
     };
     Some(
         CMemoryRange::new_wide(base.clone(), shifted(start), shifted(end), width)
