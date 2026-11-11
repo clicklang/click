@@ -1578,9 +1578,27 @@ pub(in crate::kernel) fn pointer_offsets_equal_after_exact_materialization(
                 byte_width: right_width,
             },
         ) => {
-            left_width == right_width
-                && (bitvector_terms_equal_after_exact_materialization(left_value, right_value)
-                    || loads_equal_by_bounded_snapshot_match(left_value, right_value))
+            if left_width != right_width {
+                return false;
+            }
+            let left = exact_materialized_index_fixed_point(left_value);
+            let right = exact_materialized_index_fixed_point(right_value);
+            let left_view = left.operand_view();
+            let right_view = right.operand_view();
+            let equal = match (left_view, right_view) {
+                (MachineOperandView::Legacy(a), MachineOperandView::Legacy(b)) => a == b,
+                _ => crate::kernel::shared_machine_syntax_equal(
+                    &crate::kernel::KernelTerm::retained_machine_operand(
+                        MachineIntegerType::Int32,
+                        left_view,
+                    ),
+                    &crate::kernel::KernelTerm::retained_machine_operand(
+                        MachineIntegerType::Int32,
+                        right_view,
+                    ),
+                ),
+            };
+            equal || loads_equal_by_bounded_snapshot_match(left_view, right_view)
         }
         (PointerOffsetTerm::Add(left_a, left_b), PointerOffsetTerm::Add(right_a, right_b)) => {
             (pointer_offsets_equal_after_exact_materialization(left_a, right_a)
@@ -1597,10 +1615,16 @@ pub(in crate::kernel) fn pointer_offsets_equal_after_exact_materialization(
 /// bounded snapshot matcher decide the memory pair at that one cell. Havoc
 /// markers must match on both sides, so this never equates loads across an
 /// unresolved havoc. Assumption-free.
-fn loads_equal_by_bounded_snapshot_match(left: &MachineTerm, right: &MachineTerm) -> bool {
+fn loads_equal_by_bounded_snapshot_match(
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+) -> bool {
+    let (Some(left), Some(right)) = (left.read_source(), right.read_source()) else {
+        return false;
+    };
     let (Some(left_load), Some(right_load)) = (
-        crate::kernel::eval::viewed_as_memory_load(&exact_materialized_load_fixed_point(left)),
-        crate::kernel::eval::viewed_as_memory_load(&exact_materialized_load_fixed_point(right)),
+        crate::kernel::eval::viewed_as_memory_load(&left),
+        crate::kernel::eval::viewed_as_memory_load(&right),
     ) else {
         return false;
     };
@@ -1628,6 +1652,21 @@ fn loads_equal_by_bounded_snapshot_match(left: &MachineTerm, right: &MachineTerm
         )
 }
 
+/// Only a root int32 read is materialized by this rule. Arithmetic, other
+/// read kinds and unresolved snapshots keep their written operand.
+fn exact_materialized_index_fixed_point(
+    term: &SharedMachineIntegerTerm,
+) -> SharedMachineIntegerTerm {
+    let view = term.operand_view();
+    if !matches!(view.read(), Some((_, _, LoadKind::Int32))) {
+        return term.clone();
+    }
+    let source = view.read_source().expect("selected root read");
+    let result = exact_materialized_load_fixed_point(&source);
+    term.with_mapped_index(result)
+}
+
+#[cfg(test)]
 fn bitvector_terms_equal_after_exact_materialization(
     left: &MachineTerm,
     right: &MachineTerm,
@@ -1668,6 +1707,118 @@ mod exact_materialization_tests {
                 crate::kernel::LoadKind::Int32,
             )
         })
+    }
+
+    fn index(value: MachineTerm, shared: bool) -> PointerOffsetTerm {
+        let format = MachineIntegerType::Int32;
+        let value = if shared {
+            let root = crate::kernel::KernelTerm::retained_machine_operand(
+                format,
+                MachineOperandView::Legacy(&value),
+            );
+            SharedMachineIntegerTerm::from_shared(format, root).unwrap()
+        } else {
+            SharedMachineIntegerTerm::intern(format, value)
+        };
+        PointerOffsetTerm::Int32Scaled {
+            value,
+            byte_width: 4,
+        }
+    }
+
+    #[test]
+    fn retained_materialization_preserves_root_only_rules_and_read_kinds() {
+        use crate::kernel::{KernelTermExport, MachineBinaryOp};
+        let _session = crate::kernel::VerificationSession::enter();
+        let chain = load_chain(8, 17);
+        let add = |value| MachineTerm::Binary {
+            format: MachineIntegerType::Int32,
+            op: MachineBinaryOp::Add,
+            left: Box::new(value),
+            right: Box::new(MachineTerm::Variable(Variable(994551))),
+        };
+        let pointer = Pointer {
+            block: "exact-kind-control".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let unsigned = MachineTerm::MemoryLoad(
+            intern_c_memory(CMemory::new().store(pointer.clone(), CValue::UInt32(17u32.into()))),
+            Box::new(pointer),
+            LoadKind::UInt32,
+        );
+        for (left, right, expected) in [
+            (chain.clone(), 17u32.into(), true),
+            (chain.clone(), 18u32.into(), false),
+            (add(chain.clone()), add(17u32.into()), false),
+            (add(chain.clone()), add(chain), true),
+            (unsigned, 17u32.into(), false),
+            (
+                MachineTerm::constant(17),
+                MachineTerm::uint32_constant(17),
+                false,
+            ),
+        ] {
+            for shared_left in [false, true] {
+                for shared_right in [false, true] {
+                    let left = index(left.clone(), shared_left);
+                    let right = index(right.clone(), shared_right);
+                    let exports = KernelTermExport::machine_export_count();
+                    assert_eq!(
+                        pointer_offsets_equal_after_exact_materialization(&left, &right),
+                        expected
+                    );
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn retained_materialization_preserves_snapshot_separation_and_havoc() {
+        use crate::kernel::KernelTermExport;
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: "retained-snapshot".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let other = Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(32),
+        };
+        let before = CMemory::new().with_block("retained-snapshot", 64);
+        let load = |memory| {
+            MachineTerm::MemoryLoad(
+                intern_c_memory(memory),
+                Box::new(pointer.clone()),
+                LoadKind::Int32,
+            )
+        };
+        for (after, expected) in [
+            (
+                before.clone().store(other, CValue::Int32(9u32.into())),
+                true,
+            ),
+            (
+                before
+                    .clone()
+                    .store(pointer.clone(), CValue::Int32(9u32.into())),
+                false,
+            ),
+            (before.clone().with_block("havoc:994554", 0), false),
+        ] {
+            for shared_left in [false, true] {
+                for shared_right in [false, true] {
+                    let left = index(load(before.clone()), shared_left);
+                    let right = index(load(after.clone()), shared_right);
+                    let exports = KernelTermExport::machine_export_count();
+                    assert_eq!(
+                        pointer_offsets_equal_after_exact_materialization(&left, &right),
+                        expected
+                    );
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
     }
 
     #[test]
