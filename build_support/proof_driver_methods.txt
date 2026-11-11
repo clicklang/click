@@ -51,6 +51,7 @@ try_fact_transport
 try_generated_linear_script
 try_planned_explicit_steps
 try_restricted_solve_closure
+try_index_disequality_closure
 try_selected_arithmetic
 try_selected_arithmetic_without_identities
 try_signed_definedness_closure

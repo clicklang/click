@@ -13,6 +13,7 @@ pub(crate) struct ProofSearch<P: ?Sized> {
 
 mod permission;
 pub(crate) mod proposition_search;
+pub(crate) mod store_separation;
 pub(crate) use permission::SearchPermission;
 
 pub(crate) fn disjunction_candidates(
