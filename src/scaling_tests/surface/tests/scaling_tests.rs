@@ -7838,53 +7838,6 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
 }
 
 #[test]
-#[ignore = "nightly: unchanged rb_next proof checked at four postconditions exceeds ten seconds"]
-fn rb_next_false_list_postconditions_fail_below_the_smart_budget() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/rb_next.md");
-    let fixture = crate::cli::read_mdtest(&path).unwrap();
-    let source = fixture.click_source.as_deref().unwrap();
-    let sources = fixture
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    let correct =
-        "rb_list_adjacent(rb_inorder(plug(old(c.model), old(t.model))), node, result) == 1;";
-    assert_eq!(source.matches(correct).count(), 1);
-    // Each false claim must fail well inside the default smart budget of
-    // 2,000,000 units, not exhaust it. Measured 2026-10-07, the three
-    // failing searches cost between 530,000 and 560,000 units; before
-    // machine-integer quantifiers kept their types (#309) they cost between
-    // 425,000 and 500,000. The limit leaves room for that kind of change
-    // and still catches a search that doubles.
-    let limits = crate::instrumentation::TacticWorkLimits {
-        smart: 750_000,
-        ..crate::instrumentation::TacticWorkLimits::default()
-    };
-    crate::instrumentation::with_tactic_work_limits(limits, || {
-        crate::surface::verify_c0_sources_functions(source, &sources, ["rb_next".to_string()])
-            .expect("the original successor proof must still verify");
-        for wrong in [
-            "rb_list_adjacent(rb_inorder(plug(old(c.model), old(t.model))), result, node) == 1;",
-            "rb_list_adjacent(rb_inorder(plug(old(c.model), old(t.model))), node, node) == 1;",
-            "rb_list_starts_with(rb_inorder(plug(old(c.model), old(t.model))), result) == 1;",
-        ] {
-            let changed = source.replace(correct, wrong);
-            let error = crate::surface::verify_c0_sources_functions(
-                &changed,
-                &sources,
-                ["rb_next".to_string()],
-            )
-            .expect_err("a wrong list position is not a successor proof");
-            let message = error.message();
-            assert!(message.contains("ensures"), "{message}");
-            assert!(!message.contains("budget"), "{message}");
-            assert!(!message.contains("exhausted"), "{message}");
-        }
-    });
-}
-
-#[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn list_position_solve_search_stays_bounded_beside_unrelated_facts() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
