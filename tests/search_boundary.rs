@@ -1313,3 +1313,23 @@ fn signed_definedness_certificate_attempts_stay_in_search() {
         );
     }
 }
+
+#[test]
+fn unsigned_order_fact_restatement_stays_in_search() {
+    let path = "src/surface/proof/smart_closures.rs";
+    for source in [
+        "impl Proof { fn try_unsigned_strict_fact(&self) {} }",
+        "impl Proof { fn unsigned_strict_fact(&self) { self.driver().have_by_integer_arithmetic(goal, premises); } }",
+        "impl Proof { fn use_order(&self) { ProofSearch::try_unsigned_strict_fact(self, lower, upper, facts); } }",
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        let errors = proof_search_boundary::check(path, &file).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("search method must not return")
+                    || error.starts_with("unreviewed proof-search dependency:")),
+            "{errors:?}"
+        );
+    }
+}

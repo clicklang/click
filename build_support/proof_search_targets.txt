@@ -207,3 +207,4 @@ try_entry_existential_closure
 try_selected_entry_existential_closure
 try_carry_entry_conjunct
 try_signed_definedness_certificate
+try_unsigned_strict_fact

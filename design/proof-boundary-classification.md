@@ -2,7 +2,7 @@
 
 Source reconciliation at `c53645952` (2026-11-11), the completed head of
 PR #2520. Queue/merge status is separate from this source baseline. This
-classifies all 19 `mixed` and 5 `operation-to-driver` records in
+classifies all 19 `mixed` and 4 `operation-to-driver` records in
 `build_support/proof_search_edges.tsv` and groups the operation references.
 A record is one caller/target pair, not one runtime call or one slow walk.
 A classified call is not a complexity proof for its callee. This documentation
@@ -14,9 +14,9 @@ dispatch now lives in the match driver: preparation returns the excluded
 partition, the driver applies the written contradiction with its source site,
 and completion publishes the retained partition and closed-arm certificate.
 The relocated match reference is driver-owned. Signed-definedness certificate
-attempts now live on `ProofSearch`; the primitive certificate application is
-unchanged. Registering that search helper exposes its three existing search-only
-callers, increasing the inventory by three records without adding runtime work.
+attempts and unsigned strict-fact restatement now live on `ProofSearch`;
+primitive certificate application is unchanged. Registering these helpers exposes
+existing search-only callers without adding runtime work.
 
 ## Current boundary
 
@@ -106,7 +106,7 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 5 operation-to-driver reference records
+## The 4 operation-to-driver reference records
 
 Methods below are on `Proof`.
 
@@ -114,11 +114,10 @@ Methods below are on `Proof`.
 | --- | --- |
 | `plan_invariant_bundle_closure` | Search/orchestration adapter on the wrong interface: forwards to the driver planner and records the missed member. Used by invariant-closing orchestration. |
 | `solve_open_for_missing_resource` | Search helper on the wrong interface: selects a resource to unfold, called from smart retry. |
-| `unsigned_strict_fact` | Search helper on the wrong interface: called from smart closures and may prove a reversed inequality using arithmetic. |
 | `apply_planned_fact_transport_inner` | Bare-transport search adapter, not a primitive despite its location. Plans premises, then dispatches `TransportUsing`. |
 | `apply_planned_outcome_fact_transport` | The same bare-transport adapter at a completed execution outcome. |
 
-Totals: 5 search/support adapters. Some categories overlap semantically; each record is counted
+Totals: 4 search/support adapters. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
 
 ## Why accidental search remains possible
@@ -223,7 +222,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 616 reference records, not 616 obligations to remove.
+The inventory contains 617 reference records, not 617 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this

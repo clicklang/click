@@ -286,7 +286,7 @@ src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_de
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_with_operand_definedness	signed_operand_bound_premises	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_with_operand_definedness	try_solve_closure	1
 src/surface/proof/smart_closures.rs	import	::	plan_solve_certificate	1
-src/surface/proof/smart_closures.rs	operation-to-driver	Proof::unsigned_strict_fact	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_unsigned_strict_fact	driver	1
 src/surface/proof/smart_closures.rs	presentation	Proof::spell_refutation	resolve_solve_premises	1
 src/surface/proof/smart_closures.rs	presentation	Proof::spelled_goal_for_search	available_surface_fact	2
 src/surface/proof/smart_closures.rs	presentation	Proof::unsigned_surface_fact	available_surface_fact	4
@@ -614,3 +614,4 @@ src/surface/proof/driver/execution.rs	driver	::advance_prepared_execution_match	
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_closure	try_signed_definedness_certificate	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_with_operand_definedness	try_signed_definedness_certificate	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_restricted_signed_definedness_closure	try_signed_definedness_certificate	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_unsigned_order_step_from	try_unsigned_strict_fact	4
