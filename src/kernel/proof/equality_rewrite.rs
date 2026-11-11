@@ -2,6 +2,7 @@
 
 mod shared;
 pub(in crate::kernel) use shared::clear as clear_shared_exact_rewrite_cache;
+pub(in crate::kernel) use shared::normalize_node as rebuild_normalized_machine_node;
 pub(in crate::kernel) use shared::transport_node as rebuild_transported_machine_node;
 
 use super::fact_reasoning::exactly_available_fact;
