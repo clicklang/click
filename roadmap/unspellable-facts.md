@@ -397,7 +397,7 @@ The remaining locations divide into these concrete groups:
 
 | Group | Remaining routes | Disposition |
 | --- | --- | --- |
-| Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_provenance` exact-load normalization (framed transport is closed below) | Live checker migration; shared outer arithmetic does not eliminate native address children |
+| Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_provenance` framed transport and exact-load normalization are closed below | Live checker migration; shared outer arithmetic does not eliminate native address children |
 | Wide indices and shallow pointer checks | Wide access reconstruction, strided-region membership, offset transport and fold-read summaries are closed below; snapshot equivalence and `pointer_block_bounds` remain | Retain width, signedness and exactness rules while closing the remaining callers |
 | Pointer fact/rewrite payloads | `arithmetic_special`, `equality_rewrite`, `fact_keys`, `fact_reasoning`, pointer-offset substitution and execution facts | Mixed construction/checking boundaries; migrate expression children without changing pointer semantics |
 | Resource and snapshot construction | quantified cells, memory-base roots, initialized-byte spelling, havoc identity, memory-load range collection | Mixed producer/checker boundaries, not merely printing |
@@ -568,9 +568,9 @@ width and exact-snapshot requirements; this does not broaden its rule family.
 
 Controls compare native/shared value answers, preserve changed-cell and width
 refusals, and reject cold arithmetic DAGs at 16, 64 and 256 levels with constant
-root-inspection work and zero exports. Framed pointer-offset transport is
-closed below. Exact-load normalization remains open, as do the implicit traits and
-live checker migrations listed above.
+root-inspection work and zero exports. Framed pointer-offset transport and
+exact-load normalization are closed below. The implicit traits and other live
+checker migrations listed above remain open.
 
 Validation: five focused tests passed. The full `scripts/check.sh --no-fail-fast`
 gate exited 0 in 9m17s: 7,138 unit/API tests, 58 examples and 5,160 mdtests
@@ -583,7 +583,7 @@ The four canonicalization/read-selection walkers explicitly borrow retained
 native inputs after their shared-index guard. These eight call sites no longer
 depend on implicit `Deref`. Shared indices retain their exact structure and
 snapshots without entering the native walkers. This classifies existing native
-input paths. Framed transport is closed below; normalization exports remain open.
+input paths. Framed transport and exact-load normalization are closed below.
 
 Validation: `scripts/check.sh --no-fail-fast` exited 0 with 7,142 unit/API tests
 and the complete regular examples/mdtests. The cold run took 14m07s, including
@@ -624,8 +624,8 @@ precompiled test binary: 7,150 unit/API tests, 58 example projects and 5,180
 mdtests. The focused eight-test run includes deterministic 16/64/256-prefix
 scaling and zero-export checks. No nightly run.
 
-The distinct cumulative pointer-index producer, exact-load normalization and
-the remaining compiler-audit groups are still open. Framed transport is closed below.
+The distinct cumulative pointer-index producer and remaining compiler-audit
+groups are still open. Framed transport and exact-load normalization are closed below.
 
 #### Retained snapshot-equivalent pointer indices
 
@@ -706,8 +706,8 @@ tests, 58 example projects and 5,180 mdtests. Its precompiled-binary run took
 10m09s and emitted the ten-minute budget warning (preceding run: 9m41s). The
 extra wall time was distributed across existing tests; the five focused tests
 took 0.043s. This does not establish a cause for the variation. No limits were
-changed and no nightly suite was run. Full exact-load normalization still uses
-native reconstruction and remains an open boundary.
+changed and no nightly suite was run. Full exact-load normalization is closed
+in the later increment below.
 
 #### Framed pointer-index transport — closed
 
@@ -730,8 +730,33 @@ tests, memory provenance, rewriting, transport API, documentation and search
 boundaries, using the gate's existing 8 MiB test-thread stack. Formatting and
 documentation rendering passed; advisory Vale lint was unavailable. The full
 integration gate and nightly suite were not run locally; CI and the merge queue
-run the full gate. The complete split remains open; exact-load normalization is
-the next remaining reconstruction boundary.
+run the full gate. The complete split remains open.
+
+#### Exact-load normalization of pointer indices — closed
+
+Exact-load normalization now uses the same iterative, query-local shared-index
+walk as framed transport, with its own smart-constructor policy. It resolves
+selected native load leaves through the existing snapshot/kind checks and
+cycle guard, and retains shared arithmetic parents. Native inputs and opaque
+selected leaves keep the native normalizer. Load authority never survives a
+query or fact-context change. The narrow carrier, signed/unsigned wide reading,
+stride reductions, and 32-bit smart folding (including sorted XOR cancellation)
+retain their native rules. XOR orders selected atoms structurally without
+exporting their shared arithmetic; rebuilding its normalized chain charges work
+for the selected atoms and produced nodes.
+
+Validation: all 1,721 selected tests passed on the rebased change, including all
+nonignored scaling tests, memory provenance, equality/term rewriting, transport
+API, documentation and search-boundary checks. The run used the existing 8 MiB
+test-thread stack; compilation took 5m07s and tests took 116s (two slow notices).
+The five new regressions cover native constructor parity, snapshot/kind/context
+authority, and cold 16/64/256-node DAGs for unchanged arithmetic, resolved read
+children and structurally ordered XOR atoms, with zero machine-tree exports.
+Formatting and documentation rendering passed. The full integration gate and
+nightly suite were not run locally; PR CI and the merge queue run the full gate.
+The remaining compiler-audit inventory, producers, legacy families, and final
+Surface/Kernel boundary remain open; this closes pointer-index normalization,
+not the whole migration.
 
 #### Classified boundaries and retained coverage
 

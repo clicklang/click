@@ -6508,7 +6508,9 @@ fn transport_framed_atomic_pointer_offset(
 }
 
 mod shared_index_transport;
-use shared_index_transport::{transport_framed_index, transported_scaled_index};
+use shared_index_transport::{
+    normalize_exact_index, transport_framed_index, transported_scaled_index,
+};
 
 fn transport_framed_atomic_bitvector(
     term: &MachineTerm,
@@ -6730,26 +6732,28 @@ pub(super) fn normalize_exact_memory_loads_in_pointer_offset(
                         tasks.push(Task::Visit(*left));
                     }
                     PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                        let normalized =
-                            normalize_exact_memory_loads_in_bitvector(&value, assumptions);
-                        results.push(if let Some(bits) = normalized.as_const() {
-                            PointerOffsetTerm::Constant((bits as i32 as i64) * byte_width)
-                        } else {
-                            PointerOffsetTerm::Int32Scaled {
-                                value: value.with_mapped_index(normalized),
-                                byte_width,
-                            }
-                        });
+                        let normalized = normalize_exact_index(&value, assumptions)
+                            .unwrap_or_else(|| value.clone());
+                        results.push(
+                            if let Some(bits) = normalized.operand_view().word32_constant() {
+                                PointerOffsetTerm::Constant((bits as i32 as i64) * byte_width)
+                            } else {
+                                PointerOffsetTerm::Int32Scaled {
+                                    value: normalized,
+                                    byte_width,
+                                }
+                            },
+                        );
                     }
                     PointerOffsetTerm::Int64Scaled {
                         value,
                         byte_width,
                         unsigned,
                     } => {
-                        results.push(PointerOffsetTerm::scale_int64(
-                            normalize_exact_memory_loads_in_bitvector(&value, assumptions),
+                        results.push(transported_scaled_index(
+                            normalize_exact_index(&value, assumptions).unwrap_or(value),
                             byte_width,
-                            unsigned,
+                            Some(unsigned),
                         ));
                     }
                 }
