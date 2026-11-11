@@ -6754,6 +6754,33 @@ impl Parser {
         .then_some(start + 3 - position)
     }
 
+    /// `at(point, name)`: a bound resource instance as it was held at a
+    /// recorded state. Leaves the position unchanged when the tokens are not
+    /// exactly that form, so `at(point, expression)` still parses as a value.
+    fn try_parse_instance_at(&mut self) -> Option<ResourceSubject> {
+        if self.peek_ident() != Some("at") || self.peek_next() != Some(&Token::LParen) {
+            return None;
+        }
+        let saved = self.position;
+        self.position += 2;
+        if let Ok(selector) = self.parse_snapshot_selector()
+            && self.peek() == Some(&Token::Comma)
+            && let Some(Token::Ident(name)) = self.peek_next()
+            && let Some((identity, _)) = self.names.resource_bindings.get(name)
+            && self.tokens.get(self.position + 2) == Some(&Token::RParen)
+        {
+            let subject = ResourceSubject::Instance {
+                name: name.clone(),
+                identity: *identity,
+                at: Some(selector),
+            };
+            self.position += 3;
+            return Some(subject);
+        }
+        self.position = saved;
+        None
+    }
+
     fn parse_resource_subject_atom(&mut self) -> Result<ResourceSubject, ClickError> {
         if self.peek() == Some(&Token::LParen) {
             self.position += 1;
@@ -6772,8 +6799,12 @@ impl Parser {
             let subject = ResourceSubject::Instance {
                 name: name.to_string(),
                 identity: *identity,
+                at: None,
             };
             self.position += 1;
+            return Ok(subject);
+        }
+        if let Some(subject) = self.try_parse_instance_at() {
             return Ok(subject);
         }
         if let Some(name) = self.peek_ident()
@@ -11242,7 +11273,7 @@ impl Parser {
                         ContractExpression::CFragment(CExpression::Variable(name))
                         | ContractExpression::Binding(name) => name,
                         ContractExpression::Resource(subject) => match *subject {
-                            ResourceSubject::Instance { name, .. } => name,
+                            ResourceSubject::Instance { name, at: None, .. } => name,
                             _ => return Err(self.error("resource arguments must name instances")),
                         },
                         _ => return Err(self.error(
@@ -12430,6 +12461,13 @@ impl Parser {
                 .parse_resource_subject()
                 .map(|r| ContractExpression::Resource(Box::new(r)));
         }
+        let saved = self.position;
+        if self.try_parse_instance_at().is_some() {
+            self.position = saved;
+            return self
+                .parse_resource_subject()
+                .map(|r| ContractExpression::Resource(Box::new(r)));
+        }
         if self.peek_ident().is_some_and(|name| {
             self.resource_parameters.contains_key(name)
                 || (self.names.resource_bindings.contains_key(name)
@@ -12507,7 +12545,9 @@ impl Parser {
         // measure, as before resource descriptors could be theorem arguments.
         let component = match component {
             ContractExpression::Resource(subject) => match *subject {
-                ResourceSubject::Instance { name, .. } => ContractExpression::Binding(name),
+                ResourceSubject::Instance { name, at: None, .. } => {
+                    ContractExpression::Binding(name)
+                }
                 other => ContractExpression::Resource(Box::new(other)),
             },
             other => other,

@@ -7923,8 +7923,20 @@ impl AnnotationLowerer<'_> {
                 Box::new(self.lower_resource_subject_to_spec(left, environment)?),
                 Box::new(self.lower_resource_subject_to_spec(right, environment)?),
             )),
-            ResourceSubject::Instance { identity, name } => {
-                if let Some(state) = environment.snapshot_state.as_ref() {
+            ResourceSubject::Instance { identity, name, at } => {
+                // `at(point, name)` reads the named state; inside an
+                // enclosing snapshot a bare name reads that snapshot.
+                let named = match at {
+                    Some(selector) => Some(
+                        self.snapshots
+                            .and_then(|snapshots| snapshots.get(selector))
+                            .ok_or_else(|| {
+                                format!("`at(..., {name})` names a state that is not recorded here")
+                            })?,
+                    ),
+                    None => None,
+                };
+                if let Some(state) = named.or(environment.snapshot_state.as_ref()) {
                     let instance =
                         state
                             .resource_instance_at_path(*identity, &[])
