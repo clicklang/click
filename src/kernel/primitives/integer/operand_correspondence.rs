@@ -38,6 +38,18 @@ pub(crate) fn shared_snapshot_read_pairs(left: &KernelTerm, right: &KernelTerm) 
     )
 }
 
+/// Exact native syntax equality for retained machine DAGs. No read framing,
+/// registry resolution, constant evaluation, or premise lookup is permitted.
+pub(crate) fn shared_machine_syntax_equal(left: &KernelTerm, right: &KernelTerm) -> bool {
+    shared_operand_leaf_pairs_with_policy(
+        MachineIntegerType::Int32,
+        left,
+        right,
+        CorrespondencePolicy::Snapshot(false),
+    )
+    .is_some()
+}
+
 fn shared_operand_leaf_pairs_with_policy(
     format: MachineIntegerType,
     left: &KernelTerm,

@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `52a744a4f`, including merged PR #2572.
+Baseline for this revision: `f82fe90ac`, including merged PR #2573.
 
 Already landed:
 
@@ -687,6 +687,27 @@ checks with and without evidence capture and zero tree exports.
 `scripts/check.sh --no-fail-fast` passed with 7,158 unit/API tests, 58 example
 projects and 5,180 mdtests in 9m41s with the binary precompiled. No limits
 were changed and no nightly suite was run.
+
+#### Exact-materialization index equality
+
+The assumption-free offset comparison retains its indices while following only
+root `int32` reads through exact stored cells. It does not normalize loads inside
+arithmetic, reinterpret other read kinds, or resolve an unknown snapshot. Both
+sides are materialized once; the existing bounded snapshot rule then receives
+only selected native read leaves. Exact shared syntax correspondence reuses the
+memoized operand matcher with framing disabled, preserving native literal and
+operator distinctions without exporting either arithmetic DAG. This is also the
+syntax-equality primitive needed by the remaining shared reconstruction work.
+
+Validation: five focused tests pass, including native/shared/mixed parity,
+root-only and kind refusals, separated/overlapping stores, havoc and cold-session
+16/64/256-prefix scaling with zero exports. The full gate passed 7,161 unit/API
+tests, 58 example projects and 5,180 mdtests. Its precompiled-binary run took
+10m09s and emitted the ten-minute budget warning (preceding run: 9m41s). The
+extra wall time was distributed across existing tests; the five focused tests
+took 0.043s. This does not establish a cause for the variation. No limits were
+changed and no nightly suite was run. Framed transport and full exact-load
+normalization still use native reconstruction and remain open boundaries.
 
 #### Classified boundaries and retained coverage
 
