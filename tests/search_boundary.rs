@@ -1297,3 +1297,39 @@ fn match_arm_exclusion_primitives_cannot_dispatch_steps() {
         );
     }
 }
+
+#[test]
+fn signed_definedness_certificate_attempts_stay_in_search() {
+    let path = "src/surface/proof/signed_definedness.rs";
+    for source in [
+        "impl Proof { fn try_signed_definedness_certificate(&self) {} }",
+        "impl Proof { fn apply_signed_definedness_certificate(&self) { self.driver().apply_step(certificate); } }",
+        "impl Proof { fn apply_certificate(&self) { ProofSearch::try_signed_definedness_certificate(self, width, premises); } }",
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        assert!(
+            proof_search_boundary::check(path, &file).is_err(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn unsigned_order_fact_restatement_stays_in_search() {
+    let path = "src/surface/proof/smart_closures.rs";
+    for source in [
+        "impl Proof { fn try_unsigned_strict_fact(&self) {} }",
+        "impl Proof { fn unsigned_strict_fact(&self) { self.driver().have_by_integer_arithmetic(goal, premises); } }",
+        "impl Proof { fn use_order(&self) { ProofSearch::try_unsigned_strict_fact(self, lower, upper, facts); } }",
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        let errors = proof_search_boundary::check(path, &file).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("search method must not return")
+                    || error.starts_with("unreviewed proof-search dependency:")),
+            "{errors:?}"
+        );
+    }
+}
