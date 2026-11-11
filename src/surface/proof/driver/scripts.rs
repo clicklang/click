@@ -677,7 +677,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     }
                     proof = match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&(proof), source, target)? {
                         Ok(transported) => transported,
-                        Err(source_refusal) => proof.apply_planned_fact_transport(
+                        Err(source_refusal) => crate::kernel::search::ProofSearch::apply_planned_fact_transport(
+ &proof,
                             source,
                             target,
                             index,

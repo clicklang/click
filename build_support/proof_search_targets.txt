@@ -211,3 +211,5 @@ try_carry_entry_conjunct
 try_signed_definedness_certificate
 try_unsigned_strict_fact
 try_open_for_missing_resource
+apply_planned_fact_transport
+apply_planned_fact_transport_inner

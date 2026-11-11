@@ -2,7 +2,7 @@
 
 Source reconciliation at `c53645952` (2026-11-11), the completed head of
 PR #2520. Queue/merge status is separate from this source baseline. This
-classifies all 19 `mixed` and 2 `operation-to-driver` records in
+classifies all 19 `mixed` and 1 `operation-to-driver` records in
 `build_support/proof_search_edges.tsv` and groups the operation references.
 A record is one caller/target pair, not one runtime call or one slow walk.
 A classified call is not a complexity proof for its callee. This documentation
@@ -20,7 +20,8 @@ existing search-only callers without adding runtime work. Invariant-bundle
 closure, its scope wrapper and member solve dispatch now live on the driver;
 selected-obligation diagnostics and explicit Both/Intro certificates are preserved.
 Resource-opening candidate selection now lives on `ProofSearch`; explicit
-unfold and statement operations are unchanged.
+unfold and statement operations are unchanged. Live-state transport premise
+planning is also on `ProofSearch`; returned-state planning remains below.
 
 ## Current boundary
 
@@ -75,7 +76,7 @@ other concerns need separate treatment: remaining orchestration adapters on
 operations and declaration validation that searches outside proof scripts.
 
 The known direct operation/search dependencies remain: this classification does
-not eliminate the seven kernel bridges, their 22 caller records, or the 14
+not eliminate the seven kernel bridges, their 22 caller records, or the 13
 Surface operation/search records. In particular, explicit premises are not an
 explicit derivation: `transport(...) using {...}` is classified Simple in
 `src/surface.rs`, but its application can still call `derive_atomic_proposition`.
@@ -110,16 +111,15 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 2 operation-to-driver reference records
+## The remaining operation-to-driver reference
 
-Methods below are on `Proof`.
+The method below is on `Proof`.
 
 | Caller | Classification and action |
 | --- | --- |
-| `apply_planned_fact_transport_inner` | Bare-transport search adapter, not a primitive despite its location. Plans premises, then dispatches `TransportUsing`. |
 | `apply_planned_outcome_fact_transport` | The same bare-transport adapter at a completed execution outcome. |
 
-Totals: 2 search/support adapters. Some categories overlap semantically; each record is counted
+Total: 1 search/support adapter. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
 
 ## Why accidental search remains possible
@@ -186,13 +186,13 @@ frontier; it performs no speculative continuation.
 
 ## Reconciled operation dependencies
 
-The 14 `operation` records are not 14 independent slow walks:
+The 13 `operation` records are not 13 independent slow walks:
 
 | Group | Records | Current interpretation and remaining evidence |
 | --- | ---: | --- |
 | Explicit tactic/theorem handlers on `ProofDriver` | 4 | `apply_step_without_outcome_wrapping` calls disequality refutation, unsigned order and wide arithmetic; `apply_theorem_application` selects an application. Driver placement does not make explicit tactic checking search-free. Audit each selected-input bound and expansion route. |
 | Legacy explicit transport checking | 3 | `certified_fact_transport_reaches`, `check_fixed_state_fact_transport_using_facts_inner`, and `apply_pure_transport_using` call atomic derivation. Confirmed search access from the explicit transport route; migrate/retire under T1–T5, not a new independent bug per record. |
-| Planned transport adapters | 2 | `apply_planned_fact_transport_inner` and `apply_planned_outcome_fact_transport` perform smart discovery. Search is legitimate here, but the emitted `TransportUsing` is not yet generally search-free. |
+| Planned returned-state transport | 1 | `apply_planned_outcome_fact_transport` performs smart discovery; live-state planning is now on `ProofSearch`. Search is legitimate here, but the emitted `TransportUsing` is not yet generally search-free. |
 | Transition, branch-path and initializer handling | 3 | `certified_transitions_from_execution`, `surface_branch_path_for_outcome`, and `capture_resource_field_initializer` need caller-specific input/cost and reachability evidence. Do not infer a measured violation merely from `derive_atomic_proposition` or `proves`. |
 | Definition validation | 2 | `symbolic_segment_covers_index` and `symbolic_segment_covers_range` join the mixed `segment_contains_pointer` record in one declaration-validation concern. There is no ordinary user obligation/expansion boundary established for these checks. |
 
@@ -224,7 +224,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 618 reference records, not 618 obligations to remove.
+The inventory contains 622 reference records, not 622 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this

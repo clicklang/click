@@ -1373,3 +1373,19 @@ fn resource_opening_selection_stays_in_search() {
         );
     }
 }
+
+#[test]
+fn live_transport_planning_stays_in_search() {
+    let path = "src/surface/proof/proof_object/execution_statements.rs";
+    for source in [
+        "impl Proof { fn apply_planned_fact_transport(&self) {} }",
+        "impl Proof { fn apply_planned_fact_transport_inner(&self) {} }",
+        "impl Proof { fn transport(&self) { ProofSearch::apply_planned_fact_transport(self, source, target); } }",
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        assert!(
+            proof_search_boundary::check(path, &file).is_err(),
+            "{source}"
+        );
+    }
+}
