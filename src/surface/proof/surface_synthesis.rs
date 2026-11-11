@@ -2934,10 +2934,6 @@ fn raise_kernel_term(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelIntegerOperator as Op, KernelTermNode as Node, KernelType};
-    if term.ty() == &KernelType::Bool {
-        let condition = crate::kernel::KernelTermExport::condition(term).ok()?;
-        return synthesize_surface_bool(&condition, parameter_binding, state, bound_variables);
-    }
     let category = if term.ty() == &KernelType::Integer {
         "integer"
     } else {
@@ -2945,6 +2941,14 @@ fn raise_kernel_term(
     };
     let _frame = SurfaceSynthesisFrame::enter(category)?;
     let recurse = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
+    if matches!(
+        term.node(),
+        Node::MachineBinary { .. } | Node::MachineUnary { .. } | Node::MachineCast { .. }
+    ) && let Some(named) =
+        synthesize_named_integer_local(state.locals().names_holding_kernel_integer(term))
+    {
+        return Some(named);
+    }
     Some(match term.node() {
         Node::IntegerLiteral(value) if value.sign() == num_bigint::Sign::Minus => {
             SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral((-value).to_string())))
@@ -2972,6 +2976,11 @@ fn raise_kernel_term(
                 )),
             }
         }
+        Node::IntegerIf { arguments } => SurfaceTerm::If {
+            condition: Box::new(bool_truth(recurse(&arguments[0])?)),
+            then_branch: Box::new(integer_typed_expression(recurse(&arguments[1])?)),
+            else_branch: Box::new(integer_typed_expression(recurse(&arguments[2])?)),
+        },
         Node::IntegerOperation {
             operator,
             arguments,
@@ -3002,12 +3011,66 @@ fn raise_kernel_term(
             name: generic_instance_source_name(name).into(),
             arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
         },
-        Node::BoolLiteral(_)
-        | Node::BoolCompare { .. }
-        | Node::IntegerCompare { .. }
-        | Node::BoolEqual { .. }
-        | Node::BoolIf { .. }
-        | Node::LegacyBool(_) => unreachable!("Bool sorts handled above"),
+        Node::BoolLiteral(value) => bool_literal(*value),
+        Node::BoolIf { arguments } => SurfaceTerm::If {
+            condition: Box::new(bool_truth(recurse(&arguments[0])?)),
+            then_branch: Box::new(recurse(&arguments[1])?),
+            else_branch: Box::new(recurse(&arguments[2])?),
+        },
+        Node::BoolEqual { arguments } => proposition_bool_value(ClickProposition::Comparison {
+            left: recurse(&arguments[0])?,
+            operator: ComparisonOperator::Equal,
+            right: recurse(&arguments[1])?,
+        })
+        .ok()?,
+        Node::IntegerCompare {
+            operator,
+            arguments,
+        } => {
+            use crate::kernel::IntegerComparisonOperator as C;
+            proposition_bool_value(ClickProposition::Comparison {
+                left: integer_typed_expression(recurse(&arguments[0])?),
+                operator: match operator {
+                    C::Equal => ComparisonOperator::Equal,
+                    C::NotEqual => ComparisonOperator::NotEqual,
+                    C::LessThan => ComparisonOperator::LessThan,
+                    C::LessEqual => ComparisonOperator::LessEqual,
+                    C::GreaterThan => ComparisonOperator::GreaterThan,
+                    C::GreaterEqual => ComparisonOperator::GreaterEqual,
+                },
+                right: recurse(&arguments[1])?,
+            })
+            .ok()?
+        }
+        Node::BoolCompare {
+            format,
+            relation,
+            arguments,
+        } => {
+            let operand = |term| synthesize_observation_operand(recurse(term)?, format.c_type());
+            proposition_bool_value(ClickProposition::Comparison {
+                left: operand(&arguments[0])?,
+                operator: match relation {
+                    CompareRelation::Equal => ComparisonOperator::Equal,
+                    CompareRelation::LessThan => ComparisonOperator::LessThan,
+                    CompareRelation::LessEqual => ComparisonOperator::LessEqual,
+                    CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
+                    CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
+                },
+                right: operand(&arguments[1])?,
+            })
+            .ok()?
+        }
+        Node::LegacyBool(_) => {
+            let condition = crate::kernel::KernelTermExport::condition(term).ok()?;
+            synthesize_surface_bool(&condition, parameter_binding, state, bound_variables)?
+        }
+        Node::Variable(variable) if term.ty() == &KernelType::Bool => synthesize_surface_bool(
+            &ConditionTerm::Variable(*variable),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
         Node::BoolCast {
             destination,
             operand,
@@ -3020,17 +3083,7 @@ fn raise_kernel_term(
             arguments: vec![recurse(operand)?],
         },
         Node::MachineObservation { format, operand } => {
-            let value = crate::kernel::KernelTermExport::default()
-                .argument(operand)
-                .ok()?;
-            let crate::kernel::PureFunctionArgument::Value(value) = value else {
-                return None;
-            };
-            let (crate::kernel::integer_c_value!(bits)) = value else {
-                return None;
-            };
-            let expression =
-                synthesize_surface_bitvector(&bits, parameter_binding, state, bound_variables)?;
+            let expression = recurse(operand)?;
             SurfaceTerm::Call {
                 name: "to_integer".into(),
                 arguments: vec![match format {
@@ -3051,28 +3104,101 @@ fn raise_kernel_term(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
-        Node::MachineLiteral(_) => {
-            let crate::kernel::PureFunctionArgument::Value(value) =
-                crate::kernel::KernelTermExport::default()
-                    .argument(term)
-                    .ok()?
-            else {
+        Node::MachineLiteral(literal) => {
+            let KernelType::C(ty) = term.ty() else {
                 return None;
             };
-            SurfaceTerm::CFragment(CExpression::Value(value))
+            SurfaceTerm::CFragment(CExpression::Value(
+                literal.value_at(MachineIntegerType::from_c_type(*ty)?),
+            ))
         }
-        Node::MemoryLoad { .. }
-        | Node::MachineBinary { .. }
-        | Node::MachineUnary { .. }
-        | Node::MachineCast { .. }
-        | Node::Variable(_) => {
-            // Machine producers still use the old checker representation.
-            // One exact export preserves its established typed spelling;
-            // there is no fact-aware alternative or normalization here.
-            let value = crate::kernel::KernelTermExport::default()
-                .argument(term)
-                .ok()?;
-            synthesize_legacy_call_argument(&value, parameter_binding, state, bound_variables)?
+        Node::MachineBinary {
+            format,
+            operator,
+            arguments,
+        } => {
+            let left = Box::new(recurse(&arguments[0])?);
+            let mut right = Box::new(recurse(&arguments[1])?);
+            if *format == MachineIntegerType::UInt32
+                && matches!(
+                    operator,
+                    MachineBinaryOp::Divide | MachineBinaryOp::Remainder
+                )
+            {
+                right = Box::new(synthesize_uint32_operand(*right)?);
+            }
+            match operator {
+                MachineBinaryOp::Add => SurfaceTerm::Add(left, right),
+                MachineBinaryOp::Subtract => SurfaceTerm::Subtract(left, right),
+                MachineBinaryOp::Multiply => SurfaceTerm::Multiply(left, right),
+                MachineBinaryOp::Divide => SurfaceTerm::Divide(left, right),
+                MachineBinaryOp::Remainder => SurfaceTerm::Remainder(left, right),
+                MachineBinaryOp::ShiftLeft => SurfaceTerm::ShiftLeft(left, right),
+                MachineBinaryOp::ShiftRight => SurfaceTerm::ShiftRight(left, right),
+                MachineBinaryOp::BitwiseAnd => SurfaceTerm::BitwiseAnd(left, right),
+                MachineBinaryOp::BitwiseOr => SurfaceTerm::BitwiseOr(left, right),
+                MachineBinaryOp::BitwiseXor => SurfaceTerm::BitwiseXor(left, right),
+            }
+        }
+        Node::MachineUnary { operand, .. } => SurfaceTerm::BitwiseNot(Box::new(recurse(operand)?)),
+        Node::MemoryLoad { .. } => synthesize_surface_bitvector(
+            term.machine_read_leaf()?,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
+        Node::Variable(variable) => synthesize_surface_bitvector(
+            &MachineTerm::Variable(*variable),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
+        Node::MachineCast {
+            encoding,
+            source,
+            destination,
+            operand,
+        } => {
+            let mut expression = recurse(operand)?;
+            if *encoding == MachineCastSpelling::Generic
+                && crate::kernel::is_narrow_widening32(*source, *destination)
+            {
+                if *destination == MachineIntegerType::UInt32 {
+                    synthesize_uint32_operand(expression)?
+                } else {
+                    synthesize_int32_operand(expression)?
+                }
+            } else {
+                if matches!(
+                    encoding,
+                    MachineCastSpelling::Int64From32
+                        | MachineCastSpelling::Int64FromUInt32
+                        | MachineCastSpelling::UInt64From32
+                        | MachineCastSpelling::UInt64FromInt32
+                ) {
+                    expression = if matches!(
+                        encoding,
+                        MachineCastSpelling::Int64FromUInt32 | MachineCastSpelling::UInt64From32
+                    ) {
+                        synthesize_uint32_operand(expression)?
+                    } else {
+                        synthesize_int32_operand(expression)?
+                    };
+                }
+                SurfaceTerm::CFragment(CExpression::Cast {
+                    expression: Box::new(contract_expression_to_c_fragment(&expression)?),
+                    target_type: destination.c_type(),
+                    integer_mode: if *encoding == MachineCastSpelling::UInt32From64 {
+                        crate::kernel::CIntegerCastMode::Standard
+                    } else {
+                        crate::kernel::CIntegerCastMode::CConversion
+                    },
+                    pointee_struct: None,
+                    pointee_volatile: false,
+                    pointee_constant: false,
+                    explicit_qualification: false,
+                })
+            }
         }
     })
 }
@@ -3672,6 +3798,37 @@ fn synthesize_population_entry_count(
     )))
 }
 
+fn synthesize_named_integer_local<'a>(
+    mut holders: impl Iterator<Item = &'a str>,
+) -> Option<SurfaceTerm> {
+    let first = holders.next();
+    let named = first
+        .filter(|name| !crate::surface::diagnostics::is_call_result_temporary(name))
+        .or_else(|| {
+            if STRUCTURAL_GOAL_SYNTHESIS.with(|slot| slot.get()) {
+                return None;
+            }
+            holders.find(|name| !crate::surface::diagnostics::is_call_result_temporary(name))
+        });
+    if named.is_none()
+        && let Some(result) = first.and_then(call_result_expression)
+    {
+        return Some(result);
+    }
+    if let Some(name) = named {
+        return Some(if name == crate::kernel::C_CONTRACT_RESULT_NAME {
+            ContractExpression::CFragment(CExpression::Variable("result".to_string()))
+        } else if crate::surface::is_click_value_name(name) {
+            ContractExpression::CBinding(name.to_string())
+        } else {
+            ContractExpression::CFragment(CExpression::Variable(
+                surface_local_name(name).to_string(),
+            ))
+        });
+    }
+    None
+}
+
 fn synthesize_surface_bitvector(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -3703,35 +3860,9 @@ fn synthesize_surface_bitvector(
             CValue::UInt32(term.clone()),
         )));
     }
-    // The locals' held-term index finds the first local, in name order,
-    // holding exactly this term, without comparing it with every local.
-    // A source local is preferred to a call's result temporary, which is
-    // spelled by its call.
-    let mut holders = state.locals().names_holding_integer(term);
-    let first = holders.next();
-    let named = first
-        .filter(|name| !crate::surface::diagnostics::is_call_result_temporary(name))
-        .or_else(|| {
-            if STRUCTURAL_GOAL_SYNTHESIS.with(|slot| slot.get()) {
-                return None;
-            }
-            holders.find(|name| !crate::surface::diagnostics::is_call_result_temporary(name))
-        });
-    if named.is_none()
-        && let Some(result) = first.and_then(call_result_expression)
+    if let Some(named) = synthesize_named_integer_local(state.locals().names_holding_integer(term))
     {
-        return Some(result);
-    }
-    if let Some(name) = named {
-        return Some(if name == crate::kernel::C_CONTRACT_RESULT_NAME {
-            ContractExpression::CFragment(CExpression::Variable("result".to_string()))
-        } else if crate::surface::is_click_value_name(name) {
-            ContractExpression::CBinding(name.to_string())
-        } else {
-            ContractExpression::CFragment(CExpression::Variable(
-                surface_local_name(name).to_string(),
-            ))
-        });
+        return Some(named);
     }
     // The term is the value a parameter was passed. No local holds it now, or
     // the search above would have named it, so if that parameter is a local

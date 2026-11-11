@@ -934,6 +934,26 @@ export their prefixes. Keep
 `forward_conversion_requires_symbolic_argument_definedness` as a negative
 control: claim completion must not bypass evaluation obligations.
 
+#### Live producer inventory after checker closure
+
+The next producer/common-raising increment retains division, remainder and
+shift domains, gives Integer conditionals common children, and raises migrated
+machine/Boolean children directly. Indexed current-local naming preserves
+existing loop proofs and diagnostics without exporting shared arithmetic.
+Its full gate passed 7,205 unit/integration tests and all four fixture harnesses
+in 12m55s, over the ten-minute target; no limits were changed. The production
+build passed. Full regular-corpus fact-stability runs before and after both
+passed with zero fact-dependent lowerings. Native/shared parity, source-drop
+round trips, local-index collision checks and deterministic 16/64/256-node
+zero-export regressions cover the new boundaries. Steps 2–4 remain open.
+
+| Producer | Representation boundary still to close |
+| --- | --- |
+| `spec/shared_machine::prepare` | Same-format available 32/64-bit arithmetic, including division/remainder and shifts, retains common children and debts. The final `SpecExpressionPath::value` is still a native `CValue`. |
+| `spec::evaluate_spec_expression_dispatch` | Deferred values, mixed-format arithmetic, narrow arithmetic, casts, short-circuit branches, and scoped requirements still use native path values. Preserve their ordering and branch-local obligations when replacing that carrier. |
+| `eval/operators` and `eval/operators/spec_arithmetic` | C execution, Rust shifts, conversions, bitwise operations and wide operations construct native `CExpressionOutcome::Value` payloads. Runtime-error branches and logical specification debts have distinct rules. |
+| `ProofObligation::verification_condition` | Observation canonicalization now retains shared comparisons instead of exporting their prefixes, preserving polarity and native/shared checking equivalence. |
+
 ### 3. Finish existing term families without redesigning their semantics
 
 `KernelTermNode::Legacy` and `LegacyBool` are explicitly temporary bridges.
@@ -963,6 +983,17 @@ semantics is not a prerequisite. Do not declare issue #2179 resolved by this
 representation work. Frontend ASTs and statement evaluators may remain distinct
 because they represent source/evaluation information, not a second kernel term
 model; states and resources need not become expression nodes.
+
+#### Live payload and common-boundary inventory
+
+| Family | Current storage / bridge and disposition |
+| --- | --- |
+| Mathematical Integer | `SharedIntegerNode` retains `IntegerTerm` plus a cached `KernelTerm`. Arithmetic, calls and conditionals have common children. Folds and algebraic matches still need typed common children and binder metadata. Remove the parallel native node storage after its readers migrate. |
+| Machine values | `MachineTerm` and native `CValue` payloads remain producer/result carriers. Shared arithmetic, casts and read descriptors are common nodes; conditional, fold, application, algebraic-match, pointer-address and floating payloads still use generic bridges on some routes. |
+| Logical Bool | Comparisons, calls, equality and conditionals have common nodes. `LegacyBool` still carries pointer/offset/complete-pointer comparisons, algebraic equality, overflow and floating conditions, and Boolean loads. |
+| Complete pointers and read addresses | Keep address, designation, opaque extent, qualifiers, subobject extent and access/evidence metadata. Expression children must migrate; snapshot, allocation and execution-event identities may remain semantic atoms. A wrapper around the existing complete pointer tree is not closure. |
+| Algebraic values and array references | `KernelTermImport::argument` still uses the generic legacy argument boundary. Constructors, matches and scalar children need typed common nodes; array-reference snapshot identity remains an atom. |
+| Raising/lowering | `raise_kernel_term` visits common arithmetic, casts, observations, Integer conditionals and Boolean children directly. Shared arithmetic uses the existing local-name index before expanding children; it preserves current-local spelling without exporting the query or scanning unrelated locals. Legacy payload dispatch, native fact/goal synthesis, certificate-only lowering and the general evaluator-backed lowering path remain distinct boundaries until consolidated. |
 
 ### 4. Close the common boundary and declare the split complete
 

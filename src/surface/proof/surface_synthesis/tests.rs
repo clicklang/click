@@ -3718,6 +3718,8 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
         "foo(x + 1)",
         "foo(x * 2)",
         "foo(x / 2)",
+        "foo((x / 2) % 3)",
+        "if foo(x) < 0 { foo(x) + 1 } else { foo(x) - 1 }",
         "foo(x ^ 1)",
         "foo(x << 1)",
         "foo(x >> 1)",
@@ -3751,7 +3753,7 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
         };
         let original = lower(written);
         let raised = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
-            .expect("shared term spelling");
+            .unwrap_or_else(|| panic!("shared term spelling: {expression}"));
         let text = crate::surface::printing::source_click_proposition(&raised);
         let call_name = if expression.contains("foo_wide(") {
             "foo_wide("
@@ -3960,5 +3962,82 @@ fn volatile_read_event_results_follow_snapshot_branches() {
             .region_result_value(&CodeRegionRef::Region(3))
             .unwrap(),
         old
+    );
+}
+
+#[test]
+fn shared_arithmetic_raising_does_not_export_operand_trees() {
+    use crate::kernel::{KernelTermExport, KernelTermImport};
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = Variable(993401);
+    let native = MachineTerm::logical_machine_binary(
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        MachineTerm::Variable(variable),
+        MachineTerm::constant(1),
+    );
+    let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+    let state = CState::new().with_local("x", CValue::Int32(MachineTerm::Variable(variable)));
+    let named_state = state
+        .clone()
+        .with_local("current", CValue::Int32(native.clone()));
+    let named_exports = KernelTermExport::machine_export_count();
+    assert_eq!(
+        raise_kernel_term(
+            &root,
+            ParameterBinding::default(),
+            &named_state,
+            &BTreeMap::new()
+        )
+        .unwrap(),
+        SurfaceTerm::CFragment(CExpression::Variable("current".into())),
+        "a current local must be named before spelling its historical operands",
+    );
+    assert_eq!(KernelTermExport::machine_export_count(), named_exports);
+    // Both roots and immediate child tags collide in the local-name index.
+    // Exact matching must reject the earlier name before using the true holder.
+    let outer = |value| {
+        MachineTerm::logical_machine_binary(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Add,
+            value,
+            MachineTerm::constant(1),
+        )
+    };
+    let nested = outer(native.clone());
+    let nested_root = KernelTermImport::default().machine(MachineIntegerType::Int32, &nested);
+    let collision_state = named_state
+        .with_local(
+            "a_collision",
+            CValue::Int32(outer(outer(MachineTerm::Variable(Variable(993499))))),
+        )
+        .with_local("current_nested", CValue::Int32(nested));
+    assert_eq!(
+        raise_kernel_term(
+            &nested_root,
+            ParameterBinding::default(),
+            &collision_state,
+            &BTreeMap::new()
+        )
+        .unwrap(),
+        SurfaceTerm::CFragment(CExpression::Variable("current_nested".into())),
+    );
+    assert_eq!(KernelTermExport::machine_export_count(), named_exports);
+    let exports = KernelTermExport::machine_export_count();
+    let surface =
+        raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new()).unwrap();
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+    let written = ClickProposition::Comparison {
+        left: surface,
+        operator: ComparisonOperator::LessEqual,
+        right: SurfaceTerm::CFragment(CExpression::Value(int32(20))),
+    };
+    let lowered = relower_written_proposition(&written, &state).unwrap();
+    let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) = lowered else {
+        panic!("comparison")
+    };
+    assert_eq!(
+        KernelTermImport::default().machine(MachineIntegerType::Int32, &left),
+        root
     );
 }

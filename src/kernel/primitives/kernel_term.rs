@@ -52,6 +52,11 @@ pub enum KernelTermNode {
     BoolIf {
         arguments: [KernelTerm; 3],
     },
+    /// A mathematical conditional with its condition and both branches retained.
+    /// Construction is structural; definedness and branch assumptions stay outside.
+    IntegerIf {
+        arguments: [KernelTerm; 3],
+    },
     /// Exact condition payload at the temporary migration boundary.
     LegacyBool(KernelLegacyTerm),
     IntegerLiteral(BigInt),
@@ -219,6 +224,10 @@ impl NodeKey {
             KernelTermNode::BoolIf { arguments } => arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
+            // Integer conditionals already had retained Integer identity before
+            // becoming common nodes. Conversion consumers visit their branches
+            // with the source width and current snapshot; keep that boundary.
+            KernelTermNode::IntegerIf { .. } => false,
             KernelTermNode::BoolCast { operand, .. }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
@@ -455,7 +464,9 @@ impl KernelTerm {
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => arguments,
-            KernelTermNode::BoolIf { arguments } => arguments,
+            KernelTermNode::BoolIf { arguments } | KernelTermNode::IntegerIf { arguments } => {
+                arguments
+            }
             KernelTermNode::BoolCast { operand, .. }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
@@ -710,6 +721,20 @@ impl KernelTermImport {
                     .collect();
                 KernelTerm::checked_call(KernelType::Integer, application.name().into(), arguments)
             }
+            IntegerTerm::If {
+                condition,
+                then_term,
+                else_term,
+            } => KernelTerm::intern(
+                KernelType::Integer,
+                KernelTermNode::IntegerIf {
+                    arguments: [
+                        self.condition(condition),
+                        self.integer(then_term),
+                        self.integer(else_term),
+                    ],
+                },
+            ),
             // Binders and their scoped obligations keep
             // their exact old representation until their own migration.
             _ => KernelTerm::legacy(PureFunctionArgument::Integer(term.clone())),
@@ -925,6 +950,26 @@ mod tests {
     }
 
     #[test]
+    fn integer_conditional_has_common_children_after_source_drop() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source: SharedIntegerTerm = IntegerTerm::If {
+            condition: Box::new(ConditionTerm::Variable(Variable(993402))),
+            then_term: IntegerTerm::Variable(Variable(993403)).into(),
+            else_term: IntegerTerm::constant_i64(-1).into(),
+        }
+        .into();
+        let weak = source.downgrade();
+        let common = KernelTermImport::default().integer(&source);
+        assert!(matches!(common.node(), KernelTermNode::IntegerIf { .. }));
+        assert_eq!(common.children().len(), 3);
+        assert_eq!(common.children()[0].ty(), &KernelType::Bool);
+        drop(source);
+        assert!(weak.upgrade().is_none());
+        let restored = KernelTermExport::default().integer(&common).unwrap();
+        assert_eq!(KernelTermImport::default().integer(&restored), common);
+    }
+
+    #[test]
     fn legacy_pointer_equality_does_not_discard_auxiliary_qualifiers() {
         let pointer = CPointerValue::new(Pointer::symbolic(Variable(76)), CType::Int32Pointer);
         let constant = pointer.clone().with_pointee_constant(true);
@@ -1074,6 +1119,14 @@ impl KernelTermExport {
                     .into(),
                 )
             }
+            KernelTermNode::IntegerIf { arguments } => PureFunctionArgument::Integer(
+                IntegerTerm::If {
+                    condition: Box::new(Self::condition(&arguments[0])?),
+                    then_term: self.integer(&arguments[1])?,
+                    else_term: self.integer(&arguments[2])?,
+                }
+                .into(),
+            ),
             KernelTermNode::IntegerOperation {
                 operator,
                 arguments,

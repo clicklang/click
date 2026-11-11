@@ -51,11 +51,19 @@ pub(super) fn prepare(
                     }
                     SpecExpression::Add(a, b)
                     | SpecExpression::Subtract(a, b)
-                    | SpecExpression::Multiply(a, b) => {
+                    | SpecExpression::Multiply(a, b)
+                    | SpecExpression::Divide(a, b)
+                    | SpecExpression::Remainder(a, b)
+                    | SpecExpression::ShiftLeft(a, b)
+                    | SpecExpression::ShiftRight(a, b) => {
                         let op = match expression {
                             SpecExpression::Add(..) => MachineBinaryOp::Add,
                             SpecExpression::Subtract(..) => MachineBinaryOp::Subtract,
-                            _ => MachineBinaryOp::Multiply,
+                            SpecExpression::Multiply(..) => MachineBinaryOp::Multiply,
+                            SpecExpression::Divide(..) => MachineBinaryOp::Divide,
+                            SpecExpression::Remainder(..) => MachineBinaryOp::Remainder,
+                            SpecExpression::ShiftLeft(..) => MachineBinaryOp::ShiftLeft,
+                            _ => MachineBinaryOp::ShiftRight,
                         };
                         pending.push(Step::Binary(op));
                         pending.push(Step::Enter(b));
@@ -97,21 +105,76 @@ pub(super) fn prepare(
             Prepared::Binary(format, op) => {
                 let right = values.pop().unwrap();
                 let left = values.pop().unwrap();
-                if matches!(
-                    format,
-                    MachineIntegerType::Int32 | MachineIntegerType::Int64
-                ) && let Some(domain) =
-                    Proposition::arithmetic_domain([Proposition::signed_arithmetic_domain_views(
-                        format,
-                        op,
-                        MachineOperandView::Shared(&left),
-                        MachineOperandView::Shared(&right),
-                    )])
-                {
-                    obligations.push(
-                        ProofObligation::evaluation_domain(domain)
-                            .with_context("arithmetic expression is defined"),
-                    );
+                let left_view = MachineOperandView::Shared(&left);
+                let right_view = MachineOperandView::Shared(&right);
+                let mut domain = Vec::new();
+                let shift = matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight);
+                if shift {
+                    let constant = |n: u64| {
+                        crate::kernel::machine_integer::range::constant_word(format, &n.into())
+                            .unwrap()
+                    };
+                    let compare = |value, relation, n| {
+                        crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                            format,
+                            relation,
+                            [value, MachineOperandView::Legacy(&constant(n))],
+                        )
+                    };
+                    let mut require_false = |condition| {
+                        if PureFactContext::decide_intrinsically(&condition) != Some(false) {
+                            domain.push(Proposition::ConditionIs(condition, false));
+                        }
+                    };
+                    if format.format().is_signed() {
+                        require_false(compare(right_view, CompareRelation::LessThan, 0));
+                    }
+                    require_false(compare(
+                        right_view,
+                        CompareRelation::GreaterEqual,
+                        u64::from(format.format().bits()),
+                    ));
+                    if op == MachineBinaryOp::ShiftLeft && format.format().is_signed() {
+                        require_false(compare(left_view, CompareRelation::LessThan, 0));
+                        domain.push(Proposition::ConditionIs(
+                            ConditionTerm::signed_shift_result_fits_views(
+                                format, left_view, right_view,
+                            ),
+                            true,
+                        ));
+                    }
+                } else if matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder) {
+                    if SpecDivision::of(budget) == SpecDivision::CDefined {
+                        let zero =
+                            crate::kernel::machine_integer::range::constant_word(format, &0.into())
+                                .unwrap();
+                        domain.push(Proposition::ConditionIs(
+                            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                                format,
+                                CompareRelation::Equal,
+                                [right_view, MachineOperandView::Legacy(&zero)],
+                            ),
+                            false,
+                        ));
+                    }
+                    if format.format().is_signed() {
+                        domain.push(Proposition::signed_division_exclusion_views(
+                            format, left_view, right_view,
+                        ));
+                    }
+                } else if format.format().is_signed() {
+                    domain.push(Proposition::signed_arithmetic_domain_views(
+                        format, op, left_view, right_view,
+                    ));
+                }
+                if let Some(domain) = Proposition::arithmetic_domain(domain) {
+                    obligations.push(ProofObligation::evaluation_domain(domain).with_context(
+                        if shift {
+                            "shift expression is defined"
+                        } else {
+                            "arithmetic expression is defined"
+                        },
+                    ));
                 }
                 // Preserve the existing evaluator's literal-only folding.
                 // Shared node construction itself is always structural.
@@ -125,8 +188,7 @@ pub(super) fn prepare(
                         let value = wrap(format, value);
                         importer.argument(&PureFunctionArgument::Value(value))
                     } else {
-                        KernelTerm::arithmetic_binary(format, op, [left, right])
-                            .map_err(|_| ExecutionLimit::Paths)?
+                        KernelTerm::machine_binary_shared(format, op, [left, right])
                     };
                 values.push(term);
             }
@@ -170,6 +232,134 @@ mod tests {
             &mut budget,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn nested_division_retains_total_and_c_defined_domains() {
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let constant = |n: i64| {
+                crate::kernel::machine_integer::range::constant_word(format, &n.into())
+                    .unwrap_or_else(|| {
+                        if format.format().bits() == 32 {
+                            MachineTerm::constant(n as u32)
+                        } else {
+                            MachineTerm::uint64_constant(n as u64)
+                        }
+                    })
+            };
+            let min = if format.format().bits() == 32 {
+                i32::MIN as i64
+            } else {
+                i64::MIN
+            };
+            for (a, b) in [
+                (MachineTerm::Variable(Variable(991901)), constant(2)),
+                (constant(min), constant(-1)),
+                (constant(3), constant(0)),
+            ] {
+                for remainder in [false, true] {
+                    let a = Box::new(SpecExpression::Value(wrap(format, a.clone())));
+                    let b = Box::new(SpecExpression::Value(wrap(format, b.clone())));
+                    let inner = if remainder {
+                        SpecExpression::Remainder(a, b)
+                    } else {
+                        SpecExpression::Divide(a, b)
+                    };
+                    let expression = SpecExpression::Multiply(
+                        Box::new(inner),
+                        Box::new(SpecExpression::Value(wrap(format, constant(0)))),
+                    );
+                    for defined in [false, true] {
+                        let run = |disabled| {
+                            let mut execution = ExecutionBudget::new();
+                            let mut budget = SpecEvaluation::logical(&mut execution);
+                            budget.c_definedness = defined;
+                            budget.machine_preparation_disabled = disabled;
+                            evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                                SpecScope::unbound(&CState::new(), None),
+                                &expression,
+                                &PureFactContext::new(),
+                                &mut budget,
+                            )
+                            .unwrap()
+                        };
+                        assert_eq!(
+                            run(false),
+                            run(true),
+                            "{format:?}, remainder={remainder}, defined={defined}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_shifts_preserve_count_and_result_obligations() {
+        // Storage differs deliberately: the shared result-bound comparison
+        // keeps its operands, while the old producer emits a boxed Compare.
+        // Export only in this parity oracle and compare the exact native trees.
+        fn boxed_domain(value: &Proposition) -> Proposition {
+            match value {
+                Proposition::And(a, b) => Proposition::And(Box::new(boxed_domain(a)), Box::new(boxed_domain(b))),
+                Proposition::ConditionIs(condition, truth) => {
+                    crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition, *truth)
+                        .map(|(condition, truth)| Proposition::ConditionIs(condition, truth))
+                        .unwrap_or_else(|| value.clone())
+                }
+                _ => value.clone(),
+            }
+        }
+        let native_paths = |mut paths: Vec<SpecExpressionPath>| {
+            for path in &mut paths {
+                for obligation in &mut path.obligations {
+                    obligation.proposition = boxed_domain(obligation.proposition());
+                }
+            }
+            paths
+        };
+
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let constant = |n: u64| {
+                crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
+            };
+            for shift_right in [false, true] {
+                for (left, count) in [
+                    (constant(1), constant(0)),
+                    (constant(1), constant(1)),
+                    (constant(1), constant(u64::from(format.format().bits()))),
+                    (MachineTerm::Variable(Variable(991902)), constant(1)),
+                    (constant(1), MachineTerm::Variable(Variable(991903))),
+                    (
+                        MachineTerm::Variable(Variable(991902)),
+                        MachineTerm::Variable(Variable(991903)),
+                    ),
+                ] {
+                    let left = Box::new(SpecExpression::Value(wrap(format, left)));
+                    let right = Box::new(SpecExpression::Value(wrap(format, count)));
+                    let expression = if shift_right {
+                        SpecExpression::ShiftRight(left, right)
+                    } else {
+                        SpecExpression::ShiftLeft(left, right)
+                    };
+                    assert_eq!(
+                        native_paths(evaluate(&expression, false)),
+                        native_paths(evaluate(&expression, true)),
+                        "{format:?}, {expression:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

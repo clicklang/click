@@ -5683,11 +5683,19 @@ mod ranking_member_tests {
         )))
     }
 
+    fn observed_word(value: MachineTerm) -> SharedIntegerTerm {
+        IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            value,
+        ))
+        .into()
+    }
+
     /// An `Integer`-valued component owes the same two members, `0 <= m` and
     /// `m_post < m_pre`, built from the two readings of the one declared
     /// component. An observation of one machine value compared with a
-    /// constant or another observation of its type is stated in its one
-    /// native form.
+    /// constant or another observation of its type retains that machine
+    /// carrier in an Integer comparison.
     #[test]
     fn an_integer_component_builds_integer_members() {
         let value = MachineTerm::Variable(Variable(13));
@@ -5713,18 +5721,24 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[0].proposition(),
             &Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(MachineTerm::constant(0), post.clone()),
+                ConditionTerm::IntegerLessEqual(
+                    observed_word(MachineTerm::constant(0)),
+                    observed_word(post.clone())
+                ),
                 true,
             ),
-            "the nonnegativity member is the native comparison at the back edge"
+            "the nonnegativity member is the retained comparison at the back edge"
         );
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::ConditionIs(
-                ConditionTerm::signed_less_than(post.clone(), value.clone()),
+                ConditionTerm::IntegerLessThan(
+                    observed_word(post.clone()),
+                    observed_word(value.clone())
+                ),
                 true,
             ),
-            "the decrease member is the native comparison against the iteration entry"
+            "the decrease member is the retained comparison against the iteration entry"
         );
         assert!(
             obligations[1]
@@ -5738,7 +5752,7 @@ mod ranking_member_tests {
     /// A tuple may mix carriers. A pivot arm only ever compares one
     /// component's two readings, so each member is built in that component's
     /// own carrier and no comparison crosses them; an Integer member over one
-    /// int32 observation is stated in its native form.
+    /// int32 observation retains that carrier in an Integer comparison.
     #[test]
     fn a_mixed_tuple_builds_each_member_in_its_own_carrier() {
         let outer = MachineTerm::Variable(Variable(17));
@@ -5776,7 +5790,10 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(MachineTerm::constant(0), post_inner.clone()),
+                ConditionTerm::IntegerLessEqual(
+                    observed_word(MachineTerm::constant(0)),
+                    observed_word(post_inner.clone())
+                ),
                 true,
             )
         );
@@ -5790,7 +5807,7 @@ mod ranking_member_tests {
                 true,
             )),
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::signed_less_than(post_inner, inner),
+                ConditionTerm::IntegerLessThan(observed_word(post_inner), observed_word(inner)),
                 true,
             )),
         );

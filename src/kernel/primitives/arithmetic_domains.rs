@@ -116,6 +116,37 @@ impl Proposition {
         )
     }
 
+    /// The same exclusion over retained operands; constructing a domain never
+    /// materializes the arithmetic prefixes it constrains.
+    pub(crate) fn signed_division_exclusion_views(
+        format: MachineIntegerType,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Self {
+        let (minimum, minus_one) = match format {
+            MachineIntegerType::Int32 => (
+                MachineTerm::constant(i32::MIN as u32),
+                MachineTerm::constant(u32::MAX),
+            ),
+            MachineIntegerType::Int64 => (
+                MachineTerm::int64_constant(i64::MIN),
+                MachineTerm::int64_constant(-1),
+            ),
+            _ => unreachable!("native signed division uses int32 or int64"),
+        };
+        let compare = |view, constant: &MachineTerm| {
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format,
+                CompareRelation::Equal,
+                [view, MachineOperandView::Legacy(constant)],
+            )
+        };
+        Self::Or(
+            Box::new(Self::ConditionIs(compare(left, &minimum), false)),
+            Box::new(Self::ConditionIs(compare(right, &minus_one), false)),
+        )
+    }
+
     pub(crate) fn signed_division_defined(
         format: MachineIntegerType,
         left: &MachineTerm,
@@ -233,6 +264,54 @@ impl ConditionTerm {
     /// A total representability comparison. The enclosing shift domain checks
     /// the original count; masking here makes the bound itself well-defined
     /// even when that original count is invalid.
+    pub(crate) fn signed_shift_result_fits_views(
+        format: MachineIntegerType,
+        left: MachineOperandView<'_>,
+        count: MachineOperandView<'_>,
+    ) -> Self {
+        let constant = |n: u64| {
+            KernelTerm::retained_native_machine_operand(
+                format,
+                &crate::kernel::machine_integer::range::constant_word(format, &n.into())
+                    .expect("shift bound fits"),
+            )
+        };
+        let operation = |op, left: KernelTerm, right: KernelTerm| {
+            if let (Some(a), Some(b)) = (
+                left.machine_constant_reading(),
+                right.machine_constant_reading(),
+            ) {
+                let value =
+                    MachineTerm::machine_binary(format, op, a.legacy_term(), b.legacy_term());
+                KernelTerm::retained_native_machine_operand(format, &value)
+            } else {
+                crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
+                    format, op, left, right,
+                )
+            }
+        };
+        let bits = format.format().bits();
+        let masked = operation(
+            MachineBinaryOp::BitwiseAnd,
+            KernelTerm::retained_machine_operand(format, count),
+            constant(u64::from(bits - 1)),
+        );
+        let bound = operation(
+            MachineBinaryOp::ShiftRight,
+            constant(if bits == 32 {
+                i32::MAX as u64
+            } else {
+                i64::MAX as u64
+            }),
+            masked,
+        );
+        crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            format,
+            CompareRelation::LessEqual,
+            [left, MachineOperandView::Shared(&bound)],
+        )
+    }
+
     pub(crate) fn signed_shift_result_fits(
         format: MachineIntegerType,
         left: MachineTerm,

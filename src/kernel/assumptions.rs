@@ -11817,11 +11817,11 @@ fn aliased_operands(
     graph.decide(&itself)
 }
 
-/// `proposition` with each Integer comparison of exact observations replaced
-/// by the native comparison it holds exactly when, as specification lowering
-/// writes it: one fact, one form. A comparison whose native form folds to a
-/// constant, such as a type-range bound, keeps its Integer form. The walk
-/// visits each connective once.
+/// `proposition` with exact machine observations read in their native carrier.
+/// Shared operands remain retained comparisons; this does not export their
+/// arithmetic prefixes. A comparison whose native form folds to a constant,
+/// such as a type-range bound, keeps its Integer form. The walk visits each
+/// connective once and never consults facts.
 pub(crate) fn canonical_observation_form(proposition: &Proposition) -> Proposition {
     observation_comparison_form(proposition)
 }
@@ -11830,14 +11830,16 @@ fn observation_comparison_form(proposition: &Proposition) -> Proposition {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            match super::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition, *value) {
+            match super::machine_integer::comparison::structural_native_comparison_view(
+                condition, *value,
+            )
+            .map(|view| view.retained_condition())
+            {
                 Some((ConditionTerm::Constant(_), _)) | None => proposition.clone(),
                 Some((native, truth)) => Proposition::ConditionIs(native, truth),
             }
         }
-        Proposition::Not(inner) => {
-            Proposition::Not(Box::new(observation_comparison_form(inner)))
-        }
+        Proposition::Not(inner) => Proposition::Not(Box::new(observation_comparison_form(inner))),
         Proposition::And(left, right) => Proposition::And(
             Box::new(observation_comparison_form(left)),
             Box::new(observation_comparison_form(right)),

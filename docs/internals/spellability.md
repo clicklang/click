@@ -121,13 +121,24 @@ binary, complement and explicit-cast nodes. The result type and operator
 format are distinct: a `uint32` result may contain a sign-free `int32` word
 operation. Literal payload tags survive exactly. Export builds the explicit
 boxed checker output once, without cloning every intermediate subtree.
-Ordinary specification evaluation now constructs shared nodes directly for
-same-format `uint32`/`uint64` addition, subtraction and multiplication over
-already available values. Children stay shared until one final checker export.
-These total wrapping operations owe no domain obligation. The evaluator retains
-its existing literal-only evaluation; the shared constructor itself does not
-fold. A mixed-format or deferred operand retains the legacy evaluator, and one
-rejected preparation disables further attempts inside that selected tree.
+Ordinary specification evaluation constructs shared nodes directly for
+same-format 32/64-bit signed and unsigned addition, subtraction, multiplication,
+division, remainder and shifts over already available values. Children stay
+shared until the final native `SpecExpressionPath::value` export. Definedness
+obligations retain those same operands: signed range and division-overflow
+conditions, C-defined division's nonzero divisor, and shift count/result bounds.
+Total specification division keeps its existing zero-divisor semantics. The
+evaluator retains its existing literal-only evaluation; the shared constructor
+itself does not fold. A mixed-format or deferred operand retains the legacy
+evaluator, and one rejected preparation disables further attempts inside that
+selected tree.
+
+Integer conditionals now retain their condition and branches as common children.
+Raising visits common machine arithmetic, casts, observations, Boolean
+comparisons/conditionals and Integer conditionals directly. Unmigrated payloads
+still cross explicit legacy boundaries; native result carriers, folds, full
+pointer/algebraic payloads and consolidation of general lowering remain open.
+See the live inventories in `roadmap/unspellable-facts.md`.
 One same-format `int32`/`int64` addition, subtraction or multiplication over
 two available values also constructs a shared node, accompanied by the existing
 ordinary-proposition range obligation. Literal evaluation and held-resource

@@ -397,3 +397,37 @@ fn leading_domain_recognition_retains_shared_arithmetic() {
         }
     }
 }
+
+#[test]
+fn common_arithmetic_names_ignore_unrelated_locals_without_exports() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, VerificationSession};
+    for size in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let native = MachineTerm::logical_machine_binary(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Add,
+            MachineTerm::Variable(Variable(993410)),
+            MachineTerm::constant(1),
+        );
+        let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+        let mut state = CState::new().with_local("current", CValue::Int32(native));
+        for index in 0..size {
+            state = state.with_local(
+                format!("noise_{index}"),
+                CValue::Int32(MachineTerm::Variable(Variable(994000 + index))),
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
+        });
+        assert_eq!(
+            surface,
+            Some(SurfaceTerm::CFragment(CExpression::Variable(
+                "current".into()
+            )))
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work <= 32, "{size} unrelated locals: {work} work");
+    }
+}
