@@ -4284,8 +4284,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                             source, target,
                                         )? {
                                             Ok(transported) => Ok(transported),
-                                            Err(source_refusal) => prepared
-                                                .apply_planned_fact_transport(
+                                            Err(source_refusal) => crate::kernel::search::ProofSearch::apply_planned_fact_transport(
+ &prepared,
                                                     source,
                                                     target,
                                                     *tactic_index,

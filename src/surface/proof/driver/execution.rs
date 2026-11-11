@@ -1180,12 +1180,15 @@ fn apply_frontier_source_tactic<'a>(
             target,
         )? {
             Ok(transported) => transported,
-            Err(source_refusal) => proof.apply_planned_fact_transport(
-                source,
-                target,
-                indexed.index,
-                source_refusal.as_ref(),
-            )?,
+            Err(source_refusal) => {
+                crate::kernel::search::ProofSearch::apply_planned_fact_transport(
+                    &proof,
+                    source,
+                    target,
+                    indexed.index,
+                    source_refusal.as_ref(),
+                )?
+            }
         }
     } else if let Some(have) = frontier_have(&indexed.tactic) {
         let have = have.as_ref();

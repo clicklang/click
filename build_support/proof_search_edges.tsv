@@ -206,9 +206,9 @@ src/surface/proof/proof_object/execution_joins.rs	mixed	Proof::execute_enum_matc
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try_focused_execute_to_exit_within	driver	2
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try_focused_execute_to_exit_within	try_smart_statement_step	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::close_bundle_member_by_solve	try_solve_closure	1
-src/surface/proof/proof_object/execution_statements.rs	operation	Proof::apply_planned_fact_transport_inner	derive_proposition	1
+src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	derive_proposition	1
 src/surface/proof/proof_object/execution_statements.rs	operation	Proof::apply_planned_outcome_fact_transport	derive_proposition	1
-src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_fact_transport_inner	driver	1
+src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_outcome_fact_transport	driver	1
 src/surface/proof/proof_object/fixed_state_steps.rs	operation	Proof::apply_pure_transport_using	derive_atomic_proposition	1
 src/surface/proof/proof_object/resource_steps/search.rs	search	ProofSearch::try_open_for_missing_resource	driver	1
@@ -616,3 +616,7 @@ src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_restricte
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_unsigned_order_step_from	try_unsigned_strict_fact	4
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::plan_invariant_bundle_closure	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::retry_statement_after_solve_open	try_open_for_missing_resource	1
+src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport	apply_planned_fact_transport_inner	1
+src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	apply_planned_fact_transport	1
+src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	apply_planned_fact_transport	1
+src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_script	apply_planned_fact_transport	1

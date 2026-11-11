@@ -66,12 +66,12 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **618 reference records**: 7 legacy bridges, 22 callers
-of those bridges, 14 operation references, 2 operation-to-driver references,
-19 mixed references, 113 driver references, 433 search references, 6 presentation
+The frozen inventory has **622 reference records**: 7 legacy bridges, 22 callers
+of those bridges, 13 operation references, 1 operation-to-driver reference,
+19 mixed references, 116 driver references, 436 search references, 6 presentation
 references and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
-classifies every mixed and operation-to-driver record and groups all 14
+classifies every mixed and operation-to-driver record and groups all 13
 operation references. Registering the signed-definedness and unsigned-order
 helpers exposes four existing search-only caller records; it adds no runtime work.
 
@@ -102,7 +102,7 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
 Resource-scope completion now reports obligations to the driver, including
 nested opens; function-exit deferral is unchanged. C-branch and proof-case script
 interpretation now also lives in the driver; primitive split/focus/join operations
-do not run arm-script callbacks. Two operation-to-driver records remain.
+do not run arm-script callbacks. One operation-to-driver record remains.
 For a new scaling experiment, L1 through an actual write remains a bounded
 candidate. Boundary cleanup and enforcement are alternative next slices below.
 Transport work should target a named T1–T5 route and its retirement criterion,
@@ -357,8 +357,8 @@ authorize a new primitive or a verifier behavior change.
 F2 and C1 remain subsequent measurement candidates, followed by R2, R1
 reachability, and J1/M1/lifecycle coverage. Declaration-validation search and
 legacy transport T1–T5 remain separate design tracks; preparation completion did
-not remove either. The two remaining operation/driver records are search/support
-adapters on the wrong interface, not six newly measured hidden solver bugs.
+not remove either. The remaining operation/driver record is a search/support
+adapter on the wrong interface, not six newly measured hidden solver bugs.
 
 For whichever slice is selected:
 
