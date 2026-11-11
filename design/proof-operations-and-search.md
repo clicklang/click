@@ -116,10 +116,10 @@ Roles distinguish the work remaining:
 | `import` | Named import, not a runtime invocation. |
 
 The inventory after diagnostic stepping removal, match-arm dispatch relocation
-and signed-definedness/unsigned-order search extraction contains 622 records: 7 legacy bridges, 22 kernel callers,
-13 Surface operation dependencies, 1 operation-to-driver dependency,
-116 driver records, 6 presentation records,
-436 search-internal records, 19 mixed records and 2 imports. These are reference
+and signed-definedness/unsigned-order search extraction contains 632 records: 7 legacy bridges, 22 kernel callers,
+12 Surface operation dependencies, 0 operation-to-driver dependencies,
+120 driver records, 6 presentation records,
+444 search-internal records, 19 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several

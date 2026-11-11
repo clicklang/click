@@ -213,3 +213,4 @@ try_unsigned_strict_fact
 try_open_for_missing_resource
 apply_planned_fact_transport
 apply_planned_fact_transport_inner
+apply_planned_outcome_fact_transport
