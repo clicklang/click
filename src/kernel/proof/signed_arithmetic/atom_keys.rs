@@ -147,6 +147,7 @@ pub(super) fn cache_len() -> usize {
 
 #[derive(Clone)]
 enum Head {
+    Opaque(SignedArithmeticAtom),
     Variable(Variable),
     Read(KernelTerm),
     Constant(u32),
@@ -161,6 +162,13 @@ fn shape(term: &KernelTerm, reading: Reading) -> Option<(Head, Vec<(&KernelTerm,
     use KernelTermNode as N;
     let child = |value| vec![(value, reading)];
     match term.node() {
+        N::Legacy(_) if reading == Reading::Signed => {
+            let value = canonical_term_budgeted(term.machine_conversion_leaf()?)?;
+            Some((
+                Head::Opaque(SignedArithmeticAtom::from_term(&value)?),
+                vec![],
+            ))
+        }
         N::Variable(value) => Some((Head::Variable(*value), vec![])),
         N::MemoryLoad { .. } => Some((Head::Read(term.clone()), vec![])),
         N::MachineLiteral(_) => {
@@ -267,7 +275,12 @@ pub(super) fn from_shared(root: &KernelTerm) -> Option<SignedArithmeticAtom> {
             let all_parts = operands.iter().all(|operand| operand.opaque_parts);
             let small_word_literal = matches!(&head, Head::Constant(value) if *value <= 31)
                 || operands.iter().any(|operand| operand.small_word_literal);
+            if let Head::Opaque(atom) = head {
+                keys.insert(key, Some(atom));
+                continue;
+            }
             let (node, root_opaque, parts) = match head {
+                Head::Opaque(_) => unreachable!(),
                 Head::Variable(v) => (variable(v), true, true),
                 Head::Read(read) => (read.with_machine_observation_type(T::Int32), true, true),
                 Head::Constant(v) => (constant(v), false, true),
@@ -328,10 +341,7 @@ pub(super) fn from_shared(root: &KernelTerm) -> Option<SignedArithmeticAtom> {
 /// generic casts. Shared machine operands already name their loads. Integer
 /// conversion leaves are opaque to both canonicalization passes and outside
 /// this certificate's atom grammar, so they are refused without an export.
-fn canonical_arithmetic(root: &KernelTerm) -> Option<KernelTerm> {
-    if root.has_machine_conversions() {
-        return None;
-    }
+pub(super) fn canonical_arithmetic(root: &KernelTerm) -> Option<KernelTerm> {
     CANONICAL.with(|cache| {
         let mut cache = cache.borrow_mut();
         let mut pending = vec![(root, false)];
@@ -354,9 +364,20 @@ fn canonical_arithmetic(root: &KernelTerm) -> Option<KernelTerm> {
                 continue;
             }
             let value = match term.node() {
-                KernelTermNode::Variable(_)
-                | KernelTermNode::MachineLiteral(_)
-                | KernelTermNode::MemoryLoad { .. } => term.clone(),
+                KernelTermNode::MemoryLoad { .. } => {
+                    let native = term.machine_read_leaf()?;
+                    let canonical = canonical_term_budgeted(native)?;
+                    let crate::kernel::KernelType::C(ty) = term.ty() else {
+                        return None;
+                    };
+                    KernelTerm::retained_machine_operand(
+                        MachineIntegerType::from_c_type(*ty)?,
+                        crate::kernel::MachineOperandView::Legacy(&canonical),
+                    )
+                }
+                KernelTermNode::Legacy(_)
+                | KernelTermNode::Variable(_)
+                | KernelTermNode::MachineLiteral(_) => term.clone(),
                 KernelTermNode::MachineBinary {
                     format,
                     operator,

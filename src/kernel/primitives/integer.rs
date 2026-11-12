@@ -560,6 +560,8 @@ pub(super) fn clear_machine_observation_memo() {
     MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow_mut().clear());
 }
 
+mod observation_identity;
+
 impl SharedMachineIntegerTerm {
     /// An explicit native operand already imported in this verification.
     /// Read-only: a miss does not import syntax or retain an opaque payload.
@@ -665,6 +667,16 @@ impl SharedMachineIntegerTerm {
             shared.remember_explicit_import(key);
             return shared;
         }
+        let view = MachineOperandView::Legacy(value);
+        if view.binary().is_some() || view.unary().is_some() || view.cast().is_some() {
+            let root = KernelTerm::retained_machine_operand(ty, view);
+            let shared = Self::observe_shared(ty, root).expect("retained machine observation");
+            if let MachineIntegerOperand::Shared { boxed, .. } = &shared.0.operand {
+                let _ = boxed.set(value.clone());
+            }
+            shared.remember_explicit_import(key);
+            return shared;
+        }
         Self::intern_key(key)
     }
 
@@ -712,9 +724,13 @@ impl SharedMachineIntegerTerm {
         MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow_mut().insert(self.id(), self.clone()));
     }
 
-    /// Observe shared arithmetic and typed Integer conversions without
-    /// materializing boxed prefixes. Other opaque leaves whose KernelTerm
-    /// identities are producer-specific remain outside this fragment.
+    /// Observe retained arithmetic without exporting prefixes. Opaque producer
+    /// identities are mapped once to their existing numeric observation keys.
+    pub(crate) fn observe_shared(ty: MachineIntegerType, term: KernelTerm) -> Option<Self> {
+        Self::from_shared(ty, observation_identity::normalize(&term))
+    }
+
+    /// Retain exact operand identity, including producer and read metadata.
     pub(crate) fn from_shared(ty: MachineIntegerType, term: KernelTerm) -> Option<Self> {
         if term.ty() != &KernelType::C(ty.c_type()) || !term.is_shared_machine_operand() {
             return None;

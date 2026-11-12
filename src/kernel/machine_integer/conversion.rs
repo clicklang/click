@@ -552,10 +552,12 @@ fn cast_through_readings(
 fn matches_word(machine: &crate::kernel::SharedMachineIntegerTerm, word: &MachineTerm) -> bool {
     match machine.operand_view() {
         crate::kernel::MachineOperandView::Legacy(actual) => actual == word,
-        crate::kernel::MachineOperandView::Shared(actual) => {
-            crate::kernel::KernelTermImport::default()
-                .machine_arithmetic(machine.ty(), word)
-                .is_some_and(|expected| *actual == expected)
+        crate::kernel::MachineOperandView::Shared(_) => {
+            let expected = crate::kernel::KernelTerm::retained_machine_operand(
+                machine.ty(),
+                crate::kernel::MachineOperandView::Legacy(word),
+            );
+            matches_kernel(machine, &expected)
         }
     }
 }
@@ -564,13 +566,18 @@ fn matches_kernel(
     machine: &crate::kernel::SharedMachineIntegerTerm,
     word: &crate::kernel::KernelTerm,
 ) -> bool {
-    let expected = word.with_machine_observation_type(machine.ty());
-    match machine.operand_view() {
-        crate::kernel::MachineOperandView::Shared(actual) => *actual == expected,
-        crate::kernel::MachineOperandView::Legacy(actual) => {
-            crate::kernel::KernelTermImport::default().machine(machine.ty(), actual) == expected
-        }
-    }
+    // Compare written observations at one format. The numeric opaque-leaf key
+    // is independent of the exact producer handle, and never peels a cast.
+    let expected = crate::kernel::SharedMachineIntegerTerm::observe_shared(
+        machine.ty(),
+        word.with_machine_observation_type(machine.ty()),
+    );
+    let actual =
+        crate::kernel::KernelTerm::retained_machine_operand(machine.ty(), machine.operand_view());
+    let actual = crate::kernel::SharedMachineIntegerTerm::observe_shared(machine.ty(), actual);
+    actual
+        .zip(expected)
+        .is_some_and(|(actual, expected)| actual == expected)
 }
 
 fn matches_converted_value(

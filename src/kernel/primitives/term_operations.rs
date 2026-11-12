@@ -275,39 +275,7 @@ impl MachineTerm {
     // Local structural bounds only: do not search assumptions or traverse an
     // unrelated expression tree to establish a shift-count bound.
     fn unsigned32_upper_bound(&self) -> u32 {
-        match self {
-            int32_constant!(value) => constant_u32(*value),
-            binary_term!(Bits32, BitwiseAnd, left, right) => {
-                match (left.as_ref(), right.as_ref()) {
-                    (bits32_constant!(mask), _) | (_, bits32_constant!(mask)) => {
-                        constant_u32(*mask)
-                    }
-                    _ => u32::MAX,
-                }
-            }
-            cast_term!(UInt32From64, value) => match value.as_ref() {
-                Self::Binary {
-                    format: MachineIntegerType::UInt64,
-                    op: MachineBinaryOp::ShiftRight,
-                    left: _,
-                    right: count,
-                } => {
-                    let count = match count.as_ref() {
-                        int32_constant!(count) if constant_u32(*count) < 64 => constant_u32(*count),
-                        uint64_constant!(count) if constant_u64(*count) < 64 => {
-                            constant_u64(*count) as u32
-                        }
-                        int64_constant!(count) if (0..64).contains(&constant_i64(*count)) => {
-                            constant_i64(*count) as u32
-                        }
-                        _ => return u32::MAX,
-                    };
-                    (u64::MAX >> count).min(u32::MAX as u64) as u32
-                }
-                _ => u32::MAX,
-            },
-            _ => u32::MAX,
-        }
+        crate::kernel::MachineOperandView::Legacy(self).unsigned32_upper_bound()
     }
 
     pub(crate) fn opaque_conversion(name: impl Into<String>, value: Self) -> Self {

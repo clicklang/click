@@ -3973,6 +3973,7 @@ impl<'a> TermRewrite<'a> {
                 if let Some(root) = value.shared_operand()
                     && let Some(result) = self.shared_machine_operand(root)
                 {
+                    let changed = result != *root;
                     let operand = MachineOperandView::Shared(&result);
                     // A substituted carrier need not admit the observation's
                     // numeric reading (for example a full-width unsigned
@@ -3984,6 +3985,27 @@ impl<'a> TermRewrite<'a> {
                         operand
                             .observe(value.ty())
                             .unwrap_or_else(|| IntegerTerm::Machine(operand.retain(value.ty())))
+                    };
+                    // A changed observation must use the same numeric opaque
+                    // keys as freshly lowered syntax. A no-op keeps its exact
+                    // retained handle, including producer metadata.
+                    let result = match result {
+                        IntegerTerm::Machine(machine)
+                            if changed && self.integer_exact.is_none() =>
+                        {
+                            if let Some(root) = machine.shared_operand() {
+                                IntegerTerm::Machine(
+                                    SharedMachineIntegerTerm::observe_shared(
+                                        machine.ty(),
+                                        root.clone(),
+                                    )
+                                    .expect("rewritten machine observation"),
+                                )
+                            } else {
+                                IntegerTerm::Machine(machine)
+                            }
+                        }
+                        result => result,
                     };
                     self.integer_cache.insert(cache_key, result.clone());
                     return result;

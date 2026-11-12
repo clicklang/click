@@ -951,7 +951,7 @@ zero-export regressions cover the new boundaries. Steps 2–4 remain open.
 | Producer | Representation boundary still to close |
 | --- | --- |
 | `spec/shared_machine::prepare` | Same-format available 32/64-bit arithmetic, including division/remainder and shifts, retains common children and debts through `SpecExpressionPath::value`. |
-| `spec::evaluate_spec_expression_dispatch` | Deferred same-format 32/64-bit add/subtract/multiply/divide/remainder and scoped requirement handoffs retain results, debts and structural Integer observations. Opaque/read observation payloads and deferred partial operations over those payloads retain their native identity/domain boundary. Literal-right add chains evaluate iteratively with retained prefixes, including deferred bases. Deferred shifts, mixed/narrow/wide operations, casts, let bindings, symbolic conditional joins, folds, pure-call arguments, pointer indices, scalar comparison propositions and C execution/API outputs still have explicit native boundaries. |
+| `spec::evaluate_spec_expression_dispatch` | Deferred same-format 32/64-bit arithmetic, including shifts, and scoped requirement handoffs retain results and debts. Opaque/read operands retain shared surrounding arithmetic through domain construction and Integer observations; a session-local memo maps opaque leaves to the existing numeric observation identity without changing exact producer payloads. Same-format 32/64-bit scalar comparisons retain shared operands. Literal-right add chains evaluate iteratively with retained prefixes, including deferred bases. Same-format casts retain the existing result and debts. Mixed/narrow/wide operations, representation-changing casts, let bindings, symbolic conditional joins, folds, pure-call arguments, pointer indices and C execution/API outputs still have explicit native boundaries. |
 | `eval/operators` and `eval/operators/spec_arithmetic` | C execution, Rust shifts, conversions, bitwise operations and wide operations construct native `CExpressionOutcome::Value` payloads. Runtime-error branches and logical specification debts have distinct rules. |
 | `ProofObligation::verification_condition` | Observation canonicalization now retains shared comparisons instead of exporting their prefixes, preserving polarity and native/shared checking equivalence. |
 
@@ -964,6 +964,21 @@ rerun, all 18 shared-producer regressions passed, and the final production
 fact-stability run passed all 5,188 mdtests with zero differences (the baseline
 also had zero). The final boundary fixes were checked by these targeted and
 corpus reruns; the combined gate was not rerun afterward. Steps 2–4 remain open.
+
+The deferred-domain/comparison increment removes the opaque-domain and deferred
+shift compatibility exclusions. Native observation inputs and shared producers
+now agree on numeric identity even after the producer is dropped. Signed claim
+recognition, certificate term selection and typed comparison spelling read the
+retained comparison view. The bounded tagged-address certificate evaluator
+borrows shared operands directly, retaining its payload limits, alignment
+requirements, relation-cycle refusal and tag rules. Its explicit source terms
+and alignment evidence remain the only inputs; no ambient proof search is added.
+Signed interval planning bounds and exports selected operands once for the
+existing public certificate payload; its affine evidence matcher reads shared
+claims directly. Shared cast raising keeps Surface operands, including snapshot
+selectors, instead of forcing them through C fragments.
+The public signed certificate's selected term payload is still native, as are
+the remaining producer families listed above. Steps 2–4 remain open.
 
 ### 3. Finish existing term families without redesigning their semantics
 

@@ -13927,8 +13927,17 @@ fn lower_selected_resource_body_clauses(
                 limit.describe()
             )),
         })?;
-        let path = crate::kernel::api::exactly_selected_spec_proposition_path(&paths, &context)
-            .ok_or("instance body fact needs an unsupported conditional proof")?;
+        let mut path = crate::kernel::api::exactly_selected_spec_proposition_path(&paths, &context)
+            .ok_or("instance body fact needs an unsupported conditional proof")?
+            .clone();
+        if let Proposition::ConditionIs(condition, truth) = &path.proposition
+            && let Some(condition) =
+                crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(
+                    condition,
+                )
+        {
+            path.proposition = Proposition::ConditionIs(condition, *truth);
+        }
         // An undischarged pure undefined-behavior condition (unchecked
         // arithmetic) is exposed alongside the body fact instead of
         // refusing the rewrite: the author asserted the C meaning, which

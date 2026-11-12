@@ -112,6 +112,21 @@ pub(crate) fn condition_for_operand_views(
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> ConditionTerm {
     use crate::kernel::{CompareRelation as R, MachineOperandView as V};
+    if format == MachineIntegerType::UInt32
+        && let Some(bound) = operands[1].literal().and_then(|word| word.constant32())
+    {
+        let upper = operands[0].unsigned32_upper_bound();
+        let result = match relation {
+            R::LessThan if upper < bound => Some(true),
+            R::LessEqual if upper <= bound => Some(true),
+            R::GreaterThan if upper <= bound => Some(false),
+            R::GreaterEqual if upper < bound => Some(false),
+            _ => None,
+        };
+        if let Some(result) = result {
+            return ConditionTerm::Constant(result);
+        }
+    }
     let atoms = operands.map(|operand| match operand {
         V::Shared(root) => root
             .machine_constant_reading()
@@ -133,7 +148,14 @@ pub(crate) fn condition_for_operand_views(
         if let Some(literal) = operand.literal() {
             IntegerTerm::from_machine(format, literal).expect("typed comparison literal")
         } else {
-            IntegerTerm::Machine(operand.retain(format))
+            IntegerTerm::Machine(match operand {
+                V::Legacy(value) => SharedMachineIntegerTerm::intern(format, value.clone()),
+                V::Shared(root) => SharedMachineIntegerTerm::observe_shared(
+                    format,
+                    root.with_machine_observation_type(format),
+                )
+                .expect("typed comparison operand"),
+            })
         }
     });
     match relation {
@@ -143,6 +165,56 @@ pub(crate) fn condition_for_operand_views(
         R::GreaterThan => ConditionTerm::integer_greater_than(left, right),
         R::GreaterEqual => ConditionTerm::integer_greater_equal(left, right),
     }
+}
+
+/// Retain native arithmetic at an explicit checking boundary. This is a
+/// syntax-only reading of the selected comparison, not a lowering policy.
+pub(crate) fn retained_arithmetic_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let ConditionTerm::Compare {
+        format,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    if !matches!(
+        format,
+        MachineIntegerType::Int32
+            | MachineIntegerType::UInt32
+            | MachineIntegerType::Int64
+            | MachineIntegerType::UInt64
+    ) {
+        return None;
+    }
+    use crate::kernel::{KernelTerm, MachineBinaryOp as O, MachineOperandView as V};
+    let operands = [V::Legacy(left), V::Legacy(right)];
+    let roots = operands.map(|operand| {
+        operand
+            .binary()
+            .filter(|(_, op, _)| {
+                matches!(
+                    op,
+                    O::Add
+                        | O::Subtract
+                        | O::Multiply
+                        | O::Divide
+                        | O::Remainder
+                        | O::ShiftLeft
+                        | O::ShiftRight
+                )
+            })
+            .map(|_| KernelTerm::retained_machine_operand(*format, operand))
+    });
+    if roots.iter().all(Option::is_none) {
+        return None;
+    }
+    Some(condition_for_operand_views(
+        *format,
+        *relation,
+        std::array::from_fn(|i| roots[i].as_ref().map(V::Shared).unwrap_or(operands[i])),
+    ))
 }
 
 /// A comparison query retaining its original shared operand identities.

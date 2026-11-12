@@ -2685,7 +2685,36 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
             let fact = Proposition::ConditionIs(condition.clone(), polarity);
             let surface =
                 synthesize_surface_proposition(&fact, ParameterBinding::default(), &state).unwrap();
-            assert_eq!(relower_written_proposition(&surface, &state), Ok(fact));
+            let lowered = relower_written_proposition(&surface, &state).unwrap();
+            let Proposition::ConditionIs(lowered, lowered_truth) = lowered else {
+                panic!("comparison")
+            };
+            let expected =
+                crate::kernel::machine_integer::comparison::comparison_view(&condition, polarity)
+                    .unwrap();
+            let actual = crate::kernel::machine_integer::comparison::comparison_view(
+                &lowered,
+                lowered_truth,
+            )
+            .unwrap();
+            assert_eq!(actual.format, expected.format);
+            assert_eq!(actual.relation, expected.relation);
+            let format = expected.format;
+            for (actual, expected) in actual.operands.iter().zip(&expected.operands) {
+                assert_eq!(
+                    actual
+                        .operand_view()
+                        .observe(format)
+                        .map(|value| value.value_read().clone()),
+                    expected
+                        .operand_view()
+                        .observe(format)
+                        .map(|value| value.value_read().clone()),
+                    "condition={condition:?} surface={surface:?} actual={:?} expected={:?}",
+                    actual.operand_view().retain(format).structural_value(),
+                    expected.operand_view().retain(format).structural_value(),
+                );
+            }
         }
     }
 }
@@ -4033,11 +4062,19 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
         right: SurfaceTerm::CFragment(CExpression::Value(int32(20))),
     };
     let lowered = relower_written_proposition(&written, &state).unwrap();
-    let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) = lowered else {
+    let Proposition::ConditionIs(condition, true) = lowered else {
         panic!("comparison")
     };
+    let view =
+        crate::kernel::machine_integer::comparison::structural_comparison_view(&condition).unwrap();
+    assert_eq!(view.format, MachineIntegerType::Int32);
+    assert_eq!(view.relation, crate::kernel::CompareRelation::LessEqual);
     assert_eq!(
-        KernelTermImport::default().machine(MachineIntegerType::Int32, &left),
+        crate::kernel::KernelTerm::retained_machine_operand(
+            view.format,
+            view.operands[0].operand_view()
+        ),
         root
     );
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
 }

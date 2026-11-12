@@ -1837,26 +1837,40 @@ impl<'a> Proof<'a> {
                 return Err(proof
                     .step_error("signed_int32 certificate term did not lower to a proposition"));
             };
-            let term = match condition {
-                crate::kernel::ConditionTerm::Compare {
-                    format:
-                        crate::kernel::MachineIntegerType::Int32
-                        | crate::kernel::MachineIntegerType::UInt32,
-                    relation: crate::kernel::CompareRelation::Equal,
-                    left,
-                    right,
-                } if matches!(right.as_ref(), bits32_constant!(0)) => left.as_ref().clone(),
-                crate::kernel::ConditionTerm::Compare {
-                    format:
-                        crate::kernel::MachineIntegerType::Int32
-                        | crate::kernel::MachineIntegerType::UInt32,
-                    relation: crate::kernel::CompareRelation::Equal,
-                    left,
-                    right,
-                } if matches!(left.as_ref(), bits32_constant!(0)) => right.as_ref().clone(),
-                _ => {
-                    return Err(proof
-                        .step_error("signed_int32 certificate term must be an int32 expression"));
+            let view =
+                crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+                    .filter(|view| {
+                        matches!(
+                            view.format,
+                            crate::kernel::MachineIntegerType::Int32
+                                | crate::kernel::MachineIntegerType::UInt32
+                        ) && view.relation == crate::kernel::CompareRelation::Equal
+                            && !view.negated
+                    })
+                    .ok_or_else(|| {
+                        proof
+                            .step_error("signed_int32 certificate term must be an int32 expression")
+                    })?;
+            let [left, right] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            let operand = if right.word32_constant() == Some(0) {
+                left
+            } else if left.word32_constant() == Some(0) {
+                right
+            } else {
+                return Err(
+                    proof.step_error("signed_int32 certificate term must be an int32 expression")
+                );
+            };
+            // The public signed certificate still stores a native term. Export
+            // only its explicitly selected payload, after recognizing the shared comparison.
+            let term = match operand {
+                crate::kernel::MachineOperandView::Legacy(term) => term.clone(),
+                crate::kernel::MachineOperandView::Shared(root) => {
+                    crate::kernel::KernelTermExport::machine(root)
+                        .map_err(|error| proof.step_error(error))?
                 }
             };
             let term = crate::kernel::canonical_term(&term);

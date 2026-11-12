@@ -9,7 +9,10 @@ use crate::kernel::{
 
 impl KernelLegacyTerm {
     fn machine_operand(&self) -> Option<&MachineTerm> {
-        if !matches!(self.identity, LegacyIdentity::Machine(_)) {
+        if !matches!(
+            self.identity,
+            LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
+        ) {
             return None;
         }
         let PureFunctionArgument::Value(value) = self.value() else {

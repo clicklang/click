@@ -111,10 +111,23 @@ impl SignedArithmeticAtom {
         signed_arithmetic_atom_key(term)
     }
 
-    fn from_operand(value: crate::kernel::MachineOperandView<'_>) -> Option<Self> {
+    pub(crate) fn from_operand(value: crate::kernel::MachineOperandView<'_>) -> Option<Self> {
         match value {
             crate::kernel::MachineOperandView::Legacy(value) => Self::from_term(value),
             crate::kernel::MachineOperandView::Shared(value) => atom_keys::from_shared(value),
+        }
+    }
+
+    pub(crate) fn from_canonical_operand(
+        value: crate::kernel::MachineOperandView<'_>,
+    ) -> Option<Self> {
+        match value {
+            crate::kernel::MachineOperandView::Legacy(value) => {
+                Self::from_term(&canonical_term_budgeted(value)?)
+            }
+            crate::kernel::MachineOperandView::Shared(value) => {
+                atom_keys::from_observation(value, MachineIntegerType::Int32)
+            }
         }
     }
 
@@ -549,6 +562,106 @@ impl TermArena {
                 self.equivalence_cache.insert((right, left), equivalent);
                 if !equivalent {
                     return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn equivalent_operand(
+        &self,
+        reference: usize,
+        explicit: crate::kernel::MachineOperandView<'_>,
+    ) -> bool {
+        use crate::kernel::MachineOperandView as V;
+        let V::Shared(root) = explicit else {
+            let V::Legacy(value) = explicit else {
+                unreachable!()
+            };
+            return self.equivalent_explicit(reference, value);
+        };
+        let Some(root) = atom_keys::canonical_arithmetic(root) else {
+            return false;
+        };
+        let mut pending = vec![(reference, V::Shared(&root))];
+        while let Some((reference, actual)) = pending.pop() {
+            if crate::instrumentation::deadline_exceeded_with_work(1) {
+                return false;
+            }
+            match &self.terms[reference] {
+                CheckedTerm::Atom(expected) => {
+                    let Some(actual) = SignedArithmeticAtom::from_operand(actual) else {
+                        return false;
+                    };
+                    if !charge_atom_pair_work(expected, &actual) || expected != &actual {
+                        return false;
+                    }
+                }
+                CheckedTerm::Binary {
+                    operator,
+                    left,
+                    right,
+                } => {
+                    let Some((MachineIntegerType::Int32, actual_op, [a, b])) = actual.binary()
+                    else {
+                        return false;
+                    };
+                    use crate::kernel::MachineBinaryOp as O;
+                    use CheckedBinaryOperator as C;
+                    if !matches!(
+                        (operator, actual_op),
+                        (C::Add, O::Add)
+                            | (C::Subtract, O::Subtract)
+                            | (C::Multiply, O::Multiply)
+                            | (C::Remainder, O::Remainder)
+                            | (C::ShiftLeft, O::ShiftLeft)
+                            | (C::ArithmeticShiftRight, O::ShiftRight)
+                            | (C::BitwiseAnd, O::BitwiseAnd)
+                    ) {
+                        return false;
+                    }
+                    pending.extend([(*left, a), (*right, b)]);
+                }
+                CheckedTerm::Cast {
+                    source,
+                    destination,
+                    operand,
+                } => {
+                    let Some((
+                        MachineCastSpelling::Generic,
+                        widened_from,
+                        MachineIntegerType::Int32,
+                        narrowed,
+                    )) = actual.cast()
+                    else {
+                        return false;
+                    };
+                    let Some((
+                        MachineCastSpelling::Generic,
+                        actual_source,
+                        actual_destination,
+                        value,
+                    )) = narrowed.cast()
+                    else {
+                        return false;
+                    };
+                    if widened_from != actual_destination
+                        || *source != actual_source
+                        || *destination != actual_destination
+                        || !narrowed_word_cast(actual_source, actual_destination)
+                    {
+                        return false;
+                    }
+                    if source.format().bits() < 32 {
+                        let value =
+                            crate::kernel::KernelTerm::retained_machine_operand(*source, value)
+                                .checking_machine_cast(*source, MachineIntegerType::Int32);
+                        if !self.equivalent_operand(*operand, V::Shared(&value)) {
+                            return false;
+                        }
+                    } else {
+                        pending.push((*operand, value));
+                    }
                 }
             }
         }
@@ -2141,127 +2254,30 @@ fn affine_claim_from_interval_evidence_refs(
         },
         _ => return None,
     };
-    let (relation, left, right, strict) = match (condition, value) {
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-            true,
-        ) => (SignedArithmeticRelation::LessEqual, left, right, true),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            },
-            true,
-        ) => (SignedArithmeticRelation::LessEqual, left, right, false),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            },
-            true,
-        ) => (SignedArithmeticRelation::LessEqual, right, left, true),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            },
-            true,
-        ) => (SignedArithmeticRelation::LessEqual, right, left, false),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-            false,
-        ) => (SignedArithmeticRelation::LessEqual, right, left, false),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            },
-            false,
-        ) => (SignedArithmeticRelation::LessEqual, right, left, true),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            },
-            false,
-        ) => (SignedArithmeticRelation::LessEqual, left, right, false),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            },
-            false,
-        ) => (SignedArithmeticRelation::LessEqual, left, right, true),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) => {
-            let (terms, constant) = affine_difference_from_evidence_refs(
-                left,
-                right,
-                terms,
-                left_info.as_ref(),
-                right_info.as_ref(),
-            )?;
-            return Some(SignedArithmeticClaim {
-                carrier: SignedArithmeticCarrier::SignedInt32,
-                relation: SignedArithmeticRelation::Equal,
-                terms,
-                constant,
-            });
-        }
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            false,
-        ) => {
-            let (terms, constant) = affine_difference_from_evidence_refs(
-                left,
-                right,
-                terms,
-                left_info.as_ref(),
-                right_info.as_ref(),
-            )?;
-            return Some(SignedArithmeticClaim {
-                carrier: SignedArithmeticCarrier::SignedInt32,
-                relation: SignedArithmeticRelation::Disequal,
-                terms,
-                constant,
-            });
-        }
-        _ => return None,
+    let view = if matches!(condition, ConditionTerm::Compare { .. }) {
+        crate::kernel::machine_integer::comparison::comparison_view(condition, value)?
+    } else {
+        crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+            condition, value,
+        )?
     };
+    use crate::kernel::machine_integer::Relation as R;
+    if view.format != MachineIntegerType::Int32
+        && !(view.format == MachineIntegerType::UInt32
+            && matches!(view.relation, R::Equal | R::NotEqual))
+    {
+        return None;
+    }
+    let relation = match view.relation {
+        R::Equal => SignedArithmeticRelation::Equal,
+        R::NotEqual => SignedArithmeticRelation::Disequal,
+        _ => SignedArithmeticRelation::LessEqual,
+    };
+    let strict = view.relation == R::Less;
+    let [left, right] = view
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view());
     let (terms, mut constant) = affine_difference_from_evidence_refs(
         left,
         right,
@@ -2284,21 +2300,21 @@ fn affine_claim_from_interval_evidence_refs(
 }
 
 fn affine_difference_from_evidence_refs(
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
     terms: &mut TermArena,
     left_evidence: Option<&(usize, (BTreeMap<SignedArithmeticAtom, BigInt>, BigInt))>,
     right_evidence: Option<&(usize, (BTreeMap<SignedArithmeticAtom, BigInt>, BigInt))>,
 ) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
     let difference =
-        |term: &MachineTerm,
+        |term: crate::kernel::MachineOperandView<'_>,
          coefficient: i8,
          evidence: Option<&(usize, (BTreeMap<SignedArithmeticAtom, BigInt>, BigInt))>| {
             if crate::instrumentation::deadline_exceeded_with_work(1) {
                 return None;
             }
             if let Some((evidence_term, evidence_affine)) = evidence
-                && terms.equivalent_explicit(*evidence_term, term)
+                && terms.equivalent_operand(*evidence_term, term)
             {
                 let multiplier = BigInt::from(coefficient);
                 let mut result = BTreeMap::new();
@@ -2323,10 +2339,19 @@ fn affine_difference_from_evidence_refs(
                 }
                 return Some((result, evidence_affine.1.clone() * multiplier));
             }
-            if contains_affine_machine_operation(term) {
+            if matches!(
+                term.binary(),
+                Some((
+                    MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::Add
+                        | crate::kernel::MachineBinaryOp::Subtract
+                        | crate::kernel::MachineBinaryOp::Multiply,
+                    _
+                ))
+            ) {
                 return None;
             }
-            affine_leaf(term).map(|(mut result, constant)| {
+            affine_operand_leaf(term).map(|(mut result, constant)| {
                 if coefficient == -1 {
                     for value in result.values_mut() {
                         *value = -value.clone();
@@ -2515,6 +2540,19 @@ fn interval_affine_evidence(
     Some((term_reference, affine))
 }
 
+fn affine_operand_leaf(
+    term: crate::kernel::MachineOperandView<'_>,
+) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
+    if let Some(value) = term.word32_constant() {
+        return Some((BTreeMap::new(), BigInt::from(value as i32)));
+    }
+    let atom = SignedArithmeticAtom::from_canonical_operand(term)?;
+    if crate::instrumentation::deadline_exceeded_with_work(atom.work()) {
+        return None;
+    }
+    Some((BTreeMap::from([(atom, BigInt::one())]), BigInt::zero()))
+}
+
 fn affine_leaf(term: &MachineTerm) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
     if let Some(value) = term.as_const().map(|value| i64::from(value as i32)) {
         return Some((BTreeMap::new(), BigInt::from(value)));
@@ -2525,15 +2563,6 @@ fn affine_leaf(term: &MachineTerm) -> Option<(BTreeMap<SignedArithmeticAtom, Big
         return None;
     }
     Some((BTreeMap::from([(atom, BigInt::one())]), BigInt::zero()))
-}
-
-fn contains_affine_machine_operation(root: &MachineTerm) -> bool {
-    matches!(
-        root,
-        binary_term!(Int32, Add, _, _)
-            | binary_term!(Int32, Subtract, _, _)
-            | binary_term!(Int32, Multiply, _, _)
-    )
 }
 
 #[cfg(test)]
@@ -2791,6 +2820,60 @@ fn comparison_proposition_matches(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return false;
     };
+    if !matches!(condition, ConditionTerm::Compare { .. }) {
+        let Some(view) =
+            crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+                condition, *value,
+            )
+        else {
+            return false;
+        };
+        use crate::kernel::machine_integer::Relation as R;
+        use SignedArithmeticComparison as C;
+        let supported = matches!(
+            (comparison, view.format, view.relation),
+            (C::LessThan, MachineIntegerType::Int32, R::Less)
+                | (C::LessEqual, MachineIntegerType::Int32, R::LessEqual)
+                | (
+                    C::Equal,
+                    MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    R::Equal
+                )
+                | (
+                    C::Disequal,
+                    MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    R::NotEqual
+                )
+                | (C::UnsignedLessThan, MachineIntegerType::UInt32, R::Less)
+                | (
+                    C::UnsignedLessEqual,
+                    MachineIntegerType::UInt32,
+                    R::LessEqual
+                )
+        );
+        if !supported {
+            return false;
+        }
+        let reads = |index, operand: crate::kernel::MachineOperandView<'_>| {
+            if terms.equivalent_operand(index, operand) {
+                return true;
+            }
+            if matches!(comparison, C::UnsignedLessThan | C::UnsignedLessEqual)
+                && operand.literal().is_none()
+            {
+                let root = crate::kernel::KernelTerm::retained_machine_operand(
+                    MachineIntegerType::UInt32,
+                    operand,
+                )
+                .checking_machine_cast(MachineIntegerType::UInt32, MachineIntegerType::Int32);
+                return terms
+                    .equivalent_operand(index, crate::kernel::MachineOperandView::Shared(&root));
+            }
+            false
+        };
+        return reads(left, view.operands[0].operand_view())
+            && reads(right, view.operands[1].operand_view());
+    }
     if matches!(
         comparison,
         SignedArithmeticComparison::UnsignedLessThan
@@ -3010,6 +3093,74 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         },
         _ => return None,
     };
+    if !matches!(condition, ConditionTerm::Compare { .. })
+        && let Some(view) =
+            crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+                condition, value,
+            )
+    {
+        use crate::kernel::machine_integer::Relation as R;
+        if view.format != MachineIntegerType::Int32
+            && !(view.format == MachineIntegerType::UInt32
+                && matches!(view.relation, R::Equal | R::NotEqual))
+        {
+            return None;
+        }
+        let mut terms = BTreeMap::new();
+        let mut constant = BigInt::zero();
+        for (operand, coefficient) in view.operands.iter().zip([BigInt::one(), -BigInt::one()]) {
+            let operand = operand.operand_view();
+            if let Some(value) = operand.literal().and_then(|literal| literal.as_const()) {
+                let value = BigInt::from(value as i32);
+                if !charge_bigint_binary_work(&coefficient, &value) {
+                    return None;
+                }
+                let product = coefficient * value;
+                if !charge_bigint_binary_work(&constant, &product) {
+                    return None;
+                }
+                constant += product;
+            } else {
+                let atom = match operand {
+                    crate::kernel::MachineOperandView::Shared(root) => {
+                        atom_keys::from_observation(root, MachineIntegerType::Int32)?
+                    }
+                    crate::kernel::MachineOperandView::Legacy(value) => {
+                        SignedArithmeticAtom::from_term(&canonical_term_budgeted(value)?)?
+                    }
+                };
+                if !charge_affine_map_update_work(&terms, &atom, &coefficient) {
+                    return None;
+                }
+                let previous = terms.get(&atom).cloned().unwrap_or_default();
+                if !charge_bigint_binary_work(&previous, &coefficient) {
+                    return None;
+                }
+                let updated = previous + coefficient;
+                if updated.is_zero() {
+                    terms.remove(&atom);
+                } else {
+                    terms.insert(atom, updated);
+                }
+            }
+        }
+        if view.relation == R::Less {
+            if !charge_bigint_binary_work(&constant, &BigInt::one()) {
+                return None;
+            }
+            constant += 1;
+        }
+        return Some(SignedArithmeticClaim {
+            carrier: SignedArithmeticCarrier::SignedInt32,
+            relation: match view.relation {
+                R::Equal => SignedArithmeticRelation::Equal,
+                R::NotEqual => SignedArithmeticRelation::Disequal,
+                _ => SignedArithmeticRelation::LessEqual,
+            },
+            terms,
+            constant,
+        });
+    }
     let widened = crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition);
     let condition = widened.as_ref().unwrap_or(condition);
     let (relation, left, right, strict) = match (condition, value) {
