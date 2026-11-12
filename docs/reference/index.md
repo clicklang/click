@@ -30,6 +30,11 @@ options, defaults, output, and exit behavior.
 The [Click library reference](library/index.md) covers every public theorem,
 function, predicate, and abstract resource loaded from the `library/` modules.
 
+## Magic variables
+
+[Magic variables](magic-variables.md) lists the names a proof reads without
+the source declaring them: `result`, `iterations`, and a Rust loop's `iter`.
+
 ## Glossary
 
 The [glossary](glossary.md) defines terms for readers who know programming but
