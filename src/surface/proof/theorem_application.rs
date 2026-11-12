@@ -865,7 +865,12 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
             _ => false,
         };
         if !admitted {
-            return Err("elements indices must be int32, int64, or uint64".into());
+            return Err(if definition.name() == "click::separation::subrange" {
+                "subrange bounds must be int32 or uint64"
+            } else {
+                "elements indices must be int32, int64, or uint64"
+            }
+            .into());
         }
     }
     let concrete = generics::instantiate_theorem_statement(definition, &substitution)?;
