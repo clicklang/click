@@ -384,8 +384,7 @@ explicit composition, not a hidden transition walk. Inconclusive checking
 cannot establish equality or preservation, and explicit proof application must
 not reconstruct identities or search for intermediate states.
 
-Theorem application migration: pure, fixed-state and live-execution named applications now retain their
+Theorem application migration: pure, fixed-state, live-execution and returned-outcome named applications now retain their
 instantiated result and return argument-domain and formal-premise obligations.
-The remaining context is returned outcomes;
-the final migration needs strict no-discovery replay coverage. Special built-in
+The final migration needs strict no-discovery replay coverage. Special built-in
 population/range applications remain separately classified.

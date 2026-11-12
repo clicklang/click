@@ -3,9 +3,8 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
-    /// Retain a pure, fixed-state or live application's evaluated arguments and instantiated result,
+    /// Retain an application's evaluated arguments and instantiated result,
     /// then prove its argument and premise obligations before publication.
-    /// Returned outcomes retain their existing selection route.
     pub(in crate::surface::proof) fn apply_theorem_application(
         &self,
         application: &TheoremApplication,
@@ -14,7 +13,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             self.proof.context.as_ref(),
             ProofContext::Pure(_) | ProofContext::FixedState(_)
         ) || matches!(self.proof.context.as_ref(), ProofContext::Execution(_))
-            && !self.proof.is_at_function_exit())
+            && (!self.proof.is_at_function_exit() || self.proof.focused_outcome_data().is_some()))
             && application.name != "population_member_count_zero"
             && !crate::surface::proof::theorem_application::is_integer_range_fold_theorem_name(
                 &application.name,
