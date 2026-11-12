@@ -21780,3 +21780,29 @@ fn implicit_resource_opening_expands_to_an_explicit_unfold() {
     without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
 }
+
+#[test]
+fn returned_branch_closers_replay_from_retained_decisions() {
+    // Nested selected returns, pruned arms, and joins already have distinct
+    // retained-route fixtures. Replay the expanded proofs without implicit
+    // solve so a missing route cannot be repaired by a fresh guard search.
+    for (fixture, function, claim) in [
+        ("pruned_returning_branch_expansion.md", "f", "f.contract"),
+        (
+            "proof_branch_interface_continuation.md",
+            "advance_nested_join",
+            "advance_nested_join.ensures_0",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, function).unwrap();
+        without_implicit_solve_for_claim(claim, || {
+            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
