@@ -78,7 +78,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 
 | Chunk | Work package | State |
 | --- | --- | --- |
-| 1 | Let bindings and local value handoffs | Implemented locally; retain specification bindings and selected lookups, with shadowing and snapshot scope preserved. PR pending. |
+| 1 | Let bindings and local value handoffs | Implemented and validated; specification bindings retain shared values through selected lookups, with shadowing and snapshot scope preserved. Awaiting integration. |
 | 2 | Symbolic conditional joins | Open |
 | 3 | Pure-function arguments and results | Open |
 | 4 | Mixed-width arithmetic and casts | Open |
