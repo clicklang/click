@@ -3063,55 +3063,87 @@ id = "cli.import.--"
 path = "reference/cli/import.md#options-and-exit-status"
 
 [[item]]
-id = "cli.install.command"
-path = "reference/cli/versions.md#click-install"
+id = "cli.upgrade.command"
+path = "reference/cli/versions.md#click-upgrade"
 
 [[item]]
-id = "cli.install.--help"
+id = "cli.upgrade.--help"
 path = "reference/cli/versions.md#synopsis"
 
 [[item]]
-id = "cli.install.-h"
+id = "cli.upgrade.-h"
 path = "reference/cli/versions.md#synopsis"
 
 [[item]]
-id = "cli.use.command"
-path = "reference/cli/versions.md#click-use"
+id = "cli.version.add.command"
+path = "reference/cli/versions.md#click-version-add"
 
 [[item]]
-id = "cli.use.--help"
+id = "cli.version.add.--help"
 path = "reference/cli/versions.md#synopsis"
 
 [[item]]
-id = "cli.use.-h"
+id = "cli.version.add.-h"
 path = "reference/cli/versions.md#synopsis"
 
 [[item]]
-id = "cli.use.--unset"
-path = "reference/cli/versions.md#click-use"
+id = "cli.version.add.--rust"
+path = "reference/cli/versions.md#click-version-add"
 
 [[item]]
-id = "cli.default.command"
-path = "reference/cli/versions.md#click-default"
+id = "cli.version.add.--cpp"
+path = "reference/cli/versions.md#click-version-add"
 
 [[item]]
-id = "cli.default.--help"
+id = "cli.version.use.command"
+path = "reference/cli/versions.md#click-version-use"
+
+[[item]]
+id = "cli.version.use.--help"
 path = "reference/cli/versions.md#synopsis"
 
 [[item]]
-id = "cli.default.-h"
+id = "cli.version.use.-h"
 path = "reference/cli/versions.md#synopsis"
 
 [[item]]
-id = "cli.versions.command"
-path = "reference/cli/versions.md#click-versions"
+id = "cli.version.use.--unset"
+path = "reference/cli/versions.md#click-version-use"
 
 [[item]]
-id = "cli.versions.--help"
+id = "cli.version.default.command"
+path = "reference/cli/versions.md#click-version-default"
+
+[[item]]
+id = "cli.version.default.--help"
 path = "reference/cli/versions.md#synopsis"
 
 [[item]]
-id = "cli.versions.-h"
+id = "cli.version.default.-h"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.version.list.command"
+path = "reference/cli/versions.md#click-version-list"
+
+[[item]]
+id = "cli.version.list.--help"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.version.list.-h"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.version.remove.command"
+path = "reference/cli/versions.md#click-version-remove"
+
+[[item]]
+id = "cli.version.remove.--help"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.version.remove.-h"
 path = "reference/cli/versions.md#synopsis"
 
 
