@@ -34,24 +34,44 @@ int signed_quotient_read_unsigned(int32 x, int32 y) {
     requires 0 <= x;
     requires 0 < y;
     ensures result == 1;
+} by {
+    have y != 0 by solve();
+    have (y as uint32) != 0u32 by solve();
+    step_until(function.exit);
+    solve();
 }
 
 int signed_remainder_read_unsigned(int32 x, int32 y) {
     requires 0 <= x;
     requires 0 < y;
     ensures result == 1;
+} by {
+    have y != 0 by solve();
+    have (y as uint32) != 0u32 by solve();
+    step_until(function.exit);
+    solve();
 }
 
 int unsigned_quotient_read_signed(uint32 n, uint32 d) {
     requires 0 <= n as int32;
     requires 0 < d as int32;
     ensures result == 1;
+} by {
+    have (d as int32) != 0 by solve();
+    have d != 0u32 by solve();
+    step_until(function.exit);
+    solve();
 }
 
 int unsigned_remainder_read_signed(uint32 n, uint32 d) {
     requires 0 <= n as int32;
     requires 0 < d as int32;
     ensures result == 1;
+} by {
+    have (d as int32) != 0 by solve();
+    have d != 0u32 by solve();
+    step_until(function.exit);
+    solve();
 }
 ```
 
