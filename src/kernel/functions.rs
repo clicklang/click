@@ -638,85 +638,6 @@ pub(super) fn transfer_population_call_facts<'a>(
     Ok(state)
 }
 
-pub(in crate::kernel) mod call_read_aliases;
-
-/// Re-spell symbolic pointer values that a field-derived borrowed owner was
-/// checked against with the exact caller pointer selected by the reservation
-/// planner. This is used only to instantiate verified postconditions: the
-/// contract footprint and resource transition keep their original checked
-/// facts. Restricting the substitution to a zero-based symbolic memory range
-/// makes the replacement a direct pointer identity, with no interval
-/// arithmetic or authority widening.
-fn with_canonical_borrowed_pointer_memory(
-    state: &CState,
-    canonical_borrowed_owners: &[(CResourceFact, CResourceFact)],
-) -> CState {
-    let mut replacements = BTreeMap::<Variable, Option<Pointer>>::new();
-    for (checked, canonical) in canonical_borrowed_owners {
-        let (variable, canonical_start) = match (checked.resource(), canonical.resource()) {
-            (CResource::Memory(checked), CResource::Memory(canonical)) => {
-                let PointerBlock::Symbolic(variable) = checked.base().block else {
-                    continue;
-                };
-                if checked.base().offset != PointerOffsetTerm::Constant(0)
-                    || checked.constant_start() != Some(0)
-                {
-                    continue;
-                }
-                (variable, canonical.start_pointer())
-            }
-            (
-                CResource::Composite {
-                    arguments: checked, ..
-                },
-                CResource::Composite {
-                    arguments: canonical,
-                    ..
-                },
-            ) => {
-                let (
-                    [AlgebraicValue::C(CValue::Pointer(checked))],
-                    [AlgebraicValue::C(CValue::Pointer(canonical))],
-                ) = (checked.as_ref(), canonical.as_ref())
-                else {
-                    continue;
-                };
-                let PointerBlock::Symbolic(variable) = checked.pointer().block else {
-                    continue;
-                };
-                if checked.pointer().offset != PointerOffsetTerm::Constant(0) {
-                    continue;
-                }
-                (variable, canonical.pointer().clone())
-            }
-            _ => continue,
-        };
-        replacements
-            .entry(variable)
-            .and_modify(|known| {
-                if known.as_ref() != Some(&canonical_start) {
-                    *known = None;
-                }
-            })
-            .or_insert(Some(canonical_start));
-    }
-    let memory =
-        replacements
-            .into_iter()
-            .fold(
-                state.memory().clone(),
-                |memory, (variable, replacement)| match replacement {
-                    Some(replacement) => super::reasoning::substitute_pointer_variable_in_memory(
-                        &memory,
-                        variable,
-                        &replacement,
-                    ),
-                    None => memory,
-                },
-            );
-    state.clone().with_memory(memory)
-}
-
 /// Rejoins returned owned pieces with their immediate indexed neighbours on
 /// the non-stable-view route. Stable-view recovery restores each exact escrow
 /// without normalizing its block. Neither route rebuilds the caller frame.
@@ -4267,22 +4188,11 @@ fn execute_verified_function_applications_with_suspension(
                 Arc::make_mut(&mut post_state.population_effects).creation = Some(next);
             }
         }
-        let canonical_entry_contract_state = call_read_aliases::CallReadState::new(
-            &entry_contract_state,
-            &transfer.canonical_borrowed_owners,
-        );
-        let provisional_caller_contract_state =
+        // Postconditions are lowered against the caller's own snapshots, so
+        // their reads are the caller's reads.
+        let canonical_entry_contract_state = entry_contract_state.clone();
+        let provisional_post_contract_state =
             with_contract_interface_argument_views(&post_state, interface, &argument_values);
-        let provisional_post_contract_state = call_read_aliases::CallReadState::new(
-            &provisional_caller_contract_state,
-            &transfer.canonical_borrowed_owners,
-        );
-        // The reservation plan has already checked these pointer aliases.
-        // Reads lowered for this call keep their caller-snapshot equations.
-        let provisional_read_aliases = call_read_aliases::CallReadAliasScope::enter([
-            &canonical_entry_contract_state,
-            &provisional_post_contract_state,
-        ]);
         let provisional_post_contract_state = match checked_contract_control_read_state(
             &provisional_post_contract_state,
             &output_resources,
@@ -4316,7 +4226,6 @@ fn execute_verified_function_applications_with_suspension(
             budget,
         )?;
         drop(provisional_ensure_timing);
-        drop(provisional_read_aliases);
 
         let allocation_delta_timing = crate::instrumentation::OperationTiming::new(
             name,
@@ -4363,16 +4272,8 @@ fn execute_verified_function_applications_with_suspension(
             ));
             continue;
         }
-        let caller_contract_state =
+        let post_contract_state =
             with_contract_interface_argument_views(&post_state, interface, &argument_values);
-        let post_contract_state = call_read_aliases::CallReadState::new(
-            &caller_contract_state,
-            &transfer.canonical_borrowed_owners,
-        );
-        let _read_aliases = call_read_aliases::CallReadAliasScope::enter([
-            &canonical_entry_contract_state,
-            &post_contract_state,
-        ]);
         let returned_body_state = post_contract_state.clone();
         let post_contract_state = match checked_contract_control_read_state(
             &post_contract_state,
@@ -12601,10 +12502,6 @@ fn evaluate_contract_return_resource_context(
                 .unchecked_with_facts(entry_argument_views.iter().cloned()),
         )
     };
-    let entry_state_for_argument_reads = with_canonical_borrowed_pointer_memory(
-        &entry_state_for_argument_reads,
-        canonical_borrowed_owners,
-    );
     let entry_state_for_argument_reads =
         if interface
             .resource_ensures()
