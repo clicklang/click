@@ -226,21 +226,27 @@ impl SpecCallArgument {
         }
     }
 
-    fn into_native(self) -> PureFunctionArgument {
+    fn into_payload(self) -> PureFunctionArgument {
         match self {
             Self::Native(value) => value,
-            Self::Shared(value) => KernelTermExport::default()
-                .argument(&value)
-                .expect("retained pure-call argument"),
+            Self::Shared(value) => {
+                let KernelType::C(ty) = value.ty() else {
+                    unreachable!("machine argument");
+                };
+                let format = MachineIntegerType::from_c_type(*ty).expect("machine argument type");
+                PureFunctionArgument::SharedMachine(
+                    SharedMachineIntegerTerm::from_shared(format, value)
+                        .expect("retained pure-call argument"),
+                )
+            }
         }
     }
 }
 
-/// Explicit boundary for call payloads whose readers still require native
-/// arguments. Do not use this while constructing or cloning argument paths.
-pub(super) fn native_call_arguments(arguments: Vec<SpecCallArgument>) -> Vec<PureFunctionArgument> {
+/// Call payloads retain word expressions and preserve opaque descriptors.
+pub(super) fn call_arguments(arguments: Vec<SpecCallArgument>) -> Vec<PureFunctionArgument> {
     arguments
         .into_iter()
-        .map(SpecCallArgument::into_native)
+        .map(SpecCallArgument::into_payload)
         .collect()
 }

@@ -709,6 +709,9 @@ fn collect_algebraic_term_bitvector_variables(
         AlgebraicTermNode::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 match argument {
+                    PureFunctionArgument::SharedMachine(value) => {
+                        collect_machine_bitvector_variables(value, variables)
+                    }
                     PureFunctionArgument::Value(value) => {
                         collect_c_value_bitvector_variables(value, variables)
                     }
@@ -1127,6 +1130,9 @@ fn collect_pure_argument_bound_identities(
     integer_seen: &mut SeenTerms,
 ) {
     match argument {
+        PureFunctionArgument::SharedMachine(value) => {
+            collect_machine_integer_variables(value, variables);
+        }
         PureFunctionArgument::Value(value) => {
             collect_c_value_bound_identities(value, variables, integer_seen);
         }
@@ -2048,6 +2054,9 @@ fn collect_application_connection_variables(
     }
     for argument in arguments {
         match argument {
+            PureFunctionArgument::SharedMachine(value) => {
+                collect_machine_bitvector_variables(value, variables)
+            }
             PureFunctionArgument::Value(value) => {
                 collect_c_value_bitvector_variables(value, variables)
             }
@@ -2417,6 +2426,11 @@ fn collect_integer_free_variables_seen(
                     PureFunctionArgument::Algebraic(value) => {
                         collect_algebraic_free_integer_variables(value, variables, seen)
                     }
+                    PureFunctionArgument::SharedMachine(value) => {
+                        visit_machine_carrier_leaves(value, |leaf| {
+                            collect_operand_integer_variables_seen(leaf, variables, seen);
+                        });
+                    }
                     PureFunctionArgument::Value(value) => {
                         collect_c_value_integer_variables(value, variables, seen)
                     }
@@ -2611,6 +2625,11 @@ fn collect_algebraic_free_integer_variables(
                     return;
                 }
                 match argument {
+                    PureFunctionArgument::SharedMachine(value) => {
+                        visit_machine_carrier_leaves(value, |leaf| {
+                            collect_operand_integer_variables_seen(leaf, variables, seen);
+                        });
+                    }
                     PureFunctionArgument::Value(value) => {
                         collect_c_value_integer_variables(value, variables, seen)
                     }
@@ -2680,6 +2699,11 @@ fn collect_pure_argument_integer_variables(
         }
         PureFunctionArgument::Algebraic(value) => {
             collect_algebraic_integer_variables(value, variables, seen)
+        }
+        PureFunctionArgument::SharedMachine(value) => {
+            visit_machine_carrier_leaves(value, |leaf| {
+                collect_operand_integer_variables_seen(leaf, variables, seen);
+            });
         }
         PureFunctionArgument::Value(value) => {
             collect_c_value_integer_variables(value, variables, seen)
@@ -2823,6 +2847,9 @@ fn collect_integer_variables_seen(
         IntegerTerm::PureFunctionApplication(application) => {
             for argument in application.arguments() {
                 match argument {
+                    PureFunctionArgument::SharedMachine(value) => {
+                        collect_machine_bitvector_variables(value, variables)
+                    }
                     PureFunctionArgument::Value(value) => {
                         collect_c_value_bitvector_variables(value, variables)
                     }
@@ -3474,6 +3501,13 @@ fn collect_capture_variables_in_pure_argument(
         return;
     }
     match argument {
+        PureFunctionArgument::SharedMachine(value) => {
+            collect_integer_bitvector_capture_variables(
+                &IntegerTerm::Machine(value.clone()),
+                variables,
+                integer_seen,
+            );
+        }
         PureFunctionArgument::Value(value) => {
             collect_capture_variables_in_c_value(value, variables, integer_seen)
         }
@@ -4274,6 +4308,9 @@ fn collect_scope_summary_in_argument(
         return IntegerScopeSummary::default();
     }
     match argument {
+        PureFunctionArgument::SharedMachine(value) => {
+            collect_machine_scope_summary(value, summaries)
+        }
         PureFunctionArgument::Value(value) => collect_c_value_scope_summary(value, summaries),
         PureFunctionArgument::Integer(value) => {
             collect_integer_scope_summary_shared(value, summaries)
@@ -5123,6 +5160,14 @@ fn collect_binder_variables_in_pure_argument(
         return;
     }
     match argument {
+        PureFunctionArgument::SharedMachine(value) => visit_machine_carrier_leaves(value, |leaf| {
+            collect_operand_binder_variables_seen(
+                leaf,
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            );
+        }),
         PureFunctionArgument::Value(value) => collect_binder_variables_in_c_value(
             value,
             integer_variables,

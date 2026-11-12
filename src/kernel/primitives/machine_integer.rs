@@ -443,7 +443,7 @@ impl MachineIntegerType {
         Some(self.value_from_term(self.constant_term(value)?))
     }
 
-    pub(in crate::kernel) fn value_from_term(self, term: MachineTerm) -> CValue {
+    pub(crate) fn value_from_term(self, term: MachineTerm) -> CValue {
         let term = term.in_format32(self).in_narrow_format(self);
         match self {
             Self::Int8 => CValue::Int8(term),

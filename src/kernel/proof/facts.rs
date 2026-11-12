@@ -3157,7 +3157,15 @@ fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAt
         MachineTerm::ClickFunctionApplication { name, arguments } => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             for argument in arguments {
+                if let Some(value) = argument.machine_identity() {
+                    4u8.hash(&mut hasher);
+                    value.hash(&mut hasher);
+                    continue;
+                }
                 match argument {
+                    PureFunctionArgument::SharedMachine(_) => {
+                        unreachable!("machine argument identity")
+                    }
                     PureFunctionArgument::Value(value) => {
                         0u8.hash(&mut hasher);
                         value.hash(&mut hasher);

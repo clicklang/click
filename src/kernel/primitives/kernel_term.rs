@@ -704,6 +704,7 @@ impl KernelTerm {
         let ty = match &argument {
             PureFunctionArgument::Integer(_) => KernelType::Integer,
             PureFunctionArgument::Value(value) => KernelType::C(value.c_type()),
+            PureFunctionArgument::SharedMachine(value) => KernelType::C(value.ty().c_type()),
             PureFunctionArgument::Algebraic(value) => {
                 KernelType::Algebraic(value.algebraic_type.clone())
             }
@@ -734,6 +735,10 @@ impl KernelTermImport {
     pub(crate) fn argument(&mut self, value: &PureFunctionArgument) -> KernelTerm {
         match value {
             PureFunctionArgument::Integer(value) => self.integer(value),
+            PureFunctionArgument::SharedMachine(value) => value
+                .shared_operand()
+                .cloned()
+                .unwrap_or_else(|| self.machine(value.ty(), value.value())),
             PureFunctionArgument::Value(value) if matches!(value, integer_c_value!(_)) => {
                 let format = MachineIntegerType::from_c_type(value.c_type()).unwrap();
                 let (integer_c_value!(bits)) = value else {
@@ -793,7 +798,8 @@ impl KernelTermImport {
                     .enumerate()
                     .map(|(index, arg)| match arg {
                         PureFunctionArgument::Integer(value) => self.integer(value),
-                        PureFunctionArgument::Value(integer_c_value!(_)) => self.argument(arg),
+                        PureFunctionArgument::Value(integer_c_value!(_))
+                        | PureFunctionArgument::SharedMachine(_) => self.argument(arg),
                         _ => KernelTerm::legacy_at(
                             arg.clone(),
                             LegacyIdentity::ApplicationArgument(application.clone(), index),

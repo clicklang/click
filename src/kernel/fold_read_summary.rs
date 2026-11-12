@@ -178,8 +178,8 @@ impl std::fmt::Display for FoldReadDecline {
 pub(crate) struct FoldReadInterval {
     pub(crate) memory: CMemory,
     pub(crate) base: Pointer,
-    pub(crate) start: MachineTerm,
-    pub(crate) end: MachineTerm,
+    pub(crate) start: SharedMachineIntegerTerm,
+    pub(crate) end: SharedMachineIntegerTerm,
     pub(crate) element_width: u32,
 }
 
@@ -319,6 +319,11 @@ impl CheckedFoldReadSummary {
                         && self.parameter_types[position].pointee_type() == Some(*element_type)
                         && matches!(pointer, CValue::Pointer(_))
                 }
+                PureFunctionArgument::SharedMachine(value) => {
+                    position != self.array_parameter
+                        && *c_type == CType::Int32
+                        && value.ty() == MachineIntegerType::Int32
+                }
                 PureFunctionArgument::Value(CValue::Int32(_)) => {
                     position != self.array_parameter && *c_type == CType::Int32
                 }
@@ -337,9 +342,19 @@ impl CheckedFoldReadSummary {
             return None;
         };
         let endpoint = |template: FoldEndpointTemplate| match template {
-            FoldEndpointTemplate::Literal(value) => Some(MachineTerm::constant(value)),
+            FoldEndpointTemplate::Literal(value) => Some(SharedMachineIntegerTerm::index(
+                MachineIntegerType::Int32,
+                MachineTerm::constant(value),
+            )),
             FoldEndpointTemplate::Parameter(position) => match &arguments[position] {
-                PureFunctionArgument::Value(CValue::Int32(value)) => Some(value.clone()),
+                PureFunctionArgument::SharedMachine(value)
+                    if value.ty() == MachineIntegerType::Int32 =>
+                {
+                    Some(value.clone())
+                }
+                PureFunctionArgument::Value(CValue::Int32(value)) => Some(
+                    SharedMachineIntegerTerm::index(MachineIntegerType::Int32, value.clone()),
+                ),
                 _ => None,
             },
         };
@@ -1223,7 +1238,11 @@ fn proven_signed_lt_views(
 /// The interval reads no cell because its end is proven at or below its
 /// start. Unknown order is not emptiness.
 fn interval_proven_empty(interval: &FoldReadInterval, assumptions: &PureFactContext) -> bool {
-    proven_signed_le(&interval.end, &interval.start, assumptions)
+    proven_signed_le_views(
+        interval.end.operand_view(),
+        interval.start.operand_view(),
+        assumptions,
+    )
 }
 
 /// Whether the `bytes` bytes at `pointer` miss every cell of the interval.
@@ -1246,14 +1265,14 @@ fn access_misses_interval(
         // write fits in the cell it starts in (`constant + bytes <= width`).
         let above = constant >= 0
             && proven_signed_le_views(
-                MachineOperandView::Legacy(&interval.end),
+                interval.end.operand_view(),
                 index.operand_view(),
                 assumptions,
             );
         let below = constant + i128::from(bytes) <= width
             && proven_signed_lt_views(
                 index.operand_view(),
-                MachineOperandView::Legacy(&interval.start),
+                interval.start.operand_view(),
                 assumptions,
             );
         if above || below {
@@ -1293,8 +1312,15 @@ fn range_misses_interval(
         // proven well formed first; a reversed range is never read as empty,
         // because nothing here decides what bytes such a write set covers.
         if proven_signed_le(written.start(), written.end(), assumptions)
-            && (proven_signed_le(written.end(), &interval.start, assumptions)
-                || proven_signed_le(&interval.end, written.start(), assumptions))
+            && (proven_signed_le_views(
+                MachineOperandView::Legacy(written.end()),
+                interval.start.operand_view(),
+                assumptions,
+            ) || proven_signed_le_views(
+                interval.end.operand_view(),
+                MachineOperandView::Legacy(written.start()),
+                assumptions,
+            ))
         {
             return true;
         }
@@ -1347,8 +1373,16 @@ fn range_contains_interval(
         && scaled_index_from(&interval.base, range.base(), interval.element_width).is_some_and(
             |(index, rest)| rest == 0 && index.operand_view().word32_constant() == Some(0),
         )
-        && proven_signed_le(range.start(), &interval.start, assumptions)
-        && proven_signed_le(&interval.end, range.end(), assumptions)
+        && proven_signed_le_views(
+            MachineOperandView::Legacy(range.start()),
+            interval.start.operand_view(),
+            assumptions,
+        )
+        && proven_signed_le_views(
+            interval.end.operand_view(),
+            MachineOperandView::Legacy(range.end()),
+            assumptions,
+        )
 }
 
 /// The `bytes` bytes at `pointer` lie inside one cell of `range`.

@@ -865,7 +865,7 @@ enum AlphaCValueKey {
     Void,
     /// A value of a specification type, keyed as the algebraic term it is.
     Parameter(Box<AlphaAlgebraicKey>),
-    Scalar(CType, AlphaBitvectorKey),
+    Scalar(CType, AlphaMachineKey),
     Pointer {
         c_type: CType,
         pointee_volatile: bool,
@@ -2195,7 +2195,11 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
             };
             AlphaCValueKey::Scalar(
                 ty,
-                alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(term, bindings, next_binder)?,
+                alpha_machine_key::<ALLOW_LOADS>(
+                    crate::kernel::MachineOperandView::Legacy(term),
+                    bindings,
+                    next_binder,
+                )?,
             )
         }
     })
@@ -2275,6 +2279,12 @@ fn alpha_pure_function_argument_key_with_bindings<const ALLOW_LOADS: bool>(
 ) -> Option<AlphaPureFunctionArgumentKey> {
     alpha_work_checkpoint(bindings, 1)?;
     Some(match argument {
+        PureFunctionArgument::SharedMachine(value) => {
+            AlphaPureFunctionArgumentKey::Value(AlphaCValueKey::Scalar(
+                value.ty().c_type(),
+                alpha_machine_key::<ALLOW_LOADS>(value.operand_view(), bindings, next_binder)?,
+            ))
+        }
         PureFunctionArgument::Value(value) => AlphaPureFunctionArgumentKey::Value(
             alpha_c_value_key_with_bindings::<ALLOW_LOADS>(value, bindings, next_binder)?,
         ),

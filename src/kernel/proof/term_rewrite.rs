@@ -606,6 +606,7 @@ fn collect_argument_carriers(
     }
     match argument {
         PureFunctionArgument::Value(value) => collect_c_value_carriers(value, variables),
+        PureFunctionArgument::SharedMachine(value) => collect_machine_carriers(value, variables),
         PureFunctionArgument::Integer(value) => {
             collect_integer_shared_carriers(value, variables, seen)
         }
@@ -1477,6 +1478,13 @@ fn exhausted_sequence(term: &SequenceTerm) -> SequenceTerm {
 fn exhausted_argument(argument: &PureFunctionArgument) -> PureFunctionArgument {
     match argument {
         PureFunctionArgument::Value(value) => PureFunctionArgument::Value(exhausted_c_value(value)),
+        PureFunctionArgument::SharedMachine(value) => {
+            PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::index(
+                value.ty(),
+                crate::kernel::machine_integer::range::constant_word(value.ty(), &0.into())
+                    .unwrap(),
+            ))
+        }
         PureFunctionArgument::Integer(value) => {
             PureFunctionArgument::Integer(exhausted_integer(value.as_ref()).into())
         }
@@ -3678,6 +3686,9 @@ impl<'a> TermRewrite<'a> {
         }
         let result = match a {
             PureFunctionArgument::Value(v) => PureFunctionArgument::Value(self.value(v)),
+            PureFunctionArgument::SharedMachine(v) => {
+                PureFunctionArgument::SharedMachine(self.index_bits(v))
+            }
             PureFunctionArgument::Integer(v) => {
                 PureFunctionArgument::Integer(self.integer_shared(v).into())
             }

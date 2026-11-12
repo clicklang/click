@@ -33,11 +33,41 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
             .unwrap()
         });
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].value, SpecCallArgument::Shared(root));
+        assert_eq!(paths[0].value, SpecCallArgument::Shared(root.clone()));
         assert!(paths[0].facts.is_empty());
         assert!(paths[0].obligations.is_empty());
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(work < 64, "argument depth {depth}: {work} work");
+
+        // An actual scalar call must retain the exact argument DAG in its
+        // payload, not just while assembling the argument paths.
+        let mut execution = ExecutionBudget::new();
+        let (calls, work) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_spec_pure_function_application_paths_in(
+                scope,
+                "retained_argument",
+                std::slice::from_ref(&argument),
+                CType::UInt32,
+                None,
+                None,
+                None,
+                &PureFactContext::new(),
+                &mut SpecEvaluation::logical(&mut execution),
+            )
+            .unwrap()
+        });
+        let SpecValue::Native(CValue::UInt32(MachineTerm::ClickFunctionApplication {
+            arguments,
+            ..
+        })) = &calls[0].value else {
+            panic!("expected a scalar call payload");
+        };
+        let [PureFunctionArgument::SharedMachine(value)] = arguments.as_slice() else {
+            panic!("expected a retained call argument");
+        };
+        assert_eq!(value.shared_operand(), Some(&root));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work < 128, "scalar call at depth {depth}: {work} work");
 
         // The declared pointer origin selects only argument 1. Determining a
         // null result must not materialize the unrelated exponential DAG.

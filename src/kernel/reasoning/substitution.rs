@@ -1412,6 +1412,14 @@ fn walk_pure_function_argument<S: VariableSubstitution + ?Sized>(
         PureFunctionArgument::Integer(value) => {
             PureFunctionArgument::Integer(s.integer(value.as_ref()).into())
         }
+        PureFunctionArgument::SharedMachine(value) => PureFunctionArgument::SharedMachine(
+            crate::kernel::memory_provenance::map_shared_pointer_index(
+                value,
+                |leaf| Some(s.bitvector(leaf)),
+                crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
+            )
+            .unwrap_or_else(|| value.clone()),
+        ),
         PureFunctionArgument::Value(value) => PureFunctionArgument::Value(s.c_value(value)),
         PureFunctionArgument::Algebraic(value) => {
             PureFunctionArgument::Algebraic(s.algebraic_term(value))
@@ -3194,6 +3202,11 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
         MachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 match argument {
+                    PureFunctionArgument::SharedMachine(value) => {
+                        visit_machine_operand_native_leaves(value.operand_view(), |leaf| {
+                            collect_bitvector_bound_variables(leaf, variables);
+                        });
+                    }
                     PureFunctionArgument::Value(value) => {
                         collect_c_value_bound_variables(value, variables)
                     }
@@ -3286,6 +3299,11 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
         AlgebraicTermNode::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 match argument {
+                    PureFunctionArgument::SharedMachine(value) => {
+                        visit_machine_operand_native_leaves(value.operand_view(), |leaf| {
+                            collect_bitvector_bound_variables(leaf, variables);
+                        });
+                    }
                     PureFunctionArgument::Value(value) => {
                         collect_c_value_bound_variables(value, variables)
                     }
@@ -3361,6 +3379,11 @@ fn collect_condition_bound_variables(
         ConditionTerm::BoolApplication(application) => {
             for argument in application.arguments() {
                 match argument {
+                    PureFunctionArgument::SharedMachine(value) => {
+                        visit_machine_operand_native_leaves(value.operand_view(), |leaf| {
+                            collect_bitvector_bound_variables(leaf, variables);
+                        });
+                    }
                     PureFunctionArgument::Value(value) => {
                         collect_c_value_bound_variables(value, variables)
                     }

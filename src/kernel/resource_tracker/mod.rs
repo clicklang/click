@@ -1559,6 +1559,9 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
             term.for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
         PureFunctionArgument::Value(value) => collect_value_reads(value, reads),
+        PureFunctionArgument::SharedMachine(value) => {
+            collect_operand_reads(value.operand_view(), reads)
+        }
     }
 }
 

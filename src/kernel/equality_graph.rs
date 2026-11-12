@@ -1798,6 +1798,13 @@ impl EqualityGraph {
                     _ => {}
                 },
                 Work::Argument(argument) => match argument {
+                    PureFunctionArgument::SharedMachine(value) => {
+                        if let Some(root) = value.shared_operand() {
+                            pending.push(Work::SharedMachine(root));
+                        } else {
+                            pending.push(Work::Machine(value.value()));
+                        }
+                    }
                     PureFunctionArgument::Value(value)
                     | PureFunctionArgument::ArrayRef { pointer: value, .. } => {
                         pending.push(Work::Value(value))

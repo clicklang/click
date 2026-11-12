@@ -1061,8 +1061,8 @@ fn wide_ranges_refuse_signed_fold_framing_rules() {
     let interval = FoldReadInterval {
         memory: CMemory::new(),
         base: base.clone(),
-        start: 0u32.into(),
-        end: 1u32.into(),
+        start: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, 0u32.into()),
+        end: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, 1u32.into()),
         element_width: 4,
     };
     let facts = PureFactContext::new();
@@ -1130,8 +1130,8 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
     let interval = FoldReadInterval {
         memory: CMemory::new(),
         base,
-        start: MachineTerm::constant(0),
-        end: MachineTerm::constant(4),
+        start: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, MachineTerm::constant(0)),
+        end: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, MachineTerm::constant(4)),
         element_width: 4,
     };
     let bound = Proposition::ConditionIs(
