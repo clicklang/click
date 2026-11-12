@@ -408,7 +408,7 @@ fn authority_plain_c_helper_call_follows_the_ordinary_call_rules() {
     assert!(
         error
             .message()
-            .contains("its contract has not been verified yet"),
+            .contains("the sidecar states no contract for it"),
         "{error:?}"
     );
 }

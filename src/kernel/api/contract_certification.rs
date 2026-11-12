@@ -902,7 +902,7 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeEr
         CRuntimeError::UnboundVariable(name) => format!("unbound variable `{name}`"),
         CRuntimeError::UnknownFunction(name) => format!("unknown function `{name}`"),
         CRuntimeError::MissingVerifiedFunctionRule(name) => {
-            format!("the contract of `{name}` has not been verified yet")
+            format!("the sidecar states no contract for `{name}`")
         }
         CRuntimeError::UnsupportedOpaqueFunctionContract(name) => {
             format!("the contract of `{name}` refers to an unavailable program point")
