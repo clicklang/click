@@ -266,6 +266,20 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         crate::surface::proof::pure_theorems::theorem_requirement_propositions(&theorem).map_err(
             |error| theorem_application_error(claim_label, path_index, tactic_index, error.message),
         )?;
+    let prepared_substitutions = preparing_application().then(|| {
+        requirement_source_bindings(&theorem, application)
+            .into_iter()
+            .zip(theorem.parameters())
+            .map(|((name, value), parameter)| {
+                let value = if parameter.click_type() == &ClickType::Integer {
+                    crate::surface::proof::surface_synthesis::integer_typed_expression(value)
+                } else {
+                    value
+                };
+                (name, value)
+            })
+            .collect()
+    });
     for (requirement_index, requirement) in requirements.iter().enumerate() {
         let mut lowered = lower(requirement).map_err(|error| {
             theorem_application_error(
@@ -290,23 +304,11 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             })?;
         }
         lowered = lowered.clone();
-        if preparing_application() {
-            let substitutions = requirement_source_bindings(&theorem, application)
-                .into_iter()
-                .zip(theorem.parameters())
-                .map(|((name, value), parameter)| {
-                    let value = if parameter.click_type() == &ClickType::Integer {
-                        crate::surface::proof::surface_synthesis::integer_typed_expression(value)
-                    } else {
-                        value
-                    };
-                    (name, value)
-                })
-                .collect();
+        if let Some(substitutions) = &prepared_substitutions {
             let written =
-                observe_machine_parameters(requirement, theorem.parameters(), &substitutions);
+                observe_machine_parameters(requirement, theorem.parameters(), substitutions);
             let surface =
-                substitute_click_proposition(&written, &substitutions).map_err(ClickError::new)?;
+                substitute_click_proposition(&written, substitutions).map_err(ClickError::new)?;
             crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
                 ClickError::new("theorem application has a premise obligation")
                     .with_spelled_requirement(
