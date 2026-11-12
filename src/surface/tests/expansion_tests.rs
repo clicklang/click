@@ -20669,7 +20669,12 @@ fn element_address_disequality_replays(source: &str, sources: &[(&str, &str)], f
     let (_, body) = expanded
         .split_once(&format!("int32 {function}("))
         .unwrap_or_else(|| panic!("{function} is expanded: {expanded}"));
-    let body = body.split_once("\nint32 ").map_or(body, |(body, _)| body);
+    // The function's own proof, up to the next declaration.
+    let body = ["\nint32 ", "\ntheorem "]
+        .into_iter()
+        .filter_map(|next| body.find(next))
+        .min()
+        .map_or(body, |end| &body[..end]);
     assert!(
         body.contains("apply(click::separation::distinct_elements(q, ") && !body.contains("solve"),
         "{function}: {body}"
