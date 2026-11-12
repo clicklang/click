@@ -2302,7 +2302,7 @@ is refused, and so is a compiler builtin.
 
 A sidecar that verifies the defining source too links the sources:
 `verifying "client.cpp"; verifying "counter.cpp";` in
-[`examples/multifile-cpp`](../../../examples/multifile-cpp/README.md). Each
+`examples/multifile-cpp`. Each
 source is exported and lowered on its own, then the functions are joined by
 name. A definition binds every other source's declaration of the function
 whose interface matches it (parameter names may differ), so a call is checked
