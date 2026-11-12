@@ -2,7 +2,8 @@
 
 `solve() using` proves a 64-bit equality as it proves a 64-bit order:
 through the exact Integer observations of its sides. Equal observations are
-the same value, by `integer::uint64_to_integer_equal_implies_equal` or the `int64` twin.
+the same value: an Integer comparison of exact observations is the native
+comparison.
 
 `squeeze` is the step a loop takes at its exit: `a <= b` and `not a < b`
 leave `a == b`. A negated order is read as the order it is, `b <= a`.

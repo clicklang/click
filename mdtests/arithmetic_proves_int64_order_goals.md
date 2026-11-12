@@ -6,8 +6,8 @@ unsigned one, through the exact Integer observations of its operands
 difference is what a sum owes. An unsigned sum wraps, so it is observed
 term by term once it is shown not to exceed the type. A signed sum that
 leaves its range is undefined, so it is shown defined first, from both
-Integer bounds, by `integer::int64_add_defined_by_integer_bounds`; a premise over a
-sum is carried to Integer order only after that.
+Integer bounds of the exact sum, which are its definedness condition; a
+premise over a sum is carried to Integer order only after that.
 
 `step_two` is the fact a `long` loop stepping by two owes at its back edge.
 `chain` needs no sum. `difference` bounds a difference from above.

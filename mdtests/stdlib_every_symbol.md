@@ -105,10 +105,6 @@ theorem use_uint32_to_integer_bounds(value: uint32) {
     ensures 0 <= to_integer(value) by apply(integer::uint32_to_integer_bounds(value));
     ensures to_integer(value) <= 4294967295 by apply(integer::uint32_to_integer_bounds(value));
 }
-theorem use_uint64_to_integer_bounds(value: uint64) {
-    ensures 0 <= to_integer(value) by apply(integer::uint64_to_integer_bounds(value));
-    ensures to_integer(value) <= 18446744073709551615 by apply(integer::uint64_to_integer_bounds(value));
-}
 theorem use_unsigned_reduction(value: uint32, divisor: uint32) {
     requires divisor != 0u32;
     ensures value % divisor < divisor by apply(integer::uint32_remainder_less_than_divisor(value, divisor));
@@ -258,17 +254,6 @@ theorem use_uint64_unpack_u16_high(low: uint64, high: uint64) {
 theorem use_uint64_not_greater_equal_of_less_than(left: uint64, right: uint64) {
     requires left < right;
     ensures not (left >= right) by apply(integer::uint64_less_than_implies_not_greater_equal(left, right));
-}
-
-theorem use_uint64_equal_of_to_integer(left: uint64, right: uint64) {
-    requires to_integer(left) == to_integer(right);
-    ensures left == right by apply(integer::uint64_to_integer_equal_implies_equal(left, right));
-}
-
-theorem use_int64_add_defined_by_integer_bounds(left: int64, right: int64) {
-    requires to_integer(left) + to_integer(right) >= -9223372036854775808;
-    requires to_integer(left) + to_integer(right) <= 9223372036854775807;
-    ensures defined(left + right) by apply(integer::int64_add_defined_by_integer_bounds(left, right));
 }
 
 theorem use_int64_less_than_to_integer(left: int64, right: int64) {

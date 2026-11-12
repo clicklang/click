@@ -3200,10 +3200,6 @@ id = "library.theorem.integer::uint32_to_integer_bounds"
 path = "reference/library/index.md#integeruint32_to_integer_bounds"
 
 [[item]]
-id = "library.theorem.integer::uint64_to_integer_bounds"
-path = "reference/library/index.md#integeruint64_to_integer_bounds"
-
-[[item]]
 id = "library.theorem.integer::int32_add_to_integer"
 path = "reference/library/index.md#integerint32_add_to_integer"
 
@@ -3312,16 +3308,8 @@ id = "library.theorem.integer::int64_to_integer_less_equal_implies_less_equal"
 path = "reference/library/index.md#integerint64_to_integer_less_equal_implies_less_equal"
 
 [[item]]
-id = "library.theorem.integer::uint64_to_integer_equal_implies_equal"
-path = "reference/library/index.md#integeruint64_to_integer_equal_implies_equal"
-
-[[item]]
 id = "library.theorem.integer::int64_to_integer_equal_implies_equal"
 path = "reference/library/index.md#integerint64_to_integer_equal_implies_equal"
-
-[[item]]
-id = "library.theorem.integer::int64_add_defined_by_integer_bounds"
-path = "reference/library/index.md#integerint64_add_defined_by_integer_bounds"
 
 [[item]]
 id = "library.theorem.integer::int64_subtract_to_integer"

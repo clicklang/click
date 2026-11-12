@@ -56,7 +56,7 @@ library module's own proofs are checked against the whole library.
 
 Each module is parsed with the declarations of the modules before it, and
 its diagnostics name its own file and line. Types, pure functions, and
-theorems use ordinary Click declarations. Of the 155 library theorems, 111
+theorems use ordinary Click declarations. Of the 152 library theorems, 108
 have checked proofs; 44 kernel standard theorems (21 machine-integer laws
 including `integer::uint32_from_le_bytes`, 5 Integer truncation laws, 6 `Nat`
 laws and 12 separation laws including `separation::restrict`) are backed by

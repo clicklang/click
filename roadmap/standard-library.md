@@ -16,13 +16,13 @@ This issue also tracks Integer-default specification arithmetic
 library lemmas survive. That work adds kernel rules; each one carries its
 own soundness argument and regressions.
 
-## Status (2026-11-09)
+## Status (2026-11-12)
 
 Done: delivery steps 1 to 4, the qualified-name steps of step 5 except
 generic width-free names, step 6, and the generic `permutation::count` and
 `size_t` `allocation` byte counts of step 7; Integer-default specification arithmetic; machine-integer Stages 0
 to 3, and Stage 4's front ends. The library's own proof check runs in the
-gate. Of the library's 153 theorems, 111 have checked proofs and 42 are
+gate. Of the library's 152 theorems, 108 have checked proofs and 44 are
 kernel standard theorems.
 
 Open:
@@ -69,9 +69,9 @@ trust:
   and reasonably organized.
 - **Machine-integer bridges.** At filing, 110 of the 162 theorems were
   width-specific lemmas such as `int32_less_equal_transitive` and
-  `uint64_subtract_to_integer`. Today 74 of the 153 theorems are: 66
+  `uint64_subtract_to_integer`. Today 71 of the 152 theorems are: 63
   width-prefixed `integer::` lemmas and the eight `integer::to_*_round_trip`
-  laws. 111 of the 153 have checked proofs and 42 are kernel standard
+  laws. 108 of the 152 have checked proofs and 44 are kernel standard
   theorems ([trust](../docs/concepts/trust.md#the-click-library)).
 
 The width lemmas have no consistent coverage across widths. On master at the
@@ -445,7 +445,19 @@ Still open from the flip:
   where it cost about 3,900 before the flip: each Integer postcondition
   proves an operation identity, and each identity's two range bounds are
   full solver calls. The profile budget test is retuned to that cost.
-- Most of the width lemmas below are now bridges nothing needs.
+- Deleting the width lemmas nothing needs (2026-11-12) removed only
+  `uint64_to_integer_bounds`, `uint64_to_integer_equal_implies_equal` and
+  `int64_add_defined_by_integer_bounds`, which nothing applied. Every other
+  width lemma is applied by a built-in tactic, a library proof, a kernel
+  standard theorem's registration, an mdtest, an example, a Rust import
+  fixture or a verified design sidecar (`design/adler32`,
+  `design/concurrency-composition`, `design/concurrency-probes`,
+  `design/charon-trial`). Seven are applied only by the `src/` tests that
+  check them as bridges: `uint64_less_equal_to_integer`, `uint64_less_than_to_integer`,
+  `uint64_to_integer_less_than_implies_less_than`,
+  `int64_less_equal_to_integer`, `int64_less_than_to_integer`,
+  `int64_greater_equal_to_integer` and `int64_to_integer_equal_implies_equal`.
+  Deleting them with those test rows needs a decision.
 - The library's respelled lemmas still state C results
   (`to_integer(value + 1)`). Restating them over a format with generic
   names is not planned (maintainer, 2026-11-09).

@@ -2,10 +2,10 @@
 
 The implicit closer proves an order between 64-bit values by its `Integer` reading and
 the type's bridge back. An equality goes the same way: `x == 0u64` follows
-from `not 0u64 < x` because `to_integer(x) == 0` does, and
-`integer::uint64_to_integer_equal_implies_equal` carries that back. The kernel's
+from `not 0u64 < x` because `to_integer(x) == 0` does, and the native
+equality of exact observations carries that back. The kernel's
 64-bit equality does not record a signedness, so the implicit closer tries the `uint64`
-bridge and then the `int64` one, after its cheaper searches miss. A
+reading and then the `int64` one, after its cheaper searches miss. A
 `have` and a theorem's claim each prove it with the proof omitted.
 
 ```c filename=auto_proves_a_64_bit_equality_from_bounds.c

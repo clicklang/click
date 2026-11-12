@@ -825,11 +825,6 @@ theorem uint64_less_than_implies_not_greater_equal(left: uint64, right: uint64) 
     ensures not (left >= right) by assumption();
 }
 
-theorem uint64_to_integer_equal_implies_equal(left: uint64, right: uint64) {
-    requires to_integer(left) == to_integer(right);
-    ensures left == right by assumption();
-}
-
 // Exact observations of unsigned division require both evaluation domains.
 theorem uint32_divide_to_integer(left: uint32, right: uint32) {
     requires right != 0u32;
@@ -866,17 +861,6 @@ theorem uint32_to_integer_bounds(value: uint32) {
     ensures to_integer(value) <= 4294967295 by {
         have value <= 4294967295u32;
         apply(integer::uint32_less_equal_to_integer(value, 4294967295u32)) using { value <= 4294967295u32; };
-    }
-}
-
-theorem uint64_to_integer_bounds(value: uint64) {
-    ensures 0 <= to_integer(value) by {
-        have 0u64 <= value;
-        apply(integer::uint64_less_equal_to_integer(0u64, value)) using { 0u64 <= value; };
-    }
-    ensures to_integer(value) <= 18446744073709551615 by {
-        have value <= 18446744073709551615u64;
-        apply(integer::uint64_less_equal_to_integer(value, 18446744073709551615u64)) using { value <= 18446744073709551615u64; };
     }
 }
 
@@ -1017,14 +1001,6 @@ theorem to_uint64_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 18446744073709551615;
     ensures to_integer(to_uint64(z)) == z;
-}
-
-theorem int64_add_defined_by_integer_bounds(left: int64, right: int64) {
-    requires to_integer(left) + to_integer(right) >= -9223372036854775808;
-    requires to_integer(left) + to_integer(right) <= 9223372036854775807;
-    ensures defined(left + right) by {
-        assumption();
-    }
 }
 
 theorem int64_subtract_to_integer(left: int64, right: int64) {
