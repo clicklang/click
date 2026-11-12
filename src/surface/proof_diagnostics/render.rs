@@ -815,15 +815,32 @@ pub(crate) fn render_transport_cell_walk(
     )
 }
 
+/// One cell's address as a report names it: its source spelling when the
+/// report's names give one, and otherwise its labelled address.
+pub(crate) fn render_cell_address(pointer: &Pointer, labels: &mut SnapshotLabels) -> String {
+    let naming = labels.naming.clone();
+    let (parameters, arguments) = naming
+        .as_deref()
+        .map_or((&[][..], &[][..]), |(p, a)| (p.as_slice(), a.as_slice()));
+    crate::surface::diagnostics::diagnostic_source_cell(
+        pointer,
+        ParameterBinding::new(parameters, arguments),
+    )
+    .map(|source| format!("`{source}`"))
+    .unwrap_or_else(|| {
+        if typed_notation() {
+            format!("address {}", labels.pointer_value_name(pointer))
+        } else {
+            format!("address `{}`", labels.unnamed_pointer(pointer))
+        }
+    })
+}
+
 pub(crate) fn render_memory_history_check(
     history: &super::MemoryHistoryDiagnostic,
     labels: &mut SnapshotLabels,
 ) -> Option<String> {
     use crate::kernel::resource_tracker::{Change, OwnedResource};
-    let naming = labels.naming.clone();
-    let (parameters, arguments) = naming
-        .as_deref()
-        .map_or((&[][..], &[][..]), |(p, a)| (p.as_slice(), a.as_slice()));
     let explanation = &history.explanation;
     let (at, stop) = explanation.outcome.blocking_step()?;
     let OwnedResource::Cell {
@@ -838,30 +855,30 @@ pub(crate) fn render_memory_history_check(
     };
     let at = at?;
     let written_bytes = history.written_bytes?;
-    let address = |pointer: &Pointer, labels: &mut SnapshotLabels| {
-        crate::surface::diagnostics::diagnostic_source_cell(
-            pointer,
-            ParameterBinding::new(parameters, arguments),
-        )
-        .map(|source| format!("`{source}`"))
-        .unwrap_or_else(|| {
-            if typed_notation() {
-                format!("address {}", labels.pointer_value_name(pointer))
-            } else {
-                format!("address `{}`", labels.unnamed_pointer(pointer))
-            }
-        })
-    };
-    let written = address(written, labels);
-    let read = address(read, labels);
+    let written = render_cell_address(written, labels);
+    let read = render_cell_address(read, labels);
     let memory = at.snapshot().memory();
     let snapshot = if typed_notation() {
         labels.snapshot_name(memory)
     } else {
         labels.state_phrase(memory)
     };
+    let miss = history
+        .store_search_miss
+        .as_ref()
+        .map(|miss| {
+            format!(
+                "\n    store search: {}",
+                crate::surface::diagnostics::describe_store_separation_miss(
+                    &miss.statement,
+                    miss.cell.as_deref(),
+                    &miss.fact,
+                )
+            )
+        })
+        .unwrap_or_default();
     Some(format!(
-        "memory history without the failed check's facts stops at {snapshot}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}\n    supplemental history explanation: equality and ownership facts from the failed check are not used by this walk, so a store the check itself crosses (by a quantified fact's guard, for one) can stop it; it does not say why the check failed",
+        "memory history without the failed check's facts stops at {snapshot}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}{miss}\n    supplemental history explanation: equality and ownership facts from the failed check are not used by this walk, so a store the check itself crosses (by a quantified fact's guard, for one) can stop it; it does not say why the check failed",
         written_bytes,
     ))
 }

@@ -54,6 +54,20 @@ impl ProofSearchPremiseExcerpt {
 pub(crate) struct MemoryHistoryDiagnostic {
     pub explanation: crate::kernel::resource_tracker::Explanation,
     pub written_bytes: Option<u32>,
+    /// The statement whose store the walk stopped at, and the fact the
+    /// implicit tail's store search spelled and could not prove before it,
+    /// when the failing path recorded that miss for this cell.
+    pub store_search_miss: Option<StoreSearchMiss>,
+}
+
+/// A store-search miss as a report prints it: the statement as a proof
+/// names it, and the search's own spelling of the index disequality.
+#[derive(Clone)]
+pub(crate) struct StoreSearchMiss {
+    pub statement: String,
+    /// The dropped cell as the statement's C locals spelled it.
+    pub cell: Option<String>,
+    pub fact: String,
 }
 
 impl MemoryHistoryDiagnostic {
@@ -72,6 +86,7 @@ impl MemoryHistoryDiagnostic {
         Self {
             explanation,
             written_bytes,
+            store_search_miss: None,
         }
     }
 }
@@ -997,6 +1012,8 @@ mod tests {
                     more_resources: 0,
                     origin: None,
                     chosen: None,
+                    forgotten_cells: Vec::new(),
+                    history_stops: Vec::new(),
                 },
             );
             let diagnostic = ProofFailureDiagnostic {

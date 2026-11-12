@@ -1904,6 +1904,7 @@ impl<'a> Proof<'a> {
                 None,
                 usize::MAX,
                 read_checkpoint.as_ref(),
+                Vec::new(),
             );
         }
         Ok(next)

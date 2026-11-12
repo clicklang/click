@@ -1371,6 +1371,7 @@ impl<'a> Proof<'a> {
     ) -> Result<(), ClickError> {
         self.merge_branch_generated_load_bindings(execution, parent, arms)?;
         self.merge_branch_generated_load_source_events(execution, parent, arms)?;
+        merge_branch_store_separation_misses(execution, parent, arms);
         // A chosen existential projection is usable only when both sibling
         // paths retained the same checked source record.  Otherwise it is
         // branch-local presentation and must not leak through the join.
@@ -4349,3 +4350,31 @@ mod search;
 
 #[path = "../driver/joins.rs"]
 mod driver;
+
+/// Carries the store-search misses each arm recorded after the split root,
+/// so a refusal after the join still names the store that dropped a cell it
+/// reads. Diagnostic presentation only, output-sized in the arms' suffixes;
+/// an arm that does not descend from the root contributes none.
+fn merge_branch_store_separation_misses(
+    execution: &mut ExecutionProofState,
+    parent: &ExecutionProofState,
+    arms: [&ExecutionProofState; 2],
+) {
+    for arm in arms {
+        let Some(introduced) = arm
+            .presentation
+            .store_separation_misses
+            .suffix_since(&parent.presentation.store_separation_misses)
+        else {
+            continue;
+        };
+        for miss in introduced {
+            if execution.presentation.store_separation_misses.len()
+                >= crate::surface::proof::smart_closures::MAX_RECORDED_STORE_SEPARATION_MISSES
+            {
+                return;
+            }
+            execution.presentation.store_separation_misses.push(miss);
+        }
+    }
+}
