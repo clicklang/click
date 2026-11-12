@@ -24,13 +24,16 @@ admitted in these `noexcept` functions, where a failed allocation ends the
 program. The destructor deletes the nodes still on the stack in a `while`
 loop; its contract consumes the list, and it runs at each client's return.
 
+From this directory, with an installed `click`:
+
 ```sh
-cargo run --bin click -- verify examples/cpp-stack/stack.click
+click verify stack.click
 ```
 
-To refresh the lock after changing the source:
+To refresh the lock after changing the source, with the pinned C++ front end
+installed (`click install VERSION --cpp`; in a checkout, or on another host,
+`CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"` instead):
 
 ```sh
-CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)" \
-  cargo run --bin click -- import lock examples/cpp-stack
+click import lock
 ```

@@ -2023,7 +2023,6 @@ CLICK_CPP_FRONTEND_ARCHIVE="$PWD/target/cpp-release/click-cpp-frontend-x86_64-un
 
 The test installs through the real installer and fixture transport, moves
 the Click home, and then, with an empty `PATH` and no `CLICK_CPP_EXPORTER`,
-locks a copy of `examples/basic-cpp` with the installed exporter. The
-artifacts must equal the committed ones, the lock must name the installed
-exporter's digest and be stable on a second lock, and all three sidecars
-must verify, the last also after the front end is removed.
+locks a copy of `examples/basic-cpp` with the installed exporter. The lock
+and artifacts must equal the committed ones byte for byte, and all three
+sidecars must verify, the last also after the front end is removed.

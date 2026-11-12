@@ -82,7 +82,7 @@
                 "compilation_file": "bitcoin-src/src/policy/feerate.cpp",
                 "exceptions": true,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": true,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -166,7 +166,7 @@
                 "compilation_file": "bitcoin-src/src/policy/feerate.cpp",
                 "exceptions": true,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": true,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -252,7 +252,7 @@
                 "compilation_file": "bitcoin-src/src/policy/feerate.cpp",
                 "exceptions": true,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": true,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -264,17 +264,17 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "8b40892d69c2b04045c67d955b67c228d1215e84ae9bc972411ac05ceb5ed302",
+          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
           "name": "clang"
         },
         "sources": {
           "bitcoin-src/src/consensus/amount.h": {
             "artifact": {
-              "bytes": 70861,
+              "bytes": 70768,
               "path": ".click/bitcoin/bitcoin-src/src/consensus/amount.h.click-cpp.json",
-              "sha256": "73d4df05c6faf4a0a50ad4744a3b8423a3a5649f9206df4e7e23bb55692b065d"
+              "sha256": "e39fd485c0d17781f7b22aad08cfd3703d25262748fa65ea9a9f7c0bebf3e858"
             },
-            "identity": "3238856b8e09dbddb095e7a5cf5a717350e13a2db5bc9662b031a109d3bd1015",
+            "identity": "ac45f88c2e84809dd3650125cad030cad4614064e7bc41fc5f5e2d1f1da6e971",
             "inputs": {
               "$clang-resource/include/__stdarg___gnuc_va_list.h": "feca975bfdfb254d17458a8e3d51f8ad6d9bdc9fd6287727f0f8b2fb81fcb0b0",
               "$clang-resource/include/__stddef_header_macro.h": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",
@@ -600,11 +600,11 @@
           },
           "bitcoin-src/src/serialize.h": {
             "artifact": {
-              "bytes": 77727,
+              "bytes": 77634,
               "path": ".click/bitcoin/bitcoin-src/src/serialize.h.click-cpp.json",
-              "sha256": "5884c368fb3a4b1cda317e1f029fad5cc82f7b192eb9e747279155d78d69d431"
+              "sha256": "27ac3b4e1a858039303e397d6693afebbd91e6887da5f8e8f678149d11726092"
             },
-            "identity": "e16d79ff52eeee09305647bdeef951cb9ce3c023af2bed1f806a4624f850e8f8",
+            "identity": "d98d70f8bd14cea981a29f622a1b038bcfb5b702f154960010a86250ef9daebf",
             "inputs": {
               "$clang-resource/include/__stdarg___gnuc_va_list.h": "feca975bfdfb254d17458a8e3d51f8ad6d9bdc9fd6287727f0f8b2fb81fcb0b0",
               "$clang-resource/include/__stddef_header_macro.h": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",
@@ -930,11 +930,11 @@
           },
           "bitcoin-src/src/util/feefrac.h": {
             "artifact": {
-              "bytes": 118191,
+              "bytes": 118098,
               "path": ".click/bitcoin/bitcoin-src/src/util/feefrac.h.click-cpp.json",
-              "sha256": "4b64277ab8a2ae1bc75f60e66fd57927b546bff912d148e3096f0b8e5d675231"
+              "sha256": "ec27542dd328a260b98dc1eab7c6ad7c5b0c3aef08f069657b2251c0cd8f7af3"
             },
-            "identity": "f1c2cc2ca5dcad239de0cc20c6f9be7f5287a32e44a2d1c3868953260425f387",
+            "identity": "47db5b86688343b3cf687ec7905646901bc3caa5311c847845ee24a4b363f772",
             "inputs": {
               "$clang-resource/include/__stdarg___gnuc_va_list.h": "feca975bfdfb254d17458a8e3d51f8ad6d9bdc9fd6287727f0f8b2fb81fcb0b0",
               "$clang-resource/include/__stddef_header_macro.h": "4cf46e8fbb809df048eecbbd63686fa741da27afa8db4245bd1f61c1fb1611dc",

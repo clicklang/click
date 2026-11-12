@@ -70,23 +70,30 @@ Audit of the current path, from a user's point of view:
    project locking and C++ mdtests alike. Configs name no exporter and no
    build-machine path is compiled in. `click install VERSION --cpp`
    installs there on Linux x86-64.
-3. **The version handshake is in place; lock identities are not.** The
+3. **The version handshake and release identities are in place.** The
    exporter reports its version, artifact schema and Clang version for
    `--identity`, Click checks that before exporting, and all three are
-   defined once in `src/languages/cpp/frontend-profile.json`. The lock's `exporter_sha256` is the
-   hash of the local build, so the same inputs locked on two machines give
-   two different import identities.
-4. **The demonstration is reproducible only inside the repository.** Every
-   README starts with `scripts/build-cpp-exporter.sh` and `cargo run --bin
-   click` from the repository root. The Bitcoin fee proofs exist as
+   defined once in `src/languages/cpp/frontend-profile.json`. A lock's
+   front-end identity is the digest of that profile, and the artifact
+   records the pinned Clang version rather than the build's full version
+   string, so equal inputs lock byte-identically on every machine; the
+   mdtest and example import checks compare bytes.
+4. **The demonstrations run from an installed Click.** The `basic-cpp`,
+   `cpp-stack` and `MoneyRange` READMEs give `click` commands run in the
+   project directory, and refresh with the installed front end.
+   `the_installed_cpp_front_end_reproduces_the_committed_imports` (nightly,
+   `tests/cpp_import.rs`) locks `basic-cpp` and the hermetic `MoneyRange`
+   closure outside the repository with only the installed layout (no
+   override, empty `PATH`), requires the committed locks and artifacts byte
+   for byte, and verifies their sidecars. The Bitcoin fee proofs remain
    `.click.in` templates that only `tests/bitcoin_core_money_range.rs`
-   instantiates. The full-checkout `MoneyRange` workflow assumes Homebrew
-   Clang 19.1.7, CMake, and the extracted packages.
-5. **Setup errors name paths, not causes.** A missing exporter surfaces as
-   `resolve C++ exporter `…`: No such file or directory`. A mismatched
-   exporter surfaces as a schema or profile error after it has run.
-   Diagnostics for unsupported constructs are good: the exporter's `fail`
-   reports a source location and the construct.
+   instantiates, and the full-checkout `MoneyRange` workflow still assumes
+   Homebrew Clang 19.1.7, CMake, and the extracted packages.
+5. **Setup errors name causes.** A missing exporter reports the expected
+   installed path and `click install VERSION --cpp`; an exporter with another
+   identity is refused before it runs an export
+   (`an_installed_cpp_front_end_is_required_and_checked`). Diagnostics for
+   unsupported constructs keep their source location and construct.
 
 The [project configuration](../docs/reference/cli/import.md#project-units) has since solved three further
 problems: build information no longer comes from templated compilation

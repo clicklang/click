@@ -38,7 +38,7 @@
                 "compilation_file": "field_drop.cpp",
                 "exceptions": true,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": false,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -50,17 +50,17 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "b0f42fd6919745ef3ce9ff6dc1c83435e410d8545ae2d494a02dd03e61c6ee4d",
+          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
           "name": "clang"
         },
         "sources": {
           "field_drop.cpp": {
             "artifact": {
-              "bytes": 19258,
+              "bytes": 19165,
               "path": ".click/fixture/field_drop.cpp.click-cpp.json",
-              "sha256": "7c2fc04e1ed35bbc6dded5c71c8c5fbe82d8f77769989a302b7fd917fc6f2ea2"
+              "sha256": "9ccac3df873400a942468d413214f01bfc52b11d0822b4027f7dfb0a2082447a"
             },
-            "identity": "22ab6418975511da3c3ac4c96557f68354f8207220a281352209fa405fee3473",
+            "identity": "4cf476550cf93f760f503aba400aaef1bb3ae7e0280204c906808cb4a793dbce",
             "inputs": {
               "$unit/field_drop.cpp": "06ff84357ed52897d0699d93a68cdee16c6e20c3ef8648a5b9407c54ed8f6274"
             }
