@@ -838,8 +838,9 @@ Named theorem application has three primitive phases: prepare the selected
 arguments and instantiated conclusions while returning prerequisite obligations;
 prove those obligations in the driver with ordinary solve; publish the retained
 conclusions. Pure, fixed-state, live and returned-outcome applications share this
-route. Explicit `apply(...) using { ... }` is the replay operation. Special
-population/range built-ins retain their separately inventoried route.
+route, including the population-member-count-zero built-in. Explicit
+`apply(...) using { ... }` is the replay operation. Integer range-fold built-ins
+retain their separately inventoried route.
 
 In test builds, `FastOperationScope` surrounds preparation, publication and
 explicit theorem application and proposition/resource scope completion.

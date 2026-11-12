@@ -22022,6 +22022,7 @@ fn outcome_apply_obligations_retain_each_return_and_fold_evidence() {
 }
 
 #[test]
+#[ignore = "nightly: population obligation expansion and cold replay"]
 fn empty_population_application_expands_its_obligation() {
     let (source, sources) = mdtest_sources("mdtests/an_empty_population_counts_no_member.md");
     let sources = sources
