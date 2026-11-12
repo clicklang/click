@@ -2000,3 +2000,30 @@ frontend. The check covers packaging only: proof regressions in the Adler-32
 trials belong to nightly, including
 `adler32_prepared_demonstration_verifies_offline`, which verifies the prepared
 C/Rust checksum demonstration with the development binary.
+
+## C++ release archive installation
+
+The C++ frontend release workflow (`.github/workflows/cpp-frontend.yml`)
+installs the pinned LLVM release, builds the self-contained exporter with
+`scripts/build-cpp-exporter.sh --release`, packages one archive and checksum
+with `scripts/package-cpp-frontend-archive.sh`, and runs
+`tests/cpp_release_install.rs` against those files before upload. Like the
+Rust check, it is outside the gate and the nightly target list, and fails
+without `CLICK_CPP_FRONTEND_ARCHIVE`. The release link takes about two
+minutes; it needs the pinned `ld.lld`, because the release's static Clang
+libraries hold LLVM bitcode. Run it locally with:
+
+```console
+scripts/build-cpp-exporter.sh --release
+scripts/package-cpp-frontend-archive.sh target/cpp-release target/cpp-exporter-release \
+  /usr/lib/llvm-19/include/llvm/Support/LICENSE.TXT
+CLICK_CPP_FRONTEND_ARCHIVE="$PWD/target/cpp-release/click-cpp-frontend-x86_64-unknown-linux-gnu.tar.gz" \
+  cargo test --test cpp_release_install cpp_release_archive_installs_and_locks -- --ignored
+```
+
+The test installs through the real installer and fixture transport, moves
+the Click home, and then, with an empty `PATH` and no `CLICK_CPP_EXPORTER`,
+locks a copy of `examples/basic-cpp` with the installed exporter. The
+artifacts must equal the committed ones, the lock must name the installed
+exporter's digest and be stable on a second lock, and all three sidecars
+must verify, the last also after the front end is removed.

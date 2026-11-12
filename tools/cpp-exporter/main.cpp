@@ -45,7 +45,9 @@
 #include "clang/Tooling/JSONCompilationDatabase.h"
 #include "clang/Tooling/Tooling.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -69,8 +71,23 @@ constexpr int kArtifactSchema = CLICK_CPP_ARTIFACT_SCHEMA;
 #ifndef CLICK_CLANG_RESOURCE_DIR
 #error "build with scripts/build-cpp-exporter.sh, which defines CLICK_CLANG_RESOURCE_DIR"
 #endif
-// The pinned Clang's resource directory, recorded when the exporter is built.
+// The pinned Clang's resource directory, recorded when the exporter is built:
+// absolute for a development build, or relative to the exporter's own
+// directory for a release bundle, which ships the headers beside it.
 constexpr const char *kClangResourceDir = CLICK_CLANG_RESOURCE_DIR;
+
+std::string clang_resource_dir(const char *argv0) {
+  if (llvm::sys::path::is_absolute(kClangResourceDir)) {
+    return kClangResourceDir;
+  }
+  static int anchor;
+  llvm::SmallString<256> directory(
+      llvm::sys::path::parent_path(llvm::sys::fs::getMainExecutable(
+          argv0, reinterpret_cast<void *>(&anchor))));
+  llvm::sys::path::append(directory, kClangResourceDir);
+  return std::string(directory);
+}
+
 constexpr std::size_t kMaxPreprocessorFiles = 4096;
 
 struct GenericTemplate {
@@ -6700,7 +6717,7 @@ int main(int argc, const char **argv) {
     return 0;
   }
   if (argc == 2 && std::string(argv[1]) == "--print-resource-dir") {
-    llvm::outs() << kClangResourceDir << "\n";
+    llvm::outs() << clang_resource_dir(argv[0]) << "\n";
     return 0;
   }
   auto options = parse_options(argc, argv);
@@ -6761,7 +6778,7 @@ int main(int argc, const char **argv) {
   options->compilation_command = command.CommandLine;
   clang::tooling::ClangTool tool(*database, {options->source});
   // A command that names no resource directory gets the pinned Clang's, not
-  // one derived from where this executable happens to be installed.
+  // the `../lib/clang/19` Clang would derive from this executable's path.
   const bool names_resource_dir = std::any_of(
       command.CommandLine.begin(), command.CommandLine.end(),
       [](const std::string &argument) {
@@ -6770,7 +6787,7 @@ int main(int argc, const char **argv) {
       });
   if (!names_resource_dir) {
     tool.appendArgumentsAdjuster(clang::tooling::getInsertArgumentAdjuster(
-        (std::string("-resource-dir=") + kClangResourceDir).c_str(),
+        (std::string("-resource-dir=") + clang_resource_dir(argv[0])).c_str(),
         clang::tooling::ArgumentInsertPosition::END));
   }
   ExportState state;

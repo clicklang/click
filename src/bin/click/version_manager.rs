@@ -41,45 +41,84 @@ pub fn entry_with(command: &str, arguments: Vec<String>) -> Result<(), String> {
 
 fn usage() -> &'static str {
     "version-manager commands:
-  click install <VERSION|latest> [--rust]
+  click install <VERSION|latest> [--rust] [--cpp]
   click use [VERSION|--unset]
   click default [VERSION]
   click versions"
 }
 
 fn install_command(arguments: &[String]) -> Result<(), String> {
-    if !matches!(arguments, [_] | [_, _]) || (arguments.len() == 2 && arguments[1] != "--rust") {
+    let Some((requested, frontends)) = arguments.split_first() else {
+        return Err(usage().to_string());
+    };
+    let rust = frontends.iter().any(|flag| flag == "--rust");
+    let cpp = frontends.iter().any(|flag| flag == "--cpp");
+    if frontends.len() != usize::from(rust) + usize::from(cpp) {
         return Err(usage().to_string());
     }
-    let requested = arguments[0].as_str();
+    let requested = requested.as_str();
     let version = if requested == "latest" {
         latest_version()?
     } else {
         normalize_version(requested)?
     };
     install_version(&version)?;
-    if arguments.len() == 2 {
-        install_rust_frontend(&version)?;
+    if rust {
+        install_frontend(&RUST_FRONTEND, &version)?;
+    }
+    if cpp {
+        install_frontend(&CPP_FRONTEND, &version)?;
     }
     Ok(())
 }
 
-fn install_rust_frontend(version: &str) -> Result<(), String> {
+/// A language front end published beside each Click release as
+/// `click-{directory}-frontend-{target}.tar.gz`, holding one `{directory}/`
+/// tree that installs to `versions/<v>/frontends/{directory}`.
+struct Frontend {
+    language: &'static str,
+    directory: &'static str,
+    /// Checks an unpacked or installed tree; returns the version to list.
+    check: fn(&Path, &str) -> Result<String, String>,
+}
+
+const RUST_FRONTEND: Frontend = Frontend {
+    language: "Rust",
+    directory: "rust",
+    check: check_rust_bundle,
+};
+
+const CPP_FRONTEND: Frontend = Frontend {
+    language: "C++",
+    directory: "cpp",
+    check: check_cpp_bundle,
+};
+
+fn install_frontend(frontend: &Frontend, version: &str) -> Result<(), String> {
+    let Frontend {
+        language,
+        directory,
+        check,
+    } = *frontend;
     let target = host_target()?;
     if target != "x86_64-unknown-linux-gnu" {
         return Err(format!(
-            "a pinned Rust frontend bundle is not yet available for {target}; Click itself remains installed"
+            "a pinned {language} frontend bundle is not yet available for {target}; Click itself remains installed"
         ));
     }
     let home = click_home()?;
-    let destination = home.join("versions").join(version).join("frontends/rust");
+    let destination = home
+        .join("versions")
+        .join(version)
+        .join("frontends")
+        .join(directory);
     if destination.exists() {
-        check_rust_bundle(&destination, version)?;
-        println!("Rust frontend for Click {version} is already installed.");
+        check(&destination, version)?;
+        println!("{language} frontend for Click {version} is already installed.");
         return Ok(());
     }
     let temporary = temporary_directory(&home)?;
-    let name = format!("click-rust-frontend-{target}.tar.gz");
+    let name = format!("click-{directory}-frontend-{target}.tar.gz");
     let base = format!(
         "https://github.com/{}/releases/download/v{version}",
         release_repository()?
@@ -93,29 +132,36 @@ fn install_rust_frontend(version: &str) -> Result<(), String> {
         File::open(&archive).map_err(|e| e.to_string())?,
     ))
     .unpack(&temporary.0)
-    .map_err(|e| format!("could not unpack Rust frontend: {e}"))?;
-    let bundle = temporary.0.join("rust");
-    check_rust_bundle(&bundle, version)?;
+    .map_err(|e| format!("could not unpack {language} frontend: {e}"))?;
+    let bundle = temporary.0.join(directory);
+    check(&bundle, version)?;
     fs::create_dir_all(destination.parent().unwrap()).map_err(|e| e.to_string())?;
     fs::rename(bundle, &destination)
-        .map_err(|e| format!("could not install Rust frontend: {e}"))?;
-    println!("Installed Rust frontend for Click {version} ({target}).");
+        .map_err(|e| format!("could not install {language} frontend: {e}"))?;
+    println!("Installed {language} frontend for Click {version} ({target}).");
     Ok(())
 }
 
-fn check_rust_bundle(bundle: &Path, version: &str) -> Result<String, String> {
+/// Read a front end's `frontend.json`, within its byte bound.
+fn frontend_manifest(bundle: &Path, language: &str) -> Result<serde_json::Value, String> {
     let path = bundle.join("frontend.json");
     if fs::metadata(&path)
-        .map_err(|e| format!("Rust frontend manifest: {e}"))?
+        .map_err(|e| format!("{language} frontend manifest: {e}"))?
         .len()
         > 64 << 10
     {
-        return Err("Rust frontend manifest exceeds its byte bound".into());
+        return Err(format!(
+            "{language} frontend manifest exceeds its byte bound"
+        ));
     }
-    let manifest: serde_json::Value = serde_json::from_reader(
-        File::open(path).map_err(|e| format!("Rust frontend manifest: {e}"))?,
+    serde_json::from_reader(
+        File::open(path).map_err(|e| format!("{language} frontend manifest: {e}"))?,
     )
-    .map_err(|e| format!("Rust frontend manifest: {e}"))?;
+    .map_err(|e| format!("{language} frontend manifest: {e}"))
+}
+
+fn check_rust_bundle(bundle: &Path, version: &str) -> Result<String, String> {
+    let manifest = frontend_manifest(bundle, "Rust")?;
     if manifest["schema"] != 1
         || manifest["click_version"] != version
         || manifest["host"] != "x86_64-unknown-linux-gnu"
@@ -138,6 +184,35 @@ fn check_rust_bundle(bundle: &Path, version: &str) -> Result<String, String> {
         ));
     }
     Ok(manifest["extractor_version"].as_str().unwrap().to_string())
+}
+
+/// The installed layout `src/languages/cpp/runtime.rs` resolves: the
+/// exporter, with the pinned Clang's builtin headers beside it.
+fn check_cpp_bundle(bundle: &Path, version: &str) -> Result<String, String> {
+    let manifest = frontend_manifest(bundle, "C++")?;
+    let profile: serde_json::Value =
+        serde_json::from_str(include_str!("../../languages/cpp/frontend-profile.json"))
+            .map_err(|e| format!("C++ frontend profile: {e}"))?;
+    if manifest["schema"] != 1
+        || manifest["click_version"] != version
+        || manifest["host"] != "x86_64-unknown-linux-gnu"
+        || manifest["exporter"] != "click-cpp-exporter"
+        || manifest["resource_dir"] != "clang-resource"
+        || ["exporter_version", "clang_version", "artifact_schema"]
+            .iter()
+            .any(|key| manifest[key] != profile[key])
+        || !bundle.join("click-cpp-exporter").is_file()
+        || !bundle.join("clang-resource/include/stddef.h").is_file()
+    {
+        return Err(format!(
+            "C++ frontend bundle is incomplete or does not match Click {version}"
+        ));
+    }
+    Ok(format!(
+        "{} (Clang {})",
+        profile["exporter_version"].as_str().unwrap_or_default(),
+        profile["clang_version"].as_str().unwrap_or_default()
+    ))
 }
 
 fn install_version(version: &str) -> Result<(), String> {
@@ -589,12 +664,16 @@ fn versions_command(arguments: &[String]) -> Result<(), String> {
         } else {
             ""
         };
-        let bundle = versions.join(&version).join("frontends/rust");
-        let rust = check_rust_bundle(&bundle, &version).map_or_else(
+        let frontends = versions.join(&version).join("frontends");
+        let rust = check_rust_bundle(&frontends.join("rust"), &version).map_or_else(
             |_| String::new(),
             |charon| format!(" (Rust frontend: Charon {charon})"),
         );
-        println!("{version}{global_marker}{project_marker}{rust}");
+        let cpp = check_cpp_bundle(&frontends.join("cpp"), &version).map_or_else(
+            |_| String::new(),
+            |exporter| format!(" (C++ frontend: exporter {exporter})"),
+        );
+        println!("{version}{global_marker}{project_marker}{rust}{cpp}");
     }
     Ok(())
 }
