@@ -27,6 +27,57 @@ const MAX_NODES: usize = 4096;
 const SIGNED_MIN: i64 = i32::MIN as i64;
 const SIGNED_MAX: i64 = i32::MAX as i64;
 
+// Interval certificate nodes still carry explicit native source terms. Bound
+// their selected syntax before exporting once at this public-payload boundary;
+// the kernel reads incoming shared claims directly when checking the evidence.
+fn native_certificate_proposition(proposition: &Proposition) -> Option<Proposition> {
+    let canonical = crate::kernel::canonical_condition_fact(proposition);
+    let Proposition::ConditionIs(condition, truth) = &canonical else {
+        return Some(canonical);
+    };
+    if matches!(condition, ConditionTerm::Compare { .. }) {
+        return Some(canonical);
+    }
+    let Some(view) = crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+        condition, *truth,
+    ) else {
+        return Some(canonical);
+    };
+    if !matches!(
+        view.format,
+        MachineIntegerType::Int32 | MachineIntegerType::UInt32
+    ) {
+        return Some(canonical);
+    }
+    let mut pending = view
+        .operands
+        .iter()
+        .map(|operand| operand.operand_view())
+        .collect::<Vec<_>>();
+    let mut occurrences = 0;
+    while let Some(operand) = pending.pop() {
+        occurrences += 1;
+        charge_work(1)?;
+        if occurrences > MAX_NODES {
+            return None;
+        }
+        if let Some((_, _, operands)) = operand.binary() {
+            pending.extend(operands);
+        } else if let Some((_, _, operand)) = operand.unary() {
+            pending.push(operand);
+        } else if let Some((_, _, _, operand)) = operand.cast() {
+            pending.push(operand);
+        }
+    }
+    let (condition, truth) =
+        crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
+            condition, *truth,
+        )?;
+    Some(crate::kernel::canonical_condition_fact(
+        &Proposition::ConditionIs(condition, truth),
+    ))
+}
+
 pub(super) fn plan_signed_arithmetic_certificate(
     goal: &Proposition,
     premises: &[Proposition],
@@ -60,11 +111,11 @@ fn plan_signed_arithmetic_certificate_with_mode(
     // The kernel checks arithmetic atoms in canonical form. A population
     // count may still carry a raw memory read here, while another premise
     // names that same value by its registered load variable.
-    let goal = crate::kernel::canonical_condition_fact(goal);
+    let goal = native_certificate_proposition(goal)?;
     let premises = premises
         .iter()
-        .map(crate::kernel::canonical_condition_fact)
-        .collect::<Vec<_>>();
+        .map(native_certificate_proposition)
+        .collect::<Option<Vec<_>>>()?;
     if unsigned_order_terms(&goal).is_some() {
         return plan_unsigned_order_goal(&goal, &premises, false)
             .or_else(|| plan_unsigned_order_goal(&goal, &premises, true));
@@ -302,151 +353,13 @@ fn charge_work(units: usize) -> Option<()> {
 }
 
 fn signed_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
-    let (condition, value) = match proposition {
-        Proposition::ConditionIs(condition, value) => (condition, *value),
-        Proposition::Not(body) => match body.as_ref() {
-            Proposition::ConditionIs(condition, value) => (condition, !*value),
-            _ => return None,
-        },
-        _ => return None,
-    };
-    let (relation, left, right, strict) = match (condition, value) {
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-            true,
-        ) => (SignedArithmeticRelation::LessEqual, left, right, true),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            },
-            true,
-        ) => (SignedArithmeticRelation::LessEqual, left, right, false),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            },
-            true,
-        ) => (SignedArithmeticRelation::LessEqual, right, left, true),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            },
-            true,
-        ) => (SignedArithmeticRelation::LessEqual, right, left, false),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-            false,
-        ) => (SignedArithmeticRelation::LessEqual, right, left, false),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            },
-            false,
-        ) => (SignedArithmeticRelation::LessEqual, right, left, true),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            },
-            false,
-        ) => (SignedArithmeticRelation::LessEqual, left, right, false),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            },
-            false,
-        ) => (SignedArithmeticRelation::LessEqual, left, right, true),
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) => {
-            let (terms, constant) = affine_difference(left, right)?;
-            return Some(SignedArithmeticClaim {
-                carrier: SignedArithmeticCarrier::SignedInt32,
-                relation: SignedArithmeticRelation::Equal,
-                terms,
-                constant,
-            });
-        }
-        (
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            false,
-        ) => {
-            let (terms, constant) = affine_difference(left, right)?;
-            return Some(SignedArithmeticClaim {
-                carrier: SignedArithmeticCarrier::SignedInt32,
-                relation: SignedArithmeticRelation::Disequal,
-                terms,
-                constant,
-            });
-        }
-        (ConditionTerm::Constant(constant), value) => {
-            return Some(SignedArithmeticClaim {
-                carrier: SignedArithmeticCarrier::SignedInt32,
-                relation: SignedArithmeticRelation::Equal,
-                terms: BTreeMap::new(),
-                constant: if *constant == value {
-                    BigInt::zero()
-                } else {
-                    BigInt::one()
-                },
-            });
-        }
-        _ => return None,
-    };
-    let (terms, mut constant) = affine_difference(left, right)?;
-    if strict {
-        constant += 1;
-    }
-    Some(SignedArithmeticClaim {
-        carrier: SignedArithmeticCarrier::SignedInt32,
-        relation,
-        terms,
-        constant,
-    })
+    crate::kernel::proof::signed_arithmetic::signed_arithmetic_claim(proposition)
 }
 
 pub(in crate::surface) fn decomposed_signed_claim(
     proposition: &Proposition,
 ) -> Option<SignedArithmeticClaim> {
-    let canonical = crate::kernel::canonical_condition_fact(proposition);
+    let canonical = native_certificate_proposition(proposition)?;
     let proposition = &canonical;
     let (condition, value) = match proposition {
         Proposition::ConditionIs(condition, value) => (condition, *value),
@@ -575,37 +488,6 @@ pub(in crate::surface) fn decomposed_signed_claim(
         terms,
         constant,
     })
-}
-
-fn affine_difference(
-    left: &MachineTerm,
-    right: &MachineTerm,
-) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
-    let mut terms: BTreeMap<SignedArithmeticAtom, BigInt> = BTreeMap::new();
-    let mut constant = BigInt::zero();
-    let mut pending = vec![(left, BigInt::one()), (right, -BigInt::one())];
-    while let Some((term, coefficient)) = pending.pop() {
-        charge_work(coefficient.bits() as usize + 1)?;
-        if let bits32_constant!(value) = term {
-            let value = BigInt::from(constant_u32(*value) as i32);
-            charge_bigint_binary_work(&coefficient, &value)?;
-            let product = &coefficient * &value;
-            charge_bigint_binary_work(&constant, &product)?;
-            constant += product;
-        } else {
-            let atom = SignedArithmeticAtom::from_term(term)?;
-            charge_map_update_work(terms.len(), &atom, &coefficient)?;
-            let previous = terms.get(&atom).cloned().unwrap_or_default();
-            charge_bigint_binary_work(&previous, &coefficient)?;
-            let updated = previous + coefficient;
-            if updated.is_zero() {
-                terms.remove(&atom);
-            } else {
-                terms.insert(atom, updated);
-            }
-        }
-    }
-    Some((terms, constant))
 }
 
 fn decomposed_affine_difference(

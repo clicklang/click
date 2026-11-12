@@ -1091,65 +1091,79 @@ fn direct_constant_lookup_declines_chains_until_the_endpoint_is_stated() {
 /// indexed: applying it stays an explicit `extract`.
 #[test]
 fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
-    let guarded = |index: u64| {
-        let old = MachineTerm::Variable(Variable(98_000 + index));
-        let delta = MachineTerm::Variable(Variable(98_500 + index));
-        let new = MachineTerm::Variable(Variable(99_000 + index));
-        Proposition::Implies(
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: Box::new(old.clone()),
-                    right: Box::new(delta.clone()),
-                },
-                false,
-            )),
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::equal(
-                    new,
-                    binary_node!(Int32, Add, Box::new(old), Box::new(delta)),
-                ),
-                true,
-            )),
-        )
-    };
-    let goal = Proposition::ConditionIs(
-        ConditionTerm::equal(
-            MachineTerm::Variable(Variable(99_000)),
-            MachineTerm::constant(1),
-        ),
-        true,
-    );
-    let bound = |value: u32| {
-        Proposition::ConditionIs(
-            ConditionTerm::signed_less_than(
-                MachineTerm::Variable(Variable(97_900)),
-                MachineTerm::constant(value),
+    for shared in [false, true] {
+        let guarded = |index: u64| {
+            let old = MachineTerm::Variable(Variable(98_000 + index));
+            let delta = MachineTerm::Variable(Variable(98_500 + index));
+            let new = MachineTerm::Variable(Variable(99_000 + index));
+            Proposition::Implies(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: OverflowOperation::Add,
+                        left: Box::new(old.clone()),
+                        right: Box::new(delta.clone()),
+                    },
+                    false,
+                )),
+                Box::new(Proposition::ConditionIs(
+                    {
+                        let condition = ConditionTerm::equal(
+                            new,
+                            binary_node!(Int32, Add, Box::new(old), Box::new(delta)),
+                        );
+                        if shared {
+                            crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(&condition).unwrap()
+                        } else {
+                            condition
+                        }
+                    },
+                    true,
+                )),
+            )
+        };
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::equal(
+                MachineTerm::Variable(Variable(99_000)),
+                MachineTerm::constant(1),
             ),
             true,
-        )
-    };
-    let ordinary_guard = Proposition::Implies(Box::new(bound(10)), Box::new(goal.clone()));
-    let samples = [16, 32, 64, 128]
-        .into_iter()
-        .map(|size| {
-            let mut facts = vec![guarded(0), ordinary_guard.clone()];
-            facts.extend((1..size).map(guarded));
-            let facts = crate::kernel::proof::ProofFacts::from_ordered(&facts);
-            let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
-                facts.guarded_implications_mentioning(&goal)
-            });
-            assert_eq!(selected, vec![guarded(0)]);
-            assert!(work > 0, "the lookup charges the buckets it visits");
-            (size, work)
-        })
-        .collect::<Vec<_>>();
-    for pair in samples.windows(2) {
-        assert!(
-            pair[1].1 <= pair[0].1.saturating_mul(2).saturating_add(8),
-            "guarded-equality lookup grew with unrelated facts: {samples:?}"
         );
+        let bound = |value: u32| {
+            Proposition::ConditionIs(
+                ConditionTerm::signed_less_than(
+                    MachineTerm::Variable(Variable(97_900)),
+                    MachineTerm::constant(value),
+                ),
+                true,
+            )
+        };
+        let ordinary_guard = Proposition::Implies(Box::new(bound(10)), Box::new(goal.clone()));
+        let samples = [16, 32, 64, 128]
+            .into_iter()
+            .map(|size| {
+                let mut facts = vec![guarded(0), ordinary_guard.clone()];
+                facts.extend((1..size).map(guarded));
+                let facts = crate::kernel::proof::ProofFacts::from_ordered(&facts);
+                let exports = crate::kernel::KernelTermExport::machine_export_count();
+                let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    facts.guarded_implications_mentioning(&goal)
+                });
+                assert_eq!(
+                    crate::kernel::KernelTermExport::machine_export_count(),
+                    exports
+                );
+                assert_eq!(selected, vec![guarded(0)]);
+                assert!(work > 0, "the lookup charges the buckets it visits");
+                (size, work)
+            })
+            .collect::<Vec<_>>();
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1.saturating_mul(2).saturating_add(8),
+                "guarded-equality lookup grew with unrelated facts: {samples:?}"
+            );
+        }
     }
 }
 

@@ -258,3 +258,19 @@ fn opaque_source_matching_preserves_existing_fold_scope_refusals() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn rewritten_opaque_observations_match_fresh_lowering_without_exports() {
+    let _session = VerificationSession::enter();
+    let format = MachineIntegerType::UInt64;
+    let source = MachineTerm::pointer_address(Pointer::symbolic(Variable(992560)));
+    let replacement = MachineTerm::pointer_address(Pointer::symbolic(Variable(992561)));
+    let sum = |address| MachineTerm::uint64_add(address, MachineTerm::Variable(Variable(992562)));
+    let input = IntegerTerm::from_machine(format, sum(source.clone())).unwrap();
+    let expected = IntegerTerm::from_machine(format, sum(replacement.clone())).unwrap();
+    let exports = KernelTermExport::machine_export_count();
+    let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
+    assert_eq!(rewrite.integer(&input), expected);
+    assert!(rewrite.refusal().is_none());
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+}

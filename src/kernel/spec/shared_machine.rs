@@ -34,15 +34,6 @@ pub(super) fn apply_values(
         return None;
     }
     let operator = operator?;
-    // Deferred count conversions still need the native shift-domain shape
-    // for narrowing/upper-bound checking. Available-tree preparation already
-    // has its separate retained-domain contract.
-    if matches!(
-        operator,
-        MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
-    ) {
-        return None;
-    }
     let (a, left) = left.machine()?;
     let (b, right) = right.machine()?;
     if a != b
@@ -58,24 +49,6 @@ pub(super) fn apply_values(
     }
     let left = retained_operand(a, left);
     let right = retained_operand(b, right);
-    // Deferred opaque/read payloads still owe native domain propositions:
-    // their producer-specific observation identity is not a Surface identity.
-    // Keep those partial producers at the compatibility boundary until the
-    // payload family migrates. Total unsigned arithmetic has no such debts.
-    let has_domain = a.format().is_signed()
-        || matches!(
-            operator,
-            MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
-        )
-        || (matches!(
-            operator,
-            MachineBinaryOp::Divide | MachineBinaryOp::Remainder
-        ) && SpecDivision::of(budget) == SpecDivision::CDefined);
-    if has_domain
-        && (left.has_opaque_observation_boundary() || right.has_opaque_observation_boundary())
-    {
-        return None;
-    }
     Some(apply(a, operator, left, right, budget))
 }
 
@@ -761,6 +734,34 @@ mod tests {
     }
 
     #[test]
+    fn opaque_observation_identity_survives_source_drop_and_distinguishes_payloads() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let make = |id| {
+            let format = MachineIntegerType::UInt64;
+            let leaf = MachineTerm::opaque_conversion(
+                "observation_owner",
+                MachineTerm::Variable(Variable(id)),
+            );
+            SpecValue::Shared(KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Subtract,
+                [
+                    KernelTerm::retained_native_machine_operand(format, &leaf),
+                    KernelTerm::retained_native_machine_operand(
+                        format,
+                        &MachineTerm::uint64_constant(1),
+                    ),
+                ],
+            ))
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let observation = make(992250).observe().unwrap();
+        assert_eq!(Some(observation.clone()), make(992250).observe());
+        assert_ne!(Some(observation), make(992251).observe());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
     fn deferred_requirements_preserve_results_domains_and_order() {
         for format in [
             MachineIntegerType::Int32,
@@ -825,10 +826,7 @@ mod tests {
                     )
                     .unwrap();
                     assert_eq!(paths.len(), 1);
-                    assert_eq!(
-                        matches!(paths[0].value, SpecValue::Shared(_)),
-                        !matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight)
-                    );
+                    assert!(matches!(paths[0].value, SpecValue::Shared(_)));
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
                     let legacy = evaluate_with_assumptions(&expression, true, &assumptions);
                     let mut paths = native_results(paths);

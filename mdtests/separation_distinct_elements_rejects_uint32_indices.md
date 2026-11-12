@@ -1,0 +1,15 @@
+# Element separation preserves its supported index types
+
+```click
+import click::separation;
+theorem unsupported(p: uint8*, i: uint32, j: uint32) {
+    requires i != j;
+    ensures &p[i] != &p[j] by {
+        apply(separation::distinct_elements(p, i, j)) using { i != j; };
+    }
+}
+```
+
+```expect
+fail: elements indices must be int32, int64, or uint64
+```

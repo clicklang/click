@@ -115,11 +115,10 @@ Roles distinguish the work remaining:
 | `mixed` | Drivers and auxiliary planners; semantic roles are recorded in the caller audit. |
 | `import` | Named import, not a runtime invocation. |
 
-The inventory after diagnostic stepping removal, match-arm dispatch relocation
-and signed-definedness/unsigned-order search extraction contains 633 records: 7 legacy bridges, 22 kernel callers,
+The current inventory contains 638 records: 7 legacy bridges, 22 kernel callers,
 6 Surface operation dependencies, 0 operation-to-driver dependencies,
 122 driver records, 6 presentation records,
-448 search-internal records, 20 mixed records and 2 imports. These are reference
+455 search-internal records, 18 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several
@@ -134,9 +133,9 @@ driver-solved obligations and publication in pure, fixed-state, live and returne
 contexts. The remaining selector edge covers special population/range built-ins
 and unsupported outcome dispatch. The three migrated primitives have test-build
 no-discovery scopes; every `ProofSearch` entry records discovery before work,
-even when called from another search. Cold generic-instance verification retains
-one named declaration-proof exception, recorded in the inventory; it remains a
-fast-to-slow dependency to remove. See the theorem boundary section in the
+even when called from another search. Generic applications instantiate checked
+statements without re-running declaration proofs; no guard exception remains.
+See the theorem boundary section in the
 [efficiency contract](../docs/internals/verification-efficiency.md).
 
 Seven kernel bridges preserve these implementations:
@@ -222,7 +221,7 @@ checker or rebuilt proof state.
 
 ## Detailed caller classification
 
-The [caller audit](proof-boundary-classification.md) classifies the current 20 mixed and
+The [caller audit](proof-boundary-classification.md) classifies the current 18 mixed and
 0 operation-to-driver records by why they invoke search or interpretation.
 It distinguishes expected dispatch from hidden obligation callbacks, declaration
 validation and the remaining primitive search dependencies.

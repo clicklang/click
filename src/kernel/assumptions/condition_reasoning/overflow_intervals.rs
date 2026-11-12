@@ -955,6 +955,8 @@ impl PureFactContext {
         right: MachineOperandView<'_>,
         strict: bool,
     ) -> Option<bool> {
+        let left = opaque_operand(left);
+        let right = opaque_operand(right);
         if !matches!(left, MachineOperandView::Legacy(MachineTerm::If { .. }))
             && !matches!(right, MachineOperandView::Legacy(MachineTerm::If { .. }))
         {
@@ -1099,6 +1101,7 @@ impl PureFactContext {
     /// The interval is reconstructed over the term's structure, so the walk
     /// is finite with no depth cut: each arithmetic node ranges its operands.
     fn signed_interval_uncached(&self, term: MachineOperandView<'_>) -> Option<(i64, i64)> {
+        let term = opaque_operand(term);
         use crate::kernel::{MachineBinaryOp as Op, MachineCastSpelling as E};
         if let Some(value) = self.signed_constant_known_equal_view(term) {
             return Some((value, value));
@@ -1874,10 +1877,34 @@ mod tests {
         );
         assert_eq!(
             assumptions.decide(&ConditionTerm::signed_less_equal(
-                conditional,
+                conditional.clone(),
                 MachineTerm::constant(8),
             )),
             None
+        );
+        let root = crate::kernel::KernelTerm::retained_machine_operand(
+            MachineIntegerType::Int32,
+            MachineOperandView::Legacy(&conditional),
+        );
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        assert_eq!(
+            assumptions.signed_interval_view(MachineOperandView::Shared(&root)),
+            Some((3, 9))
+        );
+        for (limit, expected) in [(9, Some(true)), (8, None), (2, Some(false))] {
+            let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::LessEqual,
+                [
+                    MachineOperandView::Shared(&root),
+                    MachineOperandView::Legacy(&MachineTerm::constant(limit)),
+                ],
+            );
+            assert_eq!(assumptions.decide(&condition), expected);
+        }
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
         );
     }
 
@@ -2532,5 +2559,17 @@ mod shared_overflow_query_tests {
                 exports
             );
         }
+    }
+}
+
+// An opaque retained leaf borrows the same native input used by the existing
+// interval rules. Arithmetic parents remain shared and memoized by node id.
+fn opaque_operand(view: MachineOperandView<'_>) -> MachineOperandView<'_> {
+    match view {
+        MachineOperandView::Shared(root) => root
+            .machine_conversion_leaf()
+            .map(MachineOperandView::Legacy)
+            .unwrap_or(view),
+        _ => view,
     }
 }

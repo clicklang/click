@@ -2833,3 +2833,91 @@ fn fixed_state_application_proves_premises_and_replays_explicitly() {
         assert!(missing.certificate().steps().is_empty());
     }
 }
+
+#[test]
+fn cold_theorem_application_ignores_declaration_proof_length() {
+    let mut baseline = None;
+    let mut previous_proof_work = 0;
+    for size in [4, 16, 64] {
+        let source = format!(
+            "theorem identity<T>(x: T) {{ requires x == x; ensures x == x by {{ {} assumption(); }} }}",
+            "have x == x by solve(); ".repeat(size)
+        );
+        // Verification is declaration work; measure only the application below.
+        crate::surface::verify_c0_sources(&source, &[]).unwrap();
+        let file = crate::surface::parse(&source).unwrap();
+        // Sensitivity control: the removed proof-instantiation path grows with
+        // this same input, while complete explicit application must stay flat.
+        let substitution = std::collections::BTreeMap::from([(
+            "T".into(),
+            ClickType::C(syntax::C0Type::Int32).into(),
+        )]);
+        let (declaration, proof_work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::generics::instantiate_theorem(
+                &file.theorem_definitions()[0],
+                &substitution,
+            )
+        });
+        declaration.unwrap();
+        assert!(proof_work > previous_proof_work);
+        previous_proof_work = proof_work;
+        let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
+        let predicates = PredicateEnvironment::new(&[]);
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let definitions = SpecDefinitions::new(&predicates, &functions);
+        let theorems = TheoremEnvironment::new(file.theorem_definitions());
+        let value = CValue::Int32(MachineTerm::Variable(Variable(8_900_000)));
+        let state = CState::new().with_local("x", value.clone());
+        let arguments = vec![CExpression::Value(value)];
+        let binding = ParameterBinding::new(parsed.parameters(), &arguments);
+        let snapshots = RecordedSnapshots::new();
+        let premise = ClickProposition::Comparison {
+            left: ContractExpression::Binding("x".into()),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::Binding("x".into()),
+        };
+        let goal = lower_fixed_state_proposition_with_assumptions(
+            &premise,
+            &PureFactContext::new(),
+            binding,
+            FixedStateFrame::new(&state, &state, None, &snapshots),
+            definitions,
+        )
+        .unwrap();
+        let mut forms = SurfacePropositionMap::default();
+        forms.record_lowering(&premise, &goal).unwrap();
+        let facts = vec![goal.clone()];
+        let root = Proof::for_fixed_state_goal(
+            "cold generic application",
+            0,
+            &facts,
+            goal,
+            binding,
+            &state,
+            &state,
+            &snapshots,
+            &forms,
+            definitions,
+            &theorems,
+            &[],
+            &[],
+        );
+        let application = TheoremApplication {
+            name: "identity".into(),
+            arguments: vec![ContractExpression::Binding("x".into())],
+        };
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.apply_theorem_using(&application, std::slice::from_ref(&premise))
+        });
+        result.unwrap();
+        assert_eq!(work, *baseline.get_or_insert(work), "proof length {size}");
+        let (repeated, repeated_work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.apply_theorem_using(&application, std::slice::from_ref(&premise))
+        });
+        repeated.unwrap();
+        assert_eq!(
+            work, repeated_work,
+            "cold and repeated applications must match"
+        );
+    }
+}

@@ -64,9 +64,9 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **633 reference records**: 7 legacy bridges, 22 callers
+The frozen inventory has **638 reference records**: 7 legacy bridges, 22 callers
 of those bridges, 6 operation references, 0 operation-to-driver references,
-20 mixed references, 122 driver references, 448 search references, 6 presentation
+18 mixed references, 122 driver references, 455 search references, 6 presentation
 references and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
 classifies every mixed and operation-to-driver record and groups all 6
@@ -389,9 +389,3 @@ instantiated result and return argument-domain and formal-premise obligations.
 Preparation, publication and explicit replay now have test-build discovery guards;
 all other operations still need guard coverage and their cost audit. Special built-in
 population/range applications remain separately classified.
-
-The theorem-operation guard found cold generic-instance verification nested in
-application. Its independent declaration proof has one named guard exception,
-`verify_concrete_theorem_definition -> enter_declaration_validation`; nested
-primitives remain guarded. Moving this validation out of fast application is
-still required before claiming cold expanded applications are search-free.

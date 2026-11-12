@@ -295,7 +295,37 @@ fn narrowed_shift_bounds_do_not_discard_possible_high_counts() {
             MachineTerm::constant(count),
         ));
         let below = ConditionTerm::unsigned_less_than(narrowed.clone(), MachineTerm::constant(32));
-        let above = ConditionTerm::unsigned_greater_equal(narrowed, MachineTerm::constant(32));
+        let above =
+            ConditionTerm::unsigned_greater_equal(narrowed.clone(), MachineTerm::constant(32));
+        let retained = KernelTerm::retained_machine_operand(
+            MachineIntegerType::UInt32,
+            MachineOperandView::Legacy(&narrowed),
+        );
+        let exports = KernelTermExport::machine_export_count();
+        for (relation, native) in [
+            (CompareRelation::LessThan, &below),
+            (CompareRelation::GreaterEqual, &above),
+        ] {
+            let common = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::UInt32,
+                relation,
+                [
+                    MachineOperandView::Shared(&retained),
+                    MachineOperandView::Legacy(&MachineTerm::constant(32)),
+                ],
+            );
+            assert_eq!(
+                matches!(common, ConditionTerm::Constant(true)),
+                matches!(native, ConditionTerm::Constant(true)),
+                "{count}"
+            );
+            assert_eq!(
+                matches!(common, ConditionTerm::Constant(false)),
+                matches!(native, ConditionTerm::Constant(false)),
+                "{count}"
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
         if (59..64).contains(&count) {
             assert_eq!(below, ConditionTerm::Constant(true));
             assert_eq!(above, ConditionTerm::Constant(false));

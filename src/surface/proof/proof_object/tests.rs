@@ -14561,7 +14561,7 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
 }
 
 #[test]
-fn signed_certificate_premise_keeps_native_addition_when_printed() {
+fn signed_certificate_premise_keeps_machine_addition_when_printed() {
     use crate::kernel::proof::signed_arithmetic::{
         SignedArithmeticCertificate, SignedArithmeticNode, signed_arithmetic_claim,
     };
@@ -14641,7 +14641,15 @@ fn signed_certificate_premise_keeps_native_addition_when_printed() {
     let lowered = root
         .lower_surface_proposition_direct(&reparsed, "printed premise")
         .unwrap();
-    assert_eq!(lowered, premise, "{printed}");
+    let Proposition::ConditionIs(condition, truth) = &premise else {
+        unreachable!()
+    };
+    let retained = Proposition::ConditionIs(
+        crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(condition)
+            .unwrap(),
+        *truth,
+    );
+    assert_eq!(lowered, retained, "{printed}");
 }
 
 #[test]

@@ -68,14 +68,20 @@ impl SpecValue {
         }
     }
     pub(super) fn observe(&self) -> Option<IntegerTerm> {
-        // Opaque leaves have producer-specific identities; their observation
-        // consumers still use native identity. Read the retained summary,
-        // without traversing a growing arithmetic prefix to select this boundary.
-        if let Self::Shared(root) = self
-            && !root.has_opaque_observation_boundary()
-        {
+        // Numeric observation identity is memoized separately from the exact
+        // producer payload; extending a shared prefix visits only new nodes.
+        if let Self::Shared(_) = self {
             let (format, view) = self.machine()?;
-            return view.observe(format);
+            let observed = view.observe(format)?;
+            return Some(match observed {
+                IntegerTerm::Machine(machine) if machine.shared_operand().is_some() => {
+                    IntegerTerm::Machine(SharedMachineIntegerTerm::observe_shared(
+                        machine.ty(),
+                        machine.shared_operand().unwrap().clone(),
+                    )?)
+                }
+                observed => observed,
+            });
         }
         let value = self.native();
         IntegerTerm::from_machine(
@@ -88,9 +94,35 @@ impl SpecValue {
         op: CComparisonOperator,
         right: &Self,
     ) -> ExecutionResult<Option<Proposition>> {
-        // Proposition consumers still distinguish native machine comparisons
-        // from Integer observations (including pointer-word proof routing).
-        // Keep this explicit boundary until those consumers share a view.
+        if let (Some((format, left)), Some((right_format, right))) =
+            (self.machine(), right.machine())
+            && format == right_format
+            && matches!(
+                format,
+                MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64
+                    | MachineIntegerType::UInt64
+            )
+        {
+            let relation = match op {
+                CComparisonOperator::Equal | CComparisonOperator::NotEqual => {
+                    CompareRelation::Equal
+                }
+                CComparisonOperator::LessThan => CompareRelation::LessThan,
+                CComparisonOperator::LessEqual => CompareRelation::LessEqual,
+                CComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
+                CComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
+            };
+            return Ok(Some(Proposition::ConditionIs(
+                crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                    format,
+                    relation,
+                    [left, right],
+                ),
+                op != CComparisonOperator::NotEqual,
+            )));
+        }
         let left = self.native();
         let right = right.native();
         Ok(bool_comparison_proposition(&left, op, &right)

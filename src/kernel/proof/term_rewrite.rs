@@ -3973,6 +3973,7 @@ impl<'a> TermRewrite<'a> {
                 if let Some(root) = value.shared_operand()
                     && let Some(result) = self.shared_machine_operand(root)
                 {
+                    let changed = result != *root;
                     let operand = MachineOperandView::Shared(&result);
                     // A substituted carrier need not admit the observation's
                     // numeric reading (for example a full-width unsigned
@@ -3984,6 +3985,27 @@ impl<'a> TermRewrite<'a> {
                         operand
                             .observe(value.ty())
                             .unwrap_or_else(|| IntegerTerm::Machine(operand.retain(value.ty())))
+                    };
+                    // A changed observation must use the same numeric opaque
+                    // keys as freshly lowered syntax. A no-op keeps its exact
+                    // retained handle, including producer metadata.
+                    let result = match result {
+                        IntegerTerm::Machine(machine)
+                            if changed && self.integer_exact.is_none() =>
+                        {
+                            if let Some(root) = machine.shared_operand() {
+                                IntegerTerm::Machine(
+                                    SharedMachineIntegerTerm::observe_shared(
+                                        machine.ty(),
+                                        root.clone(),
+                                    )
+                                    .expect("rewritten machine observation"),
+                                )
+                            } else {
+                                IntegerTerm::Machine(machine)
+                            }
+                        }
+                        result => result,
                     };
                     self.integer_cache.insert(cache_key, result.clone());
                     return result;
@@ -5456,6 +5478,35 @@ impl<'a> TermRewrite<'a> {
                     [true, false]
                         .into_iter()
                         .find(|value| graph.knows_condition(condition, *value))
+                        .or_else(|| {
+                            use crate::kernel::machine_integer::{
+                                Relation, comparison::comparison_view,
+                            };
+                            let view = comparison_view(condition, true)?;
+                            if !matches!(
+                                view.format,
+                                MachineIntegerType::Int64 | MachineIntegerType::UInt64
+                            ) {
+                                return None;
+                            }
+                            let equal = match view.relation {
+                                Relation::Equal => true,
+                                Relation::NotEqual => false,
+                                _ => return None,
+                            };
+                            // A cited wide equality can fix both words to
+                            // different constants. This indexed class lookup
+                            // decides an If guard without any ambient facts.
+                            let [left, right] = view
+                                .operands
+                                .each_ref()
+                                .map(|operand| operand.operand_view());
+                            Some(
+                                (graph.uint64_constant_view(left)?
+                                    == graph.uint64_constant_view(right)?)
+                                    == equal,
+                            )
+                        })
                 })
             })
     }

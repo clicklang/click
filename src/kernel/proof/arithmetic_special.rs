@@ -27,6 +27,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+mod word_view;
+use word_view::{Key as WordKey, Node as WordNode, Word};
+
 const SIGNED_MIN: i64 = i32::MIN as i64;
 const SIGNED_MAX: i64 = i32::MAX as i64;
 const MAX_TERM_PAYLOAD: usize = 256;
@@ -2466,9 +2469,9 @@ fn drop_aligned_scaled_addends(
 #[derive(Clone, Debug)]
 enum TaggedTag<'a> {
     Constant(u64),
-    Source(&'a MachineTerm),
-    Add(Arc<TaggedTag<'a>>, &'a MachineTerm),
-    Subtract(Arc<TaggedTag<'a>>, &'a MachineTerm),
+    Source(Word<'a>),
+    Add(Arc<TaggedTag<'a>>, Word<'a>),
+    Subtract(Arc<TaggedTag<'a>>, Word<'a>),
     BitwiseAnd(Arc<TaggedTag<'a>>, u64),
     BitwiseOr(Arc<TaggedTag<'a>>, u64),
 }
@@ -2506,7 +2509,7 @@ fn tagged_tag_equal<'a>(left: &Arc<TaggedTag<'a>>, right: &Arc<TaggedTag<'a>>) -
                 }
             }
             (TaggedTag::Source(left), TaggedTag::Source(right)) => {
-                if !bitvector_equal(left, right) {
+                if !word_view::equal(*left, *right) {
                     return false;
                 }
             }
@@ -2515,7 +2518,7 @@ fn tagged_tag_equal<'a>(left: &Arc<TaggedTag<'a>>, right: &Arc<TaggedTag<'a>>) -
                 TaggedTag::Subtract(left_tag, left_term),
                 TaggedTag::Subtract(right_tag, right_term),
             ) => {
-                if !bitvector_equal(left_term, right_term) {
+                if !word_view::equal(*left_term, *right_term) {
                     return false;
                 }
                 pending.push((Arc::clone(left_tag), Arc::clone(right_tag)));
@@ -2537,207 +2540,6 @@ fn tagged_tag_equal<'a>(left: &Arc<TaggedTag<'a>>, right: &Arc<TaggedTag<'a>>) -
         }
     }
     true
-}
-
-fn bounded_uint64_constants(roots: &[&MachineTerm]) -> HashMap<usize, Option<u64>> {
-    let mut pending = roots.iter().map(|root| (*root, false)).collect::<Vec<_>>();
-    let mut values: HashMap<usize, Option<u64>> = HashMap::new();
-    while let Some((term, expanded)) = pending.pop() {
-        let identity = term as *const MachineTerm as usize;
-        if values.contains_key(&identity) {
-            continue;
-        }
-        if crate::instrumentation::deadline_exceeded_with_work(1) {
-            return HashMap::new();
-        }
-        if expanded {
-            let value = match term {
-                uint64_constant!(value) => Some(constant_u64(*value)),
-                crate::kernel::binary_uint64_term!(_, _) => {
-                    let (left, right) = match term {
-                        crate::kernel::binary_uint64_term!(left, right) => (
-                            values
-                                .get(&(left.as_ref() as *const _ as usize))
-                                .copied()
-                                .flatten(),
-                            values
-                                .get(&(right.as_ref() as *const _ as usize))
-                                .copied()
-                                .flatten(),
-                        ),
-                        _ => (None, None),
-                    };
-                    match (term, left, right) {
-                        (
-                            MachineTerm::Binary {
-                                format: MachineIntegerType::UInt64,
-                                op: MachineBinaryOp::Add,
-                                left: _,
-                                right: _,
-                            },
-                            Some(left),
-                            Some(right),
-                        ) => Some(left.wrapping_add(right)),
-                        (
-                            MachineTerm::Binary {
-                                format: MachineIntegerType::UInt64,
-                                op: MachineBinaryOp::Subtract,
-                                left: _,
-                                right: _,
-                            },
-                            Some(left),
-                            Some(right),
-                        ) => Some(left.wrapping_sub(right)),
-                        (
-                            MachineTerm::Binary {
-                                format: MachineIntegerType::UInt64,
-                                op: MachineBinaryOp::Multiply,
-                                left: _,
-                                right: _,
-                            },
-                            Some(left),
-                            Some(right),
-                        ) => Some(left.wrapping_mul(right)),
-                        (
-                            MachineTerm::Binary {
-                                format: MachineIntegerType::UInt64,
-                                op: MachineBinaryOp::Divide,
-                                left: _,
-                                right: _,
-                            },
-                            Some(left),
-                            Some(right),
-                        ) if right != 0 => Some(left / right),
-                        (
-                            MachineTerm::Binary {
-                                format: MachineIntegerType::UInt64,
-                                op: MachineBinaryOp::Remainder,
-                                left: _,
-                                right: _,
-                            },
-                            Some(left),
-                            Some(right),
-                        ) if right != 0 => Some(left % right),
-                        (
-                            MachineTerm::Binary {
-                                format: MachineIntegerType::UInt64,
-                                op: MachineBinaryOp::ShiftLeft,
-                                left: _,
-                                right: _,
-                            },
-                            Some(left),
-                            Some(right),
-                        ) if right < 64 => Some(left.wrapping_shl(right as u32)),
-                        (
-                            MachineTerm::Binary {
-                                format: MachineIntegerType::UInt64,
-                                op: MachineBinaryOp::ShiftRight,
-                                left: _,
-                                right: _,
-                            },
-                            Some(left),
-                            Some(right),
-                        ) if right < 64 => Some(left >> right),
-                        (
-                            MachineTerm::Binary {
-                                format: MachineIntegerType::UInt64,
-                                op: MachineBinaryOp::BitwiseAnd,
-                                left: _,
-                                right: _,
-                            },
-                            Some(left),
-                            Some(right),
-                        ) => Some(left & right),
-                        (
-                            MachineTerm::Binary {
-                                format: MachineIntegerType::UInt64,
-                                op: MachineBinaryOp::BitwiseOr,
-                                left: _,
-                                right: _,
-                            },
-                            Some(left),
-                            Some(right),
-                        ) => Some(left | right),
-                        (
-                            MachineTerm::Binary {
-                                format: MachineIntegerType::UInt64,
-                                op: MachineBinaryOp::BitwiseXor,
-                                left: _,
-                                right: _,
-                            },
-                            Some(left),
-                            Some(right),
-                        ) => Some(left ^ right),
-                        _ => None,
-                    }
-                }
-                MachineTerm::Unary {
-                    format: MachineIntegerType::UInt64,
-                    op: MachineUnaryOp::BitwiseNot,
-                    operand: value,
-                } => values
-                    .get(&(value.as_ref() as *const _ as usize))
-                    .copied()
-                    .flatten()
-                    .map(|value| !value),
-                cast_term!(UInt64From32, value) => match value.as_ref() {
-                    bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
-                    _ => values
-                        .get(&(value.as_ref() as *const _ as usize))
-                        .copied()
-                        .flatten(),
-                },
-                cast_term!(UInt64FromInt32, value) => match value.as_ref() {
-                    bits32_constant!(value) => Some((constant_u32(*value) as i32 as i64) as u64),
-                    _ => values
-                        .get(&(value.as_ref() as *const _ as usize))
-                        .copied()
-                        .flatten(),
-                },
-                cast_term!(UInt64FromInt64, value) => match value.as_ref() {
-                    int64_constant!(value) => Some(constant_i64(*value) as u64),
-                    _ => values
-                        .get(&(value.as_ref() as *const _ as usize))
-                        .copied()
-                        .flatten(),
-                },
-                _ => None,
-            };
-            values.insert(identity, value);
-            continue;
-        }
-        match term {
-            uint64_constant!(_) => pending.push((term, true)),
-            MachineTerm::Unary {
-                format: MachineIntegerType::UInt64,
-                op: MachineUnaryOp::BitwiseNot,
-                operand: value,
-            }
-            | cast_term!(UInt64From32, value)
-            | cast_term!(UInt64FromInt32, value)
-            | cast_term!(UInt64FromInt64, value) => {
-                pending.push((term, true));
-                let direct = matches!(
-                    (term, value.as_ref()),
-                    (cast_term!(UInt64From32, _), int32_constant!(_))
-                        | (cast_term!(UInt64FromInt32, _), int32_constant!(_))
-                        | (cast_term!(UInt64FromInt64, _), int64_constant!(_))
-                );
-                if !direct {
-                    pending.push((value, false));
-                }
-            }
-            crate::kernel::binary_uint64_term!(left, right) => {
-                pending.push((term, true));
-                pending.push((right, false));
-                pending.push((left, false));
-            }
-            _ => {
-                values.insert(identity, None);
-            }
-        }
-    }
-    values
 }
 
 fn pointer_index_hash(view: crate::kernel::MachineOperandView<'_>) -> Option<u64> {
@@ -2958,16 +2760,13 @@ fn bounded_term_hash(root: &MachineTerm) -> Option<u64> {
         .copied()
 }
 
-fn constant_value(term: &MachineTerm, constants: &HashMap<usize, Option<u64>>) -> Option<u64> {
-    constants
-        .get(&(term as *const MachineTerm as usize))
-        .copied()
-        .flatten()
+fn constant_value(term: Word<'_>, constants: &HashMap<WordKey, Option<u64>>) -> Option<u64> {
+    constants.get(&term.key()).copied().flatten()
 }
 
 fn add_tag<'a>(
     form: TaggedAddress<'a>,
-    right: &'a MachineTerm,
+    right: Word<'a>,
     right_constant: Option<u64>,
 ) -> TaggedAddress<'a> {
     if form.tag_constant == Some(0) {
@@ -2996,7 +2795,7 @@ fn add_tag<'a>(
     }
 }
 
-fn masked_source_tag<'a>(term: &'a MachineTerm) -> Arc<TaggedTag<'a>> {
+fn masked_source_tag<'a>(term: Word<'a>) -> Arc<TaggedTag<'a>> {
     if let Some((source, mask)) = masked_source(term) {
         Arc::new(TaggedTag::BitwiseAnd(
             Arc::new(TaggedTag::Source(source)),
@@ -3007,123 +2806,116 @@ fn masked_source_tag<'a>(term: &'a MachineTerm) -> Arc<TaggedTag<'a>> {
     }
 }
 
-fn masked_source(term: &MachineTerm) -> Option<(&MachineTerm, u64)> {
-    let MachineTerm::Binary {
+fn masked_source(term: Word<'_>) -> Option<(Word<'_>, u64)> {
+    let WordNode::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::BitwiseAnd,
         left,
         right,
-    } = term
+    } = term.node()
     else {
         return None;
     };
-    match (&**left, &**right) {
-        (source, uint64_constant!(mask)) if !matches!(source, uint64_constant!(_)) => {
-            Some((source, constant_u64(*mask)))
-        }
-        (uint64_constant!(mask), source) if !matches!(source, uint64_constant!(_)) => {
-            Some((source, constant_u64(*mask)))
-        }
+    match (left.uint64_as_const(), right.uint64_as_const()) {
+        (None, Some(mask)) => Some((left, mask)),
+        (Some(mask), None) => Some((right, mask)),
         _ => None,
     }
 }
-
 fn pointer_or_masked_tag<'a>(
-    left: &'a MachineTerm,
-    right: &'a MachineTerm,
-) -> Option<(&'a Pointer, &'a MachineTerm, u64)> {
-    let (pointer, tag) = match (left, right) {
-        (MachineTerm::PointerAddress(pointer, _), tag)
-        | (tag, MachineTerm::PointerAddress(pointer, _)) => (pointer.as_ref(), tag),
+    left: Word<'a>,
+    right: Word<'a>,
+) -> Option<(&'a Pointer, Word<'a>, u64)> {
+    let (pointer, tag) = match (left.node(), right.node()) {
+        (WordNode::PointerAddress(pointer), _) => (pointer, right),
+        (_, WordNode::PointerAddress(pointer)) => (pointer, left),
         _ => return None,
     };
     let (_, mask) = masked_source(tag)?;
-    let alignment = mask
-        .checked_add(1)
-        .filter(|value| value.is_power_of_two())?;
+    let alignment = mask.checked_add(1).filter(|v| v.is_power_of_two())?;
     Some((pointer, tag, alignment))
 }
 
 fn tagged_form<'a>(
-    term: &'a MachineTerm,
-    relation: (&'a MachineTerm, &'a MachineTerm),
+    term: Word<'a>,
+    relation: (Word<'a>, Word<'a>),
     alignments: &AlignmentIndex<'_>,
 ) -> Option<TaggedAddress<'a>> {
     tagged_form_inner(term, Some(relation), alignments)
 }
 
 fn tagged_form_from_alignment<'a>(
-    term: &'a MachineTerm,
+    term: Word<'a>,
     alignments: &AlignmentIndex<'_>,
 ) -> Option<TaggedAddress<'a>> {
     tagged_form_inner(term, None, alignments)
 }
 
 fn tagged_form_inner<'a>(
-    term: &'a MachineTerm,
-    relation: Option<(&'a MachineTerm, &'a MachineTerm)>,
+    term: Word<'a>,
+    relation: Option<(Word<'a>, Word<'a>)>,
     alignments: &AlignmentIndex<'_>,
 ) -> Option<TaggedAddress<'a>> {
     let identities = if let Some((left, right)) = relation {
-        bounded_term_hashes(&[term, left, right])?
+        word_view::hashes(&[term, left, right])?
     } else {
-        bounded_term_hashes(&[term])?
+        word_view::hashes(&[term])?
     };
     let constants = if let Some((left, right)) = relation {
-        bounded_uint64_constants(&[term, left, right])
+        word_view::constants(&[term, left, right])
     } else {
-        bounded_uint64_constants(&[term])
+        word_view::constants(&[term])
     };
     if constants.is_empty() {
         return None;
     }
     let relation_keys = relation.map(|(left, right)| {
         (
-            identities.get(&(left as *const _ as usize)).copied(),
-            identities.get(&(right as *const _ as usize)).copied(),
+            identities.get(&left.key()).copied(),
+            identities.get(&right.key()).copied(),
         )
     });
     enum Task<'a> {
-        Visit(&'a MachineTerm),
+        Visit(Word<'a>),
         FinishAdd {
-            term: &'a MachineTerm,
-            left: &'a MachineTerm,
-            right: &'a MachineTerm,
+            term: Word<'a>,
+            left: Word<'a>,
+            right: Word<'a>,
         },
         FinishAddRight {
-            term: &'a MachineTerm,
-            left: &'a MachineTerm,
+            term: Word<'a>,
+            left: Word<'a>,
         },
         FinishSubtract {
-            term: &'a MachineTerm,
-            right: &'a MachineTerm,
+            term: Word<'a>,
+            right: Word<'a>,
         },
         FinishAnd {
-            term: &'a MachineTerm,
+            term: Word<'a>,
             mask: u64,
             alignment: u64,
         },
         FinishOr {
-            term: &'a MachineTerm,
+            term: Word<'a>,
             constant: u64,
             alignment: u64,
         },
         FinishPointerOr {
-            term: &'a MachineTerm,
+            term: Word<'a>,
             pointer: &'a Pointer,
-            tag: &'a MachineTerm,
+            tag: Word<'a>,
             alignment: u64,
         },
         FinishRelation {
-            term: &'a MachineTerm,
+            term: Word<'a>,
         },
     }
 
     fn store<'a>(
-        identity: usize,
+        identity: WordKey,
         result: Option<TaggedAddress<'a>>,
-        active: &mut HashSet<usize>,
-        results: &mut HashMap<usize, Option<TaggedAddress<'a>>>,
+        active: &mut HashSet<WordKey>,
+        results: &mut HashMap<WordKey, Option<TaggedAddress<'a>>>,
         values: &mut Vec<Option<TaggedAddress<'a>>>,
     ) {
         active.remove(&identity);
@@ -3134,11 +2926,11 @@ fn tagged_form_inner<'a>(
     let mut tasks = vec![Task::Visit(term)];
     let mut values = Vec::new();
     let mut active = HashSet::new();
-    let mut results: HashMap<usize, Option<TaggedAddress<'a>>> = HashMap::new();
+    let mut results: HashMap<WordKey, Option<TaggedAddress<'a>>> = HashMap::new();
     while let Some(task) = tasks.pop() {
         match task {
             Task::Visit(current) => {
-                let identity = current as *const _ as usize;
+                let identity = current.key();
                 if let Some(result) = results.get(&identity) {
                     values.push(result.clone());
                     continue;
@@ -3148,11 +2940,11 @@ fn tagged_form_inner<'a>(
                     continue;
                 }
                 active.insert(identity);
-                match current {
-                    MachineTerm::PointerAddress(pointer, _) => store(
+                match current.node() {
+                    WordNode::PointerAddress(pointer) => store(
                         identity,
                         Some(TaggedAddress {
-                            pointer: Arc::new(pointer.as_ref().clone()),
+                            pointer: Arc::new(pointer.clone()),
                             tag: Arc::new(TaggedTag::Constant(0)),
                             tag_constant: Some(0),
                         }),
@@ -3160,7 +2952,7 @@ fn tagged_form_inner<'a>(
                         &mut results,
                         &mut values,
                     ),
-                    MachineTerm::Binary {
+                    WordNode::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::Add,
                         left,
@@ -3173,7 +2965,7 @@ fn tagged_form_inner<'a>(
                         });
                         tasks.push(Task::Visit(left));
                     }
-                    MachineTerm::Binary {
+                    WordNode::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::Subtract,
                         left,
@@ -3185,7 +2977,7 @@ fn tagged_form_inner<'a>(
                         });
                         tasks.push(Task::Visit(left));
                     }
-                    MachineTerm::Binary {
+                    WordNode::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::BitwiseAnd,
                         left,
@@ -3195,8 +2987,8 @@ fn tagged_form_inner<'a>(
                             constant_value(left, &constants),
                             constant_value(right, &constants),
                         ) {
-                            (None, Some(mask)) => (left.as_ref(), mask),
-                            (Some(mask), None) => (right.as_ref(), mask),
+                            (None, Some(mask)) => (left, mask),
+                            (Some(mask), None) => (right, mask),
                             _ => {
                                 store(identity, None, &mut active, &mut results, &mut values);
                                 continue;
@@ -3215,7 +3007,7 @@ fn tagged_form_inner<'a>(
                         });
                         tasks.push(Task::Visit(inner));
                     }
-                    MachineTerm::Binary {
+                    WordNode::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::BitwiseOr,
                         left,
@@ -3235,8 +3027,8 @@ fn tagged_form_inner<'a>(
                             constant_value(left, &constants),
                             constant_value(right, &constants),
                         ) {
-                            (None, Some(constant)) => (left.as_ref(), constant),
-                            (Some(constant), None) => (right.as_ref(), constant),
+                            (None, Some(constant)) => (left, constant),
+                            (Some(constant), None) => (right, constant),
                             _ => {
                                 store(identity, None, &mut active, &mut results, &mut values);
                                 continue;
@@ -3258,7 +3050,7 @@ fn tagged_form_inner<'a>(
                     }
                     _ if relation_keys
                         .is_some_and(|(left, _)| left == identities.get(&identity).copied())
-                        && relation.is_some_and(|(left, _)| bitvector_equal(current, left)) =>
+                        && relation.is_some_and(|(left, _)| word_view::equal(current, left)) =>
                     {
                         let (_, right) = relation.expect("relation key is present");
                         tasks.push(Task::FinishRelation { term: current });
@@ -3266,7 +3058,7 @@ fn tagged_form_inner<'a>(
                     }
                     _ if relation_keys
                         .is_some_and(|(_, right)| right == identities.get(&identity).copied())
-                        && relation.is_some_and(|(_, right)| bitvector_equal(current, right)) =>
+                        && relation.is_some_and(|(_, right)| word_view::equal(current, right)) =>
                     {
                         let (left, _) = relation.expect("relation key is present");
                         tasks.push(Task::FinishRelation { term: current });
@@ -3279,7 +3071,7 @@ fn tagged_form_inner<'a>(
                 let left_form = values.pop().flatten();
                 if let Some(form) = left_form {
                     store(
-                        term as *const _ as usize,
+                        term.key(),
                         Some(add_tag(form, right, constant_value(right, &constants))),
                         &mut active,
                         &mut results,
@@ -3293,7 +3085,7 @@ fn tagged_form_inner<'a>(
             Task::FinishAddRight { term, left } => {
                 let right_form = values.pop().flatten();
                 store(
-                    term as *const _ as usize,
+                    term.key(),
                     right_form.map(|form| add_tag(form, left, constant_value(left, &constants))),
                     &mut active,
                     &mut results,
@@ -3303,7 +3095,7 @@ fn tagged_form_inner<'a>(
             Task::FinishSubtract { term, right } => {
                 let left_form = values.pop().flatten();
                 store(
-                    term as *const _ as usize,
+                    term.key(),
                     left_form.map(|form| {
                         let right_constant = constant_value(right, &constants);
                         let tag = form.tag_constant.zip(right_constant).map_or_else(
@@ -3331,7 +3123,7 @@ fn tagged_form_inner<'a>(
             } => {
                 let form = values.pop().flatten();
                 store(
-                    term as *const _ as usize,
+                    term.key(),
                     form.and_then(|form| {
                         // A symbolic tag may itself be an explicitly masked
                         // source term.  Disjoint masks establish a zero tag
@@ -3345,12 +3137,12 @@ fn tagged_form_inner<'a>(
                         {
                             Arc::new(TaggedTag::Constant(0))
                         } else if let TaggedTag::Source(source) = form.tag.as_ref()
-                            && let MachineTerm::Binary {
+                            && let WordNode::Binary {
                                 format: MachineIntegerType::UInt64,
                                 op: MachineBinaryOp::BitwiseAnd,
                                 left,
                                 right,
-                            } = source
+                            } = source.node()
                             && let Some(source_mask) = constant_value(left, &constants)
                                 .or_else(|| constant_value(right, &constants))
                         {
@@ -3386,7 +3178,7 @@ fn tagged_form_inner<'a>(
             } => {
                 let form = values.pop().flatten();
                 store(
-                    term as *const _ as usize,
+                    term.key(),
                     form.and_then(|form| {
                         let tag = form.tag_constant.map_or_else(
                             || Arc::new(TaggedTag::BitwiseOr(form.tag, constant)),
@@ -3411,7 +3203,7 @@ fn tagged_form_inner<'a>(
                 alignment,
             } => {
                 store(
-                    term as *const _ as usize,
+                    term.key(),
                     alignments
                         .supports(pointer, alignment)
                         .then(|| TaggedAddress {
@@ -3426,13 +3218,7 @@ fn tagged_form_inner<'a>(
             }
             Task::FinishRelation { term } => {
                 let result = values.pop().flatten();
-                store(
-                    term as *const _ as usize,
-                    result,
-                    &mut active,
-                    &mut results,
-                    &mut values,
-                );
+                store(term.key(), result, &mut active, &mut results, &mut values);
             }
         }
     }
@@ -3444,12 +3230,12 @@ fn tagged_form_inner<'a>(
 /// memory history is consulted. Addition is modular, so higher tag bits do not
 /// affect this projection.
 fn pointer_tag_read_equal<'a>(
-    left: &'a MachineTerm,
-    right: &'a MachineTerm,
-    relation: Option<(&'a MachineTerm, &'a MachineTerm)>,
+    left: Word<'a>,
+    right: Word<'a>,
+    relation: Option<(Word<'a>, Word<'a>)>,
     alignments: &AlignmentIndex<'_>,
 ) -> bool {
-    let project = |term: &'a MachineTerm| {
+    let project = |term: Word<'a>| {
         let (word, mask) = masked_source(term)?;
         let alignment = mask
             .checked_add(1)
@@ -3472,7 +3258,7 @@ fn pointer_tag_read_equal<'a>(
         };
         Some(tag)
     };
-    let source = |term: &'a MachineTerm| {
+    let source = |term: Word<'a>| {
         term.uint64_as_const().map_or_else(
             || masked_source_tag(term),
             |value| Arc::new(TaggedTag::Constant(value)),
@@ -3482,39 +3268,49 @@ fn pointer_tag_read_equal<'a>(
         || project(right).is_some_and(|tag| tagged_tag_equal(&source(left), &tag))
 }
 
+fn word_comparison(
+    proposition: &Proposition,
+) -> Option<(
+    crate::kernel::machine_integer::comparison::StructuralComparisonView<'_>,
+    bool,
+)> {
+    let Proposition::ConditionIs(condition, truth) = proposition else {
+        return None;
+    };
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+    if !matches!(
+        view.format,
+        MachineIntegerType::Int64 | MachineIntegerType::UInt64
+    ) || view.relation != CompareRelation::Equal
+    {
+        return None;
+    }
+    let expected = *truth != view.negated;
+    Some((view, expected))
+}
+
 fn pointer_word_equality(
     relation: &Proposition,
     alignment_premises: &[&Proposition],
     result: &Proposition,
 ) -> bool {
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        },
-        true,
-    ) = relation
-    else {
+    let Some((relation_view, true)) = word_comparison(relation) else {
         return false;
     };
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left: goal_left,
-            right: goal_right,
-        },
-        expected,
-    ) = result
-    else {
+    let [left, right] = relation_view
+        .operands
+        .each_ref()
+        .map(|operand| Word(operand.operand_view()));
+    let Some((goal_view, expected)) = word_comparison(result) else {
         return false;
     };
-    if !charge_bitvector(left)
-        || !charge_bitvector(right)
-        || !charge_bitvector(goal_left)
-        || !charge_bitvector(goal_right)
+    let [goal_left, goal_right] = goal_view
+        .operands
+        .each_ref()
+        .map(|operand| Word(operand.operand_view()));
+    if ![left, right, goal_left, goal_right]
+        .into_iter()
+        .all(word_view::charge)
     {
         return false;
     }
@@ -3539,7 +3335,7 @@ fn pointer_word_equality(
     {
         return false;
     }
-    if *expected
+    if expected
         && pointer_tag_read_equal(goal_left, goal_right, Some((left, right)), &alignment_index)
     {
         return true;
@@ -3553,7 +3349,7 @@ fn pointer_word_equality(
         }
         _ => false,
     };
-    let structural = if *expected {
+    let structural = if expected {
         equal
     } else {
         match (
@@ -3578,19 +3374,14 @@ fn pointer_word_equality(
 }
 
 fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Proposition) -> bool {
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        },
-        expected,
-    ) = result
-    else {
+    let Some((view, expected)) = word_comparison(result) else {
         return false;
     };
-    if !charge_bitvector(left) || !charge_bitvector(right) {
+    let [left, right] = view
+        .operands
+        .each_ref()
+        .map(|operand| Word(operand.operand_view()));
+    if !word_view::charge(left) || !word_view::charge(right) {
         return false;
     }
     for premise in alignment_premises {
@@ -3614,7 +3405,7 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
     let Some(alignment_index) = alignment_index else {
         return false;
     };
-    if *expected && pointer_tag_read_equal(left, right, None, &alignment_index) {
+    if expected && pointer_tag_read_equal(left, right, None, &alignment_index) {
         return true;
     }
     let left_form = tagged_form_from_alignment(left, &alignment_index);
@@ -3627,7 +3418,7 @@ fn pointer_word_from_alignment(alignment_premises: &[&Proposition], result: &Pro
     };
     let equal = pointer_equal(left_form.pointer.as_ref(), right_form.pointer.as_ref())
         && tagged_tag_equal(&left_form.tag, &right_form.tag);
-    if *expected {
+    if expected {
         equal
     } else {
         pointer_equal(left_form.pointer.as_ref(), right_form.pointer.as_ref())
@@ -4361,7 +4152,11 @@ mod tests {
         }
         let alignments = AlignmentIndex::new(&[]).expect("empty alignment index");
         let (form, work) = crate::instrumentation::measure_deterministic_work(|| {
-            tagged_form(&variable, (&variable, &tagged), &alignments)
+            tagged_form(
+                (&variable).into(),
+                ((&variable).into(), (&tagged).into()),
+                &alignments,
+            )
         });
         let nodes = form
             .as_ref()
@@ -4858,6 +4653,51 @@ mod tests {
     }
 
     #[test]
+    fn retained_masked_read_equation_checks_native_pointer_goal() {
+        use crate::kernel::MachineOperandView;
+        let _session = crate::kernel::VerificationSession::enter();
+        let next = pointer(PointerOffsetTerm::Constant(0));
+        let address = MachineTerm::pointer_address(next.clone());
+        let raw = MachineTerm::MemoryLoad(
+            crate::kernel::intern_c_memory(crate::kernel::CMemory::new()),
+            Box::new(next.clone()),
+            crate::kernel::LoadKind::Bits64,
+        );
+        let tagged = MachineTerm::uint64_add(
+            address.clone(),
+            MachineTerm::uint64_bitwise_and(raw.clone(), MachineTerm::uint64_constant(1)),
+        );
+        let roots = [&raw, &tagged].map(|word| {
+            crate::kernel::KernelTerm::retained_machine_operand(
+                MachineIntegerType::UInt64,
+                MachineOperandView::Legacy(word),
+            )
+        });
+        let relation = Proposition::ConditionIs(
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::UInt64,
+                CompareRelation::Equal,
+                roots.each_ref().map(MachineOperandView::Shared),
+            ),
+            true,
+        );
+        let alignment = Proposition::ConditionIs(ConditionTerm::pointer_aligned(next, 8), true);
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::uint64_equal(
+                address,
+                MachineTerm::uint64_bitwise_and(raw, MachineTerm::uint64_constant(!1)),
+            ),
+            true,
+        );
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        assert!(pointer_word_equality(&relation, &[&alignment], &goal));
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
+    }
+
+    #[test]
     fn tagged_word_certificate_requires_exact_alignment() {
         let next = pointer(PointerOffsetTerm::Constant(0));
         let address = MachineTerm::PointerAddress(
@@ -5302,8 +5142,12 @@ mod tests {
                     right: Box::new(MachineTerm::Variable(crate::kernel::Variable(300 + index))),
                 };
             }
-            let form = tagged_form(&variable, (&variable, &tagged), &alignments)
-                .expect("the relation should provide a tagged form");
+            let form = tagged_form(
+                (&variable).into(),
+                ((&variable).into(), (&tagged).into()),
+                &alignments,
+            )
+            .expect("the relation should provide a tagged form");
             let nodes = tagged_tag_nodes(&form.tag);
             assert_eq!(nodes, depth as usize);
             assert!(nodes >= previous);

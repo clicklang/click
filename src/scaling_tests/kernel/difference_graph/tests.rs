@@ -427,3 +427,49 @@ fn retained_rounding_bounds_follow_the_dividend_chain_linearly() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn retained_conditional_sum_bounds_preserve_native_intervals() {
+    use crate::kernel::KernelTermExport;
+    use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
+    let mut costs = Vec::new();
+    for size in [16, 32, 64] {
+        let guard =
+            ConditionTerm::uint64_less_than(variable(1_019_001), MachineTerm::uint64_constant(10));
+        let choice = MachineTerm::if_then_else(
+            guard.clone(),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_constant(1),
+        );
+        let mut sum = MachineTerm::uint64_constant(0);
+        for _ in 0..size {
+            sum = MachineTerm::uint64_add(sum, choice.clone());
+        }
+        let bound = |limit| {
+            ConditionTerm::uint64_less_equal(sum.clone(), MachineTerm::uint64_constant(limit))
+        };
+        let native = bound(size);
+        let retained = retained_arithmetic_comparison(&native).unwrap();
+        let too_tight = retained_arithmetic_comparison(&bound(size - 1)).unwrap();
+        let zero = retained_arithmetic_comparison(&bound(0)).unwrap();
+        let parent = DifferenceGraph::new();
+        assert_eq!(parent.decide(&native), Some(true));
+        let exports = KernelTermExport::machine_export_count();
+        let (answer, cost) =
+            crate::instrumentation::measure_deterministic_work(|| parent.decide(&retained));
+        assert_eq!(answer, Some(true));
+        assert_eq!(parent.decide(&too_tight), None);
+        assert_eq!(parent.decide(&zero), None);
+        let mut child = parent.clone();
+        child.assume_condition(&guard, true);
+        assert_eq!(child.decide(&zero), Some(true));
+        assert_eq!(parent.decide(&zero), None);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push(cost);
+    }
+    assert!(costs[0] > 0);
+    assert!(
+        costs.windows(2).all(|pair| pair[1] <= pair[0] * 3 + 32),
+        "{costs:?}"
+    );
+}

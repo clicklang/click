@@ -438,55 +438,34 @@ fn proposition_mentions_pointer(
     target: &crate::kernel::Pointer,
 ) -> bool {
     let mut pending = vec![proposition];
+    let mut shared_seen = std::collections::HashSet::new();
     while let Some(current) = pending.pop() {
         match current {
             Proposition::ConditionIs(condition, _) => {
-                let mut terms = Vec::new();
-                match condition {
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                        relation: CompareRelation::Equal,
-                        left,
-                        right,
-                    }
-                    | ConditionTerm::Compare {
-                        format: MachineIntegerType::Int64,
-                        relation: CompareRelation::Equal,
-                        left,
-                        right,
-                    }
-                    | ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessThan,
-                        left,
-                        right,
-                    }
-                    | ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessEqual,
-                        left,
-                        right,
-                    }
-                    | ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::GreaterThan,
-                        left,
-                        right,
-                    }
-                    | ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::GreaterEqual,
-                        left,
-                        right,
-                    } => {
-                        terms.push(left.as_ref());
-                        terms.push(right.as_ref());
-                    }
-                    _ => {}
-                }
-                for term in terms {
-                    if term_mentions_pointer(term, target) {
-                        return true;
+                if let Some(view) =
+                    crate::kernel::machine_integer::comparison::structural_comparison_view(
+                        condition,
+                    )
+                {
+                    for operand in &view.operands {
+                        let mut pending = vec![operand.operand_view()];
+                        while let Some(term) = pending.pop() {
+                            if let crate::kernel::MachineOperandView::Shared(root) = term
+                                && !shared_seen.insert(root.id())
+                            {
+                                continue;
+                            }
+                            if crate::instrumentation::deadline_exceeded_with_work(1) {
+                                return false;
+                            }
+                            if let Some((_, _, children)) = term.binary() {
+                                pending.extend(children);
+                            } else if let Some(leaf) = term.read_source()
+                                && term_mentions_pointer(&leaf, target)
+                            {
+                                return true;
+                            }
+                        }
                     }
                 }
             }
@@ -692,52 +671,28 @@ fn is_unsigned64_bound(p: &Proposition) -> bool {
     )
 }
 fn is_bitvector64_equality(p: &Proposition) -> bool {
-    matches!(
-        p,
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: _,
-                right: _
-            },
-            true
-        )
-    )
+    word_comparison_truth(p) == Some(true)
 }
-
 fn is_bitvector64_goal(p: &Proposition) -> bool {
-    matches!(
-        p,
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: _,
-                right: _
-            },
-            _
-        )
-    )
+    word_comparison_truth(p).is_some()
 }
-
-/// Alignment facts are also encoded as 64-bit equalities.  They are evidence
-/// for the tagged-word rule, never the recorded word relation consumed by
-/// `PointerWordEquality`.
+fn word_comparison_truth(p: &Proposition) -> Option<bool> {
+    let Proposition::ConditionIs(condition, truth) = p else {
+        return None;
+    };
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+    (matches!(
+        view.format,
+        MachineIntegerType::Int64 | MachineIntegerType::UInt64
+    ) && view.relation == CompareRelation::Equal)
+        .then_some(*truth != view.negated)
+}
+/// Alignment equalities are evidence, not the recorded tagged-word relation.
 fn is_word_equality(p: &Proposition) -> bool {
-    let Proposition::ConditionIs(
-        condition @ ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left: _,
-            right: _,
-        },
-        true,
-    ) = p
-    else {
+    let Proposition::ConditionIs(condition, _) = p else {
         return false;
     };
-    alignment_shape(condition).is_none()
+    word_comparison_truth(p) == Some(true) && alignment_shape(condition).is_none()
 }
 fn float_finite_premise(goal: &Proposition, premises: &[Proposition]) -> Option<usize> {
     let Proposition::ConditionIs(condition, _) = goal else {

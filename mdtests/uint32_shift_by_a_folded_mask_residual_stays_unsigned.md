@@ -14,5 +14,5 @@ theorem cast_shift(x: uint64, y: uint32) {
 ```
 
 ```expect
-fail: goal: 2684354560u32 == y
+fail: goal: 2684354560 == to_integer(y)
 ```
