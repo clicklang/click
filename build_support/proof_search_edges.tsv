@@ -190,7 +190,6 @@ src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_initializati
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::verify_loop_initialization_pure_proof	driver	2
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::verify_one_loop_preservation_proof	driver	3
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::verify_one_loop_preservation_proof	try_solve_closure_with_surfaces	1
-src/surface/proof/execution_planning/transition_certification.rs	operation	::certified_transitions_from_execution	derive_atomic_proposition	1
 src/surface/proof/fixed_state_proofs/fact_transport.rs	mixed	::plan_explicit_fact_transport	derive_proposition	2
 src/surface/proof/fixed_state_proofs/fact_transport.rs	operation	::certified_fact_transport_reaches	derive_atomic_proposition	1
 src/surface/proof/fixed_state_proofs/fact_transport.rs	operation	::check_fixed_state_fact_transport_using_facts_inner	derive_atomic_proposition	1

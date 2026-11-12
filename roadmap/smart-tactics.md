@@ -64,12 +64,12 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **632 reference records**: 7 legacy bridges, 22 callers
-of those bridges, 7 operation references, 0 operation-to-driver references,
+The frozen inventory has **631 reference records**: 7 legacy bridges, 22 callers
+of those bridges, 6 operation references, 0 operation-to-driver references,
 19 mixed references, 121 driver references, 448 search references, 6 presentation
 references and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
-classifies every mixed and operation-to-driver record and groups all 7
+classifies every mixed and operation-to-driver record and groups all 6
 operation references. Registering the signed-definedness and unsigned-order
 helpers exposes four existing search-only caller records; it adds no runtime work.
 
