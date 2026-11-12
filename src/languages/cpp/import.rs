@@ -184,7 +184,8 @@ fn lock_entry(
 ) -> Result<Entry, String> {
     let first = locks.values().next().ok_or("a C++ unit lists a source")?;
     if locks.values().any(|lock| {
-        lock.config_sha256 != first.config_sha256 || lock.frontend_identity != first.frontend_identity
+        lock.config_sha256 != first.config_sha256
+            || lock.frontend_identity != first.frontend_identity
     }) {
         return Err(
             "the sources of a C++ unit were prepared from different descriptions or exporters"
