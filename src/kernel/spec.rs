@@ -5925,23 +5925,31 @@ fn evaluate_spec_expression_dispatch(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
-    let mut right_operands = Vec::new();
+    let mut steps = Vec::new();
     let mut current = expression;
-    while let SpecExpression::Add(left, right) = current {
-        if !matches!(right.as_ref(), SpecExpression::Value(_)) {
-            break;
+    loop {
+        match current {
+            SpecExpression::Add(left, right)
+                if matches!(right.as_ref(), SpecExpression::Value(_)) =>
+            {
+                steps.push(SpecScalarChainStep::Add(right));
+                current = left;
+            }
+            SpecExpression::Cast(operand, target)
+                if !budget.pointer_cast_operand
+                    && matches!(
+                        target,
+                        CType::Int32 | CType::UInt32 | CType::Int64 | CType::UInt64
+                    ) =>
+            {
+                steps.push(SpecScalarChainStep::Cast(*target));
+                current = operand;
+            }
+            _ => break,
         }
-        right_operands.push(right.as_ref());
-        current = left;
     }
-    if right_operands.len() > 1 {
-        return evaluate_spec_add_chain_paths_in(
-            scope,
-            current,
-            &right_operands,
-            assumptions,
-            budget,
-        );
+    if steps.len() > 1 {
+        return evaluate_spec_add_chain_paths_in(scope, current, &steps, assumptions, budget);
     }
     // Only the explicit cast operand reads a complete C representation.
     // Pure functions, model fields and mathematical lets remain numeric.
@@ -5984,10 +5992,57 @@ fn evaluate_spec_expression_dispatch(
         .collect())
 }
 
+enum SpecScalarChainStep<'a> {
+    Add(&'a SpecExpression),
+    Cast(CType),
+}
+
+fn apply_spec_cast(
+    value: CValue,
+    target_type: CType,
+    facts: ExecutionFacts,
+    mut obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<CExpressionPath> {
+    // Rule C1: a specification `Bool`'s integer value at the
+    // target's format, `b as F`.
+    if let CValue::Bool(term) = &value
+        && let Some(condition) = term.bool_cast_operand()
+        && let Some(format) = MachineIntegerType::from_c_type(target_type)
+        && let Some(cast) = c_value_from_bitvector_term(
+            target_type,
+            MachineTerm::bool_cast(format, condition.clone()),
+        )
+    {
+        return vec![CExpressionPath {
+            outcome: CExpressionOutcome::Value(cast),
+            facts,
+            obligations,
+        }];
+    }
+    // A specification's cast is C's conversion, modulo 2^N,
+    // as the same cast in C source is; `to_T(...)` is the
+    // checked conversion.
+    let outcome = cast_c_value_to_type(
+        value,
+        target_type,
+        crate::kernel::eval::IntegerConversion::Modular,
+        &mut obligations,
+        assumptions,
+    )
+    .map(CExpressionOutcome::Value)
+    .unwrap_or_else(CExpressionOutcome::RuntimeError);
+    vec![CExpressionPath {
+        outcome,
+        facts,
+        obligations,
+    }]
+}
+
 fn evaluate_spec_add_chain_paths_in(
     scope: SpecScope<'_>,
     base: &SpecExpression,
-    right_operands: &[&SpecExpression],
+    steps: &[SpecScalarChainStep<'_>],
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
@@ -5998,9 +6053,35 @@ fn evaluate_spec_add_chain_paths_in(
         assumptions,
         budget,
     )?;
-    for right in right_operands.iter().rev() {
+    for step in steps.iter().rev() {
         budget.consume_expression_step()?;
         let mut next = Vec::new();
+        let right = match step {
+            SpecScalarChainStep::Cast(target) => {
+                for path in paths {
+                    if !budget.machine_result_production_disabled
+                        && matches!(path.value, SpecValue::Shared(_))
+                        && path.value.c_type() == *target
+                    {
+                        next.push(path);
+                    } else {
+                        next.extend(spec_value_paths_in(
+                            apply_spec_cast(
+                                path.value.into_native(),
+                                *target,
+                                path.facts,
+                                path.obligations,
+                                assumptions,
+                            ),
+                            budget,
+                        ));
+                    }
+                }
+                paths = next;
+                continue;
+            }
+            SpecScalarChainStep::Add(right) => *right,
+        };
         for left_path in paths {
             let right_assumptions = assumptions_with_path_context(
                 assumptions,
@@ -7074,45 +7155,14 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         SpecExpression::Cast(expression, target_type) => {
             let saved = budget.pointer_cast_operand;
             budget.pointer_cast_operand = target_type.is_pointer() || saved;
-            let result = evaluate_spec_scalar_unary_paths_in(
+            let result = evaluate_spec_scalar_unary_paths_retaining_type_in(
                 SpecScope::new(state, loop_entry_state, algebraic_bindings),
                 expression,
                 assumptions,
                 budget,
-                |value, facts, mut obligations| {
-                    // Rule C1: a specification `Bool`'s integer value at the
-                    // target's format, `b as F`.
-                    if let CValue::Bool(term) = &value
-                        && let Some(condition) = term.bool_cast_operand()
-                        && let Some(format) = MachineIntegerType::from_c_type(*target_type)
-                        && let Some(cast) = c_value_from_bitvector_term(
-                            *target_type,
-                            MachineTerm::bool_cast(format, condition.clone()),
-                        )
-                    {
-                        return vec![CExpressionPath {
-                            outcome: CExpressionOutcome::Value(cast),
-                            facts,
-                            obligations,
-                        }];
-                    }
-                    // A specification's cast is C's conversion, modulo 2^N,
-                    // as the same cast in C source is; `to_T(...)` is the
-                    // checked conversion.
-                    let outcome = cast_c_value_to_type(
-                        value,
-                        *target_type,
-                        crate::kernel::eval::IntegerConversion::Modular,
-                        &mut obligations,
-                        assumptions,
-                    )
-                    .map(CExpressionOutcome::Value)
-                    .unwrap_or_else(CExpressionOutcome::RuntimeError);
-                    vec![CExpressionPath {
-                        outcome,
-                        facts,
-                        obligations,
-                    }]
+                Some(*target_type),
+                |value, facts, obligations| {
+                    apply_spec_cast(value, *target_type, facts, obligations, assumptions)
                 },
             );
             budget.pointer_cast_operand = saved;
@@ -8324,6 +8374,26 @@ fn evaluate_spec_scalar_unary_paths_in(
     budget: &mut SpecEvaluation<'_>,
     apply: impl Fn(CValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    evaluate_spec_scalar_unary_paths_retaining_type_in(
+        scope,
+        expression,
+        assumptions,
+        budget,
+        None,
+        apply,
+    )
+}
+
+// A same-format cast changes neither a retained machine value nor its debts.
+// Other unary operations still cross their explicit native result boundary.
+fn evaluate_spec_scalar_unary_paths_retaining_type_in(
+    scope: SpecScope<'_>,
+    expression: &SpecExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+    retained_type: Option<CType>,
+    apply: impl Fn(CValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
+) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
     for path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
@@ -8331,6 +8401,13 @@ fn evaluate_spec_scalar_unary_paths_in(
         assumptions,
         budget,
     )? {
+        if !budget.machine_result_production_disabled
+            && matches!(path.value, SpecValue::Shared(_))
+            && retained_type == Some(path.value.c_type())
+        {
+            paths.push(path);
+            continue;
+        }
         paths.extend(spec_value_paths_in(
             apply(path.value.into_native(), path.facts, path.obligations),
             budget,

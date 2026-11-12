@@ -1144,6 +1144,51 @@ pub(crate) fn exact_fact_is_available(
     available.exact_available(required)
 }
 
+/// Check an explicit list of theorem premises or checked conclusions.
+/// Native/shared equality aliases belong at these explicit checking boundaries;
+/// exposing them to general candidate matching creates new search branches.
+/// Traverse each listed conjunction once, without rebuilding a fact context.
+pub(crate) fn listed_comparison_fact_is_available(
+    required: &Proposition,
+    available: &[Proposition],
+) -> bool {
+    let mut pending = available.iter().collect::<Vec<_>>();
+    while let Some(fact) = pending.pop() {
+        if fact == required {
+            return true;
+        }
+        if let Proposition::And(left, right) = fact {
+            pending.extend([right.as_ref(), left.as_ref()]);
+            continue;
+        }
+        if exact_fact_contains_conjunct(fact, required) {
+            return true;
+        }
+        let flatten = crate::kernel::spec::proposition_as_single_condition;
+        if let (Some((a, av)), Some((b, bv))) = (flatten(fact), flatten(required))
+            && retained_comparison_equivalent(&a, av, &b, bv, true)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Complete an explicit theorem application across an equality representation
+/// boundary. Order claims retain their existing explicit assumption step.
+pub(crate) fn listed_equality_fact_is_available(
+    required: &Proposition,
+    available: &[Proposition],
+) -> bool {
+    let Some((condition, _)) = crate::kernel::spec::proposition_as_single_condition(required)
+    else {
+        return false;
+    };
+    crate::kernel::machine_integer::comparison::structural_comparison_view(&condition)
+        .is_some_and(|view| view.relation == CompareRelation::Equal)
+        && listed_comparison_fact_is_available(required, available)
+}
+
 /// Structural proposition equality whose condition leaves are decided by the
 /// kernel's snapshot bridge: two forms of one compound fact whose load
 /// atoms carry different certified snapshots. Structure must match exactly,
@@ -1374,11 +1419,12 @@ fn polarity_equivalent_by(
     // A retained order observation and its native comparison are the same typed
     // claim. Read their syntax identities; never export a shared operand or
     // consult proof facts to recover the native spelling.
-    if retained_order_comparison_equivalent(
+    if retained_comparison_equivalent(
         &left_condition,
         left_value,
         &right_condition,
         right_value,
+        false,
     ) {
         return true;
     }
@@ -1391,14 +1437,15 @@ fn polarity_equivalent_by(
     )
 }
 
-/// Exact written order direction and polarity, across native/shared carriers.
+/// Exact written comparison direction and polarity, across native/shared carriers.
 /// Native arithmetic imports reuse their syntax memo; shared keys retain IDs.
 /// Thus repeated growing shared queries do not revisit the expression DAG.
-fn retained_order_comparison_equivalent(
+fn retained_comparison_equivalent(
     left: &ConditionTerm,
     left_value: bool,
     right: &ConditionTerm,
     right_value: bool,
+    include_equality: bool,
 ) -> bool {
     use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey;
     use crate::kernel::machine_integer::comparison::structural_comparison_view;
@@ -1416,17 +1463,33 @@ fn retained_order_comparison_equivalent(
     ) else {
         return false;
     };
-    // Only order guards are migrated here. Equality matching has separate
-    // admission and search paths; accepting additional equalities here can
-    // introduce new automatic rewrite/transport branches.
-    if left.relation == CompareRelation::Equal
-        || left.format != right.format
-        || left.relation != right.relation
+    // Automatic matching retains its existing order-only bridge. Equality
+    // aliases are consumed by explicit listed-premise checking below, not by
+    // speculative rewrite/transport candidate generation.
+    if left.relation == CompareRelation::Equal && !include_equality {
+        return false;
+    }
+    if left.relation != right.relation
         || (left_value ^ left.negated) != (right_value ^ right.negated)
     {
         return false;
     }
-    let format = left.format;
+    // Equality compares words, including their negated spellings; signedness
+    // only distinguishes order claims. The source and requested operands must
+    // still have exactly the same syntax at the same width.
+    let format = if left.relation == CompareRelation::Equal
+        && left.format.format().bits() == right.format.format().bits()
+    {
+        match left.format.format().bits() {
+            32 => MachineIntegerType::Int32,
+            64 => MachineIntegerType::Int64,
+            _ => return false,
+        }
+    } else if left.format == right.format {
+        left.format
+    } else {
+        return false;
+    };
     left.operands.iter().zip(&right.operands).all(|(a, b)| {
         let (a, b) = (a.operand_view(), b.operand_view());
         // A variable is its name, and cannot have the syntax of a compound
@@ -1932,11 +1995,11 @@ mod tests {
         let native = ConditionTerm::signed_less_than(x, y);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..32 {
-                assert!(retained_order_comparison_equivalent(
-                    &native, true, &retained, true
+                assert!(retained_comparison_equivalent(
+                    &native, true, &retained, true, false
                 ));
-                assert!(!retained_order_comparison_equivalent(
-                    &native, false, &retained, true
+                assert!(!retained_comparison_equivalent(
+                    &native, false, &retained, true, false
                 ));
             }
         });
@@ -1947,7 +2010,39 @@ mod tests {
     }
 
     #[test]
-    fn exact_premises_match_retained_machine_orders() {
+    fn listed_remainder_disequality_does_not_expand_general_candidate_matching() {
+        use super::*;
+        use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
+        let remainder = MachineTerm::machine_binary(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Remainder,
+            MachineTerm::Variable(Variable(1005290)),
+            MachineTerm::constant(2),
+        );
+        let native = ConditionTerm::equal(remainder, MachineTerm::constant(0));
+        let shared = retained_arithmetic_comparison(&native).unwrap();
+        let written = Proposition::ConditionIs(native, false);
+        let retained = Proposition::ConditionIs(shared.clone(), false);
+        assert!(!exact_fact_is_available(
+            &written,
+            std::slice::from_ref(&retained)
+        ));
+        assert!(listed_comparison_fact_is_available(
+            &written,
+            std::slice::from_ref(&retained)
+        ));
+        assert!(listed_comparison_fact_is_available(
+            &retained,
+            std::slice::from_ref(&written)
+        ));
+        assert!(!listed_comparison_fact_is_available(
+            &Proposition::ConditionIs(shared, true),
+            &[written]
+        ));
+    }
+
+    #[test]
+    fn exact_premises_match_retained_machine_comparisons() {
         use super::*;
         use crate::kernel::MachineOperandView as V;
         use crate::kernel::machine_integer::comparison::condition_for_operand_views;
@@ -1968,7 +2063,11 @@ mod tests {
                 .unwrap();
             let bound = constant(17);
             let exports = KernelTermExport::machine_export_count();
-            for relation in [CompareRelation::LessThan, CompareRelation::LessEqual] {
+            for relation in [
+                CompareRelation::Equal,
+                CompareRelation::LessThan,
+                CompareRelation::LessEqual,
+            ] {
                 let written = Proposition::ConditionIs(
                     ConditionTerm::machine_compare(format, relation, native.clone(), bound.clone()),
                     true,
@@ -1980,11 +2079,19 @@ mod tests {
                 );
                 let required = Proposition::ConditionIs(retained.clone(), true);
                 assert!(
-                    exact_fact_is_available(&required, &[written.clone()]),
+                    listed_comparison_fact_is_available(&required, &[written.clone()]),
                     "{format:?} {relation:?}: {required:?} versus {written:?}"
                 );
-                assert!(exact_fact_is_available(&written, &[required]));
-                assert!(!exact_fact_is_available(
+                assert!(listed_comparison_fact_is_available(&written, &[required]));
+                let negative_written = match &written {
+                    Proposition::ConditionIs(c, _) => Proposition::ConditionIs(c.clone(), false),
+                    _ => unreachable!(),
+                };
+                assert!(listed_comparison_fact_is_available(
+                    &Proposition::ConditionIs(retained.clone(), false),
+                    &[negative_written]
+                ));
+                assert!(!listed_comparison_fact_is_available(
                     &Proposition::ConditionIs(retained, false),
                     &[written.clone()]
                 ));
@@ -1993,7 +2100,7 @@ mod tests {
                     relation,
                     [V::Shared(&root), V::Legacy(&constant(18))],
                 );
-                assert!(!exact_fact_is_available(
+                assert!(!listed_comparison_fact_is_available(
                     &Proposition::ConditionIs(changed, true),
                     &[written]
                 ));

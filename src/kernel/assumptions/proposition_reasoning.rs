@@ -1789,17 +1789,9 @@ impl SelectedFacts<'_> {
                 AtomicPropositionDerivationEvidence::ForallInt32Instantiation(Box::new(evidence))
             });
         let pointer_word_evidence = match proposition {
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    left,
-                    right,
-                },
-                value,
-            ) => {
+            Proposition::ConditionIs(condition, value) => {
                 let mut used = crate::kernel::eval::pointer_tags::UsedFacts::new();
-                self.decide_pointer_word_equality_citing(left, right, &mut used)
+                self.decide_pointer_comparison_citing(condition, &mut used)
                     .filter(|decided| decided == value && used.complete)
                     .map(|_| {
                         AtomicPropositionDerivationEvidence::PointerWord(Box::new(
@@ -1915,16 +1907,7 @@ impl SelectedFacts<'_> {
         let domain = crate::kernel::machine_integer::definedness::range_domain_query(proposition)
             .filter(|query| query.format == MachineIntegerType::Int32);
         if let AtomicPropositionDerivationEvidence::PointerWord(evidence) = evidence {
-            let Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    left,
-                    right,
-                },
-                value,
-            ) = proposition
-            else {
+            let Proposition::ConditionIs(condition, value) = proposition else {
                 return false;
             };
             if evidence
@@ -1941,8 +1924,7 @@ impl SelectedFacts<'_> {
                     context.assume_proposition(premise.clone())
                 });
             let mut used = crate::kernel::eval::pointer_tags::UsedFacts::new();
-            return premises.decide_pointer_word_equality_citing(left, right, &mut used)
-                == Some(*value);
+            return premises.decide_pointer_comparison_citing(condition, &mut used) == Some(*value);
         }
         if let AtomicPropositionDerivationEvidence::PointerAlignment(evidence) = evidence {
             let Proposition::ConditionIs(condition, value) = proposition else {
@@ -3975,6 +3957,30 @@ impl PureFactContext {
             }
         }
 
+        // A retained comparison has the same transport rules as its native
+        // spelling. Only the two selected operand pairs are inspected.
+        if !(matches!(fact, ConditionTerm::Compare { .. })
+            && matches!(target, ConditionTerm::Compare { .. }))
+            && let (Some(a), Some(b)) = (
+                crate::kernel::machine_integer::comparison::comparison_view(fact, true),
+                crate::kernel::machine_integer::comparison::comparison_view(target, true),
+            )
+            && a.format.format().bits() == 32
+            && b.format.format().bits() == 32
+            && a.relation == b.relation
+        {
+            use crate::kernel::machine_integer::Relation;
+            let equality = matches!(a.relation, Relation::Equal | Relation::NotEqual);
+            if equality || a.format == b.format {
+                let [al, ar] = a.operands.each_ref().map(|v| v.operand_view());
+                let [bl, br] = b.operands.each_ref().map(|v| v.operand_view());
+                let same = |l, r| self.bitvector_terms_equal_for_transport_views(l, r);
+                if same(al, bl) && same(ar, br) || equality && same(al, br) && same(ar, bl) {
+                    return true;
+                }
+            }
+        }
+
         match (fact, target) {
             (
                 ConditionTerm::IntegerEqual(fact_left, fact_right),
@@ -5777,6 +5783,49 @@ mod shared_domain_evidence_tests {
 mod shared_wide_order_evidence_tests {
     use super::*;
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    #[test]
+    fn shared_pointer_word_evidence_replays_only_its_selected_relation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let x = MachineTerm::Variable(Variable(992570));
+        let tagged = MachineTerm::uint64_add(
+            MachineTerm::pointer_address(Pointer::symbolic(Variable(992571))),
+            MachineTerm::uint64_constant(1),
+        );
+        let source = Proposition::ConditionIs(ConditionTerm::uint64_equal(x.clone(), tagged), true);
+        let context = SelectedFacts::from_propositions(&[source]);
+        let next = MachineTerm::uint64_add(x.clone(), MachineTerm::uint64_constant(1));
+        let roots = [&x, &next].map(|term| {
+            KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(term))
+        });
+        let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            format,
+            CompareRelation::Equal,
+            roots.each_ref().map(MachineOperandView::Shared),
+        );
+        let goal = Proposition::ConditionIs(condition.clone(), false);
+        let exports = KernelTermExport::machine_export_count();
+        let (Some(evidence), id) = context.proves_atomic_for_derivation_with_id(&goal, true) else {
+            panic!("pointer-word evidence");
+        };
+        assert!(matches!(
+            evidence,
+            AtomicPropositionDerivationEvidence::PointerWord(_)
+        ));
+        assert!(context.checks_atomic_derivation(&goal, true, id, &evidence));
+        assert!(
+            !SelectedFacts::from_propositions(&[])
+                .checks_atomic_derivation(&goal, true, id, &evidence)
+        );
+        assert!(!context.checks_atomic_derivation(
+            &Proposition::ConditionIs(condition, true),
+            true,
+            id,
+            &evidence
+        ));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
 
     #[test]
     fn order_evidence_keeps_shared_endpoints_and_exact_polarity_sources() {

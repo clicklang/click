@@ -17,6 +17,7 @@ thread_local! {
 
 pub(crate) fn clear_shared_machine_variable_cache() {
     super::operand_correspondence::clear();
+    super::observation_identity::clear();
     clear_shared_value_readings();
     KernelTerm::clear_cast_checks();
     SHARED_MACHINE_CARRIERS.with(|cache| cache.borrow_mut().clear());
@@ -738,6 +739,31 @@ impl<'a> MachineOperandView<'a> {
 
     /// The legacy int64 root-width range, without expanding a shared cast or
     /// arithmetic operand. Generic casts deliberately retain their old refusal.
+    /// A root-local unsigned bound, shared by native comparison constructors
+    /// and retained shift domains. It never consults facts or walks a prefix.
+    pub(crate) fn unsigned32_upper_bound(self) -> u32 {
+        if let Some(value) = self.literal().and_then(|value| value.constant32()) {
+            return value;
+        }
+        if let Some((format, MachineBinaryOp::BitwiseAnd, [a, b])) = self.binary()
+            && format.format().bits() == 32
+        {
+            return [a, b]
+                .into_iter()
+                .find_map(|operand| operand.literal().and_then(|v| v.constant32()))
+                .unwrap_or(u32::MAX);
+        }
+        if let Some((MachineCastSpelling::UInt32From64, _, _, operand)) = self.cast()
+            && let Some((MachineIntegerType::UInt64, MachineBinaryOp::ShiftRight, [_, count])) =
+                operand.binary()
+            && let Some(MachineTerm::Constant { bits, .. }) = count.literal()
+            && bits < 64
+        {
+            return (u64::MAX >> bits as u32).min(u32::MAX as u64) as u32;
+        }
+        u32::MAX
+    }
+
     pub(crate) fn int64_width_interval(self) -> Option<(i64, i64)> {
         use crate::kernel::MachineCastSpelling as E;
         if let Some(int64_constant!(value)) = self.literal() {

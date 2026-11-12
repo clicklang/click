@@ -566,6 +566,16 @@ impl<'a> Query<'a> {
         result
     }
     fn interval(&mut self, domain: Domain, term: V<'_>) -> (i128, i128) {
+        // Opaque domain leaves retain the native conditional/fold rules.
+        // The native reader does not report individual cache dependencies, so
+        // invalidate this query's cacheability just as for an explicit leaf.
+        let term = match term {
+            V::Shared(root) => root
+                .machine_conversion_leaf()
+                .map(V::Legacy)
+                .unwrap_or(term),
+            term => term,
+        };
         if let V::Legacy(term) = term {
             self.uncacheable();
             return self.graph.term_interval(domain, term);

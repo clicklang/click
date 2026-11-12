@@ -3601,3 +3601,93 @@ fn compact_run_partial_store_checks_overlapping_value_widths() {
         .1
     );
 }
+
+#[test]
+fn wide_store_comparisons_keep_retained_arithmetic_and_exact_sources() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, MachineOperandView,
+        SharedMachineIntegerTerm,
+    };
+    for unsigned in [false, true] {
+        let format = if unsigned {
+            MachineIntegerType::UInt64
+        } else {
+            MachineIntegerType::Int64
+        };
+        let mut previous_work = None;
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(999_300));
+            let one = KernelTerm::retained_native_machine_operand(
+                format,
+                &MachineTerm::int64_constant(1),
+            );
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Subtract,
+                    [root, one.clone()],
+                );
+            }
+            let index = SharedMachineIntegerTerm::observe_shared(format, root.clone()).unwrap();
+            let zero = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Constant(0.into()),
+            };
+            let selected = Pointer {
+                block: zero.block.clone(),
+                offset: PointerOffsetTerm::Int64Scaled {
+                    value: index,
+                    byte_width: 4,
+                    unsigned,
+                },
+            };
+            let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format,
+                CompareRelation::Equal,
+                [
+                    MachineOperandView::Shared(&root),
+                    MachineOperandView::Legacy(&MachineTerm::int64_constant(0)),
+                ],
+            );
+            let empty = PureFactContext::new();
+            let same = empty.clone().assume_condition(condition.clone(), true);
+            let different = empty.clone().assume_condition(condition, false);
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..4 {
+                    assert!(
+                        crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &zero, &selected, &different
+                        )
+                    );
+                    assert!(
+                        crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &selected, &zero, &different
+                        )
+                    );
+                    assert!(
+                        !crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &zero, &selected, &empty
+                        )
+                    );
+                    assert!(
+                        !crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &zero, &selected, &same
+                        )
+                    );
+                }
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            // Sixteen selected queries may walk the selected arithmetic;
+            // quadrupling that arithmetic must not cause superlinear work.
+            if let Some(previous) = previous_work {
+                assert!(
+                    work <= previous * 5,
+                    "size={size}, work={work}, previous={previous}"
+                );
+            }
+            previous_work = Some(work);
+        }
+    }
+}

@@ -5966,7 +5966,15 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
         SpecDefinitions::new(&predicates, &functions),
     )
     .unwrap();
-    assert_eq!(lowered, original, "{printed}");
+    let Proposition::ConditionIs(condition, truth) = &original else {
+        unreachable!()
+    };
+    let retained = Proposition::ConditionIs(
+        crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(condition)
+            .unwrap(),
+        *truth,
+    );
+    assert_eq!(lowered, retained, "{printed}");
 }
 
 #[cfg(feature = "fast-gate")]

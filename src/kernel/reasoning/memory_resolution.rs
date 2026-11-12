@@ -685,8 +685,8 @@ pub(in crate::kernel) fn pointers_directly_distinct_for_store(
     }
     // The element indices of a common base, `int32` or 64-bit of one
     // signedness, each read by its exact comparison fact in its own format.
-    // A 64-bit equality is a native comparison, which is keyed in the
-    // orientation it was stated in, so both orientations are read.
+    // Native 64-bit equality facts keep their written orientation. Read
+    // both orientations while retaining shared query operands.
     if let Some(indices) = common_base_store_indices(left, right) {
         let denied = |swapped| {
             assumptions
@@ -2973,7 +2973,7 @@ impl StoreElementIndices {
     /// `swapped`) in the indices' own format: the key of the exact fact the
     /// store reads. An `int32` pair is compared as the Integer values of its
     /// two words, as `index_comparison` builds it; a 64-bit pair as the
-    /// native comparison its stated fact lowers to, such as
+    /// retained comparison its stated fact lowers to, such as
     /// `((n - 1) as uint64) != 0`.
     pub(in crate::kernel) fn comparison(
         &self,
@@ -2992,11 +2992,10 @@ impl StoreElementIndices {
                 right.operand_view(),
             );
         }
-        ConditionTerm::machine_compare(
+        crate::kernel::machine_integer::comparison::condition_for_operand_views(
             self.format,
             relation,
-            left.structural_value().clone(),
-            right.structural_value().clone(),
+            [left.operand_view(), right.operand_view()],
         )
     }
 }

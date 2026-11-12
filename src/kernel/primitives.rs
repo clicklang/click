@@ -1918,20 +1918,6 @@ macro_rules! binary_bitvector32_term {
 }
 pub(crate) use binary_bitvector32_term;
 
-/// Matches every two-operand unsigned 64-bit [`MachineTerm`] operation, binding the operands to
-/// `$left` and `$right`.
-macro_rules! binary_uint64_term {
-    ($left:pat, $right:pat) => {
-        $crate::kernel::MachineTerm::Binary {
-            format: $crate::kernel::MachineIntegerType::UInt64,
-            op: _,
-            left: $left,
-            right: $right,
-        }
-    };
-}
-pub(crate) use binary_uint64_term;
-
 /// Matches every two-operand [`MachineTerm`] operation that is not at a 32-bit format, binding
 /// the operands to `$left` and `$right`. Only the 64-bit formats, signed or unsigned, are built
 /// there (see [`MachineTerm::Binary`]); the others are listed so that this and

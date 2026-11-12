@@ -818,20 +818,6 @@ pub(in crate::surface) struct ResourceClausePresentation {
     pub(in crate::surface) checked: crate::kernel::ResourceBodyClauseRecord,
 }
 
-impl ResourceClausePresentation {
-    pub(in crate::surface) fn matches_available_fact(&self, facts: &ProofFacts) -> bool {
-        let binder_matches = match &self.source {
-            ClickProposition::ForAll { name, .. } => self.checked.introductions.iter().any(
-                |introduction| {
-                    matches!(introduction, crate::kernel::LoweringIntroduction::WrittenUniversal { name: lowered, .. } if lowered == name)
-                },
-            ),
-            _ => true,
-        };
-        binder_matches && facts.contains_top_level(&self.checked.proposition)
-    }
-}
-
 /// Pair each checked declaration record with its Surface clause by the arm
 /// and ordinal retained by the kernel producer. This never searches the fact
 /// store or re-lowers a clause after materializing the body's cells. The

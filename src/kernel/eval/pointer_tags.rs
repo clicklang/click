@@ -218,16 +218,9 @@ impl PureFactContext {
                 return Some(false);
             }
         }
-        if let ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } = condition
-            && used.depth < MAX_CITING_DEPTH
-        {
+        if used.depth < MAX_CITING_DEPTH {
             used.depth += 1;
-            let nested = self.decide_pointer_word_equality_citing(left, right, used);
+            let nested = self.decide_pointer_comparison_citing(condition, used);
             used.depth -= 1;
             if let Some(decided) = nested {
                 return Some(decided);
@@ -470,17 +463,17 @@ fn form_of_uncached(
             }
         }
     }
-    if matches!(term, MachineOperandView::Shared(_)) {
-        for (equal, source) in assumptions
-            .equality_graph
-            .admitted
-            .wide_constant_sources
-            .neighbors(term)
-        {
-            if let Some(form) = form_of(equal, assumptions, undecided, used, false)? {
-                used.cite(source.clone());
-                return Ok(Some(form));
-            }
+    // A native C read can be named by a retained specification comparison.
+    // Query the same selected operand index for either carrier.
+    for (equal, source) in assumptions
+        .equality_graph
+        .admitted
+        .wide_constant_sources
+        .neighbors(term)
+    {
+        if let Some(form) = form_of(equal, assumptions, undecided, used, false)? {
+            used.cite(source.clone());
+            return Ok(Some(form));
         }
     }
     // Or one recorded about a word the equality graph proves equal to this
@@ -1577,6 +1570,46 @@ mod retained_tag_tests {
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
+    }
+
+    #[test]
+    fn native_word_reads_a_retained_address_equation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let word = MachineTerm::Variable(Variable(992580));
+        let pointer = Pointer::symbolic(Variable(992581));
+        let tagged = MachineTerm::uint64_add(
+            MachineTerm::pointer_address(pointer.clone()),
+            MachineTerm::uint64_constant(1),
+        );
+        let roots = [&word, &tagged].map(|value| {
+            KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(value))
+        });
+        let source = Proposition::ConditionIs(
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                ty,
+                CompareRelation::Equal,
+                roots.each_ref().map(MachineOperandView::Shared),
+            ),
+            true,
+        );
+        let context = PureFactContext::new().assume_proposition(source.clone());
+        let exports = KernelTermExport::machine_export_count();
+        let mut used = UsedFacts::new();
+        let form = tagged_address_form(&word, &context, &mut used).unwrap();
+        assert_eq!(form.pointer, pointer);
+        assert_eq!(form.tag.operand_view().uint64_constant(), Some(1));
+        assert_eq!(used.premises, vec![source]);
+        assert!(used.complete);
+        assert!(
+            tagged_address_form(
+                &MachineTerm::Variable(Variable(992582)),
+                &context,
+                &mut UsedFacts::new()
+            )
+            .is_none()
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 
     #[test]

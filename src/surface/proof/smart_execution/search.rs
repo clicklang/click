@@ -793,7 +793,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if let Ok(surface) = surface_propositions.surface(&matched)
                 && let Ok(lowered) =
                     search_input.lower_surface_proposition(surface, "recorded theorem premise")
-                && (lowered == requirement || condition_polarity_equivalent(&lowered, &requirement))
+                && (lowered == requirement
+                    || crate::kernel::proof::fact_reasoning::listed_comparison_fact_is_available(
+                        &requirement,
+                        std::slice::from_ref(&lowered),
+                    ))
                 && search_input.facts().available_across_effects(&lowered, &[])
             {
                 let surface =
@@ -817,7 +821,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )
                 && let Ok(lowered) =
                     search_input.lower_surface_proposition(&surface, "selected theorem premise")
-                && (lowered == requirement || condition_polarity_equivalent(&lowered, &requirement))
+                && (lowered == requirement
+                    || crate::kernel::proof::fact_reasoning::listed_comparison_fact_is_available(
+                        &requirement,
+                        std::slice::from_ref(&lowered),
+                    ))
                 && search_input.facts().available_across_effects(&lowered, &[])
             {
                 let surface =
@@ -898,7 +906,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let matches_requirement = |lowered: &Proposition| {
                         (lowered.clone()
                             == requirement.clone()
-                            || condition_polarity_equivalent(lowered, &requirement))
+                            || crate::kernel::proof::fact_reasoning::listed_comparison_fact_is_available(&requirement, std::slice::from_ref(lowered)))
                             && search_input                                .facts()                                .available_across_effects(lowered, &[])
                     };
                     let direct = lower_fixed_state_proposition_with_assumptions(
@@ -1090,7 +1098,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // the outer guard. Use the explicit checker's existing rule
             // to select a checked conjunct from the proposed evidence.
             if !crate::kernel::listed_premise_holds(&requirement, |part| {
-                crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(&lowered, part)
+                crate::kernel::proof::fact_reasoning::listed_comparison_fact_is_available(
+                    part,
+                    std::slice::from_ref(&lowered),
+                )
             }) || !search_input.facts().contains(&lowered)
             {
                 // `Debug` on a kernel proposition dumps the memory snapshots

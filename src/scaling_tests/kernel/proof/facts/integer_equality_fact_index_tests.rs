@@ -230,7 +230,7 @@ fn proper_conjunct_index_walks_deep_conjunction_iteratively() {
     let (indexed, work) = crate::instrumentation::measure_deterministic_work(|| {
         index_proper_conjuncts(PersistentSet::default(), &fact)
     });
-    assert!(indexed.contains(&leaf));
+    assert!(indexed.contains(&PropositionKey::new(&leaf)));
     assert!(work > 0);
 }
 
@@ -302,4 +302,55 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
         assert!(pair[1] >= pair[0]);
         assert!(pair[1] <= pair[0] * 8 + 32, "{samples:?}");
     }
+}
+
+#[test]
+fn proper_conjunct_observation_keys_ignore_unrelated_facts() {
+    use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
+    let sum = MachineTerm::uint64_add(
+        MachineTerm::Variable(Variable(992_801)),
+        MachineTerm::uint64_constant(1),
+    );
+    let condition = ConditionTerm::uint64_less_equal(sum, MachineTerm::uint64_constant(127));
+    let native = Proposition::ConditionIs(condition.clone(), true);
+    let retained_condition = retained_arithmetic_comparison(&condition).unwrap();
+    let retained = Proposition::ConditionIs(retained_condition.clone(), true);
+    let opposite = Proposition::ConditionIs(retained_condition, false);
+    let mut work = Vec::new();
+    for size in [8, 32, 128] {
+        let unrelated: Vec<_> = (0..size)
+            .map(|i| {
+                Proposition::ConditionIs(
+                    ConditionTerm::uint64_equal(
+                        MachineTerm::Variable(Variable(993_000 + i)),
+                        MachineTerm::uint64_constant(i),
+                    ),
+                    true,
+                )
+            })
+            .collect();
+        for (source, requested) in [(&native, &retained), (&retained, &native)] {
+            let facts =
+                ProofFacts::from_ordered(&unrelated).with_kernel_checked_fact(Proposition::And(
+                    Box::new(source.clone()),
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::Constant(true),
+                        true,
+                    )),
+                ));
+            let exports = KernelTermExport::machine_export_count();
+            let (found, cost) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.contains_proper_conjunct(requested)
+            });
+            assert!(found);
+            assert!(!facts.contains_proper_conjunct(&opposite));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(
+                !ProofFacts::from_ordered(std::slice::from_ref(source))
+                    .contains_proper_conjunct(requested)
+            );
+            work.push(cost);
+        }
+    }
+    assert!(work.iter().all(|cost| *cost <= work[0] * 2 + 8), "{work:?}");
 }

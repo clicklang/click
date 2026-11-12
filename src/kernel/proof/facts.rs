@@ -11,6 +11,7 @@ use super::{
     PersistentSequence, QuantifiedEquivalenceKey, SnapshotBlindPropositionKey,
     quantified_equivalence_index_key, snapshot_blind_proposition_key,
 };
+use crate::kernel::assumptions::observation_comparisons::PropositionKey;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::*;
@@ -288,7 +289,7 @@ pub(crate) struct ProofFacts {
     /// Every strict subtree of an available top-level conjunction. This is
     /// the exact structural authority for `extract`; top-level facts are not
     /// included merely because they are independently available.
-    proper_conjuncts: PersistentSet<Arc<Proposition>>,
+    proper_conjuncts: PersistentSet<PropositionKey>,
     /// The quantified atomic conjuncts of available conjunctions, keyed by
     /// their alpha form: quantifier binders are numbered per lowering, so a
     /// citation of the second universal of a conjunction lowers with other
@@ -1620,13 +1621,14 @@ impl ProofFacts {
         &self.assumptions
     }
 
-    /// Exact proper-conjunct membership with the same condition-polarity
-    /// equivalence as the legacy structural checker.
+    /// Proper-conjunct membership uses the same observation identity for native
+    /// and retained comparisons, without consulting unrelated held facts.
     pub(crate) fn contains_proper_conjunct(&self, required: &Proposition) -> bool {
-        self.proper_conjuncts.contains(required)
+        self.proper_conjuncts
+            .contains(&PropositionKey::new(required))
             || condition_polarity_forms(required)
                 .iter()
-                .any(|form| self.proper_conjuncts.contains(form))
+                .any(|form| self.proper_conjuncts.contains(&PropositionKey::new(form)))
     }
 
     /// Project a known disjunction without naming its discarded conjuncts.
@@ -2940,72 +2942,24 @@ fn index_guarded_implication_fact(
     let Proposition::Implies(guard, consequent) = fact.as_ref() else {
         return index;
     };
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        },
-        _,
-    ) = consequent.as_ref()
+    let Proposition::ConditionIs(condition, _) = consequent.as_ref() else {
+        return index;
+    };
+    let Some(view) =
+        crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
     else {
         return index;
     };
+    if !matches!(
+        view.format,
+        MachineIntegerType::Int32 | MachineIntegerType::Int64
+    ) && !(matches!(
+        view.format,
+        MachineIntegerType::UInt32 | MachineIntegerType::UInt64
+    ) && view.relation == CompareRelation::Equal)
+    {
+        return index;
+    }
     // Only a definedness guard: applying an ambient implication under an
     // ordinary condition stays an explicit `extract`
     // (`verified_call_ensure_premise_needs_its_discharge.md`), while a
@@ -3014,8 +2968,25 @@ fn index_guarded_implication_fact(
     if !is_definedness_guard(guard) {
         return index;
     }
-    for term in [left.as_ref(), right.as_ref()] {
-        let Some(key) = bitvector_equality_atom_key(term) else {
+    for operand in &view.operands {
+        let term = operand.operand_view();
+        let atom = match term {
+            MachineOperandView::Legacy(term) => bitvector_equality_atom_key(term),
+            MachineOperandView::Shared(root) => root
+                .machine_conversion_leaf()
+                .or_else(|| root.machine_read_leaf())
+                .and_then(bitvector_equality_atom_key)
+                .or_else(|| {
+                    term.variable()
+                        .and_then(|v| bitvector_equality_atom_key(&MachineTerm::Variable(*v)))
+                })
+                .or_else(|| {
+                    term.literal()
+                        .as_ref()
+                        .and_then(bitvector_equality_atom_key)
+                }),
+        };
+        let Some(key) = atom else {
             continue;
         };
         let mut bucket = index.get(&key).cloned().unwrap_or_default();
@@ -3638,9 +3609,9 @@ fn index_implication_consequents(
 }
 
 fn index_proper_conjuncts(
-    mut index: PersistentSet<Arc<Proposition>>,
+    mut index: PersistentSet<PropositionKey>,
     fact: &Proposition,
-) -> PersistentSet<Arc<Proposition>> {
+) -> PersistentSet<PropositionKey> {
     let Proposition::And(left, right) = fact else {
         return index;
     };
@@ -3668,7 +3639,7 @@ fn index_proper_conjuncts(
                 }
                 _ => {
                     depths.insert(conjunct as *const Proposition, 1);
-                    index = index.with_value(Arc::new(conjunct.clone()));
+                    index = index.with_value(PropositionKey::new(conjunct));
                 }
             },
             Task::Finish(conjunct) => {
@@ -3684,7 +3655,7 @@ fn index_proper_conjuncts(
                 let depth = 1usize.saturating_add((*left_depth).max(*right_depth));
                 depths.insert(conjunct as *const Proposition, depth);
                 if depth <= MAX_INDEXED_CONJUNCT_DEPTH {
-                    index = index.with_value(Arc::new(conjunct.clone()));
+                    index = index.with_value(PropositionKey::new(conjunct));
                 }
             }
         }
