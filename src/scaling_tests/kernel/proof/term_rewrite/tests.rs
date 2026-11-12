@@ -1689,3 +1689,44 @@ fn pointer_index_reconstruction_keeps_cold_dags_shared() {
         assert!(pair[1] <= pair[0] * 5, "{samples:?}");
     }
 }
+
+#[test]
+fn compound_exact_replacement_ignores_only_call_argument_carrier() {
+    let _session = VerificationSession::enter();
+    let format = MachineIntegerType::Int32;
+    let argument = MachineTerm::Variable(Variable(998_930));
+    let call = |argument| MachineTerm::ClickFunctionApplication {
+        name: "compound_exact_call".into(),
+        arguments: vec![argument],
+    };
+    let native_call = call(PureFunctionArgument::Value(CValue::Int32(argument.clone())));
+    let shared_call = call(PureFunctionArgument::SharedMachine(
+        SharedMachineIntegerTerm::intern(format, argument),
+    ));
+    let compound = |operation, value| {
+        MachineTerm::machine_binary(format, operation, value, MachineTerm::constant(1))
+    };
+    for depth in [4, 16, 64] {
+        let mut source = native_call.clone();
+        let mut target = shared_call.clone();
+        for _ in 0..depth {
+            source = compound(MachineBinaryOp::Add, source);
+            target = compound(MachineBinaryOp::Add, target);
+        }
+        let replacement = MachineTerm::constant(13);
+        let exports = KernelTermExport::machine_export_count();
+        let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
+            TermRewrite::for_bits(&source, &replacement).bits(&target)
+        });
+        assert_eq!(actual, replacement);
+        assert!(work < depth * 50 + 200, "depth={depth}: {work}");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+    let source = compound(MachineBinaryOp::Add, native_call);
+    let distinct = compound(MachineBinaryOp::Subtract, shared_call);
+    let replacement = MachineTerm::constant(13);
+    assert_eq!(
+        TermRewrite::for_bits(&source, &replacement).bits(&distinct),
+        distinct
+    );
+}

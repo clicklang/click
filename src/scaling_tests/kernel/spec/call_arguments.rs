@@ -102,3 +102,60 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
         assert!(work < 128, "selected origin at depth {depth}: {work} work");
     }
 }
+
+#[test]
+fn retained_constant_call_arguments_keep_existing_decision_identity() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = CState::new();
+    let scope = SpecScope::unbound(&state, None);
+    let argument = SpecPureFunctionArgument::Value(SpecExpression::Subtract(
+        Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+            2,
+        )))),
+        Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+            1,
+        )))),
+    ));
+    let mut execution = ExecutionBudget::new();
+    let calls = evaluate_spec_pure_function_application_paths_in(
+        scope,
+        "retained_steps",
+        &[argument],
+        CType::Int32,
+        None,
+        None,
+        None,
+        &PureFactContext::new(),
+        &mut SpecEvaluation::logical(&mut execution),
+    )
+    .unwrap();
+    let SpecValue::Native(CValue::Int32(produced)) = &calls[0].value else {
+        panic!("scalar call");
+    };
+    let native = MachineTerm::ClickFunctionApplication {
+        name: "retained_steps".into(),
+        arguments: vec![PureFunctionArgument::Value(CValue::Int32(
+            MachineTerm::constant(1),
+        ))],
+    };
+    let MachineTerm::ClickFunctionApplication { arguments, .. } = produced else {
+        panic!("call");
+    };
+    let expected = PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(1)));
+    assert_eq!(
+        arguments[0].machine_identity(),
+        expected.machine_identity(),
+        "produced: {arguments:?}"
+    );
+    let known = ConditionTerm::equal(native, MachineTerm::constant(0));
+    let required = ConditionTerm::equal(produced.clone(), MachineTerm::constant(0));
+    let proof_facts = crate::kernel::proof::ProofFacts::from_ordered(&[Proposition::ConditionIs(
+        known.clone(),
+        true,
+    )]);
+    assert!(
+        proof_facts.introduced_goal_available(&Proposition::ConditionIs(required.clone(), true))
+    );
+    let facts = PureFactContext::new().assume_condition(known, true);
+    assert_eq!(facts.decide(&required), Some(true));
+}

@@ -354,3 +354,83 @@ fn proper_conjunct_observation_keys_ignore_unrelated_facts() {
     }
     assert!(work.iter().all(|cost| *cost <= work[0] * 2 + 8), "{work:?}");
 }
+
+#[test]
+fn retained_call_atom_keys_own_their_observation_identities() {
+    for count in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let opaque = MachineTerm::ClickFunctionApplication {
+            name: "opaque_argument".into(),
+            arguments: Vec::new(),
+        };
+        let root = KernelTerm::retained_native_machine_operand(format, &opaque);
+        let argument = PureFunctionArgument::SharedMachine(
+            SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
+        );
+        let term = MachineTerm::ClickFunctionApplication {
+            name: "outer_call".into(),
+            arguments: vec![argument],
+        };
+        let original = bitvector_equality_atom_key(&term).unwrap();
+        let _noise: Vec<_> = (0..count)
+            .map(|index| {
+                SharedPureApplication::intern(
+                    "unrelated_call_key".into(),
+                    vec![PureFunctionArgument::Value(CValue::Int32(
+                        MachineTerm::Variable(Variable(998_800 + index)),
+                    ))],
+                )
+            })
+            .collect();
+        let (repeated, work) = crate::instrumentation::measure_deterministic_work(|| {
+            bitvector_equality_atom_key(&term).unwrap()
+        });
+        assert_eq!(original, repeated);
+        assert!(work < 32, "unrelated calls {count}: {work}");
+    }
+}
+
+#[test]
+fn exact_call_lookup_retains_shared_argument_prefixes() {
+    for depth in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(998_900));
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let inner = MachineTerm::ClickFunctionApplication {
+            name: "inner_retained_call".into(),
+            arguments: vec![PureFunctionArgument::SharedMachine(
+                SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
+            )],
+        };
+        let retained = SharedMachineIntegerTerm::from_shared(
+            format,
+            KernelTerm::retained_native_machine_operand(format, &inner),
+        )
+        .unwrap();
+        let call = |argument| MachineTerm::ClickFunctionApplication {
+            name: "outer_retained_call".into(),
+            arguments: vec![argument],
+        };
+        let fact = |term| {
+            Proposition::ConditionIs(ConditionTerm::equal(term, MachineTerm::constant(0)), true)
+        };
+        let source = fact(call(PureFunctionArgument::Value(CValue::Int32(inner))));
+        let requested = fact(call(PureFunctionArgument::SharedMachine(retained)));
+        assert_ne!(source, requested);
+        let facts = ProofFacts::from_ordered(&[source]);
+        let exports = KernelTermExport::machine_export_count();
+        let (available, work) =
+            crate::instrumentation::measure_deterministic_work(|| facts.contains(&requested));
+        assert!(available);
+        assert!(work < 128, "argument prefix {depth}: {work}");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

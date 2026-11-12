@@ -5956,11 +5956,98 @@ impl<'a> TermRewrite<'a> {
         native: &MachineTerm,
         source: MachineOperandView<'_>,
     ) -> bool {
+        fn same_payload(
+            rewrite: &mut TermRewrite<'_>,
+            left: &MachineTerm,
+            right: &MachineTerm,
+        ) -> bool {
+            fn native(view: MachineOperandView<'_>) -> &MachineTerm {
+                let MachineOperandView::Legacy(term) = view else {
+                    unreachable!("native syntax child")
+                };
+                term
+            }
+            let mut pending = vec![(left, right)];
+            while let Some((left, right)) = pending.pop() {
+                rewrite.visit();
+                if rewrite.checked_work_exhausted() {
+                    return false;
+                }
+                if std::ptr::eq(left, right) {
+                    continue;
+                }
+                // The only new equality here is a call's typed argument
+                // carrier choice. Keep every surrounding native syntax tag,
+                // operation format, cast spelling and binder identity exact.
+                if std::mem::discriminant(left) != std::mem::discriminant(right) {
+                    return false;
+                }
+                let a = MachineOperandView::Legacy(left);
+                let b = MachineOperandView::Legacy(right);
+                if let (Some((af, ao, av)), Some((bf, bo, bv))) = (a.binary(), b.binary()) {
+                    if (af, ao) != (bf, bo) {
+                        return false;
+                    }
+                    pending.extend(av.into_iter().zip(bv).map(|(a, b)| (native(a), native(b))));
+                    continue;
+                }
+                if let (Some((af, ao, av)), Some((bf, bo, bv))) = (a.unary(), b.unary()) {
+                    if (af, ao) != (bf, bo) {
+                        return false;
+                    }
+                    pending.push((native(av), native(bv)));
+                    continue;
+                }
+                if let (Some((ae, af, at, av)), Some((be, bf, bt, bv))) = (a.cast(), b.cast()) {
+                    if (ae, af, at) != (be, bf, bt) {
+                        return false;
+                    }
+                    pending.push((native(av), native(bv)));
+                    continue;
+                }
+                match (left, right) {
+                    (
+                        MachineTerm::ClickFunctionApplication {
+                            name: a,
+                            arguments: av,
+                        },
+                        MachineTerm::ClickFunctionApplication {
+                            name: b,
+                            arguments: bv,
+                        },
+                    ) if a == b => {
+                        if SharedPureApplication::intern(a.clone(), av.clone())
+                            != SharedPureApplication::intern(b.clone(), bv.clone())
+                        {
+                            return false;
+                        }
+                    }
+                    (
+                        MachineTerm::If {
+                            condition: a,
+                            then_term: at,
+                            else_term: af,
+                        },
+                        MachineTerm::If {
+                            condition: b,
+                            then_term: bt,
+                            else_term: bf,
+                        },
+                    ) if a == b => {
+                        pending.push((at, bt));
+                        pending.push((af, bf));
+                    }
+                    _ if left == right => {}
+                    _ => return false,
+                }
+            }
+            true
+        }
         let MachineOperandView::Shared(root) = source else {
             let MachineOperandView::Legacy(source) = source else {
                 unreachable!()
             };
-            if native == source {
+            if same_payload(self, native, source) {
                 return true;
             }
             // Shared observations can retain a native read name for output.
@@ -6099,7 +6186,10 @@ impl<'a> TermRewrite<'a> {
                     pending.push((value, operand));
                 }
                 KernelTermNode::IntegerToMachine { .. } | KernelTermNode::Legacy(_) => {
-                    if shared.machine_conversion_leaf() != Some(native) {
+                    if !shared
+                        .machine_conversion_leaf()
+                        .is_some_and(|leaf| same_payload(self, leaf, native))
+                    {
                         return false;
                     }
                 }

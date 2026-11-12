@@ -55,6 +55,11 @@ impl ScalarOperandKey {
         match view {
             MachineOperandView::Shared(_) => Self::Shared(MachineAtom::from_operand(ty, view)),
             MachineOperandView::Legacy(term) => {
+                if matches!(term, MachineTerm::ClickFunctionApplication { .. }) {
+                    // The call's typed identity owns its argument keys. A
+                    // native/retained payload choice is not a new value.
+                    return Self::Shared(MachineAtom::from_operand(ty, view));
+                }
                 // Leaf imports have fixed work. Retaining them merely changes
                 // cold/warm accounting; only compound operands avoid a walk.
                 if matches!(

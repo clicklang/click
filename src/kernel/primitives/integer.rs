@@ -680,6 +680,32 @@ impl SharedMachineIntegerTerm {
         // interned observation before importing, and retain that explicit tree
         // instead of exporting it again on the first checker read.
         let key = MachineIntegerKey::native(ty, value);
+        if let MachineIntegerKey::Application { application, .. } = &key {
+            // Calls compare their typed argument values, independently of
+            // whether a producer supplied a native or retained reading.
+            // Keep this producer's exact payload outside that identity key.
+            let value = MachineTerm::ClickFunctionApplication {
+                name: application.name().to_owned(),
+                arguments: application.arguments().to_vec(),
+            };
+            // A retained opaque call is observed as a shared leaf whose
+            // payload key owns the typed application identity. Use that same
+            // observation here rather than exposing the intermediate payload
+            // ID as a second numeric identity for the native carrier.
+            let payload_identity = Self::intern_key(key);
+            let observation =
+                KernelTerm::machine_observation_leaf(ty, value.clone(), payload_identity);
+            let identity = Self::from_shared(ty, observation).expect("opaque call observation");
+            return Self(Arc::new(SharedMachineIntegerNode {
+                id: identity.id(),
+                ty,
+                operand: MachineIntegerOperand::ExactLegacy {
+                    value,
+                    _identity: identity,
+                },
+                reading: OnceLock::new(),
+            }));
+        }
         let interner =
             MACHINE_INTEGER_INTERNER.get_or_init(|| Mutex::new(MachineIntegerInterner::default()));
         if let Some(found) = interner
@@ -945,9 +971,21 @@ enum MachineIntegerKey {
         ty: MachineIntegerType,
         value: MachineTerm,
     },
+    Application {
+        arena: u32,
+        ty: MachineIntegerType,
+        application: SharedPureApplication,
+    },
 }
 impl MachineIntegerKey {
     fn native(ty: MachineIntegerType, value: MachineTerm) -> Self {
+        if let MachineTerm::ClickFunctionApplication { name, arguments } = value {
+            return Self::Application {
+                arena: super::c_memory_arena_token(),
+                ty,
+                application: SharedPureApplication::intern(name, arguments),
+            };
+        }
         Self::Legacy {
             arena: super::c_memory_arena_token(),
             ty,
@@ -1043,6 +1081,15 @@ impl MachineIntegerInterner {
             MachineIntegerKey::Legacy { ty, value, .. } => {
                 (*ty, MachineIntegerOperand::Legacy(value.clone()))
             }
+            MachineIntegerKey::Application {
+                ty, application, ..
+            } => (
+                *ty,
+                MachineIntegerOperand::Legacy(MachineTerm::ClickFunctionApplication {
+                    name: application.name().to_owned(),
+                    arguments: application.arguments().to_vec(),
+                }),
+            ),
         };
         let node = Arc::new(SharedMachineIntegerNode {
             id,
