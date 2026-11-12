@@ -14818,3 +14818,65 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
     assert!(root.certificate().steps().is_empty());
     assert!(!root.facts().contains(&requirements.recorded[0].proposition));
 }
+
+#[test]
+fn partition_assumption_uses_the_fixed_state_not_its_entry_partition() {
+    let cell = |name: &str| {
+        CResource::Memory(CMemoryRange::new(
+            Pointer {
+                block: name.into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
+        ))
+    };
+    let left = cell("partition-left");
+    let right = cell("partition-right");
+    let entry = CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
+        CResourceFact::own(left.clone()),
+        CResourceFact::View(right.clone()),
+    ]));
+    let goal = Proposition::CResourceSeparate {
+        left: Box::new(left.clone()),
+        right: Box::new(right),
+    };
+    let snapshots = RecordedSnapshots::new();
+    let surfaces = SurfacePropositionMap::default();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    for retained in [false, true] {
+        let current = if retained {
+            entry.clone()
+        } else {
+            CState::new().with_resource_context(
+                ResourceContext::new().unchecked_with_facts([CResourceFact::own(left.clone())]),
+            )
+        };
+        let root = Proof::for_fixed_state_frontier(
+            "partition assumption",
+            0,
+            &[],
+            ParameterBinding::default(),
+            FixedStateFrame::new(&entry, &current, None, &snapshots),
+            &surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+        );
+        let focused = root.focus_fixed_state_goal(goal.clone()).unwrap();
+        // Exercise the partition rule itself, with no materialized separation.
+        let state = focused
+            .state
+            .replace_focused_obligation_and_facts(
+                focused.focused_obligation().unwrap().clone(),
+                ProofFacts::default(),
+            )
+            .unwrap_or_else(|_| panic!("the selected goal must stay open"));
+        let focused = focused.with_kernel_state(state);
+        let _guard = crate::kernel::search::FastOperationScope::enter("partition assumption");
+        assert_eq!(focused.apply_assumption().is_ok(), retained);
+    }
+}

@@ -1595,6 +1595,41 @@ impl ResourceContext {
             .collect()
     }
 
+    /// Separation of two explicitly selected, independently held resources.
+    /// The valid partition supplies the authority; views alone do not separate.
+    /// Inspect one exact occurrence per written representation. Cached body
+    /// projections are not independent members of the partition.
+    pub(crate) fn proves_exact_partition_separation(
+        &self,
+        left: &CResource,
+        right: &CResource,
+    ) -> bool {
+        #[cfg(test)]
+        let _operation =
+            crate::kernel::search::FastOperationScope::enter("exact partition separation");
+        if left == right {
+            return false;
+        }
+        let direct = |fact: CResourceFact| {
+            self.storage
+                .index
+                .exact
+                .get(&fact)
+                .and_then(|entries| entries.iter().next())
+                .is_some_and(|entry| {
+                    !self.storage.supported_by.contains_key(entry)
+                        && !self
+                            .storage
+                            .support_occurrence_by_projection
+                            .contains_key(entry)
+                })
+        };
+        let left_owned = direct(CResourceFact::own(left.clone()));
+        let right_owned = direct(CResourceFact::own(right.clone()));
+        (left_owned && (right_owned || direct(CResourceFact::View(right.clone()))))
+            || (right_owned && direct(CResourceFact::View(left.clone())))
+    }
+
     /// Whether this snapshot contains the exact named representation.
     /// This does not use proof-aware entailment; representation-sensitive
     /// rewrites need the entry itself, not an entailed cached projection.

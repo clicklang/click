@@ -571,6 +571,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         goal: &crate::kernel::CClaimGoal,
         presentation: P,
     ) -> Result<Self, Vec<crate::kernel::ProofObligation>> {
+        #[cfg(test)]
+        let _operation = crate::kernel::search::FastOperationScope::enter("focus_contract_claim");
         let branch = self
             .state
             .open_branches
@@ -586,9 +588,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             return Err(pending);
         }
         let mut state = branch.state.clone();
-        state.facts = state
-            .facts
-            .with_selected_resource_separation(goal.proposition());
         if outcome.is_none() {
             state.execution = None;
         }

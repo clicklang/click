@@ -1094,7 +1094,6 @@ fn extracted_legacy_search_retains_the_existing_operation_guards() {
         "src/kernel/loans/legacy_search.rs",
         "src/kernel/primitives/resource_algebra/legacy_search.rs",
         "src/kernel/assumptions/condition_reasoning/decision/legacy_search.rs",
-        "src/kernel/assumptions/legacy_search.rs",
         "src/kernel/functions/legacy_search.rs",
     ] {
         let source = std::fs::read_to_string(root.join(path)).unwrap();
@@ -1469,6 +1468,7 @@ fn migrated_operations_cannot_drop_their_discovery_guard() {
         "prepare_theorem_application",
         "finish_prepared_theorem_application",
         "finish_prepared_step",
+        "begin_contract_claim",
     ] {
         let source = format!("impl Proof {{ fn {name}() {{}} }}");
         let errors = proof_search_boundary::check(
@@ -1483,6 +1483,20 @@ fn migrated_operations_cannot_drop_their_discovery_guard() {
             "{errors:?}"
         );
     }
+}
+
+#[test]
+fn kernel_claim_focus_must_keep_its_discovery_guard() {
+    let source = "impl ProofObject<L, P, E> { fn focus_contract_claim() {} }";
+    let errors =
+        proof_search_boundary::check("src/new_operation.rs", &syn::parse_file(source).unwrap())
+            .unwrap_err();
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("must enter its no-discovery scope")),
+        "{errors:?}"
+    );
 }
 
 #[test]

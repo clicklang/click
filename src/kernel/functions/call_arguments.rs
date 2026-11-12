@@ -652,6 +652,19 @@ pub(in crate::kernel) fn bind_c_function_arguments(
     function: &CFunction,
     values: &[CValue],
 ) -> Option<CState> {
+    bind_c_function_arguments_with(caller_state, function, values, false)
+}
+
+/// [`bind_c_function_arguments`], except that with `input_aggregates` each
+/// by-value aggregate parameter's object is declared and not copied into:
+/// it is the function's input itself, whose cells the producer of a proof's
+/// entry names as their own entry values.
+pub(in crate::kernel) fn bind_c_function_arguments_with(
+    caller_state: &CState,
+    function: &CFunction,
+    values: &[CValue],
+    input_aggregates: bool,
+) -> Option<CState> {
     // Preserve the value-only representation for parameters whose addresses
     // never escape. Besides avoiding unnecessary memory cells, this
     // keeps ordinary call summaries unchanged. A frame is needed only when
@@ -745,7 +758,16 @@ pub(in crate::kernel) fn bind_c_function_arguments(
             let source = pointer.pointer().clone();
             let slot = CMemory::frame_local_pointer(frame, parameter.name());
             register_block_alignment(&slot.block, layout.alignment_bytes());
-            register_aggregate_argument_source(&slot.block, &source);
+            // A proof's input object holds its own entry values: each field
+            // is the read of that field before the object is declared, so
+            // the value has the parameter's own spelling and no other
+            // object stands behind it.
+            let source = if input_aggregates {
+                slot.clone()
+            } else {
+                register_aggregate_argument_source(&slot.block, &source);
+                source
+            };
             // Preserve the caller's memory snapshot for symbolic source
             // loads. Declaring the destination first would make an unknown
             // external field load depend on the callee's fresh block and
