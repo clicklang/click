@@ -1151,7 +1151,6 @@ mod tests {
 
     fn export(f: Function) -> super::super::schema::RustExport {
         super::super::schema::RustExport {
-            library_iterators: false,
             schema: super::super::schema::SCHEMA,
             compiler_commit: "test".into(),
             target: super::super::schema::TARGET.into(),

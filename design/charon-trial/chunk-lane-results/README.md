@@ -3,7 +3,7 @@
 The unchanged `quad.rs` fixture returns a four-lane record from a byte-reading
 helper, then reads its second lane inside a stored `ChunksExact` loop. The
 sidecar proves every returned lane equals its corresponding chunk byte at a
-symbolic loop head. The unit sets `"iterators": "library"`, so the loop
+symbolic loop head. The iterator is a library value, so the loop
 carries where its iterator stands by the library's contract, not a cursor.
 It covers sixteen bytes with four-byte chunks; it is a lane-result transport
 regression, not an Adler checksum proof.

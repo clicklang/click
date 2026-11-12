@@ -43,10 +43,6 @@ fn reference_view(
 pub(crate) type LoweredRust = (Vec<C0Function>, BTreeMap<String, C0StructLayout>);
 
 thread_local! {
-    /// Whether the export being lowered reads an iterator through its Click
-    /// library contract ([`RustExport::library_iterators`]), set for one
-    /// lowering with the enum types.
-    static LIBRARY_ITERATORS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The kernel types of the crate enums being lowered, by name. One
     /// lowering runs on one thread and sets them for its duration
     /// ([`EnumTypes::enter`]), so a type is found from its name alone.
@@ -255,10 +251,6 @@ fn chunks_exact_type() -> crate::kernel::TypeParameterName {
         &[AlgebraicValueType::C(CType::UInt8)],
     ))
 }
-/// Whether this lowering reads an iterator through its library contract.
-fn library_iterators() -> bool {
-    LIBRARY_ITERATORS.with(std::cell::Cell::get)
-}
 /// A function-pointer type's signature, as a sidecar's `fn(i32) -> i32`
 /// parameter type spells it.
 fn fn_pointer_signature(t: &Type) -> Result<C0FunctionPointerSignature, String> {
@@ -371,7 +363,6 @@ pub(crate) fn lower_with_identity(
 ) -> Result<LoweredRust, String> {
     // Enum fields are scalars, so their types need no other enum's.
     let _enums = EnumTypes::enter(export)?;
-    LIBRARY_ITERATORS.with(|library| library.set(export.library_iterators));
     let mut layouts = BTreeMap::new();
     let mut fields = BTreeMap::new();
     for record in &export.records {
@@ -689,7 +680,6 @@ fn lower_function(
         enumerated: BTreeSet::new(),
         shared_array_options: BTreeMap::new(),
         shared_scalar_slices,
-        chunk_iterators: BTreeSet::new(),
         mir_chunk_iterators: BTreeSet::new(),
         chunk_options: BTreeSet::new(),
         local_arrays: BTreeSet::new(),
@@ -761,7 +751,6 @@ struct Context<'a> {
     enumerated: BTreeSet<String>,
     shared_array_options: BTreeMap<String, CType>,
     shared_scalar_slices: BTreeMap<String, (String, CType)>,
-    chunk_iterators: BTreeSet<String>,
     mir_chunk_iterators: BTreeSet<String>,
     chunk_options: BTreeSet<String>,
     local_arrays: BTreeSet<String>,
@@ -841,16 +830,6 @@ impl Context<'_> {
     }
     fn statement(&mut self, s: &S) -> Result<CStatement, String> {
         match s {
-            S::ChunkDeclare {
-                iterator,
-                slice,
-                size,
-            } => self.chunk_declare(iterator, slice, size),
-            S::ChunkFor {
-                iterator,
-                binding,
-                body,
-            } => self.chunk_for(iterator, binding, body),
             S::SliceSplit {
                 slice,
                 midpoint,
@@ -1792,7 +1771,7 @@ impl Context<'_> {
             return self.slice_parts(place);
         }
         if let E::ChunkRemainder { iterator } = e {
-            if !self.chunk_iterators.contains(iterator) {
+            if !self.mir_chunk_iterators.contains(iterator) {
                 return Err("unknown Rust chunk iterator".into());
             }
             return Ok((
