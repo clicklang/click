@@ -11,7 +11,7 @@ void keep(uint8* p, uint8* q) {
     views *q;
     requires separate(memory(*p), memory(*q));
 } by {
-    step();
+    step() by { assumption(); }
     have separate(statement(0).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
     }

@@ -23,7 +23,7 @@ void write(struct job *job, int32 *dest) {
             click.push_str(&format!(
                 r#"
     mark before_{index};
-    step();
+    step() by {{ assumption(); }}
     mark after_{index};
     have job->output == at(before_{index}, job->output) by {{
         transport_certificate {{

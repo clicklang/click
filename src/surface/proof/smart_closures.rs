@@ -3499,10 +3499,10 @@ impl<'a> Proof<'a> {
         // context fact's source may instead be relative to function entry.
         let recorded = if requirement.call_site.is_none() {
             self.local_surface_facts()
-                .recorded_surface(&requirement.proposition)
+                .recorded_requirement_surface(&requirement.proposition)
                 .or_else(|| {
                     self.context_surface_propositions()?
-                        .recorded_surface(&requirement.proposition)
+                        .recorded_requirement_surface(&requirement.proposition)
                 })
         } else {
             None
@@ -4056,7 +4056,14 @@ pub(super) fn lowered_states_requirement(
     lowered: &Proposition,
     requirement: &UnresolvedRequirement,
 ) -> bool {
-    if propositions_match_after_canonical_loads(lowered, &requirement.proposition) {
+    if propositions_match_after_canonical_loads(lowered, &requirement.proposition)
+        // A resource spelling includes its formation prerequisites. Proving
+        // that complete conjunction proves the selected exact requirement;
+        // never discard the extra goals or consult ambient facts here.
+        || crate::kernel::listed_premise_holds(&requirement.proposition, |part| {
+            crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(lowered, part)
+        })
+    {
         return true;
     }
     let mut target = &requirement.proposition;

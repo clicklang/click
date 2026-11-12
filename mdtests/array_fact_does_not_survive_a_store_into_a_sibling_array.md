@@ -41,6 +41,19 @@ void mark_other(int32 a[], int32 b[], int32 n, int32 j) {
         peel(icount(a, 0, 1)) using { 0 <= 0; 0 < 2147483647; };
         solve() using { icount(a, 0, 0) == 0; to_integer(a[0]) == 5; };
     }
+    have contains(memory(b[0..n]), memory(b[j])) by {
+        apply(click::separation::contains_element(b, 0, n, j)) using { 0 <= j; j < n; };
+    }
+    have contains(memory(a[0..n]), memory(a[0..n])) by {
+        apply(click::separation::contains_refl(memory(a[0..n])));
+    }
+    have separate(memory(b[j]), memory(a[0..n])) by {
+        apply(click::separation::restrict(memory(b[0..n]), memory(a[0..n]), memory(b[j]), memory(a[0..n]))) using {
+            separate(memory(b[0..n]), memory(a[0..n]));
+            contains(memory(b[0..n]), memory(b[j]));
+            contains(memory(a[0..n]), memory(a[0..n]));
+        };
+    }
     step();
     have icount(a, 0, 1) == 5;
 }

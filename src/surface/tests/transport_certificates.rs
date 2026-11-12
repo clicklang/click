@@ -97,7 +97,7 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
                 requires separate(memory(dest[0..1]), memory(kept[0..1]));
             }} by {{
                 mark before;
-                step();
+                step() by {{ assumption(); }}
                 mark after;
                 have *kept == at(before, *kept) by {{
                     transport_certificate {{
@@ -109,7 +109,7 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
                         conclusion 2;
                     }}
                 }}
-                step();
+                step() by {{ assumption(); }}
                 mark final;
                 have *kept == at(before, *kept) by {{
                     transport_certificate {{

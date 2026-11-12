@@ -3620,6 +3620,10 @@ id = "library.theorem.separation::subrange"
 path = "reference/library/index.md#separationsubrange"
 
 [[item]]
+id = "library.theorem.separation::contains_element"
+path = "reference/library/index.md#separationcontains_element"
+
+[[item]]
 id = "resource.hidden-child-field-selector"
 path = "reference/language/index.md#composite-resources"
 

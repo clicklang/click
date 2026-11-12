@@ -6632,6 +6632,24 @@ conditions.
 
 **Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md) and [`mdtests/generic_pointer_struct_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_struct_parameters.md), including padded structs and struct-pointer elements. [`mdtests/separation_subrange_supports_wide_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_subrange_supports_wide_bounds.md) covers unsigned 64-bit bounds.
 
+### `separation::contains_element`
+
+```click
+theorem contains_element<T, I>(p: T*, lo: I, hi: I, i: I) {
+    requires lo <= i;
+    requires i < hi;
+    ensures contains(memory(p[lo..hi]), memory(p[i]));
+}
+```
+
+**Meaning:** An explicitly bounded index denotes a complete element inside its
+interval. `I` is `int32` or `uint64`. The upper endpoint is exclusive. The rule
+constructs the selected element address directly, preserving the pointer's
+carrier and the inferred element width; it does not form a wrapping `i + 1`
+endpoint, inspect memory, or search facts. It grants no ownership.
+
+**Verified use:** [`mdtests/separation_element_contains_the_selected_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_element_contains_the_selected_cell.md).
+
 ## Namespace and extension rules
 
 Library functions, predicates and theorems have qualified names, such as

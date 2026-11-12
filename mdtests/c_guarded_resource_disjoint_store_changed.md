@@ -29,7 +29,22 @@ int32 f(struct cell* root) {
     ensures result == old(child.number);
     ensures child.number == old(child.number);
     ensures root->value == old(child.number);
-} by { unfold(child); step_until(function.exit); fold(child); solve(); }
+} by {
+    unfold(child);
+    have separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->base.left));
+    step_until(statement(3));
+    have contains(memory(selected->value), memory((&selected->value)[0..1])) by { normalize(); }
+    have contains(memory(root->base.left), memory(root->base.left)) by { apply(click::separation::contains_refl(memory(root->base.left))); }
+    have separate(memory((&selected->value)[0..1]), memory(root->base.left)) by {
+        apply(click::separation::restrict(memory(selected->value), memory(root->base.left), memory((&selected->value)[0..1]), memory(root->base.left))) using {
+            separate(memory(selected->value), memory(root->base.left));
+            contains(memory(selected->value), memory((&selected->value)[0..1]));
+            contains(memory(root->base.left), memory(root->base.left));
+        };
+    }
+    step_until(function.exit);
+    fold(child); solve();
+}
 ```
 ```expect
 fail: body fact

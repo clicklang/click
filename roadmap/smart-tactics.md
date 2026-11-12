@@ -64,9 +64,9 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **634 reference records**: 5 legacy bridges, 19 callers
+The frozen inventory has **642 reference records**: 5 legacy bridges, 19 callers
 of those bridges, 6 operation references, 0 operation-to-driver references,
-16 mixed references, 122 driver references, 458 search references, 6 presentation
+16 mixed references, 122 driver references, 466 search references, 6 presentation
 references and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
 classifies every mixed and operation-to-driver record and groups all 6
@@ -232,20 +232,44 @@ coverage. Pointer decisions consume explicitly stated separation instead of
 discovering it through ownership compositions or alias classes. Removing this
 copy does not establish a bound for every separation observation.
 
-### L1: write restrictions from active loans — source candidates
+### L1: write restrictions from active loans — in-progress migration
 
-[`loans.rs`](../src/kernel/loans.rs)'s
-`permits_memory_access_with_assumptions` constructs `memory_range_aliases` when
-memory loans are active, then visits symbolic protected ranges in the query's
-block and exact-alias blocks. The no-loan shortcut and concrete conflict-witness
-index leave these routes intact.
+The pointee-store route generates a separation obligation without alias
+search. The source write regression is flat at 179 charged units with one loan
+and 4/16/64 aliases (110 without a loan); these measurements cover this route,
+not the remaining callers below. Explicit source proofs retain typed subobject
+extent and designation. The `contains_element` law supports signed 32-bit and
+unsigned 64-bit interval bounds without wrapping the selected upper endpoint.
+Exact pointer argument spellings use an entry-built index; enclosing recorded
+requirement clauses use the existing conjunct index. Keep the position-drift,
+expanded-replay and negative ownership controls alongside the loan measurements.
 
-Use an actual write with a fixed owner, expression and changed cell. Independently
-grow aliases with one active loan, then same-block symbolic loans with a fixed
-alias set. Include permission, refusal and optional diagnostic, cold/repeated
-queries and branch retention. Cache protection is a separate operation; its
-exact-origin retention index is not permission to write. Retain nested-loan,
-width, overlap and ended-scope safety controls.
+Pointee scalar stores return an ordinary separation obligation against a retained
+resource descriptor of active loan backing. Loan opens/closes update a persistent
+fixed-width identity trie; generating the obligation clones its root. The driver
+runs ordinary `solve`, whose conjunction case emits the existing `separate_star`
+and `separate_symm` applications. Restricting a larger separation emits
+containment proofs and `separation::restrict`; candidate selection belongs only
+to `ProofSearch`. The store adds no e-graph facts; the separate
+`contains_element` library axiom supplies explicit interval-to-cell containment.
+`one_write_with_a_loan_does_not_walk_unrelated_aliases` measures the complete
+source write with one view and 4/16/64 aliases; `loan_access_requirement_is_retained_and_branch_local`
+covers descriptor generation and persistent closes with 4/16/64/256 loans.
+These scoped controls do not certify every loan caller or proof-publication cost.
+
+Local assignments, bulk writes, free, loop checks, and resource rewrites still
+use `permits_memory_access_with_assumptions`. Its empty-loan decision now stays
+outside `ProofSearch`; active-loan callers retain alias enumeration and symbolic
+range comparisons. Migrate each actual caller to explicit obligations or isolate
+its bounded structural rule. The local-assignment prototype also exposed
+obligations for compiler-generated storage; resolve their pre-state spelling
+before migrating that route. Do not restore a search fallback for missing proofs.
+
+Independently grow symbolic loans at fixed aliases, cold/repeated queries, and
+persistent branches. Cache retention is separate from write permission: its
+selected-separation check now tests endpoints directly instead of using the
+alias-searching membership evidence builder. Retain nested-loan, width,
+overlap and ended-scope safety controls.
 
 ### C1: modular call framing — source candidate, also in scaling roadmap
 

@@ -24,6 +24,8 @@ int32 probe(int32* p, uint64* count, int32 input) {
     ensures result == input;
 } by {
     unfold(cell(p, *count));
+    have separate(memory(old(p)[old(*count) - 1u64]), memory(old(p)[0u64..old(*count)])) by { solve(); }
+    step();
     step_until(function.exit);
     fold(cell(p, old(*count) + 1u64));
     solve();

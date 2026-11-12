@@ -25,6 +25,7 @@ int32 write_i_read_j(int32 p[], int32 i, int32 j, int32 n) {
 ```
 
 ```click
+import click::separation;
 verifying "write_i_read_j.c";
 
 int32 write_i_read_j(int32 p[], int32 i, int32 j, int32 n) {
@@ -38,6 +39,19 @@ int32 write_i_read_j(int32 p[], int32 i, int32 j, int32 n) {
     views p[j..j + 1];
     requires separate(memory(p[i..i + 1]), memory(p[j..j + 1]));
     ensures keeps_j: result == old(p[j]);
+} by {
+    have contains(memory(p[i..i + 1]), memory((p + i)[0..1])) by { normalize(); }
+    have contains(memory(p[j..j + 1]), memory(p[j..j + 1])) by {
+        apply(separation::contains_refl(memory(p[j..j + 1])));
+    }
+    have separate(memory((p + i)[0..1]), memory(p[j..j + 1])) by {
+        apply(separation::restrict(memory(p[i..i + 1]), memory(p[j..j + 1]), memory((p + i)[0..1]), memory(p[j..j + 1]))) using {
+            separate(memory(p[i..i + 1]), memory(p[j..j + 1]));
+            contains(memory(p[i..i + 1]), memory((p + i)[0..1]));
+            contains(memory(p[j..j + 1]), memory(p[j..j + 1]));
+        };
+    }
+    step() by { assumption(); }
 }
 ```
 

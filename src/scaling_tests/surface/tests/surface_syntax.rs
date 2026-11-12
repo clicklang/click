@@ -301,3 +301,34 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
         );
     }
 }
+
+#[test]
+fn requirement_spelling_selects_one_recorded_enclosing_clause() {
+    let target = Proposition::ConditionIs(ConditionTerm::Variable(Variable(8000)), true);
+    let mut work = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let mut spellings = SurfacePropositionMap::default();
+        let mut latest = None;
+        for index in 0..size {
+            let surface = ClickProposition::Comparison {
+                left: current_var(&format!("source{index}")),
+                operator: ComparisonOperator::Equal,
+                right: current_int(1),
+            };
+            let guarded = Proposition::And(
+                Box::new(target.clone()),
+                Box::new(Proposition::ConditionIs(ConditionTerm::Variable(Variable(index)), true)),
+            );
+            spellings.record_lowering(&surface, &guarded).unwrap();
+            latest = Some(surface);
+        }
+        assert!(spellings.recorded_surface(&target).is_none());
+        let (selected, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            spellings.recorded_requirement_surface(&target)
+        });
+        assert_eq!(selected, latest.as_ref());
+        assert!(spellings.recorded_requirement_surface(&Proposition::Not(Box::new(target.clone()))).is_none());
+        work.push(cost);
+    }
+    assert!(work.iter().all(|cost| *cost == work[0]), "{work:?}");
+}

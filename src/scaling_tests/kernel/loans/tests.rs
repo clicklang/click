@@ -1466,3 +1466,42 @@ fn writes_without_active_memory_loans_do_not_walk_pointer_aliases() {
         }
     }
 }
+
+#[test]
+fn loan_access_requirement_is_retained_and_branch_local() {
+    let mut samples = Vec::new();
+    for count in [4, 16, 64, 256] {
+        let (mut ledger, holder, _) = participants();
+        let owned = memory(0, 8, true);
+        let query = memory(16, 20, false);
+        let query = query.memory_range().unwrap();
+        let empty = ledger.clone();
+        let mut last = None;
+        for _ in 0..count {
+            let opening = lend_test(&ledger, holder, holder, owned.clone());
+            ledger = ledger.apply(&opening.transition).unwrap();
+            last = Some(opening);
+        }
+        let (requirement, work) = crate::instrumentation::measure_deterministic_work(|| {
+            ledger.memory_access_requirement(query).unwrap()
+        });
+        let last = last.unwrap();
+        let (child, close_work) = crate::instrumentation::measure_deterministic_work(|| {
+            ledger
+                .apply(&ledger.end(last.scope, holder).unwrap())
+                .unwrap()
+        });
+        assert_ne!(
+            child.memory_access_requirement(query),
+            Some(requirement.clone())
+        );
+        assert_eq!(ledger.memory_access_requirement(query), Some(requirement));
+        assert_eq!(empty.memory_access_requirement(query), None);
+        samples.push((count, work, close_work));
+    }
+    eprintln!("retained loan requirements (loans, construction, close): {samples:?}");
+    for sample in &samples {
+        assert_eq!(sample.1, samples[0].1);
+        assert!(sample.2 <= samples[0].2 + 32);
+    }
+}

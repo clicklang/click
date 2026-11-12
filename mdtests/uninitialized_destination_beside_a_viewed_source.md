@@ -52,6 +52,51 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
             0 <= k and k < i implies dst[k] == old(src[k])
         };
         owns dst[0..n];
+        invariant forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) };
+        preserve by {
+            mark iteration;
+            have contains(memory(dst[0..n]), memory(dst[i])) by {
+                apply(click::separation::contains_element(dst, 0, n, i)) using { 0 <= i; i < n; };
+            }
+            have contains(memory(src[0..n]), memory(src[0..n])) by {
+                apply(click::separation::contains_refl(memory(src[0..n])));
+            }
+            have separate(memory(dst[i]), memory(src[0..n])) by {
+                apply(click::separation::restrict(memory(dst[0..n]), memory(src[0..n]), memory(dst[i]), memory(src[0..n]))) using {
+                    separate(memory(dst[0..n]), memory(src[0..n]));
+                    contains(memory(dst[0..n]), memory(dst[i]));
+                    contains(memory(src[0..n]), memory(src[0..n]));
+                };
+            }
+            step(); step();
+            have forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) } by {
+                intro(); intro();
+                instantiate(at(iteration, forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) }), k) using { 0 <= k; k < n; };
+                transport(at(iteration, src[k]) == old(src[k]), src[k] == old(src[k])) using {
+                    at(iteration, src[k]) == old(src[k]);
+                    separate(memory(dst[0..n]), memory(src[0..n]));
+                    0 <= k; k < n; 0 <= at(iteration, i); at(iteration, i) < n;
+                };
+            }
+            have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
+                intro(); intro();
+                if k < at(iteration, i) {
+                    instantiate(at(iteration, forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) }), k) using { 0 <= k; k < at(iteration, i); };
+                    have k != at(iteration, i) by { solve() using { k < at(iteration, i); }; }
+                    transport(at(iteration, dst[k]) == old(src[k]), dst[k] == old(src[k])) using {
+                        at(iteration, dst[k]) == old(src[k]); k != at(iteration, i);
+                    };
+                } else {
+                    have k == at(iteration, i) by { solve() using { k < i; not k < at(iteration, i); 0 <= at(iteration, i); at(iteration, i) < n; }; }
+                    have k < n by { solve() using { k == at(iteration, i); at(iteration, i) < n; }; }
+                    instantiate(at(iteration, forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) }), k) using { 0 <= k; k < n; };
+                    transport(at(iteration, src[k]) == old(src[k]), dst[k] == old(src[k])) using {
+                        at(iteration, src[k]) == old(src[k]); k == at(iteration, i);
+                    };
+                }
+            }
+        }
+
     }
     step();
     apply(int32_le_antisymmetric(

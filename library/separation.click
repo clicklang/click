@@ -26,6 +26,13 @@ theorem subrange<T, I>(p: T*, lo: I, hi: I, inner_lo: I, inner_hi: I) {
     ensures contains(memory(p[lo..hi]), memory(p[inner_lo..inner_hi]));
 }
 
+// One index within an interval describes a contained complete element.
+theorem contains_element<T, I>(p: T*, lo: I, hi: I, i: I) {
+    requires lo <= i;
+    requires i < hi;
+    ensures contains(memory(p[lo..hi]), memory(p[i]));
+}
+
 // Descriptor laws grant no ownership. Star retains both requirements.
 theorem contains_refl(A: Resource) { ensures contains(A, A); }
 theorem contains_trans(A: Resource, B: Resource, C: Resource) {

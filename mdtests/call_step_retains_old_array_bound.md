@@ -15,6 +15,7 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
 ```
 
 ```click
+import click::separation;
 verifying "probe.c";
 resource bounded(left: int32*, n: int32) {
     views left[0..n];
@@ -33,6 +34,16 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
     requires separate(memory(left[0..n]), memory(visited[0..n]));
     ensures result >= 0;
 } by {
+    have contains(memory(visited[0..n]), memory(visited[cur..cur + 1])) by {
+        apply(separation::subrange(visited, 0, n, cur, cur + 1));
+    }
+    have contains(memory(visited[cur..cur + 1]), memory((visited + cur)[0..1])) by { normalize(); }
+    have contains(memory(visited[0..n]), memory((visited + cur)[0..1])) by {
+        apply(separation::contains_trans(memory(visited[0..n]), memory(visited[cur..cur + 1]), memory((visited + cur)[0..1]))) using {
+            contains(memory(visited[0..n]), memory(visited[cur..cur + 1]));
+            contains(memory(visited[cur..cur + 1]), memory((visited + cur)[0..1]));
+        };
+    }
     step();
     observe(bounded(left, n));
     have 0 <= left[cur] and left[cur] < n by {

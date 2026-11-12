@@ -379,3 +379,20 @@ fn wide_subrange_applies_and_expands_without_implicit_solve() {
         assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
     }
 }
+
+#[test]
+fn element_containment_expands_without_implicit_solve() {
+    let (source, _) = mdtest_sources("mdtests/separation_element_contains_the_selected_cell.md");
+    without_implicit_solve(|| verify_click_theorems(&source)).unwrap();
+    for label in ["signed.ensures_0", "wide.ensures_0"] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
+        without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    }
+    for missing in ["lo <= i;", "i < hi;"] {
+        let source = source.replace(
+            "using { lo <= i; i < hi; }",
+            &format!("using {{ {} }}", "lo <= i; i < hi;".replace(missing, "")),
+        );
+        assert!(without_implicit_solve(|| verify_click_theorems(&source)).is_err());
+    }
+}

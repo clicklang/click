@@ -22096,3 +22096,41 @@ fn explicit_partition_pointer_distinctness_expands_and_replays() {
     })
     .unwrap();
 }
+
+#[test]
+fn write_loan_obligations_expand_and_replay() {
+    for (path, function, claim) in [
+        (
+            "mdtests/explicit_write_separation_from_two_views.md",
+            "set",
+            "set.contract",
+        ),
+        (
+            "mdtests/explicit_write_separation_from_wide_view.md",
+            "set_and_read",
+            "set_and_read.contract",
+        ),
+        (
+            "mdtests/indexed_write_loan_obligation.md",
+            "write_i_read_j",
+            "write_i_read_j.keeps_j",
+        ),
+        (
+            "mdtests/indexed_wide_write_loan_obligation.md",
+            "set_at",
+            "set_at.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(path);
+        let sources = sources
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, function)
+            .unwrap_or_else(|error| panic!("{path}: {error}"));
+        without_implicit_solve_for_claim(claim, || {
+            verify_c0_sources(&expanded, &sources).map_err(|e| e.report())
+        })
+        .unwrap_or_else(|error| panic!("{path}: {error}"));
+    }
+}

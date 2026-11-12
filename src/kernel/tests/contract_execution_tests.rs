@@ -630,33 +630,24 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
         CExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("an owner-authorized write into a lent range has a checked outcome");
-    let Proposition::CFunctionExecutes { outcome, .. } = theorem.proposition() else {
-        panic!("expected a function execution proposition");
+    let Proposition::Implies(requirement, execution) = theorem.proposition() else {
+        panic!("the write must remain conditional on loan separation");
     };
-    let CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)) = outcome else {
-        panic!("expected a loan refusal, got {outcome:?}");
+    let Proposition::CResourceSeparate { left, right } = requirement.as_ref() else {
+        panic!("expected the explicit loan separation premise");
     };
-    // The D13 shape: which loan, where it came from, what it protects, and
-    // what the write attempted.
-    assert_eq!(diagnostic.category(), LoanRefusalCategory::ActiveDependency);
+    assert!(!PureFactContext::new().proves_resource_separate(left, right));
     assert_eq!(
-        diagnostic.operation(),
-        crate::kernel::LoanRefusalOperation::MemoryAccess
+        right.as_ref(),
+        view_memory_fact(pointer_for_assertions, 0, 1).resource()
     );
-    let subject = diagnostic.subject();
-    assert_eq!(
-        subject.conflicting_resource_fact(),
-        Some(&view_memory_fact(pointer_for_assertions.clone(), 0, 1))
-    );
-    assert_eq!(
-        subject.memory_range().map(CMemoryRange::base),
-        Some(&pointer_for_assertions)
-    );
-    assert_eq!(
-        subject.origin(),
-        Some(crate::kernel::LoanOriginKind::ContractInputView)
-    );
-    assert!(subject.loan_id().is_some());
+    assert!(matches!(
+        execution.as_ref(),
+        Proposition::CFunctionExecutes {
+            outcome: CFunctionOutcome::Return { .. },
+            ..
+        }
+    ));
 }
 
 /// D2 law 2 is an access restriction, not an equality check: a store of the
@@ -721,26 +712,24 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
         CExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("a same-value store into a lent range has a checked outcome");
-    let Proposition::CFunctionExecutes { outcome, .. } = theorem.proposition() else {
-        panic!("expected a function execution proposition");
+    let Proposition::Implies(requirement, execution) = theorem.proposition() else {
+        panic!("the write must remain conditional on loan separation");
     };
-    let CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)) = outcome else {
-        panic!("expected a loan refusal, got {outcome:?}");
+    let Proposition::CResourceSeparate { left, right } = requirement.as_ref() else {
+        panic!("expected the explicit loan separation premise");
     };
-    assert_eq!(diagnostic.category(), LoanRefusalCategory::ActiveDependency);
+    assert!(!PureFactContext::new().proves_resource_separate(left, right));
     assert_eq!(
-        diagnostic.operation(),
-        crate::kernel::LoanRefusalOperation::MemoryAccess
+        right.as_ref(),
+        view_memory_fact(pointer_for_assertions, 0, 1).resource()
     );
-    let subject = diagnostic.subject();
-    assert_eq!(
-        subject.conflicting_resource_fact(),
-        Some(&view_memory_fact(pointer_for_assertions, 0, 1))
-    );
-    assert_eq!(
-        subject.origin(),
-        Some(crate::kernel::LoanOriginKind::ContractInputView)
-    );
+    assert!(matches!(
+        execution.as_ref(),
+        Proposition::CFunctionExecutes {
+            outcome: CFunctionOutcome::Return { .. },
+            ..
+        }
+    ));
 }
 
 #[test]

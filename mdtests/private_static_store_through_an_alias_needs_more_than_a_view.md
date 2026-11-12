@@ -1,8 +1,9 @@
-# A store through an argument that may alias a viewed private static is refused
+# Owning an argument does not set a viewed private static
 
-The helper owns `p->value` and only views the private static. `p` may be
-the static's address, so the store is not shown separate from the view and
-is refused instead of assuming the two do not alias.
+The helper's ownership/view partition separates `p->value` from the private
+static. Its store therefore cannot establish that the value read from the
+static is five. Passing the static itself as `p` is rejected by the call's
+ownership/loan checks; the companion caller regression covers that refusal.
 
 ```c filename=library.c
 struct counter { unsigned long value; };
@@ -22,5 +23,5 @@ unsigned long set_then_read(struct counter *p) {
 ```
 
 ```expect
-fail: could not prove the requested ranges separate
+fail: left side evaluated to old(state.value)
 ```

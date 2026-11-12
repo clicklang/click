@@ -24,7 +24,7 @@ void probe(struct holder* h, int32 n) {
         initialize by solve();
         preserve by {
             unfold(cells(h->data, n));
-            have separate(memory(h->data), memory(h->data[i]));
+            have separate(memory(h->data[i]), memory(h->data));
             step(); step();
             fold(cells(h->data, n));
         }

@@ -6,6 +6,7 @@
 //! named contracts and language frontends; memory authority stays in the
 //! resource partition.
 
+mod active_footprint;
 mod exclusive_calls;
 mod local_references;
 pub(crate) mod mutex_calls;
@@ -884,6 +885,7 @@ struct LoanLedgerData {
     /// protects fresh function-local storage.
     active_nonlocal_indexed_ranges: usize,
     active_memory_loans: usize,
+    active_footprint: active_footprint::ActiveFootprint,
     /// Exact coordinate origins, including symbolic pointers. Constant byte
     /// intervals support cache retention without searching the symbolic loans.
     cache_memory_index: CacheProtectionIndex,
@@ -4395,6 +4397,7 @@ impl LoanLedger {
                     active_memory_subtree: PersistentMap::default(),
                     active_nonlocal_indexed_ranges: 0,
                     active_memory_loans: 0,
+                    active_footprint: Default::default(),
                     cache_memory_index: PersistentMap::default(),
                     cache_memory_subtree: PersistentMap::default(),
                     unindexed_memory: PersistentMap::default(),
@@ -5865,7 +5868,29 @@ impl LoanLedger {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> Result<(), LoanRefusal> {
+        // An empty barrier is a fast decision, not a search invocation.
+        if !self.has_active_memory_loans() || memory_range_is_empty(range) {
+            return Ok(());
+        }
         crate::kernel::search::ProofSearch::<LoanLedger>::loan_access(self, range, assumptions)
+    }
+
+    /// The write's complete loan condition, retained as an ordinary resource
+    /// proposition. Building it never visits the protected ranges or aliases.
+    pub(crate) fn memory_access_requirement(
+        &self,
+        range: &CMemoryRange,
+    ) -> Option<super::Proposition> {
+        #[cfg(test)]
+        let _fast = crate::kernel::search::FastOperationScope::enter("loan access requirement");
+        let footprint = self.storage.data.active_footprint.resource();
+        if matches!(footprint, CResource::Emp) || memory_range_is_empty(range) {
+            return None;
+        }
+        Some(super::Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(range.clone())),
+            right: Box::new(footprint),
+        })
     }
 
     /// Explain a refused access in the D13 shape: the loan that refused it,
@@ -6175,6 +6200,7 @@ impl LoanLedger {
                         pinned_by: None,
                     },
                 );
+                data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
                 for range in &memory_backing {
                     update_indexed_memory_range(&mut data, range, *loan, true)?;
                 }
@@ -6302,6 +6328,7 @@ impl LoanLedger {
                         pinned_by: None,
                     },
                 );
+                data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
                 for range in &memory_backing {
                     update_indexed_memory_range(&mut data, range, *loan, true)?;
                 }
@@ -6492,6 +6519,7 @@ impl LoanLedger {
                         pinned_by: None,
                     },
                 );
+                data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
                 for range in &memory_backing {
                     update_indexed_memory_range(&mut data, range, *loan, true)?;
                 }
@@ -6625,6 +6653,7 @@ impl LoanLedger {
                         pinned_by: None,
                     },
                 );
+                data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
                 for range in &memory_backing {
                     // A symbolic parent range stays protected by the parent
                     // entry, which remains active while its share is pinned.
@@ -6865,6 +6894,7 @@ impl LoanLedger {
                     },
                 );
                 if let Some(record) = data.loans.get(&scope_record.loan).cloned() {
+                    data.active_footprint = data.active_footprint.without_loan(scope_record.loan);
                     data.unindexed_memory = without_unindexed_memory(
                         &data.unindexed_memory,
                         scope_record.loan,

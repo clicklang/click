@@ -58,6 +58,19 @@ int32 copy3(int32 dst[3], int32 src[3]) {
         preserve by {
             have 0 <= i;
             mark iteration;
+            have contains(memory(dst[0..3]), memory(dst[i])) by {
+                apply(click::separation::contains_element(dst, 0, 3, i)) using { 0 <= i; i < 3; };
+            }
+            have contains(memory(src[0..3]), memory(src[0..3])) by {
+                apply(click::separation::contains_refl(memory(src[0..3])));
+            }
+            have separate(memory(dst[i]), memory(src[0..3])) by {
+                apply(click::separation::restrict(memory(dst[0..3]), memory(src[0..3]), memory(dst[i]), memory(src[0..3]))) using {
+                    separate(memory(dst[0..3]), memory(src[0..3]));
+                    contains(memory(dst[0..3]), memory(dst[i]));
+                    contains(memory(src[0..3]), memory(src[0..3]));
+                };
+            }
             step();
             step();
             have forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) } by {

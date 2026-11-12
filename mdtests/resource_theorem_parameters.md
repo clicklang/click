@@ -39,7 +39,15 @@ void copy_pos(struct cursor *target, struct cursor *source) {
             contains(memory(*source), memory(source->data));
         };
     }
-    step();
+    have contains(memory(*source), memory(*source)) by { apply(separation::contains_refl(memory(*source))); }
+    have separate(memory(target->pos), memory(*source)) by {
+        apply(separation::restrict(memory(*target), memory(*source), memory(target->pos), memory(*source))) using {
+            separate(memory(*target), memory(*source));
+            contains(memory(*target), memory(target->pos));
+            contains(memory(*source), memory(*source));
+        };
+    }
+    step() by { assumption(); }
     step();
 }
 ```

@@ -22,6 +22,19 @@ void mark(uint64 *values, int32 *visited, int32 n, int32 cur, uint64 stamp) {
 } by {
     mark before;
     have at(before, forall (k: int32) { 0 <= k and k < n implies values[k] == stamp }) by assumption();
+    have contains(memory(visited[0..n]), memory(visited[cur])) by {
+        apply(click::separation::contains_element(visited, 0, n, cur)) using { 0 <= cur; cur < n; };
+    }
+    have contains(memory(values[0..n]), memory(values[0..n])) by {
+        apply(click::separation::contains_refl(memory(values[0..n])));
+    }
+    have separate(memory(visited[cur]), memory(values[0..n])) by {
+        apply(click::separation::restrict(memory(visited[0..n]), memory(values[0..n]), memory(visited[cur]), memory(values[0..n]))) using {
+            separate(memory(visited[0..n]), memory(values[0..n]));
+            contains(memory(visited[0..n]), memory(visited[cur]));
+            contains(memory(values[0..n]), memory(values[0..n]));
+        };
+    }
     step();
     transport(
         at(before, forall (k: int32) { 0 <= k and k < n implies values[k] == stamp }),

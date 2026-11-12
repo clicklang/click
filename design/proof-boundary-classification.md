@@ -218,7 +218,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 634 reference records, not 634 obligations to remove.
+The inventory contains 642 reference records, not 642 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this
@@ -256,12 +256,13 @@ claimed. The explicit proof can use the exact partition rule in `assumption()`
 or ordinary separation laws. Driver-owned implicit solve remains outside the
 operation guard.
 
-The loan entry records discovery before its fast shortcuts. In
-`single_write_transport_expands_to_preserve_without_search`, the no-active-loan
-case returns immediately. This establishes a dependency, not slow work on that
-store. Separate the constant-time decision from alias enumeration and
-active-loan candidate checks, then measure the active-loan route and identify
-its explicit evidence before changing loan safety behavior.
+Empty-loan and empty-range decisions now precede the `loan_access` discovery
+entry. Pointee scalar stores generate a separation obligation from retained loan
+backing; the driver solves it with the same `solve` used explicitly. Conjunction
+planning applies existing separation laws and adds four search-only inventory
+records. Local assignments and other legacy callers still reach `loan_access`
+with active loans. The original reproduction therefore does not establish that
+these remaining calls are all expensive; measure and classify each caller.
 
 These guards establish absence of registered discovery on their exercised
 routes, not fresh complete-operation scaling curves or a global fast-proof

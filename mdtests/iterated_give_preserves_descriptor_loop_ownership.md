@@ -167,6 +167,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     separate(memory(arena->capacity), memory(arena->occupied[i]));
                 };
             }
+            have separate(memory(arena->occupied[i]), memory(*arena)) by { solve(); }
             mark opened;
             step();
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->data))) by {
@@ -193,7 +194,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->capacity))); };
             }
             have arena->capacity == at(opened, arena->capacity) by { assumption(); }
-            give(arena->data[i..i + 1]);
+            give(at(opened, arena->data)[i..i + 1]);
             step();
             have to_integer(start) <= to_integer(at(opened, i) + 1);
             have forall (k: int32) {
@@ -313,7 +314,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 rewrite(arena->capacity == old(arena->capacity));
                 assumption();
             }
-            let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end), {
+            let w = fold(arena_clear_window(old(arena->data), old(arena->occupied), old(arena->capacity), start, end), {
                 next: at(opened, i) + 1
             });
             have start <= end;
@@ -328,7 +329,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     have arena->data == old(arena->data);
     have arena->occupied == old(arena->occupied);
     have arena->capacity == old(arena->capacity);
-    fold(arena_cells(arena->data, arena->occupied, arena->capacity));
+    fold(arena_cells(old(arena->data), old(arena->occupied), old(arena->capacity)));
     solve();
 }
 ```

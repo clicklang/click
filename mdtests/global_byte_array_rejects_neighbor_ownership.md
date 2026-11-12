@@ -15,5 +15,5 @@ void set_second() {
 ```
 
 ```expect
-fail: memory access conflicts with an active loan
+fail: unproved obligation: `separate(
 ```

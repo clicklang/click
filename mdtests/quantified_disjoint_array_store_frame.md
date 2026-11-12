@@ -26,6 +26,19 @@ void mark(int32 *next, int32 *visited, int32 n, int32 j) {
     };
 } by {
     mark entry;
+    have contains(memory(visited[0..n]), memory(visited[j])) by {
+        apply(click::separation::contains_element(visited, 0, n, j)) using { 0 <= j; j < n; };
+    }
+    have contains(memory(next[0..n]), memory(next[0..n])) by {
+        apply(click::separation::contains_refl(memory(next[0..n])));
+    }
+    have separate(memory(visited[j]), memory(next[0..n])) by {
+        apply(click::separation::restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[j]), memory(next[0..n]))) using {
+            separate(memory(visited[0..n]), memory(next[0..n]));
+            contains(memory(visited[0..n]), memory(visited[j]));
+            contains(memory(next[0..n]), memory(next[0..n]));
+        };
+    }
     step();
     have forall (k: int32) {
         0 <= k and k < n implies at(entry, next[k]) == next[k]

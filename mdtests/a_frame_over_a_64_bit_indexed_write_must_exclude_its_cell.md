@@ -21,6 +21,22 @@ void set_at(int32* p, const struct S* s, uint64 i, int32 v) {
     requires i < s->e.n;
     ensures forall (k: uint64) { k < s->e.n implies p[k] == old(p[k]) };
 } by {
+    have 0u64 <= i by { normalize(); }
+    have contains(memory(p[0u64..s->e.n]), memory(p[i])) by {
+        apply(click::separation::contains_element(p, 0u64, s->e.n, i)) using {
+            0u64 <= i; i < s->e.n;
+        };
+    }
+    have contains(memory(s->e.n), memory(s->e.n)) by {
+        apply(click::separation::contains_refl(memory(s->e.n)));
+    }
+    have separate(memory(p[i]), memory(s->e.n)) by {
+        apply(click::separation::restrict(memory(p[0u64..s->e.n]), memory(s->e.n), memory(p[i]), memory(s->e.n))) using {
+            separate(memory(p[0u64..s->e.n]), memory(s->e.n));
+            contains(memory(p[0u64..s->e.n]), memory(p[i]));
+            contains(memory(s->e.n), memory(s->e.n));
+        };
+    }
     step_until(function.exit);
     transport(
         forall (k: uint64) { k < s->e.n implies old(p[k]) == old(p[k]) },
