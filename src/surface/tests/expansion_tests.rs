@@ -22020,3 +22020,64 @@ fn outcome_apply_obligations_retain_each_return_and_fold_evidence() {
         .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
 }
+
+#[test]
+#[ignore = "nightly: population obligation expansion and cold replay"]
+fn empty_population_application_expands_its_obligation() {
+    let (source, sources) = mdtest_sources("mdtests/an_empty_population_counts_no_member.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+    assert!(expanded.contains("count(item(pool, _)) == 0"), "{expanded}");
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: range-fold guard expansion and cold replay"]
+fn bare_range_fold_application_expands_its_guards() {
+    let (source, _) = mdtest_sources("mdtests/fold_law_accepts_a_defined_endpoint.md");
+    let source = source.replace(
+        ")) using {\n            0 < hi;\n            to_integer(lo) <= to_integer(hi - 1);\n            to_integer(hi - 1) < 2147483647;\n        };",
+        "));",
+    );
+    assert!(!source.contains("using"));
+    verify_click_theorems(&source).unwrap();
+    let expanded = expand_c0_claim_source_by_label(
+        &source,
+        &[],
+        "fold_appends_at_a_predecessor_endpoint.ensures_0",
+    )
+    .unwrap();
+    assert!(expanded.contains("using"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = source.replace("    requires to_integer(lo) <= to_integer(hi - 1);\n", "");
+    assert!(verify_click_theorems(&missing).is_err());
+}
+
+#[test]
+#[ignore = "nightly: empty-fold guard expansion and cold replay"]
+fn bare_empty_range_fold_application_expands_its_guard() {
+    let source = r#"
+theorem empty(lo: int32, hi: int32) {
+    requires to_integer(hi) <= to_integer(lo);
+    ensures (lo..hi).fold(0, |acc, k| { acc + to_integer(k) }) == 0 by {
+        apply(integer_range_fold_empty((lo..hi).fold(0, |acc, k| { acc + to_integer(k) })));
+    }
+}
+"#;
+    let expanded = expand_c0_claim_source_by_label(source, &[], "empty.ensures_0").unwrap();
+    assert!(expanded.contains("using"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = source.replace("    requires to_integer(hi) <= to_integer(lo);\n", "");
+    let refusal = verify_click_theorems(&missing).unwrap_err();
+    assert!(
+        refusal.message().contains("unproved obligation"),
+        "{refusal}"
+    );
+}

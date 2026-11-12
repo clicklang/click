@@ -1552,3 +1552,32 @@ test_batches! {
         nested_conjunction_transport_checks_deep_leaves_and_all_evidence,
     ],
 }
+
+#[test]
+#[ignore = "nightly: computed scalar transport expansion and cold replay"]
+fn computed_scalar_transport_expands_read_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/snapshot_comparison_transport_expansion.md");
+    let source = source.replace("*q == 7", "*q + 1 == 8");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert_eq!(
+        expanded.matches("preserve(separate(").count(),
+        1,
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let missing = source.replace("    requires *q + 1 == 8;\n", "");
+    assert!(verify_c0_sources(&missing, &sources).is_err());
+    let changed = expanded.replacen(
+        "have (to_integer(*q) + 1) == 8",
+        "have (to_integer(*q) + 1) == 9",
+        1,
+    );
+    assert_ne!(changed, expanded);
+    assert!(without_implicit_solve(|| verify_c0_sources(&changed, &sources)).is_err());
+}

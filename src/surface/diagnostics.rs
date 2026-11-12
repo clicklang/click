@@ -1665,6 +1665,9 @@ pub(super) fn describe_runtime_error(
         crate::kernel::CRuntimeError::HeapAllocationSizeAboveInt32 => {
             crate::kernel::CRuntimeError::HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE.to_string()
         }
+        crate::kernel::CRuntimeError::WideRangeRespellingMayWrap(no_wrap) => {
+            describe_wide_range_no_wrap(no_wrap, parameter_binding)
+        }
         crate::kernel::CRuntimeError::LoadTypeMismatch {
             pointer,
             value_type,
@@ -5396,6 +5399,37 @@ fn typed_literal_spelling(spelled: String, suffix: &str) -> String {
     } else {
         spelled
     }
+}
+
+/// A wide range held in one element width and required in another: name
+/// the range whose endpoint is the product and the product's no-wrap
+/// condition, `range p[0u64..n] of 8-byte elements needs n * 8 to not wrap
+/// (n * 8 <= UINT64_MAX)`.
+fn describe_wide_range_no_wrap(
+    no_wrap: &crate::kernel::WideRangeNoWrap,
+    parameter_binding: ParameterBinding<'_>,
+) -> String {
+    let range = render_resource_fact_diagnostic(&no_wrap.range, parameter_binding);
+    let range = range.strip_prefix("owns ").unwrap_or(&range);
+    let width = no_wrap
+        .range
+        .memory_range()
+        .map_or(0, crate::kernel::CMemoryRange::element_width);
+    let product = format!(
+        "{} * {}",
+        describe_c_value(&CValue::UInt64(no_wrap.count.clone()), parameter_binding),
+        no_wrap.factor
+    );
+    let elements = if width == 1 {
+        "bytes".to_string()
+    } else {
+        format!("{width}-byte elements")
+    };
+    format!(
+        "range `{range}` of {elements} needs `{product}` to not wrap (`{product} <= UINT64_MAX`): \
+         a wide range stands for one of another element width only where that product is \
+         decided, for example by a bound on the count"
+    )
 }
 
 pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBinding<'_>) -> String {

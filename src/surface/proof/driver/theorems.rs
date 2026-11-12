@@ -14,10 +14,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofContext::Pure(_) | ProofContext::FixedState(_)
         ) || matches!(self.proof.context.as_ref(), ProofContext::Execution(_))
             && (!self.proof.is_at_function_exit() || self.proof.focused_outcome_data().is_some()))
-            && application.name != "population_member_count_zero"
-            && !crate::surface::proof::theorem_application::is_integer_range_fold_theorem_name(
-                &application.name,
-            )
         {
             let prepared = self.proof.prepare_theorem_application(application)?;
             let (current, premises) =

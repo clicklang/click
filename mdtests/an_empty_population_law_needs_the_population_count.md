@@ -27,5 +27,5 @@ void caller(struct pool* pool, struct object* object) {
 ```
 
 ```expect
-fail: listed premise `count(item(pool, _)) == 0` is not an available fact
+fail: theorem `population_member_count_zero` has an unproved obligation
 ```

@@ -838,17 +838,19 @@ Named theorem application has three primitive phases: prepare the selected
 arguments and instantiated conclusions while returning prerequisite obligations;
 prove those obligations in the driver with ordinary solve; publish the retained
 conclusions. Pure, fixed-state, live and returned-outcome applications share this
-route. Explicit `apply(...) using { ... }` is the replay operation. Special
-population/range built-ins retain their separately inventoried route.
+route, including the population-member-count-zero and Integer range-fold
+built-ins. Explicit `apply(...) using { ... }` is the replay operation.
 
 In test builds, `FastOperationScope` surrounds preparation, publication and
-explicit theorem application. Every `ProofSearch` method records entry before
+explicit theorem application and proposition/resource scope completion.
+Prepared statement/fold publication is guarded independently of obligation
+solving. Every `ProofSearch` method records entry before
 any work, including exact-fact shortcuts; constructing `SearchPermission` also
 records discovery. A search entry inside a guarded primitive panics, including
 when the primitive itself was called by search. Driver obligation solving runs
 outside the primitive scope. Nested scopes and unwinding restore the previous
 scope. The build boundary requires both the search-entry instrumentation and the
-three migrated operation scopes.
+migrated operation scopes.
 
 Generic declarations are proved at arbitrary rigid types before use. Application
 instantiates their statements without traversing proof bodies or re-running

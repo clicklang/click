@@ -1133,7 +1133,71 @@ fn comparison_preservation_reads(
             })
             .collect::<Option<Vec<_>>>()?
     };
-    Some(pairs)
+    scalar_preservation_read_leaves(pairs)
+}
+
+/// Decompose only the written scalar expression. Each read is preserved once;
+/// ordinary equality reasoning distributes those equalities through arithmetic.
+/// Unknown expression forms stay on the existing explicit transport route.
+fn scalar_preservation_read_leaves(
+    pairs: Vec<(ContractExpression, ContractExpression)>,
+) -> Option<Vec<(ContractExpression, ContractExpression)>> {
+    let mut reads = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (historical, current) in &pairs {
+        let ContractExpression::At { selector, .. } = historical else {
+            return None;
+        };
+        let mut pending = vec![current];
+        while let Some(expression) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match expression {
+                ContractExpression::IntegerLiteral(_) => {}
+                ContractExpression::Add(left, right)
+                | ContractExpression::Subtract(left, right)
+                | ContractExpression::Multiply(left, right)
+                | ContractExpression::BitwiseAnd(left, right)
+                | ContractExpression::BitwiseOr(left, right)
+                | ContractExpression::BitwiseXor(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                ContractExpression::Negate(value) | ContractExpression::BitwiseNot(value) => {
+                    pending.push(value);
+                }
+                ContractExpression::Call { name, arguments }
+                    if name == "to_integer" && arguments.len() == 1 =>
+                {
+                    pending.push(&arguments[0]);
+                }
+                _ => {
+                    if !matches!(expression, ContractExpression::ResourceField(_))
+                        && !matches!(
+                            contract_expression_as_c_fragment(expression),
+                            Some(
+                                CExpression::Load(_)
+                                    | CExpression::TypedLoad { .. }
+                                    | CExpression::Index(_, _)
+                            )
+                        )
+                    {
+                        return None;
+                    }
+                    let pair = (
+                        ContractExpression::At {
+                            selector: selector.clone(),
+                            expression: Box::new(expression.clone()),
+                        },
+                        expression.clone(),
+                    );
+                    if seen.insert(pair.clone()) {
+                        reads.push(pair);
+                    }
+                }
+            }
+        }
+    }
+    (!reads.is_empty()).then_some(reads)
 }
 
 /// Select scalar leaves from the written historical conjunction. Index the
