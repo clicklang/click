@@ -3435,7 +3435,20 @@ pub(super) fn infer_contract_expression_type(
                     )));
                 }
             }
-            Ok(function.return_type.c_type())
+            // A generic function's result over its own type parameter,
+            // `as_ptr<T>(s: Slice<T>) -> T*`, has a C type only at the
+            // instance the arguments select, which the algebraic check
+            // infers; its declared `T*` is no C type of the call.
+            let return_type = function.return_type.c_type();
+            if let Some(C0Type::ParameterPointer(parameter)) = return_type
+                && function
+                    .type_parameters
+                    .iter()
+                    .any(|declared| declared == parameter.name())
+            {
+                return Ok(None);
+            }
+            Ok(return_type)
         }
     }
 }

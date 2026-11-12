@@ -226,10 +226,21 @@ pub(super) fn slice_iter_function(operation: &str, element: &str) -> String {
     name
 }
 
-/// Declares the external functions a slice iterator's operations call, once
-/// for each element type the export iterates over.
+/// The importer's name for Rust `Option<&element>`, the library's
+/// `spec enum Option<T>` at a reference to `element`: the value a slice
+/// iterator's `next()` returns.
+pub(super) fn option_reference_name(element: &str) -> String {
+    super::names::option_type_name(&format!("&{element}"))
+}
+
+/// Declares a slice iterator's operations as Rust has them, once for each
+/// element type the export iterates over: `<[T]>::iter`, which builds the
+/// iterator, and `Iterator::next`, which takes it by `&mut` and returns an
+/// `Option<&T>`. Each is a call whose contract is stated over the library's
+/// `SliceIter`, as `Vec`'s methods are over `Vec`. The `Option<&T>` is
+/// declared as an instance of the library's `Option`.
 fn declare_slice_iter_operations(export: &mut RustExport) {
-    use super::schema::{Function, Place, Span};
+    use super::schema::{Enum, Function, Place, Span, Variant};
     let mut elements: Vec<Type> = Vec::new();
     for function in &export.functions {
         for local in function.mir.iter().flat_map(|mir| &mir.locals) {
@@ -244,22 +255,52 @@ fn declare_slice_iter_operations(export: &mut RustExport) {
         let Some(spelling) = element.scalar_name() else {
             continue;
         };
-        let pointer = || Type::Reference {
+        let reference = Type::Reference {
             mutable: false,
             pointee: Box::new(element.clone()),
         };
+        let option = option_reference_name(spelling);
+        if !export.enums.iter().any(|declared| declared.name == option) {
+            export.enums.push(Enum {
+                name: option.clone(),
+                generic: Some("Option".into()),
+                arguments: vec![reference.clone()],
+                variants: vec![
+                    Variant {
+                        name: "None".into(),
+                        field_names: Vec::new(),
+                        fields: Vec::new(),
+                    },
+                    Variant {
+                        name: "Some".into(),
+                        field_names: Vec::new(),
+                        fields: vec![reference.clone()],
+                    },
+                ],
+            });
+        }
         let iterator = || Type::SharedArrayIterator {
             element: Box::new(element.clone()),
         };
-        let operations: [(&str, Vec<(&str, Type)>, Type); 4] = [
+        let operations: [(&str, Vec<(&str, Type)>, Type); 2] = [
             (
-                "new",
-                vec![("p", pointer()), ("n", Type::Usize)],
+                "iter",
+                vec![("p", reference.clone()), ("n", Type::Usize)],
                 iterator(),
             ),
-            ("len", vec![("it", iterator())], Type::Usize),
-            ("as_ptr", vec![("it", iterator())], pointer()),
-            ("after_next", vec![("it", iterator())], iterator()),
+            (
+                "next",
+                vec![(
+                    "it",
+                    Type::Reference {
+                        mutable: true,
+                        pointee: Box::new(iterator()),
+                    },
+                )],
+                Type::Enum {
+                    name: option.clone(),
+                },
+            ),
         ];
         for (operation, parameters, return_type) in operations {
             export.functions.push(Function {
@@ -286,14 +327,13 @@ fn declare_slice_iter_operations(export: &mut RustExport) {
     }
 }
 
-/// The contract of the slice iterator operation `operation`: the call
-/// stated with the library's `click::rust::slice_iter`, for the element
-/// type the function is declared at. What `next()` leaves is stated here,
-/// where the element's size is known: the remaining slice starts one
-/// element later and is one shorter.
+/// The contract of the slice iterator operation `operation` at the element
+/// type the function is declared at. `iter` builds the library value of the
+/// slice; `next` is the next law over `old(*it)` and `*it`. Where the
+/// remaining slice starts after one `next()` needs the element's size, so it
+/// is stated here, at the type, and not as a generic axiom.
 fn slice_iter_contract(function: &super::schema::Function, operation: &str) -> Option<String> {
     const LIBRARY: &str = "click::rust::slice_iter";
-    const SLICE: &str = "click::rust::slice";
     let name = &function.name;
     let element = function
         .parameters
@@ -302,21 +342,35 @@ fn slice_iter_contract(function: &super::schema::Function, operation: &str) -> O
         .chain(std::iter::once(&function.return_type))
         .find_map(|ty| match ty {
             Type::SharedArrayIterator { element } => element.scalar_name(),
+            Type::Reference { pointee, .. } => match pointee.as_ref() {
+                Type::SharedArrayIterator { element } => element.scalar_name(),
+                _ => None,
+            },
             _ => None,
         })?;
     let iterator = format!("SliceIter<{element}>");
+    let option = format!("Option<&{element}>");
+    const SLICE: &str = "click::rust::slice";
+    let len = |it: &str| format!("{LIBRARY}::len({it})");
+    let data = |it: &str| format!("{SLICE}::as_ptr({LIBRARY}::as_slice({it}))");
+    let count = |it: &str| format!("{SLICE}::len({LIBRARY}::as_slice({it}))");
+    let has = format!("0u64 < {}", len("old(*it)"));
+    let empty = format!("{} == 0u64", len("old(*it)"));
     let body = match operation {
-        "new" => format!(
-            "extern fn {name}(p: &{element}, n: usize) -> {iterator} {{\n    ensures result == {LIBRARY}::iter(Slice<{element}>::Slice(p, n));\n    ensures {SLICE}::as_ptr({LIBRARY}::as_slice(result)) == p;\n    ensures {SLICE}::len({LIBRARY}::as_slice(result)) == n;\n    ensures {LIBRARY}::len(result) == n;\n}}"
+        "iter" => format!(
+            "extern fn {name}(p: &{element}, n: usize) -> {iterator} {{\n    ensures result == {LIBRARY}::iter(Slice<{element}>::Slice(p, n));\n    ensures {} == p;\n    ensures {} == n;\n    ensures {} == n;\n}}",
+            data("result"),
+            count("result"),
+            len("result"),
         ),
-        "len" => format!(
-            "extern fn {name}(it: {iterator}) -> usize {{\n    ensures result == {LIBRARY}::len(it);\n}}"
-        ),
-        "as_ptr" => format!(
-            "extern fn {name}(it: {iterator}) -> &{element} {{\n    ensures result == {SLICE}::as_ptr({LIBRARY}::as_slice(it));\n}}"
-        ),
-        "after_next" => format!(
-            "extern fn {name}(it: {iterator}) -> {iterator} {{\n    requires 0u64 < {LIBRARY}::len(it);\n    ensures result == {LIBRARY}::after_next(it);\n    ensures {SLICE}::as_ptr({LIBRARY}::as_slice(result)) == {SLICE}::as_ptr({LIBRARY}::as_slice(it)) + 1u64;\n    ensures {SLICE}::len({LIBRARY}::as_slice(result)) == {SLICE}::len({LIBRARY}::as_slice(it)) - 1u64;\n    ensures {LIBRARY}::len(result) == {LIBRARY}::len(it) - 1u64;\n}}"
+        "next" => format!(
+            "extern fn {name}(it: &mut {iterator}) -> {option} {{\n    owns *it;\n    ensures {empty} implies result == {option}::None;\n    ensures {empty} implies *it == old(*it);\n    ensures {has} implies result == {option}::Some({old_data});\n    ensures {has} implies *it == {LIBRARY}::after_next(old(*it));\n    ensures {has} implies {new_data} == {old_data} + 1u64;\n    ensures {has} implies {new_count} == {old_count} - 1u64;\n    ensures {has} implies {new_len} == {old_len} - 1u64;\n}}",
+            old_data = data("old(*it)"),
+            new_data = data("*it"),
+            old_count = count("old(*it)"),
+            new_count = count("*it"),
+            old_len = len("old(*it)"),
+            new_len = len("*it"),
         ),
         _ => return None,
     };

@@ -894,6 +894,13 @@ enum AlphaAlgebraicKey {
         name: String,
         arguments: Vec<AlphaPureFunctionArgumentKey>,
     },
+    /// A library value read from memory, such as a borrowed Rust iterator:
+    /// keyed by the scalar load at the same memory and address, exactly as
+    /// that load is.
+    MemoryLoad {
+        algebraic_type: crate::kernel::AlgebraicType,
+        carrier: AlphaBitvectorKey,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -2264,9 +2271,15 @@ fn alpha_algebraic_key_with_bindings<const ALLOW_LOADS: bool>(
                     .collect::<Option<Vec<_>>>()?,
             }
         }
-        AlgebraicTermNode::Match { .. }
-        | AlgebraicTermNode::If { .. }
-        | AlgebraicTermNode::MemoryLoad { .. } => {
+        AlgebraicTermNode::MemoryLoad { memory, pointer } => AlphaAlgebraicKey::MemoryLoad {
+            algebraic_type: term.algebraic_type.clone(),
+            carrier: alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                &AlgebraicTermNode::memory_load_carrier(memory, pointer),
+                bindings,
+                next_binder,
+            )?,
+        },
+        AlgebraicTermNode::Match { .. } | AlgebraicTermNode::If { .. } => {
             return None;
         }
     })

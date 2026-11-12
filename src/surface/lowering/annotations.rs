@@ -8394,11 +8394,31 @@ impl AnnotationLowerer<'_> {
                 // Automatic aggregates are places rather than ordinary
                 // object-value bindings. Resolve only the named place in
                 // this recorded state, including after it leaves scope.
-                let pointer = environment
+                let state = environment
                     .snapshot_state
                     .as_ref()
-                    .and_then(|state| state.locals().aggregate_object_pointer(name))
                     .expect("checked aggregate snapshot binding");
+                let pointer = state
+                    .locals()
+                    .aggregate_object_pointer(name)
+                    .expect("checked aggregate snapshot binding");
+                // An object that holds one value of a library or enum type, a
+                // borrowed Rust `Vec` or iterator, is read as that value, as
+                // the program reads it.
+                if let Some(value_type @ CType::Parameter(parameter)) = state
+                    .locals()
+                    .aggregate_layout(name)
+                    .and_then(crate::kernel::CAggregateLayout::value_type)
+                {
+                    return Ok(SpecExpression::MemoryLoad {
+                        memory: environment.current_memory.clone(),
+                        pointer: Box::new(SpecExpression::Value(CValue::typed_pointer(
+                            pointer.clone(),
+                            CType::ParameterPointer(parameter),
+                        ))),
+                        value_type,
+                    });
+                }
                 Ok(SpecExpression::Value(CValue::typed_pointer(
                     pointer.clone(),
                     CType::UInt8Pointer,

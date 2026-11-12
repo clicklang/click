@@ -618,7 +618,20 @@ impl Parser {
         }
         self.position += 1;
         loop {
-            arguments.push(self.expect_ident("type argument")?);
+            // A shared reference to a scalar, `&u8`: the item a slice
+            // iterator yields, `Option<&u8>`.
+            if self.peek() == Some(&Token::Amp) {
+                self.position += 1;
+                let pointee = self.expect_ident("type argument")?;
+                if rust_scalar_type(&pointee).is_none() {
+                    return Err(self.error(
+                        "a reference type argument is a shared reference to a scalar, `&u8`",
+                    ));
+                }
+                arguments.push(format!("&{pointee}"));
+            } else {
+                arguments.push(self.expect_ident("type argument")?);
+            }
             match self.peek() {
                 Some(Token::Comma) => self.position += 1,
                 _ => break,

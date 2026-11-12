@@ -9,8 +9,9 @@ The Charon adapter checks the resolved standard core slice `.iter()` method and
 compiler iterator desugaring. The artifact retains the iterator operation rather
 than rewriting it into an index loop. The unit sets `"iterators": "library"`
 (`docs/reference/rust.md`, Slice iterators as library values), so the iterator
-is one value of the library's `SliceIter<uint8>`: each successful `next()`
-yields `iter.as_slice().as_ptr()` and leaves an iterator whose remaining slice
+is one value of the library's `SliceIter<uint8>`, imported through its Rust
+interface: each pass calls `SliceIter::next(&mut iter)`, which returns
+`Option<&u8>`, and a successful call yields `iter.as_slice().as_ptr()` and leaves an iterator whose remaining slice
 starts one element later and is one shorter. No base, length or
 remaining-count local is named. Dereferencing the yielded reference requires
 input views; Rust rejects writing through it.

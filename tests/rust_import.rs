@@ -1349,7 +1349,7 @@ fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
     );
     assert!(
         error.contains(
-            "the append-last-cell equation needs `to_integer(bytes.len() - click::rust::slice_iter::len::<uint8>(<unnamed A>)) < 18446744073709551615`"
+            "the append-last-cell equation needs `to_integer(bytes.len() - click::rust::slice_iter::len::<uint8>(at(<state A>, iter))) < 18446744073709551615`"
         ),
         "{error}"
     );
