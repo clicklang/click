@@ -441,6 +441,26 @@ access, not an equality about the current memory contents.
 
 Only the new facts at each checked step are printed, not the accumulated set.
 
+A step whose store dropped a cached cell of the same array says so, with the
+fact the store reads to keep it:
+``forgets cached `q[0]` beside the store to `q[(m - 1)]`: the store keeps it
+only on the stated fact …``. The fact is the disequality of the two `int32`
+index words; state it before that statement to keep the cell. The trace reads
+this from the step's own memory delta (the cells the two memories differ on,
+at most four pairs listed); the store itself records nothing. A step whose
+read followed memory history and stopped without reaching the value says
+`read history stopped after crossing N recorded transitions (a read follows
+at most one)`, with the walk's address, start and stop snapshots and reason:
+a read follows one recorded transition, so a value an older store left needs
+an explicit transport or a fact stated before the intervening statement. At
+most four such walks are listed per step.
+
+When the implicit tail's store search could not prove that disequality, a
+refusal whose goal reads the dropped cell adds a line naming the statement
+and the fact as the search spelled it (in a trace, a `store search:` line
+under the memory-history check). A proof `if` is recorded at its own line, so
+`--trace-to` a tactic in either arm selects that arm.
+
 A step that a search produced says which one. A step that smart work checked
 ends its header with ``(from `implicit tail`)`` or the like, naming its
 origin: `implicit tail` for the steps the implicit tail took and for its

@@ -3658,10 +3658,7 @@ impl CMemory {
         // contain_pointer` answers `false` for every other block, and the
         // aliased spellings above are not proven distinct by construction.
         let candidates = AliasCandidates::of_block(&pointer.block);
-        let Some(bytes) = std::sync::Arc::make_mut(&mut self.heap)
-            .live_allocations
-            .remove(pointer)
-        else {
+        if !self.heap.live_allocations.contains_key(pointer) {
             return Err(
                 if candidates.any_entry(&self.heap.live_allocations, |base, _| {
                     heap_allocation_may_contain_pointer(base, pointer, assumptions)
@@ -3671,8 +3668,15 @@ impl CMemory {
                     CInvalidFree::NonHeapPointer
                 },
             );
-        };
+        }
+        // The edge's base is the memory the free starts from, interned before
+        // any of its own edits: a base taken after removing the allocation
+        // would be a snapshot no constructor recorded.
         let base = Some(intern_derivation_base(&mut self));
+        let bytes = std::sync::Arc::make_mut(&mut self.heap)
+            .live_allocations
+            .remove(pointer)
+            .expect("the live allocation was found above");
         if pointer.block != PointerBlock::ExternalArgument {
             std::sync::Arc::make_mut(&mut self.blocks).remove(&pointer.block);
         }

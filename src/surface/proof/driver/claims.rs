@@ -1670,8 +1670,22 @@ fn close_claim_directly_from_outcome<'a>(
         },
         &mut labels,
     );
+    // A read of a cell a store dropped after the store search missed names
+    // that store and the fact that keeps the cell.
+    let store_separation_miss = listed_goal
+        .as_ref()
+        .and_then(|goal| proof.store_separation_miss_for_goal(goal))
+        .map(|(miss, _)| {
+            format!(
+                "\n{}",
+                crate::surface::proof::smart_closures::describe_recorded_store_separation_miss(
+                    &miss
+                )
+            )
+        })
+        .unwrap_or_default();
     let error = proof.step_error(format!(
-        "`ensures {surface}` failed for `{claim_label}` path {path_index}: unclosed goal: {surface}{evaluated_sides}\n{context}"
+        "`ensures {surface}` failed for `{claim_label}` path {path_index}: unclosed goal: {surface}{evaluated_sides}{store_separation_miss}\n{context}"
     ));
     Ok(Err(error.with_search_failures(search.finish())))
 }

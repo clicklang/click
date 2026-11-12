@@ -9252,6 +9252,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let mut proof = search_input.clone();
         let mut proved = 0usize;
+        // The spelled disequalities the closure did not prove, kept for the
+        // report of a later read of the dropped cell. Recorded on this miss
+        // path only, from what the search already constructed.
+        let mut misses = Vec::new();
         for candidate in &candidates {
             let requirement = UnresolvedRequirement {
                 proposition: candidate.indices_differ.clone(),
@@ -9268,26 +9272,31 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
+            let fact = spelling.surface.clone();
             let Some(have) =
                 attempt::candidate_outcome(proof.driver().open_have(spelling.surface))?
             else {
                 continue;
             };
-            let Some(closed) = have.driver().try_index_disequality_closure()? else {
-                continue;
+            let joined = match have.driver().try_index_disequality_closure()? {
+                Some(closed) => attempt::candidate_outcome(closed.join())?,
+                None => None,
             };
-            let Some(joined) = attempt::candidate_outcome(closed.join())? else {
+            let Some(joined) = joined else {
+                misses.push((candidate, fact));
                 continue;
             };
             proof = joined;
             proved += 1;
         }
-        if proved == 0 {
-            return Ok(stepped);
-        }
-        // The statement runs again with proved facts only; it can keep more
-        // cells than its first run, never fewer.
-        Ok(attempt::candidate_outcome(proof.driver().apply_step(step))?.unwrap_or(stepped))
+        let kept = if proved == 0 {
+            stepped
+        } else {
+            // The statement runs again with proved facts only; it can keep
+            // more cells than its first run, never fewer.
+            attempt::candidate_outcome(proof.driver().apply_step(step))?.unwrap_or(stepped)
+        };
+        record_store_separation_misses(search_input, kept, misses)
     }
 
     /// `solve`'s automatic opening (design/proof-reuse.md R4): a C operation
@@ -9490,4 +9499,58 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             Err(error) => Err(error),
         }
     }
+}
+
+/// Retains each store-search miss on the statement's successor, so a
+/// refusal that later reads the dropped cell can name the statement and
+/// the fact that keeps it. Presentation only: the checked state and its
+/// certificate are unchanged.
+fn record_store_separation_misses<'a>(
+    search_input: &Proof<'a>,
+    stepped: Proof<'a>,
+    misses: Vec<(
+        &crate::kernel::search::store_separation::ForgottenStoreCell,
+        ClickProposition,
+    )>,
+) -> Result<Proof<'a>, ClickError> {
+    if misses.is_empty() {
+        return Ok(stepped);
+    }
+    let Some(region) = search_input.current_statement_index()? else {
+        return Ok(stepped);
+    };
+    let statement = crate::surface::diagnostics::describe_statement_region(region);
+    let cells = match search_input.execution() {
+        Some(before) => misses
+            .iter()
+            .map(|(candidate, _)| {
+                crate::surface::diagnostics::describe_source_cell_at_state(
+                    &candidate.cell,
+                    &before.core.state,
+                )
+            })
+            .collect(),
+        None => vec![None; misses.len()],
+    };
+    let fallback = stepped.clone();
+    Ok(stepped
+        .edit_execution_presentation(|presentation| {
+            for ((candidate, fact), cell_text) in misses.into_iter().zip(cells) {
+                if presentation.store_separation_misses.len()
+                    >= MAX_RECORDED_STORE_SEPARATION_MISSES
+                {
+                    break;
+                }
+                presentation.store_separation_misses.push(
+                    crate::surface::proof::proof_object::StoreSeparationMiss {
+                        statement: statement.clone(),
+                        cell: candidate.cell.clone(),
+                        cell_text,
+                        store: candidate.store.clone(),
+                        fact,
+                    },
+                );
+            }
+        })
+        .map_or(fallback, |(proof, ())| proof))
 }

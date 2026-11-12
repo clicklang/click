@@ -3598,9 +3598,27 @@ pub(super) fn describe_proposition_version_mismatch(
     premise_point: &str,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
+    describe_proposition_version_mismatch_explained(
+        goal,
+        premises,
+        premise_point,
+        parameter_binding,
+    )
+    .map(|(message, _)| message)
+}
+
+/// [`describe_proposition_version_mismatch`] with the explanation it
+/// describes, so a caller can add what its own path recorded about the
+/// blocking step without walking the history again.
+pub(super) fn describe_proposition_version_mismatch_explained(
+    goal: &Proposition,
+    premises: &[&Proposition],
+    premise_point: &str,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<(String, resource_tracker::Explanation)> {
     let (explanation, internal) =
         proposition_version_explanation(goal, premises, parameter_binding)?;
-    describe_resource_version_mismatch(
+    let message = describe_resource_version_mismatch(
         &explanation,
         if internal {
             "the snapshot the other side reads"
@@ -3609,7 +3627,38 @@ pub(super) fn describe_proposition_version_mismatch(
         },
         premises,
         parameter_binding,
+    )?;
+    Some((message, explanation))
+}
+
+/// The statement whose store dropped `cell`, and the index disequality the
+/// implicit tail's store search spelled and could not prove before it.
+/// `fact` is that search's own spelling; the cell is spelled as the history
+/// explanation spells it, and is left unnamed where that has no spelling.
+pub(in crate::surface) fn describe_store_separation_miss(
+    statement: &str,
+    cell: Option<&str>,
+    fact: &str,
+) -> String {
+    let overwritten = cell
+        .map(|cell| format!("`{cell}`"))
+        .unwrap_or_else(|| "the cell this goal reads".to_string());
+    format!(
+        "{statement} may have overwritten {overwritten}; it is kept if you state \
+         `have {fact} by {{ ... }};` before {statement}"
     )
+}
+
+/// `pointer`'s cell as the C locals of `state` spell it (`q[0]` through a
+/// pointer local `q`), the way a memory-history explanation spells a cell
+/// through the function's parameters.
+pub(in crate::surface) fn describe_source_cell_at_state(
+    pointer: &Pointer,
+    state: &CState,
+) -> Option<String> {
+    let (parameters, arguments) = local_naming_tables(state);
+    describe_source_cell(pointer, ParameterBinding::new(&parameters, &arguments))
+        .map(|cell| cell.text())
 }
 
 /// Recover the bounded history comparison without discarding its exact addresses.
@@ -7267,6 +7316,25 @@ pub(super) fn describe_program_point_ref(point: &ProgramPointRef) -> String {
         });
     }
     describe_program_point_ref_as_recorded(point)
+}
+
+/// The statement at `region` as a proof names it: the path through the
+/// statements as written (`statement(5)`) when the function being checked
+/// has one, as [`describe_program_point_ref`] spells its points, and
+/// `region(N)` otherwise. Both lower back to this statement.
+pub(in crate::surface) fn describe_statement_region(region: usize) -> String {
+    let point = ProgramPointRef {
+        region: CodeRegionRef::Region(region),
+        kind: ProgramPointKind::Entry,
+    };
+    if let Some(steps) = SPELLING_LAYOUT.with(|slot| {
+        slot.borrow()
+            .as_ref()?
+            .source_path_spelling(region, point.kind)
+    }) {
+        return describe_code_region_ref(&CodeRegionRef::Path(steps));
+    }
+    describe_code_region_ref(&point.region)
 }
 
 /// `point` exactly as it is spelled, `region(N)` included.

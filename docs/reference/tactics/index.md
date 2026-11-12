@@ -210,8 +210,15 @@ indices by selected-premise arithmetic, or the disequality bridge of
 equality), not by the rest of `solve`. Bounds such as `2 <= m` or `1 <= j`, or
 the Integer fact `m - 1 != 0`, suffice. Expansion writes the `have` before the
 statement's `step()`. A disequality it misses leaves the statement as it
-ran, and a later read of the element reports the store
-([`a_store_at_the_last_heap_element_keeps_the_first.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_the_last_heap_element_keeps_the_first.md),
+ran. The path keeps the miss (at most 32 per path): a later refusal whose
+goal reads the dropped element names the statement and the disequality the
+tail spelled, ``statement(3) may have overwritten `q[0]`; it is kept if you
+state `have … by { ... };` before statement(3)``, and `--trace-proof` marks
+the store that dropped it
+([`a_store_search_miss_names_the_store_and_the_fact_for_a_heap_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_search_miss_names_the_store_and_the_fact_for_a_heap_read.md),
+[`a_store_search_miss_names_the_store_and_the_fact_for_an_array_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_search_miss_names_the_store_and_the_fact_for_an_array_read.md),
+[`a_stated_store_search_fact_keeps_the_heap_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/a_stated_store_search_fact_keeps_the_heap_cell.md),
+[`a_store_at_the_last_heap_element_keeps_the_first.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_the_last_heap_element_keeps_the_first.md),
 [`a_store_at_another_symbolic_element_keeps_a_cached_one.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_another_symbolic_element_keeps_a_cached_one.md),
 [`a_store_at_an_index_that_may_be_the_cached_one_overwrites_it.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_an_index_that_may_be_the_cached_one_overwrites_it.md)).
 A `size_t` or other 64-bit index is not covered: the store-time check reads

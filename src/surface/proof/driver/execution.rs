@@ -2078,7 +2078,11 @@ fn try_check_structural_function_proof_inner<'a>(
                     current = continuation;
                     continue;
                 }
-                proof = proof.with_execution_tactic_index(*index)?;
+                proof = proof
+                    .with_execution_tactic_index(*index)?
+                    // The split's trace and refusals name the `if` itself, so
+                    // `--trace-to` a line in one arm finds that arm.
+                    .at_source_tactic(*source_index);
                 // Arms that rejoin before the first statement continue from
                 // the bound entry state, as an interface join does.
                 if ensuring.is_some() || !matches!(continuation.as_ref(), InternalProofNode::Done) {
@@ -2927,7 +2931,11 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                 else_branch,
                 continuation,
             } => {
-                proof = proof.with_execution_tactic_index(*index)?;
+                proof = proof
+                    .with_execution_tactic_index(*index)?
+                    // The split's trace and refusals name the `if` itself, so
+                    // `--trace-to` a line in one arm finds that arm.
+                    .at_source_tactic(*source_index);
                 // With an interface the cases rejoin inside the body, as the
                 // arms of a `branch` do, and what follows the `if` is checked
                 // once on the one path that leaves it.
@@ -4263,7 +4271,11 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     continue;
                 }
                 let owner = proof.clone();
-                let proof_at_if = proof.with_execution_tactic_index(*index)?;
+                let proof_at_if = proof
+                    .with_execution_tactic_index(*index)?
+                    // The split's trace and refusals name the `if` itself, so
+                    // `--trace-to` a line in one arm finds that arm.
+                    .at_source_tactic(*source_index);
                 if expanded_execution_if_has_pruned_arm(then_branch, else_branch)
                     && expanded_execution_if_steps(then_branch, else_branch).is_none()
                     && proof_at_if.frontier_is_execution_branch(condition)?

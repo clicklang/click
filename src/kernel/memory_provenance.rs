@@ -89,6 +89,36 @@ pub(crate) fn with_bounded_cell_walk_diagnostics<T>(run: impl FnOnce() -> T) -> 
     })
 }
 
+/// The cell walks `run` performs, up to `limit`, for a trace of one checked
+/// step. An enclosing capture still receives them, within its own limit, as
+/// if it had recorded them itself, so a written check's observations do not
+/// change because a trace is on. Diagnostic only: no query changes.
+pub(crate) fn capture_step_cell_walks<T>(
+    limit: usize,
+    run: impl FnOnce() -> T,
+) -> (T, Vec<TransportCellWalkDiagnostic>) {
+    let (result, walks) = with_transport_cell_walk_diagnostics(|| {
+        TRANSPORT_CELL_WALKS.with(|slot| slot.borrow_mut().as_mut().unwrap().limit = Some(limit));
+        let result = run();
+        (result, take_transport_cell_walk_diagnostics())
+    });
+    TRANSPORT_CELL_WALKS.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(outer) = slot.as_mut() else {
+            return;
+        };
+        for walk in &walks {
+            if outer.limit.is_some_and(|limit| outer.walks.len() >= limit) {
+                break;
+            }
+            if outer.seen.insert(walk.clone()) {
+                outer.walks.push(walk.clone());
+            }
+        }
+    });
+    (result, walks)
+}
+
 pub(crate) fn take_transport_cell_walk_diagnostics() -> Vec<TransportCellWalkDiagnostic> {
     TRANSPORT_CELL_WALKS.with(|slot| {
         slot.borrow_mut()
