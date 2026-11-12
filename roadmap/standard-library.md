@@ -21,8 +21,9 @@ own soundness argument and regressions.
 Done: delivery steps 1 to 4, the qualified-name steps of step 5 except
 generic width-free names, step 6, and the generic `permutation::count` and
 `size_t` `allocation` byte counts of step 7; Integer-default specification arithmetic; machine-integer Stages 0
-to 3, and Stage 4's front ends. The library's own proof check runs in the
-gate. Of the library's 145 theorems, 101 have checked proofs and 44 are
+to 3, and Stage 4's front ends; Rust names for the lemmas a Rust proof
+applies. The library's own proof check runs in the
+gate. Of the library's 148 theorems, 104 have checked proofs and 44 are
 kernel standard theorems.
 
 Open:
@@ -32,8 +33,6 @@ Open:
   generic `T: intn` library mechanism; the kernel rules are stated once
   over a format and `src/surface/tests/width_uniformity.rs` guards width
   uniformity ([One machine-integer design](#one-machine-integer-design)).
-- Rust names for the lemmas a Rust proof applies
-  ([below](#rust-names-for-the-surviving-lemmas)).
 - One convention for the language library models: where the C library,
   allocator, `snprintf`, C++ catalog and Rust core contracts are stated and
   how they are reported ([Layers](#layers)).
@@ -69,9 +68,9 @@ trust:
   and reasonably organized.
 - **Machine-integer bridges.** At filing, 110 of the 162 theorems were
   width-specific lemmas such as `int32_less_equal_transitive` and
-  `uint64_subtract_to_integer`. Today 64 of the 145 theorems are: 56
+  `uint64_subtract_to_integer`. Today 64 of the 148 theorems are: 56
   width-prefixed `integer::` lemmas and the eight `integer::to_*_round_trip`
-  laws. 101 of the 145 have checked proofs and 44 are kernel standard
+  laws. 104 of the 148 have checked proofs and 44 are kernel standard
   theorems ([trust](../docs/concepts/trust.md#the-click-library)).
 
 The width lemmas have no consistent coverage across widths. On master at the
@@ -581,6 +580,22 @@ lemmas that are about to be removed. The archived Charon-trial sidecars under
 
 Done when the lemmas a Rust example applies have Rust spellings and a Rust
 fixture applies them by those names.
+
+Status: done (2026-11-12). Three lemmas are applied by Rust proofs, and each
+has a Rust-named wrapper theorem in the module of its operand type, proved by
+applying the C-named lemma (not a kernel standard theorem):
+`u32::multiply_to_integer` (`integer::uint32_multiply_to_integer`),
+`usize::multiply_to_integer` (`integer::uint64_multiply_to_integer`) and
+`usize::product_bound_from_division`
+(`integer::uint64_product_bound_from_division`). `examples/rust-unsigned`
+and `rust_usize_arithmetic_casts_and_expansion_verify` in
+`tests/rust_import.rs` apply them by those names, and
+`mdtests/stdlib_every_symbol.md` uses each. Library theorems are qualified
+per module, so two modules may declare one bare name
+(`is_qualified_declaration` in `src/surface/names.rs`). The verified
+`design/adler32/project/adler2` sidecar keeps its C spellings
+(`integer::uint64_divide_to_integer`, `integer::uint64_add_to_integer` and
+others, which have no Rust wrapper), as do the archived `design/charon-trial` sidecars.
 
 ## Width-uniformity gaps
 

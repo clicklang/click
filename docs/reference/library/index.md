@@ -4900,6 +4900,16 @@ with the same function after `import click::rust::u32;`. Each is opaque until
 and `unsigned_abs` go through the unsigned type of its width, whose casts are
 modular; an 8- or 16-bit result is cast back from C's promoted `int`.
 
+### Rust names for library lemmas
+
+A Rust proof applies the library lemmas it needs by Rust names, in the
+module of the operand type: `u32::multiply_to_integer`,
+`usize::multiply_to_integer` and `usize::product_bound_from_division`. Each
+restates a width-named lemma of [`click::integer`](#clickinteger) and is
+proved by applying it, so it adds no trust. These modules import
+`click::integer` for those proofs; a sidecar that applies a Rust name needs
+only `import click::rust::u32;` or `import click::rust::usize;`.
+
 ### `i8::min`
 
 ```click
@@ -5712,6 +5722,21 @@ function abs_diff(a: uint32, b: uint32) -> uint32 {
 }
 ```
 
+### `u32::multiply_to_integer`
+
+```click
+theorem multiply_to_integer(left: uint32, right: uint32) {
+    requires right == 0u32 or left <= 4294967295u32 / right;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right) by apply(integer::uint32_multiply_to_integer(left, right));
+}
+```
+
+An in-range `u32` product is the Integer product: the Rust name of
+[`integer::uint32_multiply_to_integer`](#integeruint32_multiply_to_integer),
+proved by applying it.
+
+**Verified use:** [`examples/rust-unsigned/arithmetic.click`](https://github.com/clicklang/click/blob/master/examples/rust-unsigned/arithmetic.click), [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `u64::min`
 
 ```click
@@ -5879,6 +5904,37 @@ function abs_diff(a: uint64, b: uint64) -> uint64 {
     if b <= a { a - b } else { b - a }
 }
 ```
+
+### `usize::product_bound_from_division`
+
+```click
+theorem product_bound_from_division(x: uint64, y: uint64) {
+    requires y != 0u64;
+    requires x <= 18446744073709551615u64 / y;
+    ensures to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64) by apply(integer::uint64_product_bound_from_division(x, y));
+}
+```
+
+A product bounded by division does not exceed `usize::MAX`: the Rust name of
+[`integer::uint64_product_bound_from_division`](#integeruint64_product_bound_from_division),
+proved by applying it.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md); `tests/rust_import.rs` applies it to imported Rust (`rust_usize_arithmetic_casts_and_expansion_verify`).
+
+### `usize::multiply_to_integer`
+
+```click
+theorem multiply_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) * to_integer(right) <= 18446744073709551615;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right) by apply(integer::uint64_multiply_to_integer(left, right));
+}
+```
+
+An in-range `usize` product is the Integer product: the Rust name of
+[`integer::uint64_multiply_to_integer`](#integeruint64_multiply_to_integer),
+proved by applying it.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md); `tests/rust_import.rs` applies it to imported Rust (`rust_usize_arithmetic_casts_and_expansion_verify`).
 
 ## `click::rust::vec`
 

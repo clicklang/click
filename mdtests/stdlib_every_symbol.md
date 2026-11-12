@@ -1607,6 +1607,11 @@ theorem use_rust_u32_abs_diff() {
     }
 }
 
+theorem use_rust_u32_multiply_to_integer(left: uint32, right: uint32) {
+    requires right == 0u32 or left <= 4294967295u32 / right;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right) by apply(u32::multiply_to_integer(left, right));
+}
+
 theorem use_rust_u64_min() {
     ensures u64::min(18446744073709551615u64, 0u64) == 0u64 by {
         unfold(u64::min(18446744073709551615u64, 0u64));
@@ -1745,6 +1750,17 @@ theorem use_rust_usize_abs_diff() {
         unfold(usize::abs_diff(0u64, 18446744073709551615u64));
         solve();
     }
+}
+
+theorem use_rust_usize_product_bound_from_division(x: uint64, y: uint64) {
+    requires y != 0u64;
+    requires x <= 18446744073709551615u64 / y;
+    ensures to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64) by apply(usize::product_bound_from_division(x, y));
+}
+
+theorem use_rust_usize_multiply_to_integer(left: uint64, right: uint64) {
+    requires to_integer(left) * to_integer(right) <= 18446744073709551615;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right) by apply(usize::multiply_to_integer(left, right));
 }
 
 theorem use_option_unwrap_or(d: int32) {

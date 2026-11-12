@@ -271,8 +271,10 @@ fn library_declaration_names() -> &'static BTreeMap<&'static str, BTreeSet<Strin
 /// Each Click library theorem's bare name and its qualified identity,
 /// `click::module::name`, which the verifier uses for it: a file theorem of
 /// the same name is a different theorem, and built-in tactics name library
-/// theorems by this identity.
-pub(in crate::surface) fn library_theorem_identities() -> &'static BTreeMap<String, String> {
+/// theorems by this identity. A bare name two modules declare keeps the
+/// later module's identity; tests use it for names declared once.
+#[cfg(test)]
+fn library_theorem_identities() -> &'static BTreeMap<String, String> {
     static THEOREMS: std::sync::OnceLock<BTreeMap<String, String>> = std::sync::OnceLock::new();
     THEOREMS.get_or_init(|| {
         let mut theorems = BTreeMap::new();
@@ -319,12 +321,34 @@ const QUALIFIED_MODULES: &[&str] = &[
 /// Whether the library declaration `name` in module `identity` is known to
 /// the verifier by its qualified identity.
 pub(in crate::surface) fn is_qualified_declaration(identity: &str, name: &str) -> bool {
-    let path = crate::surface::library_module_path(identity);
-    library_theorem_identities().get(name) == Some(&format!("{path}::{name}"))
+    library_theorem_names()
+        .get(identity)
+        .is_some_and(|names| names.contains(name))
         || (QUALIFIED_MODULES.contains(&identity)
             && library_functions_and_predicates()
                 .get(identity)
                 .is_some_and(|names| names.contains(name)))
+}
+
+/// The theorems of each Click library module. Every library theorem has a
+/// qualified identity, so two modules may declare theorems of one bare name
+/// (`u32::multiply_to_integer` and `usize::multiply_to_integer`).
+fn library_theorem_names() -> &'static BTreeMap<&'static str, BTreeSet<String>> {
+    static NAMES: std::sync::OnceLock<BTreeMap<&'static str, BTreeSet<String>>> =
+        std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        library_declarations()
+            .keys()
+            .map(|identity| {
+                (
+                    *identity,
+                    library_names_of(identity, &[DeclarationKind::Theorem])
+                        .map(str::to_string)
+                        .collect(),
+                )
+            })
+            .collect()
+    })
 }
 
 /// The pure functions and predicates of each Click library module. Types,

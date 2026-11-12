@@ -1,3 +1,5 @@
+import click::integer;
+
 // The Rust core methods of `u32`, as specification functions. A call to
 // one of these methods in imported Rust is a call to an external function
 // whose contract states its result with the function of the same name here,
@@ -48,4 +50,12 @@ function checked_sub(a: uint32, b: uint32) -> Option<uint32> {
 
 function abs_diff(a: uint32, b: uint32) -> uint32 {
     if b <= a { a - b } else { b - a }
+}
+
+// The product identity a Rust proof applies, by its Rust name: an in-range
+// `u32` product is the Integer product. It restates
+// `integer::uint32_multiply_to_integer` and is proved by it.
+theorem multiply_to_integer(left: uint32, right: uint32) {
+    requires right == 0u32 or left <= 4294967295u32 / right;
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right) by apply(integer::uint32_multiply_to_integer(left, right));
 }

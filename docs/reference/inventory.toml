@@ -3972,6 +3972,10 @@ id = "library.function.u32::abs_diff"
 path = "reference/library/index.md#u32abs_diff"
 
 [[item]]
+id = "library.theorem.u32::multiply_to_integer"
+path = "reference/library/index.md#u32multiply_to_integer"
+
+[[item]]
 id = "library.function.u64::min"
 path = "reference/library/index.md#u64min"
 
@@ -4050,6 +4054,14 @@ path = "reference/library/index.md#usizechecked_sub"
 [[item]]
 id = "library.function.usize::abs_diff"
 path = "reference/library/index.md#usizeabs_diff"
+
+[[item]]
+id = "library.theorem.usize::product_bound_from_division"
+path = "reference/library/index.md#usizeproduct_bound_from_division"
+
+[[item]]
+id = "library.theorem.usize::multiply_to_integer"
+path = "reference/library/index.md#usizemultiply_to_integer"
 
 [[item]]
 id = "library.type.Slice"

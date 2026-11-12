@@ -4828,18 +4828,18 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
     requires x <= 18446744073709551615u64 / y;
     ensures result == x * y;
 } by {
-    apply(click::integer::uint64_product_bound_from_division(x, y)) using {
+    apply(usize::product_bound_from_division(x, y)) using {
         y != 0u64;
         x <= 18446744073709551615u64 / y;
     };
-    apply(click::integer::uint64_multiply_to_integer(x, y)) using {
+    apply(usize::multiply_to_integer(x, y)) using {
         to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64);
     };
     step_until(function.exit); solve();
 }"#,
     );
     assert_ne!(general_mul, sidecar);
-    let general_mul = format!("import click::integer;\n{general_mul}");
+    let general_mul = format!("import click::rust::usize;\n{general_mul}");
     C0VerificationSession::new_program_prepared(&general_mul, &prepared).unwrap();
     let expanded = click::surface::expand_program_prepared_claim_source_by_label(
         &general_mul,
