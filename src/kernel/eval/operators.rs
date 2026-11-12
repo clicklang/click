@@ -1431,7 +1431,6 @@ pub(in crate::kernel) fn apply_c_divide(
             right,
             facts,
             obligations,
-            assumptions,
             MachineTerm::unsigned_divide,
         )
     } else {
@@ -1478,7 +1477,6 @@ pub(in crate::kernel) fn apply_c_remainder(
             right,
             facts,
             obligations,
-            assumptions,
             MachineTerm::unsigned_remainder,
         )
     } else {
@@ -4106,29 +4104,32 @@ fn apply_c_uint64_division_like(
     )
 }
 
+/// One conditional successor with C's divisor domain left for the driver.
+/// Even an already known domain is retained; this operation has no fact context.
 fn apply_c_uint32_division_like(
     left: MachineTerm,
     right: MachineTerm,
     facts: ExecutionFacts,
-    obligations: Vec<ProofObligation>,
-    assumptions: &PureFactContext,
+    mut obligations: Vec<ProofObligation>,
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
 ) -> Vec<CExpressionPath> {
-    let divides_by_zero = ConditionTerm::equal(right.clone(), MachineTerm::constant(0));
-    split_on_undefined_behavior(
-        divides_by_zero,
-        CUndefinedBehavior::DivisionByZero,
+    #[cfg(test)]
+    let _fast = crate::kernel::search::FastOperationScope::enter("unsigned division domain");
+    let zero = ConditionTerm::machine_compare(
+        MachineIntegerType::UInt32,
+        CompareRelation::Equal,
+        right.clone(),
+        MachineTerm::constant(0),
+    );
+    obligations.push(
+        ProofObligation::verification_condition(Proposition::ConditionIs(zero, false))
+            .with_context("unsigned division requires a nonzero divisor"),
+    );
+    vec![CExpressionPath {
+        outcome: CExpressionOutcome::Value(uint32(result(left, right))),
         facts,
         obligations,
-        assumptions,
-        |facts, obligations| {
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(uint32(result(left, right))),
-                facts,
-                obligations,
-            }]
-        },
-    )
+    }]
 }
 
 fn promote_c_shift_count(value: CValue) -> Option<(MachineTerm, bool, bool)> {
