@@ -43,21 +43,24 @@ The committed `click.project.lock.json` and `.click/bitcoin/` artifacts verify
 offline. The lock rechecks the Bitcoin and sysroot files in this directory, so
 extract the hermetic closure here first:
 
+From this directory, with an installed `click`:
+
 ```sh
-tar -xzf integrations/bitcoin-core-money-range/input-closure.tar.gz \
-  -C integrations/bitcoin-core-money-range
-cargo run --bin click -- verify integrations/bitcoin-core-money-range/MoneyRange.click
-cargo run --bin click -- profile integrations/bitcoin-core-money-range/MoneyRange.click
-cargo run --bin click -- audit integrations/bitcoin-core-money-range/MoneyRange.click
-cargo run --bin click -- expand --claim MoneyRange.contract integrations/bitcoin-core-money-range/MoneyRange.click
+tar -xzf input-closure.tar.gz
+click verify MoneyRange.click
+click profile MoneyRange.click
+click audit MoneyRange.click
+click expand --claim MoneyRange.contract MoneyRange.click
 ```
 
-Every sidecar here verifies the same way. To refresh the lock, build the pinned
-exporter and lock the project:
+Every sidecar here verifies the same way. To refresh the lock, install the
+pinned C++ front end (`click install VERSION --cpp`, Linux x86-64; in a
+checkout, or on another host,
+`CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"` instead) and lock the
+project; any pinned exporter writes the committed lock and artifacts:
 
 ```sh
-CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)" \
-  cargo run --bin click -- import lock integrations/bitcoin-core-money-range
+click import lock
 ```
 
 The lock binds the unit's arguments, exact source and header bytes, all

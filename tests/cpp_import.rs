@@ -19363,3 +19363,169 @@ fn default_construction_reads_constant_member_initializers_only() {
         assert!(error.contains(expected), "{name}: {error}");
     }
 }
+
+/// A Click home with the C++ front end installed beside this version, as
+/// `click install VERSION --cpp` places it, holding `exporter`.
+#[cfg(not(feature = "fast-gate"))]
+fn installed_cpp_home(name: &str, exporter: &Path) -> PathBuf {
+    let home = scratch_copy(name);
+    let frontend = home
+        .join("versions")
+        .join(env!("CARGO_PKG_VERSION"))
+        .join("frontends/cpp");
+    fs::create_dir_all(&frontend).unwrap();
+    fs::copy(exporter, frontend.join("click-cpp-exporter")).unwrap();
+    home
+}
+
+/// The installed `click`, run with only `home`: no exporter override and
+/// nothing on `PATH`.
+#[cfg(not(feature = "fast-gate"))]
+fn installed_click(home: &Path, project: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_click"))
+        .args(args)
+        .current_dir(project)
+        .env("CLICK_HOME", home)
+        .env("CLICK_NO_VERSION_DISPATCH", "1")
+        .env("PATH", "")
+        .env("HOME", home.join("empty-home"))
+        .env_remove("CLICK_CPP_EXPORTER")
+        .env_remove("LD_LIBRARY_PATH")
+        .output()
+        .unwrap()
+}
+
+/// A copy of the committed `example`, outside the repository, without its
+/// lock and artifacts.
+#[cfg(not(feature = "fast-gate"))]
+fn unlocked_copy(example: &str, name: &str) -> PathBuf {
+    let copy = scratch_copy(name);
+    copy_tree(&Path::new(env!("CARGO_MANIFEST_DIR")).join(example), &copy);
+    fs::remove_dir_all(copy.join(".click")).unwrap();
+    fs::remove_file(copy.join(click::project::LOCK_NAME)).unwrap();
+    copy
+}
+
+#[cfg(not(feature = "fast-gate"))]
+/// Without an installed front end, `click import lock` says how to install
+/// one; an installed exporter that is not the pinned one is refused before
+/// it exports anything. Neither writes a lock.
+#[test]
+fn an_installed_cpp_front_end_is_required_and_checked() {
+    let version = env!("CARGO_PKG_VERSION");
+    let project = unlocked_copy("examples/basic-cpp", "installed-refusals");
+    let empty = scratch_copy("installed-empty-home");
+    let missing = installed_click(&empty, &project, &["import", "lock"]);
+    let stderr = String::from_utf8_lossy(&missing.stderr);
+    assert!(!missing.status.success());
+    assert!(
+        stderr.contains(&format!(
+            "the C++ front end is not installed for Click {version}"
+        )) && stderr.contains(&format!("click install {version} --cpp")),
+        "{stderr}"
+    );
+
+    let impostor = scratch_copy("installed-impostor");
+    let script = impostor.join("click-cpp-exporter");
+    fs::write(
+        &script,
+        "#!/bin/sh\necho 'click-cpp-exporter 0; schema 1; clang clang version 18.1.8'\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let home = installed_cpp_home("installed-wrong-version", &script);
+    let refused = installed_click(&home, &project, &["import", "lock"]);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success());
+    assert!(
+        stderr.contains("C++ exporter version mismatch; expected click-cpp-exporter"),
+        "{stderr}"
+    );
+    assert!(!project.join(click::project::LOCK_NAME).exists());
+    for directory in [project, empty, impostor, home] {
+        let _ = fs::remove_dir_all(directory);
+    }
+}
+
+#[cfg(not(feature = "fast-gate"))]
+/// The installed layout alone prepares and verifies the C++ demonstrations:
+/// with the pinned exporter installed beside this Click, no override and
+/// nothing on `PATH`, locking `examples/basic-cpp` and the hermetic
+/// `MoneyRange` integration outside the repository writes their committed
+/// locks and artifacts byte for byte, and their sidecars verify.
+#[test]
+#[ignore = "nightly: locks two projects with the pinned exporter"]
+fn the_installed_cpp_front_end_reproduces_the_committed_imports() {
+    let exporter = PathBuf::from(
+        std::env::var_os("CLICK_CPP_EXPORTER")
+            .expect("scripts/check.sh supplies the pinned C++ exporter"),
+    );
+    let home = installed_cpp_home("installed-home", &exporter);
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let money_range = "integrations/bitcoin-core-money-range";
+    for (example, sidecars) in [
+        (
+            "examples/basic-cpp",
+            &[
+                "increment.click",
+                "with_restore.click",
+                "with_restore_caller.click",
+            ][..],
+        ),
+        (money_range, &["MoneyRange.click"][..]),
+    ] {
+        let project = unlocked_copy(example, "installed-project");
+        if example == money_range {
+            let closure = root.join(money_range).join("input-closure.tar.gz");
+            let unpacked = Command::new("tar")
+                .arg("-xzf")
+                .arg(&closure)
+                .arg("-C")
+                .arg(&project)
+                .status()
+                .unwrap();
+            assert!(unpacked.success(), "extract {}", closure.display());
+        }
+        let locked = installed_click(&home, &project, &["import", "lock"]);
+        assert!(
+            locked.status.success(),
+            "{example}: {}",
+            String::from_utf8_lossy(&locked.stderr)
+        );
+        let committed = root.join(example);
+        let mut files = vec![PathBuf::from(click::project::LOCK_NAME)];
+        let mut pending = vec![PathBuf::from(".click")];
+        while let Some(relative) = pending.pop() {
+            for entry in fs::read_dir(committed.join(&relative)).unwrap() {
+                let entry = entry.unwrap();
+                let child = relative.join(entry.file_name());
+                if entry.file_type().unwrap().is_dir() {
+                    pending.push(child);
+                } else {
+                    files.push(child);
+                }
+            }
+        }
+        for file in files {
+            assert_eq!(
+                fs::read(project.join(&file)).unwrap(),
+                fs::read(committed.join(&file)).unwrap(),
+                "{example}: {}",
+                file.display()
+            );
+        }
+        for sidecar in sidecars {
+            let verified = installed_click(&home, &project, &["verify", sidecar]);
+            assert!(
+                verified.status.success(),
+                "{example} {sidecar}: {}",
+                String::from_utf8_lossy(&verified.stderr)
+            );
+        }
+        let _ = fs::remove_dir_all(project);
+    }
+    let _ = fs::remove_dir_all(home);
+}
