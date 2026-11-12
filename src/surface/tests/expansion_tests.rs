@@ -21873,6 +21873,8 @@ fn saved_array_application_obligation_expands_without_search() {
         .collect::<Vec<_>>();
     verify_c0_sources(&source, &sources).unwrap();
     let expanded = expand_function_proof_source(&source, &sources, "keep").unwrap();
-    without_implicit_solve_for_claim("keep.contract", || verify_c0_sources(&expanded, &sources))
-        .unwrap();
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
