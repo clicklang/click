@@ -7660,6 +7660,49 @@ pub(crate) fn refine_object_pointer_argument(
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> bool {
+    refine_object_pointer_argument_with_null(
+        value,
+        object_class,
+        memory,
+        assumptions,
+        |facts, pointer| {
+            facts.decide(&ConditionTerm::pointer_equal(
+                pointer.clone(),
+                Pointer::null(),
+            )) == Some(true)
+        },
+    )
+}
+
+/// The explicit theorem operation may use recorded null equality, not search
+/// ownership anchors to decide an argument's nominal object class.
+pub(crate) fn refine_object_pointer_argument_using_facts(
+    value: &mut CValue,
+    object_class: &crate::kernel::effective_type::CAccessClass,
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+) -> bool {
+    refine_object_pointer_argument_with_null(
+        value,
+        object_class,
+        memory,
+        assumptions,
+        |facts, pointer| {
+            facts.exact_condition_value(&ConditionTerm::pointer_equal(
+                pointer.clone(),
+                Pointer::null(),
+            )) == Some(true)
+        },
+    )
+}
+
+fn refine_object_pointer_argument_with_null(
+    value: &mut CValue,
+    object_class: &crate::kernel::effective_type::CAccessClass,
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+    proves_null: impl FnOnce(&PureFactContext, &Pointer) -> bool,
+) -> bool {
     let CValue::Pointer(pointer) = value else {
         return false;
     };
@@ -7684,10 +7727,7 @@ pub(crate) fn refine_object_pointer_argument(
                 })
             // A pointer the facts prove null meets the requirement too. It
             // keeps its written address rather than being respelled as null.
-            || assumptions.decide(&ConditionTerm::pointer_equal(
-                pointer.pointer().clone(),
-                Pointer::null(),
-            )) == Some(true))
+            || proves_null(assumptions, pointer.pointer()))
     {
         *pointer = pointer
             .clone()

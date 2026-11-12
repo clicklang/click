@@ -1272,7 +1272,7 @@ pub(super) fn theorem_application_bindings(
                     spec_definitions,
                     &active_functions,
                 )?;
-                if !crate::kernel::refine_object_pointer_argument(
+                if !crate::kernel::refine_object_pointer_argument_using_facts(
                     &mut value,
                     &class,
                     context.post_state.memory(),

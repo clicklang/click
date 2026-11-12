@@ -11,6 +11,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_premises: &[ClickProposition],
     ) -> Result<Proof<'a>, Option<String>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_wide_arithmetic_using");
         // The caller wraps a refusal in the original arithmetic step's
         // diagnostic. Preserve bridge failures with raw summaries: rendering
         // their nested goals/premises here would embed a second diagnostic
@@ -115,6 +117,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         carrier: Carrier,
         surface_premises: &[ClickProposition],
     ) -> Result<Proof<'a>, Option<String>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("wide_arithmetic_with");
         let ty = carrier.name();
         let describe = crate::surface::diagnostics::describe_contract_expression;
         let spell = crate::surface::printing::source_click_proposition;

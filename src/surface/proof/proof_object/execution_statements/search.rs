@@ -17,6 +17,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         tactic_index: usize,
         source_refusal: Option<&ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("apply_planned_fact_transport");
         Self::apply_planned_fact_transport_inner(
             search_input,
             surface_source,
@@ -37,6 +39,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         tactic_index: usize,
         source_refusal: Option<&ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("apply_planned_fact_transport_inner");
         let resolved_source =
             search_input.substitute_fixed_state_locals_in_proposition(surface_source)?;
         let resolved_target =
@@ -159,6 +163,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         tactic_index: usize,
         source_refusal: Option<&ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("apply_planned_outcome_fact_transport");
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Err(search_input.step_error("`transport` requires an execution proof"));
         };

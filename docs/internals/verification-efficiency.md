@@ -831,3 +831,33 @@ Any new hot-path collection, cache, or clone answers these review questions:
 See [Testing Click](testing.md) for commands, budgets, and profiling. The open
 implementation work is ordered in
 [`roadmap/README.md`](https://github.com/clicklang/click/blob/master/roadmap/README.md).
+
+### Theorem operation discovery boundary
+
+Named theorem application has three primitive phases: prepare the selected
+arguments and instantiated conclusions while returning prerequisite obligations;
+prove those obligations in the driver with ordinary solve; publish the retained
+conclusions. Pure, fixed-state, live and returned-outcome applications share this
+route. Explicit `apply(...) using { ... }` is the replay operation. Special
+population/range built-ins retain their separately inventoried route.
+
+In test builds, `FastOperationScope` surrounds preparation, publication and
+explicit theorem application. Every `ProofSearch` method records entry before
+any work, including exact-fact shortcuts; constructing `SearchPermission` also
+records discovery. A search entry inside a guarded primitive panics, including
+when the primitive itself was called by search. Driver obligation solving runs
+outside the primitive scope. Nested scopes and unwinding restore the previous
+scope. The build boundary requires both the search-entry instrumentation and the
+three migrated operation scopes.
+
+Cold generic-instance validation is one named exception:
+`verify_concrete_theorem_definition` starts an independent declaration proof and
+temporarily suspends the requesting operation's scope. Every primitive called
+inside that proof still installs its own guard, and returning restores the
+requester's guard. The exception has a frozen dependency record; adding another
+caller fails the boundary audit. Lazy declaration verification can still happen
+inside an expanded application and remains a separate migration item.
+
+This is a discovery boundary, not a complexity proof: it does not detect an
+unregistered helper's loop, a scan in lowering, or expensive fact admission.
+Those still require the operation audit and deterministic scaling regressions.

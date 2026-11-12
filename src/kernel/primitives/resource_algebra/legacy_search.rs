@@ -9,6 +9,8 @@ impl crate::kernel::search::ProofSearch<ResourceContext> {
         skip_block: Option<&PointerBlock>,
         assumptions: &PureFactContext,
     ) -> BTreeSet<ResourceEntryId> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("ownership_validity_candidates");
         let index = &proof_input.storage.index;
         let base = range.base();
         let mut candidates = BTreeSet::new();
@@ -122,6 +124,8 @@ impl crate::kernel::search::ProofSearch<ResourceContext> {
         assumptions: &PureFactContext,
         use_separation: bool,
     ) -> bool {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("ownership_overlap");
         // Literal byte coordinates already settle this pair. Do not construct
         // aliases or search their Cartesian product to rediscover the answer.
         if let Some(overlap) = constant_memory_overlap(left, right) {

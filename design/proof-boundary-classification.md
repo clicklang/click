@@ -2,7 +2,7 @@
 
 Source reconciliation at `c53645952` (2026-11-11), the completed head of
 PR #2520. Queue/merge status is separate from this source baseline. This
-classifies all 19 `mixed` records in `build_support/proof_search_edges.tsv`
+classifies all 20 `mixed` records in `build_support/proof_search_edges.tsv`
 and groups the 6 operation references. The operation-to-driver list is empty.
 A record is one caller/target pair, not one runtime call or one slow walk.
 A classified call is not a complexity proof for its callee. This documentation
@@ -84,7 +84,7 @@ Bare `transport(...)`, by contrast, is classified Smart and may discover evidenc
 Expanding the latter into the former is not by itself a search-free guarantee.
 `transport_certificate` is a different operation and must be audited separately.
 
-## The 19 mixed reference records
+## The 20 mixed reference records
 
 Paths below are relative to `src/surface/`.
 
@@ -105,9 +105,10 @@ Paths below are relative to `src/surface/`.
 | `plan_explicit_predecessor_upper_bound` | 1 | Search support. Used by solve directly and by the recorded signed-order planner; may plan equality rewrites. |
 | `plan_explicit_fact_transport` | 1 | Smart transport planner. Reached from smart execution and the bare-transport adapters on `Proof`; builds contexts from available facts/effects and tests derivability. Ordinary expansion covers the scalar routes listed in T1–T5; surviving legacy output still uses `TransportUsing`, whose remaining search is not excused by this classification. |
 | `segment_contains_pointer` | 1 | Declaration-validation search. `checking/segments.rs` calls `ProofSearch::proves` for bounds; the production caller is resource-definition read-coverage validation in `validation/definition_validation.rs`. This is not ordinary implicit solve on a user proof obligation. Determine the declaration-input cost bound and how expensive reasoning can be replaced by explicit evidence. |
+| `verify_concrete_theorem_definition` | 1 | Named guard exception for an independent cold generic declaration proof. It suspends the enclosing theorem-operation guard; nested primitives establish their own guards. Moving declaration validation out of fast application remains required. |
 
 Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
-(including bare transport), and 1 declaration-validation search record.
+(including bare transport), and 2 declaration-validation records.
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
@@ -188,7 +189,7 @@ The 6 `operation` records are not 6 independent slow walks:
 
 | Group | Records | Current interpretation and remaining evidence |
 | --- | ---: | --- |
-| Theorem application on `ProofDriver` | 1 | Pure, fixed-state and live-execution named applications retain their evaluated arguments and instantiated conclusions while the driver proves argument-domain and formal-premise obligations with ordinary solve. `apply_theorem_application` still selects evidence for returned-outcome applications. Driver placement does not make explicit tactic checking search-free. Audit its selected-input bound and obligation/expansion route. ArithmeticUsing is already a smart step; its strategy sequence is now behind one explicit search dispatch. |
+| Theorem application on `ProofDriver` | 1 | Pure, fixed-state, live and returned-outcome named applications retain arguments and conclusions while the driver solves their obligations. The selector edge remains for special population/range built-ins and unsupported outcome dispatch. Migrated primitives have test-build discovery guards; cold generic declaration validation retains one named exception and still needs separation from application. The guard does not certify unregistered helper loops as fast. ArithmeticUsing remains smart and dispatches through search. |
 | Legacy explicit transport checking | 3 | `certified_fact_transport_reaches`, `check_fixed_state_fact_transport_using_facts_inner`, and `apply_pure_transport_using` call atomic derivation. Confirmed search access from the explicit transport route; migrate/retire under T1–T5, not a new independent bug per record. |
 | Definition validation | 2 | `symbolic_segment_covers_index` and `symbolic_segment_covers_range` join the mixed `segment_contains_pointer` record in one declaration-validation concern. There is no ordinary user obligation/expansion boundary established for these checks. |
 
