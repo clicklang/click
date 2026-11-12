@@ -90,6 +90,7 @@ impl<'ast> Visit<'ast> for Inventory {
                     "apply_theorem_using"
                         | "prepare_theorem_application"
                         | "finish_prepared_theorem_application"
+                        | "finish_prepared_step"
                 )
         {
             let guarded = matches!(item.block.stmts.first(), Some(syn::Stmt::Local(local))

@@ -842,7 +842,9 @@ route. Explicit `apply(...) using { ... }` is the replay operation. Special
 population/range built-ins retain their separately inventoried route.
 
 In test builds, `FastOperationScope` surrounds preparation, publication and
-explicit theorem application and proposition/resource scope completion. Every `ProofSearch` method records entry before
+explicit theorem application and proposition/resource scope completion.
+Prepared statement/fold publication is guarded independently of obligation
+solving. Every `ProofSearch` method records entry before
 any work, including exact-fact shortcuts; constructing `SearchPermission` also
 records discovery. A search entry inside a guarded primitive panics, including
 when the primitive itself was called by search. Driver obligation solving runs

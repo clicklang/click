@@ -1463,11 +1463,12 @@ fn search_entries_cannot_omit_or_delay_runtime_discovery_recording() {
 }
 
 #[test]
-fn migrated_theorem_operations_cannot_drop_their_discovery_guard() {
+fn migrated_operations_cannot_drop_their_discovery_guard() {
     for name in [
         "apply_theorem_using",
         "prepare_theorem_application",
         "finish_prepared_theorem_application",
+        "finish_prepared_step",
     ] {
         let source = format!("impl Proof {{ fn {name}() {{}} }}");
         let errors = proof_search_boundary::check(
