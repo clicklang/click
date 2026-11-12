@@ -31,7 +31,7 @@ fn selected_conditional_checks_retain_arms_at_every_machine_format() {
             for _ in 0..size {
                 value = join(&guard, &value, &zero);
             }
-            let condition = ConditionTerm::integer_equal(value.observe().unwrap(), IntegerTerm::constant(1));
+            let condition = ConditionTerm::integer_equal(value.observe().unwrap(), IntegerTerm::constant(1.into()));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 assert_eq!(facts.decide(&condition), Some(true));
