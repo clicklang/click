@@ -1431,6 +1431,11 @@ fn transport_read_subject(read: &ContractExpression) -> Option<TransportReadSubj
         CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
             Some(TransportReadSubject::Cell(*pointer))
         }
+        // The parser names a single indexed cell by the address of that
+        // written place. Select that same subject; preserve checks the law.
+        read @ CExpression::Index(_, _) => Some(TransportReadSubject::Cell(
+            CExpression::AddressOf(Box::new(read)),
+        )),
         _ => None,
     }
 }

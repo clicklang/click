@@ -10224,6 +10224,16 @@ fn snapshot_comparison_transport_replay_scales_with_explicit_links() {
 
 #[test]
 fn two_read_transport_replay_scales_with_explicit_links() {
+    two_read_transport_replay_cost(false);
+}
+
+#[test]
+#[ignore = "nightly: indexed transport expansion and cold replay at four chain lengths"]
+fn indexed_read_transport_replay_scales_with_explicit_links() {
+    two_read_transport_replay_cost(true);
+}
+
+fn two_read_transport_replay_cost(indexed: bool) {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
         let c = format!(
@@ -10258,6 +10268,14 @@ fn two_read_transport_replay_scales_with_explicit_links() {
             }}
         "#
         );
+        let source = if indexed {
+            source.replace("*q", "q[0]").replace("*r", "q[1]").replace(
+                "using { separate(statement(0).footprint",
+                "using { at(statement(0).entry, q[0] == q[1]); separate(statement(0).footprint",
+            )
+        } else {
+            source
+        };
         let sources = [("chain.c", c.as_str())];
         let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
