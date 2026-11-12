@@ -42,9 +42,11 @@ fn conditional_snapshot_keys_reuse_growing_shared_arms() {
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
-                let guard = crate::kernel::KernelTermImport::default().condition(
-                    &ConditionTerm::equal(MachineTerm::Variable(Variable(998222 + index as u64)), MachineTerm::constant(0)),
-                );
+                let guard =
+                    crate::kernel::KernelTermImport::default().condition(&ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(998222 + index as u64)),
+                        MachineTerm::constant(0),
+                    ));
                 root = KernelTerm::machine_if_shared(format, [guard, root.clone(), root.clone()]);
                 let key = operand(V::Shared(&root));
                 assert_eq!(key, operand(V::Shared(&root)));
@@ -55,7 +57,9 @@ fn conditional_snapshot_keys_reuse_growing_shared_arms() {
         (size, work)
     });
     for pair in samples.windows(2) {
-        let [(small, sw), (large, lw)] = pair else { unreachable!() };
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
         assert!(lw * small <= sw * large * 2, "{samples:?}");
     }
 }

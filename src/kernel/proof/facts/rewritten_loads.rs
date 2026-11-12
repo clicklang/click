@@ -42,6 +42,26 @@ pub(super) fn differences(left: &KernelTerm, right: &KernelTerm) -> Option<Diffe
             }
             let children = match (a.node(), b.node()) {
                 (
+                    KernelTermNode::MachineIf { arguments: aa },
+                    KernelTermNode::MachineIf { arguments: ba },
+                ) if a.ty() == b.ty() => aa.iter().zip(ba).collect(),
+                (
+                    KernelTermNode::BoolCompare {
+                        format: af,
+                        relation: ar,
+                        arguments: aa,
+                    },
+                    KernelTermNode::BoolCompare {
+                        format: bf,
+                        relation: br,
+                        arguments: ba,
+                    },
+                ) if af == bf && ar == br => aa.iter().zip(ba).collect(),
+                (
+                    KernelTermNode::BoolEqual { arguments: aa },
+                    KernelTermNode::BoolEqual { arguments: ba },
+                ) => aa.iter().zip(ba).collect(),
+                (
                     KernelTermNode::MachineBinary {
                         format: af,
                         operator: ao,

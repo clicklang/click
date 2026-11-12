@@ -510,12 +510,17 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
                     to: T::UInt8,
                     value: Box::new(KernelTermExport::condition(&arguments[0]).ok()?),
                 };
-                let guard = crate::kernel::eval::canonical_term(&guard);
+                let rewritten = crate::kernel::eval::canonical_term(&guard);
+                let guard = if rewritten == guard {
+                    arguments[0].clone()
+                } else {
+                    KernelTermImport::default()
+                        .condition(&ConditionTerm::truth_of_bool_word(&rewritten))
+                };
                 KernelTerm::machine_if_shared(
                     format(term),
                     [
-                        KernelTermImport::default()
-                            .condition(&ConditionTerm::truth_of_bool_word(&guard)),
+                        guard,
                         values[&arguments[1].id()].clone(),
                         values[&arguments[2].id()].clone(),
                     ],
@@ -724,12 +729,17 @@ pub(super) fn rewrite(
                     to: T::UInt8,
                     value: Box::new(KernelTermExport::condition(&arguments[0]).ok()?),
                 };
-                let guard = rewrite_leaf(&guard);
+                let rewritten = rewrite_leaf(&guard);
+                let guard = if rewritten == guard {
+                    arguments[0].clone()
+                } else {
+                    KernelTermImport::default()
+                        .condition(&ConditionTerm::truth_of_bool_word(&rewritten))
+                };
                 KernelTerm::machine_if_shared(
                     ty,
                     [
-                        KernelTermImport::default()
-                            .condition(&ConditionTerm::truth_of_bool_word(&guard)),
+                        guard,
                         values[&arguments[1].id()].clone(),
                         values[&arguments[2].id()].clone(),
                     ],

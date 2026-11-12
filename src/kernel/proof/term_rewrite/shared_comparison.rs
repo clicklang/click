@@ -76,7 +76,7 @@ impl TermRewrite<'_> {
             .bitvector
             .map(|(from, _)| super::super::machine_source_match::MachineSourceMatcher::new(from));
         let mut replacements = HashMap::<MachineIntegerType, KernelTerm>::new();
-        let mut guards = HashMap::<u64, ConditionTerm>::new();
+        let mut guards = HashMap::<u64, (ConditionTerm, KernelTerm)>::new();
         let mut pending = vec![(root.clone(), false)];
         while let Some((term, finish)) = pending.pop() {
             self.visit();
@@ -160,19 +160,23 @@ impl TermRewrite<'_> {
                 if let Some(collected) = &mut self.collected_conditions {
                     collected.push(condition.clone());
                 }
-                let condition = self.condition(&condition);
-                guards.insert(
-                    term.id(),
-                    if self.integer_exact.is_some() {
-                        condition
-                    } else {
-                        folded_machine_condition(condition)
-                    },
-                );
+                let original = condition;
+                let condition = self.condition(&original);
+                let condition = if self.integer_exact.is_some() {
+                    condition
+                } else {
+                    folded_machine_condition(condition)
+                };
+                let guard = if condition == original {
+                    arguments[0].clone()
+                } else {
+                    KernelTermImport::default().condition(&condition)
+                };
+                guards.insert(term.id(), (condition, guard));
             }
             let children: Vec<_> = match term.node() {
                 KernelTermNode::MachineIf { arguments } => match guards.get(&term.id()) {
-                    Some(ConditionTerm::Constant(value)) if self.integer_exact.is_none() => {
+                    Some((ConditionTerm::Constant(value), _)) if self.integer_exact.is_none() => {
                         vec![arguments[if *value { 1 } else { 2 }].clone()]
                     }
                     _ => arguments[1..].to_vec(),
@@ -189,7 +193,7 @@ impl TermRewrite<'_> {
             }
             let value = match term.node() {
                 KernelTermNode::MachineIf { arguments } => {
-                    let condition = guards.remove(&term.id()).expect("visited guard");
+                    let (condition, guard) = guards.remove(&term.id()).expect("visited guard");
                     if self.integer_exact.is_none()
                         && let ConditionTerm::Constant(value) = condition
                     {
@@ -202,14 +206,7 @@ impl TermRewrite<'_> {
                         {
                             left
                         } else {
-                            KernelTerm::machine_if_shared(
-                                format,
-                                [
-                                    KernelTermImport::default().condition(&condition),
-                                    left,
-                                    right,
-                                ],
-                            )
+                            KernelTerm::machine_if_shared(format, [guard, left, right])
                         }
                     }
                 }

@@ -7,6 +7,7 @@ use crate::persistent::PersistentMap;
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
 enum CorrespondencePolicy {
     LoadAtoms,
+    ConditionLoads,
     // Only a 32-bit ring-operator path may frame changed read snapshots.
     Snapshot(bool),
 }
@@ -27,6 +28,16 @@ pub(crate) fn shared_operand_leaf_pairs(
     right: &KernelTerm,
 ) -> Option<Pairs> {
     shared_operand_leaf_pairs_with_policy(format, left, right, CorrespondencePolicy::LoadAtoms)
+}
+
+/// Selected condition matching also returns differing guards for the caller's
+/// load authority. These are syntax pairs, never cached proof decisions.
+pub(crate) fn shared_condition_operand_leaf_pairs(
+    format: MachineIntegerType,
+    left: &KernelTerm,
+    right: &KernelTerm,
+) -> Option<Pairs> {
+    shared_operand_leaf_pairs_with_policy(format, left, right, CorrespondencePolicy::ConditionLoads)
 }
 
 pub(crate) fn shared_snapshot_read_pairs(left: &KernelTerm, right: &KernelTerm) -> Option<Pairs> {
@@ -140,7 +151,7 @@ fn shared_operand_leaf_pairs_with_policy(
                                     | crate::kernel::MachineBinaryOp::Multiply
                             ),
                     ),
-                    P::LoadAtoms => P::LoadAtoms,
+                    P::LoadAtoms | P::ConditionLoads => policy,
                 };
                 (af == bf && ao == bo)
                     .then_some(vec![(af, child_policy, al, bl), (af, child_policy, ar, br)])
@@ -149,7 +160,7 @@ fn shared_operand_leaf_pairs_with_policy(
                     af,
                     match policy {
                         P::Snapshot(_) => P::Snapshot(false),
-                        P::LoadAtoms => P::LoadAtoms,
+                        P::LoadAtoms | P::ConditionLoads => policy,
                     },
                     av,
                     bv,
@@ -159,7 +170,7 @@ fn shared_operand_leaf_pairs_with_policy(
                     af,
                     match policy {
                         P::Snapshot(_) => P::Snapshot(false),
-                        P::LoadAtoms => P::LoadAtoms,
+                        P::LoadAtoms | P::ConditionLoads => policy,
                     },
                     av,
                     bv,
@@ -167,9 +178,14 @@ fn shared_operand_leaf_pairs_with_policy(
             } else if let (Some((ac, [al, ar])), Some((bc, [bl, br]))) =
                 (a.conditional(), b.conditional())
             {
-                (ac == bc).then_some(vec![
-                    (format, P::Snapshot(false), al, bl),
-                    (format, P::Snapshot(false), ar, br),
+                let child_policy = if matches!(policy, P::ConditionLoads) {
+                    policy
+                } else {
+                    P::Snapshot(false)
+                };
+                (ac == bc || matches!(policy, P::ConditionLoads)).then_some(vec![
+                    (format, child_policy, al, bl),
+                    (format, child_policy, ar, br),
                 ])
             } else {
                 None
@@ -192,7 +208,18 @@ fn shared_operand_leaf_pairs_with_policy(
                 pending.extend(children.into_iter().map(|(f, p, a, b)| (f, p, a, b, false)));
                 continue;
             }
-            let mut result = Some(Pairs::default());
+            let mut initial = Pairs::default();
+            if matches!(policy, P::ConditionLoads)
+                && let (
+                    KernelTermNode::MachineIf { arguments: a },
+                    KernelTermNode::MachineIf { arguments: b },
+                ) = (left.node(), right.node())
+                && a[0] != b[0]
+            {
+                initial =
+                    initial.with_inserted((a[0].id(), b[0].id()), (a[0].clone(), b[0].clone()));
+            }
+            let mut result = Some(initial);
             for (format, child_policy, a, b) in children {
                 let Some(child) = &pairs[&(format, child_policy, a.id(), b.id())] else {
                     result = None;

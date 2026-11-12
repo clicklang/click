@@ -12,7 +12,9 @@ fn match_alpha_identity_work_scales_with_selected_arms() {
         (size, work)
     });
     for pair in samples.windows(2) {
-        let [(small, sw), (large, lw)] = pair else { unreachable!() };
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
         assert!(*sw > 0);
         assert!(lw * small <= sw * large * 2, "{samples:?}");
     }

@@ -179,3 +179,63 @@ fn conditional_evaluation_keeps_guarded_domains_and_ignores_ambient_truth() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/spec/conditional_tests.rs");
 }
+
+#[test]
+fn independent_opaque_call_guard_imports_have_the_same_observation() {
+    let _session = VerificationSession::enter();
+    let format = MachineIntegerType::Int32;
+    let guard = ConditionTerm::equal(
+        MachineTerm::ClickFunctionApplication {
+            name: "flag".into(),
+            arguments: vec![],
+        },
+        MachineTerm::constant(1),
+    );
+    let left = variable(format, 998204);
+    let right = word(format, 0);
+    let exports = KernelTermExport::machine_export_count();
+    let first = join(&guard, &left, &right).observe();
+    for _ in 0..8 {
+        assert_eq!(first, join(&guard, &left, &right).observe());
+    }
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+}
+
+#[test]
+fn exact_rewrites_keep_opaque_conditional_observation_identity() {
+    use crate::kernel::proof::term_rewrite::TermRewrite;
+    let _session = VerificationSession::enter();
+    let format = MachineIntegerType::Int32;
+    let guard = ConditionTerm::pointer_equal(
+        Pointer::symbolic(Variable(998205)),
+        Pointer::symbolic(Variable(998206)),
+    );
+    let source = join(&guard, &word(format, 1), &word(format, 0))
+        .observe()
+        .unwrap();
+    let from: SharedIntegerTerm = IntegerTerm::constant(99.into()).into();
+    let to: SharedIntegerTerm = IntegerTerm::constant(100.into()).into();
+    let mut current = source.clone();
+    let exports = KernelTermExport::machine_export_count();
+    for _ in 0..8 {
+        current = TermRewrite::for_integer_exact(&from, &to).integer(&current);
+        assert_eq!(current, source);
+    }
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::integer_less_equal(IntegerTerm::constant(1.into()), source),
+        true,
+    );
+    let unrelated = Proposition::ConditionIs(
+        ConditionTerm::equal(
+            MachineTerm::Variable(Variable(998207)),
+            MachineTerm::constant(99),
+        ),
+        true,
+    );
+    for _ in 0..8 {
+        assert!(
+            !crate::kernel::proof::equality_rewrite::equality_rewrite_applies(&goal, &unrelated)
+        );
+    }
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+}

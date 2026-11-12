@@ -21,8 +21,8 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use num_traits::{One, Zero};
 pub(crate) use operand_correspondence::{
-    machine_operand_syntax_cmp, shared_machine_syntax_equal, shared_operand_leaf_pairs,
-    shared_snapshot_read_pairs,
+    machine_operand_syntax_cmp, shared_condition_operand_leaf_pairs, shared_machine_syntax_equal,
+    shared_operand_leaf_pairs, shared_snapshot_read_pairs,
 };
 use std::collections::{HashMap, VecDeque};
 use std::fmt;

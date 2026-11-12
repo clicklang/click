@@ -9,6 +9,30 @@ pub(super) fn clear() {
     ROOTS.with(|roots| roots.borrow_mut().clear());
 }
 
+// Boolean guard imports can contain exact generic machine payloads. They
+// are numeric observation leaves here, without changing the producer's node
+// or admitting arbitrary legacy payloads into the machine operand API.
+fn machine_payload(term: &KernelTerm) -> Option<&MachineTerm> {
+    if let KernelTermNode::Legacy(value) = term.node()
+        && let PureFunctionArgument::Value(value) = value.value()
+    {
+        return match value {
+            CValue::Int8(value)
+            | CValue::UInt8(value)
+            | CValue::Int16(value)
+            | CValue::UInt16(value)
+            | CValue::Int32(value)
+            | CValue::UInt32(value)
+            | CValue::Int64(value)
+            | CValue::UInt64(value)
+            | CValue::Int128(value)
+            | CValue::UInt128(value) => Some(value),
+            _ => None,
+        };
+    }
+    term.machine_conversion_leaf()
+}
+
 pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
     if !root.has_opaque_observation_boundary() {
         return root.clone();
@@ -22,6 +46,10 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
+            if !term.has_opaque_observation_boundary() {
+                roots.insert(term.id(), term);
+                continue;
+            }
             let format = match term.ty() {
                 KernelType::C(ty) => {
                     MachineIntegerType::from_c_type(*ty).unwrap_or(MachineIntegerType::UInt8)
@@ -30,11 +58,9 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
             };
             if !finish
                 && matches!(term.node(), KernelTermNode::Legacy(_))
-                && term.machine_conversion_leaf().is_some()
+                && machine_payload(&term).is_some()
             {
-                let value = term
-                    .machine_conversion_leaf()
-                    .expect("retained machine leaf");
+                let value = machine_payload(&term).expect("retained machine leaf");
                 let view = MachineOperandView::Legacy(value);
                 if view.binary().is_some()
                     || view.unary().is_some()
@@ -73,10 +99,8 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let normalized = match term.node() {
-                KernelTermNode::Legacy(_) if term.machine_conversion_leaf().is_some() => {
-                    let value = term
-                        .machine_conversion_leaf()
-                        .expect("retained machine leaf");
+                KernelTermNode::Legacy(_) if machine_payload(&term).is_some() => {
+                    let value = machine_payload(&term).expect("retained machine leaf");
                     let identity = SharedMachineIntegerTerm::intern_key(MachineIntegerKey::native(
                         format,
                         value.clone(),

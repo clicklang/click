@@ -6287,9 +6287,17 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
                 collect_pointer_offset_memories(&pointer.offset, memories);
             }
         }
-        ConditionTerm::Constant(_)
-        | ConditionTerm::Variable(_)
-        | crate::kernel::integer_comparison_condition!(_, _) => {}
+        crate::kernel::integer_comparison_condition!(_, _) => {
+            if let Some(view) =
+                crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+            {
+                let mut seen = BTreeSet::new();
+                for operand in &view.operands {
+                    collect_operand_memories(operand.operand_view(), memories, &mut seen);
+                }
+            }
+        }
+        ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
         // As a word-valued Click application.
         ConditionTerm::BoolApplication(_) => {}
         ConditionTerm::BoolIf {
@@ -6349,6 +6357,10 @@ fn collect_operand_memories(
                 if !memories.contains(memory) {
                     memories.push(memory.clone());
                 }
+            } else if let Some((condition, [left, right])) = operand.conditional() {
+                collect_condition_memories(&condition, memories);
+                pending.push(right);
+                pending.push(left);
             } else if let Some((_, _, [left, right])) = operand.binary() {
                 pending.push(right);
                 pending.push(left);
@@ -6426,6 +6438,33 @@ fn transport_framed_atomic_condition(
     if crate::kernel::assumptions::reasoning_interrupted() {
         return None;
     }
+    if matches!(
+        condition,
+        crate::kernel::integer_comparison_condition!(_, _)
+    ) {
+        use crate::kernel::machine_integer::comparison::{
+            condition_for_operand_views, structural_comparison_view,
+        };
+        let view = structural_comparison_view(condition)?;
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view().retain(view.format));
+        let left = transport_framed_index(&left, after, assumptions)?;
+        let right = transport_framed_index(&right, after, assumptions)?;
+        return Some(if view.negated {
+            ConditionTerm::integer_not_equal(
+                IntegerTerm::Machine(left),
+                IntegerTerm::Machine(right),
+            )
+        } else {
+            condition_for_operand_views(
+                view.format,
+                view.relation,
+                [left.operand_view(), right.operand_view()],
+            )
+        });
+    }
     Some(match condition {
         // Do not claim a snapshot bridge through an opaque algebraic value.
         ConditionTerm::PointerValueEqual(left, right) => ConditionTerm::PointerValueEqual(
@@ -6460,8 +6499,8 @@ fn transport_framed_atomic_condition(
             transport_framed_atomic_pointer(right, after, assumptions)?,
         ),
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => return None,
-        // Mathematical integers carry no snapshot-dependent loads, so this
-        // memory transport path has no authority to rewrite them.
+        // Machine observations were handled above. Other mathematical integer
+        // forms are outside this memory transport path.
         crate::kernel::integer_comparison_condition!(_, _) => return None,
         // Nor does it for `Bool` values yet: they are not transported.
         condition if condition.is_bool_value_form() => return None,

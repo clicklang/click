@@ -118,17 +118,18 @@ pub(in crate::kernel) fn map_index_with_descent(
                     ),
                 };
                 let mapped = map_leaf(&guard)?;
-                let condition = ConditionTerm::truth_of_bool_word(&mapped);
+                let condition = if mapped == guard {
+                    arguments[0].clone()
+                } else {
+                    crate::kernel::KernelTermImport::default()
+                        .condition(&ConditionTerm::truth_of_bool_word(&mapped))
+                };
                 let KernelType::C(ty) = node.ty() else {
                     return None;
                 };
                 let updated = KernelTerm::machine_if_shared(
                     MachineIntegerType::from_c_type(*ty)?,
-                    [
-                        crate::kernel::KernelTermImport::default().condition(&condition),
-                        arguments[1].clone(),
-                        arguments[2].clone(),
-                    ],
+                    [condition, arguments[1].clone(), arguments[2].clone()],
                 );
                 rebuild(&updated, &children)?
             } else {
@@ -831,6 +832,33 @@ mod tests {
                 .structural_value(),
             parent.structural_value()
         );
+    }
+
+    #[test]
+    fn unchanged_opaque_guards_preserve_exact_pointer_index_identity() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let value = retained(
+            ty,
+            &MachineTerm::If {
+                condition: Box::new(ConditionTerm::pointer_equal(
+                    Pointer::symbolic(Variable(1007510)),
+                    Pointer::symbolic(Variable(1007511)),
+                )),
+                then_term: Box::new(MachineTerm::constant(1)),
+                else_term: Box::new(MachineTerm::constant(0)),
+            },
+        );
+        let empty = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        for _ in 0..8 {
+            assert_eq!(normalize_exact_index(&value, &empty), Some(value.clone()));
+            assert_eq!(
+                transport_framed_index(&value, &CMemory::new(), None),
+                Some(value.clone())
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 
     mod scaling_tests {

@@ -3990,9 +3990,7 @@ impl<'a> TermRewrite<'a> {
                     // keys as freshly lowered syntax. A no-op keeps its exact
                     // retained handle, including producer metadata.
                     let result = match result {
-                        IntegerTerm::Machine(machine)
-                            if changed && self.integer_exact.is_none() =>
-                        {
+                        IntegerTerm::Machine(machine) if changed => {
                             if let Some(root) = machine.shared_operand() {
                                 IntegerTerm::Machine(
                                     SharedMachineIntegerTerm::observe_shared(

@@ -455,3 +455,43 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
     assert!(costs[1] <= costs[0] * 5 + 10, "{costs:?}");
     assert!(costs[2] <= costs[1] * 5 + 10, "{costs:?}");
 }
+
+#[test]
+fn shared_conditional_guard_reads_keep_snapshot_identity_in_linear_work() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelTermImport, KernelType, MachineOperandView, Variable,
+        VerificationSession,
+    };
+    for size in [16usize, 64, 256] {
+        let _session = VerificationSession::enter();
+        let memory = intern_c_memory(CMemory::new().with_declared_scalar_block(
+            block("global:g"),
+            4,
+            CType::Int32,
+        ));
+        let pointer = at(block("global:g"), 0);
+        crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 4);
+        let guard = ConditionTerm::equal(
+            MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32),
+            MachineTerm::constant(0),
+        );
+        let guard = KernelTermImport::default().condition(&guard);
+        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(998201));
+        for _ in 0..size {
+            root = KernelTerm::machine_if_shared(
+                MachineIntegerType::Int32,
+                [guard.clone(), root.clone(), root],
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let mut reads = Vec::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            super::super::collect_operand_reads(MachineOperandView::Shared(&root), &mut reads);
+        });
+        assert_eq!(reads.len(), 1);
+        assert_eq!(reads[0].resource, OwnedResource::Cell { pointer, bytes: 4 });
+        assert_eq!(reads[0].point, ProgramPoint::at(&memory));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(work <= size * 32 + 16, "size={size}, work={work}");
+    }
+}

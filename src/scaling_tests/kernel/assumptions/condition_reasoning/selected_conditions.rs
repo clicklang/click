@@ -476,3 +476,46 @@ fn retained_transport_reuses_growing_prefixes_across_context_changes() {
     }
     assert!(samples.windows(2).all(|p| p[1] <= p[0] * 5), "{samples:?}");
 }
+
+#[test]
+fn conditional_transport_reuses_shared_arms_and_requires_selected_equality() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelTermImport, KernelType};
+    let ty = MachineIntegerType::Int32;
+    let mut samples = Vec::new();
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let a = Variable(993531);
+        let b = Variable(993532);
+        let guard =
+            KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(993533)));
+        let mut left = KernelTerm::variable(KernelType::C(ty.c_type()), a);
+        let mut right = KernelTerm::variable(KernelType::C(ty.c_type()), b);
+        for _ in 0..size {
+            left = KernelTerm::machine_if_shared(ty, [guard.clone(), left.clone(), left]);
+            right = KernelTerm::machine_if_shared(ty, [guard.clone(), right.clone(), right]);
+        }
+        let empty = PureFactContext::new();
+        let facts = empty.clone().assume_condition(
+            ConditionTerm::equal(MachineTerm::Variable(a), MachineTerm::Variable(b)),
+            true,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(
+                !empty
+                    .bitvector_terms_equal_for_transport_views(V::Shared(&left), V::Shared(&right))
+            );
+            assert!(
+                facts
+                    .bitvector_terms_equal_for_transport_views(V::Shared(&left), V::Shared(&right))
+            );
+            assert!(
+                !empty
+                    .bitvector_terms_equal_for_transport_views(V::Shared(&left), V::Shared(&right))
+            );
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(samples.windows(2).all(|p| p[1] <= p[0] * 5), "{samples:?}");
+}

@@ -281,17 +281,24 @@ fn operands_equal_with_load_atoms(
         return terms_equal_with_load_atoms(&a, &b, loads_match);
     }
     if let (V::Shared(left), V::Shared(right)) = (left, right) {
-        return crate::kernel::shared_operand_leaf_pairs(format, left, right).is_some_and(
-            |pairs| {
+        return crate::kernel::shared_condition_operand_leaf_pairs(format, left, right)
+            .is_some_and(|pairs| {
                 pairs.values().all(|(a, b)| {
+                    if a.ty() == &crate::kernel::KernelType::Bool {
+                        return crate::kernel::KernelTermExport::condition(a)
+                            .ok()
+                            .zip(crate::kernel::KernelTermExport::condition(b).ok())
+                            .is_some_and(|(a, b)| {
+                                conditions_equal_with_load_atoms(&a, &b, loads_match)
+                            });
+                    }
                     terms_equal_with_load_atoms(
                         &operand_load_leaf(V::Shared(a)).expect("selected leaf"),
                         &operand_load_leaf(V::Shared(b)).expect("selected leaf"),
                         loads_match,
                     )
                 })
-            },
-        );
+            });
     }
     let mut pending = vec![(format, left, right)];
     while let Some((format, left, right)) = pending.pop() {
@@ -316,6 +323,15 @@ fn operands_equal_with_load_atoms(
             {
                 return false;
             }
+            continue;
+        }
+        if let (Some((a, [al, ar])), Some((b, [bl, br]))) =
+            (left.conditional(), right.conditional())
+        {
+            if !conditions_equal_with_load_atoms(&a, &b, loads_match) {
+                return false;
+            }
+            pending.extend([(format, al, bl), (format, ar, br)]);
             continue;
         }
         if let (Some((af, ao, [al, ar])), Some((bf, bo, [bl, br]))) =

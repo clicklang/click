@@ -163,6 +163,9 @@ impl KernelTermExport {
         match term.node() {
             KernelTermNode::Variable(variable) => Ok(MachineTerm::Variable(*variable)),
             KernelTermNode::MachineLiteral(value) => Ok(value.legacy_term()),
+            KernelTermNode::MemoryLoad { .. } => {
+                Ok(term.machine_read_leaf().expect("read descriptor").clone())
+            }
             _ => Self::machine(term),
         }
     }
