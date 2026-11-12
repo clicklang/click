@@ -2129,7 +2129,7 @@ fn retain_required_integer_obligation(
     assumptions: &PureFactContext,
     proposition: Proposition,
 ) {
-    if !assumptions.retains_required_obligations() && assumptions.proves_exact(&proposition) {
+    if !assumptions.retains_argument_obligations() && assumptions.proves_exact(&proposition) {
         return;
     }
     // Keep the original evaluation obligations and their diagnostic context.
