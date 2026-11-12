@@ -115,7 +115,7 @@ Roles distinguish the work remaining:
 | `mixed` | Drivers and auxiliary planners; semantic roles are recorded in the caller audit. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory contains 639 records: 7 legacy bridges, 22 kernel callers,
+The current inventory contains 637 records: 6 legacy bridges, 21 kernel callers,
 6 Surface operation dependencies, 0 operation-to-driver dependencies,
 122 driver records, 6 presentation records,
 458 search-internal records, 16 mixed records and 2 imports. These are reference
@@ -130,15 +130,14 @@ on `ProofDriver`: moving dispatch must not hide those search dependencies or
 reclassify them as legitimate implicit solving. Driver placement alone is not
 an efficiency guarantee. Named theorem applications now use retained preparation,
 driver-solved obligations and publication in pure, fixed-state, live and returned
-contexts. The remaining selector edge covers special population/range built-ins
-and unsupported outcome dispatch. The three migrated primitives have test-build
+contexts. The remaining selector edge covers unsupported outcome dispatch. The three migrated primitives have test-build
 no-discovery scopes; every `ProofSearch` entry records discovery before work,
 even when called from another search. Generic applications instantiate checked
 statements without re-running declaration proofs; no guard exception remains.
 See the theorem boundary section in the
 [efficiency contract](../docs/internals/verification-efficiency.md).
 
-Seven kernel bridges preserve these implementations:
+Six kernel bridges preserve these implementations:
 
 | Existing entry point | `ProofSearch` implementation | Ambient work to resolve |
 | --- | --- | --- |
@@ -147,7 +146,6 @@ Seven kernel bridges preserve these implementations:
 | `owned_validity_candidates` | `ownership_validity_candidates` | Candidate owners for composition validity. |
 | `memory_ranges_proven_overlapping_with_separation` | `ownership_overlap` | Alias-pair overlap discovery. |
 | `pointers_distinct_by_owned_anchors` | `owned_anchor_distinctness` | Equality components and ownership compositions. |
-| `compositions_only` | `composition_context` | Ambient composition context reconstruction. |
 | `call_kept_ownership` | `call_frame` | Residual caller resources and composite families. |
 
 `build_support/proof_search_boundary.rs`, invoked by the normal build boundary

@@ -64,7 +64,7 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **639 reference records**: 7 legacy bridges, 22 callers
+The frozen inventory has **637 reference records**: 6 legacy bridges, 21 callers
 of those bridges, 6 operation references, 0 operation-to-driver references,
 16 mixed references, 122 driver references, 458 search references, 6 presentation
 references and 2 imports. These are neither independent walks nor
@@ -77,8 +77,8 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   discovery.
   T5 also retains uncharged transition-assumption reconstruction. No fresh
   scaling curve was run for this reconciliation.
-- **Unmeasured candidates:** seven kernel bridges map to five groups, L1, R2,
-  F1, F2 and C1. Other transition and declaration checks
+- **Unmeasured candidates:** six kernel bridges map to four groups, L1, R2,
+  F1 and C1. Other transition and declaration checks
   need caller-specific evidence. Preserve these as candidates, not confirmed
   performance regressions.
 - **Legitimate search:** driver-owned implicit solve and explicit smart
@@ -96,8 +96,8 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
 - **Operation guards:** theorem application, scope completion and prepared-step
   publication have test-build discovery guards. Probes for have opening,
-  contract-claim opening and statement preparation reproduce seven operation/entry
-  pairs through five existing bridge entries; see the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
+  contract-claim opening and statement preparation reproduce six operation/entry
+  pairs through four existing bridge entries; see the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
   Those three operations remain unguarded; no exception exempts their search.
 - **Enforcement gap:** lexical dependency freezing and selected work counters
   do not prohibit every search call during expanded replay or detect arbitrary
@@ -150,7 +150,7 @@ follow it. None of these whole-operation rows is marked complete.
 | Execute a scalar statement or access; pay for selected expression and affected storage | `kernel/eval.rs`, `kernel/proof/execution.rs`, `kernel/primitives/memory_state.rs` | `kernel/tests/memory_scaling_tests.rs`: `one_store_is_logarithmic_in_unrelated_cells`, `sequential_owned_parameter_stores_ignore_earlier_cached_fields`; source step-shape tests | Memory/cache candidates M1; ownership and loan checks below are dependencies of the whole step. A flat store helper alone is insufficient. |
 | Admit facts and decide a condition; pay for named terms and justified incremental updates | `kernel/assumptions.rs`, `kernel/equality_graph.rs`, `kernel/difference_graph.rs`, `kernel/assumptions/condition_reasoning/decision.rs` | `kernel/assumptions/condition_buckets.rs`: `equality_class_hits_and_anchored_misses_stay_indexed`, `interval_queries_do_not_walk_symbolic_order_components`; graph late-merge/fork controls | Source candidate F1: owned-anchor pointer distinctness still enumerates equality components/compositions. Coverage gap: total admission/propagation work across growing shared classes, beyond covered shapes. |
 | Select, consume, fold or unfold ownership; pay for explicitly selected pieces/body | `ResourceContext::{satisfies_fact,without_fact_incrementally_impl,consume_unit_owned_memory}`, `ExecutionProofCore` fold construction | `kernel/loans/tests.rs`: `call_fragment_composition_stops_at_a_fixed_gap`; `kernel/proof/execution/tests.rs`: `constructing_an_instance_fold_pays_for_its_body_once`; source fold/unfold controls | R1 reachability gap for other quantities; R2 source candidates for ownership validity, alias/root discovery and overlap. |
-| Observe separation or resource facts; pay for selected operands/evidence | `surface/proof/proof_object/splits_and_scopes.rs`, `kernel/proof/facts.rs`, `kernel/assumptions/memory_reasoning.rs` | source `observing_one_owner_ignores_unused_parameters`; transport footprint tests, including `two_footprints_do_not_expand_into_a_cartesian_product` | Source candidate F2: composition-only context construction at an observation frontier. Shared composition/member buckets still need adversarial growth tests. |
+| Observe separation or resource facts; pay for selected operands/evidence | `surface/proof/proof_object/splits_and_scopes.rs`, `kernel/proof/facts.rs`, `kernel/assumptions/memory_reasoning.rs` | source `observing_one_owner_ignores_unused_parameters`; transport footprint tests, including `two_footprints_do_not_expand_into_a_cartesian_product` | F2: composition/member bucket growth remains a coverage gap; frontier opening no longer reconstructs a composition-only context. |
 | Check a write against loans; pay for selected conflict/evidence, not all loans or aliases | `LoanLedger::permits_memory_access_with_assumptions`, called by memory-access checking | `kernel/loans/tests.rs`: `write_barrier_does_not_enumerate_overlapping_loans`, `writes_without_active_memory_loans_do_not_walk_pointer_aliases` | L1: aliases with active loans and symbolic-loan comparisons. Zero-loan and concrete-overlap controls do not finish this operation. |
 | Apply a modular call, transfer resources and finish it; pay for selected contract and effects | `kernel/functions.rs`: `execute_verified_function_applications_with_suspension`, `call_kept_ownership`; `kernel/proof/execution.rs` | source `a_call_ignores_unrelated_owned_objects`; `kernel/functions/stable_view_call_tests.rs`: `returning_one_borrowed_owner_does_not_rebuild_its_memory_block` | C1: residual instances, non-argument-direct composites, and number of resource families. E1: execution/publication/completion accounting. |
 | Split/join branches and enter/exit loops; pay for explicit arms/interfaces and actual changes | `kernel/api.rs`: `abstract_c_state_for_interface_join_across`; `kernel/loops.rs`; `kernel/proof/execution.rs` | `kernel/loops/contract_exit_join_tests.rs`, `kernel/loops/frame_resource_tests.rs`; branch availability and interface-join controls | J1 coverage gap: fixed-delta joins across growing stable state; loop-head abstraction uses a different policy. Existing growth allowances do not establish ambient independence. |
@@ -230,21 +230,16 @@ holding the decided condition and two owners fixed. Include misses and repeated
 queries through a simple checker; decide whether this route needs explicit
 separation rather than discovery. Direct scalar equality tests do not cover it.
 
-### F2: separation observation — source candidate
+### F2: separation observation — remaining coverage
 
-At an observation frontier, when the current held-resource shortcut does not
-settle a selected separation, `with_selected_composition_separation` can call
-`PureFactContext::compositions_only`. That helper enumerates every retained
-composition and admits it into a fresh context. The caller is in
-[`splits_and_scopes.rs`](../src/surface/proof/proof_object/splits_and_scopes.rs),
-not merely in a smart premise collector.
+Frontier `have` opening no longer constructs a composition-only context or
+admits the selected separation from it. Its explicit proof must establish that
+fact. `have_opening_does_not_copy_ambient_compositions` grows unrelated owners
+at 4/16/64 with a fixed selected goal and proof.
 
-Construct a fixed `have separate(...)` that reaches this branch, grow retained
-compositions, and measure opening plus completion of the explicit proof with
-implicit search disabled. Include a miss. Also inspect membership bucket growth.
-The old `scaling.md` claim of roughly twenty full composition iterations is
-not a current count: inspected separation cross-checks use `scan_for_upkeep`
-inside debug-only checks. Classify each live caller before counting it.
+Other selected observation routes still need composition/member bucket growth
+coverage and the owned-anchor discovery repair tracked under F1. Removing this
+copy does not establish a bound for every separation observation.
 
 ### L1: write restrictions from active loans — source candidates
 

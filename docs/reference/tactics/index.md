@@ -1524,6 +1524,14 @@ A conjunction or disjunction costs one lookup per side of the goal, and a
 failure names the first side that is not available; prove other missing
 premises with `have` first.
 
+For exactly named, independently held resources, `assumption()` applies the
+live partition rule: an owned unit is separate from another owned unit or a
+view. Two views alone do not establish separation. The rule uses exact resource
+lookups; it does not enumerate aliases or compositions, and supported cached
+projections do not count as independent entries. It also applies to separation
+leaves in a conjunction. Constant disjoint intervals of the same base can
+instead be proved by `normalize()`.
+
 An explicit `have separate(...)` can use the live ownership partition
 immediately after `unfold`, including fixed-size fields fully contained in
 different owned objects; it checks complete byte coverage and grants no new

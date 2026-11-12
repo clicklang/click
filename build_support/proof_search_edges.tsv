@@ -1,4 +1,3 @@
-src/kernel/assumptions.rs	legacy-bridge	PureFactContext::compositions_only	composition_context	1
 src/kernel/assumptions/condition_reasoning/decision.rs	legacy-bridge	PureFactContext::pointers_distinct_by_owned_anchors	owned_anchor_distinctness	1
 src/kernel/assumptions/condition_reasoning/decision.rs	legacy-caller	PureFactContext::decide_pointer_disequality	pointers_distinct_by_owned_anchors	1
 src/kernel/assumptions/condition_reasoning/decision.rs	legacy-caller	PureFactContext::offsets_distinct_by_owned_anchors	pointers_distinct_by_owned_anchors	2
@@ -26,7 +25,6 @@ src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::try_com
 src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::validity_error_with_separation	owned_validity_candidates	1
 src/kernel/proof/execution.rs	legacy-caller	CheckedResourceRewrite::check_authority_wrapper	permits_memory_access_with_assumptions	1
 src/kernel/proof/execution.rs	legacy-caller	CheckedResourceRewrite::check_with_children_recording	permits_memory_access_with_assumptions	1
-src/kernel/proof/facts.rs	legacy-caller	ProofFacts::with_selected_separation_facts	compositions_only	1
 src/kernel/publication.rs	legacy-caller	::release_store	call_kept_ownership	1
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_and_rule	derive_proposition_using	2
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_atomic_proposition	derive_atomic_proposition_using	1

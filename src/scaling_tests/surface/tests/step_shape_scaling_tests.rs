@@ -1273,3 +1273,49 @@ fn observing_one_owner_ignores_unused_parameters() {
         "observations walk unused parameters: {curves:?}"
     );
 }
+
+#[test]
+#[ignore = "nightly: have opening composition scaling"]
+fn have_opening_does_not_copy_ambient_compositions() {
+    let (source, sources) = super::expansion_tests::mdtest_sources(
+        "mdtests/a_cast_contract_a_saved_word_keeps_its_historical_relationship.md",
+    );
+    let mut curves = Vec::new();
+    for size in [4, 16, 64] {
+        let parameters = (0..size)
+            .map(|i| format!(", int32* unused{i}"))
+            .collect::<String>();
+        let owners = (0..size)
+            .map(|i| format!("owns *unused{i};\n"))
+            .collect::<String>();
+        let proof = source
+            .replace("struct node* p)", &format!("struct node* p{parameters})"))
+            .replace("owns *slot;", &format!("owns *slot;\n{owners}"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| {
+                (
+                    name.clone(),
+                    text.replace("struct node* p)", &format!("struct node* p{parameters})")),
+                )
+            })
+            .collect::<Vec<_>>();
+        let borrowed = sources
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        let (result, samples) =
+            crate::instrumentation::collect_tactic_work(|| verify_c0_sources(&proof, &borrowed));
+        result.unwrap_or_else(|error| panic!("{size}: {}", error.report()));
+        let selected = samples
+            .iter()
+            .find(|s| s.tactic.tactic_name == "have")
+            .unwrap();
+        curves.push(selected.work);
+    }
+    eprintln!("have composition work: {curves:?}");
+    assert!(
+        curves.windows(2).all(|p| p[1] <= p[0] + 32),
+        "have copied ambient compositions: {curves:?}"
+    );
+}
