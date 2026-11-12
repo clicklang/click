@@ -713,12 +713,21 @@ fn partition_outcome_cases(
     ))
 }
 
+/// An instantiated application whose arguments and conclusions are retained.
+/// Only the driver may publish it, after proving its collected prerequisites.
+pub(in crate::surface::proof) struct PreparedTheoremApplication {
+    conclusions: Vec<Proposition>,
+    pub(in crate::surface::proof) obligations: Vec<UnresolvedRequirement>,
+}
+
 impl<'a> Proof<'a> {
     pub(super) fn apply_theorem_using(
         &self,
         application: &TheoremApplication,
         surface_premises: &[ClickProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        #[cfg(test)]
+        let _operation = crate::kernel::search::FastOperationScope::enter("apply_theorem_using");
         let resolved_application = self.resolve_theorem_application(application)?;
         let surface_premises = surface_premises
             .iter()
@@ -756,50 +765,73 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// Instantiate the named theorem's written premises, without discovering
-    /// evidence for them. Work follows only that theorem and its arguments;
-    /// the driver owns the resulting proposition proofs.
-    pub(in crate::surface::proof) fn prepare_pure_theorem_requirements(
+    pub(in crate::surface::proof) fn prepare_theorem_application(
         &self,
         application: &TheoremApplication,
-    ) -> Result<Vec<ClickProposition>, ClickError> {
-        if !matches!(self.context.as_ref(), ProofContext::Pure(_)) {
-            return Err(self.step_error("pure theorem preparation requires a proposition proof"));
+    ) -> Result<PreparedTheoremApplication, ClickError> {
+        #[cfg(test)]
+        let _operation =
+            crate::kernel::search::FastOperationScope::enter("prepare_theorem_application");
+        if matches!(self.context.as_ref(), ProofContext::Execution(_))
+            && self.is_at_function_exit()
+            && self.focused_outcome_data().is_none()
+        {
+            return Err(self.step_error("returned theorem applications require an outcome proof"));
         }
-        let (theorem, mut substitutions) = self
-            .theorem_application_instance(application)
-            .ok_or_else(|| {
-                self.step_error(format!(
-                    "could not instantiate theorem `{}` with these arguments",
-                    application.name
-                ))
-            })?;
-        // A contextual Integer literal loses its type when substituted into
-        // a standalone comparison. Keep the formal type in the emitted term;
-        // the value lies outside this local binding's scope, so no caller name
-        // is captured.
-        for parameter in theorem.parameters() {
-            if parameter.click_type() == &ClickType::Integer
-                && let Some(value) = substitutions.get_mut(parameter.name())
-            {
-                *value = crate::surface::proof::surface_synthesis::integer_typed_expression(
-                    value.clone(),
-                );
+        let (prepared, probe) =
+            crate::surface::proof::execution_planning::probe_step_obligations(|| {
+                crate::surface::proof::theorem_application::with_application_preparation(|| {
+                    self.apply_theorem_using(application, &[])
+                })
+            });
+        Ok(PreparedTheoremApplication {
+            conclusions: prepared?.checked_facts,
+            obligations: probe.recorded,
+        })
+    }
+
+    pub(in crate::surface::proof) fn finish_prepared_theorem_application(
+        &self,
+        prepared: PreparedTheoremApplication,
+        application: &TheoremApplication,
+        premises: Vec<ClickProposition>,
+    ) -> Result<Self, ClickError> {
+        #[cfg(test)]
+        let _operation =
+            crate::kernel::search::FastOperationScope::enter("finish_prepared_theorem_application");
+        let mut facts = self.facts().clone();
+        let mut added = Vec::new();
+        for conclusion in &prepared.conclusions {
+            if !facts.contains(conclusion) {
+                added.push(conclusion.clone());
             }
+            facts = facts.with_kernel_checked_fact(conclusion.clone());
         }
-        crate::surface::proof::pure_theorems::theorem_requirement_propositions(&theorem)?
-            .iter()
-            .map(|requirement| {
-                let requirement =
-                    crate::surface::proof::theorem_application::observe_machine_parameters(
-                        requirement,
-                        theorem.parameters(),
-                        &substitutions,
-                    );
-                substitute_click_proposition(&requirement, &substitutions)
-                    .map_err(|message| self.step_error(message))
-            })
-            .collect()
+        let complete = self.goal().is_some_and(|goal| {
+            facts.introduced_goal_available(goal)
+                || listed_equality_fact_is_available(goal, &prepared.conclusions)
+        });
+        let transition = self.checked_fact_transition(
+            self.state().locals().clone(),
+            facts,
+            complete,
+            added,
+            prepared.conclusions,
+        );
+        let state = self.publish_checked_transition(transition)?;
+        Ok(Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state,
+            node: ProofNode::step_child(
+                &self.node,
+                self.focused_branch_id(),
+                Arc::new(ProofStep::ApplyTheoremUsing {
+                    application: application.clone(),
+                    premises,
+                }),
+            ),
+        })
     }
 
     pub(super) fn apply_pure_theorem_using(
@@ -891,7 +923,15 @@ impl<'a> Proof<'a> {
         // An explicit `using` list supplies both argument-domain evidence
         // and the theorem's premises; omitted guards cannot leak in from
         // the surrounding proof context.
-        let lowering_assumptions = assumptions_from_propositions(&explicit_premises);
+        let lowering_assumptions =
+            if crate::surface::proof::theorem_application::preparing_application() {
+                self.facts()
+                    .assumptions()
+                    .clone()
+                    .retaining_argument_obligations()
+            } else {
+                assumptions_from_propositions(&explicit_premises)
+            };
         let applied = instantiate_theorem_application_with_assumptions(
             context.theorem_environment,
             application,

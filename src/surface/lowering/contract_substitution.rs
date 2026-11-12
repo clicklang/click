@@ -398,9 +398,18 @@ fn substitute_click_proposition_nonlogical(
         ClickProposition::ResourceViewable { resource } => Ok(ClickProposition::ResourceViewable {
             resource: substitute_resource_subject(resource, substitutions)?,
         }),
-        ClickProposition::Loadable { segment } => Ok(ClickProposition::Loadable {
-            segment: substitute_contract_segment(segment, substitutions)?,
-        }),
+        ClickProposition::Loadable { segment } => {
+            // A saved array argument is a Surface pointer expression. Keep
+            // current-memory viewability through that saved pointer rather
+            // than forcing it back into a C-only segment spelling.
+            match substitute_resource_subject(
+                &ResourceSubject::Memory(segment.clone()),
+                substitutions,
+            )? {
+                ResourceSubject::Memory(segment) => Ok(ClickProposition::Loadable { segment }),
+                resource => Ok(ClickProposition::ResourceViewable { resource }),
+            }
+        }
         ClickProposition::Defined { expression } => Ok(ClickProposition::Defined {
             expression: substitute_contract_expression_in(expression, substitutions)?,
         }),

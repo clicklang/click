@@ -1,15 +1,16 @@
 # Rust iterators: one generic model, per-type library contracts
 
-Status: step 1 done, step 2 next. `library/rust/chunks_exact.click` declares
-`ChunksExact<T>` with `len`, `nth`, `remainder` and `after_next` and the
-axioms relating them, and a proof reads a value with those methods. A Rust
-unit with `"iterators": "library"` imports its `chunks_exact` iterators as
-values of that type, and construction, `remainder()` and loops, including
-one that reads through each chunk, are proved from the contract
-(`examples/rust-chunks-exact/chunks.click`). The loop fact is a library
-function, `after(it, k)`, the iterator after `k` calls of `next()`: a loop
-carries `iter == start.after(iterations)`. The unit option is
-temporary and is removed with the old model (migration step 4). The loop's starting iterator is spelled with the
+Status: steps 1 and 2 done, step 3 next. `library/rust/chunks_exact.click`
+declares `ChunksExact<T>` with `len`, `nth`, `remainder` and `after_next` and
+the axioms relating them, and a proof reads a value with those methods. Every
+Rust unit imports its `chunks_exact` iterators as values of that type, and
+construction, `remainder()` and loops, including one that reads through each
+chunk, are proved from the contract (`examples/rust-chunks-exact/chunks.click`,
+every `chunks_exact` fixture, and adler2). The chunk iterators' hidden-state
+model and the temporary `"iterators": "library"` unit option are removed. The
+loop fact is a library function, `after(it, k)`, the iterator after `k` calls
+of `next()`: a loop carries `iter == start.after(iterations)`. The loop's
+starting iterator is spelled with the
 existing snapshot form, `at(loop(i).entry, iter)` (open question 2).
 
 ## Problem
@@ -168,11 +169,12 @@ The per-kind accessor table, `RustIteratorKind` and the old spellings
 
 1. Done: the generic model plus the `ChunksExact` contract on
    `examples/rust-chunks-exact`, which settled open questions 1 and 2.
-2. The other `chunks_exact` fixtures, then adler2.
+2. Done: the other `chunks_exact` fixtures, then adler2. The chunk
+   iterators' hidden-state lowering and the `"iterators": "library"` unit
+   option that let fixtures move one at a time are removed.
 3. Slice iterators, `enumerate` and ranges onto their library contracts.
    This includes inclusive ranges, currently blocked by
    `bugs/solve-exhausts-its-budget-spelling-premises-of-an-inclusive-range-loop.md`,
    which should be re-checked under the new model.
-4. Remove the per-kind lowering, the accessor table and the old spellings,
-   and with them the `"iterators": "library"` unit option, which exists only
-   so fixtures can move one at a time.
+4. Remove the remaining per-kind lowering, the accessor table and the old
+   spellings.

@@ -8,6 +8,8 @@ impl crate::kernel::search::ProofSearch<PureFactContext> {
         left: &Pointer,
         right: &Pointer,
     ) -> Option<bool> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("owned_anchor_distinctness");
         if proof_input.resource_compositions.is_empty() {
             return None;
         }

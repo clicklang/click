@@ -8,6 +8,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         width: SignedDefinedWidth,
         premises: Vec<ClickProposition>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_signed_definedness_certificate");
         let Some(surface_goal) = search_input.surface_goal() else {
             return Ok(None);
         };
@@ -36,6 +38,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_signed_definedness_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_signed_definedness_closure");
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
@@ -89,6 +93,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         width: SignedDefinedWidth,
         operands: [(&MachineTerm, &ContractExpression); 2],
     ) -> Vec<ClickProposition> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("signed_operand_bound_premises");
         let assumptions = search_input.facts().assumptions();
         let mut premises = Vec::new();
         for (term, surface) in operands {
@@ -115,6 +121,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         width: SignedDefinedWidth,
         operands: [(&MachineTerm, &ContractExpression); 2],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_signed_definedness_with_operand_definedness");
         let mut premises = crate::kernel::search::ProofSearch::signed_operand_bound_premises(
             search_input,
             width,
@@ -157,6 +165,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         width: SignedDefinedWidth,
         operands: [(&MachineTerm, &ContractExpression); 2],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery(
+            "try_signed_definedness_after_operand_substitution",
+        );
         let Some(ClickProposition::Defined { expression }) = search_input.surface_goal() else {
             return Ok(None);
         };
@@ -234,6 +246,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_restricted_signed_definedness_closure");
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };

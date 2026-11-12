@@ -3895,7 +3895,6 @@ pub(super) fn decode_crate(
         records,
         enums,
         functions,
-        library_iterators: false,
     })
 }
 
@@ -4068,7 +4067,7 @@ mod tests {
                 _ => unreachable!(),
             }
             assert!(changed);
-            super::super::standard_library::use_library_iterators(&mut altered);
+            super::super::standard_library::declare_iterator_operations(&mut altered);
             let rejected = match super::super::import::prepared_for_test(altered) {
                 Err(_) => true,
                 Ok(prepared) => {
@@ -4265,7 +4264,7 @@ mod tests {
         )
         .unwrap();
         let mut export = export;
-        super::super::standard_library::use_library_iterators(&mut export);
+        super::super::standard_library::declare_iterator_operations(&mut export);
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         C0VerificationSession::new_program_prepared(
             include_str!("../../../design/charon-trial/chunks/chunks.click"),
@@ -5102,7 +5101,7 @@ mod tests {
                         .retain(|s| !matches!(s, S::ChunkInitialize { .. }));
                 }
             }
-            super::super::standard_library::use_library_iterators(&mut export);
+            super::super::standard_library::declare_iterator_operations(&mut export);
             let prepared = super::super::import::prepared_for_test(export).unwrap();
             assert_eq!(
                 C0VerificationSession::new_program_prepared(

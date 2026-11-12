@@ -5,6 +5,37 @@ thread_local! {
     static APPLICATION_SOURCE: std::cell::RefCell<Option<std::rc::Rc<TheoremApplication>>> = const { std::cell::RefCell::new(None) };
 }
 
+thread_local! {
+    static PREPARING_APPLICATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(in crate::surface::proof) fn preparing_application() -> bool {
+    PREPARING_APPLICATION.with(std::cell::Cell::get)
+}
+
+pub(in crate::surface::proof) fn with_application_preparation<T>(prepare: impl FnOnce() -> T) -> T {
+    with_application_preparation_mode(true, prepare)
+}
+
+fn with_application_preparation_mode<T>(active: bool, operation: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            PREPARING_APPLICATION.with(|active| active.set(self.0));
+        }
+    }
+    let _restore = Restore(PREPARING_APPLICATION.with(|current| current.replace(active)));
+    operation()
+}
+
+/// A generic declaration proves its own prerequisites. They must never become
+/// conditional debts of the application which requested that declaration.
+fn with_independent_declaration_proof<T>(check: impl FnOnce() -> T) -> T {
+    with_application_preparation_mode(false, || {
+        super::execution_planning::without_open_obligation_probe(check)
+    })
+}
+
 /// The checker resolves proof bindings to values. Retain just this tactic's
 /// written arguments for diagnostics; never consult them to decide a proof.
 pub(super) fn with_application_source<T>(
@@ -248,6 +279,20 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         crate::surface::proof::pure_theorems::theorem_requirement_propositions(&theorem).map_err(
             |error| theorem_application_error(claim_label, path_index, tactic_index, error.message),
         )?;
+    let prepared_substitutions = preparing_application().then(|| {
+        requirement_source_bindings(&theorem, application)
+            .into_iter()
+            .zip(theorem.parameters())
+            .map(|((name, value), parameter)| {
+                let value = if parameter.click_type() == &ClickType::Integer {
+                    crate::surface::proof::surface_synthesis::integer_typed_expression(value)
+                } else {
+                    value
+                };
+                (name, value)
+            })
+            .collect()
+    });
     for (requirement_index, requirement) in requirements.iter().enumerate() {
         let mut lowered = lower(requirement).map_err(|error| {
             theorem_application_error(
@@ -272,6 +317,29 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             })?;
         }
         lowered = lowered.clone();
+        if let Some(substitutions) = &prepared_substitutions {
+            let written =
+                observe_machine_parameters(requirement, theorem.parameters(), substitutions);
+            let surface =
+                substitute_click_proposition(&written, substitutions).map_err(ClickError::new)?;
+            crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                ClickError::new("theorem application has a premise obligation")
+                    .with_spelled_requirement(
+                        lowered.clone(),
+                        surface,
+                        format!("theorem `{}` premise", theorem.name()),
+                    ),
+            )?;
+            for guard in crate::kernel::stated_loadable_extent_guards(&lowered) {
+                crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                    ClickError::new("theorem range requires a valid extent")
+                        .with_unresolved_requirement(&ProofObligation::verification_condition(
+                            guard,
+                        )),
+                )?;
+            }
+            continue;
+        }
         // A named `using` premise may be a checked conjunction, such as the
         // `defined(x + y)` fact emitted for a C addition.  The theorem may
         // require one of that fact's proper conjuncts (the no-overflow
@@ -766,16 +834,17 @@ fn resolve_generic_theorem_application(
             concrete.name()
         ));
     }
-    let result =
+    let result = with_independent_declaration_proof(|| {
         verify_concrete_theorem_definition(&concrete, spec_definitions, theorem_environment, None)
-            .map(|_| ())
-            .map_err(|error| {
-                format!(
-                    "generic theorem instance `{}` failed verification: {}",
-                    concrete.name(),
-                    error.raw_summary()
-                )
-            });
+    })
+    .map(|_| ())
+    .map_err(|error| {
+        format!(
+            "generic theorem instance `{}` failed verification: {}",
+            concrete.name(),
+            error.raw_summary()
+        )
+    });
     theorem_environment.finish_generic_instance_verification(concrete.name(), result.is_ok());
     result?;
     Ok(concrete)
@@ -1115,6 +1184,22 @@ pub(super) fn theorem_application_bindings(
                     value.algebraic_type.name
                 ));
             }
+            if preparing_application() {
+                for guard in crate::kernel::algebraic_argument_evaluation_guards(
+                    context.post_state,
+                    &value,
+                    Some(context.pre_state),
+                    assumptions,
+                )? {
+                    crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                        ClickError::new("model theorem argument has an evaluation obligation")
+                            .with_unresolved_requirement(&ProofObligation::verification_condition(
+                                guard,
+                            )),
+                    )
+                    .map_err(|error| error.message().to_owned())?;
+                }
+            }
             algebraic_values.insert(parameter.name().to_string(), value);
             continue;
         };
@@ -1188,7 +1273,7 @@ pub(super) fn theorem_application_bindings(
                     spec_definitions,
                     &active_functions,
                 )?;
-                if !crate::kernel::refine_object_pointer_argument(
+                if !crate::kernel::refine_object_pointer_argument_using_facts(
                     &mut value,
                     &class,
                     context.post_state.memory(),
@@ -1464,6 +1549,29 @@ mod observed_integer_argument_tests {
     }
 
     #[test]
+    fn pure_argument_obligations_solve_and_expand_without_evidence_selection() {
+        let source = r#"
+            theorem identity(value: int32) { ensures value == value by assumption(); }
+            theorem use_argument(x: int32) {
+                requires 0 <= x;
+                requires x < 10;
+                ensures x == x by { apply(identity(x + 1)); assumption(); }
+            }
+        "#;
+        verify_c0_sources(source, &[]).unwrap();
+        let expanded =
+            expand_c0_claim_source_by_label(source, &[], "use_argument.ensures_0").unwrap();
+        assert!(expanded.contains("have "), "{expanded}");
+        crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
+        assert!(verify_c0_sources(&source.replace("requires x < 10;", ""), &[]).is_err());
+        let explicit_without_guard = source.replace(
+            "apply(identity(x + 1));",
+            "apply(identity(x + 1)) using {}; ",
+        );
+        assert!(verify_c0_sources(&explicit_without_guard, &[]).is_err());
+    }
+
+    #[test]
     fn machine_theorem_arguments_retain_domains_in_selected_expansion() {
         let source = r#"
             theorem reflexive(z: int32) { ensures z == z by solve(); }
@@ -1713,6 +1821,31 @@ theorem nested_count(value: int32) {
 #[cfg(test)]
 mod diagnostic_source_tests {
     use super::*;
+
+    #[test]
+    fn generic_declaration_proof_does_not_inherit_application_preparation() {
+        use super::super::execution_planning::{
+            collecting_step_requirements, probe_step_obligations,
+        };
+        assert!(!preparing_application());
+        probe_step_obligations(|| {
+            with_application_preparation(|| {
+                assert!(collecting_step_requirements());
+                let result = std::panic::catch_unwind(|| {
+                    with_independent_declaration_proof(|| {
+                        assert!(!preparing_application());
+                        assert!(!collecting_step_requirements());
+                        panic!("declaration refusal");
+                    })
+                });
+                assert!(result.is_err());
+                assert!(preparing_application());
+                assert!(collecting_step_requirements());
+            })
+        });
+        assert!(!preparing_application());
+        assert!(!collecting_step_requirements());
+    }
 
     #[test]
     fn application_diagnostic_source_restores_after_nested_failures() {

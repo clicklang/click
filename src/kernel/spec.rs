@@ -735,6 +735,27 @@ pub(crate) fn capture_spec_integer_value_with_guards(
     entry_state: Option<&CState>,
     assumptions: &PureFactContext,
 ) -> Result<(IntegerTerm, Vec<Proposition>), SpecCaptureRefusal> {
+    capture_spec_integer_argument(state, expression, entry_state, assumptions, false)
+}
+
+/// Captures a conditional argument once. Its guards must be proved before the
+/// caller publishes any theorem conclusion using the returned value.
+pub(crate) fn prepare_spec_integer_argument(
+    state: &CState,
+    expression: &SpecIntegerExpression,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+) -> Result<(IntegerTerm, Vec<Proposition>), SpecCaptureRefusal> {
+    capture_spec_integer_argument(state, expression, entry_state, assumptions, true)
+}
+
+fn capture_spec_integer_argument(
+    state: &CState,
+    expression: &SpecIntegerExpression,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+    retain_obligations: bool,
+) -> Result<(IntegerTerm, Vec<Proposition>), SpecCaptureRefusal> {
     let paths = evaluate_spec_integer_expression_paths_in(
         SpecScope::unbound(state, entry_state),
         expression,
@@ -765,25 +786,29 @@ pub(crate) fn capture_spec_integer_value_with_guards(
     // Kernel-certified consequences (such as the observation of a guarded
     // native result) are definitions, not extra assumptions the caller must
     // restate. Their path guards and proof obligations still need discharge.
-    let undischarged = path
-        .facts
-        .iter()
-        .filter(|fact| !fact.is_certified())
-        .map(|fact| fact.proposition())
-        .chain(path.obligations.iter().map(|o| o.proposition()))
-        .find(|proposition| !required_obligation_is_exactly_discharged(assumptions, proposition));
-    if let Some(proposition) = undischarged {
-        let subterm = locate_spec_integer_capture_condition(
-            state,
-            expression,
-            entry_state,
-            assumptions,
-            proposition,
-        );
-        return Err(SpecCaptureRefusal::Undischarged {
-            subterm,
-            proposition: proposition.clone(),
-        });
+    if !retain_obligations {
+        let undischarged = path
+            .facts
+            .iter()
+            .filter(|fact| !fact.is_certified())
+            .map(|fact| fact.proposition())
+            .chain(path.obligations.iter().map(|o| o.proposition()))
+            .find(|proposition| {
+                !required_obligation_is_exactly_discharged(assumptions, proposition)
+            });
+        if let Some(proposition) = undischarged {
+            let subterm = locate_spec_integer_capture_condition(
+                state,
+                expression,
+                entry_state,
+                assumptions,
+                proposition,
+            );
+            return Err(SpecCaptureRefusal::Undischarged {
+                subterm,
+                proposition: proposition.clone(),
+            });
+        }
     }
     if crate::instrumentation::deadline_exceeded_with_work(
         path.facts.len().saturating_add(path.obligations.len()),
@@ -2104,7 +2129,7 @@ fn retain_required_integer_obligation(
     assumptions: &PureFactContext,
     proposition: Proposition,
 ) {
-    if assumptions.proves_exact(&proposition) {
+    if !assumptions.retains_argument_obligations() && assumptions.proves_exact(&proposition) {
         return;
     }
     // Keep the original evaluation obligations and their diagnostic context.
@@ -7685,6 +7710,49 @@ pub(crate) fn refine_object_pointer_argument(
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> bool {
+    refine_object_pointer_argument_with_null(
+        value,
+        object_class,
+        memory,
+        assumptions,
+        |facts, pointer| {
+            facts.decide(&ConditionTerm::pointer_equal(
+                pointer.clone(),
+                Pointer::null(),
+            )) == Some(true)
+        },
+    )
+}
+
+/// The explicit theorem operation may use recorded null equality, not search
+/// ownership anchors to decide an argument's nominal object class.
+pub(crate) fn refine_object_pointer_argument_using_facts(
+    value: &mut CValue,
+    object_class: &crate::kernel::effective_type::CAccessClass,
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+) -> bool {
+    refine_object_pointer_argument_with_null(
+        value,
+        object_class,
+        memory,
+        assumptions,
+        |facts, pointer| {
+            facts.exact_condition_value(&ConditionTerm::pointer_equal(
+                pointer.clone(),
+                Pointer::null(),
+            )) == Some(true)
+        },
+    )
+}
+
+fn refine_object_pointer_argument_with_null(
+    value: &mut CValue,
+    object_class: &crate::kernel::effective_type::CAccessClass,
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+    proves_null: impl FnOnce(&PureFactContext, &Pointer) -> bool,
+) -> bool {
     let CValue::Pointer(pointer) = value else {
         return false;
     };
@@ -7709,10 +7777,7 @@ pub(crate) fn refine_object_pointer_argument(
                 })
             // A pointer the facts prove null meets the requirement too. It
             // keeps its written address rather than being respelled as null.
-            || assumptions.decide(&ConditionTerm::pointer_equal(
-                pointer.pointer().clone(),
-                Pointer::null(),
-            )) == Some(true))
+            || proves_null(assumptions, pointer.pointer()))
     {
         *pointer = pointer
             .clone()

@@ -31,5 +31,5 @@ int32 read_first(int32 j) {
 ```
 
 ```expect
-fail: statement(2) may have overwritten `a`; it is kept if you state `have not ((j - 1) as int32) == (0 as int32) by { ... };` before statement(2)
+fail: statement(2) may have overwritten `a`; it is kept if you state `have ((j - 1) as int32) != 0 by { ... };` before statement(2)
 ```

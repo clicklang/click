@@ -1064,6 +1064,56 @@ pub(in crate::surface) fn synthesize_surface_proposition(
     )
 }
 
+/// The disequality of two array element indices a store compares (or a
+/// pointer disequality's two element addresses differ by), spelled as a
+/// comparison of the index words: `((m - 1) as int32) != 0` for `int32`
+/// indices, `((n - 1u64) as uint64) != 0u64` or `j != 0u64` for `uint64`
+/// ones. Each word is spelled as [`synthesize_surface_bitvector`] spells it;
+/// a word that spells as arithmetic is converted to its format with `as`,
+/// since Click arithmetic on C operands is Integer arithmetic and the store
+/// compares the wrapped word. The caller states it for the kernel comparison
+/// it built from the same two words; the requirement's round trip checks the
+/// lowering.
+pub(in crate::surface) fn synthesize_store_index_disequality(
+    store_index: &MachineTerm,
+    cell_index: &MachineTerm,
+    format: MachineIntegerType,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ClickProposition> {
+    let _scope = SurfaceSynthesisScope::enter();
+    let word = |term: &MachineTerm| {
+        let expression =
+            synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
+        let ctype = match format {
+            MachineIntegerType::Int32 => CType::Int32,
+            MachineIntegerType::Int64 => CType::Int64,
+            MachineIntegerType::UInt64 => CType::UInt64,
+            _ => return None,
+        };
+        if matches!(
+            expression,
+            ContractExpression::Add(..)
+                | ContractExpression::Subtract(..)
+                | ContractExpression::Multiply(..)
+        ) {
+            synthesize_observation_operand(expression, ctype)
+        } else {
+            Some(expression)
+        }
+    };
+    // Both words are spelled before either refusal is read: synthesis
+    // charges work.
+    let left = word(store_index);
+    let right = word(cell_index);
+    Some(ClickProposition::Comparison {
+        left: left?,
+        operator: ComparisonOperator::NotEqual,
+        right: right?,
+    })
+}
+
 /// The source spelling of one machine term, for a diagnostic that has to name
 /// the written subterm a generated condition came from.
 ///

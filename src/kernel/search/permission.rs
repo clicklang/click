@@ -7,7 +7,9 @@ pub(crate) struct SearchPermission {
 }
 
 impl SearchPermission {
-    pub(super) const fn new() -> Self {
+    pub(super) fn new() -> Self {
+        #[cfg(test)]
+        super::record_discovery("SearchPermission::new");
         Self { _private: () }
     }
 }

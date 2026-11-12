@@ -18,6 +18,9 @@ forwarding through a user theorem and application to C struct fields.
 The element law `separation::elements` is verified in
 [`separation_elements.md`](separation_elements.md) and
 [`separation_elements_types.md`](separation_elements_types.md).
+The element-address law `separation::distinct_elements` is verified in
+[`solve_proves_element_addresses_distinct_from_their_indices.md`](solve_proves_element_addresses_distinct_from_their_indices.md),
+explicitly and through `solve`.
 The generic range law `separation::subrange` is verified in
 [`generic_pointer_theorem_parameters.md`](generic_pointer_theorem_parameters.md),
 including nested generic applications and several element widths.

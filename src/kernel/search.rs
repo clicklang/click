@@ -21,3 +21,8 @@ pub(crate) fn disjunction_candidates(
 ) -> impl Iterator<Item = &crate::kernel::Proposition> {
     context.disjunction_fact_propositions(SearchPermission::new())
 }
+
+#[cfg(test)]
+mod operation_guard;
+#[cfg(test)]
+pub(crate) use operation_guard::{FastOperationScope, record_discovery};

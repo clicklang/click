@@ -7436,6 +7436,19 @@ impl PureFactContext {
         self.with_reasoning_policy(ReasoningPolicy::RETAIN_REQUIRED_OBLIGATIONS)
     }
 
+    /// Argument capture retains its domains for explicit theorem evidence.
+    /// This is separate from statement obligation presentation: Integer path
+    /// guards must not become extra wrappers on unrelated statement goals.
+    pub(crate) fn retaining_argument_obligations(self) -> Self {
+        self.retaining_required_obligations()
+            .with_reasoning_policy(ReasoningPolicy::RETAIN_ARGUMENT_DOMAINS)
+    }
+
+    pub(crate) fn retains_argument_obligations(&self) -> bool {
+        self.reasoning_policy
+            .contains(ReasoningPolicy::RETAIN_ARGUMENT_DOMAINS)
+    }
+
     pub(crate) fn retains_required_obligations(&self) -> bool {
         self.reasoning_policy
             .contains(ReasoningPolicy::RETAIN_REQUIRED_OBLIGATIONS)

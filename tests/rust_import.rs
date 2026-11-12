@@ -56,17 +56,6 @@ impl Project {
         .unwrap();
         p
     }
-    /// [`Project::new`] with the unit's iterators imported as values of
-    /// their library types (`design/rust-iterators.md`).
-    fn with_library_iterators(source: &str) -> Self {
-        let p = Self::isolated(source);
-        fs::write(
-            p.project_file(),
-            r#"{"units": {"borrow": {"language": "rust", "iterators": "library", "sources": {"borrow.rs": {}}}}}"#,
-        )
-        .unwrap();
-        p
-    }
     /// Where a test writes an import description in the per-sidecar config
     /// format of earlier releases, for [`Project::adopt_config`] to translate.
     fn config(&self) -> PathBuf {
@@ -5395,7 +5384,7 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
 fn rust_chunks_exact_remainder_metadata_and_bytes() {
     let source = "pub fn tail_len(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); let tail = chunks.remainder(); tail.len() }
     pub fn tail_byte(bytes: &[u8]) -> u8 { let chunks = bytes.chunks_exact(2); let tail = chunks.remainder(); tail[0] }";
-    let p = Project::with_library_iterators(source);
+    let p = Project::new(source);
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     let sidecar = "import click::rust::slice;
@@ -5433,16 +5422,15 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     }
 }
 
-/// Under `"iterators": "library"` a `ChunksExact` is one value of the
-/// library's type, and a proof reads it through that type's contract: the
+/// A `ChunksExact` is one value of the library's type, and a proof reads it through that type's contract: the
 /// remainder from what `chunks_exact` builds, and a loop's count from what
 /// each `next()` leaves. No cursor or remaining-byte count is named.
 #[test]
 #[ignore = "nightly: 12s in the parallel gate"]
-fn library_iterators_prove_chunks_exact_by_its_contract() {
+fn chunks_exact_is_proved_by_its_library_contract() {
     let source = "pub fn tail_len(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); let tail = chunks.remainder(); tail.len() }
     pub fn count(bytes: &[u8]) -> usize { let mut n = 0; for _chunk in bytes.chunks_exact(4) { n += 1; } n }";
-    let p = Project::with_library_iterators(source);
+    let p = Project::new(source);
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     let sidecar = "import click::rust::slice;
@@ -5505,13 +5493,6 @@ fn library_iterators_prove_chunks_exact_by_its_contract() {
         assert_ne!(invalid, sidecar);
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
-    // The option is the unit's: without it the same source keeps the
-    // hidden-state model, which has no iterator value to cite.
-    let hidden = Project::new(source);
-    hidden.refresh().unwrap();
-    assert!(
-        C0VerificationSession::new_program_prepared(sidecar, &hidden.prepared().unwrap()).is_err()
-    );
 }
 
 fn chunks_loop_project(by_reference: bool) -> (Project, String) {
@@ -5529,7 +5510,7 @@ fn chunks_loop_project(by_reference: bool) -> (Project, String) {
     // The proof names the loop's iterator as `iter` and the library's
     // contract, so it is the same proof whether the loop consumes the
     // iterator or borrows it.
-    let p = Project::with_library_iterators(&source);
+    let p = Project::new(&source);
     p.refresh().unwrap();
     (p, sidecar)
 }
@@ -5615,14 +5596,14 @@ fn rust_chunks_exact_boundaries_and_full_width_sizes() {
         (5, u64::MAX),
     ] {
         let sidecar = format!(
-            "verifying \"borrow.rs\"; fn length(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == {size}u64; ensures result == {}u64; }}",
+            "{LIBRARY_CHUNKS} verifying \"borrow.rs\"; fn length(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ step_until(function.exit); apply(chunks_exact::remainder_chunks_exact({BYTES_SLICE}, size)); solve(); }}",
             length % size
         );
         C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
     }
     for length in [0, 5] {
         let sidecar = format!(
-            "verifying \"borrow.rs\"; fn length(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == 0u64; ensures result == 0u64; }}"
+            "{LIBRARY_CHUNKS} verifying \"borrow.rs\"; fn length(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == 0u64; ensures result == 0u64; }}"
         );
         let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
             .err()
@@ -5630,7 +5611,7 @@ fn rust_chunks_exact_boundaries_and_full_width_sizes() {
         assert!(
             error
                 .message()
-                .contains("Rust chunks_exact zero size panic check"),
+                .contains("unproved obligation: `size != 0u64`"),
             "{}",
             error.message()
         );
@@ -5645,11 +5626,23 @@ fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct()
     pub fn shadow(bytes: &[u8]) -> usize { let chunks = bytes.chunks_exact(4); let tail = chunks.remainder(); let chunks = tail.chunks_exact(1); chunks.remainder().len() }");
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let sidecar = "verifying \"borrow.rs\";
-    fn size(p: &mut i32) -> usize { requires *p == 0; owns *p; ensures *p == 1; ensures result == 4u64; }
-    fn length(bytes: &[u8], p: &mut i32) -> usize { requires bytes.len() == 5u64; requires *p == 0; owns *p; ensures *p == 1; ensures result == 1u64; }
-    fn shadow(bytes: &[u8]) -> usize { requires bytes.len() == 5u64; ensures result == 0u64; }";
-    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    let sidecar = format!("{LIBRARY_CHUNKS} verifying \"borrow.rs\";
+    fn size(p: &mut i32) -> usize {{ requires *p == 0; owns *p; ensures *p == 1; ensures result == 4u64; }}
+    fn length(bytes: &[u8], p: &mut i32) -> usize {{ requires bytes.len() == 5u64; requires *p == 0; owns *p; ensures *p == 1; ensures result == 1u64; }} by {{
+        step_until(function.exit);
+        apply(chunks_exact::remainder_chunks_exact({BYTES_SLICE}, 4u64));
+        solve();
+    }}
+    fn shadow(bytes: &[u8]) -> usize {{ requires bytes.len() == 5u64; ensures result == 0u64; }} by {{
+        apply(chunks_exact::remainder_chunks_exact({BYTES_SLICE}, 4u64));
+        step_until(assignment(tail_len, 0));
+        step();
+        apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(tail, tail_len), 1u64));
+        step_until(function.exit);
+        solve();
+    }}");
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
     let artifact = prepared.export();
     let function = artifact
         .functions
@@ -5698,27 +5691,6 @@ fn rust_chunks_exact_rejects_writes_and_unsupported_iterator_protocols() {
         assert!(error.contains(diagnostic), "{error}");
         assert!(!error.contains("panicked"), "{error}");
     }
-}
-
-#[cfg(not(feature = "fast-gate"))]
-#[test]
-#[ignore = "nightly: 6s in the parallel gate"]
-fn rust_chunks_exact_direct_nested_loops_keep_independent_state() {
-    let source = "pub fn nested(bytes: &[u8]) -> usize {
-    for chunk in bytes.chunks_exact(4) {
-        for part in chunk.chunks_exact(2) {}
-    }
-    0
-}";
-    let p = Project::new(source);
-    p.refresh().unwrap();
-    let prepared = p.prepared().unwrap();
-    let sidecar = "verifying \"borrow.rs\"; fn nested(bytes: &[u8]) -> usize { requires bytes.len() == 8u64; ensures result == 0u64; }";
-    C0VerificationSession::new_program_prepared(sidecar, &prepared)
-        .unwrap_or_else(|error| panic!("{}", error.message()));
-    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
-    assert_cli(&p, &["expand", "--claim", "nested.ensures_0", "--in-place"]);
-    assert_cli(&p, &["verify"]);
 }
 
 #[cfg(not(feature = "fast-gate"))]

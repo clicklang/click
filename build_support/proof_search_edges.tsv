@@ -173,7 +173,6 @@ src/surface/proof/driver/state.rs	driver	ProofDriver::complete_fixed_state_oblig
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_have_step	driver	2
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_at	driver	1
-src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_with_origin	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_with_origin_inner	driver	16
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping_after_wide	driver	3
@@ -183,7 +182,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_unsigned_order_step_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_wide_arithmetic_using	1
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_selected_theorem_application	driver	1
-src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_theorem_application	driver	1
+src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_theorem_application	driver	3
 src/surface/proof/driver/theorems.rs	operation	ProofDriver::apply_theorem_application	select_theorem_application_step	1
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_initialization_body	driver	4
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_initialization_body	try_solve_closure	2
@@ -363,6 +362,8 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_discharged_co
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_discharged_consequent_conjunct_closure	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_disequality_by_refuted_equality	driver	4
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_disequality_by_refuted_equality	try_solve_closure_with_surfaces	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_element_address_disequality	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_element_address_disequality	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_disjunctive_syllogism_closure	available_surface_fact	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_disjunctive_syllogism_closure	disjunction_candidates	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_disjunctive_syllogism_closure	try_selected_disjunction_cases	1
@@ -524,6 +525,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_direct_operation_identity	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_direct_structural_closure_under_binders	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_disequality_by_refuted_equality	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_element_address_disequality	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_entry_existential_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_flat_solve_conjunction	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_late_arithmetic_with_selected_premises	1
@@ -629,5 +631,6 @@ src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_scr
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	apply_planned_outcome_fact_transport	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping	apply_arithmetic_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	driver	1
-src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_pure_theorem_requirements	try_solve_closure	1
-src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_pure_theorem_requirements	driver	2
+src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_theorem_application_obligations	try_solve_closure	1
+src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_theorem_application_obligations	driver	2
+src/surface/proof/pure_theorems.rs	mixed	::verify_concrete_theorem_definition	enter_declaration_validation	1

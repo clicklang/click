@@ -91,7 +91,8 @@ mod separation_laws;
 pub use resource_conjunction::ResourceConjunction;
 pub(crate) use separation_laws::{prove_resource_law, prove_viewable_restrict, resource_viewable};
 pub(crate) use separation_laws::{
-    prove_separation_elements, prove_separation_restrict, prove_separation_subrange,
+    prove_separation_distinct_elements, prove_separation_elements, prove_separation_restrict,
+    prove_separation_subrange,
 };
 mod loops;
 pub(crate) mod machine_integer;
@@ -129,7 +130,7 @@ pub use spec::required_constructions::is_required_construction;
 pub(crate) use spec::{
     SpecCaptureRefusal, algebraic_argument_evaluation_guards, capture_spec_algebraic_value,
     capture_spec_integer_value, capture_spec_integer_value_with_guards,
-    refine_object_pointer_argument, with_preserved_integer_comparisons,
+    refine_object_pointer_argument_using_facts, with_preserved_integer_comparisons,
 };
 mod termination;
 // Checked internal fork/join; binding to imported pthread declarations is a
@@ -519,3 +520,5 @@ pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIte
 
 // Search has no authority to construct proof successors.
 pub(crate) mod search;
+
+pub(crate) use spec::prepare_spec_integer_argument;

@@ -7,6 +7,8 @@ impl crate::kernel::search::ProofSearch<LoanLedger> {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> Vec<CMemoryRange> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("loan_aliases");
         // Rebase through the indexed, directly stated equalities before scaling
         // element offsets. An equality such as w == p + 1 relates different pointer
         // spellings, which syntactic pointer subtraction alone cannot see.
@@ -34,6 +36,8 @@ impl crate::kernel::search::ProofSearch<LoanLedger> {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> Result<(), LoanRefusal> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("loan_access");
         // This barrier only restricts otherwise owner-authorized writes.
         // With no active memory loans there is nothing to compare, regardless
         // of pointer aliases, non-memory loans, or ended loan history.

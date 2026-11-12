@@ -4,6 +4,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_guarded_consequent_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_guarded_consequent_closure");
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
@@ -88,6 +90,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surfaces: &[ClickProposition],
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_restricted_guarded_consequent");
         for (index, (kernel, surface)) in premise_pairs.iter().enumerate() {
             let Proposition::Implies(guard, consequent) = kernel else {
                 continue;
@@ -151,6 +155,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         antecedent: &Proposition,
     ) -> bool {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("antecedent_is_refuted");
         let mut pending = vec![antecedent];
         while let Some(proposition) = pending.pop() {
             match proposition {
@@ -179,6 +185,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_guard: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("prove_guard");
         let Some(scope) =
             attempt::candidate_outcome(search_input.driver().open_have(surface_guard.clone()))?
         else {
