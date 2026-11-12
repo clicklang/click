@@ -16,5 +16,5 @@ theorem missing(a: int32, b: int32, c: int32) {
 ```
 
 ```expect
-fail: required exact fact for theorem `add_observation` is unavailable
+fail: theorem `add_observation` has an unproved obligation
 ```

@@ -534,11 +534,17 @@ pub(in crate::surface::proof) fn refuse_unproved_conversion_bounds(
     site: &StatedSite<'_>,
 ) -> Result<(), String> {
     for obligation in obligations {
-        if obligation.is_assumable() || established_condition(assumptions, obligation.proposition())
+        if obligation.is_assumable()
+            || (!crate::surface::proof::theorem_application::preparing_application()
+                && established_condition(assumptions, obligation.proposition()))
         {
             continue;
         }
-        let message = describe_refusal(obligation.proposition(), assumptions, site);
+        let message = if crate::surface::proof::theorem_application::preparing_application() {
+            "theorem argument has an evaluation obligation".to_owned()
+        } else {
+            describe_refusal(obligation.proposition(), assumptions, site)
+        };
         crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
             ClickError::new(message.clone()).with_unresolved_requirement(obligation),
         )

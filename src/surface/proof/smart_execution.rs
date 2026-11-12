@@ -227,7 +227,7 @@ impl<'a> Proof<'a> {
     /// substitutions by the application's written arguments. A generic
     /// theorem is instantiated only in a pure theorem proof, where its type
     /// instance is inferred from the arguments alone.
-    fn theorem_application_instance(
+    pub(super) fn theorem_application_instance(
         &self,
         application: &TheoremApplication,
     ) -> Option<(TheoremDefinition, BTreeMap<String, ContractExpression>)> {

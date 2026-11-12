@@ -2265,15 +2265,16 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
     let verified = verify_click_theorems(source).expect("bare apply should verify");
     assert!(matches!(
         verified[1].proof_tactics().as_deref(),
-        Some([ProofTactic::ApplyTheoremUsing { application, premises }])
-            if application.name == "equality_symmetric" && premises.len() == 1
+        Some([ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }), ProofTactic::ApplyTheoremUsing { application, premises }])
+            if matches!(body.as_slice(), [ProofTactic::Assumption]) && application.name == "equality_symmetric" && premises.len() == 1
     ));
     assert!(matches!(
         verified[2].proof_tactics().as_deref(),
         Some([
             ProofTactic::Extract(_),
+            ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }),
             ProofTactic::ApplyTheoremUsing { application, premises },
-        ]) if application.name == "equality_symmetric"
+        ]) if matches!(body.as_slice(), [ProofTactic::Assumption]) && application.name == "equality_symmetric"
             && matches!(premises.as_slice(), [ClickProposition::Comparison { .. }])
     ));
 

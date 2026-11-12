@@ -9460,8 +9460,7 @@ impl Parser {
             && self.peek_next() == Some(&Token::LParen)
         {
             let application = self.parse_call_binder_transport(Some(output), true)?;
-            self.expect(Token::Semicolon)?;
-            return Ok(ProofTactic::UserTactic(application));
+            return self.parse_step_proof(ProofTactic::UserTactic(application));
         }
         if self.peek_ident() == Some("unfold") {
             let CallOutputPattern::Named(bindings) = output else {
@@ -10399,8 +10398,7 @@ impl Parser {
             // parser reads it again as the tactic it applies.
             self.position -= 1;
             let application = self.parse_call_binder_transport(None, true)?;
-            self.expect(Token::Semicolon)?;
-            return Ok(ProofTactic::UserTactic(application));
+            return self.parse_step_proof(ProofTactic::UserTactic(application));
         }
         let tactic = match name.as_str() {
             "step" => {

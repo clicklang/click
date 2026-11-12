@@ -25,6 +25,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         step: ProofStep,
         origin: Option<ProofStepOrigin>,
     ) -> Result<Proof<'a>, ClickError> {
+        self.observe_step(step, |step| self.apply_step_with_origin_inner(step, origin))
+    }
+
+    /// Retain diagnostics, tracing and synchronization for an already prepared
+    /// operation without evaluating its inputs again.
+    pub(in crate::surface::proof) fn observe_step(
+        &self,
+        step: ProofStep,
+        apply: impl FnOnce(ProofStep) -> Result<Proof<'a>, ClickError>,
+    ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         let read_checkpoint = crate::surface::proof_trace::enabled_for(driver_proof.claim_label())
             .then(|| {
@@ -48,19 +58,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             && crate::surface::proof_trace::smart_origin().is_some())
         .then(|| chosen_step_text(&step))
         .flatten();
-        // A trace shows the read-history walks this step makes; the capture
-        // records queries already made and passes them on to any enclosing
-        // check's own capture.
-        let apply = || {
-            driver_proof
-                .driver()
-                .apply_step_with_origin_inner(step, origin)
-        };
+        // A trace observes the read-history queries already made by this
+        // operation, including publication of a retained application.
+        let run = || apply(step);
         let (result, cell_walks) =
             if crate::surface::proof_trace::enabled_for(driver_proof.claim_label()) {
-                crate::kernel::capture_step_cell_walks(TRACED_STEP_CELL_WALKS, apply)
+                crate::kernel::capture_step_cell_walks(TRACED_STEP_CELL_WALKS, run)
             } else {
-                (apply(), Vec::new())
+                (run(), Vec::new())
             };
         let result = result.map_err(|error| {
             driver_proof
@@ -372,7 +377,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return driver_proof.driver().apply_execution_statement_step(step);
         }
         if matches!(&step, ProofStep::UserTactic(_)) {
-            return driver_proof.apply_execution_user_tactic(step);
+            return driver_proof.driver().apply_bare_statement_step(step);
         }
 
         let mut provenance_step = step.clone();

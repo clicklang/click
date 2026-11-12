@@ -43,5 +43,5 @@ theorem a_missing_conclusion_is_not_invented(x: int32) {
 ```
 
 ```expect
-fail: required exact fact for theorem `needs_tighter_upper` is unavailable: requirement 1 `x <= 5`
+fail: theorem `needs_tighter_upper` has an unproved obligation: `x <= 5`
 ```

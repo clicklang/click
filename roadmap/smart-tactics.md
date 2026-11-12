@@ -64,12 +64,12 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **634 reference records**: 7 legacy bridges, 22 callers
-of those bridges, 9 operation references, 0 operation-to-driver references,
-19 mixed references, 121 driver references, 448 search references, 6 presentation
+The frozen inventory has **633 reference records**: 7 legacy bridges, 22 callers
+of those bridges, 6 operation references, 0 operation-to-driver references,
+19 mixed references, 123 driver references, 448 search references, 6 presentation
 references and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
-classifies every mixed and operation-to-driver record and groups all 9
+classifies every mixed and operation-to-driver record and groups all 6
 operation references. Registering the signed-definedness and unsigned-order
 helpers exposes four existing search-only caller records; it adds no runtime work.
 
@@ -78,7 +78,7 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   T5 also retains uncharged transition-assumption reconstruction. No fresh
   scaling curve was run for this reconciliation.
 - **Unmeasured candidates:** seven kernel bridges map to five groups, L1, R2,
-  F1, F2 and C1. Other transition/branch/initializer and declaration checks
+  F1, F2 and C1. Other transition and declaration checks
   need caller-specific evidence. Preserve these as candidates, not confirmed
   performance regressions.
 - **Legitimate search:** driver-owned implicit solve and explicit smart
@@ -383,3 +383,9 @@ at exact footprint entry/exit snapshots. Whole-region preservation must be
 explicit composition, not a hidden transition walk. Inconclusive checking
 cannot establish equality or preservation, and explicit proof application must
 not reconstruct identities or search for intermediate states.
+
+Theorem application migration: pure and fixed-state named applications now retain their
+instantiated result and return argument-domain and formal-premise obligations.
+Remaining contexts are live execution and returned outcomes;
+the final migration needs strict no-discovery replay coverage. Special built-in
+population/range applications remain separately classified.

@@ -2644,20 +2644,25 @@ premises and result.
 
 **Form:** `apply(theorem(args))`
 
-**Core.** Apply a verified global theorem and select its proposition premises
-from context. Each premise is looked up among the available facts, and none is
-proved: state a premise that is not yet a fact first, with `have P by { ... }`
-spelled as the theorem's `requires` with the written arguments substituted.
+**Core.** Apply a verified global theorem. In a pure theorem proof, its
+written `requires` clauses are instantiated as obligations; the proof driver
+runs ordinary implicit `solve()` on each one and retains the proofs. You can
+also establish the premises first with `have P by { ... }`.
+
+Execution and fixed-state applications still select available premises. Native,
+model, and Integer argument evaluation can require explicit domain evidence;
+this premise-obligation slice does not replace that evidence-selection route.
+Special built-in range-fold and population-count applications retain their
+existing rules.
 
 **Failure, checking, and tools:**
 
-An unknown theorem, type mismatch, or bounded premise-selection miss fails
-without changing resources. A premise that is not an available fact is a
-search miss: the refusal says so and names the `have` that states the premise,
-after which the application finds it. Click checks the selected application;
-expansion adds `using`, and profiling reports search and leaves.
+An unknown theorem, type mismatch, or unproved premise fails without changing
+resources. Pure premise failures name the obligation. Expansion retains ordinary
+`have` proofs followed by `apply(...) using { ... }`; the explicit `using` form
+continues to require the listed facts and performs no implicit premise solving.
 
-**Checked examples:** [`pure_theorem_apply.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_apply.md), [`apply_cites_a_premise_stated_first.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_cites_a_premise_stated_first.md)
+**Checked examples:** [`pure_theorem_apply.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_apply.md), [`pure_apply_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_apply_obligations.md), [`apply_cites_a_premise_stated_first.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_cites_a_premise_stated_first.md)
 
 ### Theorem application with selected premises
 
@@ -4069,6 +4074,12 @@ available facts, consume its consumed instances, produce its produced instances
 under the names of a `let { binder: name }` pattern, and add its `ensures`.
 
 No C runs and memory is unchanged, so every fact about a cell survives.
+
+Evaluation prerequisites of argument expressions are ordinary obligations. Supply
+`by { ... }` for one or `{ requires P by ...; }` for several; omitted proofs use
+implicit `solve()`. Expansion retains these proofs (see
+[`tactic_argument_obligation.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_argument_obligation.md)). This does not change the
+exact-fact requirements of the tactic contract itself.
 
 **Accepts**, at the execution frontier of a C function or `tactic` proof
 before exit, an application of a `tactic` declared earlier in the module (or

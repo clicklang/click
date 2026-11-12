@@ -2952,7 +2952,7 @@ fn synthesize_surface_atomic_proposition(
 
 /// The value is outside the binding's scope, so this local name cannot
 /// capture a name in the expression being spelled.
-fn integer_typed_expression(value: ContractExpression) -> ContractExpression {
+pub(super) fn integer_typed_expression(value: ContractExpression) -> ContractExpression {
     ContractExpression::Let {
         name: "integer_value".into(),
         click_type: Some(ClickType::Integer),

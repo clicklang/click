@@ -29,5 +29,5 @@ theorem lift(callback: int32 (*)(int32)) {
 ```
 
 ```expect
-fail: required exact fact for theorem `nonnegative_equal` is unavailable: requirement 1 `x >= 0` with x = x
+fail: theorem `nonnegative_equal` has an unproved obligation: `x >= 0`
 ```

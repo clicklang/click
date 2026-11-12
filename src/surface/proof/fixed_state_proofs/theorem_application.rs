@@ -38,6 +38,10 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
         lowering_assumptions = lowering_assumptions.assume_proposition(fact);
     }
 
+    if crate::surface::proof::theorem_application::preparing_application() {
+        lowering_assumptions = lowering_assumptions.retaining_argument_obligations();
+    }
+
     let mut explicit_premises = Vec::new();
     for surface_premise in surface_premises {
         let freshly_lowered = lower_fixed_state_proposition_with_integer_values(
