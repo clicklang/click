@@ -6296,9 +6296,12 @@ private:
   // sidecar that also verifies the defining source proves.
   bool is_external(const clang::FunctionDecl *function) const {
     // A compiler builtin is declared implicitly where it is used; it is
-    // never another translation unit's function.
+    // never another translation unit's function. A virtual method keeps
+    // dispatch's own rules: a pure one is only its interface.
     return function->getDefinition() == nullptr && !is_axiom(function) &&
            function->getBuiltinID() == 0 && !function->isImplicit() &&
+           !(llvm::isa<clang::CXXMethodDecl>(function) &&
+             llvm::cast<clang::CXXMethodDecl>(function)->isVirtual()) &&
            function->isExternallyVisible() &&
            executable_source(source_manager_.getSpellingLoc(
                function->getLocation())).has_value();
@@ -6395,6 +6398,14 @@ private:
       parameters.push_back(std::move(self));
     }
     for (const clang::ParmVarDecl *parameter : declaration->parameters()) {
+      // A sidecar states an external function's contract over its
+      // parameters by name.
+      if (external && parameter->getName().empty()) {
+        fail(parameter->getLocation(),
+             kind + " `" + declaration->getQualifiedNameAsString() +
+                 "` must name every parameter in its declaration");
+        return std::nullopt;
+      }
       if (parameter->hasDefaultArg() && constructor != nullptr) {
         fail(parameter->getLocation(),
              "default arguments of standard-library constructors are not modeled");
