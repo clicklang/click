@@ -38,7 +38,7 @@
                 "compilation_file": "single_guard_step.cpp",
                 "exceptions": true,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": false,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -50,17 +50,17 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "b0f42fd6919745ef3ce9ff6dc1c83435e410d8545ae2d494a02dd03e61c6ee4d",
+          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
           "name": "clang"
         },
         "sources": {
           "single_guard_step.cpp": {
             "artifact": {
-              "bytes": 30965,
+              "bytes": 30872,
               "path": ".click/fixture/single_guard_step.cpp.click-cpp.json",
-              "sha256": "67816d7c12ce7124db1f9522a43a6a35ccaf439c611581e73d4fc649b4385d14"
+              "sha256": "aad2e8ea5a71087c8838df8fb96809eaabf4aa75e9e4e2d988d903f324513d5e"
             },
-            "identity": "d95ce9c817872a8c334450cee53681322fa7f836dcfd17d0e5e905035c8380bc",
+            "identity": "70d2533b251e0f089447b8974076660979fb2e4c667a169e1b3f1362989c2d87",
             "inputs": {
               "$unit/single_guard_step.cpp": "2757971b4a589bcbed041a8d1dfa661512efa25e0e6f9d65ee36d303f3561c85"
             }

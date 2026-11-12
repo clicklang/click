@@ -39,9 +39,14 @@ executable, with `charon-driver` beside it. Verification never reads it.
 
 ### `CLICK_CPP_EXPORTER`
 
-`click import lock` reads `CLICK_CPP_EXPORTER=PATH`, the pinned C++ exporter,
-when it prepares a C++ unit of a project. The test harnesses read it too.
-Verification never reads it.
+`CLICK_CPP_EXPORTER=PATH` overrides where `click import lock` finds the pinned
+C++ exporter when it prepares a C++ unit of a project; it is for development,
+with an exporter built by `scripts/build-cpp-exporter.sh`. Unset, Click uses
+the exporter installed for its own version,
+`$CLICK_HOME/versions/<version>/frontends/cpp/click-cpp-exporter`, which
+`click install VERSION --cpp` installs, and otherwise reports that the C++ front end is not installed and where it was
+expected. A path that is not a file is refused. The test harnesses read it
+too. Verification never reads it.
 
 ## Diagnostic variables
 

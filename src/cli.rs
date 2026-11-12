@@ -1890,12 +1890,10 @@ pub fn prepare_mdtest_inputs(mdtest: &MdTest) -> Result<CInput, String> {
         .filter(|directory| directory.join(crate::project::LOCK_NAME).is_file());
     if let Some(checked_in) = checked_in {
         copy_cpp_import(checked_in, &fixture.directory)?;
-    } else if let Some(exporter) = std::env::var_os("CLICK_CPP_EXPORTER") {
+    } else if let Ok(exporter) = crate::languages::cpp::runtime::resolve_exporter() {
         // A fixture written outside the corpus, as a command test writes one,
         // has nothing checked in; the pinned exporter imports it directly.
-        fixture
-            .project
-            .lock_with_cpp_exporter(Some(Path::new(&exporter)))?;
+        fixture.project.lock_with_cpp_exporter(Some(&exporter))?;
     } else {
         return Err(match &cpp.import_directory {
             Some(directory) => format!(

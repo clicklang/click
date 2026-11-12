@@ -50,46 +50,50 @@ verifies offline on a fresh clone of the user's project on another machine.
 
 Audit of the current path, from a user's point of view:
 
-1. **The exporter is built from source.** `scripts/build-cpp-exporter.sh`
-   needs LLVM 19.1.7 development tools (`llvm-config`, `libclang-cpp`) and
-   working libstdc++ headers. It compiles the 4,800-line
-   `tools/cpp-exporter/main.cpp` into `target/cpp-exporter/` inside the Click
-   checkout. The binary links `libclang-cpp` dynamically with an rpath into
-   the host's LLVM `libdir`, so it cannot be moved to another machine. The
-   installer (`install.sh`, `install.ps1`, and the cargo-dist configuration
-   in `Cargo.toml`) ships only `click`. CI already tars the built exporter
-   to share it between test shards (`scripts/check.sh`), but releases do not
-   include it.
-2. **There is no single way to locate the exporter.** Each import config
-   names the exporter by a path relative to the config. Every checked-in
-   config points into the repository's build output:
-   `../../target/cpp-exporter/click-cpp-exporter` in
-   `integrations/bitcoin-core-money-range/MoneyRange.click.import.json`.
-   Project units, such as `examples/basic-cpp`, take the exporter from
-   `CLICK_CPP_EXPORTER` at lock time only.
-   C++ mdtests take a different route: they read `CLICK_CPP_EXPORTER`. If it
-   is unset they fall back to `CARGO_MANIFEST_DIR/target/cpp-exporter/...`,
-   a path compiled into the binary (`prepare_mdtest_inputs` in
-   `src/cli.rs`), so an installed `click` points at the build machine's
-   checkout. The tests use the environment variable (`tests/cpp_import.rs`,
-   `tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`).
-3. **The version handshake is in place; lock identities are not.** The
+1. **Releases ship a Linux x86-64 exporter; other hosts build it.**
+   `scripts/build-cpp-exporter.sh --release` links the pinned Clang, LLVM
+   and C++ runtime statically and copies Clang's builtin headers beside the
+   exporter as `clang-resource/`, which it finds relative to itself; only
+   the system C library stays dynamic.
+   `.github/workflows/cpp-frontend.yml` packages that bundle for each
+   release tag as `click-cpp-frontend-x86_64-unknown-linux-gnu.tar.gz`,
+   tests it with `tests/cpp_release_install.rs`, and attaches it, and
+   `click install VERSION --cpp` installs it. `install.sh` and
+   `install.ps1` still install only `click`, and macOS and Windows have no
+   bundle: there the development build (LLVM 19.1.7 development tools,
+   `libclang-cpp` linked with an rpath into the host's LLVM `libdir`, not
+   movable) is the only exporter.
+2. **One resolution order, nothing installed yet.** Click finds the
+   exporter through `CLICK_CPP_EXPORTER`, else
+   `$CLICK_HOME/versions/<version>/frontends/cpp/click-cpp-exporter`, else
+   reports where it expected one (`src/languages/cpp/runtime.rs`), for
+   project locking and C++ mdtests alike. Configs name no exporter and no
+   build-machine path is compiled in. `click install VERSION --cpp`
+   installs there on Linux x86-64.
+3. **The version handshake and release identities are in place.** The
    exporter reports its version, artifact schema and Clang version for
    `--identity`, Click checks that before exporting, and all three are
-   defined once in `src/languages/cpp/frontend-profile.json`. The lock's `exporter_sha256` is the
-   hash of the local build, so the same inputs locked on two machines give
-   two different import identities.
-4. **The demonstration is reproducible only inside the repository.** Every
-   README starts with `scripts/build-cpp-exporter.sh` and `cargo run --bin
-   click` from the repository root. The Bitcoin fee proofs exist as
+   defined once in `src/languages/cpp/frontend-profile.json`. A lock's
+   front-end identity is the digest of that profile, and the artifact
+   records the pinned Clang version rather than the build's full version
+   string, so equal inputs lock byte-identically on every machine; the
+   mdtest and example import checks compare bytes.
+4. **The demonstrations run from an installed Click.** The `basic-cpp`,
+   `cpp-stack` and `MoneyRange` READMEs give `click` commands run in the
+   project directory, and refresh with the installed front end.
+   `the_installed_cpp_front_end_reproduces_the_committed_imports` (nightly,
+   `tests/cpp_import.rs`) locks `basic-cpp` and the hermetic `MoneyRange`
+   closure outside the repository with only the installed layout (no
+   override, empty `PATH`), requires the committed locks and artifacts byte
+   for byte, and verifies their sidecars. The Bitcoin fee proofs remain
    `.click.in` templates that only `tests/bitcoin_core_money_range.rs`
-   instantiates. The full-checkout `MoneyRange` workflow assumes Homebrew
-   Clang 19.1.7, CMake, and the extracted packages.
-5. **Setup errors name paths, not causes.** A missing exporter surfaces as
-   `resolve C++ exporter `…`: No such file or directory`. A mismatched
-   exporter surfaces as a schema or profile error after it has run.
-   Diagnostics for unsupported constructs are good: the exporter's `fail`
-   reports a source location and the construct.
+   instantiates, and the full-checkout `MoneyRange` workflow still assumes
+   Homebrew Clang 19.1.7, CMake, and the extracted packages.
+5. **Setup errors name causes.** A missing exporter reports the expected
+   installed path and `click install VERSION --cpp`; an exporter with another
+   identity is refused before it runs an export
+   (`an_installed_cpp_front_end_is_required_and_checked`). Diagnostics for
+   unsupported constructs keep their source location and construct.
 
 The [project configuration](../docs/reference/cli/import.md#project-units) has since solved three further
 problems: build information no longer comes from templated compilation

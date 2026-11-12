@@ -170,23 +170,23 @@ pub(in crate::surface) fn verify_theorem_definition(
     Ok(verified)
 }
 
-/// The index type parameter of a kernel law stated over C indices, and the
-/// index types its kernel rule admits. `separation::elements` and `separation::distinct_elements` build their
-/// descriptors at an `int32`, `int64`, or `uint64` index, the formats
-/// [`crate::kernel::prove_separation_elements`] accepts.
-pub(super) fn kernel_law_index_types(name: &str) -> Option<(&'static str, [C0Type; 3])> {
-    matches!(
-        name,
-        "click::separation::elements" | "click::separation::distinct_elements"
-    )
-    .then_some((
-        "I",
-        [
+/// The index parameter and concrete formats admitted by a trusted descriptor law.
+pub(in crate::surface) fn kernel_law_index_types(
+    name: &str,
+) -> Option<(&'static str, Vec<C0Type>)> {
+    let formats = match name {
+        "click::separation::elements" | "click::separation::distinct_elements" => vec![
             C0Type::Int32,
             C0Type::Int64(crate::languages::c::syntax::LongRank::Long),
             C0Type::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
-    ))
+        "click::separation::subrange" => vec![
+            C0Type::Int32,
+            C0Type::UInt64(crate::languages::c::syntax::LongRank::Long),
+        ],
+        _ => return None,
+    };
+    Some(("I", formats))
 }
 
 pub(in crate::surface) fn verify_concrete_theorem_definition(
@@ -2765,8 +2765,9 @@ fn verify_kernel_standard_theorem_axiom(
     } else if theorem.name().split("::<").next() == Some("click::separation::subrange") {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
-            Some(CValue::Int32(value)) => Ok(value.clone()),
-            _ => Err(ClickError::new("subrange bounds must be int32")),
+            Some(CValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
+            Some(CValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
+            _ => Err(ClickError::new("subrange bounds must be int32 or uint64")),
         };
         let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
         else {
@@ -2778,13 +2779,19 @@ fn verify_kernel_standard_theorem_axiom(
         if width == 0 {
             return Err(ClickError::new("subrange requires a nonzero element width"));
         }
+        let bounds = [parameter(1)?, parameter(2)?, parameter(3)?, parameter(4)?];
+        let format = bounds[0].0;
+        if bounds.iter().any(|(kind, _)| *kind != format) {
+            return Err(ClickError::new("subrange bounds must have the same type"));
+        }
         crate::kernel::prove_separation_subrange(
             pointer.clone(),
             width,
-            parameter(1)?,
-            parameter(2)?,
-            parameter(3)?,
-            parameter(4)?,
+            format,
+            bounds[0].1.clone(),
+            bounds[1].1.clone(),
+            bounds[2].1.clone(),
+            bounds[3].1.clone(),
         )
     } else if resource_law_shape(theorem.name()).is_some() {
         if theorem

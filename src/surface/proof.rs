@@ -46,6 +46,7 @@ mod checked_drivers;
 mod execution_state;
 mod guarded_consequents;
 mod pure_theorems;
+pub(in crate::surface) use pure_theorems::kernel_law_index_types;
 mod resources;
 mod selected_arithmetic;
 mod signed_definedness;

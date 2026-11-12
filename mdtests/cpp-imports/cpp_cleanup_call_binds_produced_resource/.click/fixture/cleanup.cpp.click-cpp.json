@@ -281,7 +281,7 @@
     "compilation_file": "cleanup.cpp",
     "exceptions": false,
     "frontend": "clang",
-    "frontend_version": "Debian clang version 19.1.7 (3+b1)",
+    "frontend_version": "clang version 19.1.7",
     "rtti": false,
     "standard": "c++20",
     "target": "x86_64-unknown-linux-gnu"

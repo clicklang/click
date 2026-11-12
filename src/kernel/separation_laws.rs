@@ -124,24 +124,32 @@ pub(crate) fn prove_separation_restrict(
 pub(crate) fn prove_separation_subrange(
     base: CPointerValue,
     width: u32,
+    format: MachineIntegerType,
     lo: MachineTerm,
     hi: MachineTerm,
     inner_lo: MachineTerm,
     inner_hi: MachineTerm,
 ) -> Theorem {
+    assert!(matches!(
+        format,
+        MachineIntegerType::Int32 | MachineIntegerType::UInt64
+    ));
     crate::instrumentation::record_deterministic_work(1);
     let premises = [
         (lo.clone(), inner_lo.clone()),
         (inner_lo.clone(), inner_hi.clone()),
         (inner_hi.clone(), hi.clone()),
     ];
+    let range = |start, end| match format {
+        MachineIntegerType::Int32 => CMemoryRange::from_pointer_value(&base, start, end, width),
+        MachineIntegerType::UInt64 => {
+            CMemoryRange::from_pointer_value_wide(&base, start, end, width)
+        }
+        _ => unreachable!(),
+    };
     let conclusion = Proposition::CResourceContains {
-        parent: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
-            &base, lo, hi, width,
-        ))),
-        child: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
-            &base, inner_lo, inner_hi, width,
-        ))),
+        parent: Box::new(CResource::Memory(range(lo, hi))),
+        child: Box::new(CResource::Memory(range(inner_lo, inner_hi))),
     };
     Theorem::new(
         premises
@@ -150,7 +158,12 @@ pub(crate) fn prove_separation_subrange(
             .fold(conclusion, |body, (left, right)| {
                 Proposition::Implies(
                     Box::new(Proposition::ConditionIs(
-                        ConditionTerm::signed_less_equal(left, right),
+                        ConditionTerm::machine_compare(
+                            format,
+                            CompareRelation::LessEqual,
+                            left,
+                            right,
+                        ),
                         true,
                     )),
                     Box::new(body),

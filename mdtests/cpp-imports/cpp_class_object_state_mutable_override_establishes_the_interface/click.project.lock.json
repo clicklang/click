@@ -38,7 +38,7 @@
                 "compilation_file": "shapes.cpp",
                 "exceptions": false,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": false,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -50,17 +50,17 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "b0f42fd6919745ef3ce9ff6dc1c83435e410d8545ae2d494a02dd03e61c6ee4d",
+          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
           "name": "clang"
         },
         "sources": {
           "shapes.cpp": {
             "artifact": {
-              "bytes": 18060,
+              "bytes": 17967,
               "path": ".click/fixture/shapes.cpp.click-cpp.json",
-              "sha256": "ee3b63608dfde2d5b2ced0edc5b800a122a3939ad41c0a7df9b64b018722c0c2"
+              "sha256": "7e484eb0c94c3d70179a1ceebf8ec3732a52ea9fa3b24cc470dd9259cf6a8294"
             },
-            "identity": "76d317af52d2ad225a381d64729e507b9c8cf405a73d6f127e4a1b632a491854",
+            "identity": "1121974027ef48168fc58de1d5f45ae99b4864f691075394eed5b3f5c36ec743",
             "inputs": {
               "$unit/shapes.cpp": "37294a463bee79fdbfe2b261cbb63e858c4b328d9de7a144a847cedc3592bd8c"
             }

@@ -38,7 +38,7 @@
                 "compilation_file": "cleanup.cpp",
                 "exceptions": false,
                 "frontend": "clang",
-                "frontend_version": "Debian clang version 19.1.7 (3+b1)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": false,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -50,17 +50,17 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "d5798ad72d5be2758f916f4c8ca13887b936a29653d1562e67ed89deeaa7c1c7",
+          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
           "name": "clang"
         },
         "sources": {
           "cleanup.cpp": {
             "artifact": {
-              "bytes": 15128,
+              "bytes": 15114,
               "path": ".click/fixture/cleanup.cpp.click-cpp.json",
-              "sha256": "670c63341e0ad7b886220d12b9c20886412cff43b2f526a7d0b8f159666b5456"
+              "sha256": "975f6a1ceb2c9132750f239a0c9a802c58fa17b3248f39c1a28640487c49d35f"
             },
-            "identity": "b1a545178babd66fd8c05fab86845926016114dd4969756fa9ce4b7f13773681",
+            "identity": "573400767ed41544c4ad46a66748da3a1aba565b791141fcfd199dd8bc407832",
             "inputs": {
               "$unit/cleanup.cpp": "a0de3d8a152c64b9f2a2b4dbe7d21b47cafe7a0f005900ff765d4197b9847d03"
             }
