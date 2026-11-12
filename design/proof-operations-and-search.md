@@ -115,10 +115,10 @@ Roles distinguish the work remaining:
 | `mixed` | Drivers and auxiliary planners; semantic roles are recorded in the caller audit. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory contains 638 records: 7 legacy bridges, 22 kernel callers,
+The current inventory contains 639 records: 7 legacy bridges, 22 kernel callers,
 6 Surface operation dependencies, 0 operation-to-driver dependencies,
 122 driver records, 6 presentation records,
-455 search-internal records, 18 mixed records and 2 imports. These are reference
+458 search-internal records, 16 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several
@@ -221,7 +221,7 @@ checker or rebuilt proof state.
 
 ## Detailed caller classification
 
-The [caller audit](proof-boundary-classification.md) classifies the current 18 mixed and
+The [caller audit](proof-boundary-classification.md) classifies the current 16 mixed and
 0 operation-to-driver records by why they invoke search or interpretation.
 It distinguishes expected dispatch from hidden obligation callbacks, declaration
 validation and the remaining primitive search dependencies.
