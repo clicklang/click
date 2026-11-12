@@ -19,8 +19,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let prepared = self.proof.prepare_pure_theorem_application(application)?;
             let (current, premises) =
                 self.prove_theorem_application_obligations(application, &prepared.obligations)?;
-            let applied =
-                current.finish_prepared_theorem_application(prepared, application, premises)?;
+            let step = ProofStep::ApplyTheoremUsing {
+                application: application.clone(),
+                premises: premises.clone(),
+            };
+            let applied = current.driver().observe_step(step, |_| {
+                current.finish_prepared_theorem_application(prepared, application, premises)
+            })?;
             return Ok(current
                 .driver()
                 .spell_applied_conclusions(application, applied));

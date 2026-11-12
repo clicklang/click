@@ -173,7 +173,6 @@ src/surface/proof/driver/state.rs	driver	ProofDriver::complete_fixed_state_oblig
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_have_step	driver	2
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_at	driver	1
-src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_with_origin	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_with_origin_inner	driver	16
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping_after_wide	driver	3
@@ -183,7 +182,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_unsigned_order_step_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_wide_arithmetic_using	1
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_selected_theorem_application	driver	1
-src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_theorem_application	driver	2
+src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_theorem_application	driver	3
 src/surface/proof/driver/theorems.rs	operation	ProofDriver::apply_theorem_application	select_theorem_application_step	1
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_initialization_body	driver	4
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_initialization_body	try_solve_closure	2
