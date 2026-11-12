@@ -988,9 +988,12 @@ Cited-condition rewriting visits opaque payloads and folds resolved conditional
 arithmetic; wide word equality retains the signed interpretation of high-bit
 literals. Difference-graph interval queries borrow retained opaque leaves and
 preserve their native branch rules without exporting surrounding arithmetic.
-Exact listed premises bridge equality and disequality as well as order claims;
-resource match/unfold consumers use the producer's paired clause records directly
-instead of rechecking them against a differently represented fact store.
+Theorem requirement selection and checking bridge listed equality and disequality
+premises as well as order claims. Goal completion checks the selected theorem's
+conclusions through the same bridge. General rewrite/transport candidate matching
+keeps its existing order-only admission. Resource match/unfold consumers use the
+producer's paired clause records directly instead of rechecking them against a
+differently represented fact store.
 The public signed certificate's selected term payload is still native, as are
 the remaining producer families listed above. Steps 2–4 remain open.
 

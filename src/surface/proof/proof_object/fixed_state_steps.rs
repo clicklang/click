@@ -2,7 +2,7 @@
 //! transport steps.
 
 use super::*;
-use crate::kernel::proof::fact_reasoning::InstanceArgument;
+use crate::kernel::proof::fact_reasoning::{InstanceArgument, listed_comparison_fact_is_available};
 use crate::kernel::proof::{CheckedProofCasePartition, OutcomeEvidenceFork, OutcomeForkArm};
 
 const MAX_CHOSEN_PROJECTION_WORK: usize = 4096;
@@ -913,9 +913,12 @@ impl<'a> Proof<'a> {
             }
             facts = facts.with_kernel_checked_fact(fact.clone());
         }
-        let complete = self
-            .goal()
-            .is_some_and(|goal| facts.introduced_goal_available(goal));
+        // Only the selected theorem's checked conclusions participate in
+        // this representation bridge; ambient candidate matching stays unchanged.
+        let complete = self.goal().is_some_and(|goal| {
+            facts.introduced_goal_available(goal)
+                || listed_comparison_fact_is_available(goal, &applied)
+        });
         Ok(self.checked_fact_transition(
             self.state().locals().clone(),
             facts,
@@ -961,9 +964,10 @@ impl<'a> Proof<'a> {
             view.effect_facts,
             view.spec_definitions,
         )?;
-        let complete = self
-            .goal()
-            .is_some_and(|goal| checked.facts.introduced_goal_available(goal));
+        let complete = self.goal().is_some_and(|goal| {
+            checked.facts.introduced_goal_available(goal)
+                || listed_comparison_fact_is_available(goal, &checked.checked_facts)
+        });
         Ok(self.checked_fact_transition(
             self.state().locals().clone(),
             checked.facts,
@@ -1020,9 +1024,10 @@ impl<'a> Proof<'a> {
             &execution.core.effect_facts,
             context.spec_definitions,
         )?;
-        let complete = self
-            .goal()
-            .is_some_and(|goal| checked.facts.introduced_goal_available(goal));
+        let complete = self.goal().is_some_and(|goal| {
+            checked.facts.introduced_goal_available(goal)
+                || listed_comparison_fact_is_available(goal, &checked.checked_facts)
+        });
         Ok(self.checked_execution_transition(
             checked.facts,
             complete,

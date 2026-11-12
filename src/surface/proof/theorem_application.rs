@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::proof::fact_reasoning::listed_comparison_fact_is_available;
 
 thread_local! {
     static APPLICATION_SOURCE: std::cell::RefCell<Option<std::rc::Rc<TheoremApplication>>> = const { std::cell::RefCell::new(None) };
@@ -285,10 +286,10 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         let mirrored_order_listed = || {
             crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
                 .iter()
-                .any(|form| exact_fact_is_available(form, available))
+                .any(|form| listed_comparison_fact_is_available(form, available))
         };
         if !crate::kernel::listed_premise_holds(&lowered, |premise| {
-            exact_fact_is_available(premise, available)
+            listed_comparison_fact_is_available(premise, available)
         }) && !mirrored_order_listed()
             && !matches!(normalize_proposition(&lowered), NormalizedProposition::True)
         {
@@ -313,7 +314,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         // the valid-extent fact it never established. The guards are spelled
         // over the element count, which is the spelling a proof can write.
         for guard in crate::kernel::stated_loadable_extent_guards(&lowered) {
-            if exact_fact_is_available(&guard, available)
+            if listed_comparison_fact_is_available(&guard, available)
                 || matches!(normalize_proposition(&guard), NormalizedProposition::True)
             {
                 continue;
