@@ -18,7 +18,7 @@ impl TermClasses {
             }
             // The observation may read an operator at another carrier width.
             // Legacy registration keeps such an operator opaque (except for
-            // its explicit add/sub cancellation). Retain that exact identity
+            // its explicit add/sub cancellation). Use the native numeric observation identity
             // without exporting the operator's shared descendants.
             let operator_format = match term.node() {
                 N::MachineBinary { format, .. } | N::MachineUnary { format, .. } => Some(*format),
@@ -90,7 +90,7 @@ impl TermClasses {
                         W::Bits64 => MachineIntegerType::UInt64,
                         W::Bits128 => MachineIntegerType::UInt128,
                     };
-                    let atom = MachineAtom::from_operand(
+                    let atom = MachineAtom::from_numeric_operand(
                         format,
                         crate::kernel::MachineOperandView::Shared(term),
                     );
@@ -361,7 +361,7 @@ impl TermClasses {
                             W::Bits64 => MachineIntegerType::UInt64,
                             W::Bits128 => MachineIntegerType::UInt128,
                         };
-                        let atom = MachineAtom::from_operand(
+                        let atom = MachineAtom::from_numeric_operand(
                             format,
                             crate::kernel::MachineOperandView::Shared(term),
                         );
@@ -381,7 +381,7 @@ impl TermClasses {
                         W::Bits64 => MachineIntegerType::UInt64,
                         W::Bits128 => MachineIntegerType::UInt128,
                     };
-                    let atom = MachineAtom::from_operand(
+                    let atom = MachineAtom::from_numeric_operand(
                         format,
                         crate::kernel::MachineOperandView::Shared(term),
                     );
@@ -415,7 +415,7 @@ impl TermClasses {
                                 .expect("read descriptor");
                         crate::kernel::eval::is_selected_scalar_read(memory, pointer, kind)
                     } {
-                        let atom = MachineAtom::from_operand(
+                        let atom = MachineAtom::from_numeric_operand(
                             format,
                             crate::kernel::MachineOperandView::Shared(term),
                         );
@@ -437,7 +437,7 @@ impl TermClasses {
                             if shared != term.with_machine_observation_type(format) {
                                 self.intern_shared_machine(&shared, width)
                             } else {
-                                let atom = MachineAtom::from_operand(
+                                let atom = MachineAtom::from_numeric_operand(
                                     format,
                                     crate::kernel::MachineOperandView::Shared(term),
                                 );

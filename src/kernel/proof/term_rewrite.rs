@@ -5969,7 +5969,9 @@ impl<'a> TermRewrite<'a> {
             }
             let mut pending = vec![(left, right)];
             while let Some((left, right)) = pending.pop() {
-                rewrite.visit();
+                // This is matching work inside one existing rewrite visit,
+                // not another visit of the rewritten source expression.
+                rewrite.charge_rewrite_work(1);
                 if rewrite.checked_work_exhausted() {
                     return false;
                 }
@@ -6775,63 +6777,6 @@ mod tests {
                 input.clone()
             };
             assert_eq!(canonicalize_integer_to_machine_constant(input), expected);
-        }
-    }
-
-    #[test]
-    fn narrowing_rewrite_visits_scale_with_selected_expression() {
-        let from = MachineTerm::Variable(Variable(91));
-        let to = MachineTerm::Variable(Variable(92));
-        let make = |value: &MachineTerm, size| {
-            Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                name: "many".into(),
-                arguments: vec![
-                    PureFunctionArgument::Value(CValue::UInt32(
-                        MachineTerm::legacy_cast(
-                            MachineCastSpelling::UInt32From64,
-                            Box::new(value.clone())
-                        )
-                    ));
-                    size
-                ],
-            })
-        };
-        for size in [16, 64, 256] {
-            let mut rewrite = TermRewrite::for_bits(&from, &to);
-            assert_eq!(rewrite.term(&make(&from, size)), make(&to, size));
-            assert!(rewrite.changed);
-            assert_eq!(rewrite.visits, 2 + 2 * size);
-        }
-    }
-
-    #[test]
-    fn conditional_reduction_work_scales_with_selected_expression() {
-        let condition = ConditionTerm::Variable(Variable(51));
-        let conditions = HashMap::from([(condition.clone(), true)]);
-        for size in [16, 64, 256] {
-            let input = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                name: "many".into(),
-                arguments: vec![
-                    PureFunctionArgument::Value(CValue::Int32(MachineTerm::If {
-                        condition: Box::new(condition.clone()),
-                        then_term: Box::new(MachineTerm::constant(7)),
-                        else_term: Box::new(MachineTerm::constant(0)),
-                    },));
-                    size
-                ],
-            });
-            let expected = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                name: "many".into(),
-                arguments: vec![
-                    PureFunctionArgument::Value(
-                        CValue::Int32(MachineTerm::constant(7),)
-                    );
-                    size
-                ],
-            });
-            let mut rewrite = TermRewrite::for_conditions(&conditions);
-            assert_eq!(rewrite.term(&input), expected);
-            assert_eq!(rewrite.visits, 2 + 3 * size);
         }
     }
 

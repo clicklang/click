@@ -823,7 +823,7 @@ pub(in crate::kernel) fn equality_graph_term_key(term: &MachineTerm) -> MachineT
 thread_local! {
     static SOLVE_FACT_CONDITIONS_IN_PROGRESS: RefCell<BTreeSet<(ConditionTerm, bool)>> =
         const { RefCell::new(BTreeSet::new()) };
-    static CONDITION_DECISIONS_IN_PROGRESS: RefCell<BTreeSet<ConditionTerm>> =
+    static CONDITION_DECISIONS_IN_PROGRESS: RefCell<BTreeSet<(Option<MachineIntegerType>, ConditionTerm)>> =
         const { RefCell::new(BTreeSet::new()) };
     static REASONING_PROVENANCE_STACK: RefCell<Vec<ReasoningProvenanceFrame>> =
         const { RefCell::new(Vec::new()) };
@@ -1542,7 +1542,7 @@ fn solve_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
 }
 
 struct ConditionDecisionGuard {
-    condition: ConditionTerm,
+    key: (Option<MachineIntegerType>, ConditionTerm),
 }
 
 impl ConditionDecisionGuard {
@@ -1551,15 +1551,23 @@ impl ConditionDecisionGuard {
     // an in-progress query cannot add evidence, so stop that branch
     // conservatively instead of recursing through the Rust stack.
     fn enter(condition: &ConditionTerm) -> Option<Self> {
+        // Fact identity equates a narrow comparison with its promoted
+        // spelling. Decision dispatch must still visit that wider carrier:
+        // its indexed order authority lives there. Retain the written format
+        // in the cycle key, while repeated queries at either format remain
+        // blocked, including a wider query that returns to the narrow one.
+        let format = match condition {
+            ConditionTerm::Compare { format, .. } => Some(*format),
+            _ => None,
+        };
+        let key = (format, condition.clone());
         CONDITION_DECISIONS_IN_PROGRESS.with(|in_progress| {
             let mut in_progress = in_progress.borrow_mut();
-            if !in_progress.insert(condition.clone()) {
+            if !in_progress.insert(key.clone()) {
                 note_incomplete_reasoning();
                 return None;
             }
-            Some(Self {
-                condition: condition.clone(),
-            })
+            Some(Self { key })
         })
     }
 }
@@ -1567,9 +1575,30 @@ impl ConditionDecisionGuard {
 impl Drop for ConditionDecisionGuard {
     fn drop(&mut self) {
         CONDITION_DECISIONS_IN_PROGRESS.with(|in_progress| {
-            in_progress.borrow_mut().remove(&self.condition);
+            in_progress.borrow_mut().remove(&self.key);
         });
     }
+}
+
+#[test]
+fn condition_decision_cycle_guard_allows_promotion_but_blocks_reentry() {
+    let narrow = ConditionTerm::narrow_compare(
+        MachineIntegerType::UInt8,
+        CompareRelation::LessEqual,
+        MachineTerm::narrow_constant(MachineIntegerType::UInt8, 48),
+        MachineTerm::Variable(Variable(982899)),
+    );
+    let wide = crate::kernel::machine_integer::comparison::narrow_fact_widening(&narrow)
+        .expect("narrow comparison");
+    assert_eq!(narrow, wide, "both spellings denote the same fact");
+    let outer = ConditionDecisionGuard::enter(&narrow).unwrap();
+    let promoted = ConditionDecisionGuard::enter(&wide).unwrap();
+    assert!(ConditionDecisionGuard::enter(&wide).is_none());
+    assert!(ConditionDecisionGuard::enter(&narrow).is_none());
+    drop(promoted);
+    assert!(ConditionDecisionGuard::enter(&wide).is_some());
+    drop(outer);
+    assert!(ConditionDecisionGuard::enter(&narrow).is_some());
 }
 
 /// Pointer-offset equality up to exact materialization: two forms of one

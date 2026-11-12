@@ -128,3 +128,167 @@ fn shared_scalar_premise_selection_keeps_written_truth() {
         &goal
     ));
 }
+
+#[test]
+fn promoted_call_endpoint_keys_preserve_typed_argument_identity() {
+    use crate::kernel::{CValue, KernelTermExport, PureFunctionArgument, VerificationSession};
+    let _session = VerificationSession::enter();
+    let argument = MachineTerm::uint64_constant(7);
+    let shared = SharedMachineIntegerTerm::intern(MachineIntegerType::UInt64, argument.clone());
+    let call = |argument| MachineTerm::ClickFunctionApplication {
+        name: "promoted_digit".into(),
+        arguments: vec![argument],
+    };
+    let native = call(PureFunctionArgument::Value(CValue::UInt64(argument)));
+    let retained = call(PureFunctionArgument::SharedMachine(shared));
+    let promote = |value| {
+        MachineTerm::machine_integer_cast(
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int32,
+            value,
+        )
+    };
+    let native = promote(native);
+    let retained = promote(retained);
+    let exports = KernelTermExport::machine_export_count();
+    let key = |term: &MachineTerm| ScalarOperandKey::new(MachineOperandView::Legacy(term));
+    assert_eq!(key(&native), key(&retained));
+    let root = KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &retained);
+    assert_eq!(
+        key(&native),
+        ScalarOperandKey::new(MachineOperandView::Shared(&root))
+    );
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+    let different = promote(call(PureFunctionArgument::Value(CValue::UInt64(
+        MachineTerm::uint64_constant(8),
+    ))));
+    assert_ne!(key(&native), key(&different));
+    let different_sort = promote(call(PureFunctionArgument::Value(CValue::Int64(
+        MachineTerm::int64_constant(7),
+    ))));
+    assert_ne!(key(&native), key(&different_sort));
+    let different_cast = MachineTerm::machine_integer_cast(
+        MachineIntegerType::Int8,
+        MachineIntegerType::Int32,
+        call(PureFunctionArgument::Value(CValue::UInt64(
+            MachineTerm::uint64_constant(7),
+        ))),
+    );
+    assert_ne!(key(&native), key(&different_cast));
+}
+
+#[test]
+fn arithmetic_call_endpoint_keys_preserve_argument_identity_and_opaque_refusal() {
+    use crate::kernel::{CValue, KernelTermExport, PureFunctionArgument, VerificationSession};
+    let _session = VerificationSession::enter();
+    let call = |shared| MachineTerm::ClickFunctionApplication {
+        name: "arithmetic_digit".into(),
+        arguments: vec![if shared {
+            PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
+                MachineIntegerType::UInt64,
+                MachineTerm::uint64_constant(7),
+            ))
+        } else {
+            PureFunctionArgument::Value(CValue::UInt64(MachineTerm::uint64_constant(7)))
+        }],
+    };
+    let promote = |value| {
+        MachineTerm::machine_integer_cast(
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int32,
+            value,
+        )
+    };
+    let add = |left, right| MachineTerm::Binary {
+        format: MachineIntegerType::Int32,
+        op: MachineBinaryOp::Add,
+        left: Box::new(left),
+        right: Box::new(right),
+    };
+    let invert = |operand| MachineTerm::Unary {
+        format: MachineIntegerType::Int32,
+        op: crate::kernel::MachineUnaryOp::BitwiseNot,
+        operand: Box::new(operand),
+    };
+    let key = |term: &MachineTerm| ScalarOperandKey::new(MachineOperandView::Legacy(term));
+    let exports = KernelTermExport::machine_export_count();
+    for (native, retained) in [
+        (
+            add(promote(call(false)), MachineTerm::constant(1)),
+            add(promote(call(true)), MachineTerm::constant(1)),
+        ),
+        (invert(promote(call(false))), invert(promote(call(true)))),
+    ] {
+        assert_eq!(key(&native), key(&retained));
+        let root =
+            KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &retained);
+        assert_eq!(
+            key(&native),
+            ScalarOperandKey::new(MachineOperandView::Shared(&root))
+        );
+    }
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+    let read = MachineTerm::MemoryLoad(
+        crate::kernel::intern_c_memory_ref(&CMemory::new()),
+        Box::new(Pointer::null()),
+        LoadKind::Int32,
+    );
+    let mixed = add(call(false), read);
+    assert!(!selected_call_expression(MachineOperandView::Legacy(
+        &mixed
+    )));
+    assert!(matches!(key(&mixed), ScalarOperandKey::Written(_)));
+    assert_ne!(
+        key(&add(call(false), MachineTerm::constant(1))),
+        key(&add(call(true), MachineTerm::constant(2)))
+    );
+}
+
+#[test]
+fn opaque_call_endpoint_observation_is_linear_cold_and_constant_warm() {
+    use crate::kernel::{KernelTermExport, PureFunctionArgument};
+    let mut samples = Vec::new();
+    for depth in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let call = MachineTerm::ClickFunctionApplication {
+            name: "shared_endpoint_leaf".into(),
+            arguments: vec![PureFunctionArgument::Value(CValue::Int32(
+                MachineTerm::constant(7),
+            ))],
+        };
+        let mut root =
+            KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &call);
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (key, cold) = crate::instrumentation::measure_deterministic_work(|| {
+            ScalarOperandKey::new(MachineOperandView::Shared(&root))
+        });
+        let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..8 {
+                assert_eq!(
+                    ScalarOperandKey::new(MachineOperandView::Shared(&root)),
+                    key
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push((depth, cold, warm));
+    }
+    for pair in samples.windows(2) {
+        let [
+            (small, cold_small, warm_small),
+            (large, cold_large, warm_large),
+        ] = pair
+        else {
+            unreachable!()
+        };
+        assert!(cold_large * small <= cold_small * large * 2, "{samples:?}");
+        assert!(*warm_large <= warm_small + 8, "{samples:?}");
+    }
+}

@@ -85,14 +85,17 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
             let children = match term.node() {
                 KernelTermNode::MachineBinary { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
+                | KernelTermNode::IntegerCompare { arguments, .. }
                 | KernelTermNode::BoolEqual { arguments } => arguments.to_vec(),
                 KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } => {
                     arguments.to_vec()
                 }
+                KernelTermNode::IntegerOperation { arguments, .. } => arguments.clone(),
                 KernelTermNode::Call { arguments, .. } if term.ty() == &KernelType::Bool => {
                     arguments.clone()
                 }
-                KernelTermNode::MachineUnary { operand, .. }
+                KernelTermNode::MachineObservation { operand, .. }
+                | KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
                 _ => Vec::new(),
             };
@@ -121,6 +124,33 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     ));
                     KernelTerm::bool_observation_leaf(condition, identity)
                 }
+                KernelTermNode::IntegerCompare {
+                    operator,
+                    arguments,
+                } => KernelTerm::intern(
+                    KernelType::Bool,
+                    KernelTermNode::IntegerCompare {
+                        operator: *operator,
+                        arguments: arguments.each_ref().map(|arg| get(arg)),
+                    },
+                ),
+                KernelTermNode::IntegerOperation {
+                    operator,
+                    arguments,
+                } => KernelTerm::intern(
+                    KernelType::Integer,
+                    KernelTermNode::IntegerOperation {
+                        operator: *operator,
+                        arguments: arguments.iter().map(|arg| get(arg)).collect(),
+                    },
+                ),
+                KernelTermNode::MachineObservation { format, operand } => KernelTerm::intern(
+                    KernelType::Integer,
+                    KernelTermNode::MachineObservation {
+                        format: *format,
+                        operand: get(operand),
+                    },
+                ),
                 KernelTermNode::MachineIf { arguments } => {
                     KernelTerm::machine_if_shared(format, arguments.each_ref().map(|arg| get(arg)))
                 }
@@ -193,6 +223,75 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
 #[cfg(test)]
 mod recursive_call_tests {
     use super::*;
+
+    #[test]
+    fn mathematical_guards_normalize_nested_call_argument_carriers() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let argument = MachineTerm::constant(7);
+        let shared = SharedMachineIntegerTerm::intern(format, argument.clone());
+        let call = |argument| MachineTerm::ClickFunctionApplication {
+            name: "math_guard_length".into(),
+            arguments: vec![argument],
+        };
+        let native = call(PureFunctionArgument::Value(CValue::UInt64(argument)));
+        let retained = call(PureFunctionArgument::SharedMachine(shared));
+        let guard = |call: &MachineTerm| {
+            let observation = KernelTerm::intern(
+                KernelType::Integer,
+                KernelTermNode::MachineObservation {
+                    format,
+                    operand: KernelTermImport::default().machine(format, call),
+                },
+            );
+            let difference = KernelTerm::integer_operation(
+                KernelIntegerOperator::Subtract,
+                vec![observation, KernelTerm::integer_literal(3.into())],
+            )
+            .unwrap();
+            KernelTerm::intern(
+                KernelType::Bool,
+                KernelTermNode::IntegerCompare {
+                    operator: IntegerComparisonOperator::LessThan,
+                    arguments: [KernelTerm::integer_literal(1.into()), difference],
+                },
+            )
+        };
+        let native_guard = guard(&native);
+        let shared_guard = guard(&retained);
+        let native_written = KernelTermExport::condition(&native_guard).unwrap();
+        let shared_written = KernelTermExport::condition(&shared_guard).unwrap();
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(normalize(&native_guard), normalize(&shared_guard));
+        let conditional = |guard| {
+            KernelTerm::machine_if_shared(
+                format,
+                [
+                    guard,
+                    KernelTermImport::default().machine(format, &MachineTerm::constant(48)),
+                    KernelTermImport::default().machine(format, &MachineTerm::constant(49)),
+                ],
+            )
+        };
+        let a = SharedMachineIntegerTerm::observe_shared(format, conditional(native_guard.clone()))
+            .unwrap();
+        let b = SharedMachineIntegerTerm::observe_shared(format, conditional(shared_guard.clone()))
+            .unwrap();
+        assert_eq!(a, b);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(
+            KernelTermExport::condition(&native_guard).unwrap(),
+            native_written
+        );
+        assert_eq!(
+            KernelTermExport::condition(&shared_guard).unwrap(),
+            shared_written
+        );
+        let different = guard(&call(PureFunctionArgument::Value(CValue::UInt64(
+            MachineTerm::constant(8),
+        ))));
+        assert_ne!(normalize(&native_guard), normalize(&different));
+    }
 
     #[test]
     fn observation_identity_allows_nested_shared_opaque_call_arguments() {

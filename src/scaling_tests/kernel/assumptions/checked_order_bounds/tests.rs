@@ -93,3 +93,80 @@ fn shared_word_prefix_bounds_do_not_materialize_operands() {
         }
     }
 }
+
+#[test]
+fn native_order_premises_select_retained_promoted_call_bounds() {
+    use crate::kernel::{KernelTermExport, PureFunctionArgument};
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+    ] {
+        for truth in [false, true] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let call = MachineTerm::ClickFunctionApplication {
+                name: "indexed_digit".into(),
+                arguments: vec![PureFunctionArgument::Value(CValue::UInt64(
+                    MachineTerm::uint64_constant(7),
+                ))],
+            };
+            let endpoint =
+                MachineTerm::machine_integer_cast(MachineIntegerType::UInt8, format, call);
+            let literal = if format == MachineIntegerType::Int64 {
+                MachineTerm::int64_constant(48)
+            } else {
+                MachineTerm::constant(48)
+            };
+            let fact = ConditionTerm::Compare {
+                format,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(literal),
+                right: Box::new(endpoint.clone()),
+            };
+            let mut index = CheckedOrderBounds::default();
+            index.adjust(&fact, truth, true);
+            let root = KernelTerm::retained_native_machine_operand(format, &endpoint);
+            let exports = KernelTermExport::machine_export_count();
+            let native = if format == MachineIntegerType::Int64 {
+                index.signed_wide_interval(&endpoint)
+            } else {
+                index.interval(&endpoint, format == MachineIntegerType::UInt32)
+            };
+            let shared = if format == MachineIntegerType::Int64 {
+                index.signed_wide_interval_view(MachineOperandView::Shared(&root))
+            } else {
+                index.interval_view(
+                    MachineOperandView::Shared(&root),
+                    format == MachineIntegerType::UInt32,
+                )
+            };
+            assert!(native.is_some(), "{format:?}/{truth}");
+            assert_eq!(native, shared, "{format:?}/{truth}");
+            if truth {
+                assert_eq!(shared.unwrap().0, 48);
+            } else {
+                assert_eq!(shared.unwrap().1, 47);
+            }
+            if format != MachineIntegerType::Int64 {
+                assert_eq!(
+                    index.interval_view(
+                        MachineOperandView::Shared(&root),
+                        format != MachineIntegerType::UInt32
+                    ),
+                    None
+                );
+            }
+            index.adjust(&fact, truth, false);
+            let removed = if format == MachineIntegerType::Int64 {
+                index.signed_wide_interval_view(MachineOperandView::Shared(&root))
+            } else {
+                index.interval_view(
+                    MachineOperandView::Shared(&root),
+                    format == MachineIntegerType::UInt32,
+                )
+            };
+            assert_eq!(removed, None);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+}
