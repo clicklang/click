@@ -610,6 +610,7 @@ impl<'a> Proof<'a> {
                     unfolds
                 });
         Ok(CheckedExecutionJoinParts {
+            trace_arm_paths: None,
             execution,
             facts,
             common_added_facts: added_facts,
@@ -1231,6 +1232,7 @@ impl<'a> Proof<'a> {
             },
         };
         Ok(CheckedExecutionJoinParts {
+            trace_arm_paths: None,
             execution,
             facts,
             common_added_facts: added_facts,
@@ -1608,6 +1610,10 @@ impl<'a> Proof<'a> {
                 .execution()
                 .expect("validated terminal arm")
         });
+        // The trace shows the arm that holds a failing outcome path; the
+        // joined outcomes list the then-arm's paths first.
+        let trace_arm_paths = crate::surface::proof_trace::enabled_for(self.claim_label())
+            .then(|| completed_arms.map(|completed| completed.path_count()));
         let can_share_publication = !call_outcomes
             && terminal_route.is_none()
             && arms.iter().zip(completed_arms).all(|(arm, completed)| {
@@ -2109,6 +2115,7 @@ impl<'a> Proof<'a> {
             split_condition.step(None, then_proof, else_proof)
         };
         Ok(CheckedExecutionJoinParts {
+            trace_arm_paths,
             execution,
             facts,
             common_added_facts,
@@ -2315,6 +2322,7 @@ impl<'a> Proof<'a> {
             else_proof: Box::new(else_arm.certificate),
         };
         Ok(CheckedExecutionJoinParts {
+            trace_arm_paths: None,
             execution,
             facts,
             common_added_facts,
@@ -2675,6 +2683,7 @@ impl<'a> Proof<'a> {
         }
         let [then_arm, else_arm] = arms;
         Ok(Some(CheckedExecutionJoinParts {
+            trace_arm_paths: None,
             execution,
             facts,
             common_added_facts,
@@ -2949,6 +2958,7 @@ impl<'a> Proof<'a> {
             record.parent_execution.presentation.branch_path.clone();
         execution.core.has_empty_execution_branch_leaf = true;
         let parts = CheckedExecutionJoinParts {
+            trace_arm_paths: None,
             execution,
             facts: view.facts.clone(),
             common_added_facts: view.introduced_facts.clone(),
@@ -2988,6 +2998,7 @@ impl<'a> Proof<'a> {
         let parent_node = marker.node.parent.clone().ok_or_else(|| {
             self.step_error("cannot join `branch`: the split marker lost its root")
         })?;
+        let trace_arm_paths = parts.trace_arm_paths;
         let trace_added_facts =
             crate::surface::proof_trace::enabled_for(self.claim_label()).then(|| {
                 (
@@ -3043,6 +3054,7 @@ impl<'a> Proof<'a> {
                     facts,
                     more_facts,
                     continuation_arm: None,
+                    arm_paths: trace_arm_paths,
                     _retained: Box::new(self.node.clone()),
                 },
             );

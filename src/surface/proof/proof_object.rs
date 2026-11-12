@@ -301,6 +301,8 @@ struct CheckedExecutionJoinParts {
     common_added_facts: Vec<Proposition>,
     unfolded_predicates: PersistentOrderedSet<String>,
     step: ProofStep,
+    /// A terminal join's outcome paths per arm, counted only while tracing.
+    trace_arm_paths: Option<[usize; 2]>,
 }
 
 impl<'a> ExecutionSplitData<'a> {
@@ -1835,6 +1837,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         branch_arm: &dyn Fn(&[usize], &crate::source::SourcePosition) -> Option<usize>,
         have_body_contains: &dyn Fn(&[usize], &crate::source::SourcePosition) -> bool,
         target: Option<&crate::source::SourcePosition>,
+        failing_path: Option<usize>,
     ) -> Option<String> {
         let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
         if !crate::surface::proof_trace::enabled_for(claim) {
@@ -1860,6 +1863,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             branch_arm,
             have_body_contains,
             target,
+            failing_path,
         )?;
         if self
             .5
@@ -2024,6 +2028,7 @@ impl Proof<'_> {
         ClickError::with_diagnostic(
             message.clone(),
             crate::surface::proof_diagnostics::ProofFailureDiagnostic {
+                failing_path: None,
                 checks: None,
                 origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
                     stage: "return-fold certification".into(),
@@ -3457,6 +3462,7 @@ impl<'a> Proof<'a> {
             reason
         );
         let diagnostic = crate::surface::proof_diagnostics::ProofFailureDiagnostic {
+            failing_path: None,
             checks: None,
             origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
                 stage: "proof step".to_owned(),
@@ -3503,6 +3509,7 @@ impl<'a> Proof<'a> {
             .path()
             .unwrap_or_else(|| format!("checked step {}", self.node.depth + 1));
         let diagnostic = crate::surface::proof_diagnostics::ProofFailureDiagnostic {
+            failing_path: None,
             checks: None,
             origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
                 stage: "proof step".to_owned(),

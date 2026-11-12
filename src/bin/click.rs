@@ -920,6 +920,63 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    /// The implicit tail joins an early `return` with the rest of the
+    /// function at exit. A claim that fails on the rest's outcome path shows
+    /// that arm and the read it made, not `branch (joined)`; a failure on
+    /// the early return's path shows the then arm.
+    #[test]
+    fn trace_of_a_terminal_join_shows_the_failing_paths_arm() {
+        let directory =
+            std::env::temp_dir().join(format!("click-terminal-join-trace-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("g.c"),
+            "int g(int *p, int q) {\n    if (q == 0) return 1;\n    int v = *p;\n    return v;\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("g.click");
+        for (ensures, path, arm, step) in [
+            (
+                "result == 1",
+                "path 1",
+                "branch (else arm)",
+                "steps through: v = *p",
+            ),
+            (
+                "result == 0",
+                "path 0",
+                "branch (then arm)",
+                "steps through: return 1",
+            ),
+        ] {
+            fs::write(
+                &sidecar,
+                format!(
+                    "verifying \"g.c\";\n\nint32 g(int32 *p, int32 q) {{\n    views p[0..1];\n    requires defined(p[0]);\n    ensures {ensures};\n}}\n"
+                ),
+            )
+            .unwrap();
+            let traced = entry([
+                "verify".to_string(),
+                "--trace-proof".to_string(),
+                "g".to_string(),
+                sidecar.display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(
+                traced.contains(&format!("`g.ensures_0` {path}")),
+                "{traced}"
+            );
+            assert!(traced.contains(arm), "{traced}");
+            assert!(traced.contains(step), "{traced}");
+            assert!(!traced.contains("(joined)"), "{traced}");
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     #[ignore = "nightly: 6s in the parallel gate"]
     fn tautological_ensure_preserves_population_certification() {

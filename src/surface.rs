@@ -10272,6 +10272,7 @@ impl ClickError {
                     &|_, _| None,
                     &|_, _| false,
                     None,
+                    diagnostic.failing_path,
                 )
             })
         {
@@ -10561,6 +10562,7 @@ impl ClickError {
                     branch_arm,
                     have_body_contains,
                     target,
+                    diagnostic.failing_path,
                 )
             })
             .map(|trace| {
@@ -10895,6 +10897,16 @@ impl ClickError {
             && diagnostic.checks.is_none()
         {
             std::sync::Arc::make_mut(diagnostic).checks = Some(std::sync::Arc::new(checks));
+            self.rendered = std::sync::OnceLock::new();
+        }
+        self
+    }
+
+    /// Names the function outcome path this failure lies on, so its trace
+    /// shows the arm of a terminal join that holds it.
+    pub(crate) fn with_failing_path(mut self, path_index: usize) -> Self {
+        if let Some(diagnostic) = self.diagnostic.as_mut() {
+            std::sync::Arc::make_mut(diagnostic).failing_path = Some(path_index);
             self.rendered = std::sync::OnceLock::new();
         }
         self
