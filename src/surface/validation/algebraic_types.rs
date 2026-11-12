@@ -1268,62 +1268,87 @@ pub(super) fn validate_algebraic_type_uses(
         }
     }
     for theorem in &theorems {
-        let mut variables = AlgebraicVariables::parameters(theorem.parameters());
-        let mut click_variables = ScopedTypes::new(
-            theorem
-                .parameters()
+        // Trusted index laws are stated over their admitted C formats. Validate
+        // their signatures at those formats, just as theorem verification does.
+        let formats = crate::surface::proof::kernel_law_index_types(theorem.name())
+            .map(|(name, formats)| {
+                formats
+                    .into_iter()
+                    .map(|format| Some((name, format)))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| vec![None]);
+        for index in formats {
+            let mut variables = AlgebraicVariables::parameters(theorem.parameters());
+            let mut click_variables = ScopedTypes::new(
+                theorem
+                    .parameters()
+                    .iter()
+                    .map(|parameter| {
+                        (
+                            parameter.name().to_string(),
+                            match (index.as_ref(), parameter.click_type_with_object_class()) {
+                                (Some((name, format)), ClickType::Parameter(parameter))
+                                    if parameter == *name =>
+                                {
+                                    ClickType::C(format.clone())
+                                }
+                                (Some((name, format)), ClickType::Algebraic(application))
+                                    if application.name == *name
+                                        && application.arguments.is_empty() =>
+                                {
+                                    ClickType::C(format.clone())
+                                }
+                                (_, click_type) => click_type,
+                            },
+                        )
+                    })
+                    .collect::<BTreeMap<_, _>>(),
+            );
+            for requirement in theorem
+                .requires()
                 .iter()
-                .map(|parameter| {
-                    (
-                        parameter.name().to_string(),
-                        parameter.click_type_with_object_class(),
-                    )
-                })
-                .collect::<BTreeMap<_, _>>(),
-        );
-        for requirement in theorem
-            .requires()
-            .iter()
-            .filter_map(Requirement::proposition)
-        {
-            validate_algebraic_proposition(
-                requirement,
-                &mut variables,
-                click_functions,
-                &predicate_types,
-                &definitions,
-                &format!("theorem `{}` requirement", theorem.name()),
-            )?;
-            if !theorem.type_parameters().is_empty() {
-                validate_generic_proposition_types(
+                .filter_map(Requirement::proposition)
+            {
+                validate_algebraic_proposition(
                     requirement,
-                    &mut click_variables,
+                    &mut variables,
                     click_functions,
                     &predicate_types,
                     &definitions,
                     &format!("theorem `{}` requirement", theorem.name()),
                 )?;
-            }
-        }
-        for ensure in theorem.ensures() {
-            if let Ensure::Proposition(proposition) = ensure.ensure() {
-                validate_algebraic_proposition(
-                    proposition,
-                    &mut variables,
-                    click_functions,
-                    &predicate_types,
-                    &definitions,
-                    &format!("theorem `{}` ensure", theorem.name()),
-                )?;
                 if !theorem.type_parameters().is_empty() {
                     validate_generic_proposition_types(
-                        proposition,
+                        requirement,
                         &mut click_variables,
+                        click_functions,
+                        &predicate_types,
+                        &definitions,
+                        &format!("theorem `{}` requirement", theorem.name()),
+                    )?;
+                }
+            }
+            for ensure in theorem.ensures() {
+                if let Ensure::Proposition(proposition) = ensure.ensure() {
+                    validate_algebraic_proposition(
+                        proposition,
+                        &mut variables,
                         click_functions,
                         &predicate_types,
                         &definitions,
                         &format!("theorem `{}` ensure", theorem.name()),
                     )?;
+                    if !theorem.type_parameters().is_empty() {
+                        validate_generic_proposition_types(
+                            proposition,
+                            &mut click_variables,
+                            click_functions,
+                            &predicate_types,
+                            &definitions,
+                            &format!("theorem `{}` ensure", theorem.name()),
+                        )?;
+                    }
                 }
             }
         }

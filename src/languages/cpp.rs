@@ -11,6 +11,7 @@ mod interface;
 mod lifetime;
 mod lowering;
 pub mod names;
+pub(crate) mod runtime;
 mod scalar;
 mod schema;
 pub(crate) mod standard_library;

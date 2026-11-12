@@ -1929,6 +1929,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         crate::kernel::prove_separation_subrange(
             CPointerValue::new(execution_data.clone(), CType::Int32Pointer),
             4,
+            MachineIntegerType::Int32,
             0u32.into(),
             capacity.clone(),
             index.clone(),

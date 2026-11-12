@@ -16,7 +16,8 @@
 //!
 //! A C unit lists translation units that its compiler preprocesses. A C++
 //! unit lists logical sources and the functions selected from each; the
-//! pinned exporter named by `CLICK_CPP_EXPORTER` exports them at lock time
+//! pinned exporter (`CLICK_CPP_EXPORTER`, else the installed C++ front end)
+//! exports them at lock time
 //! from a compilation database Click synthesizes from the unit's arguments.
 //! A Rust unit is one crate, or a single-file program, and lists its root;
 //! the pinned Rust front end extracts it at lock time, and a crate's `roots`
@@ -407,11 +408,9 @@ impl Project {
                     let (config, sources) = self.cpp_unit(name)?;
                     let exporter = match cpp_exporter {
                         Some(exporter) => exporter.as_os_str().to_owned(),
-                        None => std::env::var_os("CLICK_CPP_EXPORTER").ok_or_else(|| {
-                            format!(
-                                "set CLICK_CPP_EXPORTER to the pinned C++ exporter to prepare C++ unit `{name}`"
-                            )
-                        })?,
+                        None => crate::languages::cpp::runtime::resolve_exporter()
+                            .map_err(|error| format!("prepare C++ unit `{name}`: {error}"))?
+                            .into_os_string(),
                     };
                     for source in &sources {
                         create_parent(&self.root.join(&source.artifact))?;

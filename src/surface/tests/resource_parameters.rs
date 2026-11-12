@@ -363,3 +363,19 @@ fn recursive_call_resource_bound_is_explicit_and_replays() {
         });
     }
 }
+
+#[test]
+fn wide_subrange_applies_and_expands_without_implicit_solve() {
+    let (source, sources) = mdtest_sources("mdtests/separation_subrange_supports_wide_bounds.md");
+    assert!(sources.is_empty());
+    without_implicit_solve(|| verify_click_theorems(&source)).unwrap();
+    let expanded = expand_c0_claim_source_by_label(&source, &[], "wide.ensures_0").unwrap();
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    for premise in ["lo <= a;", "a <= b;", "b <= hi;"] {
+        let missing = source.replace(
+            "lo <= a; a <= b; b <= hi;",
+            &"lo <= a; a <= b; b <= hi;".replace(premise, ""),
+        );
+        assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+    }
+}
