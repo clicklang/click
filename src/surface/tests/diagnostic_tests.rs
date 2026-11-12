@@ -3174,6 +3174,7 @@ fn ordinary_legacy_diagnostics_bound_late_context_but_traces_remain_full() {
     let error = ClickError::with_diagnostic(
         "required fact unavailable",
         proof_diagnostics::ProofFailureDiagnostic {
+            failing_path: None,
             checks: None,
             origin: proof_diagnostics::ProofDiagnosticOrigin {
                 stage: "simple checking".into(),

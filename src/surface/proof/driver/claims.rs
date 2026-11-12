@@ -1416,9 +1416,11 @@ fn close_claim_directly_from_outcome<'a>(
                 } else {
                     "could not lower the claim goal".to_string()
                 };
-                return Ok(Err(error.with_context(format!(
-                    "`ensures {surface}` failed for `{claim_label}` path {path_index}: {reason}"
-                ))));
+                return Ok(Err(error
+                    .with_context(format!(
+                        "`ensures {surface}` failed for `{claim_label}` path {path_index}: {reason}"
+                    ))
+                    .with_failing_path(path_index)));
             }
         }
     };
@@ -1687,7 +1689,9 @@ fn close_claim_directly_from_outcome<'a>(
     let error = proof.step_error(format!(
         "`ensures {surface}` failed for `{claim_label}` path {path_index}: unclosed goal: {surface}{evaluated_sides}{store_separation_miss}\n{context}"
     ));
-    Ok(Err(error.with_search_failures(search.finish())))
+    Ok(Err(error
+        .with_search_failures(search.finish())
+        .with_failing_path(path_index)))
 }
 
 /// The conditions that make one execution path the case it is: each C

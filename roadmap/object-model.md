@@ -11,24 +11,25 @@ is claimed.
 ## Goal
 
 Land the accepted bounded object model on upstream master as independently
-reviewable, green slices, taken from the archived implementation of
-[PR #646](https://github.com/clicklang/click/pull/646). New C++ feature
-admission stays frozen until this foundation lands. Done means a checked model
-with demonstrated language boundaries and preserved existing behavior.
+reviewable, green slices, built on current master when C++ feature work
+resumes. New C++ feature admission stays frozen until this foundation lands.
+Done means a checked model with demonstrated language boundaries and preserved
+existing behavior.
 
-- Laws and operation audit: [C++ object model and shared memory semantics](https://github.com/lacker/click/blob/e3d84a785792c007da19d2f42d75b9e143372164/design/cpp-object-model.md).
+- Laws and operation audit: [C++ object model and shared memory semantics](../design/cpp-object-model.md).
 - Construction/return protocol: [aggregate construction](../design/aggregate-construction.md).
 - Subobject pointers: [subobject extents](../design/pointer-subobject-extents.md).
-- Revisions, commands, failure ledger, change inventory and the record of
-  every landed extraction: [recovery audit](../design/object-model-recovery-audit.md).
-  Record new results there, not here.
+- Record of the extractions already landed from the retired archive branch:
+  [recovery audit](../design/object-model-recovery-audit.md). Record new
+  results there, not here.
 - Later C++ coverage belongs to [cpp-support.md](cpp-support.md).
 
 ## Where it stands
 
-- The implementation lives on the preserved recovery branch in the fork. Its
-  normal example audit passes 50 of 52 projects; arena (destroy) and
-  binary-tree fail. Nothing from it is activated upstream.
+- The archived implementation of [PR #646](https://github.com/clicklang/click/pull/646)
+  is retired: it diverged from master by thousands of commits and is not a
+  source for further slices. Its accepted design is in
+  [cpp-object-model.md](../design/cpp-object-model.md).
 - Upstream has landed the independent extractions recorded in the audit. These
   include pointer-read naming: every pointer read is named by the read itself,
   and its value and designation are compared under one rule
@@ -38,13 +39,6 @@ with demonstrated language boundaries and preserved existing behavior.
   [below](#rbtree-regressions-on-master).
 
 ## What's left
-
-### Recovery failures
-
-- [ ] Arena: the destroy proof and the occupancy postcondition of arena-write.
-- [ ] Binary-tree.
-- [ ] Attribute each remaining failure to its introducing change and record it
-  in the audit's failure ledger.
 
 ### Shared foundation
 
@@ -110,7 +104,7 @@ intermediate model.
   | Rust availability/ranges and proof cost | rust-chunks-exact, rust-byte-sum |
   | Importer and proof scaling | record-inventory multi-size work, growing-place graph test, decoder audits |
 
-- [ ] The [bounded acceptance matrix](https://github.com/lacker/click/blob/e3d84a785792c007da19d2f42d75b9e143372164/design/cpp-object-model.md#stabilization-work-and-exit-criteria)
+- [ ] The [bounded acceptance matrix](../design/cpp-object-model.md#stabilization-work-and-exit-criteria)
   has named evidence for representation, modular transfer, destination/copy,
   aliasing/frames, lifetime/availability, typed access, proof modes and scaling.
 - [ ] The unchanged pinned Bitcoin `ser_readdata32` verifies with exact word
