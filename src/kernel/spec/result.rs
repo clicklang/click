@@ -202,3 +202,45 @@ impl SpecValue {
             .or_else(|| c_value_comparison_proposition(&left, op, &right)))
     }
 }
+
+/// Call assembly retains machine results while subsequent arguments branch.
+/// Opaque argument descriptors remain native until their domain migration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum SpecCallArgument {
+    Native(PureFunctionArgument),
+    Shared(KernelTerm),
+}
+
+impl SpecCallArgument {
+    pub(super) fn from_value(value: SpecValue) -> Self {
+        match value {
+            SpecValue::Native(value) => Self::Native(PureFunctionArgument::Value(value)),
+            SpecValue::Shared(value) => Self::Shared(value),
+        }
+    }
+
+    pub(super) fn native_descriptor(&self) -> Option<&PureFunctionArgument> {
+        match self {
+            Self::Native(value) => Some(value),
+            Self::Shared(_) => None,
+        }
+    }
+
+    fn into_native(self) -> PureFunctionArgument {
+        match self {
+            Self::Native(value) => value,
+            Self::Shared(value) => KernelTermExport::default()
+                .argument(&value)
+                .expect("retained pure-call argument"),
+        }
+    }
+}
+
+/// Explicit boundary for call payloads whose readers still require native
+/// arguments. Do not use this while constructing or cloning argument paths.
+pub(super) fn native_call_arguments(arguments: Vec<SpecCallArgument>) -> Vec<PureFunctionArgument> {
+    arguments
+        .into_iter()
+        .map(SpecCallArgument::into_native)
+        .collect()
+}

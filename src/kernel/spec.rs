@@ -53,7 +53,7 @@ pub(super) struct SpecPropositionPath {
 
 mod bindings;
 mod result;
-use result::SpecValue;
+use result::{SpecCallArgument, SpecValue, native_call_arguments};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SpecExpressionPath {
@@ -924,7 +924,7 @@ struct SpecAlgebraicValuePath {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecPureFunctionArgumentPath {
-    value: PureFunctionArgument,
+    value: SpecCallArgument,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 }
@@ -4168,12 +4168,15 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                 for (values, facts, obligations) in paths {
                     let path_assumptions =
                         assumptions_with_path_context(assumptions, &facts, &obligations);
-                    for argument_path in evaluate_spec_pure_function_argument_paths_in(
+                    let argument_paths = evaluate_spec_pure_function_argument_paths_in(
                         scope,
                         argument,
                         &path_assumptions,
                         budget,
-                    )? {
+                    )?;
+                    let mut argument_paths = argument_paths.into_iter().peekable();
+                    let mut prefix = Some(values);
+                    while let Some(argument_path) = argument_paths.next() {
                         let Some((merged_facts, merged_obligations)) =
                             merge_execution_pure_facts_and_obligations_under(
                                 &facts,
@@ -4186,7 +4189,11 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         else {
                             continue;
                         };
-                        let mut values = values.clone();
+                        let mut values = if argument_paths.peek().is_none() {
+                            prefix.take().expect("last call path owns its prefix")
+                        } else {
+                            prefix.as_ref().unwrap().clone()
+                        };
                         values.push(argument_path.value);
                         next.push((values, merged_facts, merged_obligations));
                     }
@@ -4196,6 +4203,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             Ok(paths
                 .into_iter()
                 .map(|(arguments, facts, mut obligations)| {
+                    let arguments = native_call_arguments(arguments);
                     if name == "to_nat"
                         && let Some(PureFunctionArgument::Integer(value)) = arguments.first()
                     {
@@ -5448,7 +5456,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
         .map(|(arguments, facts, obligations)| SpecIntegerPath {
             value: IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 name.to_string(),
-                arguments,
+                native_call_arguments(arguments),
             )),
             facts,
             obligations,
@@ -7554,12 +7562,15 @@ fn evaluate_spec_pure_function_application_paths_in(
         let mut next = Vec::new();
         for (values, facts, obligations) in paths {
             let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
-            for argument_path in evaluate_spec_pure_function_argument_paths_in(
+            let argument_paths = evaluate_spec_pure_function_argument_paths_in(
                 scope,
                 argument,
                 &path_assumptions,
                 budget,
-            )? {
+            )?;
+            let mut argument_paths = argument_paths.into_iter().peekable();
+            let mut prefix = Some(values);
+            while let Some(argument_path) = argument_paths.next() {
                 if let Some((merged_facts, merged_obligations)) =
                     merge_execution_pure_facts_and_obligations_under(
                         &facts,
@@ -7570,7 +7581,11 @@ fn evaluate_spec_pure_function_application_paths_in(
                         &path_assumptions,
                     )
                 {
-                    let mut merged_values = values.clone();
+                    let mut merged_values = if argument_paths.peek().is_none() {
+                        prefix.take().expect("last call path owns its prefix")
+                    } else {
+                        prefix.as_ref().unwrap().clone()
+                    };
                     merged_values.push(argument_path.value);
                     next.push((merged_values, merged_facts, merged_obligations));
                 }
@@ -7594,7 +7609,12 @@ fn evaluate_spec_pure_function_application_paths_in(
             continue;
         }
         let value = if result_type.is_pointer() {
-            let (all_null, object_class) = pure_pointer_result_class(pointer_result, &arguments);
+            let (all_null, object_class) =
+                pure_pointer_result_class_from(pointer_result, |index| {
+                    arguments
+                        .get(index)
+                        .and_then(SpecCallArgument::native_descriptor)
+                });
             CValue::Pointer(
                 CPointerValue::new(
                     if all_null {
@@ -7602,7 +7622,10 @@ fn evaluate_spec_pure_function_application_paths_in(
                     } else {
                         Pointer {
                             block: PointerBlock::PureFunctionApplication(
-                                SharedPureApplication::intern(name.to_string(), arguments),
+                                SharedPureApplication::intern(
+                                    name.to_string(),
+                                    native_call_arguments(arguments),
+                                ),
                             ),
                             offset: PointerOffsetTerm::Constant(0),
                         }
@@ -7619,7 +7642,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 algebraic_type: parameter.algebraic_type(),
                 node: AlgebraicTermNode::PureFunctionApplication {
                     name: name.to_string(),
-                    arguments,
+                    arguments: native_call_arguments(arguments),
                 },
             }))
         } else if result_type == CType::Bool {
@@ -7627,14 +7650,14 @@ fn evaluate_spec_pure_function_application_paths_in(
             // (Stage 5), carried as its cast to `uint8` (rule C1).
             CValue::Bool(MachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
-                ConditionTerm::bool_application(name, arguments),
+                ConditionTerm::bool_application(name, native_call_arguments(arguments)),
             ))
         } else {
             c_value_from_bitvector_term(
                 result_type,
                 MachineTerm::ClickFunctionApplication {
                     name: name.to_string(),
-                    arguments,
+                    arguments: native_call_arguments(arguments),
                 },
             )
             .ok_or(ExecutionLimit::UnsupportedPureFunctionResult(result_type))?
@@ -7653,10 +7676,10 @@ fn evaluate_spec_pure_function_application_paths_in(
 /// type.
 fn projected_field(
     projection: &PureProjection,
-    arguments: &[PureFunctionArgument],
+    arguments: &[SpecCallArgument],
     result_type: CType,
 ) -> Option<CValue> {
-    let term = match arguments.get(projection.argument)? {
+    let term = match arguments.get(projection.argument)?.native_descriptor()? {
         PureFunctionArgument::Algebraic(term) => term,
         PureFunctionArgument::Value(CValue::Parameter(term)) => term.as_ref(),
         _ => return None,
@@ -7679,6 +7702,13 @@ pub(super) fn pure_pointer_result_class(
     result: Option<&PurePointerResult>,
     arguments: &[PureFunctionArgument],
 ) -> (bool, Option<ObjectTypeEvidence>) {
+    pure_pointer_result_class_from(result, |index| arguments.get(index))
+}
+
+fn pure_pointer_result_class_from<'a>(
+    result: Option<&PurePointerResult>,
+    argument: impl Fn(usize) -> Option<&'a PureFunctionArgument>,
+) -> (bool, Option<ObjectTypeEvidence>) {
     let Some(result) = result else {
         return (false, None);
     };
@@ -7698,7 +7728,7 @@ pub(super) fn pure_pointer_result_class(
                 pointer: CValue::Pointer(pointer),
                 ..
             },
-        ) = arguments.get(*index)
+        ) = argument(*index)
         else {
             return (false, None);
         };
@@ -7832,8 +7862,10 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 .into_iter()
                 .filter_map(|mut path| {
                     let value = match &mut path.value {
-                        PureFunctionArgument::Value(value)
-                        | PureFunctionArgument::ArrayRef { pointer: value, .. } => value,
+                        SpecCallArgument::Native(
+                            PureFunctionArgument::Value(value)
+                            | PureFunctionArgument::ArrayRef { pointer: value, .. },
+                        ) => value,
                         _ => return None,
                     };
                     let context =
@@ -7874,7 +7906,9 @@ fn evaluate_spec_pure_function_argument_paths_in(
             evaluate_spec_integer_expression_paths_in(scope, expression, assumptions, budget)?
                 .into_iter()
                 .map(|path| SpecPureFunctionArgumentPath {
-                    value: PureFunctionArgument::Integer(path.value.into()),
+                    value: SpecCallArgument::Native(PureFunctionArgument::Integer(
+                        path.value.into(),
+                    )),
                     facts: path.facts,
                     obligations: path.obligations,
                 })
@@ -7890,7 +7924,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
             Ok(paths
                 .into_iter()
                 .map(|path| SpecPureFunctionArgumentPath {
-                    value: PureFunctionArgument::Value(path.value.into_native()),
+                    value: SpecCallArgument::from_value(path.value),
                     facts: path.facts,
                     obligations: path.obligations,
                 })
@@ -7905,7 +7939,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
             )?
             .into_iter()
             .map(|path| SpecPureFunctionArgumentPath {
-                value: PureFunctionArgument::Algebraic(path.value),
+                value: SpecCallArgument::Native(PureFunctionArgument::Algebraic(path.value)),
                 facts: path.facts,
                 obligations: path.obligations,
             })
@@ -7934,7 +7968,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
             )?
             .into_iter()
             .map(|path| SpecPureFunctionArgumentPath {
-                value: PureFunctionArgument::ArrayRef {
+                value: SpecCallArgument::Native(PureFunctionArgument::ArrayRef {
                     // The argument names the snapshot it reads, and that
                     // snapshot is compared structurally, so the live one
                     // would make this argument -- and every fact about a
@@ -7946,7 +7980,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                     memory: array_ref_argument_memory(memory, &path.value.native()),
                     pointer: path.value.into_native(),
                     element_type: *element_type,
-                },
+                }),
                 facts: path.facts,
                 obligations: path.obligations,
             })
@@ -9904,6 +9938,7 @@ mod arithmetic_domain_scaling_tests {
     use super::*;
     include!("../scaling_tests/kernel/spec/arithmetic_domains.rs");
     include!("../scaling_tests/kernel/spec/rust_shifts.rs");
+    include!("../scaling_tests/kernel/spec/call_arguments.rs");
 }
 
 #[cfg(test)]
