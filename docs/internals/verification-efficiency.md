@@ -850,13 +850,15 @@ outside the primitive scope. Nested scopes and unwinding restore the previous
 scope. The build boundary requires both the search-entry instrumentation and the
 three migrated operation scopes.
 
-Cold generic-instance validation is one named exception:
-`verify_concrete_theorem_definition` starts an independent declaration proof and
-temporarily suspends the requesting operation's scope. Every primitive called
-inside that proof still installs its own guard, and returning restores the
-requester's guard. The exception has a frozen dependency record; adding another
-caller fails the boundary audit. Lazy declaration verification can still happen
-inside an expanded application and remains a separate migration item.
+Generic declarations are proved at arbitrary rigid types before use. Application
+instantiates their statements without traversing proof bodies or re-running
+verification; there is no cold-instance proof cache or discovery-guard exception.
+The type-specific `separation::elements` and `separation::distinct_elements`
+laws retain explicit checks for their supported index types. Generic separation
+laws also retain the nonzero storage-width requirement. Declaration verification
+still instantiates proofs where required. `cold_theorem_application_ignores_declaration_proof_length`
+measures first and repeated explicit applications at growing declaration-proof
+lengths; the statement-instantiation regression also excludes proof locations.
 
 This is a discovery boundary, not a complexity proof: it does not detect an
 unregistered helper's loop, a scan in lowering, or expensive fact admission.

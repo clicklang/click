@@ -1485,7 +1485,7 @@ fn migrated_theorem_operations_cannot_drop_their_discovery_guard() {
 }
 
 #[test]
-fn declaration_validation_exception_cannot_spread_to_other_callers() {
+fn removed_declaration_validation_escape_cannot_be_reintroduced() {
     let file = syn::parse_file(
         "fn ordinary_operation() { FastOperationScope::enter_declaration_validation(); }",
     )

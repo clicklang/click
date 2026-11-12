@@ -174,7 +174,7 @@ pub(in crate::surface) fn verify_theorem_definition(
 /// index types its kernel rule admits. `separation::elements` and `separation::distinct_elements` build their
 /// descriptors at an `int32`, `int64`, or `uint64` index, the formats
 /// [`crate::kernel::prove_separation_elements`] accepts.
-fn kernel_law_index_types(name: &str) -> Option<(&'static str, [C0Type; 3])> {
+pub(super) fn kernel_law_index_types(name: &str) -> Option<(&'static str, [C0Type; 3])> {
     matches!(
         name,
         "click::separation::elements" | "click::separation::distinct_elements"
@@ -196,7 +196,7 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
     function_environment: Option<&CExecutionEnvironment>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     #[cfg(test)]
-    let _declaration = crate::kernel::search::FastOperationScope::enter_declaration_validation();
+    crate::kernel::search::record_discovery("verify_concrete_theorem_definition");
     debug_assert!(theorem.type_parameters().is_empty());
     let context = pure_theorem_context(theorem, spec_definitions)?;
     theorem

@@ -9,14 +9,6 @@ thread_local! {
 pub(crate) struct FastOperationScope(Option<&'static str>);
 
 impl FastOperationScope {
-    /// Existing cold generic-instance validation starts an independent proof.
-    /// This named exception does not make the enclosing operation fast; its
-    /// caller remains in the declaration-validation audit. Nested primitives
-    /// establish their own scopes inside that proof.
-    pub(crate) fn enter_declaration_validation() -> Self {
-        Self(OPERATION.with(|current| current.replace(None)))
-    }
-
     pub(crate) fn enter(name: &'static str) -> Self {
         Self(OPERATION.with(|current| current.replace(Some(name))))
     }
@@ -73,16 +65,5 @@ mod tests {
             assert!(std::panic::catch_unwind(|| record_discovery("inner search")).is_err());
         }
         assert!(std::panic::catch_unwind(|| record_discovery("outer search")).is_err());
-    }
-    #[test]
-    fn declaration_validation_keeps_nested_operations_guarded_and_restores_the_caller() {
-        let _outer = FastOperationScope::enter("application requesting a generic instance");
-        {
-            let _declaration = FastOperationScope::enter_declaration_validation();
-            record_discovery("independent declaration proof");
-            let _nested = FastOperationScope::enter("primitive called by declaration search");
-            assert!(std::panic::catch_unwind(|| record_discovery("nested search")).is_err());
-        }
-        assert!(std::panic::catch_unwind(|| record_discovery("application search")).is_err());
     }
 }

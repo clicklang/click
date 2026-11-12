@@ -27,14 +27,6 @@ fn with_application_preparation_mode<T>(active: bool, operation: impl FnOnce() -
     operation()
 }
 
-/// A generic declaration proves its own prerequisites. They must never become
-/// conditional debts of the application which requested that declaration.
-fn with_independent_declaration_proof<T>(check: impl FnOnce() -> T) -> T {
-    with_application_preparation_mode(false, || {
-        super::execution_planning::without_open_obligation_probe(check)
-    })
-}
-
 /// The checker resolves proof bindings to values. Retain just this tactic's
 /// written arguments for diagnostics; never consult them to decide a proof.
 pub(super) fn with_application_source<T>(
@@ -197,29 +189,14 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             ),
         )
     })?;
-    let theorem = resolve_generic_theorem_application(
+    let theorem = instantiate_generic_theorem_application_definition(
         theorem,
         application,
-        theorem_environment,
         lowering_assumptions,
         context,
         spec_definitions,
     )
     .map_err(|message| theorem_application_error(claim_label, path_index, tactic_index, message))?;
-    if application.arguments.len() != theorem.parameters().len() {
-        return Err(theorem_application_error(
-            claim_label,
-            path_index,
-            tactic_index,
-            format!(
-                "theorem `{}` expects {} argument(s), got {}",
-                theorem.name(),
-                theorem.parameters().len(),
-                application.arguments.len()
-            ),
-        ));
-    }
-
     let (values, array_refs, algebraic_values, integer_values) = theorem_application_bindings(
         &theorem,
         application,
@@ -806,49 +783,6 @@ fn collect_conjunctive_guard_facts<'a>(
     }
 }
 
-fn resolve_generic_theorem_application(
-    definition: &TheoremDefinition,
-    application: &TheoremApplication,
-    theorem_environment: &TheoremEnvironment,
-    assumptions: &PureFactContext,
-    context: &TheoremApplicationContext<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-) -> Result<TheoremDefinition, String> {
-    let concrete = instantiate_generic_theorem_application_definition(
-        definition,
-        application,
-        assumptions,
-        context,
-        spec_definitions,
-    )?;
-    if definition.type_parameters().is_empty() {
-        return Ok(concrete);
-    }
-    if theorem_environment.generic_instance_is_verified(concrete.name()) {
-        return Ok(concrete);
-    }
-    if !theorem_environment.begin_generic_instance_verification(concrete.name()) {
-        return Err(format!(
-            "cyclic verification of generic theorem instance `{}`",
-            concrete.name()
-        ));
-    }
-    let result = with_independent_declaration_proof(|| {
-        verify_concrete_theorem_definition(&concrete, spec_definitions, theorem_environment, None)
-    })
-    .map(|_| ())
-    .map_err(|error| {
-        format!(
-            "generic theorem instance `{}` failed verification: {}",
-            concrete.name(),
-            error.raw_summary()
-        )
-    });
-    theorem_environment.finish_generic_instance_verification(concrete.name(), result.is_ok());
-    result?;
-    Ok(concrete)
-}
-
 pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definition(
     definition: &TheoremDefinition,
     application: &TheoremApplication,
@@ -856,11 +790,16 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
     context: &TheoremApplicationContext<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<TheoremDefinition, String> {
-    if definition.type_parameters().is_empty() {
-        return Ok(definition.clone());
-    }
     if application.arguments.len() != definition.parameters().len() {
-        return Ok(definition.clone());
+        return Err(format!(
+            "theorem `{}` expects {} argument(s), got {}",
+            definition.name(),
+            definition.parameters().len(),
+            application.arguments.len()
+        ));
+    }
+    if definition.type_parameters().is_empty() {
+        return generics::instantiate_theorem_statement(definition, &BTreeMap::new());
     }
     // An `Integer` parameter decides no type argument, and its argument,
     // a loop's `iterations` for one, is no C expression to read a type from.
@@ -885,7 +824,45 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
             .map(|parameter| parameter.click_type().clone()),
         argument_types,
     )?;
-    generics::instantiate_theorem(definition, &substitution)
+    if let Some((index, formats)) = pure_theorems::kernel_law_index_types(definition.name()) {
+        let admitted = match substitution
+            .get(index)
+            .and_then(generics::TypeArgument::value)
+        {
+            Some(ClickType::C(actual)) => formats
+                .iter()
+                .any(|allowed| allowed.to_kernel_type() == actual.to_kernel_type()),
+            _ => false,
+        };
+        if !admitted {
+            return Err("elements indices must be int32, int64, or uint64".into());
+        }
+    }
+    let concrete = generics::instantiate_theorem_statement(definition, &substitution)?;
+    if matches!(
+        definition.name(),
+        "click::separation::elements"
+            | "click::separation::distinct_elements"
+            | "click::separation::subrange"
+    ) {
+        let parameter = &concrete.parameters()[0];
+        let element = parameter
+            .c_type()
+            .pointee_type()
+            .ok_or_else(|| "expected a sized pointer element".to_string())?;
+        let width = match parameter.struct_name().filter(|_| !element.is_pointer()) {
+            Some(name) => spec_definitions
+                .struct_sizes
+                .and_then(|sizes| sizes.get(name))
+                .copied()
+                .ok_or_else(|| format!("struct `{name}` has no known layout"))?,
+            None => element.to_kernel_type().byte_width(),
+        };
+        if width == 0 {
+            return Err("separation law requires a nonzero element width".into());
+        }
+    }
+    Ok(concrete)
 }
 
 fn theorem_application_argument_type(
@@ -1820,31 +1797,6 @@ theorem nested_count(value: int32) {
 #[cfg(test)]
 mod diagnostic_source_tests {
     use super::*;
-
-    #[test]
-    fn generic_declaration_proof_does_not_inherit_application_preparation() {
-        use super::super::execution_planning::{
-            collecting_step_requirements, probe_step_obligations,
-        };
-        assert!(!preparing_application());
-        probe_step_obligations(|| {
-            with_application_preparation(|| {
-                assert!(collecting_step_requirements());
-                let result = std::panic::catch_unwind(|| {
-                    with_independent_declaration_proof(|| {
-                        assert!(!preparing_application());
-                        assert!(!collecting_step_requirements());
-                        panic!("declaration refusal");
-                    })
-                });
-                assert!(result.is_err());
-                assert!(preparing_application());
-                assert!(collecting_step_requirements());
-            })
-        });
-        assert!(!preparing_application());
-        assert!(!collecting_step_requirements());
-    }
 
     #[test]
     fn application_diagnostic_source_restores_after_nested_failures() {
