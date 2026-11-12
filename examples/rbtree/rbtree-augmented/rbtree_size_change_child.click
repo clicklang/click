@@ -23,8 +23,8 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
     ensures after.model == old(before.model);
     ensures (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size);
     ensures old->__rb_parent_color == old(old->__rb_parent_color);
-    // The complete pointer-typed word, so a caller keeps its parent cast.
-    ensures *((&old->__rb_parent_color) as (int32 **)) == old(*((&old->__rb_parent_color) as (int32 **)));
+    // The parent the word designates, so a caller keeps its parent cast.
+    ensures ((old->__rb_parent_color & ~3) as (struct rb_node *)) == old(((old->__rb_parent_color & ~3) as (struct rb_node *)));
 } by {
     match before.model {
         SizedContext::Top => {
