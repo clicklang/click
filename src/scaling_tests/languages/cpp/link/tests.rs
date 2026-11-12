@@ -14,7 +14,9 @@ fn linking_work_scales_with_the_functions_each_source_holds() {
     for size in [8, 32, 128, 512] {
         let functions = |prefix: &str| {
             (0..size)
-                .map(|index| C0Function::external(C0Type::Void, format!("{prefix}{index:04}"), vec![]))
+                .map(|index| {
+                    C0Function::external(C0Type::Void, format!("{prefix}{index:04}"), vec![])
+                })
                 .collect::<Vec<_>>()
         };
         let execution = |functions: Vec<C0Function>| PreparedExecution {
