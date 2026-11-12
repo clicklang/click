@@ -1755,16 +1755,13 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         CExecutionSemantics::EXECUTE_BODIES,
     )
     .unwrap();
-    assert!(
-        matches!(
-            theorem.proposition(),
-            Proposition::CFunctionExecutes {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_)),
-                ..
-            }
-        ),
-        "even a same-value write through an alias conflicts with the local loan"
-    );
+    let Proposition::Implies(requirement, _) = theorem.proposition() else {
+        panic!("even a same-value alias write must require loan separation");
+    };
+    let Proposition::CResourceSeparate { left, right } = requirement.as_ref() else {
+        panic!("expected the explicit loan separation premise");
+    };
+    assert!(!PureFactContext::new().proves_resource_separate(left, right));
     let (joined, _) = active
         .join(
             handle,

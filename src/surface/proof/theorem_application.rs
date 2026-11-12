@@ -865,8 +865,11 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
             _ => false,
         };
         if !admitted {
-            return Err(if definition.name() == "click::separation::subrange" {
-                "subrange bounds must be int32 or uint64"
+            return Err(if matches!(
+                definition.name(),
+                "click::separation::subrange" | "click::separation::contains_element"
+            ) {
+                "interval law bounds must be int32 or uint64"
             } else {
                 "elements indices must be int32, int64, or uint64"
             }
@@ -879,6 +882,7 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
         "click::separation::elements"
             | "click::separation::distinct_elements"
             | "click::separation::subrange"
+            | "click::separation::contains_element"
     ) {
         let parameter = &concrete.parameters()[0];
         let element = parameter

@@ -2632,6 +2632,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery(
             "try_solve_closure_after_direct_with_surfaces_and_function_unfold",
         );
+        // A separating conjunction already states its structural proof tree.
+        // Decompose it before selecting ambient arithmetic/history candidates;
+        // each child still runs ordinary solve and emits ordinary library steps.
+        if let Some(surface_goal) = search_input.surface_goal()
+            && let Some(proof) = Self::try_resource_star_separation_closure(
+                search_input,
+                surface_goal,
+                introduced_surfaces,
+            )?
+        {
+            return Ok(Some(proof));
+        }
         // Plain solve and recursive logical closure share the same memory
         // strategies. A structural child must not lose read-over-write or
         // explicit frame transport merely because it was reached by `both`.
@@ -5274,6 +5286,240 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
     }
 
+    /// Search chooses enclosing separated regions; replay cites containment
+    /// and the ordinary restriction law. No store invokes this planner.
+    pub(in crate::surface::proof) fn try_resource_separation_restriction_closure(
+        search_input: &Proof<'a>,
+        surface_goal: &ClickProposition,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_resource_separation_restriction_closure");
+        let ClickProposition::Separate { left, right } = surface_goal else {
+            return Ok(None);
+        };
+        let Some(mut kernel_goal) = search_input.goal() else {
+            return Ok(None);
+        };
+        // Resource lowering appends formation conditions to the stated fact.
+        // Planning retains and proves the complete Surface goal below.
+        while let Proposition::And(stated, _) = kernel_goal {
+            kernel_goal = stated;
+        }
+        let Proposition::CResourceSeparate {
+            left: goal_left,
+            right: goal_right,
+        } = kernel_goal
+        else {
+            return Ok(None);
+        };
+        if !matches!(
+            (goal_left.as_ref(), goal_right.as_ref()),
+            (CResource::Memory(_), CResource::Memory(_))
+        ) {
+            return Ok(None);
+        }
+        let Some(view) = search_input.premise_fixed_state_view() else {
+            return Ok(None);
+        };
+        let mut candidates = search_input
+            .facts()
+            .assumptions()
+            .resource_separation_candidates(goal_left, goal_right)
+            .unwrap_or_default()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        for fact in view.fixed_state.state.resources().facts() {
+            if fact.is_own() && matches!(fact.resource(), CResource::Memory(_)) {
+                candidates.push(Proposition::CResourceSeparate {
+                    left: Box::new(fact.resource().clone()),
+                    right: goal_right.clone(),
+                });
+            }
+        }
+        for candidate in candidates {
+            check_verification_deadline()?;
+            let Proposition::CResourceSeparate { left: a, right: b } = &candidate else {
+                continue;
+            };
+            if !matches!(
+                (a.as_ref(), b.as_ref()),
+                (CResource::Memory(_), CResource::Memory(_))
+            ) {
+                continue;
+            }
+            if a == goal_left && b == goal_right {
+                continue;
+            }
+            // The goal already owns exact spellings for these resources,
+            // including reads at its selected historical points. Keep those
+            // names instead of reconstructing them from the current state.
+            let source = |resource: &CResource| {
+                if resource == goal_left.as_ref() {
+                    return Ok(left.clone());
+                }
+                if resource == goal_right.as_ref() {
+                    return Ok(right.clone());
+                }
+                super::surface_synthesis::synthesize_surface_resource_subject(
+                    resource,
+                    view.parameter_binding,
+                    view.fixed_state.state,
+                    &BTreeMap::new(),
+                )
+                .ok_or_else(|| {
+                    search_input
+                        .step_error("a separation restriction source has no Surface spelling")
+                })
+            };
+            let (a, b) = (source(a)?, source(b)?);
+            for (a, b) in [(a.clone(), b.clone()), (b, a)] {
+                let separate = ClickProposition::Separate {
+                    left: a.clone(),
+                    right: b.clone(),
+                };
+                let premises = vec![
+                    separate,
+                    ClickProposition::Contains {
+                        parent: a.clone(),
+                        child: left.clone(),
+                    },
+                    ClickProposition::Contains {
+                        parent: b.clone(),
+                        child: right.clone(),
+                    },
+                ];
+                let mut proof = search_input.clone();
+                let mut proved = true;
+                for (index, premise) in premises.iter().enumerate() {
+                    let Some(scope) =
+                        attempt::candidate_outcome(proof.driver().open_have(premise.clone()))?
+                    else {
+                        proved = false;
+                        break;
+                    };
+                    // Never recursively search for a larger separation here.
+                    let closed = if index == 0 {
+                        scope.driver().try_direct_logical_closure()?
+                    } else {
+                        scope
+                            .driver()
+                            .try_solve_closure_with_surfaces(introduced_surfaces)?
+                    };
+                    let Some(closed) = closed else {
+                        proved = false;
+                        break;
+                    };
+                    proof = closed.join()?;
+                }
+                if !proved {
+                    continue;
+                }
+                let resource_arg = |r: &crate::surface::ResourceSubject| {
+                    ContractExpression::Resource(Box::new(r.clone()))
+                };
+                proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                    application: TheoremApplication {
+                        name: "click::separation::restrict".into(),
+                        arguments: vec![
+                            resource_arg(&a),
+                            resource_arg(&b),
+                            resource_arg(left),
+                            resource_arg(right),
+                        ],
+                    },
+                    premises,
+                })?;
+                if proof.is_complete() || proof.goal() != search_input.goal() {
+                    return Ok(Some(proof));
+                }
+                if let Some(closed) = Self::try_direct_logical_closure(&proof)? {
+                    return Ok(Some(closed));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Expand separation from a conjunction through the existing library laws.
+    /// Only search recurses over the descriptor; replay applies each law once.
+    pub(in crate::surface::proof) fn try_resource_star_separation_closure(
+        search_input: &Proof<'a>,
+        surface_goal: &ClickProposition,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_resource_star_separation_closure");
+        let ClickProposition::Separate { left, right } = surface_goal else {
+            return Ok(None);
+        };
+        let (a, b, other, reversed) = match (left, right) {
+            (crate::surface::ResourceSubject::Star(a, b), other) => (a, b, other, false),
+            (other, crate::surface::ResourceSubject::Star(a, b)) => (a, b, other, true),
+            _ => return Ok(None),
+        };
+        let resource_arg = |resource: &crate::surface::ResourceSubject| {
+            ContractExpression::Resource(Box::new(resource.clone()))
+        };
+        let separate = |left: &crate::surface::ResourceSubject,
+                        right: &crate::surface::ResourceSubject| {
+            ClickProposition::Separate {
+                left: left.clone(),
+                right: right.clone(),
+            }
+        };
+        let mut proof = search_input.clone();
+        let mut premises = Vec::new();
+        for child in [a.as_ref(), b.as_ref()] {
+            check_verification_deadline()?;
+            let premise = if reversed {
+                separate(other, child)
+            } else {
+                separate(child, other)
+            };
+            let scope = proof.driver().open_have(premise.clone())?;
+            let Some(closed) = scope
+                .driver()
+                .try_solve_closure_with_surfaces(introduced_surfaces)?
+            else {
+                return Ok(None);
+            };
+            proof = closed.join()?;
+            if reversed {
+                proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                    application: TheoremApplication {
+                        name: "click::separation::separate_symm".into(),
+                        arguments: vec![resource_arg(other), resource_arg(child)],
+                    },
+                    premises: vec![premise],
+                })?;
+            }
+            premises.push(separate(child, other));
+        }
+        proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: "click::separation::separate_star".into(),
+                arguments: vec![resource_arg(a), resource_arg(b), resource_arg(other)],
+            },
+            premises,
+        })?;
+        if reversed {
+            proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
+                application: TheoremApplication {
+                    name: "click::separation::separate_symm".into(),
+                    arguments: vec![resource_arg(right), resource_arg(left)],
+                },
+                premises: vec![separate(right, left)],
+            })?;
+        }
+        if proof.is_complete() || proof.goal() != search_input.goal() {
+            Ok(Some(proof))
+        } else {
+            Self::try_direct_logical_closure(&proof)
+        }
+    }
+
     /// Refines the Proof-owned Surface goal through audited scopes and steps.
     /// The caller cannot supply a second description of the judgment: this
     /// syntax is the view paired with the kernel goal in `PropositionObligation`.
@@ -5289,6 +5535,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
+        if let Some(proof) = Self::try_resource_separation_restriction_closure(
+            search_input,
+            surface_goal,
+            introduced_surfaces,
+        )? {
+            return Ok(Some(proof));
+        }
         if matches!(goal, Proposition::And(_, _)) {
             // The split owns the checked Surface-to-kernel correspondence.
             // In particular, a lowered existential body may be a conjunction

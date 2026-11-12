@@ -355,6 +355,41 @@ fn memory_write_permission_outcome_for_local(
     if let Some(outcome) = stable_loan_memory_range_outcome(state, &range, assumptions) {
         return Some(outcome);
     }
+    memory_write_ownership_outcome(state, range, assumptions, private_local)
+}
+
+/// Pointee stores report loan separation as an obligation. The driver chooses
+/// its explicit proof or ordinary solve; this operation never searches loans.
+fn memory_write_obligation_outcome(
+    state: &CState,
+    range: CMemoryRange,
+    storage_pointer: &Pointer,
+    assumptions: &PureFactContext,
+    obligations: &mut Vec<ProofObligation>,
+) -> Option<CStatementOutcome> {
+    let storage_range = range.with_base(storage_pointer.clone());
+    if let Some(error) =
+        super::super::mutexes::storage_write_refusal(state, &storage_range, assumptions)
+    {
+        return Some(CStatementOutcome::RuntimeError(error));
+    }
+    if let Some(requirement) = state
+        .loan_ledger()
+        .and_then(|ledger| ledger.memory_access_requirement(&range))
+    {
+        obligations.push(ProofObligation::verification_condition(requirement));
+    }
+    memory_write_ownership_outcome(state, storage_range, assumptions, false)
+}
+
+fn memory_write_ownership_outcome(
+    state: &CState,
+    range: CMemoryRange,
+    assumptions: &PureFactContext,
+    private_local: bool,
+) -> Option<CStatementOutcome> {
+    let pointer = range.base();
+    let bytes = range.element_width();
     if (state.memory.requires_explicit_scalar_ownership(pointer)
         || (state.has_local_scalar_references() && !private_local))
         && state
@@ -722,6 +757,9 @@ fn write_c_lvalue_paths_without_local_reference(
             )])
         }
         CLValueStorage::Memory { pointer } => {
+            // The loan obligation names the evaluated source lvalue. Keep its
+            // address before storage chooses an equivalent owner's coordinates.
+            let source_pointer = pointer.clone();
             if let Some(refusal) = subobject_access_refusal(
                 &pointer,
                 lvalue_extent.as_deref(),
@@ -854,14 +892,25 @@ fn write_c_lvalue_paths_without_local_reference(
                     obligations,
                 )]);
             }
-            // The write is owner-authorized here, so a refusal below names the
-            // stable loan it conflicts with rather than masking the ordinary
-            // missing-ownership diagnostic above.
-            if let Some(outcome) = memory_write_permission_outcome(
-                state,
-                &pointer,
+            // Ownership was established above. Loan separation is a proof
+            // obligation for the driver, not an alias search during the store.
+            let mut write_range = CMemoryRange::new_with_element_width(
+                source_pointer,
+                0u32.into(),
+                1u32.into(),
                 value.byte_width(),
+            )
+            .with_opaque_extent(lvalue.opaque_extent.clone(), lvalue.extent_known)
+            .with_typed_carrier();
+            if let Some(designation) = &lvalue.designation {
+                write_range = write_range.with_designation(designation.clone());
+            }
+            if let Some(outcome) = memory_write_obligation_outcome(
+                state,
+                write_range,
+                &pointer,
                 &effective_assumptions,
+                &mut obligations,
             ) {
                 return Ok(vec![CStatementExecutionPath::new(
                     outcome,

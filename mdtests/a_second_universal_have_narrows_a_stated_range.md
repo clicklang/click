@@ -25,6 +25,21 @@ void walk(int32 *a, int32 *b, int32 n) {
     requires 1 <= n;
     requires n <= 1073741823;
 } by {
+    have 0 <= 0 by { normalize(); }
+    have 0 < n by { solve() using { 1 <= n; }; }
+    have contains(memory(b[0..n]), memory(b[0])) by {
+        apply(click::separation::contains_element(b, 0, n, 0)) using { 0 <= 0; 0 < n; };
+    }
+    have contains(memory(a[0..n]), memory(a[0..n])) by {
+        apply(click::separation::contains_refl(memory(a[0..n])));
+    }
+    have separate(memory(b[0]), memory(a[0..n])) by {
+        apply(click::separation::restrict(memory(b[0..n]), memory(a[0..n]), memory(b[0]), memory(a[0..n]))) using {
+            separate(memory(b[0..n]), memory(a[0..n]));
+            contains(memory(b[0..n]), memory(b[0]));
+            contains(memory(a[0..n]), memory(a[0..n]));
+        };
+    }
     have forall (j: int32) {
         0 <= j and j < n implies 0 <= j
     } by {

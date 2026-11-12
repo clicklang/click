@@ -172,6 +172,60 @@ pub(crate) fn prove_separation_subrange(
     )
 }
 
+/// An explicitly bounded index denotes one complete element of its interval.
+/// Offset construction is exact; no wrapping `i + 1` endpoint is introduced.
+pub(crate) fn prove_separation_contains_element(
+    base: CPointerValue,
+    width: u32,
+    format: MachineIntegerType,
+    lo: MachineTerm,
+    hi: MachineTerm,
+    index: MachineTerm,
+) -> Theorem {
+    assert!(width > 0);
+    assert!(matches!(
+        format,
+        MachineIntegerType::Int32 | MachineIntegerType::UInt64
+    ));
+    crate::instrumentation::record_deterministic_work(1);
+    let wide = format == MachineIntegerType::UInt64;
+    let parent = if wide {
+        CMemoryRange::from_pointer_value_wide(&base, lo.clone(), hi.clone(), width)
+    } else {
+        CMemoryRange::from_pointer_value(&base, lo.clone(), hi.clone(), width)
+    };
+    let address = base
+        .pointer()
+        .offset_by_typed_elements(index.clone(), width, wide, wide);
+    let child = CMemoryRange::from_pointer_value(
+        &base.with_address(address),
+        0u32.into(),
+        1u32.into(),
+        width,
+    );
+    let conclusion = Proposition::CResourceContains {
+        parent: Box::new(CResource::Memory(parent)),
+        child: Box::new(CResource::Memory(child)),
+    };
+    Theorem::new(
+        [
+            (CompareRelation::LessEqual, lo, index.clone()),
+            (CompareRelation::LessThan, index, hi),
+        ]
+        .into_iter()
+        .rev()
+        .fold(conclusion, |body, (relation, left, right)| {
+            Proposition::Implies(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::machine_compare(format, relation, left, right),
+                    true,
+                )),
+                Box::new(body),
+            )
+        }),
+    )
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../scaling_tests/kernel/separation_laws.rs");

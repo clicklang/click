@@ -28,6 +28,19 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
 } by {
     mark entry;
     have zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n) by normalize();
+    have contains(memory(b[0..n]), memory(b[j])) by {
+        apply(click::separation::contains_element(b, 0, n, j)) using { 0 <= j; j < n; };
+    }
+    have contains(memory(a[0..n]), memory(a[0..n])) by {
+        apply(click::separation::contains_refl(memory(a[0..n])));
+    }
+    have separate(memory(b[j]), memory(a[0..n])) by {
+        apply(click::separation::restrict(memory(b[0..n]), memory(a[0..n]), memory(b[j]), memory(a[0..n]))) using {
+            separate(memory(b[0..n]), memory(a[0..n]));
+            contains(memory(b[0..n]), memory(b[j]));
+            contains(memory(a[0..n]), memory(a[0..n]));
+        };
+    }
     step();
     have zeros(at(entry, a), 0, n) == zeros(a, 0, n) by {
         transport(

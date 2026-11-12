@@ -1104,6 +1104,21 @@ impl SurfacePropositionMap {
             .map(|(_, surface)| surface.get())
     }
 
+    /// A written requirement may also include formation premises. Select its
+    /// exact recorded enclosing clause by index; the driver proves that whole
+    /// clause, including those premises. Never scan alternate spellings.
+    pub(in crate::surface) fn recorded_requirement_surface(
+        &self,
+        kernel: &Proposition,
+    ) -> Option<&ClickProposition> {
+        if let Some(surface) = self.recorded_surface(kernel) {
+            return Some(surface);
+        }
+        let id = self.storage.kernel_id(kernel)?;
+        let (_, container) = self.storage.by_conjunct.get(&id)?.nodes().next_back()?;
+        self.recorded_surface(container.get())
+    }
+
     pub fn surface(&self, kernel: &Proposition) -> Result<&ClickProposition, ClickError> {
         self.recorded_surface(kernel).ok_or_else(|| {
             ClickError::new(format!(

@@ -3511,14 +3511,7 @@ impl<'a> Proof<'a> {
         if let Some(surface) = &requirement.surface {
             return Ok(self
                 .lower_surface_goal(surface, "tactic requirement")
-                .is_ok_and(|lowered| {
-                    lowered_states_requirement(&lowered, requirement)
-                        || crate::kernel::listed_premise_holds(&requirement.proposition, |part| {
-                            crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(
-                                &lowered, part,
-                            )
-                        })
-                })
+                .is_ok_and(|lowered| lowered_covers_recorded_requirement(&lowered, requirement))
                 .then(|| RequirementSpelling {
                     surface: surface.clone(),
                 }));
@@ -3531,17 +3524,17 @@ impl<'a> Proof<'a> {
         // context fact's source may instead be relative to function entry.
         let recorded = if requirement.call_site.is_none() {
             self.local_surface_facts()
-                .recorded_surface(&requirement.proposition)
+                .recorded_requirement_surface(&requirement.proposition)
                 .or_else(|| {
                     self.context_surface_propositions()?
-                        .recorded_surface(&requirement.proposition)
+                        .recorded_requirement_surface(&requirement.proposition)
                 })
         } else {
             None
         };
         if let Some(surface) = recorded {
             let lowered = self.lower_surface_goal(surface, "recorded tactic requirement")?;
-            if !lowered_states_requirement(&lowered, requirement) {
+            if !lowered_covers_recorded_requirement(&lowered, requirement) {
                 return Err(self.step_error("a recorded tactic requirement does not round-trip"));
             }
             return Ok(Some(RequirementSpelling {
@@ -4084,11 +4077,34 @@ fn literal_requirement_spelling(
     })
 }
 
+// A recorded source was already selected by its exact proposition key. It
+// may state evaluation guards together with that proposition. This is not
+// the matcher that chooses among a tactic's written `requires` clauses:
+// proving a trivial goal cannot identify which clause the author selected.
+fn lowered_covers_recorded_requirement(
+    lowered: &Proposition,
+    requirement: &UnresolvedRequirement,
+) -> bool {
+    lowered_states_requirement(lowered, requirement)
+        || crate::kernel::listed_premise_holds(&requirement.proposition, |part| {
+            crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(lowered, part)
+        })
+}
+
 pub(super) fn lowered_states_requirement(
     lowered: &Proposition,
     requirement: &UnresolvedRequirement,
 ) -> bool {
-    if propositions_match_after_canonical_loads(lowered, &requirement.proposition) {
+    if propositions_match_after_canonical_loads(lowered, &requirement.proposition)
+        // A resource spelling includes its formation prerequisites. Proving
+        // that complete conjunction proves the selected exact requirement;
+        // never discard the extra goals or consult ambient facts here.
+        || (matches!(requirement.proposition, Proposition::CResourceSeparate { .. } | Proposition::CResourceContains { .. })
+            && crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(
+                lowered,
+                &requirement.proposition,
+            ))
+    {
         return true;
     }
     let mut target = &requirement.proposition;
@@ -4967,6 +4983,46 @@ fn selected_premise_contains_goal(premise: &Proposition, goal: &Proposition) -> 
 #[cfg(test)]
 mod synthesized_literal_tests {
     use super::*;
+
+    #[test]
+    fn requirement_matching_does_not_select_an_unrelated_trivial_goal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let requirement = |proposition| UnresolvedRequirement {
+            proposition,
+            context: None,
+            introductions: Default::default(),
+            call_site: None,
+            assertion_condition: None,
+            surface: None,
+        };
+        let less_equal = |left, right| ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+        let trivial = Proposition::ConditionIs(less_equal(0u32.into(), 0u32.into()), true);
+        let bound = Proposition::ConditionIs(
+            less_equal(MachineTerm::var(Variable(71_229)), 10u32.into()),
+            true,
+        );
+        assert!(!lowered_states_requirement(
+            &bound,
+            &requirement(trivial.clone())
+        ));
+        assert!(lowered_states_requirement(
+            &trivial,
+            &requirement(trivial.clone())
+        ));
+        let whole = Proposition::And(Box::new(trivial.clone()), Box::new(bound));
+        assert!(!lowered_states_requirement(&whole, &requirement(trivial)));
+        let separation = Proposition::CResourceSeparate {
+            left: Box::new(crate::kernel::CResource::Emp),
+            right: Box::new(crate::kernel::CResource::Emp),
+        };
+        let whole = Proposition::And(Box::new(whole), Box::new(separation.clone()));
+        assert!(lowered_states_requirement(&whole, &requirement(separation)));
+    }
 
     #[test]
     fn signed_certificate_spelling_matches_exact_read_atoms() {

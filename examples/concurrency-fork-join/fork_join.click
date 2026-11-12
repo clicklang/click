@@ -136,6 +136,10 @@ void *fill_range(void *argument) {
                     separate(memory(job->value), memory(job->output[index]));
                 };
             }
+            have contains(memory(job->output[job->begin..job->end]), memory(job->output[index])) by {
+                apply(separation::contains_element(job->output, job->begin, job->end, index)) using { job->begin <= index; index < job->end; };
+            }
+            have separate(memory(job->output[index]), memory(*job)) by { solve(); }
             mark iteration;
             step();
             have at(iteration, separate(loop(0).statement(0).footprint, memory(job->output))) by { normalize() using {

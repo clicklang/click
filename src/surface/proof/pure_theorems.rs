@@ -180,7 +180,7 @@ pub(in crate::surface) fn kernel_law_index_types(
             C0Type::Int64(crate::languages::c::syntax::LongRank::Long),
             C0Type::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
-        "click::separation::subrange" => vec![
+        "click::separation::subrange" | "click::separation::contains_element" => vec![
             C0Type::Int32,
             C0Type::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
@@ -2642,6 +2642,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
             name.split("::<").next(),
             Some(
                 "click::separation::subrange"
+                    | "click::separation::contains_element"
                     | "click::separation::elements"
                     | "click::separation::distinct_elements"
             )
@@ -2680,6 +2681,7 @@ fn verify_kernel_standard_theorem_axiom(
         "click::integer::uint32_from_le_bytes" => (1, 3),
         "click::separation::restrict" => (4, 3),
         name if name.split("::<").next() == Some("click::separation::subrange") => (5, 3),
+        name if name.split("::<").next() == Some("click::separation::contains_element") => (4, 2),
         name if matches!(
             name.split("::<").next(),
             Some("click::separation::elements" | "click::separation::distinct_elements")
@@ -2762,37 +2764,59 @@ fn verify_kernel_standard_theorem_axiom(
         } else {
             crate::kernel::prove_separation_distinct_elements(pointer.clone(), width, format, i, j)
         }
-    } else if theorem.name().split("::<").next() == Some("click::separation::subrange") {
+    } else if matches!(
+        theorem.name().split("::<").next(),
+        Some("click::separation::subrange" | "click::separation::contains_element")
+    ) {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
             Some(CValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
             Some(CValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
-            _ => Err(ClickError::new("subrange bounds must be int32 or uint64")),
+            _ => Err(ClickError::new(
+                "interval law bounds must be int32 or uint64",
+            )),
         };
         let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
         else {
-            return Err(ClickError::new("subrange base must be a typed pointer"));
+            return Err(ClickError::new("interval law base must be a typed pointer"));
         };
         let width = spec_definitions
             .pointer_element_width(pointer)
             .map_err(ClickError::new)?;
         if width == 0 {
-            return Err(ClickError::new("subrange requires a nonzero element width"));
+            return Err(ClickError::new(
+                "interval law requires a nonzero element width",
+            ));
         }
-        let bounds = [parameter(1)?, parameter(2)?, parameter(3)?, parameter(4)?];
+        let bounds = (1..theorem.parameters().len())
+            .map(parameter)
+            .collect::<Result<Vec<_>, _>>()?;
         let format = bounds[0].0;
         if bounds.iter().any(|(kind, _)| *kind != format) {
-            return Err(ClickError::new("subrange bounds must have the same type"));
+            return Err(ClickError::new(
+                "interval law bounds must have the same type",
+            ));
         }
-        crate::kernel::prove_separation_subrange(
-            pointer.clone(),
-            width,
-            format,
-            bounds[0].1.clone(),
-            bounds[1].1.clone(),
-            bounds[2].1.clone(),
-            bounds[3].1.clone(),
-        )
+        if theorem.name().split("::<").next() == Some("click::separation::contains_element") {
+            crate::kernel::prove_separation_contains_element(
+                pointer.clone(),
+                width,
+                format,
+                bounds[0].1.clone(),
+                bounds[1].1.clone(),
+                bounds[2].1.clone(),
+            )
+        } else {
+            crate::kernel::prove_separation_subrange(
+                pointer.clone(),
+                width,
+                format,
+                bounds[0].1.clone(),
+                bounds[1].1.clone(),
+                bounds[2].1.clone(),
+                bounds[3].1.clone(),
+            )
+        }
     } else if resource_law_shape(theorem.name()).is_some() {
         if theorem
             .parameters()
@@ -4226,6 +4250,19 @@ mod tests {
     /// A C index has no rigid type, so the generic element law's own entry
     /// point checks it at each index type its kernel builder admits rather
     /// than refusing the rigid index.
+    #[test]
+    fn generic_element_containment_law_keeps_its_bounds_and_exclusive_end() {
+        let source = "theorem click::separation::contains_element<T, I>(p: T*, lo: I, hi: I, i: I) { requires lo <= i; requires i < hi; ensures contains(memory(p[lo..hi]), memory(p[i])); }";
+        assert_eq!(verify_standard_declarations(source).unwrap().len(), 2);
+        for invalid in [
+            source.replace("requires lo <= i;", ""),
+            source.replace("i < hi", "i <= hi"),
+            source.replace("memory(p[i])", "memory(p[hi])"),
+        ] {
+            assert!(verify_standard_declarations(&invalid).is_err(), "{invalid}");
+        }
+    }
+
     #[test]
     fn generic_element_separation_law_is_checked_at_each_admitted_index_type() {
         let source = "theorem click::separation::elements<T, I>(p: T*, i: I, j: I) { requires i != j; ensures separate(memory(p[i]), memory(p[j])); }";

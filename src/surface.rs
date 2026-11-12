@@ -7357,6 +7357,7 @@ impl<'a> ParameterBinding<'a> {
 pub(crate) struct ParameterNaming {
     pub(crate) parameters: std::sync::Arc<[syntax::C0Parameter]>,
     pub(crate) arguments: std::sync::Arc<[CExpression]>,
+    pointer_sources: BTreeMap<Pointer, usize>,
 }
 
 impl ParameterNaming {
@@ -7365,7 +7366,25 @@ impl ParameterNaming {
         Self {
             parameters: parameters.into(),
             arguments: arguments.into(),
+            pointer_sources: arguments.iter().enumerate().fold(
+                BTreeMap::new(),
+                |mut sources, (index, argument)| {
+                    if let CExpression::Value(CValue::Pointer(pointer)) = argument {
+                        sources.entry(pointer.pointer().clone()).or_insert(index);
+                    }
+                    sources
+                },
+            ),
         }
+    }
+
+    pub(crate) fn pointer_source(
+        &self,
+        pointer: &Pointer,
+    ) -> Option<(&syntax::C0Parameter, &CExpression)> {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = *self.pointer_sources.get(pointer)?;
+        Some((self.parameters.get(index)?, self.arguments.get(index)?))
     }
 }
 

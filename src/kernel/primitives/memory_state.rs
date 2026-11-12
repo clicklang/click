@@ -1685,7 +1685,7 @@ impl CLocalEnvironment {
         self.slots.keys()
     }
 
-    pub(in crate::kernel) fn name_for_slot(&self, pointer: &Pointer) -> Option<&str> {
+    pub(crate) fn name_for_slot(&self, pointer: &Pointer) -> Option<&str> {
         self.slots.get(pointer).map(String::as_str)
     }
 

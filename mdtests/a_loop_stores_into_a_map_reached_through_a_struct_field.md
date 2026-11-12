@@ -42,6 +42,10 @@ void mark_all(struct arena* arena) {
         initialize by solve();
         preserve by {
             have separate(memory(*arena), memory(arena->data[0..arena->capacity])) by solve();
+            have contains(memory(arena->data[0..arena->capacity]), memory(arena->data[i])) by {
+                apply(click::separation::contains_element(arena->data, 0, arena->capacity, i)) using { 0 <= i; i < arena->capacity; };
+            }
+            have separate(memory(arena->data[i]), memory(*arena)) by { solve(); }
             mark write;
             step();
             transport(at(write, arena->capacity) == at(write, arena->capacity),

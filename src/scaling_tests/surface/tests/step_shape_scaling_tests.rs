@@ -1372,3 +1372,51 @@ fn explicit_pointer_separation_ignores_ambient_aliases() {
         "explicit separation grows with aliases: {curves:?}"
     );
 }
+
+#[test]
+#[ignore = "nightly: active loan alias scaling"]
+fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
+    let mut curves = Vec::new();
+    for viewed in [false, true] {
+        for size in [4, 16, 64] {
+            let parameters = (0..size)
+                .map(|i| format!(", int32* a{i}"))
+                .collect::<String>();
+            let requirements = (0..size)
+                .map(|i| format!("requires a{i} == p;\n"))
+                .collect::<String>();
+            let c = format!("void set(int32* p, int32* q{parameters}) {{ *p = 1; }}");
+            let view = if viewed { "views *q;" } else { "" };
+            let proof = format!(
+                "verifying \"loan.c\";\nvoid set(int32* p, int32* q{parameters}) {{ owns *p; {view} {requirements} }} by {{ step(); }}"
+            );
+            let proof = if viewed {
+                proof.replace(
+                    "by { step(); }",
+                    "by { have separate(memory(*p), memory(*q)) by { assumption(); } step(); }",
+                )
+            } else {
+                proof
+            };
+            let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+                verify_c0_sources(&proof, &[("loan.c", &c)])
+            });
+            result.unwrap_or_else(|e| panic!("viewed={viewed}, aliases={size}: {}", e.report()));
+            let work = samples
+                .iter()
+                .find(|s| s.tactic.tactic_name == "step")
+                .unwrap()
+                .work;
+            curves.push((viewed, size, work));
+        }
+    }
+    eprintln!("write beside one loan (active, aliases, work): {curves:?}");
+    for samples in curves.chunks(3) {
+        assert!(
+            samples
+                .iter()
+                .all(|(_, _, work)| *work <= samples[0].2 + 16),
+            "write scans aliases with fixed owner and loan: {samples:?}"
+        );
+    }
+}

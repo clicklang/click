@@ -6192,3 +6192,59 @@ test_batches! {
         synthesized_signed_difference_preserves_its_type_without_literals,
     ],
 }
+
+#[test]
+fn local_storage_and_resource_stars_have_round_tripping_spellings() {
+    let declaration = crate::kernel::prove_c_statement_execution(
+        CState::new(),
+        crate::kernel::CStatement::Declare {
+            name: "i".into(),
+            c_type: CType::Int32,
+            volatile: false,
+            pointee_volatile: false,
+            constant: false,
+            pointee_constant: false,
+            initializer: Some(CExpression::Value(CValue::Int32(MachineTerm::constant(7)))),
+            zero_fill: None,
+            declared_class: None,
+        },
+    )
+    .unwrap();
+    let Proposition::CStatementExecutes {
+        outcome: crate::kernel::CStatementOutcome::Normal(state),
+        ..
+    } = declaration.proposition()
+    else {
+        panic!("local declaration did not finish");
+    };
+    let local = state.resources().facts()[0].resource().clone();
+    let original = Proposition::CResourceSeparate {
+        left: Box::new(local.clone()),
+        right: Box::new(crate::kernel::CResource::star(
+            local,
+            crate::kernel::CResource::Emp,
+        )),
+    };
+    let surface = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+        .expect("local storage and separating conjunction must be spellable");
+    let printed = printing::source_click_proposition(&surface);
+    let file = parser::parse_file_items(&format!(
+        "theorem t() {{ requires {printed}; ensures true; }}"
+    ))
+    .unwrap();
+    let reparsed = file.theorem_definitions()[0].requires()[0]
+        .theorem_proposition()
+        .unwrap();
+    let values = BTreeMap::from([("i".to_string(), CValue::Int32(MachineTerm::constant(7)))]);
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let lowered = crate::surface::proof::lower_fixed_state_proposition_through_kernel(
+        &reparsed,
+        &crate::kernel::PureFactContext::new(),
+        ContractEnvironment::new(&values, &BTreeMap::new()),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+        SpecDefinitions::new(&predicates, &functions),
+    )
+    .unwrap();
+    assert_eq!(lowered, original, "{printed}");
+}

@@ -3442,33 +3442,95 @@ fn synthesize_unsigned_comparison(
     })
 }
 
-fn synthesize_surface_resource_subject(
+pub(super) fn synthesize_surface_resource_subject(
     resource: &CResource,
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ResourceSubject> {
     let _frame = SurfaceSynthesisFrame::enter("resource")?;
+    if let CResource::Star(pair) = resource {
+        return Some(ResourceSubject::Star(
+            Box::new(synthesize_surface_resource_subject(
+                &pair.0,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?),
+            Box::new(synthesize_surface_resource_subject(
+                &pair.1,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?),
+        ));
+    }
+    if matches!(resource, CResource::Emp) {
+        return Some(ResourceSubject::Emp);
+    }
     let CResource::Memory(range) = resource else {
         return None;
     };
-    let semantic_base =
-        synthesize_surface_pointer(range.base(), parameter_binding, state, bound_variables)?;
-    let surface_base = synthesize_surface_pointer_offset(
-        &range.base().offset,
-        parameter_binding,
-        state,
-        bound_variables,
-    )
-    .unwrap_or_else(|| ContractExpression::CFragment(semantic_base.clone()));
+    // A scalar's storage is its address, not its current value or the zero
+    // offset within its block. The slot index supplies the exact local name.
+    let surface_base = if let Some(name) = state.locals().name_for_slot(range.base()) {
+        let object = CExpression::Variable(surface_local_name(name).to_string());
+        let address = if state.locals().array_object_element_type(name).is_some() {
+            object
+        } else {
+            CExpression::AddressOf(Box::new(object))
+        };
+        ContractExpression::CFragment(address)
+    } else {
+        synthesize_surface_pointer_expression(
+            range.base(),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?
+    };
+    // A range counts its retained element width, which need not be the
+    // pointee width of the name (for example, a struct field's backing).
+    // Spell scalar coordinates explicitly; pointer casts retain provenance.
+    let scalar_pointer_type = match range.element_width() {
+        1 => Some(CType::UInt8Pointer),
+        2 => Some(CType::UInt16Pointer),
+        4 => Some(CType::Int32Pointer),
+        8 => Some(CType::UInt64Pointer),
+        _ => None,
+    };
+    let surface_base = match scalar_pointer_type {
+        Some(target_type) => ContractExpression::CUnary {
+            operand: Box::new(surface_base),
+            lowered: CExpression::Cast {
+                expression: Box::new(CExpression::Value(int32(0))),
+                target_type,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            },
+        },
+        None => surface_base,
+    };
     // The bounds are spelled as the terms they are, in either index kind.
     let (range_start, range_end) = range.bound_terms();
     let surface_start =
         synthesize_surface_bitvector(range_start, parameter_binding, state, bound_variables)?;
     let surface_end =
         synthesize_surface_bitvector(range_end, parameter_binding, state, bound_variables)?;
-    let start = contract_expression_to_c_fragment(&surface_start)?;
-    let end = contract_expression_to_c_fragment(&surface_end)?;
+    let (Some(semantic_base), Some(start), Some(end)) = (
+        contract_expression_to_c_fragment(&surface_base),
+        contract_expression_to_c_fragment(&surface_start),
+        contract_expression_to_c_fragment(&surface_end),
+    ) else {
+        return Some(ResourceSubject::SavedMemory {
+            base: surface_base,
+            start: surface_start,
+            end: Some(surface_end),
+        });
+    };
     Some(ResourceSubject::Memory(ContractSegment {
         uninitialized: false,
         state: ContractSegmentState::Current,
@@ -5469,6 +5531,15 @@ fn synthesize_surface_pointer(
     {
         return Some(CExpression::Variable(name.clone()));
     }
+    // Exact parameter addresses retain their source identity at proof entry.
+    // Naming a stored pointer must not enumerate all earlier parameters.
+    if let Some((parameter, argument)) = parameter_binding
+        .naming
+        .and_then(|names| names.pointer_source(pointer))
+        && parameter_names_its_argument(parameter.name(), argument, state)
+    {
+        return Some(CExpression::Variable(parameter.name().to_string()));
+    }
     if let Some(expression) = parameter_binding
         .parameters
         .iter()
@@ -5485,8 +5556,21 @@ fn synthesize_surface_pointer(
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width();
-            let index = synthesis_element_index(pointer, base, element_width)?;
-            let base = CExpression::Variable(parameter.name().to_string());
+            let element_width = parameter
+                .pointee_struct_layout()
+                .or_else(|| parameter.struct_layout())
+                .map_or(element_width, syntax::C0StructLayout::size_bytes);
+            let name = CExpression::Variable(parameter.name().to_string());
+            let Some(index) = synthesis_element_index(pointer, base, element_width) else {
+                let bytes = pointer
+                    .element_index_from_base_with_width(base, 1)?
+                    .as_const()?;
+                return (bytes <= i32::MAX as u32).then(|| CExpression::PointerOffsetBytes {
+                    pointer: Box::new(name),
+                    bytes,
+                });
+            };
+            let base = name;
             if index == MachineTerm::constant(0) {
                 return Some(base);
             }
@@ -5509,8 +5593,25 @@ fn synthesize_surface_pointer(
         .find_map(|(name, base)| {
             crate::instrumentation::record_deterministic_work(1);
             let element_width = base.c_type().pointee_type()?.byte_width();
-            let index = synthesis_element_index(pointer, base, element_width)?;
-            let base = CExpression::Variable(surface_local_name(name).to_string());
+            let element_width = SYNTHESIS_STRUCT_OWNERS
+                .with(|slot| {
+                    slot.borrow()
+                        .as_ref()
+                        .and_then(|owners| owners.locals.get(name))
+                        .map(syntax::C0StructLayout::size_bytes)
+                })
+                .unwrap_or(element_width);
+            let name = CExpression::Variable(surface_local_name(name).to_string());
+            let Some(index) = synthesis_element_index(pointer, base, element_width) else {
+                let bytes = pointer
+                    .element_index_from_base_with_width(base, 1)?
+                    .as_const()?;
+                return (bytes <= i32::MAX as u32).then(|| CExpression::PointerOffsetBytes {
+                    pointer: Box::new(name),
+                    bytes,
+                });
+            };
+            let base = name;
             if index == MachineTerm::constant(0) {
                 return Some(base);
             }
@@ -5523,6 +5624,31 @@ fn synthesize_surface_pointer(
         })
     {
         return Some(expression);
+    }
+    // Static scalar and aggregate storage has an indexed source slot too.
+    // Name a displaced address from that slot, without scanning objects or
+    // pretending the aggregate itself is an array pointer.
+    if pointer.block.is_static_storage_block()
+        && let PointerOffsetTerm::Constant(bytes) = pointer.offset
+        && let Ok(bytes) = u32::try_from(bytes)
+        && let Some(name) = state.locals().name_for_slot(&Pointer {
+            block: pointer.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        })
+        && (state.locals().aggregate_layout(name).is_some()
+            || state.locals().scalar_object_type(name).is_some())
+    {
+        let base = CExpression::AddressOf(Box::new(CExpression::Variable(
+            surface_local_name(name).to_string(),
+        )));
+        return Some(if bytes == 0 {
+            base
+        } else {
+            CExpression::PointerOffsetBytes {
+                pointer: Box::new(base),
+                bytes,
+            }
+        });
     }
     // A pointer into a global or static array, at a constant byte offset
     // from the array's slot: the array's name, displaced by those bytes.

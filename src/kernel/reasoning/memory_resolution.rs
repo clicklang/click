@@ -4262,7 +4262,6 @@ fn run_has_direct_store_separation(
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
-    use crate::kernel::resource_tracker::cell_source::AccessInRangeEvidence;
     let Some((run_pointer, run_bytes)) = run.live_byte_footprint() else {
         return false;
     };
@@ -4287,9 +4286,27 @@ fn run_has_direct_store_separation(
     {
         return false;
     }
+    // Cache retention is optional. Check only the selected endpoints; the
+    // general membership evidence builder searches aliases after a miss.
+    let contains_access = |pointer: &Pointer, bytes: u32, range: &CMemoryRange| {
+        let width = range.element_width();
+        if bytes == 0 || width == 0 {
+            return false;
+        }
+        let last = ((bytes - 1) / width) * width;
+        crate::kernel::assumptions::pointer_in_memory_range_shallow_with_facts(
+            pointer,
+            range,
+            assumptions,
+        ) && (last == 0
+            || crate::kernel::assumptions::pointer_in_memory_range_shallow_with_facts(
+                &pointer.offset_by_bytes(last),
+                range,
+                assumptions,
+            ))
+    };
     let fits = |range, access| {
-        AccessInRangeEvidence::for_access(&run_pointer, run_bytes, range, assumptions).is_some()
-            && AccessInRangeEvidence::for_access(pointer, bytes, access, assumptions).is_some()
+        contains_access(&run_pointer, run_bytes, range) && contains_access(pointer, bytes, access)
     };
     if fits(left, right) || fits(right, left) {
         crate::kernel::record_implicit_reasoning_provenance(assumptions, fact);

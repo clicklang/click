@@ -171,8 +171,21 @@ fn assert_loan_write_rejected(outcome: &CStatementOutcome) {
     assert!(diagnostic.subject().conflicting_resource_fact().is_some());
 }
 
+fn assert_loan_write_obligation_is_unprovable(path: &CStatementExecutionPath) {
+    assert!(matches!(path.outcome, CStatementOutcome::Normal(_)));
+    let separation = path
+        .obligations
+        .iter()
+        .find_map(|obligation| match obligation.proposition() {
+            Proposition::CResourceSeparate { left, right } => Some((left, right)),
+            _ => None,
+        })
+        .expect("the scalar write must retain its loan separation obligation");
+    assert!(!PureFactContext::new().proves_resource_separate(separation.0, separation.1));
+}
+
 #[test]
-fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
+fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store() {
     let _session = crate::kernel::VerificationSession::enter();
     crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".to_string()]));
     let declared = execute_c_statement_paths(
@@ -244,8 +257,8 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
         CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
-    .expect("alias store should return a checked refusal");
-    assert_loan_write_rejected(&indirect[0].outcome);
+    .expect("alias store should return its loan obligation");
+    assert_loan_write_obligation_is_unprovable(&indirect[0]);
 }
 
 #[test]

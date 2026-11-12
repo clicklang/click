@@ -24,6 +24,9 @@ explicitly and through `solve`.
 The generic range law `separation::subrange` is verified in
 [`generic_pointer_theorem_parameters.md`](generic_pointer_theorem_parameters.md),
 including nested generic applications and several element widths.
+The selected-cell law `separation::contains_element` is verified in
+[`separation_element_contains_the_selected_cell.md`](separation_element_contains_the_selected_cell.md),
+including signed 32-bit and unsigned 64-bit interval bounds.
 
 The external catalog symbols `memcmp` and `strlen` are verified in
 [`strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md),

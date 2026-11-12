@@ -109,6 +109,11 @@ int32 owned_split_buffer_set_left(
             contains(memory(owner->data), memory(owner->data));
         };
     }
+    have index < owner->len by { solve(); }
+    have contains(memory(owner->data[0..owner->len]), memory(owner->data[index])) by {
+        apply(separation::contains_element(owner->data, 0, owner->len, index)) using { 0 <= index; index < owner->len; };
+    }
+    have separate(memory(owner->data[index]), memory(*owner)) by { solve(); }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
         normalize() using {
@@ -177,6 +182,11 @@ int32 owned_split_buffer_set_right(
             contains(memory(owner->data), memory(owner->data));
         };
     }
+    have index < owner->len by { solve(); }
+    have contains(memory(owner->data[0..owner->len]), memory(owner->data[index])) by {
+        apply(separation::contains_element(owner->data, 0, owner->len, index)) using { 0 <= index; index < owner->len; };
+    }
+    have separate(memory(owner->data[index]), memory(*owner)) by { solve(); }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
         normalize() using {

@@ -13,7 +13,7 @@ void keep(int32* p, int32* q) {
     requires *q > 0;
     ensures *q > 0;
 } by {
-    step();
+    step() by { assumption(); }
     have separate(statement(0).footprint, memory(*q)) by {
         normalize() using { separate(memory(*p), memory(*q)); };
     }

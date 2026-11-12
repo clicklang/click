@@ -459,6 +459,12 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_projected_sna
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_pure_signed_arithmetic	try_indexed_signed_arithmetic	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_quantified_conjunct_projection_closure	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_quantified_conjunct_projection_closure	resolve_solve_premises	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_separation_restriction_closure	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_separation_restriction_closure	try_direct_logical_closure	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_separation_restriction_closure	try_solve_closure_with_surfaces	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_star_separation_closure	driver	5
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_star_separation_closure	try_direct_logical_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_star_separation_closure	try_solve_closure_with_surfaces	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restated_constant_upper_bound	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restated_constant_upper_bound	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure	driver	1
@@ -531,6 +537,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_outcome_anchored_order_transitivity	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_premise_equality_chain_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_pure_signed_arithmetic	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_resource_star_separation_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_selected_constant_bound_weakening	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_selected_disjunction_cases	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_selected_forall_goal	1
@@ -581,6 +588,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_pr
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_predicate_solve_closure	try_solve_closure_with_surfaces	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_constructor_witness_exists_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_implication_solve_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_resource_separation_restriction_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_structural_and_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_structural_exists_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_structural_forall_solve_closure	1
