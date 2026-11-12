@@ -94,6 +94,11 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   migration boundaries. Its original R1–R7 reproductions are closed; use its
   current closure checklist for remaining work. Those identifiers are local to
   that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
+- **Operation guards:** theorem application, scope completion and prepared-step
+  publication have test-build discovery guards. Probes for have opening,
+  contract-claim opening and statement preparation reproduce seven operation/entry
+  pairs through five existing bridge entries; see the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
+  Those three operations remain unguarded; no exception exempts their search.
 - **Enforcement gap:** lexical dependency freezing and selected work counters
   do not prohibit every search call during expanded replay or detect arbitrary
   loops, shared-term export and copying. No global fast-proof guarantee yet.
