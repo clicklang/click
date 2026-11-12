@@ -1,7 +1,7 @@
 # uint32 division by zero
 
 Unsigned division and remainder retain C's division-by-zero undefined
-behavior; unsigned arithmetic does not turn a zero divisor into a value.
+behavior. The step's nonzero-divisor obligation cannot be proved for zero.
 
 ```c filename=uint32_division_by_zero.c
 uint32 uint32_division_by_zero() {
@@ -18,5 +18,5 @@ uint32 uint32_division_by_zero() {
 ```
 
 ```expect
-fail: undefined behavior: division by zero
+fail: unsigned division requires a nonzero divisor
 ```

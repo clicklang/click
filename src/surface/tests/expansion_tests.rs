@@ -22134,3 +22134,19 @@ fn write_loan_obligations_expand_and_replay() {
         .unwrap_or_else(|error| panic!("{path}: {error}"));
     }
 }
+
+#[test]
+fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
+    let (source, sources) = mdtest_sources("mdtests/unsigned_division_exposes_its_domain.md");
+    let implicit = source.replace("step() by { assumption(); }", "step();");
+    assert_ne!(implicit, source);
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&implicit, &sources, "divide").unwrap();
+    crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let missing = implicit.replace("    requires y != 0u32;\n", "");
+    assert_ne!(missing, implicit);
+    assert!(verify_c0_sources(&missing, &sources).is_err());
+}

@@ -4385,3 +4385,49 @@ fn specification_volatile_reads_do_not_create_execution_events() {
         );
     }
 }
+
+#[test]
+fn unsigned_division_reports_its_domain_even_when_already_known() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let left = MachineTerm::Variable(Variable(991_601));
+    let right = MachineTerm::Variable(Variable(991_602));
+    let zero = ConditionTerm::machine_compare(
+        MachineIntegerType::UInt32,
+        crate::kernel::CompareRelation::Equal,
+        right.clone(),
+        MachineTerm::constant(0),
+    );
+    for known in [None, Some(false), Some(true)] {
+        let assumptions = known.map_or_else(PureFactContext::new, |value| {
+            PureFactContext::new().assume_condition(zero.clone(), value)
+        });
+        for remainder in [false, true] {
+            let apply = if remainder {
+                crate::kernel::eval::apply_c_remainder
+            } else {
+                crate::kernel::eval::apply_c_divide
+            };
+            let paths = apply(
+                CValue::UInt32(left.clone()),
+                CValue::UInt32(right.clone()),
+                vec![].into(),
+                vec![],
+                &assumptions,
+            );
+            assert_eq!(paths.len(), 1, "one conditional successor, {known:?}");
+            assert!(matches!(
+                paths[0].outcome,
+                CExpressionOutcome::Value(CValue::UInt32(_))
+            ));
+            assert_eq!(
+                paths[0].obligations.len(),
+                1,
+                "always retain the domain, {known:?}"
+            );
+            assert_eq!(
+                paths[0].obligations[0].proposition(),
+                &Proposition::ConditionIs(zero.clone(), false)
+            );
+        }
+    }
+}

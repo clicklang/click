@@ -118,8 +118,11 @@ work items; this reconciliation changes no behavior.
 Step preparation retains emitted verification conditions and call preconditions,
 and fold preparation retains its body facts, even when already known. The driver
 proves each obligation with a written block or ordinary `solve`. This does not
-finish evaluator migration: arithmetic operators still decide some safety
-conditions before emitting any obligation. Replacing those decisions needs
+finish evaluator migration. Executed uint32 division and remainder now always
+retain their ordinary nonzero-divisor obligation; generation has no ambient
+fact-context parameter and expansion writes a step proof that replays without
+implicit solve. Other arithmetic operators still decide some safety conditions
+before emitting any obligation. Replacing those decisions needs
 round-trippable goals and flat generation/publication costs. The earlier, unlanded arithmetic-migration prototype failed `struct_array_element_expands_with_its_subscript`
 (the initialized-global sum has no round-tripping overflow-goal spelling) and
 `straight_line_assignments_cost_the_same_at_every_position` (work grows from
