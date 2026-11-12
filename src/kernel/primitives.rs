@@ -2598,6 +2598,25 @@ impl CPointerValue {
         self.c_type
     }
 
+    /// Exact retained qualifiers for syntax certification. Address-bearing
+    /// metadata is compared separately through its written term structure.
+    pub(in crate::kernel) fn retained_nonaddress_metadata_eq(&self, other: &Self) -> bool {
+        let declared_class = |value: &Self| {
+            value
+                .qualifiers
+                .as_ref()
+                .and_then(|q| q.object_class.as_ref())
+                .cloned()
+        };
+        self.c_type == other.c_type
+            && self.pointee_volatile() == other.pointee_volatile()
+            && self.pointee_constant() == other.pointee_constant()
+            && self.extent_is_known() == other.extent_is_known()
+            && declared_class(self) == declared_class(other)
+            && self.object_origin_evidence() == other.object_origin_evidence()
+            && self.local_reference() == other.local_reference()
+    }
+
     pub(crate) fn pointee_volatile(&self) -> bool {
         self.qualifiers.as_ref().is_some_and(|q| q.volatile)
     }
