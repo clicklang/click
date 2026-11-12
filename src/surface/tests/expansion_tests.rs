@@ -21986,3 +21986,37 @@ fn saved_array_application_obligation_expands_without_search() {
     })
     .unwrap();
 }
+
+#[test]
+fn outcome_apply_obligations_retain_each_return_and_fold_evidence() {
+    for (fixture, function, claim) in [
+        (
+            "outcome_apply_obligations",
+            "choose_positive",
+            "choose_positive.ensures_0",
+        ),
+        (
+            "outcome_apply_obligations",
+            "increment_result",
+            "increment_result.ensures_0",
+        ),
+        (
+            "return_fold_uses_post_return_theorem_application",
+            "pick",
+            "pick.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        let expanded = expand_function_proof_source(&source, &sources, function).unwrap();
+        without_implicit_solve_for_claim(claim, || {
+            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}

@@ -767,7 +767,9 @@ impl<'a> Proof<'a> {
         &self,
         application: &TheoremApplication,
     ) -> Result<PreparedTheoremApplication, ClickError> {
-        if matches!(self.context.as_ref(), ProofContext::Execution(_)) && self.is_at_function_exit()
+        if matches!(self.context.as_ref(), ProofContext::Execution(_))
+            && self.is_at_function_exit()
+            && self.focused_outcome_data().is_none()
         {
             return Err(self.step_error("returned theorem applications require an outcome proof"));
         }

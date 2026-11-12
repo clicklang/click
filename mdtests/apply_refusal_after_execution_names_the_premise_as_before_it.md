@@ -41,5 +41,5 @@ int32 first(int32 *a, int32 n) {
 ```
 
 ```expect
-fail: `apply(head_nonnegative(a, n))` was refused: `first.contract` proof step tactic 2: required exact fact for theorem `head_nonnegative` is unavailable: requirement 1 `0 < n` with n = n instantiates to `0 < n`
+fail: `apply(head_nonnegative(a, n))` was refused: `first.contract` proof step tactic 2: theorem `head_nonnegative` has an unproved obligation: `0 < n`
 ```
