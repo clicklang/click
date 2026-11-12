@@ -382,6 +382,7 @@ fn export(
         }
         Ok(())
     };
+    check_cpp_exporter_identity(exporter, working_directory)?;
     let artifact = run_cpp_exporter(
         exporter,
         &arguments,
@@ -441,6 +442,36 @@ fn export(
         prepared_roots: Vec::new(),
     };
     Ok((lock, artifact))
+}
+
+/// Ask the exporter at `exporter` for its identity and refuse one that is not
+/// the pinned front end, before it exports anything.
+fn check_cpp_exporter_identity(exporter: &Path, working_directory: &Path) -> Result<(), String> {
+    let output = run_compiler(
+        exporter,
+        &["--identity".to_string()],
+        working_directory,
+        &BTreeMap::new(),
+        CompilerLimits {
+            timeout: Duration::from_secs(10),
+            max_stdout_bytes: 4096,
+            max_stderr_bytes: MAX_DIAGNOSTIC_BYTES,
+        },
+    )
+    .map_err(|error| {
+        format!(
+            "C++ exporter `{}` did not report its identity ({error}); rebuild it with scripts/build-cpp-exporter.sh",
+            exporter.display()
+        )
+    })?;
+    super::schema::check_exporter_identity(&String::from_utf8_lossy(&output.stdout)).map_err(
+        |error| {
+            format!(
+                "{error}; rebuild `{}` with scripts/build-cpp-exporter.sh",
+                exporter.display()
+            )
+        },
+    )
 }
 
 fn run_cpp_exporter(
@@ -1516,6 +1547,7 @@ pub(crate) fn prepare_unit(
         .map_err(|error| format!("C++ exporter `{}`: {error}", exporter.display()))?;
     let working_directory = unit.working_directory()?;
     let roots = unit.roots()?;
+    check_cpp_exporter_identity(&exporter, &working_directory)?;
     let resources = exporter_resource_directory(&exporter, &working_directory)?;
     let labels = PathLabels::new(&[
         ("$unit", roots[0].as_path()),

@@ -15,7 +15,18 @@ elif [[ -n "${1:-}" ]]; then
     exit 2
 fi
 
-expected_version=19.1.7
+# The pinned front end: one definition, read by Click and compiled in here.
+profile=src/languages/cpp/frontend-profile.json
+profile_field() {
+    sed -n "s/^ *\"$1\": *\"\{0,1\}\([^\",]*\)\"\{0,1\},\{0,1\}\$/\1/p" "$profile"
+}
+expected_version="$(profile_field clang_version)"
+exporter_version="$(profile_field exporter_version)"
+artifact_schema="$(profile_field artifact_schema)"
+if [[ -z "$expected_version" || -z "$exporter_version" || -z "$artifact_schema" ]]; then
+    echo "error: $profile must name exporter_version, clang_version and artifact_schema" >&2
+    exit 1
+fi
 if [[ -n "${LLVM_CONFIG:-}" ]]; then
     llvm_config="$LLVM_CONFIG"
 elif command -v llvm-config-19 >/dev/null 2>&1; then
@@ -111,7 +122,7 @@ mkdir -p "$build_directory"
 stamp="$output.stamp"
 fingerprint="$(
     {
-        cat tools/cpp-exporter/* "${BASH_SOURCE[0]}"
+        cat tools/cpp-exporter/* "${BASH_SOURCE[0]}" "$profile"
         "$clangxx" --version
         printf '%s\n' "$clangxx" "$clang_cpp" "${CCC_OVERRIDE_OPTIONS:-}" \
             "${llvm_cxxflags[@]}" "${llvm_ldflags[@]}" "${llvm_libs[@]}" "${llvm_system_libs[@]}"
@@ -137,6 +148,9 @@ fi
 "$clangxx" \
     "${llvm_cxxflags[@]}" \
     "-DCLICK_CLANG_RESOURCE_DIR=\"$resource_dir\"" \
+    "-DCLICK_CPP_EXPORTER_VERSION=\"$exporter_version\"" \
+    "-DCLICK_CPP_CLANG_VERSION=\"$expected_version\"" \
+    "-DCLICK_CPP_ARTIFACT_SCHEMA=$artifact_schema" \
     -std=c++20 \
     -Wall \
     -Wextra \

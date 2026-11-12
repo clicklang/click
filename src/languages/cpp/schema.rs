@@ -56,12 +56,58 @@ impl<'a> ValidationPlaces<'a> {
     }
 }
 
-pub(crate) const EXPORT_SCHEMA: u32 = 60;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
 pub(crate) const TARGET: &str = "x86_64-unknown-linux-gnu";
-pub(crate) const CLANG_VERSION: &str = "19.1.7";
+
+/// The pinned C++ front end: the exporter's own version, the Clang it links,
+/// and the artifact schema it emits. `scripts/build-cpp-exporter.sh` compiles
+/// the same file into the exporter, so both sides read one definition.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct FrontendProfile {
+    pub(crate) exporter_version: String,
+    pub(crate) clang_version: String,
+    pub(crate) artifact_schema: u32,
+}
+
+pub(crate) fn frontend_profile() -> &'static FrontendProfile {
+    static PROFILE: std::sync::OnceLock<FrontendProfile> = std::sync::OnceLock::new();
+    PROFILE.get_or_init(|| {
+        serde_json::from_str(include_str!("frontend-profile.json"))
+            .expect("the C++ front-end profile is valid JSON")
+    })
+}
+
+/// The identity line the pinned exporter prints for `--identity`.
+pub(crate) fn expected_exporter_identity_prefix() -> String {
+    let profile = frontend_profile();
+    format!(
+        "click-cpp-exporter {}; schema {}; clang ",
+        profile.exporter_version, profile.artifact_schema
+    )
+}
+
+/// Check what an exporter reported for `--identity` against the pin.
+pub(crate) fn check_exporter_identity(reported: &str) -> Result<(), String> {
+    let profile = frontend_profile();
+    let reported = reported.trim();
+    let expected = expected_exporter_identity_prefix();
+    let matches = reported
+        .strip_prefix(&expected)
+        .is_some_and(|clang| clang.contains(&profile.clang_version));
+    if matches {
+        return Ok(());
+    }
+    Err(format!(
+        "C++ exporter version mismatch; expected click-cpp-exporter {} (schema {}, Clang {}), got {:?}",
+        profile.exporter_version,
+        profile.artifact_schema,
+        profile.clang_version,
+        reported.chars().take(160).collect::<String>()
+    ))
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -1244,9 +1290,10 @@ impl CppExport {
         expected_dependencies: &[String],
     ) -> Result<(), String> {
         super::budget::check_inventories(self)?;
-        if self.schema != EXPORT_SCHEMA {
+        let expected_schema = frontend_profile().artifact_schema;
+        if self.schema != expected_schema {
             return Err(format!(
-                "unsupported C++ exporter schema {}; expected {EXPORT_SCHEMA}",
+                "unsupported C++ exporter schema {}; expected {expected_schema}",
                 self.schema
             ));
         }
@@ -1269,9 +1316,14 @@ impl CppExport {
                 "C++ exception behavior differs from the configured compiler profile".into(),
             );
         }
-        if !self.profile.frontend_version.contains(CLANG_VERSION) {
+        let clang_version = &frontend_profile().clang_version;
+        if !self
+            .profile
+            .frontend_version
+            .contains(clang_version.as_str())
+        {
             return Err(format!(
-                "C++ export used `{}`; expected Clang {CLANG_VERSION}",
+                "C++ export used `{}`; expected Clang {clang_version}",
                 self.profile.frontend_version
             ));
         }
@@ -9018,5 +9070,34 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/languages/cpp/schema/tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod frontend_identity_tests {
+    use super::*;
+
+    #[test]
+    fn the_pinned_exporter_identity_is_accepted_and_others_are_named() {
+        let profile = frontend_profile();
+        let pinned = format!(
+            "{}clang version {} (https://github.com/llvm/llvm-project)\n",
+            expected_exporter_identity_prefix(),
+            profile.clang_version
+        );
+        assert_eq!(check_exporter_identity(&pinned), Ok(()));
+        for wrong in [
+            pinned.replace(&format!("schema {}", profile.artifact_schema), "schema 1"),
+            pinned.replace(
+                &format!("click-cpp-exporter {}", profile.exporter_version),
+                "click-cpp-exporter 0",
+            ),
+            pinned.replace(&profile.clang_version, "18.1.8"),
+            String::new(),
+        ] {
+            let error = check_exporter_identity(&wrong).unwrap_err();
+            assert!(error.contains("C++ exporter version mismatch"), "{error}");
+            assert!(error.contains(&profile.clang_version), "{error}");
+        }
     }
 }
