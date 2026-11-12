@@ -38,16 +38,19 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
         return root.clone();
     }
     ROOTS.with(|roots| {
-        let mut roots = roots.borrow_mut();
+        // Key construction may observe a nested call argument recursively.
+        // Keep every cache borrow inside its lookup/update, never across the
+        // interner or a child reconstruction callback.
+        let get = |term: &KernelTerm| roots.borrow()[&term.id()].clone();
         let mut pending = vec![(root.clone(), false)];
         let mut expanded = HashMap::new();
         while let Some((term, finish)) = pending.pop() {
-            if roots.contains_key(&term.id()) {
+            if roots.borrow().contains_key(&term.id()) {
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
             if !term.has_opaque_observation_boundary() {
-                roots.insert(term.id(), term);
+                roots.borrow_mut().insert(term.id(), term);
                 continue;
             }
             let format = match term.ty() {
@@ -75,21 +78,24 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 }
             }
             if let Some(replacement) = expanded.remove(&term.id()) {
-                let normalized = roots[&replacement.id()].clone();
-                roots.insert(term.id(), normalized);
+                let normalized = get(&replacement);
+                roots.borrow_mut().insert(term.id(), normalized);
                 continue;
             }
             let children = match term.node() {
                 KernelTermNode::MachineBinary { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
+                | KernelTermNode::IntegerCompare { arguments, .. }
                 | KernelTermNode::BoolEqual { arguments } => arguments.to_vec(),
                 KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } => {
                     arguments.to_vec()
                 }
+                KernelTermNode::IntegerOperation { arguments, .. } => arguments.clone(),
                 KernelTermNode::Call { arguments, .. } if term.ty() == &KernelType::Bool => {
                     arguments.clone()
                 }
-                KernelTermNode::MachineUnary { operand, .. }
+                KernelTermNode::MachineObservation { operand, .. }
+                | KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
                 _ => Vec::new(),
             };
@@ -118,20 +124,46 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     ));
                     KernelTerm::bool_observation_leaf(condition, identity)
                 }
-                KernelTermNode::MachineIf { arguments } => KernelTerm::machine_if_shared(
-                    format,
-                    arguments.each_ref().map(|arg| roots[&arg.id()].clone()),
+                KernelTermNode::IntegerCompare {
+                    operator,
+                    arguments,
+                } => KernelTerm::intern(
+                    KernelType::Bool,
+                    KernelTermNode::IntegerCompare {
+                        operator: *operator,
+                        arguments: arguments.each_ref().map(|arg| get(arg)),
+                    },
                 ),
+                KernelTermNode::IntegerOperation {
+                    operator,
+                    arguments,
+                } => KernelTerm::intern(
+                    KernelType::Integer,
+                    KernelTermNode::IntegerOperation {
+                        operator: *operator,
+                        arguments: arguments.iter().map(|arg| get(arg)).collect(),
+                    },
+                ),
+                KernelTermNode::MachineObservation { format, operand } => KernelTerm::intern(
+                    KernelType::Integer,
+                    KernelTermNode::MachineObservation {
+                        format: *format,
+                        operand: get(operand),
+                    },
+                ),
+                KernelTermNode::MachineIf { arguments } => {
+                    KernelTerm::machine_if_shared(format, arguments.each_ref().map(|arg| get(arg)))
+                }
                 KernelTermNode::BoolIf { arguments } => KernelTerm::intern(
                     KernelType::Bool,
                     KernelTermNode::BoolIf {
-                        arguments: arguments.each_ref().map(|arg| roots[&arg.id()].clone()),
+                        arguments: arguments.each_ref().map(|arg| get(arg)),
                     },
                 ),
                 KernelTermNode::BoolEqual { arguments } => KernelTerm::intern(
                     KernelType::Bool,
                     KernelTermNode::BoolEqual {
-                        arguments: arguments.each_ref().map(|arg| roots[&arg.id()].clone()),
+                        arguments: arguments.each_ref().map(|arg| get(arg)),
                     },
                 ),
                 KernelTermNode::BoolCompare {
@@ -143,7 +175,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     KernelTermNode::BoolCompare {
                         format: *format,
                         relation: *relation,
-                        arguments: arguments.each_ref().map(|arg| roots[&arg.id()].clone()),
+                        arguments: arguments.each_ref().map(|arg| get(arg)),
                     },
                 ),
                 KernelTermNode::Call { name, arguments } if term.ty() == &KernelType::Bool => {
@@ -151,10 +183,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                         KernelType::Bool,
                         KernelTermNode::Call {
                             name: name.clone(),
-                            arguments: arguments
-                                .iter()
-                                .map(|arg| roots[&arg.id()].clone())
-                                .collect(),
+                            arguments: arguments.iter().map(|arg| get(arg)).collect(),
                         },
                     )
                 }
@@ -166,37 +195,165 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     format,
                     *operation_format,
                     *operator,
-                    [
-                        roots[&arguments[0].id()].clone(),
-                        roots[&arguments[1].id()].clone(),
-                    ],
+                    [get(&arguments[0]), get(&arguments[1])],
                 ),
                 KernelTermNode::MachineUnary {
                     format: operation_format,
                     operator,
                     operand,
-                } => KernelTerm::machine_unary_shared(
-                    *operation_format,
-                    *operator,
-                    roots[&operand.id()].clone(),
-                )
-                .with_machine_observation_type(format),
+                } => KernelTerm::machine_unary_shared(*operation_format, *operator, get(operand))
+                    .with_machine_observation_type(format),
                 KernelTermNode::MachineCast {
                     encoding,
                     source,
                     destination,
                     operand,
-                } => KernelTerm::machine_cast_shared(
-                    *encoding,
-                    *source,
-                    *destination,
-                    roots[&operand.id()].clone(),
-                )
-                .with_machine_observation_type(format),
+                } => {
+                    KernelTerm::machine_cast_shared(*encoding, *source, *destination, get(operand))
+                        .with_machine_observation_type(format)
+                }
                 _ => term.clone(),
             };
-            roots.insert(term.id(), normalized);
+            roots.borrow_mut().insert(term.id(), normalized);
         }
-        roots[&root.id()].clone()
+        get(root)
     })
+}
+
+#[cfg(test)]
+mod recursive_call_tests {
+    use super::*;
+
+    #[test]
+    fn mathematical_guards_normalize_nested_call_argument_carriers() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let argument = MachineTerm::constant(7);
+        let shared = SharedMachineIntegerTerm::intern(format, argument.clone());
+        let call = |argument| MachineTerm::ClickFunctionApplication {
+            name: "math_guard_length".into(),
+            arguments: vec![argument],
+        };
+        let native = call(PureFunctionArgument::Value(CValue::UInt64(argument)));
+        let retained = call(PureFunctionArgument::SharedMachine(shared));
+        let guard = |call: &MachineTerm| {
+            let observation = KernelTerm::intern(
+                KernelType::Integer,
+                KernelTermNode::MachineObservation {
+                    format,
+                    operand: KernelTermImport::default().machine(format, call),
+                },
+            );
+            let difference = KernelTerm::integer_operation(
+                KernelIntegerOperator::Subtract,
+                vec![observation, KernelTerm::integer_literal(3.into())],
+            )
+            .unwrap();
+            KernelTerm::intern(
+                KernelType::Bool,
+                KernelTermNode::IntegerCompare {
+                    operator: IntegerComparisonOperator::LessThan,
+                    arguments: [KernelTerm::integer_literal(1.into()), difference],
+                },
+            )
+        };
+        let native_guard = guard(&native);
+        let shared_guard = guard(&retained);
+        let native_written = KernelTermExport::condition(&native_guard).unwrap();
+        let shared_written = KernelTermExport::condition(&shared_guard).unwrap();
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(normalize(&native_guard), normalize(&shared_guard));
+        let conditional = |guard| {
+            KernelTerm::machine_if_shared(
+                format,
+                [
+                    guard,
+                    KernelTermImport::default().machine(format, &MachineTerm::constant(48)),
+                    KernelTermImport::default().machine(format, &MachineTerm::constant(49)),
+                ],
+            )
+        };
+        let a = SharedMachineIntegerTerm::observe_shared(format, conditional(native_guard.clone()))
+            .unwrap();
+        let b = SharedMachineIntegerTerm::observe_shared(format, conditional(shared_guard.clone()))
+            .unwrap();
+        assert_eq!(a, b);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(
+            KernelTermExport::condition(&native_guard).unwrap(),
+            native_written
+        );
+        assert_eq!(
+            KernelTermExport::condition(&shared_guard).unwrap(),
+            shared_written
+        );
+        let different = guard(&call(PureFunctionArgument::Value(CValue::UInt64(
+            MachineTerm::constant(8),
+        ))));
+        assert_ne!(normalize(&native_guard), normalize(&different));
+    }
+
+    #[test]
+    fn observation_identity_allows_nested_shared_opaque_call_arguments() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let call = |name: &str, arguments| MachineTerm::ClickFunctionApplication {
+            name: name.into(),
+            arguments,
+        };
+        let inner = call("opaque_nested_argument", vec![]);
+        let inner_root = KernelTerm::retained_native_machine_operand(format, &inner);
+        let inner_argument = SharedMachineIntegerTerm::from_shared(format, inner_root).unwrap();
+        let outer = call(
+            "opaque_outer_application",
+            vec![PureFunctionArgument::SharedMachine(inner_argument)],
+        );
+        let root = KernelTerm::retained_native_machine_operand(format, &outer);
+        let exports = KernelTermExport::machine_export_count();
+        let first = SharedMachineIntegerTerm::observe_shared(format, root.clone()).unwrap();
+        let repeated = SharedMachineIntegerTerm::observe_shared(format, root).unwrap();
+        assert_eq!(first, repeated);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        let native = SharedMachineIntegerTerm::intern(format, outer.clone());
+        assert_eq!(first, native);
+        assert_eq!(native.retained_written_operand(), Some(&outer));
+    }
+
+    #[test]
+    fn opaque_call_identity_preserves_format_order_and_exact_argument_carriers() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let argument = MachineTerm::constant(7);
+        let retained = SharedMachineIntegerTerm::intern(format, argument.clone());
+        let call = |arguments| MachineTerm::ClickFunctionApplication {
+            name: "exact_call_carriers".into(),
+            arguments,
+        };
+        let native_argument = PureFunctionArgument::Value(CValue::Int32(argument));
+        let shared_argument = PureFunctionArgument::SharedMachine(retained);
+        let marker = PureFunctionArgument::Integer(IntegerTerm::constant(9.into()).into());
+        let native = call(vec![native_argument.clone(), marker.clone()]);
+        let shared = call(vec![shared_argument.clone(), marker.clone()]);
+        let a = SharedMachineIntegerTerm::intern(format, native.clone());
+        let b = SharedMachineIntegerTerm::intern(format, shared.clone());
+        assert_eq!(a, b);
+        assert_eq!(a.retained_written_operand(), Some(&native));
+        assert_eq!(b.retained_written_operand(), Some(&shared));
+        assert_ne!(
+            a,
+            SharedMachineIntegerTerm::intern(MachineIntegerType::UInt32, native)
+        );
+        assert_ne!(
+            a,
+            SharedMachineIntegerTerm::intern(format, call(vec![marker, shared_argument]))
+        );
+        let different_argument_sort = call(vec![
+            PureFunctionArgument::Value(CValue::UInt32(MachineTerm::constant(7))),
+            PureFunctionArgument::Integer(IntegerTerm::constant(9.into()).into()),
+        ]);
+        assert_ne!(
+            a,
+            SharedMachineIntegerTerm::intern(format, different_argument_sort)
+        );
+    }
 }

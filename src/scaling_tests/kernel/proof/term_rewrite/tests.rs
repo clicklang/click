@@ -1689,3 +1689,97 @@ fn pointer_index_reconstruction_keeps_cold_dags_shared() {
         assert!(pair[1] <= pair[0] * 5, "{samples:?}");
     }
 }
+
+#[test]
+fn compound_exact_replacement_ignores_only_call_argument_carrier() {
+    let _session = VerificationSession::enter();
+    let format = MachineIntegerType::Int32;
+    let argument = MachineTerm::Variable(Variable(998_930));
+    let call = |argument| MachineTerm::ClickFunctionApplication {
+        name: "compound_exact_call".into(),
+        arguments: vec![argument],
+    };
+    let native_call = call(PureFunctionArgument::Value(CValue::Int32(argument.clone())));
+    let shared_call = call(PureFunctionArgument::SharedMachine(
+        SharedMachineIntegerTerm::intern(format, argument),
+    ));
+    let compound = |operation, value| {
+        MachineTerm::machine_binary(format, operation, value, MachineTerm::constant(1))
+    };
+    for depth in [4, 16, 64] {
+        let mut source = native_call.clone();
+        let mut target = shared_call.clone();
+        for _ in 0..depth {
+            source = compound(MachineBinaryOp::Add, source);
+            target = compound(MachineBinaryOp::Add, target);
+        }
+        let replacement = MachineTerm::constant(13);
+        let exports = KernelTermExport::machine_export_count();
+        let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
+            TermRewrite::for_bits(&source, &replacement).bits(&target)
+        });
+        assert_eq!(actual, replacement);
+        assert!(work < depth * 50 + 200, "depth={depth}: {work}");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+    let source = compound(MachineBinaryOp::Add, native_call);
+    let distinct = compound(MachineBinaryOp::Subtract, shared_call);
+    let replacement = MachineTerm::constant(13);
+    assert_eq!(
+        TermRewrite::for_bits(&source, &replacement).bits(&distinct),
+        distinct
+    );
+}
+
+#[test]
+fn narrowing_rewrite_visits_scale_with_selected_expression() {
+    let from = MachineTerm::Variable(Variable(91));
+    let to = MachineTerm::Variable(Variable(92));
+    let make = |value: &MachineTerm, size| {
+        Term::Bitvector32(MachineTerm::ClickFunctionApplication {
+            name: "many".into(),
+            arguments: vec![
+                PureFunctionArgument::Value(CValue::UInt32(MachineTerm::legacy_cast(
+                    MachineCastSpelling::UInt32From64,
+                    Box::new(value.clone())
+                )));
+                size
+            ],
+        })
+    };
+    for size in [16, 64, 256] {
+        let mut rewrite = TermRewrite::for_bits(&from, &to);
+        assert_eq!(rewrite.term(&make(&from, size)), make(&to, size));
+        assert!(rewrite.changed);
+        assert_eq!(rewrite.visits, 2 + 2 * size);
+    }
+}
+
+#[test]
+fn conditional_reduction_work_scales_with_selected_expression() {
+    let condition = ConditionTerm::Variable(Variable(51));
+    let conditions = HashMap::from([(condition.clone(), true)]);
+    for size in [16, 64, 256] {
+        let input = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
+            name: "many".into(),
+            arguments: vec![
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::If {
+                    condition: Box::new(condition.clone()),
+                    then_term: Box::new(MachineTerm::constant(7)),
+                    else_term: Box::new(MachineTerm::constant(0)),
+                },));
+                size
+            ],
+        });
+        let expected = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
+            name: "many".into(),
+            arguments: vec![
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(7),));
+                size
+            ],
+        });
+        let mut rewrite = TermRewrite::for_conditions(&conditions);
+        assert_eq!(rewrite.term(&input), expected);
+        assert_eq!(rewrite.visits, 2 + 3 * size);
+    }
+}

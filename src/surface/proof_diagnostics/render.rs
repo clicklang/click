@@ -1825,6 +1825,10 @@ impl Renderer<'_> {
         self.depth += 1;
         match argument {
             PureFunctionArgument::Value(value) => self.cvalue(value),
+            // Explicit output boundary of the native diagnostic renderer.
+            PureFunctionArgument::SharedMachine(value) => {
+                self.cvalue(&value.ty().value_from_term(value.structural_value().clone()));
+            }
             PureFunctionArgument::Integer(value) => self.integer_shared(value),
             PureFunctionArgument::Algebraic(value) => self.algebraic(value),
             // The snapshot identity is printed, not elided. A goal that

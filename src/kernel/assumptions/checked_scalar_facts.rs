@@ -53,8 +53,15 @@ impl ScalarOperandKey {
             .map(MachineOperandView::Legacy)
             .unwrap_or(view);
         match view {
-            MachineOperandView::Shared(_) => Self::Shared(MachineAtom::from_operand(ty, view)),
+            MachineOperandView::Shared(_) => {
+                Self::Shared(MachineAtom::from_numeric_operand(ty, view))
+            }
             MachineOperandView::Legacy(term) => {
+                if matches!(term, MachineTerm::ClickFunctionApplication { .. }) {
+                    // A call retains its typed argument identity regardless
+                    // of the producer's native/shared carrier choice.
+                    return Self::Shared(MachineAtom::from_numeric_operand(ty, view));
+                }
                 // Leaf imports have fixed work. Retaining them merely changes
                 // cold/warm accounting; only compound operands avoid a walk.
                 if matches!(
@@ -63,7 +70,7 @@ impl ScalarOperandKey {
                 ) && let Some(shared) =
                     crate::kernel::KernelTermImport::default().machine_arithmetic(ty, term)
                 {
-                    return Self::Shared(MachineAtom::from_operand(
+                    return Self::Shared(MachineAtom::from_numeric_operand(
                         ty,
                         MachineOperandView::Shared(&shared),
                     ));
@@ -71,13 +78,43 @@ impl ScalarOperandKey {
                 if let Some(shared) =
                     crate::kernel::SharedMachineIntegerTerm::import_arithmetic(ty, term)
                 {
-                    Self::Shared(MachineAtom::from_operand(ty, shared.operand_view()))
+                    Self::Shared(MachineAtom::from_numeric_operand(ty, shared.operand_view()))
+                } else if selected_call_expression(view) {
+                    // Only a cold import needs this selected syntax walk;
+                    // retained native imports above keep repeated lookup work.
+                    Self::Shared(MachineAtom::from_numeric_operand(ty, view))
                 } else {
                     Self::Written(term.clone())
                 }
             }
         }
     }
+}
+
+// Inspect only the selected numeric syntax, never call arguments, snapshots,
+// or ambient facts. Other opaque leaves keep their existing context-local key.
+fn selected_call_expression(root: MachineOperandView<'_>) -> bool {
+    let mut pending = vec![root];
+    let mut has_call = false;
+    while let Some(view) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if matches!(
+            view,
+            MachineOperandView::Legacy(MachineTerm::ClickFunctionApplication { .. })
+        ) {
+            has_call = true;
+        } else if view.variable().is_some() || view.literal().is_some() {
+        } else if let Some((_, _, operands)) = view.binary() {
+            pending.extend(operands);
+        } else if let Some((_, _, operand)) = view.unary() {
+            pending.push(operand);
+        } else if let Some((_, _, _, operand)) = view.cast() {
+            pending.push(operand);
+        } else {
+            return false;
+        }
+    }
+    has_call
 }
 
 #[derive(Clone, Debug, Default)]

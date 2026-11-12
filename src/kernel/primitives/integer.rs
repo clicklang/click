@@ -110,10 +110,32 @@ pub struct SharedPureApplication(Arc<SharedPureApplicationNode>);
 /// The original name remains available for users of the Integer term API.
 pub type SharedIntegerApplication = SharedPureApplication;
 
-struct SharedPureApplicationNode {
+struct PureApplicationIdentity {
     id: u64,
+}
+
+struct SharedPureApplicationNode {
+    identity: Arc<PureApplicationIdentity>,
     name: String,
     arguments: Vec<PureFunctionArgument>,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
+enum PureApplicationArgumentKey {
+    Machine(SharedMachineIntegerTerm),
+    Other(PureFunctionArgument),
+}
+
+fn application_argument_keys(
+    arguments: &[PureFunctionArgument],
+) -> Vec<PureApplicationArgumentKey> {
+    arguments
+        .iter()
+        .map(|argument| match argument.machine_identity() {
+            Some(value) => PureApplicationArgumentKey::Machine(value),
+            None => PureApplicationArgumentKey::Other(argument.clone()),
+        })
+        .collect()
 }
 
 struct PureApplicationInterner {
@@ -121,8 +143,8 @@ struct PureApplicationInterner {
         u64,
         Vec<(
             String,
-            Vec<PureFunctionArgument>,
-            Weak<SharedPureApplicationNode>,
+            Vec<PureApplicationArgumentKey>,
+            Weak<PureApplicationIdentity>,
         )>,
     >,
     cleanup: VecDeque<(u64, usize)>,
@@ -130,15 +152,26 @@ struct PureApplicationInterner {
 }
 
 impl PureApplicationInterner {
+    #[cfg(test)]
     fn intern(
         &mut self,
         name: String,
         arguments: Vec<PureFunctionArgument>,
     ) -> SharedPureApplication {
+        let keys = application_argument_keys(&arguments);
+        self.intern_keyed(name, arguments, keys)
+    }
+
+    fn intern_keyed(
+        &mut self,
+        name: String,
+        arguments: Vec<PureFunctionArgument>,
+        argument_keys: Vec<PureApplicationArgumentKey>,
+    ) -> SharedPureApplication {
         crate::instrumentation::record_deterministic_work(arguments.len().saturating_add(1));
         let mut hasher = crate::id_hash::FingerprintHasher::default();
         name.hash(&mut hasher);
-        arguments.hash(&mut hasher);
+        argument_keys.hash(&mut hasher);
         let key = hasher.finish();
         let cleanup_limit = self.cleanup.len().min(8);
         for _ in 0..cleanup_limit {
@@ -164,38 +197,50 @@ impl PureApplicationInterner {
                 self.cleanup.push_back((fingerprint, pointer));
             }
         }
-        if let Some(bucket) = self.buckets.get(&key) {
-            for (old_name, old_arguments, node) in bucket {
-                if old_name == &name
-                    && old_arguments == &arguments
-                    && let Some(node) = node.upgrade()
-                {
-                    return SharedPureApplication(node);
-                }
-            }
-        }
-        let id = self.next_id;
-        self.next_id = self
-            .next_id
-            .checked_add(1)
-            .expect("Pure application interner ID exhausted");
-        let node = Arc::new(SharedPureApplicationNode {
-            id,
-            name: name.clone(),
-            arguments: arguments.clone(),
-        });
-        self.buckets
-            .entry(key)
-            .or_default()
-            .push((name, arguments, Arc::downgrade(&node)));
-        self.cleanup.push_back((key, Arc::as_ptr(&node) as usize));
-        SharedPureApplication(node)
+        let identity = self
+            .buckets
+            .get(&key)
+            .and_then(|bucket| {
+                bucket
+                    .iter()
+                    .find_map(|(old_name, old_arguments, identity)| {
+                        (old_name == &name && old_arguments == &argument_keys)
+                            .then(|| identity.upgrade())
+                            .flatten()
+                    })
+            })
+            .unwrap_or_else(|| {
+                let id = self.next_id;
+                self.next_id = self
+                    .next_id
+                    .checked_add(1)
+                    .expect("Pure application interner ID exhausted");
+                let identity = Arc::new(PureApplicationIdentity { id });
+                self.buckets.entry(key).or_default().push((
+                    name.clone(),
+                    argument_keys,
+                    Arc::downgrade(&identity),
+                ));
+                self.cleanup
+                    .push_back((key, Arc::as_ptr(&identity) as usize));
+                identity
+            });
+        // Semantic identity is interned separately from the exact payload.
+        // A caller never receives a previous producer's native/shared reading,
+        // and repeated readings do not accumulate a bucket of payload versions.
+        SharedPureApplication(Arc::new(SharedPureApplicationNode {
+            identity,
+            name,
+            arguments,
+        }))
     }
 }
 
 impl SharedPureApplication {
     pub(crate) fn intern(name: String, arguments: Vec<PureFunctionArgument>) -> Self {
         static INTERNER: OnceLock<Mutex<PureApplicationInterner>> = OnceLock::new();
+        // Compute word identities outside the application-interner lock.
+        let argument_keys = application_argument_keys(&arguments);
         INTERNER
             .get_or_init(|| {
                 Mutex::new(PureApplicationInterner {
@@ -206,10 +251,10 @@ impl SharedPureApplication {
             })
             .lock()
             .expect("Pure application interner lock poisoned")
-            .intern(name, arguments)
+            .intern_keyed(name, arguments, argument_keys)
     }
     pub(crate) fn id(&self) -> u64 {
-        self.0.id
+        self.0.identity.id
     }
     pub(crate) fn name(&self) -> &str {
         &self.0.name
@@ -635,6 +680,32 @@ impl SharedMachineIntegerTerm {
         // interned observation before importing, and retain that explicit tree
         // instead of exporting it again on the first checker read.
         let key = MachineIntegerKey::native(ty, value);
+        if let MachineIntegerKey::Application { application, .. } = &key {
+            // Calls compare their typed argument values, independently of
+            // whether a producer supplied a native or retained reading.
+            // Keep this producer's exact payload outside that identity key.
+            let value = MachineTerm::ClickFunctionApplication {
+                name: application.name().to_owned(),
+                arguments: application.arguments().to_vec(),
+            };
+            // A retained opaque call is observed as a shared leaf whose
+            // payload key owns the typed application identity. Use that same
+            // observation here rather than exposing the intermediate payload
+            // ID as a second numeric identity for the native carrier.
+            let payload_identity = Self::intern_key(key);
+            let observation =
+                KernelTerm::machine_observation_leaf(ty, value.clone(), payload_identity);
+            let identity = Self::from_shared(ty, observation).expect("opaque call observation");
+            return Self(Arc::new(SharedMachineIntegerNode {
+                id: identity.id(),
+                ty,
+                operand: MachineIntegerOperand::ExactLegacy {
+                    value,
+                    _identity: identity,
+                },
+                reading: OnceLock::new(),
+            }));
+        }
         let interner =
             MACHINE_INTEGER_INTERNER.get_or_init(|| Mutex::new(MachineIntegerInterner::default()));
         if let Some(found) = interner
@@ -900,9 +971,21 @@ enum MachineIntegerKey {
         ty: MachineIntegerType,
         value: MachineTerm,
     },
+    Application {
+        arena: u32,
+        ty: MachineIntegerType,
+        application: SharedPureApplication,
+    },
 }
 impl MachineIntegerKey {
     fn native(ty: MachineIntegerType, value: MachineTerm) -> Self {
+        if let MachineTerm::ClickFunctionApplication { name, arguments } = value {
+            return Self::Application {
+                arena: super::c_memory_arena_token(),
+                ty,
+                application: SharedPureApplication::intern(name, arguments),
+            };
+        }
         Self::Legacy {
             arena: super::c_memory_arena_token(),
             ty,
@@ -998,6 +1081,15 @@ impl MachineIntegerInterner {
             MachineIntegerKey::Legacy { ty, value, .. } => {
                 (*ty, MachineIntegerOperand::Legacy(value.clone()))
             }
+            MachineIntegerKey::Application {
+                ty, application, ..
+            } => (
+                *ty,
+                MachineIntegerOperand::Legacy(MachineTerm::ClickFunctionApplication {
+                    name: application.name().to_owned(),
+                    arguments: application.arguments().to_vec(),
+                }),
+            ),
         };
         let node = Arc::new(SharedMachineIntegerNode {
             id,

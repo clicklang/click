@@ -2598,6 +2598,25 @@ impl CPointerValue {
         self.c_type
     }
 
+    /// Exact retained qualifiers for syntax certification. Address-bearing
+    /// metadata is compared separately through its written term structure.
+    pub(in crate::kernel) fn retained_nonaddress_metadata_eq(&self, other: &Self) -> bool {
+        let declared_class = |value: &Self| {
+            value
+                .qualifiers
+                .as_ref()
+                .and_then(|q| q.object_class.as_ref())
+                .cloned()
+        };
+        self.c_type == other.c_type
+            && self.pointee_volatile() == other.pointee_volatile()
+            && self.pointee_constant() == other.pointee_constant()
+            && self.extent_is_known() == other.extent_is_known()
+            && declared_class(self) == declared_class(other)
+            && self.object_origin_evidence() == other.object_origin_evidence()
+            && self.local_reference() == other.local_reference()
+    }
+
     pub(crate) fn pointee_volatile(&self) -> bool {
         self.qualifiers.as_ref().is_some_and(|q| q.volatile)
     }
@@ -4583,6 +4602,10 @@ impl AlgebraicTermNode {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PureFunctionArgument {
     Value(CValue),
+    /// A typed word argument whose expression remains in the common DAG.
+    /// Its signedness is the argument's declared value sort, not an inferred
+    /// mathematical observation. Readers borrow its operand view.
+    SharedMachine(SharedMachineIntegerTerm),
     Integer(SharedIntegerTerm),
     Algebraic(AlgebraicTerm),
     ArrayRef {
@@ -4687,6 +4710,10 @@ impl AlgebraicTerm {
                                 PureFunctionArgument::Value(v)
                                 | PureFunctionArgument::ArrayRef { pointer: v, .. } => {
                                     Node::Value(v)
+                                }
+                                PureFunctionArgument::SharedMachine(v) => {
+                                    visit(v.operand_view());
+                                    continue;
                                 }
                                 PureFunctionArgument::Algebraic(v) => Node::Algebraic(v),
                                 PureFunctionArgument::Integer(_) => continue,
@@ -5032,9 +5059,31 @@ impl AlgebraicValue {
 }
 
 impl PureFunctionArgument {
+    /// Numeric identity for typed argument matching. The stored argument keeps
+    /// its exact producer payload; only checking asks for this observation.
+    pub(crate) fn machine_identity(&self) -> Option<SharedMachineIntegerTerm> {
+        match self {
+            Self::SharedMachine(value) => Some(match value.shared_operand() {
+                Some(root) => SharedMachineIntegerTerm::observe_shared(value.ty(), root.clone())
+                    .expect("typed shared machine argument"),
+                None => value.clone(),
+            }),
+            Self::Value(value) => {
+                let (integer_c_value!(bits)) = value else {
+                    return None;
+                };
+                Some(SharedMachineIntegerTerm::intern(
+                    MachineIntegerType::from_c_type(value.c_type()).unwrap(),
+                    bits.clone(),
+                ))
+            }
+            _ => None,
+        }
+    }
+
     fn is_well_formed(&self) -> bool {
         match self {
-            Self::Value(_) => true,
+            Self::Value(_) | Self::SharedMachine(_) => true,
             Self::Integer(_) => true,
             Self::Algebraic(term) => term.is_well_formed(),
             Self::ArrayRef {

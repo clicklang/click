@@ -2482,6 +2482,11 @@ impl Printer<'_> {
         }
         match argument {
             PureFunctionArgument::Value(value) => self.cvalue(value, depth + 1),
+            // Explicit output boundary of the native diagnostic renderer.
+            PureFunctionArgument::SharedMachine(value) => self.cvalue(
+                &value.ty().value_from_term(value.structural_value().clone()),
+                depth + 1,
+            ),
             PureFunctionArgument::Integer(value) => self.integer(value, depth + 1),
             PureFunctionArgument::Algebraic(value) => self.algebraic(value, depth + 1),
             PureFunctionArgument::ArrayRef {

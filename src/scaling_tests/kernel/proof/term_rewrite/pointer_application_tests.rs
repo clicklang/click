@@ -274,13 +274,17 @@ fn integer_address_rewrite_visits_a_shared_pointer_dag_once() {
 #[test]
 fn integer_address_rewrite_ignores_unrelated_interned_applications() {
     let word = MachineTerm::Variable(Variable(913));
-    let input = Pointer::integer_address(MachineTerm::uint64_bitwise_and(
-        word.clone(),
-        MachineTerm::uint64_constant(!3),
-    ));
     let replacement = MachineTerm::uint64_constant(1);
     let mut costs = Vec::new();
+    let mut repeated_costs = Vec::new();
     for size in [0, 64, 256] {
+        // Compare cold queries at each size, and repeated queries separately.
+        // Typed application keys populate the session's observation cache.
+        let _session = crate::kernel::VerificationSession::enter();
+        let input = Pointer::integer_address(MachineTerm::uint64_bitwise_and(
+            word.clone(),
+            MachineTerm::uint64_constant(!3),
+        ));
         let _unrelated = (0..size)
             .map(|i| {
                 call(
@@ -294,7 +298,13 @@ fn integer_address_rewrite_ignores_unrelated_interned_applications() {
         });
         assert_eq!(output, Pointer::null());
         costs.push(work);
+        let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
+            TermRewrite::for_bits(&word, &replacement).pointer(&input)
+        });
+        assert_eq!(output, Pointer::null());
+        repeated_costs.push(work);
     }
     assert!(costs[0] > 0);
     assert_eq!(costs, vec![costs[0]; 3]);
+    assert_eq!(repeated_costs, vec![repeated_costs[0]; 3]);
 }

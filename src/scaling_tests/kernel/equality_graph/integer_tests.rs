@@ -60,3 +60,65 @@ fn shared_integer_expression_dags_register_and_merge_in_linear_work() {
         "superlinear shared-DAG work: {samples:?}"
     );
 }
+
+#[test]
+fn retained_call_argument_congruence_is_linear_cold_and_constant_warm() {
+    use crate::kernel::{KernelTerm, KernelTermExport, SharedMachineIntegerTerm};
+    let mut costs = Vec::new();
+    for depth in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let leaf = MachineTerm::ClickFunctionApplication {
+            name: "argument_leaf".into(),
+            arguments: vec![PureFunctionArgument::Value(CValue::UInt64(
+                MachineTerm::Variable(Variable(982821)),
+            ))],
+        };
+        let mut root = KernelTerm::retained_native_machine_operand(M::UInt64, &leaf);
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                M::UInt64,
+                crate::kernel::MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let exact = SharedMachineIntegerTerm::from_shared(M::UInt64, root.clone()).unwrap();
+        let bound = |argument| {
+            ConditionTerm::narrow_compare(
+                M::UInt8,
+                crate::kernel::CompareRelation::LessEqual,
+                MachineTerm::Constant {
+                    format: M::UInt8,
+                    bits: 48,
+                },
+                MachineTerm::ClickFunctionApplication {
+                    name: "argument_digit".into(),
+                    arguments: vec![PureFunctionArgument::SharedMachine(argument)],
+                },
+            )
+        };
+        let query =
+            crate::kernel::machine_integer::comparison::narrow_fact_widening(&bound(exact.clone()))
+                .unwrap();
+        let exports = KernelTermExport::machine_export_count();
+        let (graph, cold) = crate::instrumentation::measure_deterministic_work(|| {
+            let observed =
+                SharedMachineIntegerTerm::observe_shared(M::UInt64, root.clone()).unwrap();
+            let mut graph = EqualityGraph::default();
+            graph.add_condition(&bound(observed), true);
+            assert!(graph.knows_condition(&query, true));
+            graph
+        });
+        let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..8 {
+                assert!(graph.knows_condition(&query, true));
+            }
+        });
+        assert_eq!(exact.shared_operand(), Some(&root));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push((cold, warm));
+    }
+    for pair in costs.windows(2) {
+        assert!(pair[1].0 <= 4 * pair[0].0 + 256, "cold: {costs:?}");
+        assert!(pair[1].1 <= pair[0].1 + 64, "warm: {costs:?}");
+    }
+}

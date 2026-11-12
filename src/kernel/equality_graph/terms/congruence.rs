@@ -1228,6 +1228,18 @@ impl TermClasses {
                 Work::Argument(argument) => {
                     match argument {
                         A::Value(value) => pending.push(Work::Value(value)),
+                        A::SharedMachine(value) => {
+                            let width = match value.ty().format().bits() {
+                                8 => W::Bits8,
+                                16 => W::Bits16,
+                                32 => W::Bits32,
+                                64 => W::Bits64,
+                                128 => W::Bits128,
+                                _ => unreachable!("machine argument width"),
+                            };
+                            pending.push(Work::Wrap(ArgumentTag::Value(value.ty().c_type())));
+                            pending.push(Work::RetainedMachine(value, width));
+                        }
                         A::Algebraic(term) => {
                             pending.push(Work::Wrap(ArgumentTag::Algebraic));
                             pending.push(Work::Algebraic(term));

@@ -286,6 +286,9 @@ pub(crate) struct ProofFacts {
     prioritized: Option<Arc<PrioritizedProofFacts>>,
     top_level_exact: PersistentSet<Arc<Proposition>>,
     exact: PersistentSet<Arc<Proposition>>,
+    /// Exact typed call payloads ignore only the native/shared argument
+    /// carrier choice; they retain snapshot, argument order and type keys.
+    call_payloads: PersistentSet<CallPayloadKey>,
     /// Every strict subtree of an available top-level conjunction. This is
     /// the exact structural authority for `extract`; top-level facts are not
     /// included merely because they are independently available.
@@ -408,11 +411,99 @@ enum BitvectorEqualityAtomKey {
     ClickFunctionApplication {
         name: String,
         arguments_hash: u64,
+        // Keep ID-based numeric keys alive as long as the indexed fact.
+        machine_identities: Vec<SharedMachineIntegerTerm>,
     },
     MemoryLoad {
         memory: (u32, u32),
         pointer_hash: u64,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum AlgebraicCallOperandKey {
+    Call(AlgebraicType, SharedPureApplication),
+    Variable(AlgebraicType, Variable),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum CallPayloadKey {
+    Machine(
+        MachineIntegerType,
+        u8,
+        bool,
+        [crate::kernel::equality_graph::MachineAtom; 2],
+    ),
+    AlgebraicCondition(bool, [AlgebraicCallOperandKey; 2]),
+    AlgebraicEquation([AlgebraicCallOperandKey; 2]),
+}
+
+fn call_payload_identity_key(fact: &Proposition) -> Option<CallPayloadKey> {
+    fn algebraic(term: &AlgebraicTerm) -> Option<AlgebraicCallOperandKey> {
+        Some(match &term.node {
+            AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
+                AlgebraicCallOperandKey::Call(
+                    term.algebraic_type.clone(),
+                    SharedPureApplication::intern(name.clone(), arguments.clone()),
+                )
+            }
+            AlgebraicTermNode::Variable(variable) => {
+                AlgebraicCallOperandKey::Variable(term.algebraic_type.clone(), *variable)
+            }
+            _ => return None,
+        })
+    }
+    let machine_call =
+        |term: &MachineTerm| matches!(term, MachineTerm::ClickFunctionApplication { .. });
+    let algebraic_call = |term: &AlgebraicTerm| {
+        matches!(term.node, AlgebraicTermNode::PureFunctionApplication { .. })
+    };
+    Some(match fact {
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format,
+                relation,
+                left,
+                right,
+            },
+            truth,
+        ) if machine_call(left) || machine_call(right) => CallPayloadKey::Machine(
+            *format,
+            *relation as u8,
+            *truth,
+            [
+                crate::kernel::equality_graph::MachineAtom::from_operand(
+                    *format,
+                    MachineOperandView::Legacy(left),
+                ),
+                crate::kernel::equality_graph::MachineAtom::from_operand(
+                    *format,
+                    MachineOperandView::Legacy(right),
+                ),
+            ],
+        ),
+        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(left, right), truth)
+            if algebraic_call(left) || algebraic_call(right) =>
+        {
+            CallPayloadKey::AlgebraicCondition(*truth, [algebraic(left)?, algebraic(right)?])
+        }
+        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
+            if algebraic_call(left) || algebraic_call(right) =>
+        {
+            CallPayloadKey::AlgebraicEquation([algebraic(left)?, algebraic(right)?])
+        }
+        _ => return None,
+    })
+}
+
+fn index_call_payload(
+    keys: PersistentSet<CallPayloadKey>,
+    fact: &Proposition,
+) -> PersistentSet<CallPayloadKey> {
+    match call_payload_identity_key(fact) {
+        Some(key) => keys.with_value(key),
+        None => keys,
+    }
 }
 
 /// Borrowed access to proposition premises. Persistent proofs supply their
@@ -987,6 +1078,7 @@ impl ProofFacts {
             crate::kernel::reasoning::variable_collection::ReservedSnapshots::default();
         let mut top_level_exact = PersistentSet::default();
         let mut exact = PersistentSet::default();
+        let mut call_payloads = PersistentSet::default();
         let mut proper_conjuncts = PersistentSet::default();
         let mut quantified_proper_conjuncts = PersistentMap::default();
         let mut by_snapshot_blind = PersistentMap::default();
@@ -1054,6 +1146,7 @@ impl ProofFacts {
                         index_finite_classification_fact(finite_classifications_by_key, &conjunct);
                     algebraic_equalities_by_term =
                         index_algebraic_equality_fact(algebraic_equalities_by_term, &conjunct);
+                    call_payloads = index_call_payload(call_payloads, &conjunct);
                     exact = exact.with_value(conjunct);
                 }
             }
@@ -1068,6 +1161,7 @@ impl ProofFacts {
                 index_finite_classification_fact(finite_classifications_by_key, fact);
             algebraic_equalities_by_term =
                 index_algebraic_equality_fact(algebraic_equalities_by_term, fact);
+            call_payloads = index_call_payload(call_payloads, fact);
             exact = exact.with_value(Arc::clone(fact));
             implicit_transport_assumptions =
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
@@ -1080,6 +1174,7 @@ impl ProofFacts {
             prioritized: None,
             top_level_exact,
             exact,
+            call_payloads,
             proper_conjuncts,
             quantified_proper_conjuncts,
             by_snapshot_blind,
@@ -1115,6 +1210,7 @@ impl ProofFacts {
     /// (`kernel::comparison_form`), under which every fact is filed too.
     pub(crate) fn contains(&self, fact: &Proposition) -> bool {
         self.exact.contains(fact)
+            || call_payload_identity_key(fact).is_some_and(|key| self.call_payloads.contains(&key))
             || crate::kernel::comparison_form(fact)
                 .is_some_and(|comparison| self.exact.contains(&comparison))
     }
@@ -1182,6 +1278,7 @@ impl ProofFacts {
         // The one copy of this fact. Every index below shares it.
         let fact = Arc::new(fact);
         let mut exact = self.exact.clone();
+        let mut call_payloads = self.call_payloads.clone();
         let mut proper_conjuncts = self.proper_conjuncts.clone();
         let mut quantified_proper_conjuncts = self.quantified_proper_conjuncts.clone();
         let mut by_snapshot_blind = self.by_snapshot_blind.clone();
@@ -1222,6 +1319,7 @@ impl ProofFacts {
                     index_finite_classification_fact(finite_classifications_by_key, &conjunct);
                 algebraic_equalities_by_term =
                     index_algebraic_equality_fact(algebraic_equalities_by_term, &conjunct);
+                call_payloads = index_call_payload(call_payloads, &conjunct);
                 exact = exact.with_value(conjunct);
             }
         }
@@ -1236,6 +1334,7 @@ impl ProofFacts {
             index_finite_classification_fact(finite_classifications_by_key, &fact);
         algebraic_equalities_by_term =
             index_algebraic_equality_fact(algebraic_equalities_by_term, &fact);
+        call_payloads = index_call_payload(call_payloads, &fact);
         exact = exact.with_value(Arc::clone(&fact));
         // Filed under its comparison form too, so a lookup of either form,
         // or of another proposition with that comparison form, finds it.
@@ -1265,6 +1364,7 @@ impl ProofFacts {
             prioritized: self.prioritized.clone(),
             top_level_exact: self.top_level_exact.with_value(Arc::clone(&fact)),
             exact,
+            call_payloads,
             proper_conjuncts,
             quantified_proper_conjuncts,
             by_snapshot_blind,
@@ -3156,8 +3256,18 @@ fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAt
         }
         MachineTerm::ClickFunctionApplication { name, arguments } => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            let mut machine_identities = Vec::new();
             for argument in arguments {
+                if let Some(value) = argument.machine_identity() {
+                    4u8.hash(&mut hasher);
+                    value.hash(&mut hasher);
+                    machine_identities.push(value);
+                    continue;
+                }
                 match argument {
+                    PureFunctionArgument::SharedMachine(_) => {
+                        unreachable!("machine argument identity")
+                    }
                     PureFunctionArgument::Value(value) => {
                         0u8.hash(&mut hasher);
                         value.hash(&mut hasher);
@@ -3185,6 +3295,7 @@ fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAt
             Some(BitvectorEqualityAtomKey::ClickFunctionApplication {
                 name: name.clone(),
                 arguments_hash: hasher.finish(),
+                machine_identities,
             })
         }
         MachineTerm::MemoryLoad(memory, pointer, kind) => {

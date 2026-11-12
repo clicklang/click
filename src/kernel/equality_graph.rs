@@ -119,6 +119,23 @@ impl MachineAtom {
     ) -> Self {
         Self(value.retain(ty))
     }
+    /// Numeric endpoint identity. Exact written carriers remain available via
+    /// from_operand; indexed bounds use the same observation for both inputs.
+    pub(in crate::kernel) fn from_numeric_operand(
+        ty: crate::kernel::MachineIntegerType,
+        value: crate::kernel::MachineOperandView<'_>,
+    ) -> Self {
+        match value {
+            crate::kernel::MachineOperandView::Legacy(value) => Self::new(ty, value.clone()),
+            crate::kernel::MachineOperandView::Shared(root) => Self(
+                crate::kernel::SharedMachineIntegerTerm::observe_shared(
+                    ty,
+                    root.with_machine_observation_type(ty),
+                )
+                .expect("typed numeric endpoint"),
+            ),
+        }
+    }
     pub(in crate::kernel) fn uint64(value: MachineTerm) -> Self {
         Self::new(crate::kernel::MachineIntegerType::UInt64, value)
     }
@@ -1798,6 +1815,13 @@ impl EqualityGraph {
                     _ => {}
                 },
                 Work::Argument(argument) => match argument {
+                    PureFunctionArgument::SharedMachine(value) => {
+                        if let Some(root) = value.shared_operand() {
+                            pending.push(Work::SharedMachine(root));
+                        } else {
+                            pending.push(Work::Machine(value.value()));
+                        }
+                    }
                     PureFunctionArgument::Value(value)
                     | PureFunctionArgument::ArrayRef { pointer: value, .. } => {
                         pending.push(Work::Value(value))

@@ -8,6 +8,7 @@ use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{bits32_constant, constant_u32};
 
 mod contract_claims;
+mod retained_syntax;
 pub use contract_claims::*;
 
 /// Returns an exhaustive set of proof-only cases for undecided guards on
@@ -2791,9 +2792,10 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
             Proposition::ConditionIs(right_condition, right_value),
         ) => {
             left_value == right_value
-                && condition_with_canonicalized_loads(left_condition)
-                    .zip(condition_with_canonicalized_loads(right_condition))
-                    .is_some_and(|(left, right)| left == right)
+                && (retained_syntax::conditions_equal(left_condition, right_condition)
+                    || condition_with_canonicalized_loads(left_condition)
+                        .zip(condition_with_canonicalized_loads(right_condition))
+                        .is_some_and(|(left, right)| left == right))
         }
         (
             Proposition::CMemoryLoadable {

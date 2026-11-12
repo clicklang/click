@@ -1264,6 +1264,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         value: &CValue,
         rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
+        rewrite_shared: &impl Fn(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> CValue {
         match value {
             CValue::PointerInteger(record) => CValue::PointerInteger(PointerIntegerValue {
@@ -1272,6 +1273,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     &record.numeric,
                     rewrite_term,
                     rewrite_pointer,
+                    rewrite_shared,
                 )),
                 pointer: Box::new(record.pointer.map_addresses(rewrite_pointer)),
             }),
@@ -1279,6 +1281,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 term,
                 rewrite_term,
                 rewrite_pointer,
+                rewrite_shared,
             ))),
             CValue::Void => CValue::Void,
             CValue::Bool(term) => CValue::Bool(rewrite_term(term)),
@@ -1302,6 +1305,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
         term: &AlgebraicTerm,
         rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
+        rewrite_shared: &impl Fn(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> AlgebraicTerm {
         let node = match &term.node {
             AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
@@ -1313,11 +1317,23 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 variant: variant.clone(),
                 fields: fields
                     .iter()
-                    .map(|field| rewrite_algebraic_value(field, rewrite_term, rewrite_pointer))
+                    .map(|field| {
+                        rewrite_algebraic_value(
+                            field,
+                            rewrite_term,
+                            rewrite_pointer,
+                            rewrite_shared,
+                        )
+                    })
                     .collect(),
             },
             AlgebraicTermNode::Match { scrutinee, arms } => AlgebraicTermNode::Match {
-                scrutinee: Box::new(rewrite_algebraic(scrutinee, rewrite_term, rewrite_pointer)),
+                scrutinee: Box::new(rewrite_algebraic(
+                    scrutinee,
+                    rewrite_term,
+                    rewrite_pointer,
+                    rewrite_shared,
+                )),
                 arms: arms
                     .iter()
                     .map(|arm| AlgebraicResultMatchArm {
@@ -1327,10 +1343,20 @@ fn rewrite_atomic_proposition_by_exact_equality(
                             .bindings
                             .iter()
                             .map(|binding| {
-                                rewrite_algebraic_value(binding, rewrite_term, rewrite_pointer)
+                                rewrite_algebraic_value(
+                                    binding,
+                                    rewrite_term,
+                                    rewrite_pointer,
+                                    rewrite_shared,
+                                )
                             })
                             .collect(),
-                        body: rewrite_algebraic(&arm.body, rewrite_term, rewrite_pointer),
+                        body: rewrite_algebraic(
+                            &arm.body,
+                            rewrite_term,
+                            rewrite_pointer,
+                            rewrite_shared,
+                        ),
                     })
                     .collect(),
             },
@@ -1340,14 +1366,23 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     arguments: arguments
                         .iter()
                         .map(|argument| match argument {
-                            PureFunctionArgument::Value(value) => PureFunctionArgument::Value(
-                                rewrite_c_value(value, rewrite_term, rewrite_pointer),
-                            ),
+                            PureFunctionArgument::SharedMachine(value) => {
+                                PureFunctionArgument::SharedMachine(rewrite_shared(value))
+                            }
+                            PureFunctionArgument::Value(value) => {
+                                PureFunctionArgument::Value(rewrite_c_value(
+                                    value,
+                                    rewrite_term,
+                                    rewrite_pointer,
+                                    rewrite_shared,
+                                ))
+                            }
                             PureFunctionArgument::Algebraic(value) => {
                                 PureFunctionArgument::Algebraic(rewrite_algebraic(
                                     value,
                                     rewrite_term,
                                     rewrite_pointer,
+                                    rewrite_shared,
                                 ))
                             }
                             PureFunctionArgument::Integer(value) => {
@@ -1359,7 +1394,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
                                 element_type,
                             } => PureFunctionArgument::ArrayRef {
                                 memory: memory.clone(),
-                                pointer: rewrite_c_value(pointer, rewrite_term, rewrite_pointer),
+                                pointer: rewrite_c_value(
+                                    pointer,
+                                    rewrite_term,
+                                    rewrite_pointer,
+                                    rewrite_shared,
+                                ),
                                 element_type: *element_type,
                             },
                         })
@@ -1373,8 +1413,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             } => {
                 return AlgebraicTerm::if_then_else(
                     crate::kernel::rewrite_condition_through_bits(condition, rewrite_term),
-                    rewrite_algebraic(then_term, rewrite_term, rewrite_pointer),
-                    rewrite_algebraic(else_term, rewrite_term, rewrite_pointer),
+                    rewrite_algebraic(then_term, rewrite_term, rewrite_pointer, rewrite_shared),
+                    rewrite_algebraic(else_term, rewrite_term, rewrite_pointer, rewrite_shared),
                 );
             }
         };
@@ -1388,15 +1428,22 @@ fn rewrite_atomic_proposition_by_exact_equality(
         value: &AlgebraicValue,
         rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
+        rewrite_shared: &impl Fn(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> AlgebraicValue {
         match value {
-            AlgebraicValue::C(value) => {
-                AlgebraicValue::C(rewrite_c_value(value, rewrite_term, rewrite_pointer))
-            }
+            AlgebraicValue::C(value) => AlgebraicValue::C(rewrite_c_value(
+                value,
+                rewrite_term,
+                rewrite_pointer,
+                rewrite_shared,
+            )),
             AlgebraicValue::Integer(value) => AlgebraicValue::Integer(value.clone()),
-            AlgebraicValue::Algebraic(value) => {
-                AlgebraicValue::Algebraic(rewrite_algebraic(value, rewrite_term, rewrite_pointer))
-            }
+            AlgebraicValue::Algebraic(value) => AlgebraicValue::Algebraic(rewrite_algebraic(
+                value,
+                rewrite_term,
+                rewrite_pointer,
+                rewrite_shared,
+            )),
         }
     }
 
@@ -1754,16 +1801,26 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     block: pointer.block.clone(),
                     offset: rewrite_offset(&pointer.offset, left, right),
                 };
+                let rewrite_shared = |value: &SharedMachineIntegerTerm| {
+                    crate::kernel::memory_provenance::map_shared_pointer_index(
+                        value,
+                        |leaf| Some(rewrite_term(leaf)),
+                        rebuild_transported_machine_node,
+                    )
+                    .unwrap_or_else(|| value.clone())
+                };
                 Proposition::Equal(
                     Term::Algebraic(rewrite_algebraic(
                         goal_left,
                         &rewrite_term,
                         &rewrite_pointer,
+                        &rewrite_shared,
                     )),
                     Term::Algebraic(rewrite_algebraic(
                         goal_right,
                         &rewrite_term,
                         &rewrite_pointer,
+                        &rewrite_shared,
                     )),
                 )
             }
@@ -2075,16 +2132,26 @@ fn rewrite_atomic_proposition_by_exact_equality(
             Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {
                 let rewrite_term =
                     |term: &MachineTerm| rewrite_load_pointers(term, &rewrite_pointer);
+                let rewrite_shared = |value: &SharedMachineIntegerTerm| {
+                    crate::kernel::memory_provenance::map_shared_pointer_index(
+                        value,
+                        |leaf| Some(rewrite_term(leaf)),
+                        rebuild_transported_machine_node,
+                    )
+                    .unwrap_or_else(|| value.clone())
+                };
                 Proposition::Equal(
                     Term::Algebraic(rewrite_algebraic(
                         goal_left,
                         &rewrite_term,
                         &rewrite_pointer,
+                        &rewrite_shared,
                     )),
                     Term::Algebraic(rewrite_algebraic(
                         goal_right,
                         &rewrite_term,
                         &rewrite_pointer,
+                        &rewrite_shared,
                     )),
                 )
             }
@@ -2201,6 +2268,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     .iter()
                     .map(|argument| {
                         let value = match argument {
+                            PureFunctionArgument::SharedMachine(value) => {
+                                return PureFunctionArgument::SharedMachine(rewrite_pointer_index(
+                                    value, from, to,
+                                ));
+                            }
                             PureFunctionArgument::Value(CValue::Int32(value)) => {
                                 CValue::Int32(rewrite_term(value, from, to))
                             }
@@ -2477,16 +2549,20 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 block: pointer.block.clone(),
                 offset: rewrite_offset_term(&pointer.offset, left, right),
             };
+            let rewrite_shared =
+                |value: &SharedMachineIntegerTerm| rewrite_pointer_index(value, left, right);
             Proposition::Equal(
                 Term::Algebraic(rewrite_algebraic(
                     goal_left,
                     &rewrite_term,
                     &rewrite_pointer,
+                    &rewrite_shared,
                 )),
                 Term::Algebraic(rewrite_algebraic(
                     goal_right,
                     &rewrite_term,
                     &rewrite_pointer,
+                    &rewrite_shared,
                 )),
             )
         }

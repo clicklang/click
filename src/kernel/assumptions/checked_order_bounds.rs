@@ -54,7 +54,7 @@ impl CheckedOrderBounds {
     }
 
     fn word_key(term: MachineOperandView<'_>) -> MachineAtom {
-        MachineAtom::from_operand(MachineIntegerType::Int32, term)
+        MachineAtom::from_numeric_operand(MachineIntegerType::Int32, term)
     }
 
     fn adjust_word_endpoints(
@@ -182,8 +182,10 @@ impl CheckedOrderBounds {
                 else {
                     continue;
                 };
-                let key =
-                    MachineAtom::from_operand(MachineIntegerType::UInt64, endpoint.operand_view());
+                let key = MachineAtom::from_numeric_operand(
+                    MachineIntegerType::UInt64,
+                    endpoint.operand_view(),
+                );
                 self.adjust_wide_endpoint(key, number, upper, condition, value, insert);
                 // Shared arithmetic has no atomic load/cast payload to
                 // canonicalize; legacy inputs retain their exact alias key.
@@ -256,7 +258,7 @@ impl CheckedOrderBounds {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("read indexed signed wide bounds", 1);
         crate::instrumentation::record_deterministic_work(1);
-        let key = MachineAtom::from_operand(MachineIntegerType::UInt64, term);
+        let key = MachineAtom::from_numeric_operand(MachineIntegerType::UInt64, term);
         let bounds = self.signed_wide.get(&key)?;
         Some((
             bounds

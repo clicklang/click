@@ -8008,6 +8008,31 @@ pub fn integer_range_fold_predecessor_application(
     };
     let mut arguments = applied.arguments().to_vec();
     arguments[position] = match arguments.get(position)? {
+        PureFunctionArgument::SharedMachine(endpoint)
+            if matches!(
+                endpoint.ty(),
+                MachineIntegerType::Int32 | MachineIntegerType::UInt64
+            ) =>
+        {
+            let format = endpoint.ty();
+            let root = KernelTerm::retained_machine_operand(format, endpoint.operand_view());
+            let one = KernelTerm::retained_native_machine_operand(
+                format,
+                &crate::kernel::machine_integer::range::constant_word(format, &1.into()).unwrap(),
+            );
+            let operands = [root, one];
+            let node = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Subtract,
+                operands.clone(),
+            );
+            let node = crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node(
+                &node, &operands,
+            )?;
+            PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::from_shared(
+                format, node,
+            )?)
+        }
         PureFunctionArgument::Value(CValue::Int32(endpoint)) => {
             PureFunctionArgument::Value(CValue::Int32(MachineTerm::subtract(
                 endpoint.clone(),

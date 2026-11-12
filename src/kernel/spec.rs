@@ -53,7 +53,7 @@ pub(super) struct SpecPropositionPath {
 
 mod bindings;
 mod result;
-use result::{SpecCallArgument, SpecValue, native_call_arguments};
+use result::{SpecCallArgument, SpecValue, call_arguments};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct SpecExpressionPath {
@@ -4203,7 +4203,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             Ok(paths
                 .into_iter()
                 .map(|(arguments, facts, mut obligations)| {
-                    let arguments = native_call_arguments(arguments);
+                    let arguments = call_arguments(arguments);
                     if name == "to_nat"
                         && let Some(PureFunctionArgument::Integer(value)) = arguments.first()
                     {
@@ -5456,7 +5456,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
         .map(|(arguments, facts, obligations)| SpecIntegerPath {
             value: IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 name.to_string(),
-                native_call_arguments(arguments),
+                call_arguments(arguments),
             )),
             facts,
             obligations,
@@ -7624,7 +7624,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                             block: PointerBlock::PureFunctionApplication(
                                 SharedPureApplication::intern(
                                     name.to_string(),
-                                    native_call_arguments(arguments),
+                                    call_arguments(arguments),
                                 ),
                             ),
                             offset: PointerOffsetTerm::Constant(0),
@@ -7642,7 +7642,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 algebraic_type: parameter.algebraic_type(),
                 node: AlgebraicTermNode::PureFunctionApplication {
                     name: name.to_string(),
-                    arguments: native_call_arguments(arguments),
+                    arguments: call_arguments(arguments),
                 },
             }))
         } else if result_type == CType::Bool {
@@ -7650,14 +7650,14 @@ fn evaluate_spec_pure_function_application_paths_in(
             // (Stage 5), carried as its cast to `uint8` (rule C1).
             CValue::Bool(MachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
-                ConditionTerm::bool_application(name, native_call_arguments(arguments)),
+                ConditionTerm::bool_application(name, call_arguments(arguments)),
             ))
         } else {
             c_value_from_bitvector_term(
                 result_type,
                 MachineTerm::ClickFunctionApplication {
                     name: name.to_string(),
-                    arguments: native_call_arguments(arguments),
+                    arguments: call_arguments(arguments),
                 },
             )
             .ok_or(ExecutionLimit::UnsupportedPureFunctionResult(result_type))?

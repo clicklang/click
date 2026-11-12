@@ -950,3 +950,49 @@ fn pointer_domain_queries_register_stored_read_definitions_without_prior_address
     );
     assert!(!EqualityGraph::default().opaque_extent_is_root(&partial_read));
 }
+
+#[test]
+fn native_and_shared_word_arguments_have_the_same_typed_call_congruence() {
+    let _session = VerificationSession::enter();
+    let word = MachineTerm::add(var(998_730), MachineTerm::constant(3));
+    let root = crate::kernel::KernelTermImport::default()
+        .machine(crate::kernel::MachineIntegerType::Int32, &word);
+    let shared = PureFunctionArgument::SharedMachine(
+        crate::kernel::SharedMachineIntegerTerm::from_shared(
+            crate::kernel::MachineIntegerType::Int32,
+            root.clone(),
+        )
+        .unwrap(),
+    );
+    let native = scalar(word);
+    assert_eq!(native.machine_identity(), shared.machine_identity());
+    let native_application =
+        crate::kernel::SharedPureApplication::intern("typed_call".into(), vec![native.clone()]);
+    let shared_application =
+        crate::kernel::SharedPureApplication::intern("typed_call".into(), vec![shared.clone()]);
+    assert_eq!(native_application, shared_application);
+    assert!(matches!(
+        native_application.arguments()[0],
+        PureFunctionArgument::Value(_)
+    ));
+    assert!(matches!(
+        shared_application.arguments()[0],
+        PureFunctionArgument::SharedMachine(_)
+    ));
+    let held = eq(call("typed_call", vec![native]), var(998_731));
+    let context = PureFactContext::new().assume_proposition(held);
+    let exports = crate::kernel::KernelTermExport::machine_export_count();
+    assert!(context.contains_known(&eq(call("typed_call", vec![shared]), var(998_731))));
+    let unsigned = PureFunctionArgument::SharedMachine(
+        crate::kernel::SharedMachineIntegerTerm::from_shared(
+            crate::kernel::MachineIntegerType::UInt32,
+            root.with_machine_observation_type(crate::kernel::MachineIntegerType::UInt32),
+        )
+        .unwrap(),
+    );
+    assert!(!context.contains_known(&eq(call("typed_call", vec![unsigned]), var(998_731))));
+    assert_eq!(
+        crate::kernel::KernelTermExport::machine_export_count(),
+        exports
+    );
+}

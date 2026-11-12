@@ -305,3 +305,120 @@ fn constant_residue_projection_preserves_the_operation_alias_route() {
     let context = context.assume_condition(condition, true);
     assert!(context.contains_known(&Proposition::ConditionIs(native, truth)));
 }
+
+#[test]
+fn cited_mathematical_guards_share_native_and_retained_call_observations() {
+    use crate::kernel::{KernelTerm, SharedMachineIntegerTerm};
+    let _session = crate::kernel::VerificationSession::enter();
+    let call = |shared, name: &str| MachineTerm::ClickFunctionApplication {
+        name: name.into(),
+        arguments: vec![if shared {
+            PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::intern(
+                M::UInt64,
+                MachineTerm::uint64_constant(7),
+            ))
+        } else {
+            PureFunctionArgument::Value(CValue::UInt64(MachineTerm::uint64_constant(7)))
+        }],
+    };
+    let difference = |shared| MachineTerm::Binary {
+        format: M::UInt64,
+        op: crate::kernel::MachineBinaryOp::Subtract,
+        left: Box::new(call(shared, "guard_padded_length")),
+        right: Box::new(call(shared, "guard_decimal_length")),
+    };
+    // The second shape exercises the shared graph's opaque If atom, whose
+    // exact producer differs only in the pure-call argument representation.
+    for conditional in [false, true] {
+        let endpoint = |shared| {
+            if conditional {
+                MachineTerm::If {
+                    condition: Box::new(ConditionTerm::Variable(Variable(982798))),
+                    then_term: Box::new(difference(shared)),
+                    else_term: Box::new(MachineTerm::uint64_constant(2)),
+                }
+            } else {
+                difference(shared)
+            }
+        };
+        let native = I::from_machine(M::UInt64, endpoint(false)).unwrap();
+        let retained = I::Machine(
+            SharedMachineIntegerTerm::from_shared(
+                M::UInt64,
+                KernelTerm::retained_native_machine_operand(M::UInt64, &endpoint(true)),
+            )
+            .expect("shared arithmetic"),
+        );
+        let left = I::from_machine(M::UInt64, MachineTerm::Variable(Variable(982799))).unwrap();
+        for truth in [false, true] {
+            let premise =
+                ConditionTerm::IntegerLessThan(left.clone().into(), native.clone().into());
+            let query =
+                ConditionTerm::IntegerLessThan(left.clone().into(), retained.clone().into());
+            let mut graph = EqualityGraph::default();
+            graph.add_condition(&premise, truth);
+            assert!(graph.knows_condition(&query, truth));
+            assert!(!graph.knows_condition(&query, !truth));
+        }
+    }
+}
+
+#[test]
+fn narrow_call_bounds_preserve_retained_argument_observation_identity() {
+    use crate::kernel::{KernelTerm, SharedMachineIntegerTerm};
+    let _session = crate::kernel::VerificationSession::enter();
+    let length = |name: &str| MachineTerm::ClickFunctionApplication {
+        name: name.into(),
+        arguments: vec![PureFunctionArgument::Value(CValue::UInt64(
+            MachineTerm::Variable(Variable(982811)),
+        ))],
+    };
+    let subtract = |left, right| MachineTerm::Binary {
+        format: M::UInt64,
+        op: crate::kernel::MachineBinaryOp::Subtract,
+        left: Box::new(left),
+        right: Box::new(right),
+    };
+    let index = subtract(
+        MachineTerm::Variable(Variable(982812)),
+        subtract(length("padded_length"), length("decimal_length")),
+    );
+    let retained = SharedMachineIntegerTerm::from_shared(
+        M::UInt64,
+        KernelTerm::retained_native_machine_operand(M::UInt64, &index),
+    )
+    .expect("retained index");
+    let observed = SharedMachineIntegerTerm::intern(M::UInt64, index);
+    let bound = |index| {
+        ConditionTerm::narrow_compare(
+            M::UInt8,
+            crate::kernel::CompareRelation::LessEqual,
+            MachineTerm::Constant {
+                format: M::UInt8,
+                bits: 48,
+            },
+            MachineTerm::ClickFunctionApplication {
+                name: "decimal_digit".into(),
+                arguments: vec![PureFunctionArgument::SharedMachine(index)],
+            },
+        )
+    };
+    let premise = bound(observed);
+    let query = bound(retained);
+    let selected =
+        PureFactContext::new().assume_proposition(Proposition::ConditionIs(premise.clone(), true));
+    let widened = crate::kernel::machine_integer::comparison::narrow_fact_widening(&query)
+        .expect("narrow comparison");
+    assert_eq!(
+        selected.decide(&query),
+        Some(true),
+        "native narrow authority"
+    );
+    assert_eq!(selected.decide(&widened), Some(true), "widened authority");
+    let mut graph = EqualityGraph::default();
+    graph.add_condition(&premise, true);
+    assert!(
+        graph.knows_condition(&widened, true),
+        "widened graph authority"
+    );
+}

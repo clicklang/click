@@ -247,3 +247,92 @@ fn importing_an_opposite_numeric_reading_reuses_the_retained_word_dag() {
         }
     }
 }
+
+#[test]
+fn shared_call_argument_readers_keep_dags_through_collection_and_rewrite() {
+    let mut samples = Vec::new();
+    for depth in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let variable = Variable(998_720);
+        let replacement_variable = Variable(998_721);
+        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let argument = PureFunctionArgument::SharedMachine(
+                SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap(),
+            );
+            let application =
+                SharedPureApplication::intern("retained_argument".into(), vec![argument]);
+            let original = IntegerTerm::PureFunctionApplication(application);
+            let imported = KernelTermImport::default().integer(&original.clone().into());
+            let KernelTermNode::Call { arguments, .. } = imported.node() else {
+                panic!("common call");
+            };
+            assert_eq!(arguments[0], root);
+            let source = MachineTerm::Variable(variable);
+            let target = MachineTerm::Variable(replacement_variable);
+            let mut rewrite =
+                crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, &target);
+            let result = rewrite.term(&Term::Integer(original));
+            assert!(rewrite.refusal().is_none());
+            let Term::Integer(result) = result else {
+                panic!("Integer call");
+            };
+            let mut variables = BTreeSet::new();
+            crate::kernel::prelude::collect_integer_variables(&result, &mut variables);
+            assert!(variables.contains(&replacement_variable));
+            assert!(!variables.contains(&variable));
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 5 + 512,
+            "retained call work: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn repeated_call_payloads_share_identity_without_accumulating_versions() {
+    for count in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut interner = PureApplicationInterner {
+            buckets: HashMap::new(),
+            cleanup: VecDeque::new(),
+            next_id: 0,
+        };
+        let variable = Variable(998_730);
+        let native = PureFunctionArgument::Value(CValue::UInt32(MachineTerm::Variable(variable)));
+        let shared = PureFunctionArgument::SharedMachine(
+            SharedMachineIntegerTerm::from_shared(
+                MachineIntegerType::UInt32,
+                KernelTerm::variable(KernelType::C(CType::UInt32), variable),
+            )
+            .unwrap(),
+        );
+        let original = interner.intern("same_call".into(), vec![native.clone()]);
+        let mut versions = Vec::new();
+        for index in 0..count {
+            let argument = if index % 2 == 0 { &native } else { &shared };
+            let (version, work) = crate::instrumentation::measure_deterministic_work(|| {
+                interner.intern("same_call".into(), vec![argument.clone()])
+            });
+            assert_eq!(version.id(), original.id());
+            assert_eq!(version.arguments(), std::slice::from_ref(argument));
+            assert!(work < 32, "version {index}/{count}: {work}");
+            versions.push(version);
+        }
+        assert_eq!(interner.buckets.values().map(Vec::len).sum::<usize>(), 1);
+        assert_eq!(interner.cleanup.len(), 1);
+    }
+}

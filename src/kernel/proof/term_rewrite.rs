@@ -606,6 +606,7 @@ fn collect_argument_carriers(
     }
     match argument {
         PureFunctionArgument::Value(value) => collect_c_value_carriers(value, variables),
+        PureFunctionArgument::SharedMachine(value) => collect_machine_carriers(value, variables),
         PureFunctionArgument::Integer(value) => {
             collect_integer_shared_carriers(value, variables, seen)
         }
@@ -1477,6 +1478,13 @@ fn exhausted_sequence(term: &SequenceTerm) -> SequenceTerm {
 fn exhausted_argument(argument: &PureFunctionArgument) -> PureFunctionArgument {
     match argument {
         PureFunctionArgument::Value(value) => PureFunctionArgument::Value(exhausted_c_value(value)),
+        PureFunctionArgument::SharedMachine(value) => {
+            PureFunctionArgument::SharedMachine(SharedMachineIntegerTerm::index(
+                value.ty(),
+                crate::kernel::machine_integer::range::constant_word(value.ty(), &0.into())
+                    .unwrap(),
+            ))
+        }
         PureFunctionArgument::Integer(value) => {
             PureFunctionArgument::Integer(exhausted_integer(value.as_ref()).into())
         }
@@ -3678,6 +3686,9 @@ impl<'a> TermRewrite<'a> {
         }
         let result = match a {
             PureFunctionArgument::Value(v) => PureFunctionArgument::Value(self.value(v)),
+            PureFunctionArgument::SharedMachine(v) => {
+                PureFunctionArgument::SharedMachine(self.index_bits(v))
+            }
             PureFunctionArgument::Integer(v) => {
                 PureFunctionArgument::Integer(self.integer_shared(v).into())
             }
@@ -5945,11 +5956,100 @@ impl<'a> TermRewrite<'a> {
         native: &MachineTerm,
         source: MachineOperandView<'_>,
     ) -> bool {
+        fn same_payload(
+            rewrite: &mut TermRewrite<'_>,
+            left: &MachineTerm,
+            right: &MachineTerm,
+        ) -> bool {
+            fn native(view: MachineOperandView<'_>) -> &MachineTerm {
+                let MachineOperandView::Legacy(term) = view else {
+                    unreachable!("native syntax child")
+                };
+                term
+            }
+            let mut pending = vec![(left, right)];
+            while let Some((left, right)) = pending.pop() {
+                // This is matching work inside one existing rewrite visit,
+                // not another visit of the rewritten source expression.
+                rewrite.charge_rewrite_work(1);
+                if rewrite.checked_work_exhausted() {
+                    return false;
+                }
+                if std::ptr::eq(left, right) {
+                    continue;
+                }
+                // The only new equality here is a call's typed argument
+                // carrier choice. Keep every surrounding native syntax tag,
+                // operation format, cast spelling and binder identity exact.
+                if std::mem::discriminant(left) != std::mem::discriminant(right) {
+                    return false;
+                }
+                let a = MachineOperandView::Legacy(left);
+                let b = MachineOperandView::Legacy(right);
+                if let (Some((af, ao, av)), Some((bf, bo, bv))) = (a.binary(), b.binary()) {
+                    if (af, ao) != (bf, bo) {
+                        return false;
+                    }
+                    pending.extend(av.into_iter().zip(bv).map(|(a, b)| (native(a), native(b))));
+                    continue;
+                }
+                if let (Some((af, ao, av)), Some((bf, bo, bv))) = (a.unary(), b.unary()) {
+                    if (af, ao) != (bf, bo) {
+                        return false;
+                    }
+                    pending.push((native(av), native(bv)));
+                    continue;
+                }
+                if let (Some((ae, af, at, av)), Some((be, bf, bt, bv))) = (a.cast(), b.cast()) {
+                    if (ae, af, at) != (be, bf, bt) {
+                        return false;
+                    }
+                    pending.push((native(av), native(bv)));
+                    continue;
+                }
+                match (left, right) {
+                    (
+                        MachineTerm::ClickFunctionApplication {
+                            name: a,
+                            arguments: av,
+                        },
+                        MachineTerm::ClickFunctionApplication {
+                            name: b,
+                            arguments: bv,
+                        },
+                    ) if a == b => {
+                        if SharedPureApplication::intern(a.clone(), av.clone())
+                            != SharedPureApplication::intern(b.clone(), bv.clone())
+                        {
+                            return false;
+                        }
+                    }
+                    (
+                        MachineTerm::If {
+                            condition: a,
+                            then_term: at,
+                            else_term: af,
+                        },
+                        MachineTerm::If {
+                            condition: b,
+                            then_term: bt,
+                            else_term: bf,
+                        },
+                    ) if a == b => {
+                        pending.push((at, bt));
+                        pending.push((af, bf));
+                    }
+                    _ if left == right => {}
+                    _ => return false,
+                }
+            }
+            true
+        }
         let MachineOperandView::Shared(root) = source else {
             let MachineOperandView::Legacy(source) = source else {
                 unreachable!()
             };
-            if native == source {
+            if same_payload(self, native, source) {
                 return true;
             }
             // Shared observations can retain a native read name for output.
@@ -6088,7 +6188,10 @@ impl<'a> TermRewrite<'a> {
                     pending.push((value, operand));
                 }
                 KernelTermNode::IntegerToMachine { .. } | KernelTermNode::Legacy(_) => {
-                    if shared.machine_conversion_leaf() != Some(native) {
+                    if !shared
+                        .machine_conversion_leaf()
+                        .is_some_and(|leaf| same_payload(self, leaf, native))
+                    {
                         return false;
                     }
                 }
@@ -6674,63 +6777,6 @@ mod tests {
                 input.clone()
             };
             assert_eq!(canonicalize_integer_to_machine_constant(input), expected);
-        }
-    }
-
-    #[test]
-    fn narrowing_rewrite_visits_scale_with_selected_expression() {
-        let from = MachineTerm::Variable(Variable(91));
-        let to = MachineTerm::Variable(Variable(92));
-        let make = |value: &MachineTerm, size| {
-            Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                name: "many".into(),
-                arguments: vec![
-                    PureFunctionArgument::Value(CValue::UInt32(
-                        MachineTerm::legacy_cast(
-                            MachineCastSpelling::UInt32From64,
-                            Box::new(value.clone())
-                        )
-                    ));
-                    size
-                ],
-            })
-        };
-        for size in [16, 64, 256] {
-            let mut rewrite = TermRewrite::for_bits(&from, &to);
-            assert_eq!(rewrite.term(&make(&from, size)), make(&to, size));
-            assert!(rewrite.changed);
-            assert_eq!(rewrite.visits, 2 + 2 * size);
-        }
-    }
-
-    #[test]
-    fn conditional_reduction_work_scales_with_selected_expression() {
-        let condition = ConditionTerm::Variable(Variable(51));
-        let conditions = HashMap::from([(condition.clone(), true)]);
-        for size in [16, 64, 256] {
-            let input = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                name: "many".into(),
-                arguments: vec![
-                    PureFunctionArgument::Value(CValue::Int32(MachineTerm::If {
-                        condition: Box::new(condition.clone()),
-                        then_term: Box::new(MachineTerm::constant(7)),
-                        else_term: Box::new(MachineTerm::constant(0)),
-                    },));
-                    size
-                ],
-            });
-            let expected = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
-                name: "many".into(),
-                arguments: vec![
-                    PureFunctionArgument::Value(
-                        CValue::Int32(MachineTerm::constant(7),)
-                    );
-                    size
-                ],
-            });
-            let mut rewrite = TermRewrite::for_conditions(&conditions);
-            assert_eq!(rewrite.term(&input), expected);
-            assert_eq!(rewrite.visits, 2 + 3 * size);
         }
     }
 
