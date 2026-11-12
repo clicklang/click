@@ -25,8 +25,9 @@ pub(super) fn shared_array_position(iterator: &str) -> CExpression {
     )
 }
 
-/// Assigns `target` the result of the library slice iterator operation
-/// `operation`, at element type `element`, on `arguments`.
+/// Assigns `target` the result of the slice iterator operation
+/// `operation`, at element type `element`, on `arguments`: one of the Rust
+/// calls `<[T]>::iter` and `Iterator::next`.
 fn slice_iter_call(
     target: String,
     operation: &str,
@@ -45,37 +46,84 @@ fn slice_iter_call(
 
 impl Context<'_> {
     /// Storage of a slice iterator that is one value of the library's
-    /// `SliceIter`. A terminator's condition is an expression, so the number
-    /// of elements left is read into a local of its own.
+    /// `SliceIter`. `next` borrows it mutably, so its value lives in its
+    /// object's memory, as a borrowed `Vec`'s does.
     pub(super) fn library_slice_iterator_storage(
         &mut self,
         name: &str,
         element: &Type,
     ) -> Result<CStatement, String> {
         pointer_type(element)?;
-        let left = format!("{name}_left");
-        if !self.locals.insert(name.into()) || !self.locals.insert(left.clone()) {
+        if !self.locals.insert(name.into()) {
             return Err("shared iterator state identity collision".into());
         }
         self.library_slice_iterators
             .insert(name.into(), element.clone());
-        Ok(c_seq(
-            c_declare(name, CType::Parameter(super::slice_iter_type(element)?)),
-            c_declare(left, CType::UInt64),
+        let value_type = CType::Parameter(super::slice_iter_type(element)?);
+        // Only the iterator a `next(&mut it)` borrows lives in memory; one
+        // that is only built and moved holds its value.
+        if !self.library_next_options.contains_key(name) {
+            return Ok(c_declare(name, value_type));
+        }
+        self.memory_values.insert(name.into(), value_type);
+        Ok(c_begin_aggregate_construction(
+            name.to_string(),
+            CAggregateLayout::holding_value(value_type),
         ))
     }
-    /// Reads how many elements the library iterator will still yield into
-    /// its `_left` local, when `iterator` is one. Each test of it reads it
-    /// afresh first, and the `next()` the test leads to uses that read.
-    pub(super) fn library_slice_read_left(&self, iterator: &str) -> Option<CStatement> {
-        let element = self.library_slice_iterators.get(iterator)?;
-        slice_iter_call(
-            format!("{iterator}_left"),
-            "len",
-            element,
-            vec![c_variable(iterator)],
-        )
-        .ok()
+    /// Storage of the `Option<&T>` a library slice iterator's `next()`
+    /// returns: a value of the library's `Option` at the reference.
+    pub(super) fn library_slice_option_storage(
+        &mut self,
+        name: &str,
+        element: &Type,
+    ) -> Result<CStatement, String> {
+        let spelling = element
+            .scalar_name()
+            .ok_or("shared array iterator requires an integer element")?;
+        if !self.locals.insert(name.into()) {
+            return Err("shared iterator state identity collision".into());
+        }
+        self.library_slice_options
+            .insert(name.into(), element.clone());
+        let option = super::super::standard_library::option_reference_name(spelling);
+        Ok(c_declare(name, CType::Parameter(EnumTypes::get(&option)?)))
+    }
+    /// The `next(&mut it)` call a test of the library iterator `iterator`
+    /// makes, assigning the `Option` it returns. The importer places the
+    /// call ahead of the test that reads its `Option`, as the compiler's
+    /// `match` on `next()` does.
+    pub(super) fn library_slice_next_call(&mut self, iterator: &str) -> Option<CStatement> {
+        let element = self.library_slice_iterators.get(iterator)?.clone();
+        let option = self.library_next_options.get(iterator)?.clone();
+        let address = self
+            .address(&E::Local {
+                name: iterator.to_string(),
+            })
+            .ok()?;
+        slice_iter_call(option, "next", &element, vec![address]).ok()
+    }
+    /// Stores the iterator value `assign` computes into a temporary into the
+    /// memory-backed library iterator `target`.
+    fn store_library_iterator(
+        &mut self,
+        target: &str,
+        assign: impl FnOnce(String) -> Result<CStatement, String>,
+    ) -> Result<CStatement, String> {
+        let Some(&value_type) = self.memory_values.get(target) else {
+            return assign(target.to_string());
+        };
+        let temporary = self.fresh_temporary()?;
+        let address = self.address(&E::Local {
+            name: target.to_string(),
+        })?;
+        Ok(c_seq(
+            c_seq(
+                c_declare(&temporary, value_type),
+                assign(temporary.clone())?,
+            ),
+            c_typed_store(address, c_variable(&temporary), value_type),
+        ))
     }
     pub(super) fn shared_array_storage(
         &mut self,
@@ -146,14 +194,17 @@ impl Context<'_> {
         )?;
         let (l_capture, l) = self.capture_operand(length, &Type::Usize)?;
         if let Some(element) = library {
-            return Ok(c_seq(
-                c_seq(p_capture, l_capture),
+            let call = |temporary: String| {
                 slice_iter_call(
-                    target.to_string(),
-                    "new",
+                    temporary,
+                    "iter",
                     &element,
                     vec![c_variable(&p), c_variable(&l)],
-                )?,
+                )
+            };
+            return Ok(c_seq(
+                c_seq(p_capture, l_capture),
+                self.store_library_iterator(target, call)?,
             ));
         }
         let begin = |length: CExpression| {
@@ -189,10 +240,14 @@ impl Context<'_> {
     }
     pub(super) fn shared_array_has_next(&self, iterator: &str) -> Result<CExpression, String> {
         if self.library_slice_iterators.contains_key(iterator) {
-            return Ok(c_less_than(
-                c_uint64_literal(0),
-                c_variable(format!("{iterator}_left")),
-            ));
+            let option = self
+                .library_next_options
+                .get(iterator)
+                .ok_or("library slice iterator test without its next() call")?;
+            return Ok(CExpression::EnumIs {
+                value: Box::new(c_variable(option)),
+                variant: "Some".into(),
+            });
         }
         if !self.shared_array_iterators.contains_key(iterator) {
             return Err("unknown shared iterator".into());
@@ -203,7 +258,7 @@ impl Context<'_> {
         ))
     }
     pub(super) fn shared_array_move(
-        &self,
+        &mut self,
         target: &str,
         source: &str,
     ) -> Result<CStatement, String> {
@@ -214,34 +269,22 @@ impl Context<'_> {
             if target == source || to != from {
                 return Err("invalid shared iterator move".into());
             }
-            return Ok(c_assign(target, c_variable(source)));
+            let value = self.expr(&E::Local {
+                name: source.to_string(),
+            })?;
+            let Some(&value_type) = self.memory_values.get(target) else {
+                return Ok(c_assign(target, value));
+            };
+            let address = self.address(&E::Local {
+                name: target.to_string(),
+            })?;
+            return Ok(c_typed_store(address, value, value_type));
         }
-        // An enumerated iterator keeps the hidden-state model; one built
-        // from a library iterator starts from what that iterator has left.
-        if let Some(element) = self.library_slice_iterators.get(source) {
-            if !self.shared_array_iterators.contains_key(target) {
-                return Err("invalid shared iterator move".into());
-            }
-            let value = || vec![c_variable(source)];
-            return Ok(c_seq(
-                c_assert(c_equal(
-                    c_variable(format!("{target}_live")),
-                    c_int32_literal(0),
-                )),
-                c_seq(
-                    slice_iter_call(format!("{target}_base"), "as_ptr", element, value())?,
-                    c_seq(
-                        slice_iter_call(format!("{target}_length"), "len", element, value())?,
-                        c_seq(
-                            c_assign(
-                                format!("{target}_remaining"),
-                                c_variable(format!("{target}_length")),
-                            ),
-                            c_assign(format!("{target}_live"), c_int32_literal(1)),
-                        ),
-                    ),
-                ),
-            ));
+        if self.library_slice_iterators.contains_key(source) {
+            return Err(
+                "enumerate over a slice iterator imported as a library value is not supported yet"
+                    .into(),
+            );
         }
         if target == source
             || !self.shared_array_iterators.contains_key(target)
@@ -288,31 +331,13 @@ impl Context<'_> {
         option: &str,
         yielded: CStatement,
     ) -> Result<CStatement, String> {
-        if let Some(element) = self.library_slice_iterators.get(iterator) {
-            if self.shared_array_options.get(option)
-                != Some(&scalar_type(element)?.to_kernel_type())
-            {
+        if self.library_slice_iterators.contains_key(iterator) {
+            // `next(&mut it)` ran ahead of the test that reads its `Option`
+            // (`library_slice_next_call`); this edge only continues.
+            if self.library_next_options.get(iterator).map(String::as_str) != Some(option) {
                 return Err("shared iterator Option element mismatch".into());
             }
-            let value = || vec![c_variable(iterator)];
-            // `next()`: the first element still to come, then the iterator
-            // after it. The test that led here read `_left` from this
-            // iterator.
-            let some = c_seq(
-                c_assign(format!("{option}_some"), c_int32_literal(1)),
-                c_seq(
-                    slice_iter_call(format!("{option}_pointer"), "as_ptr", element, value())?,
-                    c_seq(
-                        yielded,
-                        slice_iter_call(iterator.to_string(), "after_next", element, value())?,
-                    ),
-                ),
-            );
-            return Ok(c_if(
-                self.shared_array_has_next(iterator)?,
-                some,
-                c_assign(format!("{option}_some"), c_int32_literal(0)),
-            ));
+            return Ok(yielded);
         }
         if !self.shared_array_iterators.contains_key(iterator)
             || self.shared_array_iterators.get(iterator) != self.shared_array_options.get(option)

@@ -94,3 +94,71 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
         "{ambient:?}"
     );
 }
+
+/// A library value held in memory, such as a borrowed Rust iterator, is read
+/// as an algebraic load; exact comparison reads it as the stored value, at a
+/// cost in the reads compared and none in the memory's other cells.
+#[test]
+fn algebraic_read_comparison_forms_scale_with_selected_observations() {
+    fn work(selected: u64, unrelated: u64) -> usize {
+        let _session = VerificationSession::enter();
+        let address = |index| Pointer {
+            block: PointerBlock::Heap(index),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let algebraic_type = AlgebraicType {
+            rigid: true,
+            name: "SliceIter<uint8>".into(),
+            arguments: vec![],
+            variants: std::sync::Arc::new([]),
+            schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::new())),
+        };
+        let stored = |index| AlgebraicTerm {
+            algebraic_type: algebraic_type.clone(),
+            node: AlgebraicTermNode::Variable(Variable(991_000 + index)),
+        };
+        let mut memory = CMemory::new();
+        for index in 0..selected + unrelated {
+            memory = memory.store(address(index), CValue::Parameter(Box::new(stored(index))));
+        }
+        let memory = intern_c_memory(memory);
+        let goals: Vec<_> = (0..selected)
+            .map(|index| {
+                let read = AlgebraicTerm {
+                    algebraic_type: algebraic_type.clone(),
+                    node: AlgebraicTermNode::MemoryLoad {
+                        memory: memory.clone(),
+                        pointer: Box::new(address(index)),
+                    },
+                };
+                Proposition::ConditionIs(
+                    ConditionTerm::AlgebraicEqual(Box::new(read), Box::new(stored(index))),
+                    true,
+                )
+            })
+            .collect();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (index, goal) in (0..).zip(&goals) {
+                assert_eq!(
+                    comparison_form(goal),
+                    Some(Proposition::ConditionIs(
+                        ConditionTerm::AlgebraicEqual(
+                            Box::new(stored(index)),
+                            Box::new(stored(index))
+                        ),
+                        true,
+                    ))
+                );
+            }
+        });
+        work
+    }
+    let costs = [4, 8, 16, 32].map(|n| work(n, 0));
+    assert!(costs[0] > 0);
+    assert!(costs.windows(2).all(|p| p[1] <= 3 * p[0]), "{costs:?}");
+    let ambient = [0, 8, 32, 128].map(|n| work(8, n));
+    assert!(
+        ambient.iter().all(|cost| *cost == ambient[0]),
+        "{ambient:?}"
+    );
+}

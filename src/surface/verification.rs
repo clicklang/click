@@ -9176,6 +9176,16 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
                 crate::kernel::CType::UInt32 => "u32",
                 crate::kernel::CType::UInt64 => "usize",
                 crate::kernel::CType::Bool => "bool",
+                // A shared reference to a scalar, the item of a slice
+                // iterator: `Option<&u8>`.
+                crate::kernel::CType::Int8Pointer => "&i8",
+                crate::kernel::CType::Int16Pointer => "&i16",
+                crate::kernel::CType::Int32Pointer => "&i32",
+                crate::kernel::CType::Int64Pointer => "&i64",
+                crate::kernel::CType::UInt8Pointer => "&u8",
+                crate::kernel::CType::UInt16Pointer => "&u16",
+                crate::kernel::CType::UInt32Pointer => "&u32",
+                crate::kernel::CType::UInt64Pointer => "&usize",
                 _ => "?",
             }
             .into(),

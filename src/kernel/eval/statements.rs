@@ -5516,11 +5516,23 @@ pub(in crate::kernel) fn declare_aggregate_local(
     let mut state = state.clone();
     let pointer = local_declaration_pointer(&mut state, name)?;
     register_block_alignment(&pointer.block, layout.alignment_bytes());
-    state.set_memory(state.memory.clone().with_classed_block(
-        pointer.block.clone(),
-        declared_class,
-        layout.size_bytes(),
-    ));
+    // An object that holds one value of a library or enum type, a borrowed
+    // Rust `Vec` or iterator, is a scalar of that type: a loop frame keeps
+    // its owner as it keeps any automatic scalar's.
+    let memory = match layout.value_type() {
+        Some(value_type) => state.memory.clone().with_classed_scalar_block(
+            pointer.block.clone(),
+            layout.size_bytes(),
+            value_type,
+            declared_class,
+        ),
+        None => state.memory.clone().with_classed_block(
+            pointer.block.clone(),
+            declared_class,
+            layout.size_bytes(),
+        ),
+    };
+    state.set_memory(memory);
     state
         .locals
         .set_aggregate_object_at(name.to_string(), layout.clone(), pointer.clone());

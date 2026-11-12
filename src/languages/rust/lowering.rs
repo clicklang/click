@@ -100,7 +100,15 @@ impl EnumTypes {
                                     return Ok(nested);
                                 }
                                 let c_type = scalar_type(field)?;
-                                if c_type == C0Type::Void || c_type.is_pointer() {
+                                // The library's `Option` of a shared
+                                // reference, which a slice iterator's
+                                // `next()` returns, holds that reference.
+                                let reference_payload = declared.generic.as_deref()
+                                    == Some("Option")
+                                    && matches!(field, Type::Reference { mutable: false, .. });
+                                if c_type == C0Type::Void
+                                    || (c_type.is_pointer() && !reference_payload)
+                                {
                                     return Err(
                                         "Rust enum fields must be integers or booleans".to_string()
                                     );
@@ -229,6 +237,9 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             // An enum value is a spec value, as a type parameter's is.
             Type::Enum { name } => Ok(C0Type::ParameterPointer(EnumTypes::get(name)?)),
             Type::Vec { element } => Ok(C0Type::ParameterPointer(vec_type(element)?)),
+            Type::SharedArrayIterator { element } => {
+                Ok(C0Type::ParameterPointer(slice_iter_type(element)?))
+            }
             Type::Array { element, .. } => match element.as_ref() {
                 Type::I32 => Ok(C0Type::Int32Pointer),
                 Type::U8 => Ok(C0Type::UInt8Pointer),
@@ -698,6 +709,8 @@ fn lower_function(
     let mut cx = Context {
         shared_array_iterators: BTreeMap::new(),
         library_slice_iterators: BTreeMap::new(),
+        library_slice_options: BTreeMap::new(),
+        library_next_options: BTreeMap::new(),
         ranges: BTreeMap::new(),
         enumerated: BTreeSet::new(),
         shared_array_options: BTreeMap::new(),
@@ -770,6 +783,11 @@ struct Context<'a> {
     /// The slice iterators that are values of the library's `SliceIter`,
     /// with their element types.
     library_slice_iterators: BTreeMap<String, Type>,
+    /// The `Option<&T>` locals library slice iterators' `next()` returns,
+    /// with their element types.
+    library_slice_options: BTreeMap<String, Type>,
+    /// Each library slice iterator's `next()` result local.
+    library_next_options: BTreeMap<String, String>,
     /// The range locals, with their element type.
     ranges: BTreeMap<String, (Type, bool)>,
     /// The enumerated slice iterators and their `Option` locals.
@@ -1505,6 +1523,20 @@ impl Context<'_> {
     fn prepared_expr(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
         match e {
             E::EnumerateOptionIndex { option } => self.enumerate_option_index(option),
+            // The `Some` payload of a library iterator's `Option<&T>`: the
+            // test that led here established the variant.
+            E::SharedArrayOptionElement { option }
+                if self.library_slice_options.contains_key(option) =>
+            {
+                Ok((
+                    c_skip(),
+                    CExpression::EnumField {
+                        value: Box::new(c_variable(option)),
+                        variant: "Some".into(),
+                        index: 0,
+                    },
+                ))
+            }
             E::SharedArrayOptionElement { option } => {
                 if !self.shared_array_options.contains_key(option) {
                     return Err("unknown shared iterator Option".into());
@@ -2010,6 +2042,14 @@ impl Context<'_> {
         match e {
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
             E::RangeHasNext { iterator } => self.range_has_next(iterator),
+            E::SharedArrayOptionTag { option }
+                if self.library_slice_options.contains_key(option) =>
+            {
+                Ok(CExpression::EnumIs {
+                    value: Box::new(c_variable(option)),
+                    variant: "Some".into(),
+                })
+            }
             E::SharedArrayOptionTag { option } => {
                 if !self.shared_array_options.contains_key(option) {
                     return Err("unknown shared iterator Option".into());

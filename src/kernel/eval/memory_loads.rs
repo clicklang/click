@@ -2472,15 +2472,32 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     collector.collect(proposition);
     let mut variables = std::collections::BTreeSet::new();
     collector.extend_into(&mut variables);
+    let reads = collector.take_read_terms().collect::<Vec<_>>();
+    // A read of a library or enum value is the value its snapshot stores
+    // at that address, as a scalar read is: one cell lookup, no walk.
+    let algebraic_reads = reads
+        .iter()
+        .filter_map(|read| {
+            let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64) = read else {
+                return None;
+            };
+            let CValue::Parameter(stored) = memory.known_value(pointer)? else {
+                return None;
+            };
+            Some(((memory.arena_id(), pointer.as_ref().clone()), *stored))
+        })
+        .collect::<std::collections::HashMap<_, _>>();
     let replacements = variables
         .into_iter()
         .map(MachineTerm::Variable)
-        .chain(collector.take_read_terms())
+        .chain(reads)
         .filter_map(|read| read_over_write_value(&read).map(|value| (read, value)));
-    let mut resolved = crate::kernel::proof::term_rewrite::TermRewrite::comparison_read_batch(
-        proposition,
-        replacements,
-    )?;
+    let mut resolved =
+        crate::kernel::proof::term_rewrite::TermRewrite::comparison_read_batch_with_algebraic(
+            proposition,
+            replacements,
+            &algebraic_reads,
+        )?;
     if crate::instrumentation::deadline_exceeded_with_work(0) {
         return None;
     }

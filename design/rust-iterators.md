@@ -1,6 +1,12 @@
 # Rust iterators: one generic model, per-type library contracts
 
-Status: steps 1 and 2 done, step 3 under way. A Rust unit with
+Status: steps 1 and 2 done, step 3 under way and being revised: the
+iterator is imported through its Rust interface (`next(&mut it)` returning
+an `Option`), not as importer-made operations; see "Importing an iterator
+through its Rust interface". Slice iterators under `"iterators": "library"`
+are imported this way (`design/charon-trial/slice-iter`,
+`examples/rust-iterators`, `examples/rust-iter-references`); `chunks_exact`
+moves next, then the remaining fixtures. A Rust unit with
 `"iterators": "library"` imports its slice iterators as values of the
 library's `SliceIter` (`library/rust/slice_iter.click`,
 `design/charon-trial/slice-iter`); the switch is temporary and goes when
@@ -125,29 +131,79 @@ The proof combines the loop fact with the `chunks_exact` contract. On pass
 remaining-byte count and no hidden name. The loop needs no invariant about
 the iterator, only `decreases iter.len()`.
 
-## Where the hidden state goes
+## Importing an iterator through its Rust interface
 
-The importer still has to run the loop. Instead of one hand-built C model
-per kind, an iterator value becomes a value of a library type, as a `Vec<T>`
-is today. Each `next` call becomes a call whose contract is the generic
-`next` law. Each constructor becomes a call whose contract is that type's
-library contract. The lowering files above are replaced by this one path.
-The per-kind accessor table, `RustIteratorKind` and the old spellings
-(`iter_remaining`, `<prefix>_cursor`, `__rust_mir_*_remaining`) are removed.
+The importer imports an iterator the way it imports a `Vec`: through Rust's
+own interface, with each Rust call a call whose contract is stated over the
+library type. It does not take an iterator apart into C locals or invent
+operations Rust does not have.
+
+- **Construction** is the Rust call that builds the iterator, with Rust's
+  signature: `<[T]>::iter(s: &[T]) -> Iter<T>`, `<[T]>::chunks_exact(s, n)`,
+  and the `IntoIterator::into_iter` a `for` loop calls. Its contract says
+  which library value it returns: `ensures result == slice_iter::iter(s);`.
+- **`next`** is one call, `Iterator::next(it: &mut I) -> Option<Item>`. Its
+  contract is the next law at that type, over `old(*it)` and `*it`, as
+  `Vec::push`'s contract is over `old(*v)` and `*v`:
+
+  ```text
+  extern fn next(it: &mut Iter<u8>) -> Option<&u8> {
+      owns *it;
+      ensures len(old(*it)) == 0 implies result == None and *it == old(*it);
+      ensures 0 < len(old(*it)) implies
+          result == Some(as_ptr(as_slice(old(*it)))) and *it == after_next(old(*it));
+      // facts that need the element size, at this type:
+      ensures 0 < len(old(*it)) implies
+          as_ptr(as_slice(*it)) == as_ptr(as_slice(old(*it))) + 1u64;
+      ...
+  }
+  ```
+
+- **A `for` loop** is what the compiler produced: a loop that calls
+  `next(&mut it)` and matches the `Option`, `None` leaving the loop and
+  `Some(x)` binding the item. The importer keeps the call and the `match`.
+  The `Option` is a value of the library's `spec enum Option<T>` at the item
+  type, `Option<&u8>` here, as `Option<u32>` already is.
+
+The item a pass yields is then the `Some` payload. A `match` on a call
+result whose contract says it is `Some(t)` binds the payload to `t` itself,
+not to a fresh value equal to it (checked with `Option<u32>`: the payload of
+`wrap(x)`, whose contract is `result == Some(x)`, is `x`). So the item is
+`as_ptr(as_slice(start.after(k)))`, a term the loop's invariant already
+names, and a read through it needs no name for a compiler temporary.
+
+The per-kind lowering files, the `_left`, tag and pointer locals, and the
+importer-made operations (`SliceIter::len`, `SliceIter::as_ptr`,
+`SliceIter::after_next`, and the six `ChunksExact` ones) are removed. So are
+`RustIteratorKind`, the per-kind accessor table and the old spellings
+(`iter_remaining`, `<prefix>_cursor`, `__rust_mir_*_remaining`). A loop's
+`iter` stays the local `next` borrows.
+
+### What this needs
+
+- **`Option` of a reference.** The importer types `Option<T>` only for a
+  scalar, a crate enum or a type parameter
+  (`library_argument_spelling`). `Option<&T>` (slice iterators) and
+  `Option<&[T]>` (`chunks_exact`) need a pointer and a slice payload. Click
+  itself already has such values: `Option<uint8*>::Some(p)` type-checks and
+  verifies in a theorem.
+- **`&mut` of a local library value.** Already supported:
+  `design/charon-trial/vec-values` does `let mut v = Vec::new(); v.push(x)`.
+- **The loop's `Option` split.** `match` on the `next` result splits on its
+  tag. Knowing it is `Some` gives `0 < len(old(*it))` from the first
+  `ensures` by the existing rule for an implication whose consequent the
+  facts make an equation of two constructors (`docs/reference/rust.md`,
+  Result values), and then the second `ensures` gives the payload.
 
 ## Open questions
 
-1. **Pointer- and slice-valued items.** A `Vec<T>` holds integers. An
-   iterator's items can be references or slices, which are a pointer plus a
-   length, inside an `Option`. Library spec functions that return pointers
-   already exist (`examples/rbtree` returns `struct rb_node*`). Carrying
-   `Option<&[u8]>` through the importer as a library value is unproven, and
-   may need kernel support. Settled: none is needed. The importer keeps the
-   `Option` as its tag, pointer and length, read from `it.nth(0)`. The
-   pointer is the function result `slice::as_ptr(it.nth(0))`, equal to
-   `bytes + k * n` by a cited axiom, and a read through it is placed in the
-   slice's view from that equality and the offset's bound as a machine
-   value.
+1. **Pointer- and slice-valued items.** An iterator's items can be
+   references or slices inside an `Option`. The first answer, keeping the
+   `Option` as the importer's own tag, pointer and length locals, read
+   through importer-made calls, made the item a compiler temporary that a
+   proof could only name by a region number. Revised: the `Option` is a
+   library value at the item type (see "Importing an iterator through its
+   Rust interface").
 2. **Naming `start`.** The loop fact needs the iterator's value at loop
    entry. Candidates:
    - `loop(i).start`, a new built-in like `iterations`;
