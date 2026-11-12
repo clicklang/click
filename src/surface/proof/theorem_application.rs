@@ -776,7 +776,11 @@ fn instantiate_population_member_count_zero(
         };
         crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
             ClickError::new("population theorem has a premise obligation")
-                .with_spelled_requirement(guard.as_ref().clone(), surface, "empty population"),
+                .with_spelled_requirement(
+                    guard.as_ref().clone(),
+                    surface,
+                    "empty population".into(),
+                ),
         )?;
     } else if !exact_fact_is_available(guard, available) {
         return Err(error(format!(
