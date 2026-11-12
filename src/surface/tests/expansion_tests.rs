@@ -9695,9 +9695,10 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
         .expanded_proof_tactics()
         .expect("the checked execution apply should retain an expansion");
     assert!(matches!(
-        expanded.first(),
-        Some(ProofTactic::ApplyTheoremUsing { application, premises })
+        expanded.as_slice(),
+        [ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }, ..]
             if application.name == "click::integer::uint32_less_than_divisor_implies_remainder_is_value" && premises.len() == 1
+                && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
     ));
     let retained_source = verified[0]
         .expanded_proof_source()
@@ -10574,9 +10575,11 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
                 if matches!(
                     open.tactics.as_slice(),
                     [
+                        ProofTactic::Have(have),
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Step,
                     ] if application.name == "ordered_is_less_equal" && premises.len() == 1
+                        && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
                 )
         ),
         "{tactics:#?}"
@@ -11235,12 +11238,14 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
             Some(ProofTactic::Branch(branch))
                 if matches!(
                     branch.then_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
+                    [ProofTactic::Step, ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }]
                         if application.name == "ordered_is_less_equal" && premises.len() == 1
+                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
                 ) && matches!(
                     branch.else_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
+                    [ProofTactic::Step, ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }]
                         if application.name == "ordered_is_less_equal" && premises.len() == 1
+                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
                 )
         ),
         "{tactics:#?}"
