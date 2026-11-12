@@ -23,12 +23,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 application: application.clone(),
                 premises: premises.clone(),
             };
-            let applied = current.driver().observe_step(step, |_| {
-                current.finish_prepared_theorem_application(prepared, application, premises)
-            })?;
-            return Ok(current
-                .driver()
-                .spell_applied_conclusions(application, applied));
+            return current.driver().observe_step(step, |_| {
+                let applied =
+                    current.finish_prepared_theorem_application(prepared, application, premises)?;
+                Ok(current
+                    .driver()
+                    .spell_applied_conclusions(application, applied))
+            });
         }
         let driver_proof = self.proof;
         let Some(step) = crate::kernel::search::ProofSearch::select_theorem_application_step(
