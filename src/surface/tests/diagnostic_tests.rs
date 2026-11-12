@@ -4604,10 +4604,12 @@ fn trace_marks_a_dropped_cell_and_the_read_history_stop() {
         int32 read_first(int32 j) {
             requires 1 <= j;
             requires j <= 4;
-            requires j != 1;
-            ensures result == 7;
+            ensures result == 7 or result == 1;
         }
     "#;
+    // With `j != 1` the store search proves the fact by a strict bound
+    // (`a_store_index_bound_and_disequality_keep_a_cached_element.md`); here
+    // `j` may be 1, so the search misses it.
     let c = "int32 read_first(int32 j) { int32 a[4]; a[0] = 7; a[j - 1] = 1; int32 r = a[0]; return r; }";
     with_proof_trace("read_first", || {
         let error = verify_c0_sources(source, &[("f.c", c)])

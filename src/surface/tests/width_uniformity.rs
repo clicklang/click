@@ -114,10 +114,6 @@ impl Applies {
 /// `roadmap/standard-library.md` ("Width-uniformity gaps").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Gap {
-    /// `less_than_from_not_equal` is a node of the `signed_int32` certificate
-    /// only; the Integer certificate has no `!=` step, so `a <= b`,
-    /// `a != b` gives `a < b` at `int32` alone (and not over `Integer`).
-    NotEqualOrder,
     /// `to_T(z)` lowers to an opaque bounded operation that no rule relates
     /// to `z`; the library's `to_*_round_trip` laws are kernel standard
     /// theorems.
@@ -370,9 +366,7 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    requires a != b;\n    ensures a < b;\n",
             )
         },
-        gaps: gaps_at!(Gap::NotEqualOrder;
-            Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16, Ty::UInt32,
-            Ty::Int64, Ty::UInt64, Ty::Int128, Ty::UInt128),
+        gaps: &[],
     },
     Family {
         name: "positive_is_nonnegative",

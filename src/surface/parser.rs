@@ -12219,6 +12219,22 @@ impl Parser {
                         result,
                     });
                 }
+                "less_than_from_not_equal" => {
+                    let bound = self.expect_index("non-strict bound")?;
+                    self.expect(Token::Comma)?;
+                    let index = self.expect_index("disequality premise index")?;
+                    self.expect(Token::Colon)?;
+                    let proposition = self.parse_proposition()?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(IntegerCertificateNode::StrictFromDisequal {
+                        bound,
+                        index,
+                        proposition,
+                        result,
+                    });
+                }
                 "negated_goal" => {
                     self.expect(Token::FatArrow)?;
                     let result = self.parse_proposition()?;

@@ -2532,21 +2532,41 @@ impl<'a> Proof<'a> {
                     })
                 })
             };
+        // A disequality a strict bound cites agrees with another declaration
+        // when some reading of each has the same difference, either side
+        // first: at most two readings per side.
+        let same_disequality = |left: &crate::kernel::Proposition,
+                                right: &crate::kernel::Proposition| {
+            use crate::kernel::proof::integer_arithmetic::{
+                IntegerAffineRelation, integer_disequality_claims, negate_claim,
+            };
+            let right = integer_disequality_claims(right);
+            integer_disequality_claims(left).iter().any(|left| {
+                let negated = negate_claim(left, IntegerAffineRelation::Equal);
+                right.iter().any(|right| right == left || *right == negated)
+            })
+        };
         // A disequality an excluded bound cites is a premise too; it has no
         // affine claim, so two declarations of it agree by the bound.
         let same_premise = |left: &crate::kernel::Proposition,
                             right: &crate::kernel::Proposition| {
-            same_integer_claim(left, right) || {
-                let bound = crate::kernel::proof::integer_arithmetic::excluded_type_bound(left);
-                bound.is_some()
-                    && bound == crate::kernel::proof::integer_arithmetic::excluded_type_bound(right)
-            }
+            same_integer_claim(left, right)
+                || {
+                    let bound = crate::kernel::proof::integer_arithmetic::excluded_type_bound(left);
+                    bound.is_some()
+                        && bound
+                            == crate::kernel::proof::integer_arithmetic::excluded_type_bound(right)
+                }
+                || same_disequality(left, right)
         };
         for node in &certificate.nodes {
             let (IntegerCertificateNode::Premise {
                 index, proposition, ..
             }
             | IntegerCertificateNode::ExcludedTypeBound {
+                index, proposition, ..
+            }
+            | IntegerCertificateNode::StrictFromDisequal {
                 index, proposition, ..
             }) = node
             else {
@@ -2834,6 +2854,37 @@ impl<'a> Proof<'a> {
                     IntegerArithmeticNode::ExcludedTypeBound {
                         index: *index,
                         result: claim(self, result, "integer certificate excluded bound", false)?,
+                    }
+                }
+                IntegerCertificateNode::StrictFromDisequal {
+                    bound,
+                    index,
+                    proposition,
+                    result,
+                } => {
+                    let supplied = premises.get(*index).ok_or_else(|| {
+                        self.step_error(format!(
+                            "integer certificate premise {index} is out of range"
+                        ))
+                    })?;
+                    let declared = self.lower_integer_surface_proposition(
+                        proposition,
+                        "integer certificate disequality premise",
+                    )?;
+                    if crate::kernel::proof::integer_arithmetic::integer_disequality_claims(
+                        &declared,
+                    )
+                    .is_empty()
+                        || !same_disequality(supplied, &declared)
+                    {
+                        return Err(self.step_error(format!(
+                            "integer certificate premise {index} does not match its declared disequality"
+                        )));
+                    }
+                    IntegerArithmeticNode::StrictFromDisequal {
+                        bound: *bound,
+                        disequal: *index,
+                        result: claim(self, result, "integer certificate strict bound", false)?,
                     }
                 }
                 IntegerCertificateNode::Divide {

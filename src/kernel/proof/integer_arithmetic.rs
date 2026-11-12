@@ -99,6 +99,18 @@ pub(crate) enum IntegerArithmeticNode {
         index: usize,
         result: IntegerAffineClaim,
     },
+    /// A non-strict bound and a disequality of the same difference give the
+    /// strict bound: from node `bound`, `t <= 0`, and premise `disequal`,
+    /// `l != r` with `l - r` equal to `t` or `-t`, the claim `t + 1 <= 0`
+    /// ([`integer_disequality_claims`]). Over the integers `t <= 0` and
+    /// `t != 0` leave `t <= -1`. The Integer counterpart of the
+    /// `signed_int32` certificate's `less_than_from_not_equal`, stated once
+    /// for every format and for plain `Integer`.
+    StrictFromDisequal {
+        bound: usize,
+        disequal: usize,
+        result: IntegerAffineClaim,
+    },
 }
 
 /// A flat, locally checkable linear arithmetic certificate.
@@ -351,6 +363,45 @@ impl IntegerArithmeticCertificate {
                     }
                     expected
                 }
+                IntegerArithmeticNode::StrictFromDisequal {
+                    bound,
+                    disequal,
+                    result,
+                } => {
+                    let bound = checked
+                        .get(*bound)
+                        .ok_or(IntegerArithmeticCheckError::InvalidNodeReference(*bound))?;
+                    if bound.relation != IntegerAffineRelation::LessEqual {
+                        return Err(IntegerArithmeticCheckError::InvalidRelation(node_index));
+                    }
+                    let premise = premises
+                        .get(*disequal)
+                        .ok_or(IntegerArithmeticCheckError::InvalidPremise(*disequal))?;
+                    // One reading per side of the one cited disequality; the
+                    // bound is matched as it stands or negated, never searched.
+                    let differences = integer_disequality_claims(premise);
+                    if differences.is_empty() {
+                        return Err(IntegerArithmeticCheckError::UnsupportedPremise(*disequal));
+                    }
+                    if !charge_claim_work(bound) {
+                        return Err(IntegerArithmeticCheckError::WorkLimitExceeded);
+                    }
+                    let matches = differences.iter().any(|difference| {
+                        charge_claim_work(difference)
+                            && ((difference.terms == bound.terms
+                                && difference.constant == bound.constant)
+                                || claims_are_opposites(difference, bound))
+                    });
+                    if !matches {
+                        return Err(IntegerArithmeticCheckError::NodeResultMismatch(node_index));
+                    }
+                    let mut expected = bound.clone();
+                    expected.constant += BigInt::one();
+                    if &expected != result {
+                        return Err(IntegerArithmeticCheckError::NodeResultMismatch(node_index));
+                    }
+                    expected
+                }
                 IntegerArithmeticNode::Divide {
                     source,
                     divisor,
@@ -557,6 +608,75 @@ fn integer_disequality(
         (_, IntegerTerm::Machine(value)) => Some((value.clone(), literal_integer_value(left)?)),
         _ => None,
     }
+}
+
+/// The differences `l - r` of a disequality `l != r`, as `Equal` claims
+/// whose terms and constant are the difference's, one per exact reading (a
+/// native disequality of 32- or 64-bit words has two, as for
+/// [`integer_affine_claims`]). Empty when the proposition is no
+/// disequality, or one whose difference has no atom: a disequality of
+/// constants is already a claim. `StrictFromDisequal` reads it.
+pub(crate) fn integer_disequality_claims(proposition: &Proposition) -> Vec<IntegerAffineClaim> {
+    let (condition, value) = match proposition {
+        Proposition::ConditionIs(condition, value) => (condition, *value),
+        Proposition::Not(body) => match body.as_ref() {
+            Proposition::ConditionIs(condition, value) => (condition, !value),
+            _ => return Vec::new(),
+        },
+        _ => return Vec::new(),
+    };
+    let readings = if matches!(
+        condition,
+        crate::kernel::integer_comparison_condition!(_, _)
+    ) {
+        vec![Proposition::ConditionIs(condition.clone(), value)]
+    } else {
+        crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+            &Proposition::ConditionIs(condition.clone(), value),
+        )
+    };
+    let mut context = IntegerAffineCollectionContext::default();
+    let mut differences = Vec::with_capacity(readings.len());
+    for reading in &readings {
+        let (left, right) = match reading {
+            Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true)
+            | Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), false) => {
+                (left, right)
+            }
+            _ => continue,
+        };
+        let mut terms = BTreeMap::new();
+        let mut constant = BigInt::zero();
+        if collect_integer_affine_terms(
+            left,
+            &BigInt::one(),
+            &mut terms,
+            &mut constant,
+            &mut context,
+        )
+        .is_none()
+            || collect_integer_affine_terms(
+                right,
+                &BigInt::from(-1),
+                &mut terms,
+                &mut constant,
+                &mut context,
+            )
+            .is_none()
+            || terms.is_empty()
+        {
+            continue;
+        }
+        let difference = IntegerAffineClaim {
+            relation: IntegerAffineRelation::Equal,
+            terms,
+            constant,
+        };
+        if !differences.contains(&difference) {
+            differences.push(difference);
+        }
+    }
+    differences
 }
 
 /// The bound a disequality with a machine type's endpoint gives:
@@ -2082,6 +2202,152 @@ mod tests {
             true,
         );
         assert_eq!(excluded_type_bound(&equal), None);
+    }
+
+    fn strict_from_disequal(
+        bound: Proposition,
+        disequal: Proposition,
+        goal: &Proposition,
+    ) -> Result<(), IntegerArithmeticCheckError> {
+        let mut strict = claim(&bound);
+        strict.constant += BigInt::one();
+        IntegerArithmeticCertificate {
+            nodes: vec![
+                premise(0, &bound),
+                IntegerArithmeticNode::StrictFromDisequal {
+                    bound: 0,
+                    disequal: 1,
+                    result: strict,
+                },
+            ],
+            conclusion: 1,
+        }
+        .check(goal, &[bound, disequal])
+    }
+
+    fn not_equal(left: IntegerTerm, right: IntegerTerm) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::IntegerNotEqual(left.into(), right.into()),
+            true,
+        )
+    }
+
+    #[test]
+    fn a_disequality_makes_a_bound_of_its_difference_strict() {
+        use crate::kernel::{CompareRelation, MachineIntegerType, MachineTerm};
+        let (a, b) = (variable(97401), variable(97402));
+        let strict = proposition(ConditionTerm::IntegerLessThan(
+            a.clone().into(),
+            b.clone().into(),
+        ));
+        // Either side of the disequality first, and as `not (a == b)`.
+        for disequal in [
+            not_equal(a.clone(), b.clone()),
+            not_equal(b.clone(), a.clone()),
+            Proposition::ConditionIs(ConditionTerm::integer_equal(a.clone(), b.clone()), false),
+        ] {
+            assert_eq!(
+                strict_from_disequal(less_equal(a.clone(), b.clone()), disequal, &strict),
+                Ok(())
+            );
+        }
+        // A constant side: `x <= 5`, `x != 5` gives `x < 5`.
+        assert_eq!(
+            strict_from_disequal(
+                less_equal(a.clone(), IntegerTerm::constant_i64(5)),
+                not_equal(IntegerTerm::constant_i64(5), a.clone()),
+                &proposition(ConditionTerm::IntegerLessThan(
+                    a.clone().into(),
+                    IntegerTerm::constant_i64(5).into(),
+                )),
+            ),
+            Ok(())
+        );
+        // A native `int64` disequality is read as its Integer reading.
+        let word = |id| MachineTerm::Variable(Variable(id));
+        let observe = |id| IntegerTerm::from_machine(MachineIntegerType::Int64, word(id)).unwrap();
+        let native = Proposition::ConditionIs(
+            ConditionTerm::machine_compare(
+                MachineIntegerType::Int64,
+                CompareRelation::Equal,
+                word(97403),
+                word(97404),
+            ),
+            false,
+        );
+        assert_eq!(
+            strict_from_disequal(
+                less_equal(observe(97403), observe(97404)),
+                native,
+                &proposition(ConditionTerm::IntegerLessThan(
+                    observe(97403).into(),
+                    observe(97404).into(),
+                )),
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_strict_bound_needs_the_disequality_of_its_own_difference() {
+        let (a, b, c) = (variable(97411), variable(97412), variable(97413));
+        let strict = proposition(ConditionTerm::IntegerLessThan(
+            a.clone().into(),
+            b.clone().into(),
+        ));
+        // Another difference, a shifted one, an equality and a bound in
+        // place of the disequality are refused.
+        for disequal in [
+            not_equal(a.clone(), c.clone()),
+            not_equal(
+                a.clone(),
+                IntegerTerm::add(b.clone(), IntegerTerm::constant_i64(1)),
+            ),
+            proposition(ConditionTerm::integer_equal(a.clone(), b.clone())),
+            less_equal(a.clone(), b.clone()),
+        ] {
+            assert!(
+                strict_from_disequal(less_equal(a.clone(), b.clone()), disequal.clone(), &strict)
+                    .is_err(),
+                "{disequal:?}"
+            );
+        }
+        // The result is exactly one stronger than the bound.
+        let bound = less_equal(a.clone(), b.clone());
+        let mut twice = claim(&bound);
+        twice.constant += BigInt::from(2);
+        let certificate = IntegerArithmeticCertificate {
+            nodes: vec![
+                premise(0, &bound),
+                IntegerArithmeticNode::StrictFromDisequal {
+                    bound: 0,
+                    disequal: 1,
+                    result: twice,
+                },
+            ],
+            conclusion: 1,
+        };
+        assert_eq!(
+            certificate.check(&strict, &[bound.clone(), not_equal(a.clone(), b.clone())]),
+            Err(IntegerArithmeticCheckError::NodeResultMismatch(1))
+        );
+        // An equality bound is no non-strict bound.
+        let equality = proposition(ConditionTerm::integer_equal(a.clone(), b.clone()));
+        let certificate = IntegerArithmeticCertificate {
+            nodes: vec![
+                premise(0, &equality),
+                IntegerArithmeticNode::StrictFromDisequal {
+                    bound: 0,
+                    disequal: 1,
+                    result: claim(&strict),
+                },
+            ],
+            conclusion: 1,
+        };
+        assert_eq!(
+            certificate.check(&strict, &[equality, not_equal(a, b)]),
+            Err(IntegerArithmeticCheckError::InvalidRelation(1))
+        );
     }
 
     #[test]

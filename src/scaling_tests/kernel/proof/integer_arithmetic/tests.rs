@@ -285,3 +285,51 @@ fn constant_arithmetic_checking_visits_shared_nodes_once_and_bounds_squaring() {
         "checking must refuse before evaluating a giant numeral"
     );
 }
+
+/// A strict step reads its one bound node and its one cited disequality;
+/// unrelated premises beside them add no work.
+#[test]
+fn strict_from_disequal_ignores_unrelated_premises() {
+    let (a, b) = (variable(97501), variable(97502));
+    let bound = less_equal(a.clone(), b.clone());
+    let disequal = Proposition::ConditionIs(
+        ConditionTerm::IntegerNotEqual(a.clone().into(), b.clone().into()),
+        true,
+    );
+    let goal = proposition(ConditionTerm::IntegerLessThan(a.into(), b.into()));
+    let mut strict = claim(&bound);
+    strict.constant += BigInt::one();
+    let certificate = IntegerArithmeticCertificate {
+        nodes: vec![
+            premise(0, &bound),
+            IntegerArithmeticNode::StrictFromDisequal {
+                bound: 0,
+                disequal: 1,
+                result: strict,
+            },
+        ],
+        conclusion: 1,
+    };
+    let mut samples = Vec::new();
+    for size in [0u64, 16, 256, 4096] {
+        let mut premises = vec![bound.clone(), disequal.clone()];
+        premises.extend((0..size).map(|extra| {
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerNotEqual(
+                    variable(98000 + extra).into(),
+                    variable(99000 + extra).into(),
+                ),
+                true,
+            )
+        }));
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            certificate.check(&goal, &premises)
+        });
+        assert_eq!(result, Ok(()));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}

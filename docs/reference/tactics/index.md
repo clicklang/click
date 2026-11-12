@@ -210,8 +210,11 @@ four dropped elements per statement, and proves each only by the signed
 interval certificate over its variables' bounds, an order between the two
 indices by selected-premise arithmetic, or the disequality bridge of
 [`solve`'s arithmetic](#arithmetic-with-selected-premises) (a case split on the index
-equality), not by the rest of `solve`. Bounds such as `2 <= m` or `1 <= j`, or
-the Integer fact `m - 1 != 0` where `m - 1` cannot wrap, suffice. Expansion writes the `have` before the
+equality), not by the rest of `solve`. Bounds such as `2 <= m` or `1 <= j`,
+`1 <= m` with `m != 1` (a bound made strict by a disequality of its own
+difference,
+[`a_store_index_bound_and_disequality_keep_a_cached_element.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_index_bound_and_disequality_keep_a_cached_element.md)),
+or the Integer fact `m - 1 != 0` where `m - 1` cannot wrap, suffice. Expansion writes the `have` before the
 statement's `step()`. A disequality it misses leaves the statement as it
 ran. The path keeps the miss (at most 32 per path): a later refusal whose
 goal reads the dropped element names the statement and the disequality the
@@ -2142,7 +2145,12 @@ under these envelope rules common to the three forms:
   `excluded_bound N: D` (premise `N`, a disequality `v != MIN` or `v != MAX`
   of a machine `v`, as `MIN + 1 <= to_integer(v)` or `to_integer(v) <= MAX -
   1`) ([`operation_and_excluded_bounds_in_an_arithmetic_certificate.md`](https://github.com/clicklang/click/blob/master/mdtests/operation_and_excluded_bounds_in_an_arithmetic_certificate.md),
-  [`an_operation_bound_must_be_the_exact_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/an_operation_bound_must_be_the_exact_bound.md)); `negated_goal` (the integer
+  [`an_operation_bound_must_be_the_exact_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/an_operation_bound_must_be_the_exact_bound.md));
+  `less_than_from_not_equal i, N: D` (node `i`, a non-strict bound `t <= 0`,
+  made strict, `t + 1 <= 0`, by premise `N`, a disequality `l != r` whose
+  difference `l - r` is `t` or `-t`; `solve` adds it only after the linear
+  facts leave a counterexample, at every format and over `Integer`,
+  [`a_bound_and_a_disequality_give_a_strict_64_bit_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/a_bound_and_a_disequality_give_a_strict_64_bit_bound.md)); `negated_goal` (the integer
   negation of a bound goal); `divide i by g` (a non-strict bound by a positive
   common factor of its coefficients, rounding its constant).
 - The conclusion node's claim equals the goal's, or is a contradiction such

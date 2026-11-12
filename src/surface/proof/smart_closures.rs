@@ -724,6 +724,29 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges
                     certificate,
                 )
             }
+            IntegerArithmeticNode::StrictFromDisequal {
+                bound, disequal, ..
+            } => {
+                let (_, written) = premise_pairs.get(*disequal)?;
+                let (left, _, right) =
+                    integer_surface_non_strict_parts(node_surfaces.get(*bound)?)?;
+                let surface = ClickProposition::Comparison {
+                    left,
+                    operator: ComparisonOperator::LessThan,
+                    right,
+                };
+                let source_index = {
+                    let next = source_indices.len();
+                    *source_indices.entry(*disequal).or_insert(next)
+                };
+                let certificate = IntegerCertificateNode::StrictFromDisequal {
+                    bound: *bound,
+                    index: source_index,
+                    proposition: written.clone(),
+                    result: surface.clone(),
+                };
+                (surface, certificate)
+            }
             // A divided bound has no general source spelling derived from
             // its source's spelling; planners that divide spell the result
             // from their own atom table.

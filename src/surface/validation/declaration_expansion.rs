@@ -1768,6 +1768,17 @@ fn expand_declared_resource_certificate(
                                 proposition: proposition(premise)?,
                                 result: proposition(result)?,
                             },
+                            IntegerCertificateNode::StrictFromDisequal {
+                                bound,
+                                index,
+                                proposition: premise,
+                                result,
+                            } => IntegerCertificateNode::StrictFromDisequal {
+                                bound,
+                                index,
+                                proposition: proposition(premise)?,
+                                result: proposition(result)?,
+                            },
                             IntegerCertificateNode::NegatedGoal { result } => {
                                 IntegerCertificateNode::NegatedGoal {
                                     result: proposition(result)?,

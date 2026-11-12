@@ -676,6 +676,47 @@ theorem product_identity(a: uint16, b: uint16) {
         assert!(crate::surface::verify_click_theorems(&unbounded).is_err());
     }
 
+    /// `a <= b` and `a != b` give `a < b` by the Integer certificate's
+    /// `less_than_from_not_equal` at `int64` and over `Integer`; before, only
+    /// the `signed_int32` certificate had the step. The expansion replays
+    /// with no search.
+    #[test]
+    fn solve_makes_a_bound_strict_by_a_disequality_at_every_format() {
+        for ty in ["int64", "Integer"] {
+            let source = format!(
+                r#"
+theorem strict(a: {ty}, b: {ty}) {{
+    requires a <= b;
+    requires a != b;
+    ensures a < b by {{
+        have a < b by solve();
+        assumption();
+    }}
+}}
+"#
+            );
+            crate::surface::verify_click_theorems(&source).unwrap();
+            let line = source
+                .lines()
+                .position(|line| line.contains("by solve()"))
+                .unwrap();
+            let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
+            let expanded =
+                crate::surface::expand_c0_tactic_source_at(&source, &[], line + 1, column + 1)
+                    .unwrap();
+            assert!(
+                expanded.contains("less_than_from_not_equal") && !expanded.contains("signed_int32"),
+                "{ty}: {expanded}"
+            );
+            without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
+            let unequal = source.replace("    requires a != b;\n", "");
+            assert!(
+                crate::surface::verify_click_theorems(&unequal).is_err(),
+                "{ty}: `a <= b` alone gives no strict bound"
+            );
+        }
+    }
+
     #[test]
     fn solve_proves_an_equality_operation_identity_once() {
         // Each bound of the split equality is proved inside its own `have`,

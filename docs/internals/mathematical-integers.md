@@ -1331,6 +1331,16 @@ is `-8`), a symbolic divisor, a shift by the width or more, and a narrow or
 `excluded_bound N: D => P;` cites premise `N`, a disequality of a
 machine value with its type's minimum or maximum, as the bound it gives: an
 unsigned `v != 0` is `1 <= to_integer(v)` (`excluded_type_bound`).
+`less_than_from_not_equal i, N: D => P;` makes node `i`'s non-strict bound
+`t <= 0` strict, `t + 1 <= 0`, by premise `N`, a disequality whose
+difference is `t` or `-t` (`integer_disequality_claims`): over the integers
+`t <= 0` and `t != 0` leave `t <= -1`. It reads the one bound node and the
+one premise, as written or as a native comparison's Integer reading, so it
+holds at every format and over `Integer`. The refutation planner adds the
+strict rows only when the linear facts leave a counterexample, from an index
+of the premise and negated-goal bounds keyed by their difference, one
+lookup per disequality
+(`mdtests/a_bound_and_a_disequality_give_a_strict_64_bit_bound.md`).
 
 An Integer certificate premise that compares exact observations of one
 machine type, such as `1 <= to_integer(x)`, is also available when its native
