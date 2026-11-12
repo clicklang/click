@@ -3989,6 +3989,60 @@ impl PureFactContext {
         if parent.wide_bounds().is_some() || child.wide_bounds().is_some() {
             return crate::kernel::primitives::wide_memory_range_covers(parent, child, self);
         }
+        // Constant byte intervals can cross element-width boundaries. Compare
+        // the complete child span, not merely its first addressed element.
+        fn constant_delta(offset: &PointerOffsetTerm, base: &PointerOffsetTerm) -> Option<i64> {
+            if offset == base {
+                return Some(0);
+            }
+            match (offset, base) {
+                (PointerOffsetTerm::Constant(a), PointerOffsetTerm::Constant(b)) => {
+                    a.checked_sub(*b)
+                }
+                (PointerOffsetTerm::Add(a, b), _) => match b.as_ref() {
+                    PointerOffsetTerm::Constant(bytes) => {
+                        constant_delta(a, base)?.checked_add(*bytes)
+                    }
+                    _ => match a.as_ref() {
+                        PointerOffsetTerm::Constant(bytes) => {
+                            constant_delta(b, base)?.checked_add(*bytes)
+                        }
+                        _ => None,
+                    },
+                },
+                (_, PointerOffsetTerm::Add(a, b)) => match b.as_ref() {
+                    PointerOffsetTerm::Constant(bytes) => {
+                        constant_delta(offset, a)?.checked_sub(*bytes)
+                    }
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        if parent.base().block == child.base().block
+            && let (Some(delta), Some(lo), Some(hi), Some(inner_lo), Some(inner_hi)) = (
+                constant_delta(&child.base().offset, &parent.base().offset),
+                parent.start().as_const(),
+                parent.end().as_const(),
+                child.start().as_const(),
+                child.end().as_const(),
+            )
+        {
+            let lo = i128::from(lo as i32) * i128::from(parent.element_width());
+            let hi = i128::from(hi as i32) * i128::from(parent.element_width());
+            let inner_lo =
+                i128::from(delta) + i128::from(inner_lo as i32) * i128::from(child.element_width());
+            let inner_hi =
+                i128::from(delta) + i128::from(inner_hi as i32) * i128::from(child.element_width());
+            return lo <= hi
+                && inner_lo <= inner_hi
+                && (inner_lo == inner_hi || lo <= inner_lo && inner_hi <= hi);
+        }
+        // The element-membership rule below checks one parent element. A
+        // differently sized child needs a byte-span proof, not that rule.
+        if parent.element_width() != child.element_width() {
+            return false;
+        }
         if MachineTerm::subtract(child.end().clone(), child.start().clone()).as_const() == Some(1) {
             let child_pointer = child
                 .base
