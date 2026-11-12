@@ -5291,9 +5291,9 @@ fn rust_empty_slice_iterator_needs_no_read_authority() {
 const SLICE_SUM_SIDECAR: &str = include_str!("../examples/rust-iterators/sum.click");
 
 // A loop's iterator is `iter` inside the loop and `loop(i).iter` anywhere,
-// read through Rust's own methods. Inside a loop, bare `iter` is the
-// iterator, so it must be read through one; `loop(i).iter` of a loop that
-// advances no iterator names nothing.
+// read through Rust's own methods. A library iterator is a value, so bare
+// `iter` is that value and compares only for equality; `loop(i).iter` of a
+// loop that advances no iterator names nothing.
 #[test]
 fn slice_iterator_is_read_as_iter_through_its_methods() {
     let p = Project::from_fixture("examples/rust-iterators");
@@ -5305,7 +5305,7 @@ fn slice_iterator_is_read_as_iter_through_its_methods() {
         (
             "invariant iter.len() <= bytes.len();",
             "invariant iter <= bytes.len();",
-            "inside a loop, `iter` is the loop's iterator",
+            "algebraic values support only `==` and `!=` comparisons",
         ),
         (
             "have loop(0).iter.len() == 0u64;",
