@@ -227,39 +227,37 @@ a claim that expanded proofs cannot create `ProofSearch`.
 
 ## Operation discovery guards and reproduced crossings
 
-Test-build discovery guards enforce `ProofScope::join` and
-`Proof::finish_prepared_step`, in addition to the three theorem-application
+Test-build discovery guards enforce `ProofScope::join`,
+`Proof::finish_prepared_step`, `Proof::begin_contract_claim`, and kernel
+`ProofObject::focus_contract_claim`, in addition to the three theorem-application
 primitives. Driver obligation solving runs outside those operations. Source
 mutation tests prevent deleting or postponing their guards. The guards detect
 registered search, not uninstrumented loops or copying.
 
-The same guard probes cannot yet be retained on `begin_have`,
-`begin_contract_claim`, or `prepare_step`. The gate mdtest corpus reproduces
-six operation/entry pairs across those three operations:
+The same guard probes cannot yet be retained on `begin_have` or `prepare_step`.
+The gate mdtest corpus reproduces five operation/entry pairs across those two
+operations:
 
 | Operation | Discovery entry | Reproduction (`mdtests/`) |
 | --- | --- | --- |
 | `begin_have` | `owned_anchor_distinctness` | `a_held_matched_instance_without_a_typed_arm_does_not_type_its_argument.md` |
-| `begin_contract_claim` | `owned_anchor_distinctness` | `composite_resource_nested_observe_not_automatic.md` |
 | `prepare_step` | `loan_access` | `a_32_bit_cell_read_at_the_other_signedness_is_its_sign_cast.md` |
 | `prepare_step` | `owned_anchor_distinctness` | `a_32_bit_allocation_spelling_of_a_64_bit_block_is_refused.md` |
 | `prepare_step` | `ownership_overlap` | `a_call_map_gives_an_imported_let_parameter_its_value.md` |
 | `prepare_step` | `ownership_validity_candidates` | `a_callee_owns_a_window_of_a_64_bit_range.md` |
 
-These reuse four existing bridge entries; they are not six new independent
+These reuse four existing bridge entries; they are not five new independent
 walks. A first guard failure can mask a later dependency. No guard escape was
 added, and the existing source dependency records remain frozen.
 
 Have opening no longer reconstructs a composition-only context. Other selected
 observation routes can still derive separation before the written proof runs.
 `single_write_resource_transport_expands_to_preserve_without_search`
-is a focused positive reproduction. Claim opening's captured stack is
-`focus_contract_claim` → `with_selected_resource_separation` → resource
-containment/range equality → pointer disequality → owned-anchor discovery.
-That is selected observation setup, not implicit solve of an evaluation
-prerequisite. Move this proof-producing observation into expandable reasoning,
-or replace it with an explicit selected composition rule; moving it to the
-driver without exposing the reasoning would not remove hidden search.
+is a focused positive reproduction. Claim opening retains its goal and reports
+missing evaluation prerequisites; it does not materialize the separation being
+claimed. The explicit proof can use the exact partition rule in `assumption()`
+or ordinary separation laws. Driver-owned implicit solve remains outside the
+operation guard.
 
 The loan entry records discovery before its fast shortcuts. In
 `single_write_transport_expands_to_preserve_without_search`, the no-active-loan
@@ -268,8 +266,6 @@ store. Separate the constant-time decision from alias enumeration and
 active-loan candidate checks, then measure the active-loan route and identify
 its explicit evidence before changing loan safety behavior.
 
-With the have/preparation probes removed, the gate mdtest pass succeeds on
-5,222 of 5,223 fixtures and exposes the claim-opening crossing above. No scope
-completion or prepared-publication discovery occurs in that pass. These are
-scoped reachability results, not fresh complete-operation scaling curves or a
-global fast-proof guarantee.
+These guards establish absence of registered discovery on their exercised
+routes, not fresh complete-operation scaling curves or a global fast-proof
+guarantee. Have opening and statement preparation remain separate work.

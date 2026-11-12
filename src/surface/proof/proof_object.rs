@@ -3176,12 +3176,9 @@ impl<'a> Proof<'a> {
                             .step_error("contract claim has an outstanding evaluation requirement"),
                     })?
             } else {
-                // Resource compositions retain same-block separation compactly in
-                // `PureFactContext`; materialize only the selected external
-                // separation goal. This keeps the proof state proportional to its
-                // checked inputs while making the kernel-certified, goal-indexed
-                // projection an exact fact for the ordinary `Assumption` step.
-                let facts = self.facts().with_selected_resource_separation(&goal);
+                // Focusing a goal does not prove it. Its written or implicit
+                // proof applies the selected partition rule explicitly.
+                let facts = self.facts().clone();
                 KernelProofObject::root(self.state().locals().clone(), {
                     let context = BranchState {
                         facts,
