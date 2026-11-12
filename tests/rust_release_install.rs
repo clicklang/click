@@ -38,7 +38,7 @@ fn rust_release_archive_installs_and_verifies() {
     assert!(!home.join("versions").exists());
     success(
         Command::new(&launcher)
-            .args(["install", version, "--rust"])
+            .args(["version", "add", version, "--rust"])
             .current_dir(t.path())
             .env("CLICK_HOME", &home)
             .env("HOME", home.join("empty-home"))
@@ -66,7 +66,7 @@ fn rust_release_archive_installs_and_verifies() {
     let binary = installed.join("bin/click");
     let profile: serde_json::Value =
         serde_json::from_str(include_str!("../src/languages/rust/charon-profile.json")).unwrap();
-    let listed = cli(&binary, &relocated, t.path(), &["versions"]);
+    let listed = cli(&binary, &relocated, t.path(), &["version", "list"]);
     assert!(listed.status.success());
     assert!(String::from_utf8_lossy(&listed.stdout).contains(&format!(
         "Rust frontend: Charon {}",
@@ -76,7 +76,7 @@ fn rust_release_archive_installs_and_verifies() {
         &binary,
         &relocated,
         t.path(),
-        &["install", version, "--rust"],
+        &["version", "add", version, "--rust"],
     ));
 
     let basic = t.path().join("basic");

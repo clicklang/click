@@ -25,29 +25,86 @@ impl Drop for TemporaryDirectory {
     }
 }
 
+/// `click upgrade`, and `click version` with its subcommand.
 pub fn entry_with(command: &str, arguments: Vec<String>) -> Result<(), String> {
-    if matches!(arguments.as_slice(), [argument] if argument == "--help" || argument == "-h") {
+    let is_help = |arguments: &[String]| matches!(arguments, [argument] if argument == "--help" || argument == "-h");
+    if is_help(&arguments) {
         println!("{}", usage());
         return Ok(());
     }
     match command {
-        "install" => install_command(&arguments),
-        "use" => use_command(&arguments),
-        "default" => default_command(&arguments),
-        "versions" => versions_command(&arguments),
+        "upgrade" => upgrade_command(&arguments),
+        "version" => {
+            let Some((subcommand, arguments)) = arguments.split_first() else {
+                return Err(usage().to_string());
+            };
+            if is_help(arguments) {
+                println!("{}", usage());
+                return Ok(());
+            }
+            match subcommand.as_str() {
+                "add" => add_command(arguments),
+                "use" => use_command(arguments),
+                "default" => default_command(arguments),
+                "list" => list_command(arguments),
+                "remove" => remove_command(arguments),
+                _ => Err(usage().to_string()),
+            }
+        }
         _ => Err(usage().to_string()),
     }
 }
 
 fn usage() -> &'static str {
     "version-manager commands:
-  click install <VERSION|latest> [--rust] [--cpp]
-  click use [VERSION|--unset]
-  click default [VERSION]
-  click versions"
+  click upgrade
+  click version add <VERSION|latest> [--rust] [--cpp]
+  click version use [VERSION|--unset]
+  click version default [VERSION]
+  click version list
+  click version remove <VERSION>"
 }
 
-fn install_command(arguments: &[String]) -> Result<(), String> {
+/// Installs the latest release and makes it the global default.
+fn upgrade_command(arguments: &[String]) -> Result<(), String> {
+    if !arguments.is_empty() {
+        return Err(usage().to_string());
+    }
+    let version = latest_version()?;
+    install_version(&version)?;
+    default_command(std::slice::from_ref(&version))
+}
+
+/// Removes an installed version that neither the global default nor this
+/// project's pin selects.
+fn remove_command(arguments: &[String]) -> Result<(), String> {
+    let [argument] = arguments else {
+        return Err(usage().to_string());
+    };
+    let version = normalize_version(argument)?;
+    let home = click_home()?;
+    let destination = home.join("versions").join(&version);
+    if !destination.exists() {
+        return Err(format!("Click {version} is not installed"));
+    }
+    let selected = |text: Option<String>| text.is_some_and(|text| text.trim() == version);
+    if selected(fs::read_to_string(home.join("default")).ok()) {
+        return Err(format!(
+            "Click {version} is the global default; select another with `click version default VERSION` first"
+        ));
+    }
+    if selected(project_pin()?) {
+        return Err(format!(
+            "this project pins Click {version}; change the pin with `click version use` first"
+        ));
+    }
+    fs::remove_dir_all(&destination)
+        .map_err(|error| format!("could not remove {}: {error}", destination.display()))?;
+    println!("Removed Click {version}.");
+    Ok(())
+}
+
+fn add_command(arguments: &[String]) -> Result<(), String> {
     let Some((requested, frontends)) = arguments.split_first() else {
         return Err(usage().to_string());
     };
@@ -573,7 +630,7 @@ fn use_command(arguments: &[String]) -> Result<(), String> {
             let version = normalize_version(argument)?;
             if !install_is_present(&version)? {
                 return Err(format!(
-                    "Click {version} is not installed; run `click install {version}`"
+                    "Click {version} is not installed; run `click version add {version}`"
                 ));
             }
             let pin = project_pin_path()?.unwrap_or_else(|| cwd.join(".click-version"));
@@ -604,7 +661,7 @@ fn default_command(arguments: &[String]) -> Result<(), String> {
             let version = normalize_version(argument)?;
             if !install_is_present(&version)? {
                 return Err(format!(
-                    "Click {version} is not installed; run `click install {version}`"
+                    "Click {version} is not installed; run `click version add {version}`"
                 ));
             }
             replace_file(&path, format!("{version}\n").as_bytes())?;
@@ -615,7 +672,7 @@ fn default_command(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn versions_command(arguments: &[String]) -> Result<(), String> {
+fn list_command(arguments: &[String]) -> Result<(), String> {
     if !arguments.is_empty() {
         return Err(usage().to_string());
     }

@@ -79,7 +79,7 @@ pub(super) fn resolve(legacy: Option<&Path>) -> Result<Runtime, String> {
     let bundle = home.join("versions").join(VERSION).join("frontends/rust");
     if !bundle.exists() {
         return Err(format!(
-            "Rust frontend is not installed for Click {VERSION} ({}/{}); run `click install {VERSION} --rust` to install its pinned bundle at `{}`. CLICK_CHARON is a development override",
+            "Rust frontend is not installed for Click {VERSION} ({}/{}); run `click version add {VERSION} --rust` to install its pinned bundle at `{}`. CLICK_CHARON is a development override",
             std::env::consts::OS,
             std::env::consts::ARCH,
             bundle.display()
@@ -88,7 +88,7 @@ pub(super) fn resolve(legacy: Option<&Path>) -> Result<Runtime, String> {
     with_recovery(
         Runtime::bundle(&bundle),
         format!(
-            "Remove the Rust frontend at `{}` and reinstall with `click install {VERSION} --rust`",
+            "Remove the Rust frontend at `{}` and reinstall with `click version add {VERSION} --rust`",
             bundle.display()
         ),
     )

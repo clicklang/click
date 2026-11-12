@@ -24,7 +24,7 @@ pub(crate) fn resolve_exporter() -> Result<PathBuf, String> {
 }
 
 /// Whether releases ship a prebuilt C++ front end for the host Click runs
-/// on, which `click install VERSION --cpp` installs. Other hosts build the
+/// on, which `click version add VERSION --cpp` installs. Other hosts build the
 /// exporter from a Click checkout.
 const PREBUILT_HOST: bool = cfg!(all(
     target_os = "linux",
@@ -80,7 +80,7 @@ fn resolve_exporter_from(
         ));
     }
     Err(format!(
-        "the C++ front end is not installed for Click {VERSION} (expected `{}`); install it with `click install {VERSION} --cpp`, or set CLICK_CPP_EXPORTER to an exporter built with scripts/build-cpp-exporter.sh",
+        "the C++ front end is not installed for Click {VERSION} (expected `{}`); install it with `click version add {VERSION} --cpp`, or set CLICK_CPP_EXPORTER to an exporter built with scripts/build-cpp-exporter.sh",
         exporter.display()
     ))
 }

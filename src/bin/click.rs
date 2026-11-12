@@ -32,10 +32,8 @@ commands:\n  \
   audit    check expansion across a project or repository\n  \
   import   prepare and lock compiler-selected sources\n  \
   docs     print the documentation for a tactic or topic\n  \
-  install  download a Click version\n  \
-  use      pin a version for the current project\n  \
-  default  select the global fallback version\n  \
-  versions list installed versions";
+  upgrade  install the latest Click and make it the default\n  \
+  version  add, use, list, or remove installed Click versions";
 
 fn main() {
     click::cli::enable_process_crash_containment();
@@ -86,9 +84,7 @@ fn entry(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
         "audit" => audit::entry_with(arguments),
         "import" => import::entry_with(arguments),
         "docs" => docs::entry_with(arguments),
-        "install" | "use" | "default" | "versions" => {
-            version_manager::entry_with(&command, arguments.collect())
-        }
+        "version" | "upgrade" => version_manager::entry_with(&command, arguments.collect()),
         _ => Err(format!("unknown command `{command}`\n{USAGE}")),
     }
 }

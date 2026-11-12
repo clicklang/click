@@ -128,11 +128,13 @@ The `clicklang` crate is not published to crates.io.
 
 Click keeps its launcher and installed versions under `~/.click`. The launcher
 uses the nearest `.click-version` file for a project, then the global default.
-Use `click install 0.1.0` to add a version, `click use 0.1.0` to pin the
-current directory for the project, and `click default 0.1.0` to change the
-global fallback. Without either, Click runs the launcher version. `click versions`
-lists installed versions. A project can commit `.click-version` to share its
-pin with collaborators.
+`click upgrade` installs the latest release and makes it the global default.
+Use `click version add 0.1.0` to add a specific version, `click version use 0.1.0`
+to pin the current directory for the project, and `click version default 0.1.0`
+to change the global fallback. Without either, Click runs the launcher version.
+`click version list` lists installed versions, and `click version remove 0.1.0`
+removes one. A project can commit `.click-version` to share its pin with
+collaborators.
 
 Set `CLICK_HOME` to choose a different install directory. Set
 `CLICK_RELEASE_REPOSITORY=owner/name` to install from another GitHub repository.

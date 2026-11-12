@@ -67,6 +67,6 @@ sh "$installer_file"
 
 launcher=$click_home/bin/click
 [ -x "$launcher" ] || fail "the release installer did not place click at $launcher"
-CLICK_HOME=$click_home "$launcher" install "$version"
-CLICK_HOME=$click_home "$launcher" default "$version"
+CLICK_HOME=$click_home "$launcher" version add "$version"
+CLICK_HOME=$click_home "$launcher" version default "$version"
 printf 'Click %s is ready. Restart your shell if click is not on PATH yet.\n' "$version"

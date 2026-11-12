@@ -59,7 +59,7 @@ nonnull update preserves the supplied state and is not a reset request.
 Install Click, then run these preparation commands from the repository root:
 
 ```sh
-click install VERSION --rust
+click version add VERSION --rust
 python3 scripts/prepare-adler32-demo.py /tmp/click-adler32-demo
 ```
 

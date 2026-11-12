@@ -31,7 +31,7 @@ fn missing_installed_rust_frontend_names_the_version_and_install_location() {
         );
         assert!(
             error.contains(&format!(
-                "click install {} --rust",
+                "click version add {} --rust",
                 env!("CARGO_PKG_VERSION")
             )),
             "{error}"
@@ -205,7 +205,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
         );
         assert!(
             error.contains(&format!(
-                "click install {} --rust",
+                "click version add {} --rust",
                 env!("CARGO_PKG_VERSION")
             )),
             "{error}"

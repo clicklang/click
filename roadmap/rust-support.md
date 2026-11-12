@@ -25,7 +25,7 @@ the rest of the subset is in the [Rust reference](../docs/reference/rust.md).
 
 ## Today
 
-- **Hosts.** `click install VERSION --rust` has a bundle for
+- **Hosts.** `click version add VERSION --rust` has a bundle for
   `x86_64-unknown-linux-gnu` only. Every other host gets the
   unavailable-platform diagnostic
   ([version manager commands](../docs/reference/cli/versions.md)). Click
@@ -43,7 +43,7 @@ the rest of the subset is in the [Rust reference](../docs/reference/rust.md).
 ## Requirements
 
 1. **Every release host.** The Rust front end installs with
-   `click install VERSION --rust` on every host a Click release is built
+   `click version add VERSION --rust` on every host a Click release is built
    for. If a host cannot carry the pinned Charon and rustc runtime, the user
    rules on dropping it, and the installer and the
    [coverage matrix](../docs/reference/coverage.md) name the hosts that
@@ -89,7 +89,7 @@ crate with dependencies.
 
 ## Acceptance criteria
 
-- `click install VERSION --rust` succeeds on every release host, or the
+- `click version add VERSION --rust` succeeds on every release host, or the
   remaining hosts are named by a user ruling, the installer, and the
   coverage matrix.
 - The installed-layout regression passes on each supported host, and locks

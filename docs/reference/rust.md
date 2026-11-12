@@ -9,7 +9,7 @@ Verification uses the same sidecars, tactics, and bounded engine as C and C++.
 
 Charon is the extraction backend. On `x86_64-unknown-linux-gnu`, releases provide
 an optional pinned frontend and compiler runtime through
-`click install VERSION --rust`. Rust support remains experimental and covers
+`click version add VERSION --rust`. Rust support remains experimental and covers
 the subset listed in [Language coverage](coverage.md). Contributor builds use
 `scripts/build-charon.sh`; ordinary verification of committed locks needs
 neither Charon nor rustc.
@@ -25,7 +25,7 @@ stable while the disjoint field is mutated.
 
 ## Installed Rust frontend
 
-`click install VERSION --rust` installs a bundle at
+`click version add VERSION --rust` installs a bundle at
 `CLICK_HOME/versions/VERSION/frontends/rust` (with the usual default
 `CLICK_HOME`). The bundle's bounded `frontend.json` explicitly identifies
 Charon, its paired driver, rustc, and the sysroot. Extraction checks the running
@@ -33,7 +33,7 @@ Click version, pinned Charon version/revision, compiler commit and host before
 compiling. The Charon wrapper's paired-driver layout is validated against the
 explicit driver entry. The bundle supplies its own target libraries and loader
 paths; installed extraction does not search for rustup or use ambient compiler
-flags. A missing bundle names `click install VERSION --rust`. A mismatched or
+flags. A missing bundle names `click version add VERSION --rust`. A mismatched or
 incomplete installed bundle names its exact frontend path to remove before
 reinstalling: ordinary installation retains an existing bundle. Version errors
 show the expected identity and the bounded identity actually reported. A
@@ -62,7 +62,7 @@ checks mismatched identity refusal, then verifies after removing the frontend.
 
 A separate release-packaging check consumes the exact archive and checksum
 produced by `scripts/package-rust-frontend-archive.sh`. It starts with only a
-Click launcher, invokes the real `click install VERSION --rust` command using
+Click launcher, invokes the real `click version add VERSION --rust` command using
 local release assets through its ordinary curl subprocess, relocates the
 installed home, and verifies the basic Rust example with an empty PATH and no
 user Rust toolchain. It checks repeated installation and locking, then offline

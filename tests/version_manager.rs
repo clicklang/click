@@ -7,10 +7,19 @@ fn version_manager_help_succeeds_without_installation_or_project_changes() {
     let pin = directory.path().join(".click-version");
     // Help must work even when reading the selected version would fail.
     fs::write(&pin, "invalid/version\n").unwrap();
-    for command in ["install", "use", "default", "versions"] {
+    for command in [
+        &["upgrade"][..],
+        &["version"],
+        &["version", "add"],
+        &["version", "use"],
+        &["version", "default"],
+        &["version", "list"],
+        &["version", "remove"],
+    ] {
+        let command = command.join(" ");
         for flag in ["--help", "-h"] {
             let output = Command::new(env!("CARGO_BIN_EXE_click"))
-                .args([command, flag])
+                .args(command.split(' ').chain([flag]))
                 .current_dir(directory.path())
                 .env("CLICK_HOME", &home)
                 // Any attempted download would fail, even on a networked host.
@@ -22,7 +31,7 @@ fn version_manager_help_succeeds_without_installation_or_project_changes() {
             assert!(output.stderr.is_empty(), "{command} {flag}: {output:?}");
             assert_eq!(
                 String::from_utf8(output.stdout).unwrap(),
-                "version-manager commands:\n  click install <VERSION|latest> [--rust] [--cpp]\n  click use [VERSION|--unset]\n  click default [VERSION]\n  click versions\n",
+                "version-manager commands:\n  click upgrade\n  click version add <VERSION|latest> [--rust] [--cpp]\n  click version use [VERSION|--unset]\n  click version default [VERSION]\n  click version list\n  click version remove <VERSION>\n",
                 "{command} {flag}"
             );
             assert!(!home.exists(), "{command} {flag} created CLICK_HOME");
@@ -88,20 +97,20 @@ fn rust_frontend_install_checks_the_archive_and_installs_beside_its_click_versio
             .output()
             .unwrap()
     };
-    let result = run(&["install", version, "--rust"]);
+    let result = run(&["version", "add", version, "--rust"]);
     assert!(result.status.success(), "{result:?}");
     assert!(installed.join("frontends/rust/runtime/bin/rustc").is_file());
     assert!(
-        String::from_utf8_lossy(&run(&["versions"]).stdout)
+        String::from_utf8_lossy(&run(&["version", "list"]).stdout)
             .contains("Rust frontend: Charon fixture-version")
     );
     // Repeated installs use the existing bundle without downloading it again.
     fs::remove_file(assets.join(name)).unwrap();
-    assert!(run(&["install", version, "--rust"]).status.success());
+    assert!(run(&["version", "add", version, "--rust"]).status.success());
     fs::remove_dir_all(installed.join("frontends")).unwrap();
     fs::write(assets.join(name), archive).unwrap();
     fs::write(assets.join(format!("{name}.sha256")), "0".repeat(64)).unwrap();
-    let failed = run(&["install", version, "--rust"]);
+    let failed = run(&["version", "add", version, "--rust"]);
     assert!(!failed.status.success());
     assert!(
         String::from_utf8_lossy(&failed.stderr).contains("SHA-256 mismatch"),
@@ -171,7 +180,7 @@ fn cpp_frontend_install_checks_the_bundle_against_the_pinned_profile() {
     };
     // A bundle built against another Clang is refused and not installed.
     publish(&archive(&serde_json::json!("0.0.0")));
-    let failed = run(&["install", version, "--cpp"]);
+    let failed = run(&["version", "add", version, "--cpp"]);
     assert!(!failed.status.success());
     assert!(
         String::from_utf8_lossy(&failed.stderr)
@@ -180,7 +189,7 @@ fn cpp_frontend_install_checks_the_bundle_against_the_pinned_profile() {
     );
     assert!(!installed.join("frontends/cpp").exists());
     publish(&archive(&profile["clang_version"]));
-    let result = run(&["install", version, "--cpp"]);
+    let result = run(&["version", "add", version, "--cpp"]);
     assert!(result.status.success(), "{result:?}");
     // The layout the C++ runtime resolves.
     assert!(installed.join("frontends/cpp/click-cpp-exporter").is_file());
@@ -190,15 +199,59 @@ fn cpp_frontend_install_checks_the_bundle_against_the_pinned_profile() {
             .is_file()
     );
     assert!(
-        String::from_utf8_lossy(&run(&["versions"]).stdout).contains(&format!(
+        String::from_utf8_lossy(&run(&["version", "list"]).stdout).contains(&format!(
             "C++ frontend: exporter {} (Clang {})",
             profile["exporter_version"].as_str().unwrap(),
             profile["clang_version"].as_str().unwrap()
         ))
     );
     assert!(
-        !run(&["install", version, "--cpp", "--cpp"])
+        !run(&["version", "add", version, "--cpp", "--cpp"])
             .status
             .success()
     );
+}
+
+/// `click version remove` deletes an installed version, but not the one the
+/// global default or the project's pin selects; the old top-level names are
+/// gone.
+#[test]
+fn version_remove_refuses_the_selected_version() {
+    let t = tempfile::tempdir().unwrap();
+    let home = t.path().join("home");
+    for version in ["0.0.1", "0.0.2"] {
+        let bin = home.join("versions").join(version).join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(bin.join("click"), b"").unwrap();
+    }
+    let project = t.path().join("project");
+    fs::create_dir_all(&project).unwrap();
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(args)
+            .current_dir(&project)
+            .env("CLICK_HOME", &home)
+            .env("PATH", "")
+            .output()
+            .unwrap()
+    };
+    assert!(run(&["version", "default", "0.0.1"]).status.success());
+    assert!(run(&["version", "use", "0.0.2"]).status.success());
+    let refused = run(&["version", "remove", "0.0.1"]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("global default"));
+    let refused = run(&["version", "remove", "0.0.2"]);
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("pins Click 0.0.2"));
+    assert!(run(&["version", "use", "--unset"]).status.success());
+    let removed = run(&["version", "remove", "0.0.2"]);
+    assert!(removed.status.success(), "{removed:?}");
+    assert!(!home.join("versions/0.0.2").exists());
+    let listed = String::from_utf8(run(&["version", "list"]).stdout).unwrap();
+    assert_eq!(listed, "0.0.1 (default)\n");
+    for old in ["install", "use", "default", "versions"] {
+        let output = run(&[old]);
+        assert!(!output.status.success(), "{old}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unknown command"));
+    }
 }

@@ -73,7 +73,7 @@ fn cpp_release_archive_installs_and_locks() {
     let version = env!("CARGO_PKG_VERSION");
     success(
         Command::new(&launcher)
-            .args(["install", version, "--cpp"])
+            .args(["version", "add", version, "--cpp"])
             .current_dir(t.path())
             .env("CLICK_HOME", &home)
             .env("HOME", home.join("empty-home"))
@@ -97,7 +97,7 @@ fn cpp_release_archive_installs_and_locks() {
     fs::remove_dir_all(transport).unwrap();
     let installed = relocated.join("versions").join(version);
     let binary = installed.join("bin/click");
-    let listed = success(cli(&binary, &relocated, t.path(), &["versions"]));
+    let listed = success(cli(&binary, &relocated, t.path(), &["version", "list"]));
     assert!(
         String::from_utf8_lossy(&listed.stdout).contains("C++ frontend: exporter"),
         "{listed:?}"
@@ -106,7 +106,7 @@ fn cpp_release_archive_installs_and_locks() {
         &binary,
         &relocated,
         t.path(),
-        &["install", version, "--cpp"],
+        &["version", "add", version, "--cpp"],
     ));
 
     // Locking the committed example with the installed exporter reproduces
