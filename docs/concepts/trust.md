@@ -120,11 +120,11 @@ contracts in `src/languages/cpp/standard_library.rs`. See
 
 ## The Click library
 
-The `library/` modules declare 154 theorems. `verify_standard_library`
+The `library/` modules declare 152 theorems. `verify_standard_library`
 checks each one, in one of two ways; the gate runs it
 (`standard_library_theorems_are_proved_by_their_own_entry_point`):
 
-- **111 are proved.** Their written or default proofs are checked like any
+- **108 are proved.** Their written or default proofs are checked like any
   other proof. They include the `int32` increment, predecessor, order and
   definedness lemmas, the in-range `+` and `-` observation laws at `int32`,
   `int64`, `uint32` and `uint64`, the `uint32` and `uint64` product laws,

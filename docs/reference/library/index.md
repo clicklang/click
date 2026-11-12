@@ -1647,19 +1647,6 @@ A strict unsigned order excludes the opposite greater-or-equal branch.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `integer::uint64_to_integer_equal_implies_equal`
-
-```click
-theorem uint64_to_integer_equal_implies_equal(left: uint64, right: uint64) {
-    requires to_integer(left) == to_integer(right);
-    ensures left == right by assumption();
-}
-```
-
-Equal exact unsigned observations identify the same native value, over the whole 64-bit range. Arithmetic uses it to conclude a `uint64` equality it proved as an Integer claim.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
 ### `integer::uint32_less_equal_to_integer`
 
 ```click
@@ -1865,25 +1852,6 @@ Proves the full unsigned observation range from native order. This theorem does 
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
-### `integer::uint64_to_integer_bounds`
-
-```click
-theorem uint64_to_integer_bounds(value: uint64) {
-    ensures 0 <= to_integer(value) by {
-        have 0u64 <= value;
-        apply(integer::uint64_less_equal_to_integer(0u64, value)) using { 0u64 <= value; };
-    }
-    ensures to_integer(value) <= 18446744073709551615 by {
-        have value <= 18446744073709551615u64;
-        apply(integer::uint64_less_equal_to_integer(value, 18446744073709551615u64)) using { value <= 18446744073709551615u64; };
-    }
-}
-```
-
-Proves the full unsigned 64-bit observation range from native order. Arithmetic applies it to each `uint64` variable it reads, so a sum bounded only by another `uint64` value is known not to wrap.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
 ### `integer::int32_add_to_integer`
 
 ```click
@@ -1911,22 +1879,6 @@ theorem int32_add_to_integer(left: int32, right: int32) {
 
 A defined signed C addition has the same value as mathematical Integer addition.
 The definedness premise excludes overflow; the equality is not unconditional.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `integer::int64_add_defined_by_integer_bounds`
-
-```click
-theorem int64_add_defined_by_integer_bounds(left: int64, right: int64) {
-    requires to_integer(left) + to_integer(right) >= -9223372036854775808;
-    requires to_integer(left) + to_integer(right) <= 9223372036854775807;
-    ensures defined(left + right) by {
-        assumption();
-    }
-}
-```
-
-Bounds on the exact mathematical sum establish that signed 64-bit addition is defined. Both bounds are required.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
