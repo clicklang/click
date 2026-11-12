@@ -143,6 +143,24 @@ pub(super) struct TraceStep {
     /// The step as `click expand` would write it, when a search chose one of
     /// its arguments (a `using` list).
     pub chosen: Option<String>,
+    /// Cached cells this step's stores dropped, each beside the cell it
+    /// wrote, with the index disequality the store reads to keep one.
+    pub forgotten_cells: Vec<TraceForgottenCell>,
+    /// Read-history walks this step made that stopped without reaching the
+    /// value: at the one transition a read follows, or at one not shown
+    /// separate.
+    pub history_stops: Vec<crate::kernel::TransportCellWalkDiagnostic>,
+}
+
+/// A cached cell a checked step's store dropped. Read from the step's own
+/// memory delta, the same bounded inspection the implicit tail's store
+/// search makes; the store itself records nothing.
+pub(super) struct TraceForgottenCell {
+    pub cell: Pointer,
+    pub store: Pointer,
+    /// The two cells as the statement's C locals spelled them, `q[0]`.
+    pub spelled: [Option<String>; 2],
+    pub indices_differ: Proposition,
 }
 
 /// Values observed at one accepted load statement. The retained theorem's
@@ -1173,6 +1191,40 @@ fn append_path(
                     "\n{detail_indent}no checked read equalities admitted by this step"
                 ));
             }
+            for forgotten in &step.forgotten_cells {
+                let [cell, store] = [
+                    (&forgotten.spelled[0], &forgotten.cell),
+                    (&forgotten.spelled[1], &forgotten.store),
+                ]
+                .map(|(spelled, pointer)| match spelled {
+                    Some(spelled) => format!("`{spelled}`"),
+                    None => render::render_cell_address(pointer, labels),
+                });
+                let fact = render::render_proposition_labeled(&forgotten.indices_differ, labels);
+                detail.push_str(&format!(
+                    "\n{detail_indent}{}",
+                    trace_text(
+                        &format!(
+                            "forgets cached {cell} beside the store to {store}: the store keeps it only on the stated fact {fact}"
+                        ),
+                        480
+                    )
+                ));
+            }
+            for walk in &step.history_stops {
+                detail.push_str(&format!(
+                    "\n{detail_indent}{}",
+                    trace_text(
+                        &format!(
+                            "read history stopped after crossing {} recorded transition{} (a read follows at most one): {}",
+                            walk.crossed,
+                            if walk.crossed == 1 { "" } else { "s" },
+                            render::render_transport_cell_walk(walk, labels)
+                        ),
+                        480
+                    )
+                ));
+            }
             for resource in &step.resources {
                 let change = match (resource.before, resource.after) {
                     (0, 1) => format!("resource gained: {}", resource.description),
@@ -1613,6 +1665,8 @@ mod tests {
                     more_resources: 0,
                     origin: None,
                     chosen: None,
+                    forgotten_cells: Vec::new(),
+                    history_stops: Vec::new(),
                 },
             );
             let mut labels = SnapshotLabels::default();
@@ -1686,6 +1740,8 @@ mod tests {
                 more_resources: 0,
                 origin: None,
                 chosen: None,
+                forgotten_cells: Vec::new(),
+                history_stops: Vec::new(),
             };
             record(1, step("\n    source tactic 0: step".into()));
             record(3, step("\n    have body tactic 0: normalize".into()));
@@ -1783,6 +1839,8 @@ mod tests {
                 more_resources: 0,
                 origin: None,
                 chosen: None,
+                forgotten_cells: Vec::new(),
+                history_stops: Vec::new(),
             };
             record(2, step("then step"));
             record(3, step("else step"));
@@ -1896,6 +1954,8 @@ mod tests {
                     more_resources: 0,
                     origin: None,
                     chosen: None,
+                    forgotten_cells: Vec::new(),
+                    history_stops: Vec::new(),
                 },
             );
             record(
@@ -1915,6 +1975,8 @@ mod tests {
                     more_resources: 0,
                     origin: None,
                     chosen: None,
+                    forgotten_cells: Vec::new(),
+                    history_stops: Vec::new(),
                 },
             );
             record_body(
@@ -1985,6 +2047,8 @@ mod tests {
                 more_resources: 0,
                 origin: None,
                 chosen: None,
+                forgotten_cells: Vec::new(),
+                history_stops: Vec::new(),
             };
             record(
                 1,

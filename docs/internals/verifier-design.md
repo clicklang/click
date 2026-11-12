@@ -391,7 +391,13 @@ reads. It proves at most four at the pre-state with the narrow closure
 `try_index_disequality_closure` (signed interval certificate, order
 refutation, disequality bridge), retains them as
 `have`s and reruns the statement; expansion writes those `have`s and the
-expanded proof searches nothing. `solve`'s last strategy,
+expanded proof searches nothing. A disequality it does not prove is kept,
+already spelled, in the path's presentation (`store_separation_misses`, at
+most 32, carried across joins as arm suffixes) and is never read while
+checking. A refusal whose goal reads a cell a recorded miss dropped explains
+that read with one bounded history walk and, when the walk stops at that
+miss's store, prints the statement and the spelled fact; it searches for no
+spelling. `solve`'s last strategy,
 `try_disequality_by_refuted_equality`, proves a disequality from a connected
 one by cases on the goal's equality, so the Integer fact `m - 1 != 0` gives
 the word fact where the word cannot wrap. Regression:
