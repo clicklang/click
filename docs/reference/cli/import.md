@@ -205,7 +205,9 @@ as `<stddef.h>`; an installed exporter's `clang-resource/` beside it) to a comma
 machine-specific `-resource-dir`. It exports every listed function of a
 source into one artifact,
 `.click/<unit>/<source>.click-cpp.json`; a sidecar that verifies the source
-sees all of them, and verifies no other source. Preprocessor inputs under the
+sees all of them. A sidecar may verify several sources of one C++ unit, which
+are linked ([calls into another translation unit](#calls-into-another-translation-unit)),
+but no source of another unit. Preprocessor inputs under the
 unit root or the project directory are rechecked relative to those roots;
 inputs outside them, such as system, sysroot and Clang resource headers, are
 pinned by the digest the lock records and are not read when loading, so the
@@ -2293,13 +2295,29 @@ translation unit declares but does not define, such as one declared in a
 header and defined in another `.cpp` of the project. The exporter records
 that callee as `"external": true` with its kind, receiver, parameters, return
 type and declaration span, and no body; its declaration's file is a
-dependency like any other. A call to it is checked against a contract the
-sidecar states as an `extern` declaration, an assumption like any other
-external contract; without one the call is refused, naming the callee
-(`a_call_into_another_translation_unit_is_checked_against_a_contract` in
-`tests/cpp_import.rs`). The callee must be a `noexcept` free function, static
-method or ordinary non-virtual method with external linkage; a constructor,
-destructor or virtual method defined elsewhere is refused.
+dependency like any other. The callee must be a `noexcept` free function,
+static method or ordinary non-virtual method with external linkage that names
+its parameters; a constructor, destructor or virtual method defined elsewhere
+is refused, and so is a compiler builtin.
+
+A sidecar that verifies the defining source too links the sources:
+`verifying "client.cpp"; verifying "counter.cpp";` in
+`examples/multifile-cpp`. Each
+source is exported and lowered on its own, then the functions are joined by
+name. A definition binds every other source's declaration of the function
+whose interface matches it (parameter names may differ), so a call is checked
+against the contract the sidecar proves of that body. The one-definition rule
+is checked: two sources whose definitions of a function differ, whose
+declarations of it differ, or whose layouts of a record differ are refused,
+naming both sources. An inline function a shared header defines is the same
+definition in every source that uses it.
+
+A callee no linked source defines is checked against a contract the sidecar
+states as an `extern` declaration, an assumption like any other external
+contract; without one the call is refused, naming the callee
+(`a_call_into_another_translation_unit_is_checked_against_a_contract` and
+`linked_cpp_sources_refuse_an_unproved_callee_and_differing_definitions` in
+`tests/cpp_import.rs`).
 
 ## C++ standard library
 

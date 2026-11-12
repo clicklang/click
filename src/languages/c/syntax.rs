@@ -3647,6 +3647,42 @@ impl C0Function {
         self.prelowered_kernel_function.as_ref()
     }
 
+    /// Whether `self` and `other` are the same definition apart from how
+    /// their callers use them: whether a caller observes a call inside an
+    /// expression, which requires a read-only contract.
+    pub(crate) fn same_definition_apart_from_uses(&self, other: &Self) -> bool {
+        let mut other = other.clone();
+        other.requires_read_only_contract = self.requires_read_only_contract;
+        *self == other
+    }
+
+    /// Whether `self` and `other` declare the same interface: what a call
+    /// through either binds, whatever each names its parameters. Two
+    /// translation units of one project may each declare a function in
+    /// their own words.
+    pub(crate) fn declares_same_interface(&self, other: &Self) -> bool {
+        let unnamed = |parameters: &[C0Parameter]| {
+            parameters
+                .iter()
+                .map(|parameter| C0Parameter {
+                    name: String::new(),
+                    ..parameter.clone()
+                })
+                .collect::<Vec<_>>()
+        };
+        self.name == other.name
+            && self.source_name == other.source_name
+            && self.return_type == other.return_type
+            && self.return_pointee_constant == other.return_pointee_constant
+            && self.return_reference == other.return_reference
+            && self.return_struct_name == other.return_struct_name
+            && self.aggregate_return_mode == other.aggregate_return_mode
+            && self.return_pointer_struct_name == other.return_pointer_struct_name
+            && self.positional_parameters == other.positional_parameters
+            && self.closure_captures == other.closure_captures
+            && unnamed(&self.parameters) == unnamed(&other.parameters)
+    }
+
     /// The name and construction-return mode of the kernel function
     /// [`Self::to_kernel_function`] builds, without lowering its body.
     pub(crate) fn kernel_name(&self) -> &str {

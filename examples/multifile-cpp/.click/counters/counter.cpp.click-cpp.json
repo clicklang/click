@@ -1,0 +1,436 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "kind": "assign",
+          "span": {
+            "end_column": 31,
+            "end_line": 4,
+            "file": "counter.cpp",
+            "start_column": 5,
+            "start_line": 4
+          },
+          "target": {
+            "declaration_id": "c:counter.cpp@38@F@counter_add#&I#I#@counter",
+            "name": "counter",
+            "span": {
+              "end_column": 12,
+              "end_line": 4,
+              "file": "counter.cpp",
+              "start_column": 5,
+              "start_line": 4
+            }
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:counter.cpp@38@F@counter_add#&I#I#@counter",
+                "name": "counter",
+                "span": {
+                  "end_column": 22,
+                  "end_line": 4,
+                  "file": "counter.cpp",
+                  "start_column": 15,
+                  "start_line": 4
+                }
+              },
+              "span": {
+                "end_column": 22,
+                "end_line": 4,
+                "file": "counter.cpp",
+                "start_column": 15,
+                "start_line": 4
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:counter.cpp@52@F@counter_add#&I#I#@amount",
+                "name": "amount",
+                "span": {
+                  "end_column": 31,
+                  "end_line": 4,
+                  "file": "counter.cpp",
+                  "start_column": 25,
+                  "start_line": 4
+                }
+              },
+              "span": {
+                "end_column": 31,
+                "end_line": 4,
+                "file": "counter.cpp",
+                "start_column": 25,
+                "start_line": 4
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 31,
+              "end_line": 4,
+              "file": "counter.cpp",
+              "start_column": 15,
+              "start_line": 4
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        },
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 19,
+            "end_line": 5,
+            "file": "counter.cpp",
+            "start_column": 5,
+            "start_line": 5
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:counter.cpp@38@F@counter_add#&I#I#@counter",
+              "name": "counter",
+              "span": {
+                "end_column": 19,
+                "end_line": 5,
+                "file": "counter.cpp",
+                "start_column": 12,
+                "start_line": 5
+              }
+            },
+            "span": {
+              "end_column": 19,
+              "end_line": 5,
+              "file": "counter.cpp",
+              "start_column": 12,
+              "start_line": 5
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@counter_add#&I#I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "counter_add",
+      "parameters": [
+        {
+          "declaration_id": "c:counter.cpp@38@F@counter_add#&I#I#@counter",
+          "name": "counter",
+          "span": {
+            "end_column": 29,
+            "end_line": 3,
+            "file": "counter.cpp",
+            "start_column": 17,
+            "start_line": 3
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        },
+        {
+          "declaration_id": "c:counter.cpp@52@F@counter_add#&I#I#@amount",
+          "name": "amount",
+          "span": {
+            "end_column": 41,
+            "end_line": 3,
+            "file": "counter.cpp",
+            "start_column": 31,
+            "start_line": 3
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "path": [
+        "counter_add"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 6,
+        "file": "counter.cpp",
+        "start_column": 1,
+        "start_line": 3
+      }
+    },
+    {
+      "body": [
+        {
+          "kind": "assign",
+          "span": {
+            "end_column": 32,
+            "end_line": 9,
+            "file": "counter.cpp",
+            "start_column": 5,
+            "start_line": 9
+          },
+          "target": {
+            "declaration_id": "c:counter.cpp@149@F@counter_double#&I#@counter",
+            "name": "counter",
+            "span": {
+              "end_column": 12,
+              "end_line": 9,
+              "file": "counter.cpp",
+              "start_column": 5,
+              "start_line": 9
+            }
+          },
+          "value": {
+            "kind": "binary",
+            "left": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:counter.cpp@149@F@counter_double#&I#@counter",
+                "name": "counter",
+                "span": {
+                  "end_column": 22,
+                  "end_line": 9,
+                  "file": "counter.cpp",
+                  "start_column": 15,
+                  "start_line": 9
+                }
+              },
+              "span": {
+                "end_column": 22,
+                "end_line": 9,
+                "file": "counter.cpp",
+                "start_column": 15,
+                "start_line": 9
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "operator": "add",
+            "right": {
+              "kind": "load",
+              "place": {
+                "declaration_id": "c:counter.cpp@149@F@counter_double#&I#@counter",
+                "name": "counter",
+                "span": {
+                  "end_column": 32,
+                  "end_line": 9,
+                  "file": "counter.cpp",
+                  "start_column": 25,
+                  "start_line": 9
+                }
+              },
+              "span": {
+                "end_column": 32,
+                "end_line": 9,
+                "file": "counter.cpp",
+                "start_column": 25,
+                "start_line": 9
+              },
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "span": {
+              "end_column": 32,
+              "end_line": 9,
+              "file": "counter.cpp",
+              "start_column": 15,
+              "start_line": 9
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        },
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 19,
+            "end_line": 10,
+            "file": "counter.cpp",
+            "start_column": 5,
+            "start_line": 10
+          },
+          "value": {
+            "kind": "load",
+            "place": {
+              "declaration_id": "c:counter.cpp@149@F@counter_double#&I#@counter",
+              "name": "counter",
+              "span": {
+                "end_column": 19,
+                "end_line": 10,
+                "file": "counter.cpp",
+                "start_column": 12,
+                "start_line": 10
+              }
+            },
+            "span": {
+              "end_column": 19,
+              "end_line": 10,
+              "file": "counter.cpp",
+              "start_column": 12,
+              "start_line": 10
+            },
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@counter_double#&I#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "counter_double",
+      "parameters": [
+        {
+          "declaration_id": "c:counter.cpp@149@F@counter_double#&I#@counter",
+          "name": "counter",
+          "span": {
+            "end_column": 32,
+            "end_line": 8,
+            "file": "counter.cpp",
+            "start_column": 20,
+            "start_line": 8
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "path": [
+        "counter_double"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 2,
+        "end_line": 11,
+        "file": "counter.cpp",
+        "start_column": 1,
+        "start_line": 8
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "counter.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/counter.cpp",
+      "canonical_path": "$unit/counter.cpp"
+    },
+    {
+      "accessed_path": "$unit/counter.h",
+      "canonical_path": "$unit/counter.h"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "counter.cpp",
+      "-o",
+      "counter.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "counter.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [],
+  "records": [],
+  "schema": 60
+}

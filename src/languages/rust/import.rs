@@ -748,8 +748,8 @@ mod unit_tests {
         };
         let program = load().unwrap();
         assert_eq!(
-            program.logical_source(),
-            "../vendor/adler2-2.0.1/src/lib.rs"
+            program.logical_sources(),
+            ["../vendor/adler2-2.0.1/src/lib.rs"]
         );
         let click_project = crate::cli::read_click_project(&sidecar, &proof).unwrap();
         let verified =

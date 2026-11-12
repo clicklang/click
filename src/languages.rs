@@ -58,31 +58,45 @@ impl std::fmt::Display for SourceLanguage {
 #[derive(Clone, Debug)]
 pub enum PreparedProgram {
     Cpp(cpp::PreparedCppImport),
+    /// Several sources of one C++ unit a sidecar verifies together.
+    CppLinked(cpp::LinkedCppProgram),
     Rust(rust::PreparedRustImport),
 }
 impl PreparedProgram {
     pub(crate) fn prepare_execution(&self) -> Result<std::sync::Arc<PreparedExecution>, String> {
         match self {
             Self::Cpp(import) => import.prepared_execution(),
+            Self::CppLinked(program) => program.prepared_execution(),
             Self::Rust(import) => import.prepared_execution(),
         }
     }
 
-    pub fn logical_source(&self) -> &str {
+    /// The sources the program verifies, as the sidecar names them.
+    pub fn logical_sources(&self) -> Vec<&str> {
+        match self {
+            Self::Cpp(p) => vec![p.logical_source()],
+            Self::CppLinked(p) => p.logical_sources(),
+            Self::Rust(p) => vec![p.logical_source()],
+        }
+    }
+    /// The source a function of the program belongs to.
+    pub(crate) fn source_of(&self, function: &str) -> &str {
         match self {
             Self::Cpp(p) => p.logical_source(),
+            Self::CppLinked(p) => p.source_of(function).unwrap_or_default(),
             Self::Rust(p) => p.logical_source(),
         }
     }
     pub fn identity(&self) -> &str {
         match self {
             Self::Cpp(p) => p.identity(),
+            Self::CppLinked(p) => p.identity(),
             Self::Rust(p) => p.identity(),
         }
     }
     pub fn language(&self) -> SourceLanguage {
         match self {
-            Self::Cpp(_) => SourceLanguage::Cpp,
+            Self::Cpp(_) | Self::CppLinked(_) => SourceLanguage::Cpp,
             Self::Rust(_) => SourceLanguage::Rust,
         }
     }
@@ -100,6 +114,11 @@ impl From<cpp::PreparedCppImport> for PreparedProgram {
 impl From<&cpp::PreparedCppImport> for PreparedProgram {
     fn from(import: &cpp::PreparedCppImport) -> Self {
         Self::Cpp(import.clone())
+    }
+}
+impl From<cpp::LinkedCppProgram> for PreparedProgram {
+    fn from(program: cpp::LinkedCppProgram) -> Self {
+        Self::CppLinked(program)
     }
 }
 impl From<rust::PreparedRustImport> for PreparedProgram {

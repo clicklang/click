@@ -9,6 +9,7 @@ mod construction;
 mod import;
 mod interface;
 mod lifetime;
+mod link;
 mod lowering;
 pub mod names;
 pub(crate) mod runtime;
@@ -19,6 +20,7 @@ mod validity;
 
 pub use import::PreparedCppImport;
 pub(crate) use import::{UnitConfig, UnitSource, load_unit, prepare_unit};
+pub use link::LinkedCppProgram;
 pub use lowering::{LoweredCppFunction, lower_import};
 pub use schema::{
     CppBase, CppBaseReference, CppBinaryOperator, CppByteTemplateArgument, CppCallArgument,

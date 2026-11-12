@@ -481,6 +481,29 @@ impl Project {
             ));
         }
         let lock = self.read_lock()?;
+        if let Some((spelling, unit, _)) = selected
+            .iter()
+            .find(|(_, unit, _)| self.units[*unit].spec.language != "c")
+            && selected.len() > 1
+            && self.units[*unit].spec.language == "c++"
+        {
+            // Several sources of one C++ unit link into one program; a
+            // source of another unit or language cannot join them.
+            if let Some((other, _, _)) = selected.iter().find(|(_, other, _)| other != unit) {
+                return Err(format!(
+                    "`verifying \"{other}\"` selects a source outside C++ unit `{unit}`, whose sources `verifying \"{spelling}\"` links; a sidecar links the sources of one C++ unit"
+                ));
+            }
+            let sources = selected
+                .iter()
+                .map(|(spelling, unit, relative)| {
+                    Ok(self.load_cpp_unit(unit, relative, &lock)?.named(spelling))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            return Ok(Some(UnitSelection::Program(
+                cpp_import::LinkedCppProgram::new(sources).into(),
+            )));
+        }
         if let Some((spelling, unit, relative)) = selected
             .iter()
             .find(|(_, unit, _)| self.units[*unit].spec.language != "c")

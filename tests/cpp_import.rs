@@ -19463,11 +19463,11 @@ fn an_installed_cpp_front_end_is_required_and_checked() {
 #[cfg(not(feature = "fast-gate"))]
 /// The installed layout alone prepares and verifies the C++ demonstrations:
 /// with the pinned exporter installed beside this Click, no override and
-/// nothing on `PATH`, locking `examples/basic-cpp` and the hermetic
-/// `MoneyRange` integration outside the repository writes their committed
+/// nothing on `PATH`, locking `examples/basic-cpp`, `examples/multifile-cpp`
+/// and the hermetic `MoneyRange` integration outside the repository writes their committed
 /// locks and artifacts byte for byte, and their sidecars verify.
 #[test]
-#[ignore = "nightly: locks two projects with the pinned exporter"]
+#[ignore = "nightly: locks three projects with the pinned exporter"]
 fn the_installed_cpp_front_end_reproduces_the_committed_imports() {
     let exporter = PathBuf::from(
         std::env::var_os("CLICK_CPP_EXPORTER")
@@ -19486,6 +19486,7 @@ fn the_installed_cpp_front_end_reproduces_the_committed_imports() {
             ][..],
         ),
         (money_range, &["MoneyRange.click"][..]),
+        ("examples/multifile-cpp", &["counter.click"][..]),
     ] {
         let project = unlocked_copy(example, "installed-project");
         if example == money_range {
@@ -19601,4 +19602,77 @@ fn a_call_into_another_translation_unit_is_checked_against_a_contract() {
         verify_program_prepared_project(&read_click_project(&path, &without).unwrap(), &import)
             .unwrap_err();
     assert!(error.to_string().contains("add_one"), "{error}");
+}
+
+#[cfg(not(feature = "fast-gate"))]
+/// A sidecar that verifies several sources of one C++ unit links them
+/// (`examples/multifile-cpp`). A call whose callee neither a linked source
+/// defines nor the sidecar states a contract for is refused, and so are two
+/// sources that define one function differently.
+#[test]
+#[ignore = "nightly: 1.7s in the parallel gate"]
+fn linked_cpp_sources_refuse_an_unproved_callee_and_differing_definitions() {
+    let exporter = PathBuf::from(
+        std::env::var_os("CLICK_CPP_EXPORTER")
+            .expect("scripts/check.sh supplies the pinned C++ exporter"),
+    );
+    let project = scratch_copy("linked");
+    copy_tree(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/multifile-cpp"),
+        &project,
+    );
+    fs::write(
+        project.join("conflict.cpp"),
+        "int counter_add(int& counter, int amount) noexcept {\n    counter = counter + amount + 1;\n    return counter;\n}\n",
+    )
+    .unwrap();
+    let project_file = project.join(click::project::FILE_NAME);
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(&project_file).unwrap()).unwrap();
+    config["units"]["counters"]["sources"]["conflict.cpp"] =
+        serde_json::json!({"functions": ["counter_add"]});
+    fs::write(&project_file, config.to_string()).unwrap();
+    click::project::Project::load(&project_file)
+        .and_then(|unit| unit.lock_with_cpp_exporter(Some(&exporter)))
+        .unwrap();
+    let verify = |name: &str, source: &str| {
+        let path = project.join(name);
+        fs::write(&path, source).unwrap();
+        Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(["verify", name])
+            .current_dir(&project)
+            .env_remove("CLICK_CPP_EXPORTER")
+            .output()
+            .unwrap()
+    };
+    let sidecar = fs::read_to_string(project.join("counter.click")).unwrap();
+    let linked = verify("counter.click", &sidecar);
+    assert!(
+        linked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&linked.stderr)
+    );
+
+    // Verifying the client alone leaves `counter_add` without a definition
+    // or a contract.
+    let client = "verifying \"client.cpp\";\n\
+                  int counter_limit() { ensures result == 1000; }\n\
+                  int bump_then_double(int& counter) {\n requires 0 <= counter and counter <= 50;\n owns counter;\n ensures result == counter + 1000;\n}\n";
+    let unproved = verify("client.click", client);
+    let stderr = String::from_utf8_lossy(&unproved.stderr);
+    assert!(!unproved.status.success());
+    assert!(stderr.contains("`counter_add`"), "{stderr}");
+
+    let conflicting = sidecar.replace(
+        "verifying \"client.cpp\";",
+        "verifying \"client.cpp\";\nverifying \"conflict.cpp\";",
+    );
+    let refused = verify("conflict.click", &conflicting);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(!refused.status.success());
+    assert!(
+        stderr.contains("define `counter_add` differently"),
+        "{stderr}"
+    );
+    let _ = fs::remove_dir_all(project);
 }

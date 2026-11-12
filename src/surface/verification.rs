@@ -279,7 +279,7 @@ impl<'a> CSourceContext<'a> {
         let input_digest = digest_framed_parts([
             b"click-typed-prepared-project-v1".as_slice(),
             program.language().name().as_bytes(),
-            program.logical_source().as_bytes(),
+            program.logical_sources().join("\0").as_bytes(),
             program.identity().as_bytes(),
         ]);
         Ok(Self {
@@ -5359,7 +5359,14 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
 ) -> Result<parser::ProgramLayouts, ClickError> {
     let verifying_paths = super::verifying_source_paths(click_source)?;
     if let ProgramSource::Program { import, execution } = &c_sources.source {
-        if verifying_paths != vec![import.logical_source().to_string()] {
+        let mut verifying = verifying_paths
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let mut prepared = import.logical_sources();
+        verifying.sort_unstable();
+        prepared.sort_unstable();
+        if verifying != prepared {
             return Err(ClickError::new(format!(
                 "prepared {} import logical source must exactly match the verifying clause",
                 import.language()
@@ -5640,7 +5647,15 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
     }
 
     if let ProgramSource::Program { import, execution } = &c_sources.source {
-        if file.verifying_sources != vec![import.logical_source().to_string()] {
+        let mut verifying = file
+            .verifying_sources
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let mut prepared = import.logical_sources();
+        verifying.sort_unstable();
+        prepared.sort_unstable();
+        if verifying != prepared {
             return Err(ClickError::new(format!(
                 "prepared {} import logical source must exactly match the verifying clause",
                 import.language()
@@ -5653,7 +5668,7 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
                 Ok((
                     function.name().to_string(),
                     (
-                        import.logical_source().to_string(),
+                        import.source_of(function.name()).to_string(),
                         named_by_extern_head(file, function)?,
                     ),
                 ))
