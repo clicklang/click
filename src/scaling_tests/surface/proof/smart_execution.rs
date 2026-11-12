@@ -6,6 +6,10 @@ use crate::surface::proof::pure_theorems::PureTheoremContext;
 
 #[test]
 fn model_argument_guard_selection_is_independent_of_unrelated_facts() {
+    model_argument_guard_work(false);
+}
+
+fn model_argument_guard_work(prepare: bool) {
     let parsed = crate::surface::parse(
         "spec enum Count { At(int32) } theorem accept(model: Count) { ensures model == model by solve(); }",
     ).unwrap();
@@ -116,13 +120,21 @@ fn model_argument_guard_selection_is_independent_of_unrelated_facts() {
         let ((result, persistent), work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::persistent::measure_persistent_work(|| {
-                    crate::kernel::search::ProofSearch::argument_guard_premises(
-                        &(root),
-                        theorem,
-                        &application,
-                        &application_context,
-                        &[],
-                    )
+                    if prepare {
+                        root.prepare_pure_theorem_application(&application)
+                            .map(|prepared| {
+                                assert!(!prepared.obligations.is_empty());
+                                vec![guard.clone()]
+                            })
+                    } else {
+                        crate::kernel::search::ProofSearch::argument_guard_premises(
+                            &(root),
+                            theorem,
+                            &application,
+                            &application_context,
+                            &[],
+                        )
+                    }
                 })
             });
         assert_eq!(result.unwrap(), vec![guard.clone()]);
@@ -141,4 +153,9 @@ fn model_argument_guard_selection_is_independent_of_unrelated_facts() {
         );
         assert!(root.certificate().steps().is_empty());
     }
+}
+
+#[test]
+fn prepared_pure_application_ignores_unrelated_facts() {
+    model_argument_guard_work(true);
 }

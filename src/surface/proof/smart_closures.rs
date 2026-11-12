@@ -3500,7 +3500,14 @@ impl<'a> Proof<'a> {
         if let Some(surface) = &requirement.surface {
             return Ok(self
                 .lower_surface_goal(surface, "tactic requirement")
-                .is_ok_and(|lowered| lowered_states_requirement(&lowered, requirement))
+                .is_ok_and(|lowered| {
+                    lowered_states_requirement(&lowered, requirement)
+                        || crate::kernel::listed_premise_holds(&requirement.proposition, |part| {
+                            crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(
+                                &lowered, part,
+                            )
+                        })
+                })
                 .then(|| RequirementSpelling {
                     surface: surface.clone(),
                 }));
