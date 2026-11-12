@@ -1492,3 +1492,17 @@ fn removed_declaration_validation_escape_cannot_be_reintroduced() {
     .unwrap();
     assert!(proof_search_boundary::check("src/new_operation.rs", &file).is_err());
 }
+
+#[test]
+fn join_must_keep_its_discovery_guard() {
+    let source = "impl ProofScope { fn join() {} }";
+    let errors =
+        proof_search_boundary::check("src/new_operation.rs", &syn::parse_file(source).unwrap())
+            .unwrap_err();
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("must enter its no-discovery scope")),
+        "{errors:?}"
+    );
+}
