@@ -83,6 +83,7 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
     ensures (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size);
     ensures new->__rb_parent_color == old(old->__rb_parent_color);
     ensures old->__rb_parent_color == address(new) + color;
+    ensures ((old->__rb_parent_color & ~3) as (struct rb_node *)) == new;
 } by {
     sized_link_replacement_distinct(old, new, root,
         (old as (void *) as (struct sized_node *))->size, { link: c });
