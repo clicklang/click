@@ -210,6 +210,8 @@ if [[ "$platform" == Linux ]]; then
     ln -s clang-19 "$llvm_release/bin/clang"
     ln -s clang "$llvm_release/bin/clang++"
     printf '#!/usr/bin/env bash\necho 19.1.7\n' > "$llvm_release/bin/llvm-config"
+    printf 'linker\n' > "$llvm_release/bin/lld"
+    ln -s lld "$llvm_release/bin/ld.lld"
     printf 'debugger\n' > "$llvm_release/bin/lldb"
     printf 'header\n' > "$llvm_release/include/clang/Basic.h"
     printf 'library\n' > "$llvm_release/lib/libclang-cpp.so.19.1"
@@ -234,6 +236,7 @@ if [[ "$platform" == Linux ]]; then
     PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$llvm_root"
     [[ "$("$llvm_root/usr/lib/llvm-19/bin/llvm-config" --version)" == 19.1.7 ]]
     [[ -L "$llvm_root/usr/lib/llvm-19/bin/clang++" ]]
+    [[ -L "$llvm_root/usr/lib/llvm-19/bin/ld.lld" ]]
     [[ -f "$llvm_root/usr/lib/llvm-19/include/clang/Basic.h" ]]
     [[ -f "$llvm_root/usr/lib/llvm-19/lib/libclang-cpp.so.19.1" ]]
     [[ ! -e "$llvm_root/opt/$llvm_name/bin/lldb" ]]

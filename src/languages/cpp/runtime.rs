@@ -58,7 +58,7 @@ fn resolve_exporter_from(
         return Ok(exporter);
     }
     Err(format!(
-        "the C++ front end is not installed for Click {VERSION} (expected `{}`); install it there, or set CLICK_CPP_EXPORTER to an exporter built with scripts/build-cpp-exporter.sh",
+        "the C++ front end is not installed for Click {VERSION} (expected `{}`); install it with `click install {VERSION} --cpp`, or set CLICK_CPP_EXPORTER to an exporter built with scripts/build-cpp-exporter.sh",
         exporter.display()
     ))
 }

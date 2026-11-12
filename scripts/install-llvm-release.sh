@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Install the official LLVM 19.1.7 Linux x86-64 release for networks that deny
 # apt.llvm.org. Only what the C++ exporter and the pinned-Clang fixtures use is
-# extracted: Clang, llvm-config, headers, and libraries (about 2.4 GiB of the
-# release's 8.2 GiB). It goes under ROOT/opt, and ROOT/usr/lib/llvm-19 links to
+# extracted: Clang, lld (which links the release exporter), llvm-config,
+# headers, and libraries (about 2.5 GiB of the release's 8.2 GiB). It goes
+# under ROOT/opt, and ROOT/usr/lib/llvm-19 links to
 # it, the path scripts/build-cpp-exporter.sh and tests/support/pinned_clang.rs
 # look up. ROOT, the filesystem root by default, lets tests install elsewhere.
 set -euo pipefail
@@ -41,7 +42,8 @@ if [[ ! -x "$install_directory/bin/llvm-config" ]]; then
     fi
     tar -xJf "$staging/$name.tar.xz" -C "$staging" \
         "$name/bin/clang" "$name/bin/clang++" "$name/bin/clang-19" \
-        "$name/bin/llvm-config" "$name/include" "$name/lib"
+        "$name/bin/llvm-config" "$name/bin/lld" "$name/bin/ld.lld" \
+        "$name/include" "$name/lib"
     mv "$staging/$name" "$install_directory"
     rm -rf "$staging"
     trap - EXIT

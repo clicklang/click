@@ -3,16 +3,29 @@
 #
 # `--check` only checks that the pinned toolchain is installed, without
 # building: it exits 0 when it is, and otherwise names what is missing.
+#
+# `--release` builds the self-contained front end that `click install --cpp`
+# installs (Linux x86-64 only): Clang, LLVM and the C++ runtime are linked
+# statically, and the pinned Clang's builtin headers are copied beside the
+# exporter as `clang-resource/`, which it finds relative to itself. The
+# output directory is the bundle; it depends only on the system C library.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 check_only=""
-if [[ "${1:-}" == "--check" ]]; then
+release=""
+if [[ "${1:-}" == "--check" && -z "${2:-}" ]]; then
     check_only=1
+elif [[ "${1:-}" == "--release" && -z "${2:-}" ]]; then
+    release=1
 elif [[ -n "${1:-}" ]]; then
-    echo "usage: scripts/build-cpp-exporter.sh [--check]" >&2
+    echo "usage: scripts/build-cpp-exporter.sh [--check | --release]" >&2
     exit 2
+fi
+if [[ -n "$release" && "$(uname -s)/$(uname -m)" != Linux/x86_64 ]]; then
+    echo "error: the release C++ front end is built on Linux x86-64 only" >&2
+    exit 1
 fi
 
 # The pinned front end: one definition, read by Click and compiled in here.
@@ -63,20 +76,42 @@ if ! "$clangxx" --version | head -n 1 | grep -Fq "$expected_version"; then
     exit 1
 fi
 
-clang_cpp=
-for candidate in \
-    "$llvm_libdir/libclang-cpp.dylib" \
-    "$llvm_libdir/libclang-cpp.so.19.1" \
-    "$llvm_libdir/libclang-cpp.so.19" \
-    "$llvm_libdir/libclang-cpp.so"; do
-    if [[ -f "$candidate" ]]; then
-        clang_cpp="$candidate"
-        break
+# The Clang C++ API: the shared library for a development build, or the
+# static libraries the exporter uses for a release build.
+clang_static_libraries=(
+    Tooling ToolingCore ToolingInclusions Frontend Driver Serialization Parse
+    Sema Analysis Edit AST ASTMatchers Lex Basic Rewrite Support APINotes
+    Index IndexSerialization Format
+)
+clang_cpp=()
+if [[ -n "$release" ]]; then
+    for library in "${clang_static_libraries[@]}"; do
+        if [[ ! -f "$llvm_libdir/libclang$library.a" ]]; then
+            echo "error: the Clang $expected_version static library libclang$library.a was not found in $llvm_libdir" >&2
+            exit 1
+        fi
+        clang_cpp+=("$llvm_libdir/libclang$library.a")
+    done
+    # The libraries may hold LLVM bitcode, which only the pinned lld links.
+    if [[ ! -x "$llvm_bindir/ld.lld" ]]; then
+        echo "error: the pinned lld was not found at $llvm_bindir/ld.lld" >&2
+        exit 1
     fi
-done
-if [[ -z "$clang_cpp" ]]; then
-    echo "error: the Clang $expected_version C++ API library was not found in $llvm_libdir" >&2
-    exit 1
+else
+    for candidate in \
+        "$llvm_libdir/libclang-cpp.dylib" \
+        "$llvm_libdir/libclang-cpp.so.19.1" \
+        "$llvm_libdir/libclang-cpp.so.19" \
+        "$llvm_libdir/libclang-cpp.so"; do
+        if [[ -f "$candidate" ]]; then
+            clang_cpp=("$candidate")
+            break
+        fi
+    done
+    if (( ${#clang_cpp[@]} == 0 )); then
+        echo "error: the Clang $expected_version C++ API library was not found in $llvm_libdir" >&2
+        exit 1
+    fi
 fi
 
 # Clang ships no C++ standard library on Linux: it borrows the headers of the
@@ -111,7 +146,42 @@ read -r -a llvm_ldflags <<<"$("$llvm_config" --ldflags)"
 read -r -a llvm_system_libs <<<"$("$llvm_config" --system-libs)"
 read -r -a llvm_libs <<<"$("$llvm_config" --libs)"
 
-build_directory="${CLICK_CPP_EXPORTER_BUILD_DIR:-target/cpp-exporter}"
+# The pinned Clang's own builtin headers (`<stddef.h>`, `<stdarg.h>`, ...).
+# The exporter supplies this resource directory to a command that names
+# none, so a build description never has to state a machine-specific path.
+resource_dir="$("$clangxx" -print-resource-dir)"
+if [[ ! -f "$resource_dir/include/stddef.h" ]]; then
+    echo "error: $clangxx reports resource directory $resource_dir, which has no include/stddef.h" >&2
+    exit 1
+fi
+
+if [[ -n "$release" ]]; then
+    default_build_directory=target/cpp-exporter-release
+    # Relative to the exporter's own directory.
+    compiled_resource_dir=clang-resource
+    # Only the system C library stays dynamic. LLVM's optional libxml2 is
+    # left out: nothing the exporter links uses it.
+    link_flags=(
+        -fuse-ld=lld
+        -Wl,--gc-sections
+        -Wl,--start-group "${clang_cpp[@]}" -Wl,--end-group
+        "${llvm_libs[@]}"
+        -Wl,-Bstatic -lz -lzstd -Wl,-Bdynamic
+        -lrt -ldl -lm -lpthread
+        -static-libstdc++ -static-libgcc
+    )
+else
+    default_build_directory=target/cpp-exporter
+    compiled_resource_dir="$resource_dir"
+    link_flags=(
+        "-Wl,-rpath,$llvm_libdir"
+        "${clang_cpp[@]}"
+        "${llvm_libs[@]}"
+        "${llvm_system_libs[@]}"
+    )
+fi
+
+build_directory="${CLICK_CPP_EXPORTER_BUILD_DIR:-$default_build_directory}"
 output="$build_directory/click-cpp-exporter"
 temporary="$output.tmp.$$"
 mkdir -p "$build_directory"
@@ -124,8 +194,8 @@ fingerprint="$(
     {
         cat tools/cpp-exporter/* "${BASH_SOURCE[0]}" "$profile"
         "$clangxx" --version
-        printf '%s\n' "$clangxx" "$clang_cpp" "${CCC_OVERRIDE_OPTIONS:-}" \
-            "${llvm_cxxflags[@]}" "${llvm_ldflags[@]}" "${llvm_libs[@]}" "${llvm_system_libs[@]}"
+        printf '%s\n' "$clangxx" "$resource_dir" "${CCC_OVERRIDE_OPTIONS:-}" \
+            "${llvm_cxxflags[@]}" "${llvm_ldflags[@]}" "${link_flags[@]}"
     } | cksum
 )"
 if [[ -x "$output" && -f "$stamp" && "$(cat "$stamp")" == "$fingerprint" ]]; then
@@ -136,18 +206,9 @@ fi
 rm -f "$stamp"
 trap 'rm -f "$temporary"' EXIT
 
-# The pinned Clang's own builtin headers (`<stddef.h>`, `<stdarg.h>`, ...).
-# The exporter supplies this resource directory to a command that names
-# none, so a build description never has to state a machine-specific path.
-resource_dir="$("$clangxx" -print-resource-dir)"
-if [[ ! -f "$resource_dir/include/stddef.h" ]]; then
-    echo "error: $clangxx reports resource directory $resource_dir, which has no include/stddef.h" >&2
-    exit 1
-fi
-
 "$clangxx" \
     "${llvm_cxxflags[@]}" \
-    "-DCLICK_CLANG_RESOURCE_DIR=\"$resource_dir\"" \
+    "-DCLICK_CLANG_RESOURCE_DIR=\"$compiled_resource_dir\"" \
     "-DCLICK_CPP_EXPORTER_VERSION=\"$exporter_version\"" \
     "-DCLICK_CPP_CLANG_VERSION=\"$expected_version\"" \
     "-DCLICK_CPP_ARTIFACT_SCHEMA=$artifact_schema" \
@@ -158,11 +219,13 @@ fi
     -Wno-unused-parameter \
     tools/cpp-exporter/main.cpp \
     "${llvm_ldflags[@]}" \
-    "-Wl,-rpath,$llvm_libdir" \
-    "$clang_cpp" \
-    "${llvm_libs[@]}" \
-    "${llvm_system_libs[@]}" \
+    "${link_flags[@]}" \
     -o "$temporary"
+if [[ -n "$release" ]]; then
+    rm -rf "$build_directory/clang-resource"
+    mkdir -p "$build_directory/clang-resource"
+    cp -R "$resource_dir/include" "$build_directory/clang-resource/include"
+fi
 mv "$temporary" "$output"
 trap - EXIT
 printf '%s\n' "$fingerprint" > "$stamp"
