@@ -7423,12 +7423,6 @@ impl PureFactContext {
         self.store_owners.as_deref().map(Vec::as_slice)
     }
 
-    /// A context holding only this context's resource compositions: what
-    /// ownership alone proves, independent of any condition or other fact.
-    pub(crate) fn compositions_only(&self) -> Self {
-        crate::kernel::search::ProofSearch::<PureFactContext>::composition_context(self)
-    }
-
     /// Return required verification conditions even when the input already
     /// proves them. Statement preparation leaves their proofs to its driver;
     /// this policy changes obligations, never the terms being evaluated.
@@ -14222,8 +14216,6 @@ mod shared_load_atom_comparison_tests {
         include!("../scaling_tests/kernel/assumptions/shared_load_atom_comparison_tests.rs");
     }
 }
-
-mod legacy_search;
 
 #[cfg(test)]
 mod shared_read_memory_collection_tests {

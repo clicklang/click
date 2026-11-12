@@ -60,7 +60,7 @@ int32 read_back(int32 u) {
             step_until(function.exit);
         } else {
             have 1 <= u by { solve() using { 0 <= u; u != 0; }; }
-            have separate(memory(buf[1..4]), memory(buf[0..1])) by assumption();
+            have separate(memory(buf[1..4]), memory(buf[0..1])) by normalize();
             have u <= ((u + 1) as int32) by { solve() using { 1 <= u; u < 4; }; }
             have ((u + 1) as int32) <= 4 by { solve() using { 1 <= u; u < 4; }; }
             have contains(memory(buf[1..4]), memory(buf[u..u + 1])) by {
@@ -121,7 +121,7 @@ int32 read_back_stepped(int32 u) {
             step_until(function.exit);
         } else {
             have 1 <= u by { solve() using { 0 <= u; u != 0; }; }
-            have separate(memory(buf[1..4]), memory(buf[0..1])) by assumption();
+            have separate(memory(buf[1..4]), memory(buf[0..1])) by normalize();
             have u <= ((u + 1) as int32) by { solve() using { 1 <= u; u < 4; }; }
             have ((u + 1) as int32) <= 4 by { solve() using { 1 <= u; u < 4; }; }
             have contains(memory(buf[1..4]), memory(buf[u..u + 1])) by {

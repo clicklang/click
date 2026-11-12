@@ -1525,7 +1525,31 @@ impl ProofFacts {
     /// A conjunction also needs every other leaf (including range bounds) as
     /// an existing fact. No unrelated resource pairs are enumerated.
     pub(crate) fn with_selected_resource_separation(&self, goal: &Proposition) -> Self {
-        self.with_selected_separation_facts(goal, false)
+        self.with_selected_separation_facts(goal)
+    }
+
+    /// Apply the exact partition rule to the written separation leaves only.
+    /// No containment, aliases, composition traversal or fact search occurs.
+    pub(crate) fn with_exact_partition_separation(
+        &self,
+        goal: &Proposition,
+        resources: &ResourceContext,
+    ) -> Self {
+        let mut facts = self.clone();
+        let mut pending = vec![goal];
+        while let Some(part) = pending.pop() {
+            match part {
+                Proposition::And(left, right) => pending.extend([right.as_ref(), left.as_ref()]),
+                Proposition::CResourceSeparate { left, right }
+                    if !facts.contains(part)
+                        && resources.proves_exact_partition_separation(left, right) =>
+                {
+                    facts = facts.with_fact(part.clone());
+                }
+                _ => {}
+            }
+        }
+        facts
     }
 
     /// Observes only the separation explicitly requested at this checked C
@@ -1551,13 +1575,7 @@ impl ProofFacts {
         }
     }
 
-    /// As above, but separation must follow from the compositions alone.
-    /// Contextual separation facts retain their explicit derivation.
-    pub(crate) fn with_selected_composition_separation(&self, goal: &Proposition) -> Self {
-        self.with_selected_separation_facts(goal, true)
-    }
-
-    fn with_selected_separation_facts(&self, goal: &Proposition, composition_only: bool) -> Self {
+    fn with_selected_separation_facts(&self, goal: &Proposition) -> Self {
         let mut facts = self.clone();
         let mut pending = vec![goal];
         let mut all_available = true;
@@ -1568,11 +1586,7 @@ impl ProofFacts {
                 continue;
             }
             if matches!(part, Proposition::CResourceSeparate { .. }) && !facts.contains(part) {
-                let assumptions = if composition_only {
-                    facts.assumptions.compositions_only()
-                } else {
-                    facts.assumptions.clone()
-                };
+                let assumptions = &facts.assumptions;
                 if assumptions.proves_exact(part)
                     || assumptions.proves_atomic_memory_or_resource(part)
                 {

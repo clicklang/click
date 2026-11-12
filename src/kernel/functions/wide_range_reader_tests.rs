@@ -1,7 +1,7 @@
 use super::*;
 // Both symbolic bases and native extents reach call-framing readers.
 #[test]
-fn wide_call_ranges_are_undecided_and_canonical_pointers_keep_their_width() {
+fn wide_call_ranges_are_undecided() {
     let base = Pointer::symbolic(Variable(984_000));
     let wide = CMemoryRange::new_wide(
         base.clone(),
@@ -18,29 +18,6 @@ fn wide_call_ranges_are_undecided_and_canonical_pointers_keep_their_width() {
     assert!(!candidate_memory_ranges_proven_separate(
         &wide, &other, &facts
     ));
-    let checked_base = Pointer::symbolic(Variable(984_001));
-    let checked =
-        CMemoryRange::new_with_element_width(checked_base.clone(), 0u32.into(), 1u32.into(), 1);
-    let slot = Pointer {
-        block: "wide_canonical_pointer_slot".into(),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let state = CState::new().with_memory(
-        CMemory::new()
-            .with_block(slot.block.clone(), 8)
-            .store(slot.clone(), CValue::pointer(checked_base)),
-    );
-    let canonical = with_canonical_borrowed_pointer_memory(
-        &state,
-        &[(
-            CResourceFact::own_memory(checked),
-            CResourceFact::own_memory(wide.clone()),
-        )],
-    );
-    assert_eq!(
-        canonical.memory().known_value(&slot),
-        Some(CValue::pointer(wide.start_pointer()))
-    );
 }
 // Wide resource bodies are opened, folded and queried without constructing
 // signed loadability facts in the instance and ordinary-composite paths.

@@ -1125,14 +1125,9 @@ impl<'a> Proof<'a> {
         } else {
             self.lower_surface_goal_recording_introductions(&structural_proposition, "`have` body")?
         };
-        // A `have` stated at an execution frontier proves its goal from the
-        // frontier's facts alone. After an explicit checked resource unfold,
-        // materialize a selected separation goal from the compact composition
-        // with the context's facts; before one, the composition is still
-        // checked authority for what ownership alone proves (two ranges owned
-        // at entry are disjoint), while a separation that needs call
-        // postconditions stays lazy so source expansion preserves their
-        // anchored rewrites.
+        // Opening a frontier goal must not reconstruct an ambient composition
+        // context. Its written proof establishes separation from selected
+        // evidence; the direct held-resource observation below is independent.
         let at_frontier = matches!(self.focused_obligation(), Some(Obligation::Frontier(_)));
         // A single written transport is already the selected proof of this
         // goal. Do not search for an alternative separation or copy the
@@ -1155,7 +1150,7 @@ impl<'a> Proof<'a> {
             body_facts = if !at_frontier || resource_unfolded {
                 held_facts.with_selected_resource_separation(&body_kernel)
             } else {
-                held_facts.with_selected_composition_separation(&body_kernel)
+                held_facts
             };
             // A `have` stated at an execution frontier may use the frontier's
             // effect facts exactly as the shared mid-execution law offers them.

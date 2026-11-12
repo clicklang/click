@@ -1,5 +1,11 @@
 # A joined loop rewrites a stored pointer through a model alias
 
+After `sibling->right = parent`, `normalize` reads the stored pointer back
+through the model alias `sibling == model`. A read follows at most one
+recorded transition, so transport certificates carry the parent's `left` and
+`right` fields across that store, and the leaf and cell are folded at the
+identities their reads were established under.
+
 ```c filename=joined-pointer-field-store.c
 struct node { uint64 tag; struct node *right; struct node *left; };
 void inspect(struct node *parent) {
@@ -108,15 +114,44 @@ void inspect(struct node* parent) {
                             have child == leaf;
                             have sibling->left == child;
                             have model->left == leaf by {
-                                normalize() using { sibling == model; sibling->left == child; child == leaf; };
+                                rewrite(model == sibling);
+                                normalize() using { sibling->left == child; child == leaf; };
                             }
+                            have pid->left == model;
+                            have pid->right == at(split, parent->right);
+                            have separate(memory(sibling->right), memory(pid->left));
+                            have separate(memory(sibling->right), memory(pid->right));
+                            mark before_store;
                             step();
+                            mark after_store;
+                            have pid->left == at(before_store, pid->left) by {
+                                transport_certificate {
+                                    premise 0: changes_only(before_store, after_store, memory(sibling->right))
+                                        => changes_only(before_store, after_store, memory(sibling->right));
+                                    premise 1: at(before_store, separate(memory(sibling->right), memory(pid->left)))
+                                        => at(before_store, separate(memory(sibling->right), memory(pid->left)));
+                                    preserve 0, 1 => pid->left == at(before_store, pid->left);
+                                    conclusion 2;
+                                }
+                            }
+                            have pid->left == model;
+                            have pid->right == at(before_store, pid->right) by {
+                                transport_certificate {
+                                    premise 0: changes_only(before_store, after_store, memory(sibling->right))
+                                        => changes_only(before_store, after_store, memory(sibling->right));
+                                    premise 1: at(before_store, separate(memory(sibling->right), memory(pid->right)))
+                                        => at(before_store, separate(memory(sibling->right), memory(pid->right)));
+                                    preserve 0, 1 => pid->right == at(before_store, pid->right);
+                                    conclusion 2;
+                                }
+                            }
+                            have pid->right == at(split, parent->right);
                             have sibling->right == parent;
                             have model->right == parent by {
-                                normalize();
+                                normalize() using { sibling == model; };
                             }
-                            let l = fold(leaf_at(parent->left->left), { model: Identity::At(leaf) });
-                            let c = fold(cell(parent->left), { model: Pair::At(model, Identity::At(leaf)) }, { l: l });
+                            let l = fold(leaf_at(leaf), { model: Identity::At(leaf) });
+                            let c = fold(cell(model), { model: Pair::At(model, Identity::At(leaf)) }, { l: l });
                             have nf.model == fm;
                             let tree_context = fold(parent_at(root), { model: Parent::At(pid, Pair::At(model, Identity::At(leaf)), fm) }, { c: c, f: nf });
                             step(); step();

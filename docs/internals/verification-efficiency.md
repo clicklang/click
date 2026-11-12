@@ -842,7 +842,9 @@ route, including the population-member-count-zero and Integer range-fold
 built-ins. Explicit `apply(...) using { ... }` is the replay operation.
 
 In test builds, `FastOperationScope` surrounds preparation, publication and
-explicit theorem application and proposition/resource scope completion.
+explicit theorem application, contract-claim opening, and proposition/resource
+scope completion. Claim opening retains its goal without proving separation;
+its explicit proof can apply the exact live-partition rule through `assumption()`.
 Prepared statement/fold publication is guarded independently of obligation
 solving. Every `ProofSearch` method records entry before
 any work, including exact-fact shortcuts; constructing `SearchPermission` also
