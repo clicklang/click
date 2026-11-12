@@ -207,6 +207,14 @@ pieces. Test symbolic/wide carriers, gaps, ambiguity and persistent parents.
 
 ### R2: ownership validity and overlap — source candidates
 
+Entry-state call borrows rejoin their selected residual frame without memory
+alias discovery. A private transfer restores the identities retained at call
+entry. Newly produced ownership, post-state outputs, raw body-return descriptions
+and contract comparisons retain their validating path. The restoration guard and
+`call_borrow_restoration_ignores_ambient_aliases_and_frame` cover this selected
+join, with unrelated aliases, unrelated owners, and repeated forks; they do not
+certify all call preparation or output-description lowering.
+
 `owned_validity_candidates` and incremental validity checking still have
 symbolic-bound and multiple-coordinate-origin paths. Single-block count and
 constant-coordinate neighbor shortcuts do not settle multi-block alias/root
