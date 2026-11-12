@@ -3479,14 +3479,7 @@ impl<'a> Proof<'a> {
         if let Some(surface) = &requirement.surface {
             return Ok(self
                 .lower_surface_goal(surface, "tactic requirement")
-                .is_ok_and(|lowered| {
-                    lowered_states_requirement(&lowered, requirement)
-                        || crate::kernel::listed_premise_holds(&requirement.proposition, |part| {
-                            crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(
-                                &lowered, part,
-                            )
-                        })
-                })
+                .is_ok_and(|lowered| lowered_covers_recorded_requirement(&lowered, requirement))
                 .then(|| RequirementSpelling {
                     surface: surface.clone(),
                 }));
@@ -3509,7 +3502,7 @@ impl<'a> Proof<'a> {
         };
         if let Some(surface) = recorded {
             let lowered = self.lower_surface_goal(surface, "recorded tactic requirement")?;
-            if !lowered_states_requirement(&lowered, requirement) {
+            if !lowered_covers_recorded_requirement(&lowered, requirement) {
                 return Err(self.step_error("a recorded tactic requirement does not round-trip"));
             }
             return Ok(Some(RequirementSpelling {
@@ -4050,6 +4043,20 @@ fn literal_requirement_spelling(
             ))),
         },
     })
+}
+
+// A recorded source was already selected by its exact proposition key. It
+// may state evaluation guards together with that proposition. This is not
+// the matcher that chooses among a tactic's written `requires` clauses:
+// proving a trivial goal cannot identify which clause the author selected.
+fn lowered_covers_recorded_requirement(
+    lowered: &Proposition,
+    requirement: &UnresolvedRequirement,
+) -> bool {
+    lowered_states_requirement(lowered, requirement)
+        || crate::kernel::listed_premise_holds(&requirement.proposition, |part| {
+            crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(lowered, part)
+        })
 }
 
 pub(super) fn lowered_states_requirement(
