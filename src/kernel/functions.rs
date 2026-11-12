@@ -651,11 +651,6 @@ fn with_canonical_borrowed_pointer_memory(
     state: &CState,
     canonical_borrowed_owners: &[(CResourceFact, CResourceFact)],
 ) -> CState {
-    // EXPERIMENT: lower against the real memory.
-    if std::env::var_os("CLICK_NO_RESPELL").is_some() {
-        let _ = canonical_borrowed_owners;
-        return state.clone();
-    }
     let mut replacements = BTreeMap::<Variable, Option<Pointer>>::new();
     for (checked, canonical) in canonical_borrowed_owners {
         let (variable, canonical_start) = match (checked.resource(), canonical.resource()) {
