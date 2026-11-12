@@ -21833,3 +21833,24 @@ fn pure_apply_obligations_expand_to_explicit_have_and_using() {
         .unwrap();
     }
 }
+
+#[test]
+fn live_apply_obligations_expand_at_the_original_frontier() {
+    let (source, sources) = mdtest_sources("mdtests/live_apply_obligations.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "increment").unwrap();
+    assert!(
+        expanded.contains("have ") && expanded.contains("using"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("increment.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+    let false_premise = source.replace("increased(old(x), x)", "increased(x, old(x))");
+    assert!(verify_c0_sources(&false_premise, &sources).is_err());
+}
