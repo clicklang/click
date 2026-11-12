@@ -3376,7 +3376,7 @@ theorem one_tactic_proofs(x: int32) {
     let position = expansion::position_at_offset(source, offset);
     let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column).unwrap();
     assert!(
-        expanded.contains("ensures 0 <= x by {\n        apply(helper(x)) using {"),
+        expanded.contains("ensures 0 <= x by {\n        have 0 <= x by {\n            assumption();\n        }\n        apply(helper(x)) using {"),
         "{expanded}"
     );
     assert!(

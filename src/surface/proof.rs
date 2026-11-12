@@ -767,9 +767,10 @@ mod certificate_tests {
         assert!(matches!(
             verified[3].proof_tactics().as_deref(),
             Some([
+                ProofTactic::Have(ProofHave { proof: SourceProof::Script(body), .. }),
                 ProofTactic::ApplyTheoremUsing { application, premises },
                 ProofTactic::Assumption,
-            ]) if application.name == "required" && premises.len() == 1
+            ]) if matches!(body.as_slice(), [ProofTactic::Assumption]) && application.name == "required" && premises.len() == 1
         ));
         assert_eq!(
             verified[4].proof_tactics().as_deref(),
