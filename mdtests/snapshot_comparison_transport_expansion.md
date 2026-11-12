@@ -19,6 +19,7 @@ void keep(int32* p, int32* q) {
     }
     have *q == 7 by {
         transport(at(statement(0).entry, *q == 7), *q == 7) using {
+            at(statement(0).entry, *q == 7);
             separate(statement(0).footprint, memory(*q));
         };
     }
