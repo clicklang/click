@@ -6295,7 +6295,10 @@ private:
   // interface is exported; a call is checked against its contract, which a
   // sidecar that also verifies the defining source proves.
   bool is_external(const clang::FunctionDecl *function) const {
+    // A compiler builtin is declared implicitly where it is used; it is
+    // never another translation unit's function.
     return function->getDefinition() == nullptr && !is_axiom(function) &&
+           function->getBuiltinID() == 0 && !function->isImplicit() &&
            function->isExternallyVisible() &&
            executable_source(source_manager_.getSpellingLoc(
                function->getLocation())).has_value();
