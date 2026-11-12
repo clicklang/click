@@ -242,19 +242,6 @@ int fill_parallel(int output[4]) {
     step_until(statement(5));
     have first_job.output == output;
     have second_job.output == output;
-    have separate(memory(first_job), memory(output[0..4])) by { solve(); }
-    have contains(memory(output[0..4]), memory(output[0..2])) by {
-        apply(separation::subrange(output, 0, 4, 0, 2)) using { 0 <= 0; 0 <= 2; 2 <= 4; };
-    }
-    have separate(memory(first_job), memory(output[0..2])) by { solve(); }
-    have first_job.begin == 0;
-    have first_job.end == 2;
-    have separate(memory(first_job), memory(first_job.output[first_job.begin..first_job.end])) by {
-        rewrite(first_job.output == output);
-        rewrite(first_job.begin == 0);
-        rewrite(first_job.end == 2);
-        assumption();
-    }
     step();
     branch {
         step_until(function.exit);

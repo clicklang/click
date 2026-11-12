@@ -5196,17 +5196,28 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if a == goal_left && b == goal_right {
                 continue;
             }
-            let source = super::surface_synthesis::synthesize_surface_proposition(
-                &candidate,
-                view.parameter_binding,
-                view.fixed_state.state,
-            )
-            .ok_or_else(|| {
-                search_input.step_error("a separation restriction source has no Surface spelling")
-            })?;
-            let ClickProposition::Separate { left: a, right: b } = source else {
-                continue;
+            // The goal already owns exact spellings for these resources,
+            // including reads at its selected historical points. Keep those
+            // names instead of reconstructing them from the current state.
+            let source = |resource: &CResource| {
+                if resource == goal_left.as_ref() {
+                    return Ok(left.clone());
+                }
+                if resource == goal_right.as_ref() {
+                    return Ok(right.clone());
+                }
+                super::surface_synthesis::synthesize_surface_resource_subject(
+                    resource,
+                    view.parameter_binding,
+                    view.fixed_state.state,
+                    &BTreeMap::new(),
+                )
+                .ok_or_else(|| {
+                    search_input
+                        .step_error("a separation restriction source has no Surface spelling")
+                })
             };
+            let (a, b) = (source(a)?, source(b)?);
             for (a, b) in [(a.clone(), b.clone()), (b, a)] {
                 let separate = ClickProposition::Separate {
                     left: a.clone(),

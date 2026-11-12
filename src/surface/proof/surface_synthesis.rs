@@ -3442,7 +3442,7 @@ fn synthesize_unsigned_comparison(
     })
 }
 
-fn synthesize_surface_resource_subject(
+pub(super) fn synthesize_surface_resource_subject(
     resource: &CResource,
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
