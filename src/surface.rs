@@ -6963,6 +6963,15 @@ pub enum IntegerCertificateNode {
         proposition: ClickProposition,
         result: ClickProposition,
     },
+    /// A non-strict bound made strict by a disequality of the same
+    /// difference: from node `bound`, `l <= r`, and premise `index`,
+    /// `l != r` (either side first), `l < r`.
+    StrictFromDisequal {
+        bound: usize,
+        index: usize,
+        proposition: ClickProposition,
+        result: ClickProposition,
+    },
     /// The integer negation of a non-strict or strict goal, assumed for a
     /// refutation; the certificate then concludes with a contradiction.
     NegatedGoal {

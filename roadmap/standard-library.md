@@ -22,8 +22,9 @@ Done: delivery steps 1 to 4, the qualified-name steps of step 5 except
 generic width-free names, step 6, and the generic `permutation::count` and
 `size_t` `allocation` byte counts of step 7; Integer-default specification arithmetic; machine-integer Stages 0
 to 3, and Stage 4's front ends; Rust names for the lemmas a Rust proof
-applies. The library's own proof check runs in the
-gate. Of the library's 148 theorems, 104 have checked proofs and 44 are
+applies; the product-identity, `<=`-and-`!=` and round-trip width gaps
+(2026-11-12). The library's own
+proof check runs in the gate. Of the library's 148 theorems, 112 have checked proofs and 36 are
 kernel standard theorems.
 
 Open:
@@ -70,7 +71,7 @@ trust:
   width-specific lemmas such as `int32_less_equal_transitive` and
   `uint64_subtract_to_integer`. Today 64 of the 148 theorems are: 56
   width-prefixed `integer::` lemmas and the eight `integer::to_*_round_trip`
-  laws. 104 of the 148 have checked proofs and 44 are kernel standard
+  laws. 112 of the 148 have checked proofs and 36 are kernel standard
   theorems ([trust](../docs/concepts/trust.md#the-click-library)).
 
 The width lemmas have no consistent coverage across widths. On master at the
@@ -601,32 +602,20 @@ others, which have no Rust wrapper), as do the archived `design/charon-trial` si
 
 `src/surface/tests/width_uniformity.rs` states 39 families at the ten
 formats of `machine_integer::FORMATS` (`int8` to `uint128`). The omitted
-proof closes 251 statements; 33 are gaps, open here, and the nightly
+proof closes 280 statements; 4 are gaps, open here, and the nightly
 `width_family_gaps_are_still_refused` checks each is still refused with
 its recorded diagnostic. Division and remainder by a symbolic divisor have
 no kernel rule (they stay kernel standard theorems, maintainer decision)
 and are not families there; neither are the byte-packing laws
 (`uint32_pack_uint16_*`, `uint32_unpack_uint16_*`, `uint64_*_uint16_*`,
 `uint32_from_le_bytes`), which state a field layout of particular widths.
-No gap is a kernel-rule change made here; each needs a decision.
+The product identity, `<=`-and-`!=` and round-trip gaps closed on
+2026-11-12: `solve` plans a product's bounds by `integer_product_bounds`,
+the Integer certificate's `less_than_from_not_equal` makes a bound strict
+by a disequality, and `integer_cast_identity` reads `to_integer(to_T(z))` as
+`z` under `T`'s range, so the eight `to_*_round_trip` laws are proved. The
+one gap left is open by decision.
 
-- **`<=` and `!=` give `<`** (every format but `int32`, 9 pairs).
-  `less_than_from_not_equal` is a node of the `signed_int32` certificate
-  only; the Integer certificate has no `!=` step, so the law fails at
-  `int64` and over plain `Integer` too. Proposed fix: one Integer
-  certificate node, which `solve` plans at every format.
-- **Product identity** (`multiply_to_integer` at the eight formats with
-  operations, `defined_multiply_to_integer` at `int32` and `int64`, 10
-  pairs). `solve` plans in-range identities for `+` and `-` only, and does
-  not derive `0 <= to_integer(a) * to_integer(b)`; the kernel's
-  `integer_operation_identity` accepts the product with explicit
-  `integer_product_bounds` premises. Proposed fix: plan the product's
-  bounds and identity in `solve`.
-- **Round trip** (all ten formats, 10 pairs). `to_T(z)` lowers to an
-  opaque bounded operation no rule relates to `z`; the library's eight
-  `to_*_round_trip` laws are kernel standard theorems. Proposed fix: a
-  conversion rule reading `to_integer(to_T(z))` as `z` under its range
-  obligation, or keep the axioms.
 - **Wrapping difference order** (`difference_decreases_after_increment`
   at `uint8` to `uint64`, 4 pairs). The library's `uint32` proof is about
   120 lines of modular reasoning `solve` does not plan.

@@ -141,7 +141,10 @@ fn cited_by_caller_index(
         .collect::<Option<Vec<_>>>()?;
     for node in &mut certificate.nodes {
         if let IntegerArithmeticNode::Premise { index, .. }
-        | IntegerArithmeticNode::ExcludedTypeBound { index, .. } = node
+        | IntegerArithmeticNode::ExcludedTypeBound { index, .. }
+        | IntegerArithmeticNode::StrictFromDisequal {
+            disequal: index, ..
+        } = node
         {
             *index = *positions.get(*index)?;
         }

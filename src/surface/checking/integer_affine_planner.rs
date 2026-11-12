@@ -402,7 +402,8 @@ fn for_each_node_source(node: &IntegerArithmeticNode, mut visit: impl FnMut(usiz
         | IntegerArithmeticNode::NegatedGoal { .. } => {}
         IntegerArithmeticNode::Scale { source, .. }
         | IntegerArithmeticNode::EqualityToLessEqual { source, .. }
-        | IntegerArithmeticNode::Divide { source, .. } => visit(*source),
+        | IntegerArithmeticNode::Divide { source, .. }
+        | IntegerArithmeticNode::StrictFromDisequal { bound: source, .. } => visit(*source),
         IntegerArithmeticNode::Add { left, right, .. }
         | IntegerArithmeticNode::EqualityFromBounds {
             lower: left,
@@ -501,6 +502,15 @@ fn remapped_node(
                 result: result.clone(),
             }
         }
+        IntegerArithmeticNode::StrictFromDisequal {
+            bound,
+            disequal,
+            result,
+        } => IntegerArithmeticNode::StrictFromDisequal {
+            bound: source(*bound)?,
+            disequal: *disequal,
+            result: result.clone(),
+        },
     })
 }
 

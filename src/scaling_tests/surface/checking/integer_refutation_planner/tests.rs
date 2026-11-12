@@ -53,3 +53,54 @@ fn type_range_rows_grow_linearly_with_machine_observations() {
         assert!(pair[1] <= 3 * pair[0], "{samples:?}");
     }
 }
+
+/// Disequalities join the refutation by one lookup each in an index of the
+/// non-strict bounds, so unrelated disequalities and bounds add linear work,
+/// and many disequalities of the goal's own difference add one strict row
+/// each.
+#[test]
+fn strict_bounds_from_disequalities_grow_linearly() {
+    let ne = |left: IntegerTerm, right: IntegerTerm| {
+        Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::IntegerNotEqual(left.into(), right.into()),
+            true,
+        )
+    };
+    let lt = |left: IntegerTerm, right: IntegerTerm| {
+        Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::IntegerLessThan(left.into(), right.into()),
+            true,
+        )
+    };
+    let goal = lt(x(70), x(71));
+    for related in [false, true] {
+        let mut samples = Vec::new();
+        for size in [8u64, 16, 32, 64] {
+            let mut premises = vec![le(x(70), x(71)), ne(x(70), x(71))];
+            for extra in 0..size {
+                if related {
+                    // Repeated disequalities of the goal's own difference.
+                    premises.push(ne(x(71), x(70)));
+                } else {
+                    premises.push(le(x(3000 + extra), x(4000 + extra)));
+                    premises.push(ne(x(3000 + extra), x(4000 + extra)));
+                }
+            }
+            let (outcome, work) = crate::instrumentation::measure_deterministic_work(|| {
+                plan_integer_refutation(&goal, &premises)
+            });
+            let IntegerRefutation::Proved {
+                certificate,
+                premises: used,
+            } = outcome
+            else {
+                panic!("{size}: {outcome:?}");
+            };
+            assert_eq!(certificate.check(&goal, &used), Ok(()));
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= 3 * pair[0], "related {related}: {samples:?}");
+        }
+    }
+}

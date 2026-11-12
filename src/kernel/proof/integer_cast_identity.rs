@@ -1,10 +1,13 @@
 //! A modulo integral cast preserves its mathematical value inside the
-//! destination range. The certificate names exactly two source bounds.
+//! destination range, and so does the Integer-to-machine conversion
+//! `to_T(z)`: `to_integer(to_T(z)) == z` when `z` lies in `T`
+//! (`conversion::integer_conversion`). The certificate names exactly two
+//! source bounds.
 
 use super::arithmetic_special::SpecialArithmeticCheckError as Error;
 #[cfg(test)]
 use crate::kernel::binary_node;
-use crate::kernel::machine_integer::conversion::cast;
+use crate::kernel::machine_integer::conversion::{cast, integer_conversion};
 use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
 
 fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
@@ -78,6 +81,10 @@ fn check_as_written(
         (b, destination)
     } else if let Some(destination) = cast(b, a) {
         (a, destination)
+    } else if let Some((_, destination)) = integer_conversion(a).filter(|(z, _)| z == b) {
+        (b, destination.format())
+    } else if let Some((_, destination)) = integer_conversion(b).filter(|(z, _)| z == a) {
+        (a, destination.format())
     } else {
         return Err(invalid());
     };
@@ -148,6 +155,83 @@ mod tests {
         SpecialArithmeticCertificate {
             nodes: vec![SpecialArithmeticNode::IntegerCastIdentity { bounds, result }],
             conclusion: 0,
+        }
+    }
+
+    /// `to_integer(to_T(z)) == z` at every format, either side first, with
+    /// `z`'s two bounds inside `T`'s range, and nothing else: a bound past
+    /// the range, on another term, or a conversion of another value, is
+    /// refused. Wherever it is accepted the statement holds in the
+    /// independent model of `to_T` as reduction modulo `2^w` into `T`.
+    #[test]
+    fn integer_conversion_identity_is_its_operand_inside_the_range() {
+        use num_traits::One;
+        let z = IntegerTerm::Variable(Variable(168_101));
+        let other = IntegerTerm::Variable(Variable(168_102));
+        for destination in crate::kernel::machine_integer::FORMATS {
+            let converted = |value: &IntegerTerm| {
+                IntegerTerm::from_machine(
+                    destination,
+                    MachineTerm::IntegerToMachine {
+                        value: value.clone().into(),
+                        destination,
+                    },
+                )
+                .unwrap()
+            };
+            let (min, max) = destination.format().bounds();
+            let bounds = |lo: BigInt, hi: BigInt, value: &IntegerTerm| {
+                vec![
+                    le(IntegerTerm::constant(lo), value.clone()),
+                    le(value.clone(), IntegerTerm::constant(hi)),
+                ]
+            };
+            let equal = |a: IntegerTerm, b: IntegerTerm| {
+                Proposition::ConditionIs(ConditionTerm::integer_equal(a, b), true)
+            };
+            for goal in [
+                equal(converted(&z), z.clone()),
+                equal(z.clone(), converted(&z)),
+            ] {
+                let cert = certificate(goal.clone(), vec![0, 1]);
+                cert.check(&goal, &bounds(min.clone(), max.clone(), &z))
+                    .unwrap_or_else(|error| panic!("{destination:?}: {error:?}"));
+                cert.check(&goal, &bounds(BigInt::from(0), BigInt::from(7), &z))
+                    .unwrap();
+                for refused in [
+                    bounds(&min - 1, max.clone(), &z),
+                    bounds(min.clone(), &max + 1, &z),
+                    bounds(min.clone(), max.clone(), &other),
+                ] {
+                    assert!(cert.check(&goal, &refused).is_err(), "{destination:?}");
+                }
+            }
+            let unrelated = equal(converted(&other), z.clone());
+            assert!(
+                certificate(unrelated.clone(), vec![0, 1])
+                    .check(&unrelated, &bounds(min.clone(), max.clone(), &z))
+                    .is_err()
+            );
+            // The model: `to_T(n)` is `n` reduced modulo `2^w` into `T`, so
+            // the identity holds exactly on the range the rule accepts.
+            let modulus = BigInt::one() << destination.format().bits();
+            let model = |n: &BigInt| {
+                let bits = ((n % &modulus) + &modulus) % &modulus;
+                if min < BigInt::from(0) && bits > max {
+                    bits - &modulus
+                } else {
+                    bits
+                }
+            };
+            for n in [
+                &min - 1,
+                min.clone(),
+                BigInt::from(0),
+                max.clone(),
+                &max + 1,
+            ] {
+                assert_eq!(model(&n) == n, min <= n && n <= max, "{destination:?}: {n}");
+            }
         }
     }
 

@@ -724,6 +724,29 @@ pub(in crate::surface::proof) fn integer_plan_to_surface_certificate_with_ranges
                     certificate,
                 )
             }
+            IntegerArithmeticNode::StrictFromDisequal {
+                bound, disequal, ..
+            } => {
+                let (_, written) = premise_pairs.get(*disequal)?;
+                let (left, _, right) =
+                    integer_surface_non_strict_parts(node_surfaces.get(*bound)?)?;
+                let surface = ClickProposition::Comparison {
+                    left,
+                    operator: ComparisonOperator::LessThan,
+                    right,
+                };
+                let source_index = {
+                    let next = source_indices.len();
+                    *source_indices.entry(*disequal).or_insert(next)
+                };
+                let certificate = IntegerCertificateNode::StrictFromDisequal {
+                    bound: *bound,
+                    index: source_index,
+                    proposition: written.clone(),
+                    result: surface.clone(),
+                };
+                (surface, certificate)
+            }
             // A divided bound has no general source spelling derived from
             // its source's spelling; planners that divide spell the result
             // from their own atom table.
@@ -1341,9 +1364,10 @@ fn with_native_comparisons_as_integer(premises: &[Proposition]) -> Vec<Propositi
     extended
 }
 
-/// An observed machine `+` or `-` or integral cast, its exact Integer
-/// value, and the identity equating them. A cast's value is its operand's
-/// observation.
+/// An observed machine `+`, `-` or `*`, integral cast or Integer-to-machine
+/// conversion, its exact Integer value, and the identity equating them. A
+/// cast's value is its operand's observation; a conversion `to_T(z)`'s is
+/// `z`.
 type OperationIdentity = (
     crate::kernel::IntegerTerm,
     crate::kernel::IntegerTerm,
@@ -1351,7 +1375,7 @@ type OperationIdentity = (
 );
 
 /// The identities `to_integer(a op b) == to_integer(a) op to_integer(b)` of
-/// the machine `+` and `-` among `observations`, and `to_integer((T)x) ==
+/// the machine `+`, `-` and `*` among `observations`, and `to_integer((T)x) ==
 /// to_integer(x)` of their integral casts. An operand of an observed
 /// operation may itself be one, as `available - amount` in `used +
 /// (available - amount)`; each identity's operands are observed in turn,
@@ -1393,11 +1417,25 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
             continue;
         }
         let value = match mathematical(&observed) {
-            // A product's identity is planned only with a constant factor,
-            // where its exact value is affine and its bounds are decided by
-            // the same arithmetic as a sum's.
+            // A product of two observations is planned too: its bounds come
+            // from the facts or, when those miss, from `integer_product_bounds`
+            // over its operands' type ranges (`prove_operation_identities`).
             Some((_, value)) if identity_operands(&value).is_none() => continue,
             Some((_, value)) => value,
+            // `to_integer(to_T(z)) == z` in `T`'s range: its value is the
+            // conversion's Integer operand, which has no machine operand to
+            // observe in turn.
+            None if let Some((value, _)) =
+                crate::kernel::machine_integer::conversion::integer_conversion(&observed) =>
+            {
+                let value = value.as_ref().clone();
+                let identity = Proposition::ConditionIs(
+                    ConditionTerm::integer_equal(observed.clone(), value.clone()),
+                    true,
+                );
+                identities.push((observed, value, identity));
+                continue;
+            }
             None => {
                 let operands = cast_operands(&observed);
                 let operand = operands
@@ -1478,21 +1516,15 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
 }
 
 /// The observations an identity's value is written over: the two operands
-/// of a `+` or `-`, the operands of a `*` with a constant factor, or a
-/// cast's operand.
+/// of a `+`, `-` or `*`, or a cast's operand.
 fn identity_operands(
     value: &crate::kernel::IntegerTerm,
 ) -> Option<Vec<&crate::kernel::IntegerTerm>> {
     use crate::kernel::IntegerTerm;
     match value {
-        IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
-            Some(vec![left.as_ref(), right.as_ref()])
-        }
-        IntegerTerm::Multiply(left, right)
-            if left.as_const().is_some() || right.as_const().is_some() =>
-        {
-            Some(vec![left.as_ref(), right.as_ref()])
-        }
+        IntegerTerm::Add(left, right)
+        | IntegerTerm::Subtract(left, right)
+        | IntegerTerm::Multiply(left, right) => Some(vec![left.as_ref(), right.as_ref()]),
         IntegerTerm::Machine(_) => Some(vec![value]),
         _ => None,
     }
@@ -5243,6 +5275,9 @@ fn flattened_disjuncts(proposition: &Proposition) -> Vec<&Proposition> {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/proof/smart_closures/indexed_arithmetic_tests.rs");
+    mod product_identity {
+        include!("../../scaling_tests/surface/proof/smart_closures/product_identity_tests.rs");
+    }
 }
 
 /// The sides of a native machine equality fact a smart `rewrite` can cite:

@@ -210,8 +210,11 @@ four dropped elements per statement, and proves each only by the signed
 interval certificate over its variables' bounds, an order between the two
 indices by selected-premise arithmetic, or the disequality bridge of
 [`solve`'s arithmetic](#arithmetic-with-selected-premises) (a case split on the index
-equality), not by the rest of `solve`. Bounds such as `2 <= m` or `1 <= j`, or
-the Integer fact `m - 1 != 0` where `m - 1` cannot wrap, suffice. Expansion writes the `have` before the
+equality), not by the rest of `solve`. Bounds such as `2 <= m` or `1 <= j`,
+`1 <= m` with `m != 1` (a bound made strict by a disequality of its own
+difference,
+[`a_store_index_bound_and_disequality_keep_a_cached_element.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_index_bound_and_disequality_keep_a_cached_element.md)),
+or the Integer fact `m - 1 != 0` where `m - 1` cannot wrap, suffice. Expansion writes the `have` before the
 statement's `step()`. A disequality it misses leaves the statement as it
 ran. The path keeps the miss (at most 32 per path): a later refusal whose
 goal reads the dropped element names the statement and the disequality the
@@ -2142,7 +2145,12 @@ under these envelope rules common to the three forms:
   `excluded_bound N: D` (premise `N`, a disequality `v != MIN` or `v != MAX`
   of a machine `v`, as `MIN + 1 <= to_integer(v)` or `to_integer(v) <= MAX -
   1`) ([`operation_and_excluded_bounds_in_an_arithmetic_certificate.md`](https://github.com/clicklang/click/blob/master/mdtests/operation_and_excluded_bounds_in_an_arithmetic_certificate.md),
-  [`an_operation_bound_must_be_the_exact_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/an_operation_bound_must_be_the_exact_bound.md)); `negated_goal` (the integer
+  [`an_operation_bound_must_be_the_exact_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/an_operation_bound_must_be_the_exact_bound.md));
+  `less_than_from_not_equal i, N: D` (node `i`, a non-strict bound `t <= 0`,
+  made strict, `t + 1 <= 0`, by premise `N`, a disequality `l != r` whose
+  difference `l - r` is `t` or `-t`; `solve` adds it only after the linear
+  facts leave a counterexample, at every format and over `Integer`,
+  [`a_bound_and_a_disequality_give_a_strict_64_bit_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/a_bound_and_a_disequality_give_a_strict_64_bit_bound.md)); `negated_goal` (the integer
   negation of a bound goal); `divide i by g` (a non-strict bound by a positive
   common factor of its coefficients, rounding its constant).
 - The conclusion node's claim equals the goal's, or is a contradiction such
@@ -2224,7 +2232,10 @@ must be the goal itself:
   rule](../../internals/mathematical-integers.md#range-checked-modulo-cast-identities).
   Unsigned byte and 16-bit readbacks with canonical low-bit masks retain
   their observations when promoted to a 32-bit word; both source bounds
-  remain explicit.
+  remain explicit. The Integer-to-machine conversion is read the same way:
+  `integer_cast_identity bounds [i, j] => to_integer(to_T(z)) == z;` with
+  `z`'s two bounds inside `T`'s range, at every format, which `solve` plans
+  ([`an_integer_converted_to_a_machine_type_reads_back.md`](https://github.com/clicklang/click/blob/master/mdtests/an_integer_converted_to_a_machine_type_reads_back.md)).
 - `integer_operation_identity bounds [i, j] => to_integer(a + b) ==
   to_integer(a) + to_integer(b);` (or `-`, `*`) checks two named constant
   bounds on the Integer result against the range of the operation's format,
@@ -3118,8 +3129,10 @@ On an implication `A implies B`, `solve` introduces `A` and closes `B`, with
 this arithmetic and the searches below, as for `result == 1 implies cap ==
 old(cap) + 1` on a path where the antecedent reads `true`
 ([`solve_proves_an_implication_whose_consequent_needs_the_solver.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_an_implication_whose_consequent_needs_the_solver.md)).
-The in-range `+` and `-` identities, `*` identities with a constant factor
-([`solve_observes_a_product_by_a_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_observes_a_product_by_a_constant.md)),
+The in-range `+`, `-` and `*` identities, a product's bounds from its
+operands' type ranges by `integer_product_bounds` included
+([`solve_observes_a_product_by_a_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_observes_a_product_by_a_constant.md),
+[`a_product_of_64_bit_values_is_its_exact_product.md`](https://github.com/clicklang/click/blob/master/mdtests/a_product_of_64_bit_values_is_its_exact_product.md)),
 and integral-cast identities this arithmetic uses, nested ones included, are
 described in [mathematical integers](../../internals/mathematical-integers.md#in-range-machine-sums-differences-and-products).
 

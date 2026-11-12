@@ -114,18 +114,6 @@ impl Applies {
 /// `roadmap/standard-library.md` ("Width-uniformity gaps").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Gap {
-    /// `less_than_from_not_equal` is a node of the `signed_int32` certificate
-    /// only; the Integer certificate has no `!=` step, so `a <= b`,
-    /// `a != b` gives `a < b` at `int32` alone (and not over `Integer`).
-    NotEqualOrder,
-    /// `solve` plans in-range identities for `+` and `-` only; a product's
-    /// identity needs its Integer bounds from `integer_product_bounds` and an
-    /// explicit `integer_operation_identity` certificate.
-    ProductIdentity,
-    /// `to_T(z)` lowers to an opaque bounded operation that no rule relates
-    /// to `z`; the library's `to_*_round_trip` laws are kernel standard
-    /// theorems.
-    RoundTripConversion,
     /// A wrapping-difference order needs modular reasoning `solve` does not
     /// plan (the library's `uint32` proof is about 120 lines).
     WrappingOrder,
@@ -374,9 +362,7 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    requires a != b;\n    ensures a < b;\n",
             )
         },
-        gaps: gaps_at!(Gap::NotEqualOrder;
-            Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16, Ty::UInt32,
-            Ty::Int64, Ty::UInt64, Ty::Int128, Ty::UInt128),
+        gaps: &[],
     },
     Family {
         name: "positive_is_nonnegative",
@@ -414,9 +400,7 @@ const FAMILIES: &[Family] = &[
                 f.name
             )
         },
-        gaps: gaps_at!(Gap::RoundTripConversion;
-            Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16, Ty::Int32,
-            Ty::UInt32, Ty::Int64, Ty::UInt64, Ty::Int128, Ty::UInt128),
+        gaps: &[],
     },
     // In-range observation identities, with Integer-range premises (never
     // `defined`, which C files only at `int32` and `int64`). `let r: T`
@@ -438,9 +422,7 @@ const FAMILIES: &[Family] = &[
         name: "multiply_to_integer",
         applies: Applies::WithOperations,
         statement: |f| identity(f, "*", PRODUCT, f.signed(), true),
-        gaps: gaps_at!(Gap::ProductIdentity;
-            Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16,
-            Ty::Int32, Ty::UInt32, Ty::Int64, Ty::UInt64),
+        gaps: &[],
     },
     // Increment and predecessor forms.
     Family {
@@ -601,7 +583,7 @@ const FAMILIES: &[Family] = &[
         name: "defined_multiply_to_integer",
         applies: Applies::WhereDefinednessIsFiled,
         statement: |f| defined_identity(f, "*", PRODUCT),
-        gaps: gaps_at!(Gap::ProductIdentity; Ty::Int32, Ty::Int64),
+        gaps: &[],
     },
 ];
 

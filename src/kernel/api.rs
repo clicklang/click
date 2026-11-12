@@ -8962,37 +8962,6 @@ fn prove_signed_operation_defined_by_integer_bounds(
     )
 }
 
-/// A checked round trip through a machine carrier preserves an Integer
-/// precisely within that carrier's representable range.
-pub fn prove_integer_machine_round_trip(
-    value: IntegerTerm,
-    destination: MachineIntegerType,
-) -> Theorem {
-    let (lower, upper) = super::spec::integer_machine_bounds(destination);
-    let converted = MachineTerm::IntegerToMachine {
-        value: value.clone().into(),
-        destination,
-    };
-    let observed = IntegerTerm::from_machine(destination, converted)
-        .expect("machine observation has an integral carrier");
-    implication(
-        [
-            Proposition::ConditionIs(
-                ConditionTerm::IntegerGreaterEqual(value.clone().into(), lower.into()),
-                true,
-            ),
-            Proposition::ConditionIs(
-                ConditionTerm::IntegerLessEqual(value.clone().into(), upper.into()),
-                true,
-            ),
-        ],
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerEqual(observed.into(), value.into()),
-            true,
-        ),
-    )
-}
-
 /// Observe unsigned machine division in Integer arithmetic. Both domains
 /// explicitly exclude a zero divisor; no no-wrap premise is needed.
 pub fn prove_uint32_divide_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {

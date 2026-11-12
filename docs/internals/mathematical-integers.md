@@ -1260,6 +1260,17 @@ Regressions check boundary modulo oracles, forged formats and payloads,
 missing or altered bounds, unrelated equality claims, constant checking work
 with growing unused premise populations, and linear work with certificate nodes.
 
+The Integer-to-machine conversion is a conversion too: `to_integer(to_T(z))
+== z`, either side first, from `lo <= z` and `z <= hi` inside `T`'s range,
+at every format, 128 bits included (`conversion::integer_conversion`, one
+match on the observation's root). `to_T(z)` denotes an element of `T` that
+is `z` whenever `z` lies in `T`, and its lowering owes `z`'s range wherever
+it appears, so the rule states that meaning and nothing more. `solve` plans
+it as it plans a cast's identity, spelling `z` as the operand the
+observation writes, and the eight library `to_*_round_trip` laws are proved
+by it
+(`mdtests/an_integer_converted_to_a_machine_type_reads_back.md`).
+
 Nested conversions are compared with the canonical modulo cast of the source
 observation, including a narrowing cast that discards an intermediate cast.
 Unsigned byte readback also admits an exact low-bit mask: a `uint32` source
@@ -1331,6 +1342,16 @@ is `-8`), a symbolic divisor, a shift by the width or more, and a narrow or
 `excluded_bound N: D => P;` cites premise `N`, a disequality of a
 machine value with its type's minimum or maximum, as the bound it gives: an
 unsigned `v != 0` is `1 <= to_integer(v)` (`excluded_type_bound`).
+`less_than_from_not_equal i, N: D => P;` makes node `i`'s non-strict bound
+`t <= 0` strict, `t + 1 <= 0`, by premise `N`, a disequality whose
+difference is `t` or `-t` (`integer_disequality_claims`): over the integers
+`t <= 0` and `t != 0` leave `t <= -1`. It reads the one bound node and the
+one premise, as written or as a native comparison's Integer reading, so it
+holds at every format and over `Integer`. The refutation planner adds the
+strict rows only when the linear facts leave a counterexample, from an index
+of the premise and negated-goal bounds keyed by their difference, one
+lookup per disequality
+(`mdtests/a_bound_and_a_disequality_give_a_strict_64_bit_bound.md`).
 
 An Integer certificate premise that compares exact observations of one
 machine type, such as `1 <= to_integer(x)`, is also available when its native
@@ -1345,11 +1366,22 @@ operation bound of each quotient, shift, or remainder by a constant,
 and the bound each disequality with a type endpoint gives
 (`mdtests/solve_bounds_an_unsigned_quotient_by_its_operand.md`,
 `mdtests/solve_refuses_a_quotient_bound_past_the_floor.md`). When that
-also fails, it may assume the identity of each machine `+` or `-` it sees,
-and of each `*` with a constant factor, whose exact value is affine;
+also fails, it may assume the identity of each machine `+`, `-` or `*` it
+sees, reading a product of two observations as one opaque atom;
 for each identity the refutation uses, it proves the two bounds with the
 same arithmetic, applies `integer_operation_identity`, and then proves the
-goal. So
+goal. When the arithmetic misses a bound of a product `to_integer(a) *
+to_integer(b)`, the bound may still follow from the operands' type ranges:
+`solve` compares the four corner products with it and, when they give it,
+states each operand's two range bounds and proves the bound by
+`integer_product_bounds` over them, which is what `click expand` writes. So
+a `uint64` product's `0 <= to_integer(w) * to_integer(h)` needs no
+requirement, and `to_integer(w * h) == to_integer(w) * to_integer(h)`
+follows from the upper bound alone
+(`mdtests/a_product_of_64_bit_values_is_its_exact_product.md`,
+`mdtests/a_wrapping_64_bit_product_is_not_its_exact_product.md`). A product
+whose bounds still miss is left unplanned and the other identities are kept.
+So
 `ensures result == x - 1;` for an unsigned
 `x - 1u` verifies from `requires 1 <= x;` alone
 (`mdtests/solve_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The

@@ -12,7 +12,8 @@ use crate::kernel::machine_integer::bounds::operation_bound;
 use crate::kernel::proof::integer_arithmetic::{
     IntegerAffineAtom, IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate,
     IntegerArithmeticNode, add_claim, excluded_type_bound, integer_affine_claim,
-    integer_affine_claims, machine_type_range_claim, negate_claim, scale_claim,
+    integer_affine_claims, integer_disequality_claims, machine_type_range_claim, negate_claim,
+    scale_claim,
 };
 use crate::kernel::{IntegerTerm, Proposition};
 use num_bigint::BigInt;
@@ -69,6 +70,13 @@ enum Source {
     },
     /// The bound premise `index`, a disequality with a type endpoint, gives.
     Excluded(usize),
+    /// Constraint `bound`, a non-strict premise or the negated goal `t <= 0`,
+    /// made strict, `t + 1 <= 0`, by premise `disequal`, `l != r` with
+    /// `l - r` equal to `t` or `-t`.
+    Strict {
+        bound: usize,
+        disequal: usize,
+    },
 }
 
 /// As [`plan_integer_refutation`], also using the type range of each machine
@@ -211,9 +219,75 @@ pub(super) fn plan_integer_refutation_with_ranges(
         })
         .collect();
 
-    let outcome = simplex::solve(atoms.len(), &constraints, |units| {
+    let mut outcome = simplex::solve(atoms.len(), &constraints, |units| {
         !crate::instrumentation::deadline_exceeded_with_work(units)
     });
+    // A disequality is no linear constraint, so it joins only after the
+    // linear system alone leaves a counterexample: each premise `l != r`
+    // makes strict a premise or negated-goal bound of the same difference,
+    // found by one lookup in an index of those bounds. A refutation without
+    // one keeps its certificate.
+    if matches!(outcome, SimplexOutcome::Feasible(_)) {
+        let base = claims.len();
+        let mut bounds: std::collections::HashMap<_, Vec<usize>> = std::collections::HashMap::new();
+        for (position, (claim, source)) in claims.iter().zip(&sources).enumerate() {
+            if claim.relation == IntegerAffineRelation::LessEqual
+                && !claim.terms.is_empty()
+                && matches!(source, Source::NegatedGoal | Source::Premise(_))
+            {
+                bounds
+                    .entry((claim.terms.clone(), claim.constant.clone()))
+                    .or_default()
+                    .push(position);
+            }
+        }
+        if !bounds.is_empty() {
+            for (index, premise) in premises.iter().enumerate() {
+                if crate::instrumentation::deadline_exceeded_with_work(1) {
+                    return IntegerRefutation::Exhausted;
+                }
+                for difference in integer_disequality_claims(premise) {
+                    let negated = negate_claim(&difference, IntegerAffineRelation::Equal);
+                    for key in [
+                        (difference.terms, difference.constant),
+                        (negated.terms, negated.constant),
+                    ] {
+                        for position in bounds.get(&key).into_iter().flatten() {
+                            if crate::instrumentation::deadline_exceeded_with_work(1) {
+                                return IntegerRefutation::Exhausted;
+                            }
+                            let mut strict = claims[*position].clone();
+                            strict.constant += BigInt::one();
+                            sources.push(Source::Strict {
+                                bound: *position,
+                                disequal: index,
+                            });
+                            claims.push(strict);
+                        }
+                    }
+                }
+            }
+        }
+        if claims.len() > base {
+            let strict = claims[base..].iter().map(|claim| Constraint {
+                terms: claim
+                    .terms
+                    .iter()
+                    .map(|(atom, coefficient)| (atoms[atom], coefficient.clone()))
+                    .collect(),
+                constant: claim.constant.clone(),
+                relation: Relation::LessEqual,
+            });
+            let constraints = constraints
+                .iter()
+                .cloned()
+                .chain(strict)
+                .collect::<Vec<_>>();
+            outcome = simplex::solve(atoms.len(), &constraints, |units| {
+                !crate::instrumentation::deadline_exceeded_with_work(units)
+            });
+        }
+    }
     let terms = match outcome {
         SimplexOutcome::Infeasible(terms) => terms,
         SimplexOutcome::Feasible(model) => {
@@ -253,21 +327,32 @@ fn certificate_from_farkas(
     let mut addends: Vec<(usize, IntegerAffineClaim)> = Vec::new();
     for term in terms {
         let claim = claims.get(term.constraint)?;
-        let base = nodes.len();
-        match *sources.get(term.constraint)? {
+        let mut base = nodes.len();
+        let mut source_of = *sources.get(term.constraint)?;
+        // A strict bound is its non-strict bound's node, then the step.
+        let strict = match source_of {
+            Source::Strict { bound, disequal } => {
+                source_of = *sources.get(bound)?;
+                Some((claims.get(bound)?, disequal))
+            }
+            _ => None,
+        };
+        let node_claim = strict.map_or(claim, |(bound, _)| bound);
+        match source_of {
+            Source::Strict { .. } => return None,
             Source::NegatedGoal => nodes.push(IntegerArithmeticNode::NegatedGoal {
-                result: claim.clone(),
+                result: node_claim.clone(),
             }),
             Source::Range { index, upper } => nodes.push(IntegerArithmeticNode::TypeRange {
                 value: ranges.get(index)?.clone(),
                 upper,
-                result: claim.clone(),
+                result: node_claim.clone(),
             }),
             Source::Operation { index, upper } => {
                 nodes.push(IntegerArithmeticNode::OperationBound {
                     value: IntegerTerm::Machine(operations.get(index)?.clone()),
                     upper,
-                    result: claim.clone(),
+                    result: node_claim.clone(),
                 })
             }
             Source::Excluded(index) => {
@@ -278,7 +363,7 @@ fn certificate_from_farkas(
                 });
                 nodes.push(IntegerArithmeticNode::ExcludedTypeBound {
                     index: slot,
-                    result: claim.clone(),
+                    result: node_claim.clone(),
                 });
             }
             Source::Premise(index) => {
@@ -289,9 +374,22 @@ fn certificate_from_farkas(
                 });
                 nodes.push(IntegerArithmeticNode::Premise {
                     index: slot,
-                    result: claim.clone(),
+                    result: node_claim.clone(),
                 });
             }
+        }
+        if let Some((_, disequal)) = strict {
+            let next = used_premises.len();
+            let slot = *premise_slots.entry(disequal).or_insert_with(|| {
+                used_premises.push(premises[disequal].clone());
+                next
+            });
+            nodes.push(IntegerArithmeticNode::StrictFromDisequal {
+                bound: base,
+                disequal: slot,
+                result: claim.clone(),
+            });
+            base = nodes.len() - 1;
         }
         let (mut source, mut current) = (base, claim.clone());
         if claim.relation == IntegerAffineRelation::Equal {
@@ -390,6 +488,65 @@ mod tests {
             }
             other => panic!("expected a proof, got {other:?}"),
         }
+    }
+
+    fn ne(left: IntegerTerm, right: IntegerTerm) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::IntegerNotEqual(left.into(), right.into()),
+            true,
+        )
+    }
+
+    #[test]
+    fn a_disequality_makes_its_bound_strict_after_a_counterexample() {
+        // a <= b, a != b  ⊢  a < b, and through a chain: b <= c ⊢ a < c.
+        let (a, b, cc) = (x(21), x(22), x(23));
+        let used = proves(
+            &lt(a.clone(), b.clone()),
+            &[le(a.clone(), b.clone()), ne(b.clone(), a.clone())],
+        );
+        assert_eq!(used.len(), 2);
+        proves(
+            &lt(a.clone(), cc.clone()),
+            &[
+                le(a.clone(), b.clone()),
+                ne(a.clone(), b.clone()),
+                le(b.clone(), cc.clone()),
+            ],
+        );
+        // The negated goal is a bound too: a != 5 and a <= 5 ⊢ a <= 4.
+        proves(
+            &le(a.clone(), c(4)),
+            &[ne(a.clone(), c(5)), le(a.clone(), c(5))],
+        );
+        // Each alone, or a disequality of another difference, is no proof.
+        for premises in [
+            vec![le(a.clone(), b.clone())],
+            vec![ne(a.clone(), b.clone())],
+            vec![le(a.clone(), b.clone()), ne(a.clone(), cc.clone())],
+        ] {
+            assert!(
+                matches!(
+                    plan_integer_refutation(&lt(a.clone(), b.clone()), &premises),
+                    IntegerRefutation::Counterexample(_)
+                ),
+                "{premises:?}"
+            );
+        }
+        // A refutation the linear premises already give keeps its
+        // certificate: no strict step is added.
+        let IntegerRefutation::Proved { certificate, .. } = plan_integer_refutation(
+            &lt(a.clone(), b.clone()),
+            &[lt(a.clone(), b.clone()), ne(a.clone(), b.clone())],
+        ) else {
+            panic!("a strict premise proves the strict goal");
+        };
+        assert!(
+            !certificate
+                .nodes
+                .iter()
+                .any(|node| matches!(node, IntegerArithmeticNode::StrictFromDisequal { .. }))
+        );
     }
 
     #[test]

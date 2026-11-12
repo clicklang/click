@@ -1291,6 +1291,16 @@ fn integer_certificate_node_text(node: &IntegerCertificateNode) -> String {
             source_click_proposition(proposition),
             source_click_proposition(result)
         ),
+        IntegerCertificateNode::StrictFromDisequal {
+            bound,
+            index,
+            proposition,
+            result,
+        } => format!(
+            "less_than_from_not_equal {bound}, {index}: {} => {};",
+            source_click_proposition(proposition),
+            source_click_proposition(result)
+        ),
         IntegerCertificateNode::NegatedGoal { result } => {
             format!("negated_goal => {};", source_click_proposition(result))
         }
@@ -1930,6 +1940,7 @@ fn integer_certificate_node_references(node: &mut IntegerCertificateNode) -> Vec
         | IntegerCertificateNode::Divide { source, .. } => vec![source],
         IntegerCertificateNode::Add { left, right, .. } => vec![left, right],
         IntegerCertificateNode::EqualityFromBounds { lower, upper, .. } => vec![lower, upper],
+        IntegerCertificateNode::StrictFromDisequal { bound, .. } => vec![bound],
     }
 }
 

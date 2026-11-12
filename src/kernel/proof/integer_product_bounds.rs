@@ -44,9 +44,15 @@ pub(super) fn check(
         let premise = premises.get(*index).ok_or(Error::InvalidPremise(*index))?;
         let (first, second) = order(premise).ok_or(Error::InvalidIntegerProductBounds(node))?;
         let operand = if position < 2 { left } else { right };
-        let endpoint = if position % 2 == 0 && second == operand {
+        // A bound may name the operand or any observation with its value
+        // reading (rule W): a narrow operand of a product is read through its
+        // promotion, which `to_integer(a)` as written does not name.
+        let names = |bounded: &SharedIntegerTerm| {
+            bounded == operand || bounded.value_read() == operand.value_read()
+        };
+        let endpoint = if position % 2 == 0 && names(second) {
             first.as_const()
-        } else if position % 2 == 1 && first == operand {
+        } else if position % 2 == 1 && names(first) {
             second.as_const()
         } else {
             None

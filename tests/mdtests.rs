@@ -44,9 +44,14 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
     // 0.78s focused, 0.57s in the parallel gate; the automatic-array refusal
-    // `a_store_search_miss_names_the_store_and_the_fact_for_an_array_read.md`
-    // keeps the store-search miss line in the gate.
+    // below has the same store-search miss line.
     "a_store_search_miss_names_the_store_and_the_fact_for_a_heap_read.md",
+    // 0.79s focused, 0.63s in the corpus (2026-11-12): once `j != 1` made
+    // `1 <= j` strict, the honest miss needs `j` free to be 1 and a claim
+    // that holds only by a case split, which the failing tail searches;
+    // `a_store_index_bound_and_disequality_keep_a_cached_element.md` keeps
+    // the store search's hit in the gate.
+    "a_store_search_miss_names_the_store_and_the_fact_for_an_array_read.md",
     // 0.74s focused; the `int32` array-read miss stays in the gate.
     "a_size_t_store_search_miss_names_the_word_fact.md",
     // 0.86s focused; `a_stated_store_search_fact_keeps_the_heap_cell.md`
