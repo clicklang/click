@@ -403,16 +403,6 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
-    pub(in crate::kernel) fn alias_endpoints_at_offset(
-        &self,
-        offset: &PointerOffsetTerm,
-    ) -> impl Iterator<Item = &Pointer> {
-        self.admitted
-            .pointer_block_aliases_by_offset
-            .get(offset)
-            .into_iter()
-            .flat_map(|pointers| pointers.iter())
-    }
     pub(in crate::kernel) fn has_wide_pointer_sources(&self) -> bool {
         !self
             .admitted

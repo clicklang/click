@@ -14017,9 +14017,7 @@ pub struct PureFactContext {
     /// pointer comparison can build. Each range holds the element at its own
     /// anchor, so two separated ranges cannot share one anchor -- again a
     /// statement about the offset terms alone, whatever block the comparison
-    /// came from. Two owned members of a held composition are asked the same
-    /// question of the composition's own anchor index
-    /// (`ResourceContext::separates_owned_anchors`).
+    /// came from. Ownership alone does not trigger composition discovery.
     pub(super) separated_anchor_offsets: crate::persistent::PersistentMap<
         (PointerOffsetTerm, PointerOffsetTerm),
         crate::persistent::PersistentSet<Proposition>,

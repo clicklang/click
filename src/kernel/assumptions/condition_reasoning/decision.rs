@@ -770,12 +770,10 @@ impl PureFactContext {
         match condition {
             ConditionTerm::PointerEqual(left, right) => self
                 .pointers_distinct_by_nullness(left, right)
-                .or_else(|| self.pointers_distinct_by_stated_separation(left, right))
-                .or_else(|| self.pointers_distinct_by_owned_anchors(left, right)),
+                .or_else(|| self.pointers_distinct_by_stated_separation(left, right)),
             ConditionTerm::PointerOffsetEqual(left, right) => self
                 .offsets_distinct_by_nullness(left, right)
-                .or_else(|| self.offsets_distinct_by_separation(left, right))
-                .or_else(|| self.offsets_distinct_by_owned_anchors(left, right)),
+                .or_else(|| self.offsets_distinct_by_stated_separation(left, right)),
             _ => None,
         }
     }
@@ -871,96 +869,6 @@ impl PureFactContext {
         reached
     }
 
-    /// Records the exact equalities that connect `start` to the spelling at
-    /// `index` of its component, one per hop, each taken back through the
-    /// exact check. Fails when a hop is no longer an exact fact, which a
-    /// derived index never allows, so the conclusion never rests on it.
-    fn record_pointer_equality_path(
-        &self,
-        component: &[(Pointer, Option<Pointer>)],
-        index: usize,
-    ) -> Option<()> {
-        let mut current = &component[index];
-        while let Some(previous) = &current.1 {
-            crate::instrumentation::record_deterministic_work(1);
-            let condition = if previous.block == current.0.block {
-                ConditionTerm::pointer_offset_equal(
-                    previous.offset.clone(),
-                    current.0.offset.clone(),
-                )
-            } else {
-                ConditionTerm::pointer_equal(previous.clone(), current.0.clone())
-            };
-            if self.exact_condition_value(&condition) != Some(true) {
-                return None;
-            }
-            current = component.iter().find(|(pointer, _)| pointer == previous)?;
-        }
-        Some(())
-    }
-
-    /// Two pointers differ when each, or a pointer exact equalities prove it
-    /// equal to, lies inside an owned memory member of one held composition,
-    /// and the two members are distinct: the composition law separates its
-    /// owned members, and one address cannot lie in both. The members may
-    /// lie in different blocks, which is how a symbolic identity payload and
-    /// a loaded pointer are told apart once each is proved equal to the base
-    /// its cells are owned under. Each member is found by the base index
-    /// under the spelling's additive bases, as a store's member is. String
-    /// literal storage never counts: two occurrences with identical bytes
-    /// may be one object, so their ranges are deliberately never separated.
-    fn pointers_distinct_by_owned_anchors(&self, left: &Pointer, right: &Pointer) -> Option<bool> {
-        // Intrinsic condition evaluation has no ownership compositions.
-        // Keep this empty-domain decision outside the discovery interface.
-        if self.resource_compositions.is_empty() {
-            return None;
-        }
-        crate::kernel::search::ProofSearch::<PureFactContext>::owned_anchor_distinctness(
-            self, left, right,
-        )
-    }
-
-    /// The same-block form of [`Self::pointers_distinct_by_owned_anchors`].
-    /// The comparison names only its two offsets, so the block spellings
-    /// come from the pointers of those offsets that an exact equality has
-    /// aliased across blocks; two pointers of one block are equal exactly
-    /// when their offsets are, so a block that tells the two offsets apart
-    /// decides the comparison whatever block it came from.
-    fn offsets_distinct_by_owned_anchors(
-        &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
-    ) -> Option<bool> {
-        if left == right {
-            return None;
-        }
-        let spellings = |offset: &PointerOffsetTerm| {
-            self.equality_graph
-                .alias_endpoints_at_offset(offset)
-                .cloned()
-                .collect::<Vec<_>>()
-        };
-        for pointer in spellings(left) {
-            let other = Pointer {
-                block: pointer.block.clone(),
-                offset: right.clone(),
-            };
-            if self.pointers_distinct_by_owned_anchors(&pointer, &other) == Some(false) {
-                return Some(false);
-            }
-        }
-        for pointer in spellings(right) {
-            let other = Pointer {
-                block: pointer.block.clone(),
-                offset: left.clone(),
-            };
-            if self.pointers_distinct_by_owned_anchors(&other, &pointer) == Some(false) {
-                return Some(false);
-            }
-        }
-        None
-    }
-
     /// Whether an exact fact settles this pointer's null-ness.
     ///
     /// The null pointer is null intrinsically, and a pointer whose block is
@@ -1010,35 +918,6 @@ impl PureFactContext {
             }
         }
         None
-    }
-
-    /// Two offsets differ when each is the address of the first element of
-    /// one of two separated memory ranges: one address cannot hold an
-    /// element of both.
-    fn offsets_distinct_by_separation(
-        &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
-    ) -> Option<bool> {
-        if left == right {
-            return None;
-        }
-        if let Some(value) = self.offsets_distinct_by_stated_separation(left, right) {
-            return Some(value);
-        }
-        // Two owned members of one composition, anchored at these offsets.
-        // A composition holding both is listed under each member's anchor
-        // (`CompositionMemberIndex`).
-        let resources = self
-            .composition_members
-            .listed_under_anchors([left, right])
-            .into_iter()
-            .find(|resources| resources.separates_owned_anchors(left, right))?;
-        record_implicit_reasoning_provenance(
-            self,
-            &Proposition::CResourceComposition(resources.clone()),
-        );
-        Some(false)
     }
 
     fn decide_reflexive_float_comparison(&self, condition: &ConditionTerm) -> Option<bool> {
@@ -2678,67 +2557,10 @@ mod owned_anchor_tests {
         ))
     }
 
-    /// Two pointers owned as distinct members of one held composition differ.
-    /// The check reads the compositions listed under the two pointers'
-    /// members (`CompositionMemberIndex`); it once read every composition the
-    /// path had stated, one per call, fold and store.
-    #[test]
-    fn owned_anchor_distinctness_ignores_unrelated_compositions() {
-        let mut samples = Vec::new();
-        for size in [8u64, 32, 128] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let (left, right) = (pointer(1), pointer(2));
-            // The first composition is the index's unlisted root, read by
-            // every question; keep the pair out of it.
-            let facts = (0..size)
-                .fold(PureFactContext::new(), |facts, index| {
-                    facts.assume_proposition(owner_of(&[pointer(100 + index)]))
-                })
-                .assume_proposition(owner_of(&[left.clone(), right.clone()]));
-            let (distinct, work) = crate::instrumentation::measure_deterministic_work(|| {
-                facts.pointers_distinct_by_owned_anchors(&left, &right)
-            });
-            assert_eq!(distinct, Some(false));
-            samples.push((size, work));
-        }
-        let (_, smallest) = samples[0];
-        assert!(
-            samples.iter().all(|(_, work)| *work <= smallest + 4),
-            "owned-anchor distinctness grew with unrelated compositions: {samples:?}"
-        );
-    }
-
-    /// Two anchored offsets owned as distinct members of one composition's
-    /// block differ. The check reads the compositions listed under the two
-    /// anchors (`CompositionMemberIndex`); it once asked every composition
-    /// the path had stated.
-    #[test]
-    fn offset_distinctness_ignores_unrelated_compositions() {
-        let at = |id: u64| Pointer {
-            block: "anchored-offsets".into(),
-            offset: PointerOffsetTerm::Variable(Variable(992_000 + id)),
-        };
-        let mut samples = Vec::new();
-        for size in [8u64, 32, 128] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let (left, right) = (at(1), at(2));
-            // The first composition is the index's unlisted root; keep the
-            // pair out of it.
-            let facts = (0..size)
-                .fold(PureFactContext::new(), |facts, index| {
-                    facts.assume_proposition(owner_of(&[pointer(200 + index)]))
-                })
-                .assume_proposition(owner_of(&[left.clone(), right.clone()]));
-            let (distinct, work) = crate::instrumentation::measure_deterministic_work(|| {
-                facts.offsets_distinct_by_separation(&left.offset, &right.offset)
-            });
-            assert_eq!(distinct, Some(false));
-            samples.push((size, work));
-        }
-        let (_, smallest) = samples[0];
-        assert!(
-            samples.iter().all(|(_, work)| *work <= smallest + 4),
-            "offset distinctness grew with unrelated compositions: {samples:?}"
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/kernel/assumptions/condition_reasoning/decision/owned_anchor_tests.rs"
         );
     }
 }
@@ -3651,8 +3473,6 @@ mod shared_singleton_bound_evidence_tests {
         assert!(!observation.has_boxed_operand());
     }
 }
-
-mod legacy_search;
 
 #[cfg(test)]
 mod wide_observation_tag_regression {

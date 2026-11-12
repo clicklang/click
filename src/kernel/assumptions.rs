@@ -3685,29 +3685,6 @@ impl PureFactContext {
                     .pointer_alias_endpoints_by_object
                     .with_inserted(bucket, endpoints)
             };
-            let spellings = self
-                .equality_graph
-                .admitted
-                .pointer_block_aliases_by_offset
-                .get(&key.offset)
-                .cloned()
-                .unwrap_or_default();
-            let spellings = if filed {
-                spellings.with_value(key.clone())
-            } else {
-                spellings.without_value(key)
-            };
-            self.equality_graph.admitted.pointer_block_aliases_by_offset = if spellings.is_empty() {
-                self.equality_graph
-                    .admitted
-                    .pointer_block_aliases_by_offset
-                    .without_key(&key.offset)
-            } else {
-                self.equality_graph
-                    .admitted
-                    .pointer_block_aliases_by_offset
-                    .with_inserted(key.offset.clone(), spellings)
-            };
         }
         if insert {
             self.equality_graph.add_equality(left, right);
@@ -5019,8 +4996,6 @@ impl PureFactContext {
         self.equality_graph.admitted.pointer_alignment_facts =
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.pointer_block_aliases =
-            crate::persistent::PersistentMap::default();
-        self.equality_graph.admitted.pointer_block_aliases_by_offset =
             crate::persistent::PersistentMap::default();
         self.equality_graph
             .admitted
