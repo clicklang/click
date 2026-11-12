@@ -1427,3 +1427,15 @@ fn smart_arithmetic_dispatch_is_separate_from_operation_search() {
             .is_err()
     );
 }
+
+#[test]
+fn statement_preparation_cannot_search_for_atomic_prerequisites() {
+    let file = syn::parse_file("fn certified_transitions_from_execution() { ProofSearch::derive_atomic_proposition(context, goal); }").unwrap();
+    assert!(
+        proof_search_boundary::check(
+            "src/surface/proof/execution_planning/transition_certification.rs",
+            &file,
+        )
+        .is_err()
+    );
+}
