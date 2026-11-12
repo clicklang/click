@@ -27,5 +27,5 @@ void put(int32* p, int32 x) {
 ```
 
 ```expect
-fail: required exact fact for theorem `zero` is unavailable: requirement 1 `x == 0`
+fail: theorem `zero` has an unproved obligation: `x == 0`
 ```

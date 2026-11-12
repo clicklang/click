@@ -31,5 +31,5 @@ void use_models() {
 ```
 
 ```expect
-fail: required exact fact for theorem `same_shape` is unavailable
+fail: theorem `same_shape` has an unproved obligation: `shape(x.model) == shape(z.model)`
 ```
