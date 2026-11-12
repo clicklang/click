@@ -2286,6 +2286,21 @@ storage, which Click refuses to prove. The three safety options turn off the
 remaining assumptions Click does not make: type-based aliasing, overflow, and
 null-check deletion.
 
+## Calls into another translation unit
+
+A selected or reachable function may call a project function that its
+translation unit declares but does not define, such as one declared in a
+header and defined in another `.cpp` of the project. The exporter records
+that callee as `"external": true` with its kind, receiver, parameters, return
+type and declaration span, and no body; its declaration's file is a
+dependency like any other. A call to it is checked against a contract the
+sidecar states as an `extern` declaration, an assumption like any other
+external contract; without one the call is refused, naming the callee
+(`a_call_into_another_translation_unit_is_checked_against_a_contract` in
+`tests/cpp_import.rs`). The callee must be a `noexcept` free function, static
+method or ordinary non-virtual method with external linkage; a constructor,
+destructor or virtual method defined elsewhere is refused.
+
 ## C++ standard library
 
 A function declared in a system header (one reached through `-isystem`, a

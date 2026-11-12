@@ -491,6 +491,8 @@ private:
   std::optional<Json> lower_function(const clang::FunctionDecl *declaration) {
     if (is_axiom(declaration))
       return lower_axiom(declaration);
+    if (is_external(declaration))
+      return lower_axiom(declaration, /*external=*/true);
     if (!refuse_optimizer_promises(declaration))
       return std::nullopt;
     auto source = executable_source(declaration->getLocation());
@@ -3262,7 +3264,7 @@ private:
       }
     }
     const clang::FunctionDecl *definition = callee->getDefinition();
-    if (definition == nullptr && is_axiom(callee))
+    if (definition == nullptr && (is_axiom(callee) || is_external(callee)))
       definition = callee;
     if (method != nullptr && method->isPureVirtual())
       definition = method->getCanonicalDecl();
@@ -3273,7 +3275,8 @@ private:
     }
     const clang::SourceLocation definition_location =
         source_manager_.getSpellingLoc(definition->getLocation());
-    if (!is_axiom(definition) && !executable_source(definition_location)) {
+    if (!is_axiom(definition) && !is_external(definition) &&
+        !executable_source(definition_location)) {
       fail(call->getExprLoc(),
            "the supported C++ call graph requires definitions in selected or dependency sources");
       return std::nullopt;
@@ -6287,11 +6290,41 @@ private:
                source_manager_.getExpansionLoc(function->getLocation()));
   }
 
-  // The interface of a system-header function: its kind, receiver,
-  // parameters and return type, but no body. The standard name and
-  // canonical signature key the contract Click supplies for it.
-  std::optional<Json> lower_axiom(const clang::FunctionDecl *declaration) {
-    llvm::SaveAndRestore<bool> spans(system_spans_, true);
+  // A project function this translation unit declares but does not define:
+  // its definition is in another translation unit of the project. Only its
+  // interface is exported; a call is checked against its contract, which a
+  // sidecar that also verifies the defining source proves.
+  bool is_external(const clang::FunctionDecl *function) const {
+    // A compiler builtin is declared implicitly where it is used; it is
+    // never another translation unit's function. A virtual method keeps
+    // dispatch's own rules: a pure one is only its interface.
+    return function->getDefinition() == nullptr && !is_axiom(function) &&
+           function->getBuiltinID() == 0 && !function->isImplicit() &&
+           !(llvm::isa<clang::CXXMethodDecl>(function) &&
+             llvm::cast<clang::CXXMethodDecl>(function)->isVirtual()) &&
+           function->isExternallyVisible() &&
+           executable_source(source_manager_.getSpellingLoc(
+               function->getLocation())).has_value();
+  }
+
+  // The interface of a system-header function, or of an external project
+  // function: its kind, receiver, parameters and return type, but no body.
+  // For a system-header function, the standard name and canonical signature
+  // key the contract Click supplies for it.
+  std::optional<Json> lower_axiom(const clang::FunctionDecl *declaration,
+                                  bool external = false) {
+    llvm::SaveAndRestore<bool> spans(system_spans_, !external);
+    // An external declaration's spans are in its own source, as a reachable
+    // definition's are.
+    const std::optional<std::string> declaration_source =
+        external ? executable_source(declaration->getLocation()) : std::nullopt;
+    llvm::SaveAndRestore<std::string> interface_source(
+        function_source_,
+        declaration_source ? *declaration_source : function_source_);
+    if (declaration_source && *declaration_source != logical_source_)
+      dependency_sources_.insert(*declaration_source);
+    const std::string kind =
+        external ? "external C++ function" : "standard-library function";
     const auto *constructor =
         llvm::dyn_cast<clang::CXXConstructorDecl>(declaration);
     const auto *destructor =
@@ -6304,17 +6337,17 @@ private:
     if (declaration->isDependentContext() || prototype == nullptr ||
         declaration->isVariadic() ||
         (method != nullptr && (method->isVirtual() || method->isVolatile() ||
-                               method->getRefQualifier() != clang::RQ_None))) {
+                               method->getRefQualifier() != clang::RQ_None)) ||
+        (external && (constructor != nullptr || destructor != nullptr))) {
       fail(declaration->getLocation(),
-           "standard-library function `" +
-               declaration->getQualifiedNameAsString() +
-               "` has an interface outside the supported axiomatic slice");
+           kind + " `" + declaration->getQualifiedNameAsString() +
+               "` has an interface outside the supported " +
+               (external ? "external" : "axiomatic") + " slice");
       return std::nullopt;
     }
     if (!prototype->isNothrow()) {
       fail(declaration->getLocation(),
-           "standard-library function `" +
-               declaration->getQualifiedNameAsString() +
+           kind + " `" + declaration->getQualifiedNameAsString() +
                "` must be noexcept; throwing contracts are not modeled");
       return std::nullopt;
     }
@@ -6365,6 +6398,14 @@ private:
       parameters.push_back(std::move(self));
     }
     for (const clang::ParmVarDecl *parameter : declaration->parameters()) {
+      // A sidecar states an external function's contract over its
+      // parameters by name.
+      if (external && parameter->getName().empty()) {
+        fail(parameter->getLocation(),
+             kind + " `" + declaration->getQualifiedNameAsString() +
+                 "` must name every parameter in its declaration");
+        return std::nullopt;
+      }
       if (parameter->hasDefaultArg() && constructor != nullptr) {
         fail(parameter->getLocation(),
              "default arguments of standard-library constructors are not modeled");
@@ -6393,7 +6434,10 @@ private:
     result["declared_noexcept"] = true;
     result["span"] = span(declaration->getSourceRange());
     result["body"] = llvm::json::Array();
-    result["axiom"] = std::move(axiom);
+    if (external)
+      result["external"] = true;
+    else
+      result["axiom"] = std::move(axiom);
     if (!state_.error.empty())
       return std::nullopt;
     return Json(std::move(result));

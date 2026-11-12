@@ -489,7 +489,8 @@ fn function_interface(
     // An axiom keeps no body: its calls are checked against a contract.
     // A pure virtual method is only its interface.
     // A generic method's instance is verified as that method, once.
-    if source.axiom.is_none() && !source.is_pure_virtual() && source.generic_instance.is_none() {
+    if !source.is_interface_only() && !source.is_pure_virtual() && source.generic_instance.is_none()
+    {
         interface = interface.with_prelowered_kernel_function(lowered.clone());
     }
     // A lambda's leading parameters are its captures, which a sidecar head

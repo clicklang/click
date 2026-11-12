@@ -156,6 +156,13 @@ What already works and should be kept:
    This is about project structure, not language coverage; the constructs
    admitted inside each unit stay as documented.
 
+   Status: a call into a function another translation unit defines is
+   exported as an external interface and checked against a sidecar `extern`
+   contract ([calls into another translation unit](../docs/reference/cli/import.md#calls-into-another-translation-unit)).
+   That contract is still an assumption: linking several C++ sources in one
+   sidecar, so the callee's contract is proved against its own body, and the
+   one-definition check remain.
+
 The build description, lean per-project configuration, portable locks, and
 diagnostics for unsupported flags and stale locks are delivered by the
 [project configuration](../docs/reference/cli/import.md#project-units).

@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) fn is_construction_return(function: &CppFunction) -> bool {
     // An axiom returning a record constructs it into the caller's
     // destination; its contract describes the constructed value.
-    if function.axiom.is_some() {
+    if function.is_interface_only() {
         return matches!(function.return_type, super::CppType::Record { .. });
     }
     statements(&function.body).any(|statement| {

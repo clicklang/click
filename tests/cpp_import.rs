@@ -3471,7 +3471,7 @@ fn exception_enabled_profile_rejects_exception_and_object_semantics() {
     unresolved.write_config_with_profile("call_set_seven", "call_set_seven.cpp", true);
     let error = refresh_import(&unresolved.config()).unwrap_err();
     assert!(
-        error.contains("no reachable function definition"),
+        error.contains("external C++ function `set_seven` must be noexcept"),
         "{error}"
     );
     assert!(!unresolved.artifact().exists());
@@ -5915,14 +5915,13 @@ fn cpp_record_slice_rejects_unresolved_methods_bitfields_and_inheritance() {
 
     fs::write(
         project.source(),
-        "struct RestoreState {\n    int saved;\n    int read() noexcept;\n};\n\nint stage_restore(RestoreState& state, int& value) noexcept {\n    state.read();\n    return state.saved;\n}\n",
+        "struct RestoreState {\n    int saved;\n    int read();\n};\n\nint stage_restore(RestoreState& state, int& value) noexcept {\n    state.read();\n    return state.saved;\n}\n",
     )
     .unwrap();
+    // A method another translation unit defines is exported as its
+    // interface; one that may throw is refused.
     let error = refresh_import(&project.config()).unwrap_err();
-    assert!(
-        error.contains("no reachable function definition"),
-        "{error}"
-    );
+    assert!(error.contains("must be noexcept"), "{error}");
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -6680,15 +6679,15 @@ fn cpp_direct_calls_reject_missing_throwing_and_recursive_definitions() {
     let project = Project::direct_call();
     fs::write(
         project.source(),
-        "int set_seven(int& value) noexcept;\n\nint call_set_seven(int& value) noexcept {\n    set_seven(value);\n    return value;\n}\n",
+        "int set_seven(int& value);\n\nint call_set_seven(int& value) noexcept {\n    set_seven(value);\n    return value;\n}\n",
     )
     .unwrap();
+    // A function defined in another translation unit is exported as its
+    // interface (`a_call_into_another_translation_unit_is_checked_against_a_contract`);
+    // one that may throw is still refused.
     let error = refresh_import(&project.config()).unwrap_err();
-    assert!(error.contains("call_set_seven.cpp:4"), "{error}");
-    assert!(
-        error.contains("no reachable function definition"),
-        "{error}"
-    );
+    assert!(error.contains("call_set_seven.cpp:1"), "{error}");
+    assert!(error.contains("must be noexcept"), "{error}");
     assert!(!project.artifact().exists());
 
     fs::write(
@@ -7759,8 +7758,17 @@ fn compiler_constants_retain_their_origin_and_reject_runtime_calls() {
         "size",
         "unsigned long runtime() noexcept; unsigned long size() noexcept { return runtime(); }",
     );
-    assert!(refresh_import(&project.config()).is_err());
-    assert!(!project.artifact().exists());
+    // A runtime call is not a compiler constant: its callee, defined in
+    // another translation unit, is exported as an interface whose contract
+    // the sidecar must state.
+    refresh_import(&project.config()).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    assert_eq!(artifact["constants"], serde_json::json!([]), "{artifact}");
+    assert_eq!(
+        artifact["reachable_functions"][0]["external"], true,
+        "{artifact}"
+    );
 }
 
 #[test]
@@ -7966,9 +7974,11 @@ int32 accepted(int32 value) { ensures result == value; }
 "#;
     check_first_claim_certificate(&project, &import, sidecar);
     let rejected = Project::with_fixture("instances.cpp", "rejected", TEMPLATE_INSTANCE_SOURCE);
+    // The selected arm calls `unavailable`, declared without a parameter
+    // name and defined in no translation unit here.
     let error = refresh_import(&rejected.config()).unwrap_err();
     assert!(
-        error.contains("unsupported") || error.contains("reachable"),
+        error.contains("`unavailable` must name every parameter"),
         "{error}"
     );
     assert!(!rejected.artifact().exists());
@@ -8011,7 +8021,7 @@ fn constexpr_conditions_use_constant_context_and_allow_absent_else() {
     let project = Project::with_fixture("instances.cpp", "runtime_if", TEMPLATE_INSTANCE_SOURCE);
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(
-        error.contains("no reachable function definition"),
+        error.contains("must name every parameter in its declaration"),
         "{error}"
     );
     assert!(!project.artifact().exists());
@@ -9165,8 +9175,8 @@ fn direct_return_calls_reject_unsupported_expression_positions_and_recursive_gra
             "must declare noexcept",
         ),
         (
-            "int echo(int value) noexcept; int relay(int value) noexcept { return echo(value); }",
-            "no reachable function definition",
+            "int echo(int value); int relay(int value) noexcept { return echo(value); }",
+            "must be noexcept",
         ),
         (
             "int relay(int value) noexcept { return relay(value); }",
@@ -12080,7 +12090,7 @@ fn scalar_braces_do_not_convert_narrowing_or_unsupported_initializers_into_casts
         ("int n", "int{++n}"),
     ] {
         let cpp = format!(
-            "using U32 = unsigned; int missing() noexcept; int refused({params}) noexcept {{ return {value}; }}"
+            "using U32 = unsigned; int missing(); int refused({params}) noexcept {{ return {value}; }}"
         );
         let project = Project::with_fixture("braces.cpp", "refused", &cpp);
         refresh_import(&project.config())
@@ -19528,4 +19538,67 @@ fn the_installed_cpp_front_end_reproduces_the_committed_imports() {
         let _ = fs::remove_dir_all(project);
     }
     let _ = fs::remove_dir_all(home);
+}
+
+/// A call to a project function another translation unit defines exports
+/// the callee's interface only, marked external. The caller verifies against
+/// a contract its sidecar states and is refused without one.
+#[test]
+fn a_call_into_another_translation_unit_is_checked_against_a_contract() {
+    let project = Project::with_fixture(
+        "a.cpp",
+        "add_two",
+        "#include \"b.h\"\nint add_two(int value) noexcept {\n    int once = add_one(value);\n    return add_one(once);\n}\n",
+    );
+    fs::write(
+        project.directory.join("b.h"),
+        "int add_one(int value) noexcept;\n",
+    )
+    .unwrap();
+    let project_file = project.directory.join(click::project::FILE_NAME);
+    fs::write(
+        &project_file,
+        serde_json::json!({"units": {"demo": {
+            "language": "c++",
+            "args": ["-ffreestanding", "-nostdinc", "-nostdinc++"],
+            "sources": {"a.cpp": {"functions": ["add_two"], "dependencies": ["b.h"]}},
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    click::project::Project::load(&project_file)
+        .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)))
+        .unwrap();
+    let artifact: serde_json::Value = serde_json::from_slice(
+        &fs::read(project.directory.join(".click/demo/a.cpp.click-cpp.json")).unwrap(),
+    )
+    .unwrap();
+    let callee = &artifact["reachable_functions"][0];
+    assert_eq!(callee["name"], "add_one", "{artifact}");
+    assert_eq!(callee["external"], true, "{artifact}");
+    assert_eq!(callee["body"], serde_json::json!([]), "{artifact}");
+    let source = project.directory.join("a.cpp");
+    let import = match click::project::Project::load(&project_file)
+        .unwrap()
+        .prepared_sources(&[("a.cpp".into(), fs::canonicalize(&source).ok())])
+        .unwrap()
+    {
+        Some(click::project::UnitSelection::Program(click::languages::PreparedProgram::Cpp(
+            import,
+        ))) => import,
+        _ => panic!("expected the prepared C++ unit"),
+    };
+    let caller =
+        "int32 add_two(int32 value) {\n requires value < 50;\n ensures result == value + 2;\n}\n";
+    let contract = "extern int32 add_one(int32 value) {\n requires value < 100;\n ensures result == value + 1;\n}\n";
+    let path = project.directory.join("a.click");
+    let with_contract = format!("verifying \"a.cpp\";\n{contract}{caller}");
+    fs::write(&path, &with_contract).unwrap();
+    verify_program_prepared_project(&read_click_project(&path, &with_contract).unwrap(), &import)
+        .unwrap();
+    let without = format!("verifying \"a.cpp\";\n{caller}");
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, &without).unwrap(), &import)
+            .unwrap_err();
+    assert!(error.to_string().contains("add_one"), "{error}");
 }
