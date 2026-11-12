@@ -9,6 +9,11 @@ memory histories and stored values in both directions, so claiming the old
 value is refused. This catches a wide-read congruence that equates a fresh
 store with the overwritten value.
 
+A read follows at most one recorded transition, so explicit transport
+certificates carry `nid->right` across the store to `p->right` and across the
+helper call, whose footprint the consumed `context` bounds. `near == rid` is
+then a short step from the reloaded cursor.
+
 ```c filename=a_wide_store_after_a_root_call_is_not_the_old_tag.c
 struct node { unsigned long tag; struct node *left; struct node *right; };
 struct root { struct node *node; };
@@ -25,6 +30,7 @@ void probe(struct node *p, struct root *root) {
 ```
 
 ```click
+import click::separation;
 verifying "a_wide_store_after_a_root_call_is_not_the_old_tag.c";
 spec enum Leaf { At(struct node*) }
 spec enum Branch { At(struct node*, Leaf) }
@@ -67,8 +73,40 @@ void probe(struct node *p, struct root *root) {
   have p->right == sid;
   have sid->left == nid;
   have nid->right == rid;
-  step(); step(); step(); step(); step();
+  step(); step(); step(); step();
+  have separate(memory(p->right), memory(nid->right));
+  mark before_store;
+  step();
+  mark after_store;
+  have nid->right == at(before_store, nid->right) by {
+   transport_certificate {
+    premise 0: changes_only(before_store, after_store, memory(p->right))
+     => changes_only(before_store, after_store, memory(p->right));
+    premise 1: at(before_store, separate(memory(p->right), memory(nid->right)))
+     => at(before_store, separate(memory(p->right), memory(nid->right)));
+    preserve 0, 1 => nid->right == at(before_store, nid->right);
+    conclusion 2;
+   }
+  }
+  have separate(c, memory(near->right));
+  have nid == near;
+  have separate(c, memory(nid->right)) by { rewrite(nid == near); assumption(); }
+  mark before_call;
   let { after: c } = step(helper, { before: c });
+  have contains(at(before_call, c), statement(3).footprint) by { assumption(); }
+  apply(separation::contains_refl(memory(nid->right))) using {};
+  apply(separation::restrict(at(before_call, c), memory(nid->right), statement(3).footprint, memory(nid->right))) using {
+   at(before_call, separate(c, memory(nid->right)));
+   contains(at(before_call, c), statement(3).footprint);
+   contains(memory(nid->right), memory(nid->right));
+  };
+  have nid->right == at(before_call, nid->right) by {
+   transport_certificate {
+    premise 0: separate(statement(3).footprint, memory(nid->right)) => separate(statement(3).footprint, memory(nid->right));
+    preserve 0 => nid->right == at(before_call, nid->right);
+    conclusion 1;
+   }
+  }
   step();
   have cursor == nid;
   have cursor->right == rid;
