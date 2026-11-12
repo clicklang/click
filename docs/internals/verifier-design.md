@@ -373,7 +373,15 @@ views: an unresolved cached value is forgotten. The build boundary rejects
 restoring either range helper directly. Scalar-cell and union-view preservation
 also use `pointers_directly_distinct_for_store`, not general memory-resolution
 distinctness: structural byte shifts, exact pointer/index inequalities and
-exact signed-order facts supply direct evidence. Private-local separation reads
+exact signed-order facts supply direct evidence. The index facts are read by
+key from the pair `common_base_store_indices` returns, a structural reading
+of the two offsets: two `int32` indices are compared as their Integer values
+(`index_comparison`), and two 64-bit scaled indices of one width and
+signedness, or one beside a constant offset of whole elements, as the native
+`uint64` or `int64` comparison a stated `((n - 1) as uint64) != 0` lowers to,
+read in both orientations. A mixed 32/64-bit or mixed-signedness pair has no
+key. Regression:
+`wide_store_index_lookup_ignores_unrelated_facts_and_same_array_cells`. Private-local separation reads
 the addressability registry and an indexed equality-graph block coordinate;
 it does not enumerate aliases. A miss forgets the cached value. The boundary
 rejects general resolution, range search, alias enumeration and order-path walks
@@ -387,7 +395,9 @@ store. After a smart statement step (`try_statement_step_with_retries`),
 cell maps (`kernel::search::store_separation`, proportional to the changed
 cells, at most 64 pairs compared), pairs each dropped cell with a written cell
 of the same array, and spells the index disequality the store-time check
-reads. It proves at most four at the pre-state with the narrow closure
+reads, by construction from the two index words
+(`synthesize_store_index_disequality`: `((m - 1) as int32) != 0`,
+`((n - 1u64) as uint64) != 0u64`). It proves at most four at the pre-state with the narrow closure
 `try_index_disequality_closure` (signed interval certificate, order
 refutation, disequality bridge), retains them as
 `have`s and reruns the statement; expansion writes those `have`s and the
@@ -400,8 +410,16 @@ miss's store, prints the statement and the spelled fact; it searches for no
 spelling. `solve`'s last strategy,
 `try_disequality_by_refuted_equality`, proves a disequality from a connected
 one by cases on the goal's equality, so the Integer fact `m - 1 != 0` gives
-the word fact where the word cannot wrap. Regression:
-`store_index_separation_search_scales_with_unrelated_stores_and_facts`.
+the word fact where the word cannot wrap. Regressions:
+`store_index_separation_search_scales_with_unrelated_stores_and_facts` and
+its `size_t` sibling
+`wide_store_index_separation_search_scales_with_unrelated_stores_and_facts`.
+After it, `try_element_address_disequality` reduces a goal
+`&q[j] != &q[0]` whose two addresses share a base and scaled indices of one
+width and format to `have j != 0` (spelled the same way, proved by a nested
+`solve`) and closes it with
+`apply(click::separation::distinct_elements(q, j, 0))`, the explicit law
+expansion writes.
 
 Automatic store byte-gap eligibility reads an exact stated endpoint order;
 it does not follow recorded order chains or invoke general condition decision.

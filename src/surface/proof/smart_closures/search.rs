@@ -1882,7 +1882,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     Some(proof) => Some(proof),
                     None => match crate::kernel::search::ProofSearch::try_late_arithmetic_with_selected_premises(search_input)? {
                         Some(proof) => Some(proof),
-                        None => crate::kernel::search::ProofSearch::try_disequality_by_refuted_equality(search_input)?,
+                        None => match crate::kernel::search::ProofSearch::try_disequality_by_refuted_equality(search_input)? {
+                            Some(proof) => Some(proof),
+                            None => crate::kernel::search::ProofSearch::try_element_address_disequality(search_input)?,
+                        },
                     },
                 },
             },
@@ -2043,6 +2046,96 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .map(Some);
         }
         Ok(None)
+    }
+
+    /// Proves `&p[i] != &p[j]` from `i != j`: states the index disequality
+    /// with `have i != j`, proved by `solve`, then closes the goal with
+    /// `apply(click::separation::distinct_elements(p, i, j)) using { i != j; }`.
+    /// `p` is the written goal's base; `i` and `j` are spelled from the
+    /// kernel's two index words as the store search spells its index
+    /// disequality (`((m - 1) as int32)`, `n - 1u64`, `0u64`), so the steps
+    /// are spelled by construction and expansion writes them; the expanded
+    /// proof searches nothing. It runs after every other strategy has missed, on a
+    /// goal the kernel reads as two element addresses of one common base
+    /// with indices of one width and format (`int32`, or 64-bit of one
+    /// signedness), once (it does not nest inside itself), and its one
+    /// search is the nested `solve` of the index disequality.
+    pub(in crate::surface::proof) fn try_element_address_disequality(
+        search_input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        /// The base of a written element address `&p[i]`.
+        fn element_address_base(expression: &ContractExpression) -> Option<&CExpression> {
+            let ContractExpression::CFragment(CExpression::AddressOf(target)) = expression else {
+                return None;
+            };
+            let CExpression::Index(base, _) = target.as_ref() else {
+                return None;
+            };
+            Some(base)
+        }
+        let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
+        else {
+            return Ok(None);
+        };
+        let Some((left, right, format)) =
+            crate::kernel::search::store_separation::element_address_disequality_indices(goal)
+        else {
+            return Ok(None);
+        };
+        let ClickProposition::Comparison {
+            left: left_address,
+            operator: ComparisonOperator::NotEqual,
+            right: right_address,
+        } = surface_goal
+        else {
+            return Ok(None);
+        };
+        let (Some(base), Some(other_base)) = (
+            element_address_base(left_address),
+            element_address_base(right_address),
+        ) else {
+            return Ok(None);
+        };
+        if base != other_base {
+            return Ok(None);
+        }
+        let Some(_scope) = SolveFallbackScope::enter(SolveFallback::ElementAddress) else {
+            return Ok(None);
+        };
+        check_verification_deadline()?;
+        // The two indices are spelled from the kernel's index words, as the
+        // store search spells its disequality, and are the law's arguments.
+        let Some(indices_differ) = search_input.index_disequality_surface(&left, &right, format)
+        else {
+            return Ok(None);
+        };
+        let ClickProposition::Comparison {
+            left: i, right: j, ..
+        } = &indices_differ
+        else {
+            return Ok(None);
+        };
+        let arguments = vec![
+            ContractExpression::CFragment(base.clone()),
+            i.clone(),
+            j.clone(),
+        ];
+        let Some(scope) =
+            attempt::candidate_outcome(search_input.driver().open_have(indices_differ.clone()))?
+        else {
+            return Ok(None);
+        };
+        let Some(closed) = scope.driver().try_solve_closure()? else {
+            return Ok(None);
+        };
+        let Some(proof) = attempt::candidate_outcome(closed.join())? else {
+            return Ok(None);
+        };
+        Ok(proof.driver().close_with_unsigned_lemma(
+            "click::separation::distinct_elements",
+            arguments,
+            indices_differ,
+        ))
     }
 
     /// A goal that reads stored cells, proved over the values stored there:
@@ -9257,16 +9350,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // path only, from what the search already constructed.
         let mut misses = Vec::new();
         for candidate in &candidates {
+            // The disequality is spelled by construction from its two index
+            // words, `((m - 1) as int32) != 0`, and stated for the kernel
+            // comparison the store reads; the requirement's round trip
+            // checks its lowering. A word with no spelling skips the
+            // candidate.
+            let Some(surface) = search_input.store_index_disequality_surface(candidate) else {
+                continue;
+            };
             let requirement = UnresolvedRequirement {
                 proposition: candidate.indices_differ.clone(),
                 context: None,
                 introductions: Default::default(),
                 call_site: None,
                 assertion_condition: None,
-                surface: None,
+                surface: Some(surface),
             };
-            // The disequality is spelled by construction from its indices;
-            // a missing spelling is reported as the candidate's miss.
             let Some(Some(spelling)) =
                 attempt::candidate_outcome(proof.requirement_surface(&requirement, &step))?
             else {

@@ -366,6 +366,8 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_discharged_co
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_discharged_consequent_conjunct_closure	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_disequality_by_refuted_equality	driver	4
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_disequality_by_refuted_equality	try_solve_closure_with_surfaces	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_element_address_disequality	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_element_address_disequality	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_disjunctive_syllogism_closure	available_surface_fact	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_disjunctive_syllogism_closure	disjunction_candidates	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_disjunctive_syllogism_closure	try_selected_disjunction_cases	1
@@ -527,6 +529,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_direct_operation_identity	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_direct_structural_closure_under_binders	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_disequality_by_refuted_equality	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_element_address_disequality	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_entry_existential_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_flat_solve_conjunction	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_late_arithmetic_with_selected_premises	1

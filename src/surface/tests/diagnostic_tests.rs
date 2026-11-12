@@ -4613,7 +4613,7 @@ fn trace_marks_a_dropped_cell_and_the_read_history_stop() {
             .expect_err("the store search misses `((j - 1) as int32) != 0`");
         assert!(
             error.message().contains(
-                "may have overwritten `a`; it is kept if you state `have not (let integer_value: Integer = to_integer(((j - 1) as int32)); integer_value) == 0 by { ... };` before "
+                "may have overwritten `a`; it is kept if you state `have ((j - 1) as int32) != 0 by { ... };` before "
             ),
             "{}",
             error.message()

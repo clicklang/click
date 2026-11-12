@@ -3481,6 +3481,66 @@ impl<'a> Proof<'a> {
             })
     }
 
+    /// The disequality a store's index check reads for `forgotten`, spelled
+    /// at this frontier from the two index words the store search compared
+    /// (`surface_synthesis::synthesize_store_index_disequality`).
+    pub(in crate::surface::proof) fn store_index_disequality_surface(
+        &self,
+        forgotten: &crate::kernel::search::store_separation::ForgottenStoreCell,
+    ) -> Option<ClickProposition> {
+        self.index_disequality_surface(
+            &forgotten.store_index,
+            &forgotten.cell_index,
+            forgotten.format,
+        )
+    }
+
+    /// `left != right` for two element index words compared in `format`,
+    /// spelled at this frontier by
+    /// `surface_synthesis::synthesize_store_index_disequality`: in a pure
+    /// proof over its source names, at an execution frontier over its state
+    /// with the frontier's recorded points and qualified sources in scope, as
+    /// a requirement's spelling has them. Other contexts have none.
+    pub(in crate::surface::proof) fn index_disequality_surface(
+        &self,
+        left: &crate::kernel::SharedMachineIntegerTerm,
+        right: &crate::kernel::SharedMachineIntegerTerm,
+        format: crate::kernel::MachineIntegerType,
+    ) -> Option<ClickProposition> {
+        match self.context.as_ref() {
+            ProofContext::Pure(context) => {
+                super::surface_synthesis::synthesize_store_index_disequality(
+                    left.structural_value(),
+                    right.structural_value(),
+                    format,
+                    ParameterBinding::new(&[], &[]),
+                    &context.source_state,
+                    &context.source_names,
+                )
+            }
+            ProofContext::Execution(context) => {
+                let execution = self.execution()?;
+                let execution_view = execution.view(context);
+                let _recorded_points =
+                    super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+                        execution_view.recorded_snapshots,
+                    );
+                let _qualified_sources = super::surface_synthesis::QualifiedSynthesisScope::enter(
+                    execution_view.surface_propositions,
+                );
+                super::surface_synthesis::synthesize_store_index_disequality(
+                    left.structural_value(),
+                    right.structural_value(),
+                    format,
+                    context.parameter_binding(),
+                    &execution.core.state,
+                    &BTreeMap::new(),
+                )
+            }
+            ProofContext::FixedState(_) => None,
+        }
+    }
+
     /// Continues one checked smart statement after its initial checked attempt
     /// has reported an unresolved requirement.  Keeping the refused result as
     /// an input makes the retry core directly testable without changing the
@@ -3713,6 +3773,7 @@ enum SolveFallback {
     StoredValue = 16,
     MatchArithmetic = 32,
     RefutedEquality = 64,
+    ElementAddress = 128,
 }
 
 /// A candidate can try the other fallback and descend through logical

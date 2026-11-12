@@ -47,6 +47,20 @@ const NIGHTLY: &[&str] = &[
     // `a_store_search_miss_names_the_store_and_the_fact_for_an_array_read.md`
     // keeps the store-search miss line in the gate.
     "a_store_search_miss_names_the_store_and_the_fact_for_a_heap_read.md",
+    // 0.74s focused; the `int32` array-read miss stays in the gate.
+    "a_size_t_store_search_miss_names_the_word_fact.md",
+    // 0.86s focused; `a_stated_store_search_fact_keeps_the_heap_cell.md`
+    // keeps a stated store-search fact in the gate.
+    "a_stated_size_t_store_search_fact_keeps_the_heap_cell.md",
+    // 0.88s focused; `a_size_t_store_at_an_index_that_may_be_the_cached_one_overwrites_it.md`
+    // keeps a `size_t` store refusal in the gate.
+    "a_wrapping_size_t_store_index_overwrites_the_cached_element.md",
+    // 0.81s focused; `a_store_at_the_last_size_t_heap_element_keeps_the_first.md`
+    // keeps a `size_t` store search hit in the gate.
+    "a_size_t_store_index_fact_variants_keep_the_first.md",
+    // 0.62s focused; `solve_proves_element_addresses_distinct_from_their_indices.md`
+    // keeps the element-address strategy in the gate.
+    "solve_proves_element_addresses_distinct_at_each_index_type.md",
     // 0.75s focused; nested-read identity and the positive C case stay in the gate.
     "nested_index_read_does_not_use_the_changed_index.md",
     "a_decreases_measure_sum_is_an_integer.md", // 2.4s: original disjunctive-guard regression
