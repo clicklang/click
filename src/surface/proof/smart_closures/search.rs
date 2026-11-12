@@ -1374,8 +1374,34 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(Err(failed.clone()));
             };
-            let cast = matches!(value, IntegerTerm::Machine(_));
+            let conversion =
+                crate::kernel::machine_integer::conversion::integer_conversion(observed).is_some();
+            let cast = conversion || matches!(value, IntegerTerm::Machine(_));
             let spelled_value = match value {
+                // The conversion's operand as the observation itself writes
+                // it, `E` of `to_integer(to_T(E))`: lowering is fact-stable,
+                // so `E` lowers to the operand `z`, and the kernel checks it.
+                _ if conversion => {
+                    let ContractExpression::Call { name, arguments } = &spelled_observed else {
+                        return Ok(Err(failed.clone()));
+                    };
+                    let [
+                        ContractExpression::Call {
+                            arguments: converted,
+                            ..
+                        },
+                    ] = arguments.as_slice()
+                    else {
+                        return Ok(Err(failed.clone()));
+                    };
+                    let [operand] = converted.as_slice() else {
+                        return Ok(Err(failed.clone()));
+                    };
+                    if name != "to_integer" {
+                        return Ok(Err(failed.clone()));
+                    }
+                    operand.clone()
+                }
                 IntegerTerm::Add(left, right)
                 | IntegerTerm::Subtract(left, right)
                 | IntegerTerm::Multiply(left, right) => {

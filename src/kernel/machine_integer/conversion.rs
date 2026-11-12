@@ -11,6 +11,13 @@
 //! representation's business (`representation::low_word`,
 //! `representation::has_legacy_conversions`).
 //!
+//! The Integer-to-machine conversion `to_T(z)` is read the same way:
+//! `to_integer(to_T(z)) == z` when `z` lies in `T` ([`integer_conversion`]).
+//! Its meaning is an element of `T` that is `z` whenever `z` lies in `T`
+//! (the evaluator owes `z`'s range wherever it lowers `to_T(z)`), so the rule
+//! states exactly that meaning, once for every format, with the same two
+//! bounds a narrowing's identity takes.
+//!
 //! It is also the one conversion table of the languages
 //! (`design/machine-integers.md`, "Conversions in the languages"): [`lower`]
 //! says, for a source and destination format and a policy, which node a
@@ -300,6 +307,25 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
             original.value_read() != observed.value_read() && cast(observed, original).is_some()
         })
         .collect()
+}
+
+/// The Integer operand `z` and format `T` of an observation
+/// `to_integer(to_T(z))` read at `T` itself. One match on the observation's
+/// root; the conversion's operand is the shared node's cached export.
+pub(crate) fn integer_conversion(
+    observed: &IntegerTerm,
+) -> Option<(crate::kernel::SharedIntegerTerm, MachineIntegerType)> {
+    let IntegerTerm::Machine(machine) = observed else {
+        return None;
+    };
+    let term = match machine.operand_view() {
+        crate::kernel::MachineOperandView::Shared(term) => term.machine_conversion_leaf()?,
+        crate::kernel::MachineOperandView::Legacy(term) => term,
+    };
+    let MachineTerm::IntegerToMachine { value, destination } = term else {
+        return None;
+    };
+    (*destination == machine.ty()).then(|| (value.clone(), *destination))
 }
 
 /// The word through which `observed`, at a format of more than 16 bits,

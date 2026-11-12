@@ -2552,12 +2552,27 @@ function uint64_wrapping_mul(left: uint64, right: uint64) -> uint64 {
 theorem to_int8_round_trip(z: Integer) {
     requires z >= -128;
     requires z <= 127;
-    ensures to_integer(to_int8(z)) == z;
+    ensures to_integer(to_int8(z)) == z by {
+        have -128 <= z by {
+            assumption();
+        }
+        have z <= 127 by {
+            assumption();
+        }
+        arithmetic_certificate rules {
+            premise 0: -128 <= z => -128 <= z;
+            premise 1: z <= 127 => z <= 127;
+            integer_cast_identity bounds [0, 1] => to_integer(to_int8(z)) == z;
+            conclusion 0;
+        }
+    }
 }
 ```
 
 An Integer within the exact `int8` range retains its value after conversion
-to that machine type and back. Both bounds are required.
+to that machine type and back. Both bounds are required. The proof is the
+`integer_cast_identity` certificate that the omitted proof plans and
+`click expand` writes; it is no kernel standard theorem.
 
 
 ### `integer::to_int16_round_trip`
@@ -2566,12 +2581,27 @@ to that machine type and back. Both bounds are required.
 theorem to_int16_round_trip(z: Integer) {
     requires z >= -32768;
     requires z <= 32767;
-    ensures to_integer(to_int16(z)) == z;
+    ensures to_integer(to_int16(z)) == z by {
+        have -32768 <= z by {
+            assumption();
+        }
+        have z <= 32767 by {
+            assumption();
+        }
+        arithmetic_certificate rules {
+            premise 0: -32768 <= z => -32768 <= z;
+            premise 1: z <= 32767 => z <= 32767;
+            integer_cast_identity bounds [0, 1] => to_integer(to_int16(z)) == z;
+            conclusion 0;
+        }
+    }
 }
 ```
 
 An Integer within the exact `int16` range retains its value after conversion
-to that machine type and back. Both bounds are required.
+to that machine type and back. Both bounds are required. The proof is the
+`integer_cast_identity` certificate that the omitted proof plans and
+`click expand` writes; it is no kernel standard theorem.
 
 ### `integer::to_int32_round_trip`
 
@@ -2579,12 +2609,27 @@ to that machine type and back. Both bounds are required.
 theorem to_int32_round_trip(z: Integer) {
     requires z >= -2147483648;
     requires z <= 2147483647;
-    ensures to_integer(to_int32(z)) == z;
+    ensures to_integer(to_int32(z)) == z by {
+        have -2147483648 <= z by {
+            assumption();
+        }
+        have z <= 2147483647 by {
+            assumption();
+        }
+        arithmetic_certificate rules {
+            premise 0: -2147483648 <= z => -2147483648 <= z;
+            premise 1: z <= 2147483647 => z <= 2147483647;
+            integer_cast_identity bounds [0, 1] => to_integer(to_int32(z)) == z;
+            conclusion 0;
+        }
+    }
 }
 ```
 
 An Integer within the exact `int32` range retains its value after conversion
-to that machine type and back. Both bounds are required.
+to that machine type and back. Both bounds are required. The proof is the
+`integer_cast_identity` certificate that the omitted proof plans and
+`click expand` writes; it is no kernel standard theorem.
 
 ### `integer::to_uint8_round_trip`
 
@@ -2592,12 +2637,27 @@ to that machine type and back. Both bounds are required.
 theorem to_uint8_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 255;
-    ensures to_integer(to_uint8(z)) == z;
+    ensures to_integer(to_uint8(z)) == z by {
+        have 0 <= z by {
+            assumption();
+        }
+        have z <= 255 by {
+            assumption();
+        }
+        arithmetic_certificate rules {
+            premise 0: 0 <= z => 0 <= z;
+            premise 1: z <= 255 => z <= 255;
+            integer_cast_identity bounds [0, 1] => to_integer(to_uint8(z)) == z;
+            conclusion 0;
+        }
+    }
 }
 ```
 
 An Integer within the exact `uint8` range retains its value after conversion
-to that machine type and back. Both bounds are required.
+to that machine type and back. Both bounds are required. The proof is the
+`integer_cast_identity` certificate that the omitted proof plans and
+`click expand` writes; it is no kernel standard theorem.
 
 ### `integer::to_uint16_round_trip`
 
@@ -2605,12 +2665,27 @@ to that machine type and back. Both bounds are required.
 theorem to_uint16_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 65535;
-    ensures to_integer(to_uint16(z)) == z;
+    ensures to_integer(to_uint16(z)) == z by {
+        have 0 <= z by {
+            assumption();
+        }
+        have z <= 65535 by {
+            assumption();
+        }
+        arithmetic_certificate rules {
+            premise 0: 0 <= z => 0 <= z;
+            premise 1: z <= 65535 => z <= 65535;
+            integer_cast_identity bounds [0, 1] => to_integer(to_uint16(z)) == z;
+            conclusion 0;
+        }
+    }
 }
 ```
 
 An Integer within the exact `uint16` range retains its value after conversion
-to that machine type and back. Both bounds are required.
+to that machine type and back. Both bounds are required. The proof is the
+`integer_cast_identity` certificate that the omitted proof plans and
+`click expand` writes; it is no kernel standard theorem.
 
 ### `integer::to_uint32_round_trip`
 
@@ -2618,12 +2693,27 @@ to that machine type and back. Both bounds are required.
 theorem to_uint32_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 4294967295;
-    ensures to_integer(to_uint32(z)) == z;
+    ensures to_integer(to_uint32(z)) == z by {
+        have 0 <= z by {
+            assumption();
+        }
+        have z <= 4294967295 by {
+            assumption();
+        }
+        arithmetic_certificate rules {
+            premise 0: 0 <= z => 0 <= z;
+            premise 1: z <= 4294967295 => z <= 4294967295;
+            integer_cast_identity bounds [0, 1] => to_integer(to_uint32(z)) == z;
+            conclusion 0;
+        }
+    }
 }
 ```
 
 An Integer within the exact `uint32` range retains its value after conversion
-to that machine type and back. Both bounds are required.
+to that machine type and back. Both bounds are required. The proof is the
+`integer_cast_identity` certificate that the omitted proof plans and
+`click expand` writes; it is no kernel standard theorem.
 
 ### `integer::to_int64_round_trip`
 
@@ -2631,12 +2721,27 @@ to that machine type and back. Both bounds are required.
 theorem to_int64_round_trip(z: Integer) {
     requires z >= -9223372036854775808;
     requires z <= 9223372036854775807;
-    ensures to_integer(to_int64(z)) == z;
+    ensures to_integer(to_int64(z)) == z by {
+        have -9223372036854775808 <= z by {
+            assumption();
+        }
+        have z <= 9223372036854775807 by {
+            assumption();
+        }
+        arithmetic_certificate rules {
+            premise 0: -9223372036854775808 <= z => -9223372036854775808 <= z;
+            premise 1: z <= 9223372036854775807 => z <= 9223372036854775807;
+            integer_cast_identity bounds [0, 1] => to_integer(to_int64(z)) == z;
+            conclusion 0;
+        }
+    }
 }
 ```
 
 An Integer within the exact `int64` range retains its value after conversion
-to that machine type and back. Both bounds are required.
+to that machine type and back. Both bounds are required. The proof is the
+`integer_cast_identity` certificate that the omitted proof plans and
+`click expand` writes; it is no kernel standard theorem.
 
 ### `integer::to_uint64_round_trip`
 
@@ -2644,12 +2749,27 @@ to that machine type and back. Both bounds are required.
 theorem to_uint64_round_trip(z: Integer) {
     requires z >= 0;
     requires z <= 18446744073709551615;
-    ensures to_integer(to_uint64(z)) == z;
+    ensures to_integer(to_uint64(z)) == z by {
+        have 0 <= z by {
+            assumption();
+        }
+        have z <= 18446744073709551615 by {
+            assumption();
+        }
+        arithmetic_certificate rules {
+            premise 0: 0 <= z => 0 <= z;
+            premise 1: z <= 18446744073709551615 => z <= 18446744073709551615;
+            integer_cast_identity bounds [0, 1] => to_integer(to_uint64(z)) == z;
+            conclusion 0;
+        }
+    }
 }
 ```
 
 An Integer within the exact `uint64` range retains its value after conversion
-to that machine type and back. Both bounds are required.
+to that machine type and back. Both bounds are required. The proof is the
+`integer_cast_identity` certificate that the omitted proof plans and
+`click expand` writes; it is no kernel standard theorem.
 
 ### Mathematical truncating division
 

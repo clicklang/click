@@ -1364,9 +1364,10 @@ fn with_native_comparisons_as_integer(premises: &[Proposition]) -> Vec<Propositi
     extended
 }
 
-/// An observed machine `+`, `-` or `*` or integral cast, its exact Integer
-/// value, and the identity equating them. A cast's value is its operand's
-/// observation.
+/// An observed machine `+`, `-` or `*`, integral cast or Integer-to-machine
+/// conversion, its exact Integer value, and the identity equating them. A
+/// cast's value is its operand's observation; a conversion `to_T(z)`'s is
+/// `z`.
 type OperationIdentity = (
     crate::kernel::IntegerTerm,
     crate::kernel::IntegerTerm,
@@ -1421,6 +1422,20 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
             // over its operands' type ranges (`prove_operation_identities`).
             Some((_, value)) if identity_operands(&value).is_none() => continue,
             Some((_, value)) => value,
+            // `to_integer(to_T(z)) == z` in `T`'s range: its value is the
+            // conversion's Integer operand, which has no machine operand to
+            // observe in turn.
+            None if let Some((value, _)) =
+                crate::kernel::machine_integer::conversion::integer_conversion(&observed) =>
+            {
+                let value = value.as_ref().clone();
+                let identity = Proposition::ConditionIs(
+                    ConditionTerm::integer_equal(observed.clone(), value.clone()),
+                    true,
+                );
+                identities.push((observed, value, identity));
+                continue;
+            }
             None => {
                 let operands = cast_operands(&observed);
                 let operand = operands

@@ -173,14 +173,16 @@ the trusted implementation settles that question.
 
 The machine-integer kernel standard theorems of `library/integer.click` are
 `int32_remainder_to_integer`; the `uint32` and `uint64` divide and remainder
-observation laws; the eight `to_*_round_trip` laws; the seven 16-bit packing
+observation laws; the seven 16-bit packing
 laws; and `uint32_from_le_bytes`. Each is a kernel axiom built by a `prove_*`
 operation that constructs only the fixed implication documented in the
 standard library. Standard-library verification (`verify_standard_library`,
 run by the gate) checks each parsed declaration against its exact
 proposition. No certificate rule relates a machine `/` or `%` with a
-symbolic divisor, or an `Integer`-to-machine conversion `to_T(z)`, to its
-`Integer` value, so those laws remain axioms. The `int32` increment,
+symbolic divisor to its `Integer` value, so those laws remain axioms. The
+eight `to_*_round_trip` laws are proved: `integer_cast_identity` reads
+`to_integer(to_T(z))` as `z` from `z`'s two bounds inside `T`'s range, once
+for every format (`conversion::integer_conversion`). The `int32` increment,
 predecessor, order and definedness lemmas, the in-range `+`, `-` and `*`
 observation laws, the `uint32` product-guard, remainder and
 wrapping-difference laws and the `uint64` order transitivities are proved

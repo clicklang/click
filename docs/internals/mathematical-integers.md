@@ -1260,6 +1260,17 @@ Regressions check boundary modulo oracles, forged formats and payloads,
 missing or altered bounds, unrelated equality claims, constant checking work
 with growing unused premise populations, and linear work with certificate nodes.
 
+The Integer-to-machine conversion is a conversion too: `to_integer(to_T(z))
+== z`, either side first, from `lo <= z` and `z <= hi` inside `T`'s range,
+at every format, 128 bits included (`conversion::integer_conversion`, one
+match on the observation's root). `to_T(z)` denotes an element of `T` that
+is `z` whenever `z` lies in `T`, and its lowering owes `z`'s range wherever
+it appears, so the rule states that meaning and nothing more. `solve` plans
+it as it plans a cast's identity, spelling `z` as the operand the
+observation writes, and the eight library `to_*_round_trip` laws are proved
+by it
+(`mdtests/an_integer_converted_to_a_machine_type_reads_back.md`).
+
 Nested conversions are compared with the canonical modulo cast of the source
 observation, including a narrowing cast that discards an intermediate cast.
 Unsigned byte readback also admits an exact low-bit mask: a `uint32` source

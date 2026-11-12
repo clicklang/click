@@ -2611,22 +2611,6 @@ fn check_direct_pure_goal_with_proof(
     ))
 }
 
-/// Names whose declarations are checked directly against kernel arithmetic axioms.
-fn integer_round_trip_destination(name: &str) -> Option<crate::kernel::MachineIntegerType> {
-    use crate::kernel::MachineIntegerType;
-    Some(match name {
-        "click::integer::to_int8_round_trip" => MachineIntegerType::Int8,
-        "click::integer::to_int16_round_trip" => MachineIntegerType::Int16,
-        "click::integer::to_int32_round_trip" => MachineIntegerType::Int32,
-        "click::integer::to_uint8_round_trip" => MachineIntegerType::UInt8,
-        "click::integer::to_uint16_round_trip" => MachineIntegerType::UInt16,
-        "click::integer::to_uint32_round_trip" => MachineIntegerType::UInt32,
-        "click::integer::to_int64_round_trip" => MachineIntegerType::Int64,
-        "click::integer::to_uint64_round_trip" => MachineIntegerType::UInt64,
-        _ => return None,
-    })
-}
-
 fn is_nat_integer_law_name(name: &str) -> bool {
     matches!(
         name,
@@ -2662,7 +2646,6 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                     | "click::separation::distinct_elements"
             )
         )
-        || integer_round_trip_destination(name).is_some()
         || crate::kernel::integer_truncation_law_requirements(name).is_some()
         || is_nat_integer_law_name(name)
         || matches!(
@@ -2709,7 +2692,6 @@ fn verify_kernel_standard_theorem_axiom(
         | "click::nat::to_integer_nonnegative"
         | "click::nat::to_nat_to_integer" => (1, 0),
         "click::nat::to_integer_to_nat" => (1, 1),
-        name if integer_round_trip_destination(name).is_some() => (1, 2),
         name if crate::kernel::integer_truncation_law_requirements(name).is_some() => (
             2,
             crate::kernel::integer_truncation_law_requirements(name).unwrap(),
@@ -2869,16 +2851,6 @@ fn verify_kernel_standard_theorem_axiom(
                 "`{claim_label}` declaration does not match its kernel Nat conversion law"
             ))
         })?
-    } else if let Some(destination) = integer_round_trip_destination(theorem.name()) {
-        let parameter = &theorem.parameters()[0];
-        let Some(crate::kernel::SpecIntegerExpression::Term(value)) =
-            context.integer_values.get(parameter.name())
-        else {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` kernel parameter must be Integer"
-            )));
-        };
-        crate::kernel::prove_integer_machine_round_trip(value.clone(), destination)
     } else if theorem
         .name()
         .rsplit("::")

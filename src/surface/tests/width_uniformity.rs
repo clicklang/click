@@ -114,10 +114,6 @@ impl Applies {
 /// `roadmap/standard-library.md` ("Width-uniformity gaps").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Gap {
-    /// `to_T(z)` lowers to an opaque bounded operation that no rule relates
-    /// to `z`; the library's `to_*_round_trip` laws are kernel standard
-    /// theorems.
-    RoundTripConversion,
     /// A wrapping-difference order needs modular reasoning `solve` does not
     /// plan (the library's `uint32` proof is about 120 lines).
     WrappingOrder,
@@ -404,9 +400,7 @@ const FAMILIES: &[Family] = &[
                 f.name
             )
         },
-        gaps: gaps_at!(Gap::RoundTripConversion;
-            Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16, Ty::Int32,
-            Ty::UInt32, Ty::Int64, Ty::UInt64, Ty::Int128, Ty::UInt128),
+        gaps: &[],
     },
     // In-range observation identities, with Integer-range premises (never
     // `defined`, which C files only at `int32` and `int64`). `let r: T`

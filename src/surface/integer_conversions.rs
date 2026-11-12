@@ -163,6 +163,36 @@ mod tests {
         }
     }
 
+    /// The omitted proof reads `to_integer(to_T(z))` as `z` under its range
+    /// by `integer_cast_identity` at every format, 128 bits included, with
+    /// no library law in scope; the expansion replays with no search. Each
+    /// bound is needed, and a bound past the format's range is refused.
+    #[test]
+    fn solve_reads_an_integer_conversion_back_at_every_format() {
+        for (target, lower, upper) in [
+            ("int8", "-128", "127"),
+            ("int64", "-9223372036854775808", "9223372036854775807"),
+            ("uint128", "0", "340282366920938463463374607431768211455"),
+        ] {
+            let source = format!(
+                "theorem round_trip(z: Integer) {{ requires z >= {lower}; requires z <= {upper}; ensures to_integer(to_{target}(z)) == z by {{ solve(); }} }}"
+            );
+            verify_c0_sources(&source, &[]).unwrap_or_else(|e| panic!("{}\n{source}", e.message()));
+            let expanded =
+                expand_c0_claim_source_by_label(&source, &[], "round_trip.ensures_0").unwrap();
+            assert!(expanded.contains("integer_cast_identity"), "{expanded}");
+            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &[]))
+                .unwrap();
+            for missing in [
+                format!("requires z >= {lower};"),
+                format!("requires z <= {upper};"),
+            ] {
+                let invalid = source.replace(&missing, "");
+                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+            }
+        }
+    }
+
     #[test]
     fn conversion_obligations_survive_right_operand_composition() {
         for expression in [

@@ -180,3 +180,48 @@ fn integer_cast_identity_checks_only_explicit_premises_and_scales_with_nodes() {
         previous = Some(work);
     }
 }
+
+/// `to_integer(to_T(z)) == z` is checked in work independent of unrelated
+/// premises and of the size of the converted operand `z`: one match on the
+/// observation's root, one identity comparison of `z`, two endpoint
+/// comparisons.
+#[test]
+fn integer_conversion_identity_ignores_unrelated_premises_and_operand_size() {
+    let equal =
+        |left, right| Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true);
+    for destination in [Ty::Int8, Ty::UInt64, Ty::UInt128] {
+        let (lo, hi) = destination.format().bounds();
+        let mut costs = Vec::new();
+        for (ambient, depth) in [(0usize, 1usize), (16, 4), (256, 16), (1024, 64)] {
+            let mut z = IntegerTerm::Variable(Variable(168_201));
+            for step in 0..depth {
+                z = IntegerTerm::add(z, IntegerTerm::Variable(Variable(168_300 + step as u64)));
+            }
+            let converted = IntegerTerm::from_machine(
+                destination,
+                MachineTerm::IntegerToMachine {
+                    value: z.clone().into(),
+                    destination,
+                },
+            )
+            .unwrap();
+            let goal = equal(converted, z.clone());
+            let mut premises = vec![
+                le(IntegerTerm::constant(lo.clone()), z.clone()),
+                le(z.clone(), IntegerTerm::constant(hi.clone())),
+            ];
+            premises.resize_with(ambient + 2, || {
+                Proposition::ConditionIs(ConditionTerm::Variable(Variable(168_202)), true)
+            });
+            let cert = certificate(goal.clone(), vec![0, 1]);
+            let (result, work) =
+                crate::instrumentation::measure_deterministic_work(|| cert.check(&goal, &premises));
+            result.unwrap_or_else(|error| panic!("{destination:?}: {error:?}"));
+            costs.push(work);
+        }
+        assert!(
+            costs.iter().all(|cost| *cost == costs[0]),
+            "{destination:?}: {costs:?}"
+        );
+    }
+}

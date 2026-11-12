@@ -2232,7 +2232,10 @@ must be the goal itself:
   rule](../../internals/mathematical-integers.md#range-checked-modulo-cast-identities).
   Unsigned byte and 16-bit readbacks with canonical low-bit masks retain
   their observations when promoted to a 32-bit word; both source bounds
-  remain explicit.
+  remain explicit. The Integer-to-machine conversion is read the same way:
+  `integer_cast_identity bounds [i, j] => to_integer(to_T(z)) == z;` with
+  `z`'s two bounds inside `T`'s range, at every format, which `solve` plans
+  ([`an_integer_converted_to_a_machine_type_reads_back.md`](https://github.com/clicklang/click/blob/master/mdtests/an_integer_converted_to_a_machine_type_reads_back.md)).
 - `integer_operation_identity bounds [i, j] => to_integer(a + b) ==
   to_integer(a) + to_integer(b);` (or `-`, `*`) checks two named constant
   bounds on the Integer result against the range of the operation's format,
