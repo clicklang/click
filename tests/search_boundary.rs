@@ -1468,6 +1468,7 @@ fn migrated_operations_cannot_drop_their_discovery_guard() {
         "prepare_theorem_application",
         "finish_prepared_theorem_application",
         "finish_prepared_step",
+        "begin_contract_claim",
     ] {
         let source = format!("impl Proof {{ fn {name}() {{}} }}");
         let errors = proof_search_boundary::check(
@@ -1482,6 +1483,20 @@ fn migrated_operations_cannot_drop_their_discovery_guard() {
             "{errors:?}"
         );
     }
+}
+
+#[test]
+fn kernel_claim_focus_must_keep_its_discovery_guard() {
+    let source = "impl ProofObject<L, P, E> { fn focus_contract_claim() {} }";
+    let errors =
+        proof_search_boundary::check("src/new_operation.rs", &syn::parse_file(source).unwrap())
+            .unwrap_err();
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("must enter its no-discovery scope")),
+        "{errors:?}"
+    );
 }
 
 #[test]

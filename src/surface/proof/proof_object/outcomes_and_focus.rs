@@ -619,6 +619,8 @@ impl<'a> Proof<'a> {
         goal: &crate::kernel::CClaimGoal,
         surface: &ClickProposition,
     ) -> Result<Self, ClickError> {
+        #[cfg(test)]
+        let _operation = crate::kernel::search::FastOperationScope::enter("begin_contract_claim");
         for obligation in goal.unproved_requirements(self.facts().assumptions()) {
             let error = self
                 .step_error_with_requirement(

@@ -84,6 +84,7 @@ impl<'ast> Visit<'ast> for Inventory {
             ));
         }
         if (self.owner == "ProofScope" && name == "join")
+            || (self.owner == "ProofObject" && name == "focus_contract_claim")
             || self.owner == "Proof"
                 && matches!(
                     name.as_str(),
@@ -91,6 +92,7 @@ impl<'ast> Visit<'ast> for Inventory {
                         | "prepare_theorem_application"
                         | "finish_prepared_theorem_application"
                         | "finish_prepared_step"
+                        | "begin_contract_claim"
                 )
         {
             let guarded = matches!(item.block.stmts.first(), Some(syn::Stmt::Local(local))
