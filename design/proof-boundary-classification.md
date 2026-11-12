@@ -190,10 +190,10 @@ The 6 `operation` records are not 6 independent slow walks:
 | Legacy explicit transport checking | 3 | `certified_fact_transport_reaches`, `check_fixed_state_fact_transport_using_facts_inner`, and `apply_pure_transport_using` call atomic derivation. Confirmed search access from the explicit transport route; migrate/retire under T1–T5, not a new independent bug per record. |
 | Definition validation | 2 | `symbolic_segment_covers_index` and `symbolic_segment_covers_range` join the mixed `segment_contains_pointer` record in one declaration-validation concern. There is no ordinary user obligation/expansion boundary established for these checks. |
 
-The five kernel bridges and their 19 callers map to three roadmap groups:
-L1 has loan aliases and loan access; R2 has ownership candidates and overlap;
+The four kernel bridges and their 17 callers map to three roadmap groups:
+L1 has loan aliases and loan access; R2 has ownership candidates;
 C1 has call framing.
-These three candidate groups cover five bridges; they are not five measured
+These three candidate groups cover four bridges; they are not four measured
 defects. R1 is a separate reachability question. Their source
 traversals remain candidates until complete-operation red curves fix the input
 and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.md).
@@ -235,17 +235,20 @@ mutation tests prevent deleting or postponing their guards. The guards detect
 registered search, not uninstrumented loops or copying.
 
 The same guard cannot yet be retained on `prepare_step`.
-The gate mdtest corpus reproduces three remaining operation/entry pairs:
+The gate mdtest corpus reproduces two remaining operation/entry pairs:
 
 | Operation | Discovery entry | Reproduction (`mdtests/`) |
 | --- | --- | --- |
 | `prepare_step` | `loan_access` | `a_32_bit_cell_read_at_the_other_signedness_is_its_sign_cast.md` |
-| `prepare_step` | `ownership_overlap` | `a_call_map_gives_an_imported_let_parameter_its_value.md` |
 | `prepare_step` | `ownership_validity_candidates` | `a_callee_owns_a_window_of_a_64_bit_range.md` |
 
-These reuse three existing bridge entries; they are not three new independent
+These reuse two existing bridge entries; they are not two new independent
 walks. A first guard failure can mask a later dependency. No guard escape was
 added, and the existing source dependency records remain frozen.
+
+Selected ownership overlap has its own discovery guard. It compares the
+supplied ranges and recorded base/endpoint equalities; it does not enumerate
+alias spellings. Ownership candidate selection remains a separate bridge.
 
 Have opening no longer reconstructs a composition-only context. Other selected
 observation routes can still derive separation before the written proof runs.

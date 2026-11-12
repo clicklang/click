@@ -2279,6 +2279,43 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
     }
 }
 
+/// One selected overlap question must not enumerate aliases of either base.
+/// Setup admits the equalities before measuring the cold query.
+#[test]
+fn selected_ownership_overlap_ignores_ambient_aliases() {
+    let mut samples = Vec::new();
+    for count in [4_u64, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let left = argument_base(998_000);
+        let right = argument_base(998_001);
+        let assumptions = (0..count).fold(PureFactContext::new(), |facts, index| {
+            facts
+                .assume_condition(
+                    pointer_equal(left.clone(), argument_base(999_000 + index)),
+                    true,
+                )
+                .assume_condition(
+                    pointer_equal(right.clone(), argument_base(999_100 + index)),
+                    true,
+                )
+        });
+        let range =
+            |base| CMemoryRange::new(base, 0u32.into(), MachineTerm::Variable(Variable(998_002)));
+        let left = range(left);
+        let right = range(right);
+        let (overlaps, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory_ranges_proven_overlapping(&left, &right, &assumptions)
+        });
+        assert!(!overlaps, "unrelated bases do not establish overlap");
+        samples.push((count, work));
+    }
+    eprintln!("selected ownership overlap aliases: {samples:?}");
+    assert!(
+        samples.iter().all(|(_, work)| *work <= samples[0].1 + 64),
+        "selected overlap enumerates ambient aliases: {samples:?}"
+    );
+}
+
 /// A heap allocation of `bytes` bytes at `identity`, its first word written,
 /// as a `malloc` that succeeded leaves it: the allocation token and complete
 /// byte access, both owned.

@@ -14,10 +14,7 @@ src/kernel/loops.rs	legacy-caller	::validate_loop_havoc_stable_loans	permits_mem
 src/kernel/mutexes.rs	legacy-caller	MutexLedger::havoc_protected_for_call	call_kept_ownership	1
 src/kernel/mutexes/assumed_protocol.rs	legacy-caller	::forget_released_protected_memory	call_kept_ownership	1
 src/kernel/primitives/memory_state.rs	legacy-caller	CState::checked_population_member_exchange	permits_memory_access_with_assumptions	1
-src/kernel/primitives/resource_algebra.rs	legacy-bridge	::memory_ranges_proven_overlapping_with_separation	ownership_overlap	1
 src/kernel/primitives/resource_algebra.rs	legacy-bridge	ResourceContext::owned_validity_candidates	ownership_validity_candidates	1
-src/kernel/primitives/resource_algebra.rs	legacy-caller	::memory_ranges_proven_overlapping	memory_ranges_proven_overlapping_with_separation	1
-src/kernel/primitives/resource_algebra.rs	legacy-caller	::memory_ranges_proven_overlapping_ignoring_separation	memory_ranges_proven_overlapping_with_separation	1
 src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::try_compose_into_valid_context_with_occurrences	owned_validity_candidates	2
 src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::validity_error_with_separation	owned_validity_candidates	1
 src/kernel/proof/execution.rs	legacy-caller	CheckedResourceRewrite::check_authority_wrapper	permits_memory_access_with_assumptions	1

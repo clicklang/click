@@ -11775,12 +11775,41 @@ fn memory_ranges_proven_overlapping_with_separation(
     assumptions: &PureFactContext,
     use_separation: bool,
 ) -> bool {
-    crate::kernel::search::ProofSearch::<ResourceContext>::ownership_overlap(
-        left,
-        right,
-        assumptions,
-        use_separation,
-    )
+    #[cfg(test)]
+    let _fast = crate::kernel::search::FastOperationScope::enter("selected ownership overlap");
+    if memory_ranges_proven_overlapping_without_aliases(left, right, assumptions, use_separation) {
+        return true;
+    }
+    // Query recorded equalities even between structurally distinct blocks:
+    // contradictory supplied aliases must still expose duplicate ownership.
+    // Two nonempty constant byte spans sharing their first address overlap,
+    // even when a recorded equality translates one base (p == q + 8).
+    // Query the selected endpoints, never spellings in either alias class.
+    let nonempty = |range: &CMemoryRange| {
+        let (start, end) = constant_relative_byte_endpoints(range);
+        start.zip(end).is_some_and(|(start, end)| start < end)
+    };
+    if nonempty(left)
+        && nonempty(right)
+        && assumptions.pointers_known_equal(&left.start_pointer(), &right.start_pointer())
+        && (!use_separation
+            || !assumptions
+                .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                    left, right,
+                ))
+    {
+        return true;
+    }
+    // A recorded equality supplies one common coordinate system. Query its
+    // maintained graph directly; never enumerate either base's alias class.
+    left.base() != right.base()
+        && assumptions.pointers_known_equal(left.base(), right.base())
+        && memory_ranges_proven_overlapping_without_aliases(
+            left,
+            &right.with_base(left.base().clone()),
+            assumptions,
+            use_separation,
+        )
 }
 
 fn memory_ranges_proven_overlapping_without_aliases(

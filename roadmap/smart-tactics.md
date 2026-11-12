@@ -64,9 +64,9 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **642 reference records**: 5 legacy bridges, 19 callers
+The frozen inventory has **642 reference records**: 4 legacy bridges, 17 callers
 of those bridges, 6 operation references, 0 operation-to-driver references,
-16 mixed references, 122 driver references, 466 search references, 6 presentation
+16 mixed references, 122 driver references, 469 search references, 6 presentation
 references and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
 classifies every mixed and operation-to-driver record and groups all 6
@@ -77,7 +77,7 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   discovery.
   T5 also retains uncharged transition-assumption reconstruction. No fresh
   scaling curve was run for this reconciliation.
-- **Unmeasured candidates:** five kernel bridges map to three groups, L1, R2
+- **Unmeasured candidates:** four kernel bridges map to three groups, L1, R2
   and C1. Other transition and declaration checks
   need caller-specific evidence. Preserve these as candidates, not confirmed
   performance regressions.
@@ -96,8 +96,8 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
 - **Operation guards:** theorem application, scope completion, prepared-step
   publication, have opening and contract-claim opening have test-build discovery guards.
-  Statement preparation retains three reproduced operation/entry
-  pairs through three existing bridge entries; see the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
+  Statement preparation retains two reproduced operation/entry
+  pairs through two existing bridge entries; see the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
   Statement preparation remains unguarded; no exception exempts its search.
 - **Enforcement gap:** lexical dependency freezing and selected work counters
   do not prohibit every search call during expanded replay or detect arbitrary
@@ -210,9 +210,10 @@ pieces. Test symbolic/wide carriers, gaps, ambiguity and persistent parents.
 `owned_validity_candidates` and incremental validity checking still have
 symbolic-bound and multiple-coordinate-origin paths. Single-block count and
 constant-coordinate neighbor shortcuts do not settle multi-block alias/root
-discovery. `memory_ranges_proven_overlapping_with_separation` explicitly
-constructs two alias lists and visits their product when constant coordinates
-cannot settle the comparison.
+discovery. Selected overlap checking now uses the supplied ranges and indexed
+base/endpoint equality, without enumerating aliases. Its fixed-query alias
+regression and translated-address refusal controls do not settle the separate
+candidate-selection scan or the cost of a complete ownership insertion.
 
 Hold one inserted owner and one relevant neighbor fixed. Independently grow
 same-block owners, owned blocks, coordinate origins and exact/offset aliases;
