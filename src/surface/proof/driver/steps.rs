@@ -360,7 +360,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             return driver_proof.driver().apply_execution_statement_step(step);
         }
         if matches!(&step, ProofStep::UserTactic(_)) {
-            return driver_proof.apply_execution_user_tactic(step);
+            return driver_proof.driver().apply_bare_statement_step(step);
         }
 
         let mut provenance_step = step.clone();

@@ -1,6 +1,34 @@
 use super::*;
 
 #[test]
+fn tactic_argument_obligation_expands_and_replays_without_implicit_solve() {
+    let (source, sources) = mdtest_sources("mdtests/tactic_argument_obligation.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "make").unwrap();
+    without_implicit_solve_for_claim("make.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn fold_initializer_obligation_expands_and_replays_without_implicit_solve() {
+    let (source, sources) = mdtest_sources("mdtests/fold_initializer_obligation.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "make").unwrap();
+    without_implicit_solve_for_claim("make.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[ignore = "nightly: constructor pointer prerequisite expansion and cold replay"]
 fn fold_constructor_pointer_obligations_expand_and_cold_replay() {
     let (source, sources) =

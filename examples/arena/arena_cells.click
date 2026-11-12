@@ -4427,6 +4427,7 @@ void arena_free(struct region* region) {
         };
     }
     fold(arena_cells(arena->data, arena->occupied, arena->capacity));
+    have defined(n - 1) by { solve(); }
     let after = fold(arena_state(arena), { live: (n - 1), capacity: c });
     step();
     assumption();
