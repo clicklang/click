@@ -511,3 +511,41 @@ fn nested_read_address_import_is_linear_beside_unrelated_memory() {
         }
     }
 }
+
+#[test]
+fn conditional_observation_retyping_matches_native_import_without_expanding_dags() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let unsigned = MachineIntegerType::UInt32;
+    let signed = MachineIntegerType::Int32;
+    let a = MachineTerm::Variable(Variable(995910));
+    let b = MachineTerm::Variable(Variable(995911));
+    let guard = ConditionTerm::unsigned_less_equal(a.clone(), b.clone());
+    let native = MachineTerm::If {
+        condition: Box::new(guard.clone()),
+        then_term: Box::new(a.clone()),
+        else_term: Box::new(b),
+    };
+    let mut import = KernelTermImport::default();
+    let original = import.machine_arithmetic(unsigned, &native).unwrap();
+    let expected = import.machine_arithmetic(signed, &native).unwrap();
+    assert_eq!(original.with_machine_observation_type(signed), expected);
+    assert_eq!(expected.with_machine_observation_type(unsigned), original);
+    let guard = import.condition(&guard);
+    for size in [16, 64, 256] {
+        let mut root = original.clone();
+        for _ in 0..size {
+            root = KernelTerm::machine_if_shared(unsigned, [guard.clone(), root.clone(), root]);
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (signed_root, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.with_machine_observation_type(signed)
+        });
+        assert!(work <= 3 * (size + 1), "size={size}, work={work}");
+        let (_, repeated) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(root.with_machine_observation_type(signed), signed_root);
+        });
+        assert_eq!(repeated, 0);
+        assert_eq!(signed_root.with_machine_observation_type(unsigned), root);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

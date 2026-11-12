@@ -147,7 +147,48 @@ impl KernelTerm {
         if self.ty() == &KernelType::C(format.c_type()) {
             return self.clone();
         }
-        Self::intern(KernelType::C(format.c_type()), self.node().clone())
+        if !matches!(self.node(), KernelTermNode::MachineIf { .. }) {
+            return Self::intern(KernelType::C(format.c_type()), self.node().clone());
+        }
+        // A conditional's arms have its observation type, unlike an arithmetic
+        // operator whose own format determines its operands. Reinterpret the
+        // selected word at every conditional arm, exactly as native import
+        // does. Memoize DAG nodes so repeated signed/unsigned key readings do
+        // not expand shared branches or revisit an already read suffix.
+        CONDITIONAL_READINGS.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            let mut pending = vec![(self, false)];
+            while let Some((term, finish)) = pending.pop() {
+                let key = (term.id(), format);
+                if cache.contains_key(&key) {
+                    continue;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                if term.ty() == &KernelType::C(format.c_type()) {
+                    cache.insert(key, term.clone());
+                    continue;
+                }
+                let value = if let KernelTermNode::MachineIf { arguments } = term.node() {
+                    if !finish {
+                        pending.push((term, true));
+                        pending.extend(arguments[1..].iter().map(|arm| (arm, false)));
+                        continue;
+                    }
+                    Self::machine_if_shared(
+                        format,
+                        [
+                            arguments[0].clone(),
+                            cache[&(arguments[1].id(), format)].clone(),
+                            cache[&(arguments[2].id(), format)].clone(),
+                        ],
+                    )
+                } else {
+                    Self::intern(KernelType::C(format.c_type()), term.node().clone())
+                };
+                cache.insert(key, value);
+            }
+            cache[&(self.id(), format)].clone()
+        })
     }
 
     /// Construct one arithmetic operation structurally from shared children.
@@ -808,6 +849,7 @@ mod tests {
 }
 
 thread_local! {
+    static CONDITIONAL_READINGS: std::cell::RefCell<std::collections::HashMap<(u64, MachineIntegerType), KernelTerm>> = Default::default();
     static CHECKED_CASTS: std::cell::RefCell<std::collections::HashMap<(u64, MachineIntegerType, MachineIntegerType, bool), KernelTerm>> = Default::default();
 }
 
@@ -816,6 +858,7 @@ impl KernelTerm {
     /// fragment. Children stay shared; literal folding matches the old checker.
     pub(crate) fn clear_cast_checks() {
         CHECKED_CASTS.with(|cache| cache.borrow_mut().clear());
+        CONDITIONAL_READINGS.with(|cache| cache.borrow_mut().clear());
     }
 
     pub(crate) fn checking_machine_cast(
