@@ -1643,11 +1643,11 @@ impl Parser {
             let target_type = rust_scalar_type(&target)
                 .expect("checked above")
                 .to_kernel_type();
-            // An integer cast consumes the value its operand observes, so it
-            // may read historical `old(...)` and `at(...)` values, as a
-            // C-style integer cast does; other targets stay current.
-            let historical = crate::surface::validation::contains_old_expression(&operand)
-                || crate::surface::validation::contains_at_expression(&operand);
+            // An integer cast consumes the value its operand observes, as a
+            // Click-spelled integer cast does: the operand may read
+            // historical `old(...)` and `at(...)` values, or be a value of
+            // the Click library such as `iter.len()`. Other targets stay
+            // current C expressions.
             let integer_target = matches!(
                 target_type,
                 CType::Int8
@@ -1663,7 +1663,7 @@ impl Parser {
             );
             let expression = match contract_expression_as_c_fragment(&operand) {
                 Some(expression) => expression,
-                None if historical && integer_target => CExpression::Value(int32(0)),
+                None if integer_target => CExpression::Value(int32(0)),
                 None => return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value")),
             };
             // Keep the same operand-bearing representation as a C-style

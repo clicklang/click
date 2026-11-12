@@ -1587,6 +1587,7 @@ fn expand_declared_resource_tactic(
         | ProofTactic::ApplyInductionUsing { .. }
         | ProofTactic::ApplyTheoremUsing { .. }
         | ProofTactic::UnfoldFunction(_)
+        | ProofTactic::PeelFunction { .. }
         | ProofTactic::InstantiateUsing { .. }) => {
             expand_declared_resource_tactic_with_expressions(tactic, resource_definitions)
         }
@@ -2246,6 +2247,32 @@ fn expand_declared_resource_tactic_with_expressions(
                 &mut application.arguments,
             );
             Ok(ProofTactic::UnfoldFunction(application))
+        }
+        // `peel` opens one layer of the same application `unfold` opens, so
+        // its arguments and premises are resolved as an `unfold`'s are.
+        ProofTactic::PeelFunction {
+            mut application,
+            premises,
+        } => {
+            application.arguments = application
+                .arguments
+                .into_iter()
+                .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
+                .collect::<Result<Vec<_>, _>>()?;
+            resource_definitions.constructors.resolve_call(
+                CallKind::Function,
+                &application.name,
+                &mut application.arguments,
+            );
+            Ok(ProofTactic::PeelFunction {
+                application,
+                premises: premises
+                    .into_iter()
+                    .map(|premise| {
+                        expand_declared_resource_proposition(premise, resource_definitions)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            })
         }
         ProofTactic::InstantiateUsing {
             quantified,

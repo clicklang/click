@@ -440,7 +440,7 @@ fn library_module_path(identity: &str) -> String {
 /// `uint32` is to the kernel: each has no definition, only the library's
 /// bodyless functions over it and the axioms relating them. Only a library
 /// module declares one, and only one listed here.
-pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec", "ChunksExact"];
+pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec", "ChunksExact", "SliceIter"];
 
 /// The name a loop's invariants and proof read its pass count by: the number
 /// of passes the loop has completed.
@@ -465,7 +465,7 @@ pub(crate) fn rust_iterator_accessors(kind: syntax::RustIteratorKind) -> &'stati
         syntax::RustIteratorKind::Enumerate => &["len()"],
         syntax::RustIteratorKind::Range => &["start", "end", "len()"],
         syntax::RustIteratorKind::RangeInclusive => &["start()", "end()"],
-        syntax::RustIteratorKind::Chunks => &[],
+        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::SliceLibrary(_) => &[],
     }
 }
 
@@ -473,12 +473,20 @@ pub(crate) fn rust_iterator_accessors(kind: syntax::RustIteratorKind) -> &'stati
 /// of a Click library type: a proof names it `iter` and reads it with that
 /// type's methods.
 pub(crate) fn rust_library_iterator(iterator: &syntax::RustLoopIterator) -> Option<&str> {
-    (iterator.kind == syntax::RustIteratorKind::Chunks).then_some(iterator.local.as_str())
+    matches!(
+        iterator.kind,
+        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::SliceLibrary(_)
+    )
+    .then_some(iterator.local.as_str())
 }
 
-/// The Click type of a library-valued loop iterator, `ChunksExact<uint8>`.
+/// The Click type of a library-valued loop iterator: `ChunksExact<uint8>`,
+/// or `SliceIter` at the slice's element type.
 pub(crate) fn rust_library_iterator_type(iterator: &syntax::RustLoopIterator) -> Option<ClickType> {
     rust_library_iterator(iterator)?;
+    if let syntax::RustIteratorKind::SliceLibrary(name) = iterator.kind {
+        return generics::primitive_instance_value_type(&ClickType::C(C0Type::Parameter(name)));
+    }
     Some(ClickType::Algebraic(AlgebraicTypeApplication {
         rigid: false,
         name: "ChunksExact".to_string(),
@@ -521,6 +529,7 @@ pub(crate) fn rust_iterator_method(
                     K::Range => "range",
                     K::RangeInclusive => "inclusive range",
                     K::Chunks => "`chunks_exact`",
+                    K::SliceLibrary(_) => "slice",
                 },
                 match rust_iterator_accessors(iterator.kind) {
                     [] => " (it has none yet)".to_string(),
@@ -719,6 +728,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/chunks_exact.click",
         include_str!("../library/rust/chunks_exact.click"),
+    ),
+    (
+        "library/rust/slice_iter.click",
+        include_str!("../library/rust/slice_iter.click"),
     ),
 ];
 

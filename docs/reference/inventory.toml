@@ -4172,6 +4172,34 @@ id = "library.theorem.chunks_exact::remainder_after"
 path = "reference/library/index.md#chunks_exactremainder_after"
 
 [[item]]
+id = "library.type.SliceIter"
+path = "reference/library/index.md#sliceiter"
+
+[[item]]
+id = "library.function.slice_iter::iter"
+path = "reference/library/index.md#slice_iteriter"
+
+[[item]]
+id = "library.function.slice_iter::as_slice"
+path = "reference/library/index.md#slice_iteras_slice"
+
+[[item]]
+id = "library.function.slice_iter::len"
+path = "reference/library/index.md#slice_iterlen"
+
+[[item]]
+id = "library.function.slice_iter::after_next"
+path = "reference/library/index.md#slice_iterafter_next"
+
+[[item]]
+id = "library.theorem.slice_iter::as_slice_iter"
+path = "reference/library/index.md#slice_iteras_slice_iter"
+
+[[item]]
+id = "library.theorem.slice_iter::len_as_slice"
+path = "reference/library/index.md#slice_iterlen_as_slice"
+
+[[item]]
 id = "library.type.Vec"
 path = "reference/library/index.md#vec"
 

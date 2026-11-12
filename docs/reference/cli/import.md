@@ -126,6 +126,11 @@ the [Rust reference](../rust.md#locked-crates-and-qualified-declarations)):
 }
 ```
 
+A Rust unit may also set `"iterators": "library"`, which imports its slice
+iterators as values of the library's type
+([slice iterators as library values](../rust.md#slice-iterators-as-library-values)).
+It is the only value and is temporary; no other unit takes the field.
+
 `roots` lists every entry point the project's sidecars verify; one extraction
 serves every sidecar that verifies the crate root, and such a sidecar verifies
 no other source. `click import lock` runs the pinned Charon named by the

@@ -82,6 +82,7 @@ import click::rust::usize;
 import click::rust::vec;
 import click::rust::slice;
 import click::rust::chunks_exact;
+import click::rust::slice_iter;
 
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
@@ -1923,6 +1924,18 @@ theorem use_chunks_exact_after(it: ChunksExact<uint8>, k: Integer, j: uint64, m:
     ensures chunks_exact::remainder(chunks_exact::after(it, k)) == chunks_exact::remainder(it) by {
         have k <= to_integer(chunks_exact::len(it));
         apply(chunks_exact::remainder_after(it, k));
+    }
+}
+
+theorem use_slice_iter(s: Slice<uint8>, it: SliceIter<uint8>) {
+    ensures slice_iter::as_slice(slice_iter::iter(s)) == s by {
+        apply(slice_iter::as_slice_iter(s));
+    }
+    ensures slice_iter::len(it) == slice::len(slice_iter::as_slice(it)) by {
+        apply(slice_iter::len_as_slice(it));
+    }
+    ensures slice_iter::after_next(it) == slice_iter::after_next(it) by {
+        solve();
     }
 }
 

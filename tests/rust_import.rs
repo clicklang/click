@@ -1632,6 +1632,57 @@ fn charon_chunk_view_loop_reborrows_shared_subslices_at_symbolic_heads() {
     }
 }
 
+const SLICE_ITER_PROOF: &str = include_str!("../design/charon-trial/slice-iter/sum.click");
+
+/// Under `"iterators": "library"` a slice iterator is one value of the
+/// library's `SliceIter`: construction and each `next()` are calls whose
+/// contracts say what the iterator will still yield, and the loop carries
+/// where it stands as an invariant over `iter.as_slice()` and `iter.len()`.
+/// No base, length or remaining-count local is named.
+#[test]
+#[ignore = "nightly: Charon slice-iterator library model"]
+fn charon_slice_iter_sums_bytes_by_its_library_contract() {
+    let p = Project::from_fixture("design/charon-trial/slice-iter");
+    fs::write(p.root.join("borrow.click"), SLICE_ITER_PROOF).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(SLICE_ITER_PROOF, &prepared)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    for (before, after) in [
+        // The reads need the slice's views.
+        (
+            "    views bytes[0..bytes.len()];\n    ensures",
+            "    ensures",
+        ),
+        // The result is the whole sum.
+        (
+            "ensures to_integer(result) == old(prefix(bytes, bytes.len()));",
+            "ensures to_integer(result) == old(prefix(bytes, bytes.len())) + 1;",
+        ),
+        // The iterator stands where the count says, not one element on.
+        (
+            "invariant iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len());",
+            "invariant iter.as_slice().as_ptr() == bytes + ((bytes.len() - iter.len()) + 1u64);",
+        ),
+        // Each `next()` yields one element.
+        (
+            "have iter.len() == at(iteration, iter.len()) - 1u64;",
+            "have iter.len() == at(iteration, iter.len()) - 2u64;",
+        ),
+        // The measure decreases.
+        (
+            "have iter.len() < at(iteration, iter.len());",
+            "have at(iteration, iter.len()) < iter.len();",
+        ),
+    ] {
+        let invalid = SLICE_ITER_PROOF.replace(before, after);
+        assert_ne!(invalid, SLICE_ITER_PROOF, "{before}");
+        assert!(
+            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            "accepted {before} -> {after}"
+        );
+    }
+}
+
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: shared chunk-loop proof-tool agreement"]
