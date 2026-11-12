@@ -373,6 +373,25 @@ impl TermClasses {
                         })
                     }
                 }
+                N::MachineIf { .. } => {
+                    let format = match width {
+                        W::Bits8 => MachineIntegerType::UInt8,
+                        W::Bits16 => MachineIntegerType::UInt16,
+                        W::Bits32 => MachineIntegerType::Int32,
+                        W::Bits64 => MachineIntegerType::UInt64,
+                        W::Bits128 => MachineIntegerType::UInt128,
+                    };
+                    let atom = MachineAtom::from_operand(
+                        format,
+                        crate::kernel::MachineOperandView::Shared(term),
+                    );
+                    self.intern_node(match width {
+                        W::Bits8 | W::Bits16 => Node::MachineNarrow(atom),
+                        W::Bits32 => Node::Int32(atom),
+                        W::Bits64 => Node::UInt64(atom),
+                        W::Bits128 => Node::Machine128(atom),
+                    })
+                }
                 // Leaves retain load-name registration and literal normalization.
                 N::MemoryLoad { .. } => {
                     // Match native graph registration at the selected leaf;
@@ -447,6 +466,12 @@ impl TermClasses {
                 }
                 _ => unreachable!("cached shared native fragment"),
             };
+            if width == W::Bits32 && matches!(term.node(), N::MachineIf { .. }) {
+                self.register_scalar_witness_view(
+                    crate::kernel::MachineOperandView::Shared(term),
+                    class,
+                );
+            }
             self.shared_machine_classes
                 .insert(key, (term.clone(), class));
         }

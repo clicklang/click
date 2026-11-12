@@ -626,6 +626,20 @@ impl<'a> Query<'a> {
     fn structural(&mut self, domain: Domain, term: V<'_>) -> (i128, i128) {
         use MachineBinaryOp as Op;
         use MachineIntegerType as M;
+        if let Some((condition, [left, right])) = term.conditional() {
+            // Guard decisions depend on this graph's facts. The native
+            // decision API does not expose its individual dependencies.
+            self.uncacheable();
+            return match self.graph.decide(&condition) {
+                Some(true) => self.interval(domain, left),
+                Some(false) => self.interval(domain, right),
+                None => {
+                    let (a, b) = self.interval(domain, left);
+                    let (c, d) = self.interval(domain, right);
+                    (a.min(c), b.max(d))
+                }
+            };
+        }
         if domain == Domain::UInt32 {
             if let Some((ty, Op::BitwiseAnd, [a, b])) = term.binary()
                 && matches!(ty, M::Int32 | M::UInt32)

@@ -266,6 +266,7 @@ fn format(term: &KernelTerm) -> T {
 }
 fn children(term: &KernelTerm) -> Vec<&KernelTerm> {
     match term.node() {
+        KernelTermNode::MachineIf { arguments } => arguments[1..].iter().collect(),
         KernelTermNode::MachineBinary { arguments, .. } => arguments.iter().collect(),
         KernelTermNode::MachineUnary { operand, .. }
         | KernelTermNode::MachineCast { operand, .. } => vec![operand],
@@ -416,6 +417,13 @@ pub(in crate::kernel) fn transport_node(
 ) -> Option<KernelTerm> {
     Some(
         match node.node() {
+            KernelTermNode::MachineIf { arguments } => {
+                let [left, right] = children else { return None };
+                KernelTerm::machine_if_shared(
+                    format(node),
+                    [arguments[0].clone(), left.clone(), right.clone()],
+                )
+            }
             KernelTermNode::MachineBinary {
                 format, operator, ..
             } => {
@@ -486,8 +494,33 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
         } else {
             nodes.iter().any(|node| loads[&node.id()])
         };
+        let has_load = has_load
+            || if let KernelTermNode::MachineIf { arguments } = term.node() {
+                crate::kernel::eval::term_mentions_a_memory_load(&MachineTerm::BoolCast {
+                    to: T::UInt8,
+                    value: Box::new(KernelTermExport::condition(&arguments[0]).ok()?),
+                })
+            } else {
+                false
+            };
         loads.insert(term.id(), has_load);
         let value = match term.node() {
+            KernelTermNode::MachineIf { arguments } => {
+                let guard = MachineTerm::BoolCast {
+                    to: T::UInt8,
+                    value: Box::new(KernelTermExport::condition(&arguments[0]).ok()?),
+                };
+                let guard = crate::kernel::eval::canonical_term(&guard);
+                KernelTerm::machine_if_shared(
+                    format(term),
+                    [
+                        KernelTermImport::default()
+                            .condition(&ConditionTerm::truth_of_bool_word(&guard)),
+                        values[&arguments[1].id()].clone(),
+                        values[&arguments[2].id()].clone(),
+                    ],
+                )
+            }
             KernelTermNode::MachineBinary {
                 format,
                 operator,
@@ -686,6 +719,22 @@ pub(super) fn rewrite(
             continue;
         }
         let value = match term.node() {
+            KernelTermNode::MachineIf { arguments } => {
+                let guard = MachineTerm::BoolCast {
+                    to: T::UInt8,
+                    value: Box::new(KernelTermExport::condition(&arguments[0]).ok()?),
+                };
+                let guard = rewrite_leaf(&guard);
+                KernelTerm::machine_if_shared(
+                    ty,
+                    [
+                        KernelTermImport::default()
+                            .condition(&ConditionTerm::truth_of_bool_word(&guard)),
+                        values[&arguments[1].id()].clone(),
+                        values[&arguments[2].id()].clone(),
+                    ],
+                )
+            }
             KernelTermNode::MachineBinary {
                 format,
                 operator,
@@ -746,7 +795,8 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
             let value = match term.node() {
                 KernelTermNode::Variable(variable) => !crate::kernel::is_load_variable(variable),
                 KernelTermNode::MachineLiteral(_) => true,
-                KernelTermNode::IntegerToMachine { .. }
+                KernelTermNode::MachineIf { .. }
+                | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Legacy(_) => false,
                 _ => nodes.iter().all(|node| cache[&node.id()]),

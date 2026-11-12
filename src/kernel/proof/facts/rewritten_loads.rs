@@ -320,10 +320,9 @@ mod tests {
         let ty = MachineIntegerType::Int32;
         let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007330));
         let sum = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
-        let opaque = MachineTerm::If {
-            condition: ConditionTerm::Variable(Variable(1007331)).into(),
-            then_term: MachineTerm::constant(1).into(),
-            else_term: MachineTerm::constant(2).into(),
+        let opaque = MachineTerm::PureFunctionApplication {
+            name: "read_evidence_opaque".into(),
+            arguments: vec![MachineTerm::constant(1), MachineTerm::constant(2)],
         };
         let native = SharedMachineIntegerTerm::intern(ty, opaque);
         assert!(native.shared_operand().is_none());

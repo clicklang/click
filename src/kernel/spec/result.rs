@@ -20,6 +20,78 @@ impl From<KernelTerm> for SpecValue {
     }
 }
 impl SpecValue {
+    pub(super) fn conditional(
+        proposition: &Proposition,
+        then_value: &Self,
+        else_value: &Self,
+        retain: bool,
+    ) -> ExecutionResult<Option<Self>> {
+        if then_value == else_value {
+            return Ok(Some(then_value.clone()));
+        }
+        let is_bool = |value: &Self| value.c_type() == CType::Bool;
+        if (is_bool(then_value) && else_value.machine().is_some())
+            || (is_bool(else_value) && then_value.machine().is_some())
+        {
+            return Err(ExecutionLimit::MixedBoolArms);
+        }
+        if !retain {
+            return Ok(conditional_spec_value(
+                proposition,
+                then_value.clone().into_native(),
+                else_value.clone().into_native(),
+            )
+            .map(Self::Native));
+        }
+        if let (Some((left_format, left)), Some((right_format, right))) =
+            (then_value.machine(), else_value.machine())
+        {
+            let format = if left_format == right_format {
+                left_format
+            } else if matches!(
+                (left_format, right_format),
+                (MachineIntegerType::Int32, MachineIntegerType::UInt32)
+                    | (MachineIntegerType::UInt32, MachineIntegerType::Int32)
+            ) {
+                MachineIntegerType::UInt32
+            } else {
+                return Ok(None);
+            };
+            let Some((condition, expected)) = proposition_as_single_condition(proposition)
+                .or_else(|| compound_spec_value_condition(proposition))
+            else {
+                return Ok(None);
+            };
+            let left = KernelTerm::retained_machine_operand(format, left);
+            let right = KernelTerm::retained_machine_operand(format, right);
+            let (left, right) = if expected {
+                (left, right)
+            } else {
+                (right, left)
+            };
+            let result = match condition {
+                ConditionTerm::Constant(true) => left,
+                ConditionTerm::Constant(false) => right,
+                _ if crate::kernel::shared_machine_syntax_equal(&left, &right) => left,
+                condition => KernelTerm::machine_if_shared(
+                    format,
+                    [
+                        KernelTermImport::default().condition(&condition),
+                        left,
+                        right,
+                    ],
+                ),
+            };
+            return Ok(Some(Self::Shared(result)));
+        }
+        Ok(conditional_spec_value(
+            proposition,
+            then_value.clone().into_native(),
+            else_value.clone().into_native(),
+        )
+        .map(Self::Native))
+    }
+
     pub(in crate::kernel) fn into_native(self) -> CValue {
         match self {
             Self::Native(value) => value,

@@ -10,6 +10,7 @@ use std::hash::{Hash, Hasher};
 #[derive(Eq, PartialEq, Hash)]
 enum Shape {
     Atom(KernelTerm),
+    If(ConditionTerm, [usize; 2]),
     Native(MachineTerm),
     Binary(MachineIntegerType, MachineBinaryOp, [usize; 2]),
     Unary(MachineIntegerType, MachineUnaryOp, usize),
@@ -81,6 +82,7 @@ impl<'a> MachineSourceMatcher<'a> {
                 continue;
             }
             let children: Vec<_> = match term.node() {
+                KernelTermNode::MachineIf { arguments } => arguments[1..].iter().collect(),
                 KernelTermNode::MachineBinary { arguments, .. } => arguments.iter().collect(),
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand],
@@ -92,6 +94,13 @@ impl<'a> MachineSourceMatcher<'a> {
                 continue;
             }
             let shape = match term.node() {
+                KernelTermNode::MachineIf { arguments } => Shape::If(
+                    KernelTermExport::condition(&arguments[0]).ok()?,
+                    [
+                        self.nodes[&arguments[1].id()],
+                        self.nodes[&arguments[2].id()],
+                    ],
+                ),
                 KernelTermNode::MachineBinary {
                     format,
                     operator,

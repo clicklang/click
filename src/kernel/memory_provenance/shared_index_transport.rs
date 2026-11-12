@@ -72,6 +72,7 @@ pub(in crate::kernel) fn map_index_with_descent(
             continue;
         }
         let children: Vec<_> = match node.node() {
+            KernelTermNode::MachineIf { arguments } => arguments[1..].iter().collect(),
             KernelTermNode::MachineBinary { arguments, .. } => arguments.iter().collect(),
             KernelTermNode::MachineUnary { operand, .. }
             | KernelTermNode::MachineCast { operand, .. } => vec![operand],
@@ -109,7 +110,30 @@ pub(in crate::kernel) fn map_index_with_descent(
                 .iter()
                 .map(|child| results[&child.id()].clone())
                 .collect();
-            rebuild(node, &children)?
+            if let KernelTermNode::MachineIf { arguments } = node.node() {
+                let guard = MachineTerm::BoolCast {
+                    to: MachineIntegerType::UInt8,
+                    value: Box::new(
+                        crate::kernel::KernelTermExport::condition(&arguments[0]).ok()?,
+                    ),
+                };
+                let mapped = map_leaf(&guard)?;
+                let condition = ConditionTerm::truth_of_bool_word(&mapped);
+                let KernelType::C(ty) = node.ty() else {
+                    return None;
+                };
+                let updated = KernelTerm::machine_if_shared(
+                    MachineIntegerType::from_c_type(*ty)?,
+                    [
+                        crate::kernel::KernelTermImport::default().condition(&condition),
+                        arguments[1].clone(),
+                        arguments[2].clone(),
+                    ],
+                );
+                rebuild(&updated, &children)?
+            } else {
+                rebuild(node, &children)?
+            }
         };
         results.insert(node.id(), rewritten);
     }

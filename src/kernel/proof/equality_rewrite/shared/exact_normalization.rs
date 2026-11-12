@@ -79,6 +79,13 @@ fn syntax_cmp(left: &KernelTerm, right: &KernelTerm) -> std::cmp::Ordering {
     fn header(node: &KernelTerm) -> MachineTerm {
         let zero = || Box::new(MachineTerm::constant(0));
         match node.node() {
+            KernelTermNode::MachineIf { arguments } => MachineTerm::If {
+                condition: Box::new(
+                    KernelTermExport::condition(&arguments[0]).expect("conditional guard"),
+                ),
+                then_term: zero(),
+                else_term: zero(),
+            },
             KernelTermNode::MachineBinary {
                 format, operator, ..
             } => MachineTerm::Binary {

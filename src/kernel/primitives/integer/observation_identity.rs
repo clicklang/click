@@ -24,16 +24,23 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
             crate::instrumentation::record_deterministic_work(1);
             let format = match term.ty() {
                 KernelType::C(ty) => {
-                    MachineIntegerType::from_c_type(*ty).expect("machine observation")
+                    MachineIntegerType::from_c_type(*ty).unwrap_or(MachineIntegerType::UInt8)
                 }
-                _ => unreachable!(),
+                _ => MachineIntegerType::UInt8,
             };
-            if !finish && matches!(term.node(), KernelTermNode::Legacy(_)) {
+            if !finish
+                && matches!(term.node(), KernelTermNode::Legacy(_))
+                && term.machine_conversion_leaf().is_some()
+            {
                 let value = term
                     .machine_conversion_leaf()
                     .expect("retained machine leaf");
                 let view = MachineOperandView::Legacy(value);
-                if view.binary().is_some() || view.unary().is_some() || view.cast().is_some() {
+                if view.binary().is_some()
+                    || view.unary().is_some()
+                    || view.cast().is_some()
+                    || matches!(value, MachineTerm::If { .. })
+                {
                     let replacement = KernelTerm::retained_machine_operand(format, view);
                     expanded.insert(term.id(), replacement.clone());
                     pending.push((term, true));
@@ -47,7 +54,15 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let children = match term.node() {
-                KernelTermNode::MachineBinary { arguments, .. } => arguments.to_vec(),
+                KernelTermNode::MachineBinary { arguments, .. }
+                | KernelTermNode::BoolCompare { arguments, .. }
+                | KernelTermNode::BoolEqual { arguments } => arguments.to_vec(),
+                KernelTermNode::MachineIf { arguments } | KernelTermNode::BoolIf { arguments } => {
+                    arguments.to_vec()
+                }
+                KernelTermNode::Call { arguments, .. } if term.ty() == &KernelType::Bool => {
+                    arguments.clone()
+                }
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
                 _ => Vec::new(),
@@ -58,7 +73,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let normalized = match term.node() {
-                KernelTermNode::Legacy(_) => {
+                KernelTermNode::Legacy(_) if term.machine_conversion_leaf().is_some() => {
                     let value = term
                         .machine_conversion_leaf()
                         .expect("retained machine leaf");
@@ -67,6 +82,57 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                         value.clone(),
                     ));
                     KernelTerm::machine_observation_leaf(format, value.clone(), identity)
+                }
+                KernelTermNode::LegacyBool(_) => {
+                    let condition = KernelTermExport::condition(&term).expect("retained guard");
+                    let identity = SharedMachineIntegerTerm::intern_key(MachineIntegerKey::native(
+                        MachineIntegerType::UInt8,
+                        MachineTerm::BoolCast {
+                            to: MachineIntegerType::UInt8,
+                            value: Box::new(condition.clone()),
+                        },
+                    ));
+                    KernelTerm::bool_observation_leaf(condition, identity)
+                }
+                KernelTermNode::MachineIf { arguments } => KernelTerm::machine_if_shared(
+                    format,
+                    arguments.each_ref().map(|arg| roots[&arg.id()].clone()),
+                ),
+                KernelTermNode::BoolIf { arguments } => KernelTerm::intern(
+                    KernelType::Bool,
+                    KernelTermNode::BoolIf {
+                        arguments: arguments.each_ref().map(|arg| roots[&arg.id()].clone()),
+                    },
+                ),
+                KernelTermNode::BoolEqual { arguments } => KernelTerm::intern(
+                    KernelType::Bool,
+                    KernelTermNode::BoolEqual {
+                        arguments: arguments.each_ref().map(|arg| roots[&arg.id()].clone()),
+                    },
+                ),
+                KernelTermNode::BoolCompare {
+                    format,
+                    relation,
+                    arguments,
+                } => KernelTerm::intern(
+                    KernelType::Bool,
+                    KernelTermNode::BoolCompare {
+                        format: *format,
+                        relation: *relation,
+                        arguments: arguments.each_ref().map(|arg| roots[&arg.id()].clone()),
+                    },
+                ),
+                KernelTermNode::Call { name, arguments } if term.ty() == &KernelType::Bool => {
+                    KernelTerm::intern(
+                        KernelType::Bool,
+                        KernelTermNode::Call {
+                            name: name.clone(),
+                            arguments: arguments
+                                .iter()
+                                .map(|arg| roots[&arg.id()].clone())
+                                .collect(),
+                        },
+                    )
                 }
                 KernelTermNode::MachineBinary {
                     format: operation_format,

@@ -844,6 +844,51 @@ fn offsets_equal_by_cited_index_sum(
 /// same term, so it never combines different terms the way `arithmetic`
 /// does.
 fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComparisonSubject> {
+    fn retained_subject(mut operand: MachineOperandView<'_>) -> ConstantComparisonSubject {
+        if let Some((MachineCastSpelling::Generic, source, destination, child)) = operand.cast()
+            && matches!(
+                (source, destination),
+                (MachineIntegerType::Int32, MachineIntegerType::UInt32)
+                    | (MachineIntegerType::UInt32, MachineIntegerType::Int32)
+            )
+        {
+            operand = child;
+        }
+        let identity = match operand {
+            MachineOperandView::Legacy(term) => {
+                SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, term.clone())
+            }
+            MachineOperandView::Shared(term) if term.machine_conversion_leaf().is_some() => {
+                SharedMachineIntegerTerm::intern(
+                    MachineIntegerType::Int32,
+                    term.machine_conversion_leaf()
+                        .expect("opaque subject")
+                        .clone(),
+                )
+            }
+            MachineOperandView::Shared(term) => SharedMachineIntegerTerm::observe_shared(
+                MachineIntegerType::Int32,
+                term.with_machine_observation_type(MachineIntegerType::Int32),
+            )
+            .expect("machine comparison subject"),
+        };
+        ConstantComparisonSubject::Machine(identity)
+    }
+    // Retained machine comparisons are spelled as Integer observations. Their
+    // selected subject is still the same word as a native cited comparison.
+    if let Some(view) =
+        crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+    {
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        match (left.literal().is_some(), right.literal().is_some()) {
+            (false, true) => return Some(retained_subject(left)),
+            (true, false) => return Some(retained_subject(right)),
+            _ => {}
+        }
+    }
     // A constant of any format: an 8- or 16-bit comparison is native
     // (rule K8) and keeps its own constant's format.
     let machine_constant = |term: &MachineTerm| matches!(term, MachineTerm::Constant { .. });
@@ -852,7 +897,7 @@ fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComp
     // which relates the two (the difference graph's σ link, R0). The
     // subject is a key; the terms keep their σ. One match on the root.
     let subject =
-        |term: &MachineTerm| ConstantComparisonSubject::Machine(term.sign_cast32_bits().clone());
+        |term: &MachineTerm| retained_subject(MachineOperandView::Legacy(term.sign_cast32_bits()));
     let machine = |left: &MachineTerm, right: &MachineTerm| match (
         machine_constant(left),
         machine_constant(right),
@@ -894,7 +939,7 @@ fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComp
 
 #[derive(PartialEq)]
 enum ConstantComparisonSubject {
-    Machine(MachineTerm),
+    Machine(SharedMachineIntegerTerm),
     Integer(u64),
 }
 

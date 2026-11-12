@@ -35,6 +35,13 @@ impl KernelLegacyTerm {
 }
 
 impl KernelTerm {
+    pub(crate) fn machine_if_shared(format: MachineIntegerType, arguments: [Self; 3]) -> Self {
+        debug_assert_eq!(arguments[0].ty(), &KernelType::Bool);
+        Self::intern(
+            KernelType::C(format.c_type()),
+            KernelTermNode::MachineIf { arguments },
+        )
+    }
     /// An explicitly retained native leaf or the compatibility reading of a
     /// mathematical integer conversion. The surrounding machine DAG is never
     /// exported; conversion Integer payloads stay shared.
@@ -43,6 +50,18 @@ impl KernelTerm {
             && let Some(operand) = value.machine_operand()
         {
             return Some(operand);
+        }
+        if let KernelTermNode::BoolCast {
+            destination,
+            operand,
+        } = self.node()
+        {
+            return Some(self.0.machine_leaf.get_or_init(|| MachineTerm::BoolCast {
+                to: *destination,
+                value: Box::new(
+                    KernelTermExport::condition(operand).expect("Bool conversion operand"),
+                ),
+            }));
         }
         let KernelTermNode::IntegerToMachine {
             destination,
@@ -198,6 +217,20 @@ impl KernelMachineLiteral {
 pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLiteral> {
     let (format, root) = match node {
         KernelTermNode::MachineLiteral(value) => return Some(value.clone()),
+        KernelTermNode::MachineIf { arguments } => {
+            let KernelTermNode::BoolLiteral(value) = arguments[0].node() else {
+                return None;
+            };
+            return arguments[if *value { 1 } else { 2 }]
+                .machine_constant_reading()
+                .and_then(|value| match value {
+                    KernelMachineLiteral::UInt32(bits) => Some(KernelMachineLiteral::Word32(*bits)),
+                    KernelMachineLiteral::Word32(_)
+                    | KernelMachineLiteral::Int64(_)
+                    | KernelMachineLiteral::UInt64(_) => Some(value.clone()),
+                    _ => None,
+                });
+        }
         KernelTermNode::Legacy(value) => {
             // Read the selected native leaf once, on introduction. Shared
             // parents reuse this metadata, including a literal-conditioned
@@ -354,6 +387,17 @@ impl KernelTermImport {
             return self.scalar_read(result, term);
         }
         let node = match term {
+            Old::If {
+                condition,
+                then_term,
+                else_term,
+            } => KernelTermNode::MachineIf {
+                arguments: [
+                    self.condition(condition),
+                    self.machine_arithmetic(result, then_term)?,
+                    self.machine_arithmetic(result, else_term)?,
+                ],
+            },
             Old::IntegerToMachine { value, destination } => {
                 let operand = self.integer(value);
                 if operand.has_opaque_observation_boundary() {
@@ -433,6 +477,17 @@ impl KernelTermImport {
             return read;
         }
         let node = match term {
+            Old::If {
+                condition,
+                then_term,
+                else_term,
+            } => Node::MachineIf {
+                arguments: [
+                    self.condition(condition),
+                    self.machine(result, then_term),
+                    self.machine(result, else_term),
+                ],
+            },
             int32_constant!(bits) => Node::MachineLiteral(Literal::Word32(constant_u32(*bits))),
             uint32_constant!(bits) => Node::MachineLiteral(Literal::UInt32(constant_u32(*bits))),
             int64_constant!(value) => Node::MachineLiteral(Literal::Int64(constant_i64(*value))),
@@ -516,6 +571,11 @@ impl KernelTermExport {
         MACHINE_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
+            Node::MachineIf { arguments } => Old::If {
+                condition: Box::new(Self::condition(&arguments[0])?),
+                then_term: Box::new(Self::machine(&arguments[1])?),
+                else_term: Box::new(Self::machine(&arguments[2])?),
+            },
             Node::MachineLiteral(value) => value.legacy_term(),
             Node::Variable(variable) => Old::Variable(*variable),
             Node::MemoryLoad {

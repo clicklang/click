@@ -164,6 +164,13 @@ fn shared_operand_leaf_pairs_with_policy(
                     av,
                     bv,
                 )])
+            } else if let (Some((ac, [al, ar])), Some((bc, [bl, br]))) =
+                (a.conditional(), b.conditional())
+            {
+                (ac == bc).then_some(vec![
+                    (format, P::Snapshot(false), al, bl),
+                    (format, P::Snapshot(false), ar, br),
+                ])
             } else {
                 None
             };

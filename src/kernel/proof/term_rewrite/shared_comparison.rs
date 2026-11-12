@@ -32,7 +32,8 @@ impl TermRewrite<'_> {
     pub(super) fn shared_machine_operand(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
         // Only the ordinary comparison scope may share work between queries.
         // A nested binder's renamed/opaque reads use this traversal's own memo.
-        let cacheable = self.comparison_arithmetic
+        let cacheable = self.conditions.is_none()
+            && self.comparison_arithmetic
             && self.resolve_registered_loads
             && self.scope.c.iter().all(|(a, b)| a == b)
             && self.scope.integer.iter().all(|(a, b)| a == b)
@@ -75,6 +76,7 @@ impl TermRewrite<'_> {
             .bitvector
             .map(|(from, _)| super::super::machine_source_match::MachineSourceMatcher::new(from));
         let mut replacements = HashMap::<MachineIntegerType, KernelTerm>::new();
+        let mut guards = HashMap::<u64, ConditionTerm>::new();
         let mut pending = vec![(root.clone(), false)];
         while let Some((term, finish)) = pending.pop() {
             self.visit();
@@ -153,7 +155,28 @@ impl TermRewrite<'_> {
                     continue;
                 }
             }
+            if !finish && let KernelTermNode::MachineIf { arguments } = term.node() {
+                let condition = KernelTermExport::condition(&arguments[0]).ok()?;
+                if let Some(collected) = &mut self.collected_conditions {
+                    collected.push(condition.clone());
+                }
+                let condition = self.condition(&condition);
+                guards.insert(
+                    term.id(),
+                    if self.integer_exact.is_some() {
+                        condition
+                    } else {
+                        folded_machine_condition(condition)
+                    },
+                );
+            }
             let children: Vec<_> = match term.node() {
+                KernelTermNode::MachineIf { arguments } => match guards.get(&term.id()) {
+                    Some(ConditionTerm::Constant(value)) if self.integer_exact.is_none() => {
+                        vec![arguments[if *value { 1 } else { 2 }].clone()]
+                    }
+                    _ => arguments[1..].to_vec(),
+                },
                 KernelTermNode::MachineBinary { arguments, .. } => arguments.to_vec(),
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
@@ -165,6 +188,31 @@ impl TermRewrite<'_> {
                 continue;
             }
             let value = match term.node() {
+                KernelTermNode::MachineIf { arguments } => {
+                    let condition = guards.remove(&term.id()).expect("visited guard");
+                    if self.integer_exact.is_none()
+                        && let ConditionTerm::Constant(value) = condition
+                    {
+                        get(&arguments[if value { 1 } else { 2 }])?
+                    } else {
+                        let left = get(&arguments[1])?;
+                        let right = get(&arguments[2])?;
+                        if self.integer_exact.is_none()
+                            && crate::kernel::shared_machine_syntax_equal(&left, &right)
+                        {
+                            left
+                        } else {
+                            KernelTerm::machine_if_shared(
+                                format,
+                                [
+                                    KernelTermImport::default().condition(&condition),
+                                    left,
+                                    right,
+                                ],
+                            )
+                        }
+                    }
+                }
                 KernelTermNode::Variable(variable) => {
                     let rewritten = self.bits(&MachineTerm::Variable(*variable));
                     KernelTerm::retained_machine_operand(
