@@ -1,18 +1,11 @@
-# A preserved `apply` names the `viewable` premise it is missing
+# A preserved `apply` proves its current-state viewability obligation
 
-This is `search_terminates_by_unmarked_count.md` with one line removed: the
-`have viewable(visited[0..n]);` before
-`apply(unmarked_point_update(at(iter, visited), visited, 0, n, n, cur))`.
-The lemma's fifth requirement, `viewable(a[lo..n])` with `a = at(iter,
-visited)`, reads the memory of the current state, and only the loop head's
-`viewable` over an earlier state is available.
-
-The refusal used to say only that the preservation driver declined the
-`apply`, "a proof-shape limitation, not a failed proposition check". It now
-names the operation, the requirement as the lemma writes it with its
-instantiation, and which memory each side reads, because the bounded renderer
-labels snapshots per rendering and would otherwise print the requirement and
-the available fact alike.
+This is `search_terminates_by_unmarked_count.md` without the explicit
+`have viewable(visited[0..n]);` before the point-update theorem application.
+The application now generates that premise as an obligation and the driver
+proves it from the current ownership. A saved array argument supplies the
+pointer value; the theorem's `viewable` requirement still reads current memory.
+This also exercises source substitution of a saved array into a range premise.
 
 ```c filename=preserve_apply_names_its_missing_viewable.c
 int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
@@ -293,5 +286,5 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
 ```
 
 ```expect
-fail: the required `viewable` reads the memory of the current state; the available `viewable` of the same range reads `at(statement(0).entry, …)`
+pass
 ```

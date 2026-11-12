@@ -3,17 +3,19 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
-    /// Retain a pure or fixed-state application's evaluated arguments and instantiated result,
+    /// Retain a pure, fixed-state or live application's evaluated arguments and instantiated result,
     /// then prove its argument and premise obligations before publication.
-    /// Other proof contexts retain their existing selection route.
+    /// Returned outcomes retain their existing selection route.
     pub(in crate::surface::proof) fn apply_theorem_application(
         &self,
         application: &TheoremApplication,
     ) -> Result<Proof<'a>, ClickError> {
-        if matches!(
+        if (matches!(
             self.proof.context.as_ref(),
             ProofContext::Pure(_) | ProofContext::FixedState(_)
-        ) && application.name != "population_member_count_zero"
+        ) || matches!(self.proof.context.as_ref(), ProofContext::Execution(_))
+            && !self.proof.is_at_function_exit())
+            && application.name != "population_member_count_zero"
             && !crate::surface::proof::theorem_application::is_integer_range_fold_theorem_name(
                 &application.name,
             )

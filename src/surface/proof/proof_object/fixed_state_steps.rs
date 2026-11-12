@@ -767,11 +767,9 @@ impl<'a> Proof<'a> {
         &self,
         application: &TheoremApplication,
     ) -> Result<PreparedTheoremApplication, ClickError> {
-        if !matches!(
-            self.context.as_ref(),
-            ProofContext::Pure(_) | ProofContext::FixedState(_)
-        ) {
-            return Err(self.step_error("theorem preparation requires a pure or fixed-state proof"));
+        if matches!(self.context.as_ref(), ProofContext::Execution(_)) && self.is_at_function_exit()
+        {
+            return Err(self.step_error("returned theorem applications require an outcome proof"));
         }
         let (prepared, probe) =
             crate::surface::proof::execution_planning::probe_step_obligations(|| {
