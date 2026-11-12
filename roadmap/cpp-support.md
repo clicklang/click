@@ -309,10 +309,9 @@ and arithmetic are preserved, not retagged.
 
 ### Sequencing
 
-New C++ feature admission waits on [object-model.md](object-model.md), which
-recovers the accumulated PR #646 work. The
-[archived object-model design](https://github.com/lacker/click/blob/e3d84a785792c007da19d2f42d75b9e143372164/design/cpp-object-model.md)
-records the accepted laws; it is not an upstream support claim.
+New C++ feature admission waits on [object-model.md](object-model.md). The
+[object-model design](../design/cpp-object-model.md) records the accepted
+laws; it is not an upstream support claim.
 
 ### Remaining coverage
 
