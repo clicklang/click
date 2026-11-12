@@ -79,7 +79,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | Chunk | Work package | State |
 | --- | --- | --- |
 | 1 | Let bindings and local value handoffs | Merged in [PR #2617](https://github.com/clicklang/click/pull/2617); specification bindings retain shared values through selected lookups, with shadowing and snapshot scope preserved. |
-| 2 | Symbolic conditional joins | Implemented; all 1,488 selected tests passed, including the complete scaling suite and conditional round trips. Machine joins retain typed guards and shared arms, with observation identity, selected rewrites, pointer-index transport, assumptions and Surface spelling migrated together. Integration validation is in progress. |
+| 2 | Symbolic conditional joins | Implemented and integrated with upstream: typed guards and shared arms survive observation identity, exact rewrites, pointer-index transport, snapshot matching, assumptions and Surface spelling. The full gate passed 7,294 unit/API tests (including all scaling tests), 5,240 proof fixtures and all example projects; its 15m54s local run exceeded the ten-minute target. The full-corpus fact-stability audit passed all 5,240 fixtures with zero differences. |
 | 3 | Pure-function arguments and results | Open |
 | 4 | Mixed-width arithmetic and casts | Open |
 | 5 | C/Rust execution result carriers | Open |
