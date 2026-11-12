@@ -766,14 +766,27 @@ impl<'a> Proof<'a> {
         if !matches!(self.context.as_ref(), ProofContext::Pure(_)) {
             return Err(self.step_error("pure theorem preparation requires a proposition proof"));
         }
-        let (theorem, substitutions) =
-            self.theorem_application_instance(application)
-                .ok_or_else(|| {
-                    self.step_error(format!(
-                        "could not instantiate theorem `{}` with these arguments",
-                        application.name
-                    ))
-                })?;
+        let (theorem, mut substitutions) = self
+            .theorem_application_instance(application)
+            .ok_or_else(|| {
+                self.step_error(format!(
+                    "could not instantiate theorem `{}` with these arguments",
+                    application.name
+                ))
+            })?;
+        // A contextual Integer literal loses its type when substituted into
+        // a standalone comparison. Keep the formal type in the emitted term;
+        // the value lies outside this local binding's scope, so no caller name
+        // is captured.
+        for parameter in theorem.parameters() {
+            if parameter.click_type() == &ClickType::Integer
+                && let Some(value) = substitutions.get_mut(parameter.name())
+            {
+                *value = crate::surface::proof::surface_synthesis::integer_typed_expression(
+                    value.clone(),
+                );
+            }
+        }
         crate::surface::proof::pure_theorems::theorem_requirement_propositions(&theorem)?
             .iter()
             .map(|requirement| {

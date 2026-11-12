@@ -21810,18 +21810,26 @@ fn returned_branch_closers_replay_from_retained_decisions() {
 #[test]
 fn pure_apply_obligations_expand_to_explicit_have_and_using() {
     let (source, _) = mdtest_sources("mdtests/pure_apply_obligations.md");
-    let offset = source.find("apply(nonnegative(n))").unwrap();
-    let line = source[..offset]
-        .bytes()
-        .filter(|byte| *byte == b'\n')
-        .count()
-        + 1;
-    let column = offset - source[..offset].rfind('\n').map_or(0, |index| index + 1) + 1;
-    let expanded = expand_c0_tactic_source_at(&source, &[], line, column).unwrap();
-    assert!(expanded.contains("have "), "{expanded}");
-    assert!(expanded.contains("using"), "{expanded}");
-    without_implicit_solve_for_claim("positive.ensures_0", || {
-        verify_click_theorems(&expanded).map_err(|error| error.report())
-    })
-    .unwrap();
+    for (application, claim) in [
+        ("apply(nonnegative(n))", "positive.ensures_0"),
+        (
+            "apply(nonpositive(-9223372036854775809))",
+            "integer_literal_argument.ensures_0",
+        ),
+    ] {
+        let offset = source.find(application).unwrap();
+        let line = source[..offset]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+            + 1;
+        let column = offset - source[..offset].rfind('\n').map_or(0, |index| index + 1) + 1;
+        let expanded = expand_c0_tactic_source_at(&source, &[], line, column).unwrap();
+        assert!(expanded.contains("have "), "{expanded}");
+        assert!(expanded.contains("using"), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
 }
