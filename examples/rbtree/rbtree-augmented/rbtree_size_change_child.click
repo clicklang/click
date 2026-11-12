@@ -56,10 +56,34 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
             }
             have a->rb_right != a by assumption();
             mark a_links;
+            step(); step();
+            have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
+            have separate(memory(a->rb_left), memory(a->__rb_parent_color)) by { assumption(); }
+            have separate(memory(parent->rb_left), memory(a->__rb_parent_color)) by {
+                rewrite(parent == a); assumption();
+            }
+            mark before_store;
+            step();
+            // The store writes `parent->rb_left`; carry `a`'s parent word,
+            // and with it the parent cast, across that one transition.
+            have separate(statement(0).statement(0).statement(0).footprint, memory(a->__rb_parent_color)) by {
+                normalize() using { separate(memory(parent->rb_left), memory(a->__rb_parent_color)); };
+            }
+            have a->__rb_parent_color == at(before_store, a->__rb_parent_color) by {
+                transport_certificate {
+                    premise 0: separate(statement(0).statement(0).statement(0).footprint, memory(a->__rb_parent_color)) => separate(statement(0).statement(0).statement(0).footprint, memory(a->__rb_parent_color));
+                    preserve 0 => a->__rb_parent_color == at(before_store, a->__rb_parent_color);
+                    conclusion 1;
+                }
+            }
+            have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
+                rewrite(a->__rb_parent_color == at(before_store, a->__rb_parent_color)); assumption();
+            }
             step_until(function.exit);
             have a->rb_right != a by {
                 transport(at(a_links, a->rb_right != a), a->rb_right != a);
             }
+            have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by solve();
             let frames = fold(sized_context_at(new,root->rb_node,0,(old as (void *) as (struct sized_node *))->size), { model: SizedContext::Left(a, above, shade, value, sibling_model, up_model) }, { metadata: a_size, sibling: sibling, up: up });
             let after = fold(sized_link_at(new,root,(old as (void *) as (struct sized_node *))->size), { model: SizedContext::Left(a, above, shade, value, sibling_model, up_model) }, { frames: frames });
             solve();
@@ -87,7 +111,29 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                     have parent->rb_left != old by {
                         rewrite(parent->rb_left == 0); assumption();
                     }
+                    step(); step();
+                    have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
+                    have separate(memory(parent->rb_right), memory(a->__rb_parent_color)) by {
+                        have separate(memory(a->rb_right), memory(a->__rb_parent_color)) by { assumption(); }
+                        rewrite(parent == a); assumption();
+                    }
+                    mark before_right_store;
+                    step();
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(a->__rb_parent_color)) by {
+                        normalize() using { separate(memory(parent->rb_right), memory(a->__rb_parent_color)); };
+                    }
+                    have a->__rb_parent_color == at(before_right_store, a->__rb_parent_color) by {
+                        transport_certificate {
+                            premise 0: separate(statement(0).statement(0).statement(1).footprint, memory(a->__rb_parent_color)) => separate(statement(0).statement(0).statement(1).footprint, memory(a->__rb_parent_color));
+                            preserve 0 => a->__rb_parent_color == at(before_right_store, a->__rb_parent_color);
+                            conclusion 1;
+                        }
+                    }
+                    have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
+                        rewrite(a->__rb_parent_color == at(before_right_store, a->__rb_parent_color)); assumption();
+                    }
                     step_until(function.exit);
+                    have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by solve();
                     let sibling = fold(sized_at(parent->rb_left), { model: SizedTree::Empty });
                     let frames = fold(sized_context_at(new,root->rb_node,0,(old as (void *) as (struct sized_node *))->size), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { metadata: a_size, sibling: sibling, up: up });
                     let after = fold(sized_link_at(new,root,(old as (void *) as (struct sized_node *))->size), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { frames: frames });
@@ -100,7 +146,28 @@ void insert::__rb_change_child(struct rb_node* old, struct rb_node* new,
                     step();
                     step();
                     let sibling = fold(sized_at(parent->rb_left), { model: SizedTree::Node(identity,sp,sc,size,sl,sr) }, { metadata: s_size, left: s_left, right: s_right });
+                    have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
+                    have separate(memory(parent->rb_right), memory(a->__rb_parent_color)) by {
+                        have separate(memory(a->rb_right), memory(a->__rb_parent_color)) by { assumption(); }
+                        rewrite(parent == a); assumption();
+                    }
+                    mark before_right_store;
+                    step();
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(a->__rb_parent_color)) by {
+                        normalize() using { separate(memory(parent->rb_right), memory(a->__rb_parent_color)); };
+                    }
+                    have a->__rb_parent_color == at(before_right_store, a->__rb_parent_color) by {
+                        transport_certificate {
+                            premise 0: separate(statement(0).statement(0).statement(1).footprint, memory(a->__rb_parent_color)) => separate(statement(0).statement(0).statement(1).footprint, memory(a->__rb_parent_color));
+                            preserve 0 => a->__rb_parent_color == at(before_right_store, a->__rb_parent_color);
+                            conclusion 1;
+                        }
+                    }
+                    have ((a->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
+                        rewrite(a->__rb_parent_color == at(before_right_store, a->__rb_parent_color)); assumption();
+                    }
                     step_until(function.exit);
+                    have (old as (void *) as (struct sized_node *))->size == old((old as (void *) as (struct sized_node *))->size) by solve();
                     let frames = fold(sized_context_at(new,root->rb_node,0,(old as (void *) as (struct sized_node *))->size), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { metadata: a_size, sibling: sibling, up: up });
                     let after = fold(sized_link_at(new,root,(old as (void *) as (struct sized_node *))->size), { model: SizedContext::Right(a, above, shade, value, sibling_model, up_model) }, { frames: frames });
                     solve();
