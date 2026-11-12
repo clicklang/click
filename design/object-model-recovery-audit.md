@@ -1,5 +1,10 @@
 # Shared object-model recovery audit: 2026-10-14
 
+> Historical record. The archive branch this audit compares was retired on
+> 2026-11-12 and is no longer a source for slices; see
+> [object-model.md](../roadmap/object-model.md). The accepted design is now
+> [cpp-object-model.md](cpp-object-model.md).
+
 ## Revisions and reproducibility
 
 This is a fixed-baseline audit, not a green verdict for the accumulated model.
