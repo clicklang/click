@@ -2170,14 +2170,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     if value == *root {
                         return term.clone();
                     }
-                    return MachineOperandView::Shared(&value)
+                    let observed = SharedMachineIntegerTerm::observe_shared(machine.ty(), value)
+                        .expect("retained rewritten observation");
+                    return observed
+                        .operand_view()
                         .observe(machine.ty())
-                        .unwrap_or_else(|| {
-                            IntegerTerm::Machine(
-                                SharedMachineIntegerTerm::from_shared(machine.ty(), value)
-                                    .expect("retained rewrite"),
-                            )
-                        })
+                        .unwrap_or_else(|| IntegerTerm::Machine(observed.clone()))
                         .into();
                 }
                 if crate::instrumentation::deadline_exceeded() {

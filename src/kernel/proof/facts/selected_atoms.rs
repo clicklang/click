@@ -51,6 +51,9 @@ fn syntax_atoms(root: &KernelTerm) -> Option<PersistentSet<BitvectorEqualityAtom
                 KernelTermNode::MachineBinary {
                     arguments: [left, right],
                     ..
+                }
+                | KernelTermNode::MachineIf {
+                    arguments: [_, left, right],
                 } => {
                     if !finish {
                         pending.push((term, true));
@@ -101,6 +104,15 @@ pub(super) fn collect(
         atoms.insert(atom.clone());
         if let BitvectorEqualityAtomKey::Variable(variable) = atom {
             collect_load_address_atoms(*variable, atoms, 0);
+        }
+    }
+    if let Some(leaves) = crate::kernel::shared_machine_conversion_leaves(root, || {
+        !crate::instrumentation::deadline_exceeded_with_work(1)
+    }) {
+        for (_, leaf) in leaves.iter() {
+            if let Some(MachineTerm::BoolCast { value, .. }) = leaf.machine_conversion_leaf() {
+                collect_condition_bitvector_atoms(value, atoms);
+            }
         }
     }
     let Some(reads) = crate::kernel::shared_machine_read_leaves(root, || {

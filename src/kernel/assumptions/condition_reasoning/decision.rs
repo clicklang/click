@@ -501,6 +501,9 @@ impl PureFactContext {
         if let Some(value) = self.decide_signed_constant_offset_order(condition) {
             return Some(value);
         }
+        if let Some(value) = self.decide_shared_conditional_comparison(condition) {
+            return Some(value);
+        }
         if let Some(value) = self.decide_shared_signed_constant_order(condition) {
             return Some(value);
         }
@@ -2461,10 +2464,15 @@ impl PureFactContext {
             }
             let mut result = SignedConstantResolution::Unknown;
             for conditional in classes.scalar_conditional_members(id) {
-                result = result.merge(self.conditional_constant_resolution(&conditional, visiting));
+                result = result.merge(
+                    self.conditional_constant_resolution_view(conditional.operand_view(), visiting),
+                );
             }
             visiting.remove(&id);
             return result;
+        }
+        if term.conditional().is_some() {
+            return self.conditional_constant_resolution_view(term, visiting);
         }
         let MachineOperandView::Legacy(term) = term else {
             return SignedConstantResolution::Unknown;
@@ -2482,19 +2490,65 @@ impl PureFactContext {
         term: &MachineTerm,
         visiting: &mut BTreeSet<u64>,
     ) -> SignedConstantResolution {
-        let MachineTerm::If {
-            condition,
-            then_term,
-            else_term,
-        } = term
-        else {
+        self.conditional_constant_resolution_view(MachineOperandView::Legacy(term), visiting)
+    }
+
+    fn conditional_constant_resolution_view(
+        &self,
+        term: MachineOperandView<'_>,
+        visiting: &mut BTreeSet<u64>,
+    ) -> SignedConstantResolution {
+        let Some((condition, [left, right])) = term.conditional() else {
             return SignedConstantResolution::Unknown;
         };
-        match self.decide(condition) {
-            Some(condition) => self
-                .constant_class_resolution(if condition { then_term } else { else_term }, visiting),
+        match self.decide(&condition) {
+            Some(condition) => {
+                self.constant_class_resolution_view(if condition { left } else { right }, visiting)
+            }
             None => SignedConstantResolution::Unknown,
         }
+    }
+
+    /// Apply the native selected guard/arm reduction before comparing retained
+    /// conditional results. Other roots keep their existing dispatch and work.
+    fn decide_shared_conditional_comparison(&self, condition: &ConditionTerm) -> Option<bool> {
+        use crate::kernel::machine_integer::comparison::{
+            condition_for_operand_views, structural_comparison_view,
+        };
+        let view = structural_comparison_view(condition)?;
+        let operands = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        if !operands.iter().any(|operand| {
+            matches!(operand, MachineOperandView::Shared(_)) && operand.conditional().is_some()
+        }) {
+            return None;
+        }
+        let original = operands.map(|operand| operand.retain(view.format));
+        let reduced = operands.map(|mut operand| {
+            // Consume the selected chain once. Re-entering comparison dispatch
+            // at every arm would re-key every remaining suffix quadratically.
+            while let Some((guard, arms)) = operand.conditional() {
+                let selected = self.decide(&guard).or_else(|| {
+                    (arms[0].retain(view.format) == arms[1].retain(view.format)).then_some(true)
+                });
+                let Some(value) = selected else { break };
+                crate::instrumentation::record_deterministic_work(1);
+                operand = arms[if value { 0 } else { 1 }];
+            }
+            operand.retain(view.format)
+        });
+        if reduced == original {
+            return None;
+        }
+        let reduced_condition = condition_for_operand_views(
+            view.format,
+            view.relation,
+            reduced.each_ref().map(|operand| operand.operand_view()),
+        );
+        self.decide(&reduced_condition)
+            .map(|value| value != view.negated)
     }
 
     fn decide_shared_signed_constant_order(&self, condition: &ConditionTerm) -> Option<bool> {

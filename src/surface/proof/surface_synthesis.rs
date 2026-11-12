@@ -3051,7 +3051,10 @@ pub(super) fn raise_kernel_term(
     let recurse = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
     if matches!(
         term.node(),
-        Node::MachineBinary { .. } | Node::MachineUnary { .. } | Node::MachineCast { .. }
+        Node::MachineBinary { .. }
+            | Node::MachineUnary { .. }
+            | Node::MachineCast { .. }
+            | Node::MachineIf { .. }
     ) && let Some(named) =
         synthesize_named_integer_local(state.locals().names_holding_kernel_integer(term))
     {
@@ -3120,7 +3123,7 @@ pub(super) fn raise_kernel_term(
             arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
         },
         Node::BoolLiteral(value) => bool_literal(*value),
-        Node::BoolIf { arguments } => SurfaceTerm::If {
+        Node::BoolIf { arguments } | Node::MachineIf { arguments } => SurfaceTerm::If {
             condition: Box::new(bool_truth(recurse(&arguments[0])?)),
             then_branch: Box::new(recurse(&arguments[1])?),
             else_branch: Box::new(recurse(&arguments[2])?),

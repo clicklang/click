@@ -90,9 +90,9 @@ pub use integer::{
 pub use integer::{MachineIntegerType, SharedMachineIntegerTerm, SignedDefinedWidth};
 pub(crate) use integer::{
     MachineOperandView, clear_shared_machine_variable_cache, machine_operand_syntax_cmp,
-    shared_machine_conversion_leaves, shared_machine_read_leaves, shared_machine_read_uses,
-    shared_machine_syntax_equal, shared_machine_syntax_variables, shared_operand_leaf_pairs,
-    shared_snapshot_read_pairs,
+    shared_condition_operand_leaf_pairs, shared_machine_conversion_leaves,
+    shared_machine_read_leaves, shared_machine_read_uses, shared_machine_syntax_equal,
+    shared_machine_syntax_variables, shared_operand_leaf_pairs, shared_snapshot_read_pairs,
 };
 mod alias_candidates;
 pub(crate) use alias_candidates::{AliasCandidates, BlockKeyed};

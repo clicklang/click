@@ -35,9 +35,17 @@ impl TermClasses {
     }
 
     pub(super) fn register_scalar_witness(&mut self, term: &MachineTerm, node: u64) {
+        self.register_scalar_witness_view(crate::kernel::MachineOperandView::Legacy(term), node);
+    }
+
+    pub(super) fn register_scalar_witness_view(
+        &mut self,
+        term: crate::kernel::MachineOperandView<'_>,
+        node: u64,
+    ) {
         let root = self.root(node);
-        let key = MachineAtom::int32(term.clone());
-        if matches!(term, MachineTerm::If { .. }) {
+        let key = MachineAtom::from_operand(MachineIntegerType::Int32, term);
+        if term.conditional().is_some() {
             let terms = self
                 .scalar_witnesses
                 .conditionals
@@ -187,13 +195,13 @@ impl TermClasses {
     pub(in crate::kernel::equality_graph) fn scalar_conditional_members(
         &self,
         id: u64,
-    ) -> Vec<MachineTerm> {
+    ) -> Vec<MachineAtom> {
         self.scalar_witnesses
             .conditionals
             .get(&self.root(id))
             .into_iter()
             .flat_map(|members| members.iter())
-            .map(|term| term.value().clone())
+            .cloned()
             .collect()
     }
 }

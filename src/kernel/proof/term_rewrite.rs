@@ -102,7 +102,7 @@ struct RewriteScope {
 }
 
 #[derive(Clone, Copy)]
-enum BindingCarrier {
+pub(super) enum BindingCarrier {
     C,
     Integer,
     Algebraic,
@@ -250,7 +250,7 @@ fn typed_c_replacement(value: &CValue) -> Option<TypedCReplacement> {
     }
 }
 
-fn binding_variable(value: &AlgebraicValue) -> Option<(BindingCarrier, Variable)> {
+pub(super) fn binding_variable(value: &AlgebraicValue) -> Option<(BindingCarrier, Variable)> {
     match value {
         AlgebraicValue::C(value) => {
             c_value_variable(value).map(|variable| (BindingCarrier::C, variable))
@@ -3990,9 +3990,7 @@ impl<'a> TermRewrite<'a> {
                     // keys as freshly lowered syntax. A no-op keeps its exact
                     // retained handle, including producer metadata.
                     let result = match result {
-                        IntegerTerm::Machine(machine)
-                            if changed && self.integer_exact.is_none() =>
-                        {
+                        IntegerTerm::Machine(machine) if changed => {
                             if let Some(root) = machine.shared_operand() {
                                 IntegerTerm::Machine(
                                     SharedMachineIntegerTerm::observe_shared(
@@ -6014,6 +6012,23 @@ impl<'a> TermRewrite<'a> {
                     if *native != literal.legacy_term() {
                         return false;
                     }
+                }
+                KernelTermNode::MachineIf { arguments } => {
+                    let MachineTerm::If {
+                        condition,
+                        then_term,
+                        else_term,
+                    } = native
+                    else {
+                        return false;
+                    };
+                    if KernelTermExport::condition(&arguments[0]).ok().as_ref()
+                        != Some(condition.as_ref())
+                    {
+                        return false;
+                    }
+                    pending.push((else_term, &arguments[2]));
+                    pending.push((then_term, &arguments[1]));
                 }
                 KernelTermNode::MachineBinary {
                     format,

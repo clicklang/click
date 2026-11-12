@@ -19,6 +19,7 @@ enum Node {
         SnapshotBlindBitvectorKey,
     ),
     Exact(MachineTerm),
+    ExactConditional(crate::kernel::SharedMachineIntegerTerm),
 }
 
 struct Record {
@@ -105,7 +106,7 @@ fn intern(node: Node) -> SnapshotBlindBitvectorKey {
         Node::If(c, a, b) => {
             c.requires_checked_match() || a.requires_checked_match() || b.requires_checked_match()
         }
-        Node::Exact(_) => false,
+        Node::Exact(_) | Node::ExactConditional(_) => false,
     };
     let record = Arc::new(Record {
         id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
@@ -152,6 +153,12 @@ pub(super) fn written(term: &MachineTerm) -> SnapshotBlindBitvectorKey {
                 snapshot_blind_bitvector_key(then_term),
                 snapshot_blind_bitvector_key(else_term),
             )
+        }
+        MachineTerm::If { .. } => {
+            Node::ExactConditional(crate::kernel::SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int32,
+                term.clone(),
+            ))
         }
         term => {
             if let Some((operator, left, right)) = term.as_binary() {
@@ -202,6 +209,8 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
             vec![child]
         } else if let Some((_, _, child)) = view.unary() {
             vec![child]
+        } else if let Some((_, children)) = view.conditional() {
+            children.into_iter().collect()
         } else {
             Vec::new()
         };
@@ -250,6 +259,26 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
                 BitvectorUnaryOp::Machine(format, op),
                 child_key(child),
             ))
+        } else if let Some((condition, [left, right])) = view.conditional() {
+            if matches!(
+                condition.as_ref(),
+                crate::kernel::integer_comparison_condition!(_, _)
+            ) || condition.is_bool_value_form()
+            {
+                intern(Node::ExactConditional(
+                    crate::kernel::SharedMachineIntegerTerm::observe_shared(
+                        MachineIntegerType::Int32,
+                        root.clone(),
+                    )
+                    .expect("conditional observation"),
+                ))
+            } else {
+                intern(Node::If(
+                    Box::new(snapshot_blind_condition_key(&condition)),
+                    child_key(left),
+                    child_key(right),
+                ))
+            }
         } else {
             unreachable!("shared machine operand fragment")
         };
@@ -265,6 +294,33 @@ mod tests {
         KernelTerm, KernelTermExport, KernelTermImport, KernelType, MachineBinaryOp,
         MachineOperandView as V,
     };
+
+    #[test]
+    fn conditional_keys_preserve_guard_policy_and_shared_arms() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for condition in [
+            ConditionTerm::Variable(Variable(998203)),
+            ConditionTerm::equal(
+                MachineTerm::Variable(Variable(998204)),
+                MachineTerm::constant(0),
+            ),
+            ConditionTerm::IntegerEqual(
+                crate::kernel::IntegerTerm::Variable(Variable(998205)).into(),
+                crate::kernel::IntegerTerm::constant_i64(0).into(),
+            ),
+        ] {
+            let native = MachineTerm::If {
+                condition: Box::new(condition),
+                then_term: Box::new(MachineTerm::Variable(Variable(998206))),
+                else_term: Box::new(MachineTerm::constant(1)),
+            };
+            let shared = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+            let expected = written(&native);
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(operand(V::Shared(&shared)), expected);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
 
     #[test]
     fn shared_snapshot_operand_keys_match_written_structure_without_export() {

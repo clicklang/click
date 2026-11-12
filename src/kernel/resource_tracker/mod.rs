@@ -1444,6 +1444,9 @@ fn collect_operand_reads(
         }
         if let Some(leaf) = view.read_source() {
             collect_bitvector_reads(&leaf, reads);
+        } else if let Some((condition, arms)) = view.conditional() {
+            collect_condition_reads(&condition, reads);
+            pending.extend(arms);
         } else if let Some((T::Int32 | T::UInt32, _, operands)) = view.binary() {
             pending.extend(operands);
         } else if let Some((T::Int32 | T::UInt32, U::BitwiseNot, operand)) = view.unary() {

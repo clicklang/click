@@ -2921,3 +2921,103 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
         );
     }
 }
+
+#[test]
+fn retained_conditional_premise_spelling_does_not_search_snapshot_history() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let a = MachineTerm::Variable(Variable(8_179_900));
+    let b = MachineTerm::Variable(Variable(8_179_901));
+    let result = MachineTerm::Variable(Variable(8_179_902));
+    let conditional = MachineTerm::If {
+        condition: Box::new(ConditionTerm::unsigned_less_equal(a.clone(), b.clone())),
+        then_term: Box::new(a.clone()),
+        else_term: Box::new(b.clone()),
+    };
+    let observe = |word| {
+        crate::kernel::SharedIntegerTerm::from(crate::kernel::IntegerTerm::Machine(
+            crate::kernel::SharedMachineIntegerTerm::intern(MachineIntegerType::UInt32, word),
+        ))
+    };
+    let condition = ConditionTerm::IntegerEqual(observe(result.clone()), observe(conditional));
+    let fact = Proposition::ConditionIs(condition.clone(), true);
+    let state = CState::new()
+        .with_local("a", CValue::UInt32(a))
+        .with_local("b", CValue::UInt32(b))
+        .with_local("chosen", CValue::UInt32(result));
+    let entry = state.clone();
+    let surfaces = SurfacePropositionMap::default();
+    let facts = [fact.clone()];
+    let mut base = None;
+    for size in [4usize, 16, 64] {
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..size {
+            snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Region(index),
+                    kind: ProgramPointKind::Entry,
+                },
+                state.clone(),
+            );
+        }
+        let anchor = ProgramPointRef {
+            region: CodeRegionRef::Region(size - 1),
+            kind: ProgramPointKind::Entry,
+        };
+        let root = Proof::for_fixed_state_goal_with_requirements(
+            "retained conditional spelling",
+            0,
+            &facts,
+            Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            ParameterBinding::default(),
+            FixedStateFrame::new(&entry, &state, None, &snapshots),
+            Some(&anchor),
+            &surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+            &[],
+        );
+        let ((spelled, work), events) = crate::instrumentation::collect(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::search::ProofSearch::available_surface_fact(
+                    &root,
+                    &surfaces,
+                    Some(&anchor),
+                    &fact,
+                )
+            })
+        });
+        let spelled = spelled.expect("the selected conditional equality has a source form");
+        let lowered = root
+            .lower_surface_proposition_direct(&spelled, "conditional round trip")
+            .unwrap();
+        assert!(
+            crate::kernel::proof::fact_reasoning::listed_equality_fact_is_available(
+                &fact,
+                std::slice::from_ref(&lowered),
+            )
+        );
+        assert!(
+            !crate::kernel::proof::fact_reasoning::listed_equality_fact_is_available(
+                &Proposition::ConditionIs(condition.clone(), false),
+                &[lowered],
+            )
+        );
+        assert!(
+            events.iter().all(|event| !matches!(event,
+                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                    if *name == "solve premise surface at recorded snapshots"
+                        || *name == "solve premise surface across recorded snapshots"
+            )),
+            "size={size}: selected conditional spelling searched history"
+        );
+        let baseline = *base.get_or_insert(work);
+        assert!(
+            work <= baseline + 128,
+            "size={size}, work={work}, baseline={baseline}"
+        );
+    }
+}

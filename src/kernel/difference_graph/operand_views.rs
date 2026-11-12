@@ -1,5 +1,6 @@
 //! Borrowed arithmetic queries over the existing difference graph.
 use super::*;
+use std::collections::BTreeMap;
 pub(super) mod cache;
 use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
 use crate::kernel::uint64_constant;
@@ -121,6 +122,9 @@ pub(super) fn word_mask_view(term: V<'_>) -> Option<(i128, V<'_>)> {
 struct Query<'a> {
     graph: &'a DifferenceGraph,
     frames: Vec<(Vec<Read>, bool)>,
+    // Native guard dependencies prevent reuse across graph changes, but
+    // this query borrows one immutable graph throughout its DAG walk.
+    local_answers: BTreeMap<QueryKey, Answer>,
 }
 
 impl DifferenceGraph {
@@ -420,6 +424,7 @@ impl<'a> Query<'a> {
         Self {
             graph,
             frames: Vec::new(),
+            local_answers: BTreeMap::new(),
         }
     }
     fn depend(&mut self, input: Read) {
@@ -433,6 +438,10 @@ impl<'a> Query<'a> {
         }
     }
     fn begin(&mut self, key: QueryKey) -> Option<Answer> {
+        if let Some(answer) = self.local_answers.get(&key).copied() {
+            self.uncacheable();
+            return Some(answer);
+        }
         self.depend(Read::Query(key));
         // A native conditional can re-enter graph decisions while resolving
         // an operand. Hold the cache lock only for lookup or insertion, never
@@ -451,6 +460,7 @@ impl<'a> Query<'a> {
                 .lock()
                 .insert(key, root, answer, reads);
         } else {
+            self.local_answers.insert(key, answer);
             self.uncacheable();
         }
     }
@@ -626,6 +636,20 @@ impl<'a> Query<'a> {
     fn structural(&mut self, domain: Domain, term: V<'_>) -> (i128, i128) {
         use MachineBinaryOp as Op;
         use MachineIntegerType as M;
+        if let Some((condition, [left, right])) = term.conditional() {
+            // Guard decisions depend on this graph's facts. The native
+            // decision API does not expose its individual dependencies.
+            self.uncacheable();
+            return match self.graph.decide(&condition) {
+                Some(true) => self.interval(domain, left),
+                Some(false) => self.interval(domain, right),
+                None => {
+                    let (a, b) = self.interval(domain, left);
+                    let (c, d) = self.interval(domain, right);
+                    (a.min(c), b.max(d))
+                }
+            };
+        }
         if domain == Domain::UInt32 {
             if let Some((ty, Op::BitwiseAnd, [a, b])) = term.binary()
                 && matches!(ty, M::Int32 | M::UInt32)

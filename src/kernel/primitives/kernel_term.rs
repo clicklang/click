@@ -57,6 +57,11 @@ pub enum KernelTermNode {
     IntegerIf {
         arguments: [KernelTerm; 3],
     },
+    /// A word selection with a retained Bool guard and two retained word arms.
+    /// Branch definedness remains in the evaluator's guarded obligations.
+    MachineIf {
+        arguments: [KernelTerm; 3],
+    },
     /// Exact condition payload at the temporary migration boundary.
     LegacyBool(KernelLegacyTerm),
     IntegerLiteral(BigInt),
@@ -156,6 +161,7 @@ struct NodeKeyData {
     machine_conversions: bool,
     machine_reads: bool,
     conditional_machine_rewrites: bool,
+    machine_conditionals: bool,
     machine_constant: Option<KernelMachineLiteral>,
 }
 #[derive(Clone)]
@@ -222,9 +228,11 @@ impl NodeKey {
             | KernelTermNode::BoolEqual { arguments } => arguments
                 .iter()
                 .any(KernelTerm::has_opaque_observation_boundary),
-            KernelTermNode::BoolIf { arguments } => arguments
-                .iter()
-                .any(KernelTerm::has_opaque_observation_boundary),
+            KernelTermNode::BoolIf { arguments } | KernelTermNode::MachineIf { arguments } => {
+                arguments
+                    .iter()
+                    .any(KernelTerm::has_opaque_observation_boundary)
+            }
             // Integer conditionals already had retained Integer identity before
             // becoming common nodes. Conversion consumers visit their branches
             // with the source width and current snapshot; keep that boundary.
@@ -254,11 +262,15 @@ impl NodeKey {
             KernelTermNode::MachineBinary { arguments, .. } => {
                 arguments.iter().all(KernelTerm::is_shared_machine_operand)
             }
+            KernelTermNode::MachineIf { arguments } => arguments[1..]
+                .iter()
+                .all(KernelTerm::is_shared_machine_operand),
             KernelTermNode::MachineUnary { operand, .. }
             | KernelTermNode::MachineCast { operand, .. } => operand.is_shared_machine_operand(),
             _ => false,
         };
         let machine_conversions = match &node {
+            KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => true,
             KernelTermNode::Legacy(value) => matches!(
                 value.identity,
@@ -272,6 +284,7 @@ impl NodeKey {
             _ => false,
         };
         let machine_reads = match &node {
+            KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::MemoryLoad { .. } => true,
             KernelTermNode::MachineBinary { arguments, .. } => {
                 arguments.iter().any(KernelTerm::has_machine_reads)
@@ -283,6 +296,7 @@ impl NodeKey {
         // Conditional rewriting leaves ordinary arithmetic untouched. Retain
         // this syntax summary so each query skips unchanged shared prefixes.
         let conditional_machine_rewrites = match &node {
+            KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::IntegerToMachine { .. } | KernelTermNode::MachineCast { .. } => true,
             KernelTermNode::MachineBinary {
                 operator,
@@ -303,6 +317,15 @@ impl NodeKey {
             KernelTermNode::Legacy(value) => value.machine_operand().is_some(),
             _ => false,
         };
+        let machine_conditionals = match &node {
+            KernelTermNode::MachineIf { .. } => true,
+            KernelTermNode::MachineBinary { arguments, .. } => {
+                arguments.iter().any(KernelTerm::has_machine_conditionals)
+            }
+            KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => operand.has_machine_conditionals(),
+            _ => false,
+        };
         let machine_constant = machine::constant_reading(&node);
         Self(Arc::new(NodeKeyData {
             machine_constant,
@@ -312,6 +335,7 @@ impl NodeKey {
             machine_conversions,
             machine_reads,
             conditional_machine_rewrites,
+            machine_conditionals,
             ty,
             node,
         }))
@@ -421,6 +445,10 @@ impl KernelTerm {
         self.0.key.0.conditional_machine_rewrites
     }
 
+    pub(crate) fn has_machine_conditionals(&self) -> bool {
+        self.0.key.0.machine_conditionals
+    }
+
     pub(crate) fn is_shared_machine_operand(&self) -> bool {
         self.0.key.0.shared_machine_operand
     }
@@ -445,7 +473,7 @@ impl KernelTerm {
         }
     }
 
-    fn intern(ty: KernelType, node: KernelTermNode) -> Self {
+    pub(in crate::kernel::primitives) fn intern(ty: KernelType, node: KernelTermNode) -> Self {
         static INTERNER: OnceLock<Mutex<Interner>> = OnceLock::new();
         crate::instrumentation::record_deterministic_work(match &node {
             KernelTermNode::IntegerOperation { arguments, .. } => arguments.len() + 1,
@@ -475,9 +503,9 @@ impl KernelTerm {
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => arguments,
-            KernelTermNode::BoolIf { arguments } | KernelTermNode::IntegerIf { arguments } => {
-                arguments
-            }
+            KernelTermNode::BoolIf { arguments }
+            | KernelTermNode::IntegerIf { arguments }
+            | KernelTermNode::MachineIf { arguments } => arguments,
             KernelTermNode::BoolCast { operand, .. }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
@@ -599,6 +627,18 @@ impl KernelTerm {
                 )
                 .with_machine_observation_type(format)
             }
+            MachineOperandView::Legacy(MachineTerm::If {
+                condition,
+                then_term,
+                else_term,
+            }) => Self::machine_if_shared(
+                format,
+                [
+                    KernelTermImport::default().condition(condition),
+                    Self::retained_machine_operand(format, MachineOperandView::Legacy(then_term)),
+                    Self::retained_machine_operand(format, MachineOperandView::Legacy(else_term)),
+                ],
+            ),
             MachineOperandView::Legacy(value) => {
                 Self::retained_native_machine_operand(format, value)
             }
@@ -641,6 +681,22 @@ impl KernelTerm {
         Self::legacy_at(
             PureFunctionArgument::Value(machine::wrap_exact(format, value)),
             LegacyIdentity::MachineObservation(identity),
+        )
+    }
+
+    pub(crate) fn bool_observation_leaf(
+        condition: ConditionTerm,
+        identity: SharedMachineIntegerTerm,
+    ) -> Self {
+        Self::intern(
+            KernelType::Bool,
+            KernelTermNode::LegacyBool(KernelLegacyTerm {
+                identity: LegacyIdentity::MachineObservation(identity),
+                value: PureFunctionArgument::Value(CValue::Bool(MachineTerm::BoolCast {
+                    to: MachineIntegerType::UInt8,
+                    value: Box::new(condition),
+                })),
+            }),
         )
     }
 

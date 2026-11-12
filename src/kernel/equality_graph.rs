@@ -1865,6 +1865,9 @@ impl EqualityGraph {
                         }
                         N::MemoryLoad { address, .. } => pointers.push(address.clone()),
                         N::MachineLiteral(_) => {}
+                        // Native pointer discovery treats conditionals as
+                        // opaque; registering one does not inspect either arm.
+                        N::MachineIf { .. } => {}
                         N::IntegerToMachine { .. } | N::Legacy(_) => pending.push(Work::Machine(
                             term.machine_conversion_leaf().expect("conversion leaf"),
                         )),
@@ -3244,7 +3247,7 @@ impl EqualityGraph {
         }
     }
 
-    pub(in crate::kernel) fn scalar_conditional_members(&self, id: u64) -> Vec<MachineTerm> {
+    pub(in crate::kernel) fn scalar_conditional_members(&self, id: u64) -> Vec<MachineAtom> {
         self.state
             .lock()
             .expect("equality graph")

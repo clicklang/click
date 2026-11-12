@@ -49,6 +49,7 @@ fn bindings() -> AlphaBindings {
     AlphaBindings {
         integer: BTreeMap::new(),
         bitvector: BTreeMap::new(),
+        algebraic: BTreeMap::new(),
         integer_scope: 0,
         bitvector_scope: 0,
         next_scope_id: 1,

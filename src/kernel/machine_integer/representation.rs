@@ -492,10 +492,11 @@ mod mixed_observation_tests {
     use crate::kernel::*;
 
     fn opaque() -> MachineTerm {
-        MachineTerm::If {
-            condition: ConditionTerm::Variable(Variable(1007000)).into(),
-            then_term: MachineTerm::Variable(Variable(1007001)).into(),
-            else_term: MachineTerm::Variable(Variable(1007002)).into(),
+        // Conditionals now have common nodes; an unmigrated call exercises
+        // the native operand side of this mixed-boundary regression.
+        MachineTerm::PureFunctionApplication {
+            name: "mixed_observation_opaque".into(),
+            arguments: vec![MachineTerm::Variable(Variable(1007001))],
         }
     }
 

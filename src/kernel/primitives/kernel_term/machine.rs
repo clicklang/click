@@ -35,6 +35,13 @@ impl KernelLegacyTerm {
 }
 
 impl KernelTerm {
+    pub(crate) fn machine_if_shared(format: MachineIntegerType, arguments: [Self; 3]) -> Self {
+        debug_assert_eq!(arguments[0].ty(), &KernelType::Bool);
+        Self::intern(
+            KernelType::C(format.c_type()),
+            KernelTermNode::MachineIf { arguments },
+        )
+    }
     /// An explicitly retained native leaf or the compatibility reading of a
     /// mathematical integer conversion. The surrounding machine DAG is never
     /// exported; conversion Integer payloads stay shared.
@@ -43,6 +50,18 @@ impl KernelTerm {
             && let Some(operand) = value.machine_operand()
         {
             return Some(operand);
+        }
+        if let KernelTermNode::BoolCast {
+            destination,
+            operand,
+        } = self.node()
+        {
+            return Some(self.0.machine_leaf.get_or_init(|| MachineTerm::BoolCast {
+                to: *destination,
+                value: Box::new(
+                    KernelTermExport::condition(operand).expect("Bool conversion operand"),
+                ),
+            }));
         }
         let KernelTermNode::IntegerToMachine {
             destination,
@@ -128,7 +147,48 @@ impl KernelTerm {
         if self.ty() == &KernelType::C(format.c_type()) {
             return self.clone();
         }
-        Self::intern(KernelType::C(format.c_type()), self.node().clone())
+        if !matches!(self.node(), KernelTermNode::MachineIf { .. }) {
+            return Self::intern(KernelType::C(format.c_type()), self.node().clone());
+        }
+        // A conditional's arms have its observation type, unlike an arithmetic
+        // operator whose own format determines its operands. Reinterpret the
+        // selected word at every conditional arm, exactly as native import
+        // does. Memoize DAG nodes so repeated signed/unsigned key readings do
+        // not expand shared branches or revisit an already read suffix.
+        CONDITIONAL_READINGS.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            let mut pending = vec![(self, false)];
+            while let Some((term, finish)) = pending.pop() {
+                let key = (term.id(), format);
+                if cache.contains_key(&key) {
+                    continue;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                if term.ty() == &KernelType::C(format.c_type()) {
+                    cache.insert(key, term.clone());
+                    continue;
+                }
+                let value = if let KernelTermNode::MachineIf { arguments } = term.node() {
+                    if !finish {
+                        pending.push((term, true));
+                        pending.extend(arguments[1..].iter().map(|arm| (arm, false)));
+                        continue;
+                    }
+                    Self::machine_if_shared(
+                        format,
+                        [
+                            arguments[0].clone(),
+                            cache[&(arguments[1].id(), format)].clone(),
+                            cache[&(arguments[2].id(), format)].clone(),
+                        ],
+                    )
+                } else {
+                    Self::intern(KernelType::C(format.c_type()), term.node().clone())
+                };
+                cache.insert(key, value);
+            }
+            cache[&(self.id(), format)].clone()
+        })
     }
 
     /// Construct one arithmetic operation structurally from shared children.
@@ -198,6 +258,20 @@ impl KernelMachineLiteral {
 pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLiteral> {
     let (format, root) = match node {
         KernelTermNode::MachineLiteral(value) => return Some(value.clone()),
+        KernelTermNode::MachineIf { arguments } => {
+            let KernelTermNode::BoolLiteral(value) = arguments[0].node() else {
+                return None;
+            };
+            return arguments[if *value { 1 } else { 2 }]
+                .machine_constant_reading()
+                .and_then(|value| match value {
+                    KernelMachineLiteral::UInt32(bits) => Some(KernelMachineLiteral::Word32(*bits)),
+                    KernelMachineLiteral::Word32(_)
+                    | KernelMachineLiteral::Int64(_)
+                    | KernelMachineLiteral::UInt64(_) => Some(value.clone()),
+                    _ => None,
+                });
+        }
         KernelTermNode::Legacy(value) => {
             // Read the selected native leaf once, on introduction. Shared
             // parents reuse this metadata, including a literal-conditioned
@@ -354,6 +428,17 @@ impl KernelTermImport {
             return self.scalar_read(result, term);
         }
         let node = match term {
+            Old::If {
+                condition,
+                then_term,
+                else_term,
+            } => KernelTermNode::MachineIf {
+                arguments: [
+                    self.condition(condition),
+                    self.machine_arithmetic(result, then_term)?,
+                    self.machine_arithmetic(result, else_term)?,
+                ],
+            },
             Old::IntegerToMachine { value, destination } => {
                 let operand = self.integer(value);
                 if operand.has_opaque_observation_boundary() {
@@ -433,6 +518,17 @@ impl KernelTermImport {
             return read;
         }
         let node = match term {
+            Old::If {
+                condition,
+                then_term,
+                else_term,
+            } => Node::MachineIf {
+                arguments: [
+                    self.condition(condition),
+                    self.machine(result, then_term),
+                    self.machine(result, else_term),
+                ],
+            },
             int32_constant!(bits) => Node::MachineLiteral(Literal::Word32(constant_u32(*bits))),
             uint32_constant!(bits) => Node::MachineLiteral(Literal::UInt32(constant_u32(*bits))),
             int64_constant!(value) => Node::MachineLiteral(Literal::Int64(constant_i64(*value))),
@@ -516,6 +612,11 @@ impl KernelTermExport {
         MACHINE_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
+            Node::MachineIf { arguments } => Old::If {
+                condition: Box::new(Self::condition(&arguments[0])?),
+                then_term: Box::new(Self::machine(&arguments[1])?),
+                else_term: Box::new(Self::machine(&arguments[2])?),
+            },
             Node::MachineLiteral(value) => value.legacy_term(),
             Node::Variable(variable) => Old::Variable(*variable),
             Node::MemoryLoad {
@@ -748,6 +849,7 @@ mod tests {
 }
 
 thread_local! {
+    static CONDITIONAL_READINGS: std::cell::RefCell<std::collections::HashMap<(u64, MachineIntegerType), KernelTerm>> = Default::default();
     static CHECKED_CASTS: std::cell::RefCell<std::collections::HashMap<(u64, MachineIntegerType, MachineIntegerType, bool), KernelTerm>> = Default::default();
 }
 
@@ -756,6 +858,7 @@ impl KernelTerm {
     /// fragment. Children stay shared; literal folding matches the old checker.
     pub(crate) fn clear_cast_checks() {
         CHECKED_CASTS.with(|cache| cache.borrow_mut().clear());
+        CONDITIONAL_READINGS.with(|cache| cache.borrow_mut().clear());
     }
 
     pub(crate) fn checking_machine_cast(

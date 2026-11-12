@@ -64,6 +64,9 @@ pub(crate) fn shared_machine_syntax_variables(
                 KernelTermNode::MachineBinary {
                     arguments: [left, right],
                     ..
+                }
+                | KernelTermNode::MachineIf {
+                    arguments: [_, left, right],
                 } => {
                     if !finish {
                         pending.push((term, true));
@@ -112,7 +115,9 @@ pub(crate) fn shared_machine_conversion_leaves(
         |node| {
             matches!(
                 node,
-                KernelTermNode::IntegerToMachine { .. } | KernelTermNode::Legacy(_)
+                KernelTermNode::IntegerToMachine { .. }
+                    | KernelTermNode::Legacy(_)
+                    | KernelTermNode::MachineIf { .. }
             )
         },
         visit,
@@ -155,6 +160,7 @@ fn shared_machine_selected_leaves(
                 continue;
             }
             let children: Vec<_> = match term.node() {
+                KernelTermNode::MachineIf { arguments } => arguments[1..].iter().collect(),
                 KernelTermNode::MachineBinary { arguments, .. } => arguments.iter().collect(),
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand],
@@ -167,7 +173,15 @@ fn shared_machine_selected_leaves(
             }
             let mut result = crate::persistent::PersistentMap::default();
             if is_leaf(term.node()) {
-                result.insert(term.id(), term.clone());
+                // The retained guard crosses the existing Boolean dependency
+                // boundary on its own; neither selected word arm is exported.
+                let leaf = if let KernelTermNode::MachineIf { arguments } = term.node() {
+                    KernelTerm::bool_cast(MachineIntegerType::UInt8, arguments[0].clone())
+                        .expect("conditional Bool guard")
+                } else {
+                    term.clone()
+                };
+                result.insert(leaf.id(), leaf);
             }
             for child in children {
                 let entries = &cache[&child.id()];
@@ -220,6 +234,9 @@ pub(crate) fn shared_machine_read_uses(
                 continue;
             }
             let children: Vec<_> = match term.node() {
+                KernelTermNode::MachineIf { arguments } => {
+                    arguments[1..].iter().map(|child| (child, width)).collect()
+                }
                 KernelTermNode::MachineBinary {
                     format, arguments, ..
                 } => {
@@ -463,6 +480,31 @@ impl SharedMachineIntegerTerm {
 }
 
 impl<'a> MachineOperandView<'a> {
+    pub(crate) fn conditional(self) -> Option<(std::borrow::Cow<'a, ConditionTerm>, [Self; 2])> {
+        match self {
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::MachineIf { arguments } => Some((
+                    std::borrow::Cow::Owned(
+                        KernelTermExport::condition(&arguments[0]).expect("conditional guard"),
+                    ),
+                    [Self::Shared(&arguments[1]), Self::Shared(&arguments[2])],
+                )),
+                _ => root
+                    .machine_conversion_leaf()
+                    .and_then(|leaf| Self::Legacy(leaf).conditional()),
+            },
+            Self::Legacy(MachineTerm::If {
+                condition,
+                then_term,
+                else_term,
+            }) => Some((
+                std::borrow::Cow::Borrowed(condition),
+                [Self::Legacy(then_term), Self::Legacy(else_term)],
+            )),
+            _ => None,
+        }
+    }
+
     /// Inspect a read without rebuilding its address or surrounding arithmetic.
     pub(crate) fn read(self) -> Option<(&'a SharedCMemory, &'a Pointer, LoadKind)> {
         if let Self::Shared(root) = self
@@ -803,7 +845,7 @@ impl<'a> MachineOperandView<'a> {
                     Some(CarrierWidth::of_machine_type(*destination))
                 }
                 KernelTermNode::MachineLiteral(_) => crate::kernel::root_width(&self.literal()?),
-                KernelTermNode::Variable(_) => None,
+                KernelTermNode::Variable(_) | KernelTermNode::MachineIf { .. } => None,
                 KernelTermNode::MemoryLoad { kind, .. } => Some(CarrierWidth::of_load(*kind)),
                 KernelTermNode::IntegerToMachine { destination, .. } => {
                     Some(CarrierWidth::of_machine_type(*destination))

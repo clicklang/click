@@ -42,6 +42,26 @@ pub(super) fn differences(left: &KernelTerm, right: &KernelTerm) -> Option<Diffe
             }
             let children = match (a.node(), b.node()) {
                 (
+                    KernelTermNode::MachineIf { arguments: aa },
+                    KernelTermNode::MachineIf { arguments: ba },
+                ) if a.ty() == b.ty() => aa.iter().zip(ba).collect(),
+                (
+                    KernelTermNode::BoolCompare {
+                        format: af,
+                        relation: ar,
+                        arguments: aa,
+                    },
+                    KernelTermNode::BoolCompare {
+                        format: bf,
+                        relation: br,
+                        arguments: ba,
+                    },
+                ) if af == bf && ar == br => aa.iter().zip(ba).collect(),
+                (
+                    KernelTermNode::BoolEqual { arguments: aa },
+                    KernelTermNode::BoolEqual { arguments: ba },
+                ) => aa.iter().zip(ba).collect(),
+                (
                     KernelTermNode::MachineBinary {
                         format: af,
                         operator: ao,
@@ -320,10 +340,9 @@ mod tests {
         let ty = MachineIntegerType::Int32;
         let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007330));
         let sum = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
-        let opaque = MachineTerm::If {
-            condition: ConditionTerm::Variable(Variable(1007331)).into(),
-            then_term: MachineTerm::constant(1).into(),
-            else_term: MachineTerm::constant(2).into(),
+        let opaque = MachineTerm::PureFunctionApplication {
+            name: "read_evidence_opaque".into(),
+            arguments: vec![MachineTerm::constant(1), MachineTerm::constant(2)],
         };
         let native = SharedMachineIntegerTerm::intern(ty, opaque);
         assert!(native.shared_operand().is_none());

@@ -108,8 +108,8 @@ impl KernelTermExport {
             } => Old::Compare {
                 format: *format,
                 relation: *relation,
-                left: Box::new(Self::machine(&arguments[0])?),
-                right: Box::new(Self::machine(&arguments[1])?),
+                left: Box::new(Self::condition_machine_operand(&arguments[0])?),
+                right: Box::new(Self::condition_machine_operand(&arguments[1])?),
             },
             Node::IntegerCompare {
                 operator,
@@ -155,6 +155,19 @@ impl KernelTermExport {
             }
             _ => return Err("expected Bool kernel node"),
         })
+    }
+
+    fn condition_machine_operand(term: &KernelTerm) -> Result<MachineTerm, &'static str> {
+        // Fixed-size atoms have their exact written form already. Only a
+        // compound guard operand needs the remaining Boolean export boundary.
+        match term.node() {
+            KernelTermNode::Variable(variable) => Ok(MachineTerm::Variable(*variable)),
+            KernelTermNode::MachineLiteral(value) => Ok(value.legacy_term()),
+            KernelTermNode::MemoryLoad { .. } => {
+                Ok(term.machine_read_leaf().expect("read descriptor").clone())
+            }
+            _ => Self::machine(term),
+        }
     }
 }
 

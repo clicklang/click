@@ -8575,18 +8575,13 @@ fn evaluate_spec_if_paths_in(
                         ) else {
                             continue;
                         };
-                        // Conditional payloads still have a native join boundary.
-                        let then_value = then_path.value.clone().into_native();
-                        let else_value = else_path.value.clone().into_native();
-                        // Decision D2: an integer arm beside a `Bool` one.
-                        if bool_beside_integer(&then_value, &else_value) {
-                            return Err(ExecutionLimit::MixedBoolArms);
-                        }
-                        let Some(value) = conditional_spec_value(
+                        let Some(value) = SpecValue::conditional(
                             &condition_path.proposition,
-                            then_value,
-                            else_value,
-                        ) else {
+                            &then_path.value,
+                            &else_path.value,
+                            !budget.machine_result_production_disabled,
+                        )?
+                        else {
                             continue;
                         };
                         branch_paths.push(SpecExpressionPath {
@@ -10028,3 +10023,6 @@ mod shared_fold_operand_tests {
         include!("../scaling_tests/kernel/spec/shared_fold_operand_tests.rs");
     }
 }
+
+#[cfg(test)]
+mod conditional_tests;

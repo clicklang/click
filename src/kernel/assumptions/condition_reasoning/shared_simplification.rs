@@ -34,23 +34,52 @@ impl PureFactContext {
             let retain = |root: KernelTerm| V::Shared(&root).retain(format);
             let node =
                 |value: &S| KernelTerm::retained_machine_operand(value.ty(), value.operand_view());
-            let result =
-                if let Some(bits) = facts.equality_graph.direct_scalar_constant_view(operand) {
-                    S::intern(format, MachineTerm::constant(bits))
-                } else if let Some(native) = root.machine_conversion_leaf() {
-                    S::intern(format, facts.simplify_bitvector_under_assumptions(native))
-                } else if let Some(carrier) = facts.narrowed_cast_carrier_view(operand) {
-                    walk(facts, carrier.operand_view(), format, memo)
-                } else {
-                    match root.node() {
-                        KernelTermNode::MachineBinary {
-                            format: op_format,
-                            operator,
-                            arguments: [a, b],
-                        } => {
-                            let a = walk(facts, V::Shared(a), *op_format, memo);
-                            let b = walk(facts, V::Shared(b), *op_format, memo);
-                            retain(
+            let result = if let Some(bits) =
+                facts.equality_graph.direct_scalar_constant_view(operand)
+            {
+                S::intern(format, MachineTerm::constant(bits))
+            } else if let Some(native) = root.machine_conversion_leaf() {
+                S::intern(format, facts.simplify_bitvector_under_assumptions(native))
+            } else if let Some(carrier) = facts.narrowed_cast_carrier_view(operand) {
+                walk(facts, carrier.operand_view(), format, memo)
+            } else {
+                match root.node() {
+                    KernelTermNode::MachineIf { arguments } => {
+                        let condition = crate::kernel::KernelTermExport::condition(&arguments[0])
+                            .expect("conditional guard");
+                        match facts.decide(&condition) {
+                            Some(value) => walk(
+                                facts,
+                                V::Shared(&arguments[if value { 1 } else { 2 }]),
+                                format,
+                                memo,
+                            ),
+                            None => {
+                                let left =
+                                    node(&walk(facts, V::Shared(&arguments[1]), format, memo));
+                                let right =
+                                    node(&walk(facts, V::Shared(&arguments[2]), format, memo));
+                                retain(
+                                    if crate::kernel::shared_machine_syntax_equal(&left, &right) {
+                                        left
+                                    } else {
+                                        KernelTerm::machine_if_shared(
+                                            format,
+                                            [arguments[0].clone(), left, right],
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    KernelTermNode::MachineBinary {
+                        format: op_format,
+                        operator,
+                        arguments: [a, b],
+                    } => {
+                        let a = walk(facts, V::Shared(a), *op_format, memo);
+                        let b = walk(facts, V::Shared(b), *op_format, memo);
+                        retain(
                             crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
                                 *op_format,
                                 *operator,
@@ -58,50 +87,50 @@ impl PureFactContext {
                                 node(&b),
                             ),
                         )
-                        }
-                        KernelTermNode::MachineUnary {
-                            format: op_format,
-                            operator,
-                            operand: child,
-                        } => {
-                            let child = walk(facts, V::Shared(child), *op_format, memo);
-                            if let Some(literal) = child.operand_view().literal() {
-                                S::intern(
-                                    format,
-                                    MachineTerm::machine_unary(*op_format, *operator, literal),
-                                )
-                            } else {
-                                retain(KernelTerm::machine_unary_shared(
-                                    *op_format,
-                                    *operator,
-                                    node(&child),
-                                ))
-                            }
-                        }
-                        KernelTermNode::MachineCast {
-                            encoding,
-                            source,
-                            destination,
-                            operand: child,
-                        } => {
-                            if *encoding == MachineCastSpelling::UInt32From64
-                                && let Some(bits) =
-                                    facts.wide_constant_from_equalities_view(V::Shared(child))
-                            {
-                                S::intern(format, MachineTerm::constant(bits as u32))
-                            } else {
-                                let child = walk(facts, V::Shared(child), *source, memo);
-                                let child = node(&child);
-                                retain(if *encoding == MachineCastSpelling::Generic {
-                                    child.checking_machine_cast(*source, *destination)
-                                } else {
-                                    child.checking_legacy_machine_conversion(*source, *destination)
-                                })
-                            }
-                        }
-                        _ => operand.retain(format),
                     }
-                };
+                    KernelTermNode::MachineUnary {
+                        format: op_format,
+                        operator,
+                        operand: child,
+                    } => {
+                        let child = walk(facts, V::Shared(child), *op_format, memo);
+                        if let Some(literal) = child.operand_view().literal() {
+                            S::intern(
+                                format,
+                                MachineTerm::machine_unary(*op_format, *operator, literal),
+                            )
+                        } else {
+                            retain(KernelTerm::machine_unary_shared(
+                                *op_format,
+                                *operator,
+                                node(&child),
+                            ))
+                        }
+                    }
+                    KernelTermNode::MachineCast {
+                        encoding,
+                        source,
+                        destination,
+                        operand: child,
+                    } => {
+                        if *encoding == MachineCastSpelling::UInt32From64
+                            && let Some(bits) =
+                                facts.wide_constant_from_equalities_view(V::Shared(child))
+                        {
+                            S::intern(format, MachineTerm::constant(bits as u32))
+                        } else {
+                            let child = walk(facts, V::Shared(child), *source, memo);
+                            let child = node(&child);
+                            retain(if *encoding == MachineCastSpelling::Generic {
+                                child.checking_machine_cast(*source, *destination)
+                            } else {
+                                child.checking_legacy_machine_conversion(*source, *destination)
+                            })
+                        }
+                    }
+                    _ => operand.retain(format),
+                }
+            };
             memo.insert(key, result.clone());
             result
         }
@@ -219,6 +248,11 @@ mod tests {
                 x.clone(),
             ),
             narrow,
+            MachineTerm::if_then_else(
+                ConditionTerm::equal(x.clone(), MachineTerm::constant(5)),
+                MachineTerm::add(x.clone(), MachineTerm::constant(1)),
+                y.clone(),
+            ),
         ];
         let empty = PureFactContext::new();
         let exact = empty

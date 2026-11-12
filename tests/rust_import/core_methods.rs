@@ -30,8 +30,14 @@ fn smaller(a: u32, b: u32) -> u32 {
     unfold(u32::min(a, b));
     unfold(u32::max(a, b));
 }"#;
-    C0VerificationSession::new_program_prepared(witness, &prepared)
-        .unwrap_or_else(|error| panic!("{error:?}"));
+    let (verified, work) = click::instrumentation::measure_deterministic_work(|| {
+        C0VerificationSession::new_program_prepared(witness, &prepared)
+    });
+    verified.unwrap_or_else(|error| panic!("{error:?}"));
+    assert!(
+        work < 250_000,
+        "concrete min/max witness searched unrelated snapshots: {work} units"
+    );
     let invalid = witness.replace("ensures result == 1u32;", "ensures result == 2u32;");
     assert_ne!(witness, invalid);
     let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
@@ -40,6 +46,10 @@ fn smaller(a: u32, b: u32) -> u32 {
     assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
     let rendered = format!("{error:?} {error}");
     assert!(rendered.contains("smaller"), "{rendered}");
+    assert!(
+        !rendered.contains("budget exhausted") && !rendered.contains("work budget"),
+        "{rendered}"
+    );
 
     let imports = SIDECAR
         .lines()

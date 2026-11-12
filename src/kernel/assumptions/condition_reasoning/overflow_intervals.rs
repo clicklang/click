@@ -957,9 +957,7 @@ impl PureFactContext {
     ) -> Option<bool> {
         let left = opaque_operand(left);
         let right = opaque_operand(right);
-        if !matches!(left, MachineOperandView::Legacy(MachineTerm::If { .. }))
-            && !matches!(right, MachineOperandView::Legacy(MachineTerm::If { .. }))
-        {
+        if left.conditional().is_none() && right.conditional().is_none() {
             return None;
         }
         let (left_lower, left_upper) = self.signed_interval_view(left)?;
@@ -1173,19 +1171,12 @@ impl PureFactContext {
                 return (lo <= hi).then_some((lo, hi));
             }
         }
-        // Opaque conditionals and memory reads retain their existing carrier.
-        // Shared arithmetic has neither payload; do not export it to inspect one.
+        if let Some((_, [left, right])) = term.conditional() {
+            let (a, b) = self.signed_interval_view(left)?;
+            let (c, d) = self.signed_interval_view(right)?;
+            return Some((a.min(c), b.max(d)));
+        }
         if let MachineOperandView::Legacy(term) = term {
-            if let MachineTerm::If {
-                then_term,
-                else_term,
-                ..
-            } = term
-            {
-                let (a, b) = self.signed_interval(then_term)?;
-                let (c, d) = self.signed_interval(else_term)?;
-                return Some((a.min(c), b.max(d)));
-            }
             if let Some(resolved) = self.resolve_memory_load_term(term)
                 && resolved != *term
                 && let Some((lo, hi)) = self

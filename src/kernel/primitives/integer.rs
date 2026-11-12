@@ -21,8 +21,8 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use num_traits::{One, Zero};
 pub(crate) use operand_correspondence::{
-    machine_operand_syntax_cmp, shared_machine_syntax_equal, shared_operand_leaf_pairs,
-    shared_snapshot_read_pairs,
+    machine_operand_syntax_cmp, shared_condition_operand_leaf_pairs, shared_machine_syntax_equal,
+    shared_operand_leaf_pairs, shared_snapshot_read_pairs,
 };
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -659,7 +659,13 @@ impl SharedMachineIntegerTerm {
             unreachable!()
         };
         if let Some(term) = KernelTermImport::default().machine_arithmetic(ty, value) {
-            let shared = Self::from_shared(ty, term).expect("arithmetic storage fragment");
+            let shared =
+                if term.has_machine_conditionals() && term.has_opaque_observation_boundary() {
+                    Self::observe_shared(ty, term)
+                } else {
+                    Self::from_shared(ty, term)
+                }
+                .expect("arithmetic storage fragment");
             let MachineIntegerOperand::Shared { boxed, .. } = &shared.0.operand else {
                 unreachable!()
             };
@@ -668,7 +674,11 @@ impl SharedMachineIntegerTerm {
             return shared;
         }
         let view = MachineOperandView::Legacy(value);
-        if view.binary().is_some() || view.unary().is_some() || view.cast().is_some() {
+        if view.binary().is_some()
+            || view.unary().is_some()
+            || view.cast().is_some()
+            || matches!(value, MachineTerm::If { .. })
+        {
             let root = KernelTerm::retained_machine_operand(ty, view);
             let shared = Self::observe_shared(ty, root).expect("retained machine observation");
             if let MachineIntegerOperand::Shared { boxed, .. } = &shared.0.operand {

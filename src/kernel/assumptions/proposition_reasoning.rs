@@ -4438,6 +4438,13 @@ impl PureFactContext {
         if self.equality_graph.are_int32_equal_views(left, right) {
             return true;
         }
+        if let (Some((a, [al, ar])), Some((b, [bl, br]))) =
+            (left.conditional(), right.conditional())
+        {
+            return (a == b || self.condition_matches(&a, &b) || self.condition_matches(&b, &a))
+                && self.transport_views_inner(al, bl, local)
+                && self.transport_views_inner(ar, br, local);
+        }
         let sum_format = |v: V<'_>| {
             v.binary()
                 .and_then(|(ty, op, _)| (ty.format().bits() == 32 && op == Op::Add).then_some(ty))

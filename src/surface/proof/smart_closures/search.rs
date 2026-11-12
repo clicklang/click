@@ -6226,6 +6226,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 })
             )
         );
+        let retained_conditional_equality = match kernel {
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(left, right)
+                | ConditionTerm::IntegerNotEqual(left, right),
+                _,
+            ) => [left, right].iter().any(|term| match term.as_ref() {
+                crate::kernel::IntegerTerm::Machine(value) => value
+                    .shared_operand()
+                    .is_some_and(crate::kernel::KernelTerm::has_machine_conditionals),
+                _ => false,
+            }),
+            _ => false,
+        };
         let matches_kernel = |candidate: &ClickProposition, allow_recorded_pair: bool| {
             if crate::instrumentation::deadline_exceeded() {
                 return None;
@@ -6334,6 +6347,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let lowered = lower(candidate)?;
             (lowered == *kernel
                 || condition_polarity_equivalent(&lowered, kernel)
+                // This candidate spells one already-selected premise. Admit
+                // its native/shared equality reading at the same explicit
+                // boundary used when the generated certificate cites it.
+                || (retained_conditional_equality
+                    && crate::kernel::proof::fact_reasoning::listed_equality_fact_is_available(
+                        kernel, std::slice::from_ref(&lowered),
+                    ))
                 || quantified_equivalent_available_fact(kernel, std::slice::from_ref(&lowered))
                     .is_some())
             .then_some(())

@@ -102,6 +102,7 @@ pub(crate) enum SnapshotBlindFloatConditionKey {
     },
 }
 
+mod match_keys;
 mod snapshot_operands;
 use snapshot_operands::SnapshotBlindBitvectorKey;
 
@@ -803,6 +804,7 @@ enum AlphaVariableKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaBitvectorKey {
+    AlgebraicMatch(Box<AlphaAlgebraicKey>, Vec<match_keys::Arm>),
     Constant(u32),
     Int64Constant(i64),
     UInt64Constant(u64),
@@ -1179,6 +1181,7 @@ fn intern_alpha_registered_load(
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaConditionKey {
+    AlgebraicEqual(Box<AlphaAlgebraicKey>, Box<AlphaAlgebraicKey>),
     PointerValueEqual(Box<AlphaCValueKey>, Box<AlphaCValueKey>),
     Constant(bool),
     Variable(AlphaVariableKey),
@@ -1206,6 +1209,7 @@ struct AlphaMachineKey {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaMachineNode {
     Leaf(AlphaBitvectorKey),
+    If(Box<AlphaConditionKey>, [usize; 2]),
     Binary(
         MachineIntegerType,
         crate::kernel::MachineBinaryOp,
@@ -1239,7 +1243,17 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
         alpha_work_checkpoint(bindings, 1)?;
         let mut child =
             |view| node::<ALLOW_LOADS>(view, bindings, next_binder, memo, intern, nodes);
-        let value = if let Some((format, operator, arguments)) = view.binary() {
+        let value = if let Some((condition, [left, right])) = view.conditional() {
+            let arms = [child(left)?, child(right)?];
+            let outer_next_binder = *next_binder;
+            let condition = alpha_condition_key_with_bindings::<ALLOW_LOADS>(
+                &condition,
+                bindings,
+                next_binder,
+            )?;
+            *next_binder = outer_next_binder;
+            AlphaMachineNode::If(Box::new(condition), arms)
+        } else if let Some((format, operator, arguments)) = view.binary() {
             AlphaMachineNode::Binary(
                 format,
                 operator,
@@ -1464,6 +1478,7 @@ fn alpha_integer_key(
     let mut environment = AlphaBindings {
         integer: bindings.clone(),
         bitvector: BTreeMap::new(),
+        algebraic: BTreeMap::new(),
         integer_scope: 0,
         bitvector_scope: 0,
         next_scope_id: 1,
@@ -1520,6 +1535,7 @@ pub(crate) fn integer_fold_alpha_key(term: &SharedIntegerTerm) -> Option<Integer
     let mut environment = AlphaBindings {
         integer: BTreeMap::new(),
         bitvector: BTreeMap::new(),
+        algebraic: BTreeMap::new(),
         integer_scope: 0,
         bitvector_scope: 0,
         next_scope_id: 1,
@@ -1579,6 +1595,7 @@ fn bitvector_fold_alpha_key(term: &MachineTerm) -> Option<(AlphaBitvectorKey, us
     let mut environment = AlphaBindings {
         integer: BTreeMap::new(),
         bitvector: BTreeMap::new(),
+        algebraic: BTreeMap::new(),
         integer_scope: 0,
         bitvector_scope: 0,
         next_scope_id: 1,
@@ -1597,6 +1614,7 @@ fn bitvector_fold_alpha_key(term: &MachineTerm) -> Option<(AlphaBitvectorKey, us
 }
 
 struct AlphaBindings {
+    algebraic: BTreeMap<Variable, usize>,
     integer: BTreeMap<Variable, usize>,
     bitvector: BTreeMap<Variable, usize>,
     integer_scope: u64,
@@ -2193,7 +2211,7 @@ fn alpha_algebraic_key_with_bindings<const ALLOW_LOADS: bool>(
         AlgebraicTermNode::Variable(variable) => AlphaAlgebraicKey::Variable(
             term.algebraic_type.clone(),
             bindings
-                .bitvector
+                .algebraic
                 .get(variable)
                 .copied()
                 .map_or(AlphaVariableKey::Free(*variable), AlphaVariableKey::Bound),
@@ -2499,7 +2517,9 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                     .collect::<Option<Vec<_>>>()?,
             }
         }
-        MachineTerm::AlgebraicMatch { .. } => return None,
+        MachineTerm::AlgebraicMatch { scrutinee, arms } => {
+            match_keys::machine::<ALLOW_LOADS>(scrutinee, arms, bindings, next_binder)?
+        }
         MachineTerm::MemoryLoad(memory, pointer, kind) if bindings.snapshot_aware => {
             bindings.raw_snapshot_load_seen = true;
             let snapshot = AlphaSnapshotKey::new(memory);
@@ -2608,6 +2628,7 @@ fn alpha_bitvector_key<const ALLOW_LOADS: bool>(
     let mut typed = AlphaBindings {
         integer: bindings.clone(),
         bitvector: bindings.clone(),
+        algebraic: bindings.clone(),
         integer_scope: 0,
         bitvector_scope: 0,
         next_scope_id: 1,
@@ -2767,6 +2788,18 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
+        ConditionTerm::AlgebraicEqual(left, right) => AlphaConditionKey::AlgebraicEqual(
+            Box::new(alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
+                left,
+                bindings,
+                next_binder,
+            )?),
+            Box::new(alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
+                right,
+                bindings,
+                next_binder,
+            )?),
+        ),
         ConditionTerm::BoolApplication(application) => AlphaConditionKey::BoolApplication {
             name: application.name().to_owned(),
             arguments: application
@@ -2826,6 +2859,7 @@ fn alpha_proposition_key<const ALLOW_LOADS: bool>(
     let mut environment = AlphaBindings {
         integer: BTreeMap::new(),
         bitvector: bindings.clone(),
+        algebraic: bindings.clone(),
         integer_scope: 0,
         bitvector_scope: 0,
         next_scope_id: 1,
@@ -2886,6 +2920,7 @@ fn proposition_identity_key_with_raw_load_flag(
     let mut environment = AlphaBindings {
         integer: BTreeMap::new(),
         bitvector: BTreeMap::new(),
+        algebraic: BTreeMap::new(),
         integer_scope: 0,
         bitvector_scope: 0,
         next_scope_id: 1,
@@ -3469,6 +3504,7 @@ fn snapshot_alpha_proposition_key(
     let mut environment = AlphaBindings {
         integer: BTreeMap::new(),
         bitvector: BTreeMap::new(),
+        algebraic: BTreeMap::new(),
         integer_scope: 0,
         bitvector_scope: 0,
         next_scope_id: 1,
@@ -3670,6 +3706,20 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                     bindings.integer.remove(var);
                 }
                 body
+            } else if matches!(sort, Sort::Algebraic(_)) {
+                let prior = bindings.algebraic.insert(*var, ordinal);
+                let parent_scope = bindings.bitvector_scope;
+                bindings.bitvector_scope = bindings.next_scope_id;
+                bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
+                let body =
+                    alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
+                bindings.bitvector_scope = parent_scope;
+                if let Some(prior) = prior {
+                    bindings.algebraic.insert(*var, prior);
+                } else {
+                    bindings.algebraic.remove(var);
+                }
+                body
             } else {
                 let prior = bindings.bitvector.insert(*var, ordinal);
                 let parent_scope = bindings.bitvector_scope;
@@ -3706,6 +3756,20 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                     bindings.integer.insert(*var, prior);
                 } else {
                     bindings.integer.remove(var);
+                }
+                body
+            } else if matches!(sort, Sort::Algebraic(_)) {
+                let prior = bindings.algebraic.insert(*var, ordinal);
+                let parent_scope = bindings.bitvector_scope;
+                bindings.bitvector_scope = bindings.next_scope_id;
+                bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
+                let body =
+                    alpha_proposition_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
+                bindings.bitvector_scope = parent_scope;
+                if let Some(prior) = prior {
+                    bindings.algebraic.insert(*var, prior);
+                } else {
+                    bindings.algebraic.remove(var);
                 }
                 body
             } else {
