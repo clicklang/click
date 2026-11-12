@@ -38,7 +38,7 @@
                 "compilation_file": "increment.cpp",
                 "exceptions": false,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": false,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -79,7 +79,7 @@
                 "compilation_file": "with_restore.cpp",
                 "exceptions": false,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": false,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -120,7 +120,7 @@
                 "compilation_file": "with_restore_caller.cpp",
                 "exceptions": false,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": false,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -132,39 +132,39 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "8b40892d69c2b04045c67d955b67c228d1215e84ae9bc972411ac05ceb5ed302",
+          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
           "name": "clang"
         },
         "sources": {
           "increment.cpp": {
             "artifact": {
-              "bytes": 5851,
+              "bytes": 5758,
               "path": ".click/basic/increment.cpp.click-cpp.json",
-              "sha256": "94c3ff432ee583669073fe4ef6a9c9b7a4789a9d25230ec5411669d9b26c4235"
+              "sha256": "d030a6ec6d5e5eaa961a72f82e9dc1315185c747c807cd557db56cc74e3dc50a"
             },
-            "identity": "2130ee97bfebb43ff13f5e91cd9dfdf56784a4039ad0d69997a80a312ad80913",
+            "identity": "54314327dc98a404ca044c3b9b9c606a3f3e077b24e2586c0086267f0a7b68df",
             "inputs": {
               "$unit/increment.cpp": "98f954b0fe5b5f723d353f51314736438160db69728a6ad6fa9b1019530e7332"
             }
           },
           "with_restore.cpp": {
             "artifact": {
-              "bytes": 26102,
+              "bytes": 26009,
               "path": ".click/basic/with_restore.cpp.click-cpp.json",
-              "sha256": "4140f3984cd2d96be55342b0e38224d57a9c8cfe1dbf791f6db3c1eb361ffaaa"
+              "sha256": "90829f0c913653ec86622d3ed9b367fb2079008513f9baa99ff89f45d36f4635"
             },
-            "identity": "8850b9c93e33894554cdd156524b8b734402ef3f8d730fcb0de812b787cb523a",
+            "identity": "04f3131003aeee6c03331ed3c059d81d226b9e7ebadc529093ea47934c3077c3",
             "inputs": {
               "$unit/with_restore.cpp": "bf81009da5251597c4b7983a4383fc65aa4ea30fd27f873149578290dcc2cfc2"
             }
           },
           "with_restore_caller.cpp": {
             "artifact": {
-              "bytes": 32526,
+              "bytes": 32433,
               "path": ".click/basic/with_restore_caller.cpp.click-cpp.json",
-              "sha256": "60808b3f02aa909d03de9d76658939bd7ad05aaaf2474b639b7a0d982fd63961"
+              "sha256": "764e09104f9bb38a823a6c22b151df49372dbaa6585e0ee8b5812b7b30ccbdb8"
             },
-            "identity": "e070b05499da82433853b7530d493e1157d67827147839dea7a3594dde2e7c2e",
+            "identity": "99d7ce9378dddcff72a975ee3b186d123761261156f80c8ed25825410944f1b5",
             "inputs": {
               "$unit/with_restore_caller.cpp": "0c332fb5f11166337ff19553521f2726060274a63acdfd217f4818d3f1d48c3f"
             }

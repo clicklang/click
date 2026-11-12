@@ -72,6 +72,18 @@ pub(crate) struct FrontendProfile {
     pub(crate) artifact_schema: u32,
 }
 
+/// The front-end identity a C++ lock records: the SHA-256 of the pinned
+/// profile, as the Rust front end records its pinned Charon profile.
+pub(crate) fn frontend_profile_identity() -> String {
+    let profile = frontend_profile();
+    let canonical = serde_json::json!({
+        "artifact_schema": profile.artifact_schema,
+        "clang_version": profile.clang_version,
+        "exporter_version": profile.exporter_version,
+    });
+    crate::languages::inputs::hex_digest(canonical.to_string().as_bytes())
+}
+
 pub(crate) fn frontend_profile() -> &'static FrontendProfile {
     static PROFILE: std::sync::OnceLock<FrontendProfile> = std::sync::OnceLock::new();
     PROFILE.get_or_init(|| {

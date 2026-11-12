@@ -70,12 +70,14 @@ Audit of the current path, from a user's point of view:
    project locking and C++ mdtests alike. Configs name no exporter and no
    build-machine path is compiled in. `click install VERSION --cpp`
    installs there on Linux x86-64.
-3. **The version handshake is in place; lock identities are not.** The
+3. **The version handshake and release identities are in place.** The
    exporter reports its version, artifact schema and Clang version for
    `--identity`, Click checks that before exporting, and all three are
-   defined once in `src/languages/cpp/frontend-profile.json`. The lock's `exporter_sha256` is the
-   hash of the local build, so the same inputs locked on two machines give
-   two different import identities.
+   defined once in `src/languages/cpp/frontend-profile.json`. A lock's
+   front-end identity is the digest of that profile, and the artifact
+   records the pinned Clang version rather than the build's full version
+   string, so equal inputs lock byte-identically on every machine; the
+   mdtest and example import checks compare bytes.
 4. **The demonstration is reproducible only inside the repository.** Every
    README starts with `scripts/build-cpp-exporter.sh` and `cargo run --bin
    click` from the repository root. The Bitcoin fee proofs exist as

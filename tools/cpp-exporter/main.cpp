@@ -409,7 +409,9 @@ public:
 
     llvm::json::Object profile;
     profile["frontend"] = "clang";
-    profile["frontend_version"] = clang::getClangFullVersion();
+    // The pinned release, not this build's full version string, which names
+    // its packager or source checkout: equal inputs export equal artifacts.
+    profile["frontend_version"] = std::string("clang version ") + kClangVersion;
     profile["standard"] = clang::LangStandard::getLangStandardForKind(
                               context_.getLangOpts().LangStd)
                               .getName();

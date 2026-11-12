@@ -38,7 +38,7 @@
                 "compilation_file": "guarded.cpp",
                 "exceptions": true,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": false,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -50,17 +50,17 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "b0f42fd6919745ef3ce9ff6dc1c83435e410d8545ae2d494a02dd03e61c6ee4d",
+          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
           "name": "clang"
         },
         "sources": {
           "guarded.cpp": {
             "artifact": {
-              "bytes": 29985,
+              "bytes": 29892,
               "path": ".click/fixture/guarded.cpp.click-cpp.json",
-              "sha256": "666f95d1755edec4b8f87626cce212576864c682c05224d32ae4eb2e6e3caa9c"
+              "sha256": "975dc1e88cae374c04a734ad36553ee766a71d0158ebad720f996030762e5dcb"
             },
-            "identity": "c0fdc390f296b5f6a4c1c04e4213c0da9d6c06ed2032eabea8f2e88727ccb043",
+            "identity": "046a39c2761ddb9c5fe7a300a0cb44c68d306e7693195d377e7b02e7ed6fd4d2",
             "inputs": {
               "$unit/guarded.cpp": "a9cc9f657019b5063ed1ffb3e8238e224702b860ae29690f0866484745f05e56"
             }

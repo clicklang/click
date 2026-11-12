@@ -123,7 +123,7 @@ struct Config {
 struct Lock {
     schema: u32,
     config_sha256: String,
-    exporter_sha256: String,
+    frontend_identity: String,
     compilation_database_sha256: String,
     source_sha256: String,
     logical_source_sha256: String,
@@ -184,7 +184,8 @@ fn lock_entry(
 ) -> Result<Entry, String> {
     let first = locks.values().next().ok_or("a C++ unit lists a source")?;
     if locks.values().any(|lock| {
-        lock.config_sha256 != first.config_sha256 || lock.exporter_sha256 != first.exporter_sha256
+        lock.config_sha256 != first.config_sha256
+            || lock.frontend_identity != first.frontend_identity
     }) {
         return Err(
             "the sources of a C++ unit were prepared from different descriptions or exporters"
@@ -239,7 +240,7 @@ fn lock_entry(
         first.config_sha256.clone(),
         envelope::Frontend {
             name: "clang".into(),
-            identity: first.exporter_sha256.clone(),
+            identity: first.frontend_identity.clone(),
         },
         sources,
         serde_json::to_value(section).expect("a C++ lock section serializes"),
@@ -259,7 +260,7 @@ fn entry_lock(entry: &Entry, logical: &str) -> Result<Lock, String> {
     Ok(Lock {
         schema: part.schema,
         config_sha256: entry.unit.clone(),
-        exporter_sha256: entry.frontend.identity.clone(),
+        frontend_identity: entry.frontend.identity.clone(),
         compilation_database_sha256: part.compilation_database_sha256,
         source_sha256: part.source_sha256,
         logical_source_sha256: part.logical_source_sha256,
@@ -418,7 +419,10 @@ fn export(
             .values()
             .map(|file| ("preprocessor", Path::new(&file.canonical_path))),
     )?;
-    let exporter_sha256 = hex_digest(&exporter_bytes);
+    // The pinned front end, not this build of it: every exporter that passed
+    // the identity handshake exports for the same profile, so equal inputs
+    // give equal locks on every machine.
+    let frontend_identity = super::schema::frontend_profile_identity();
     let compilation_database_sha256 = hex_digest(&compilation_database_before);
     let source_sha256 = hex_digest(&source_before);
     let logical_source_sha256 = hex_digest(&logical_source_before);
@@ -430,7 +434,7 @@ fn export(
     let lock = Lock {
         schema: CONFIG_SCHEMA,
         config_sha256,
-        exporter_sha256,
+        frontend_identity,
         compilation_database_sha256,
         source_sha256,
         logical_source_sha256,
