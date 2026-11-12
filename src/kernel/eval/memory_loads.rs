@@ -75,7 +75,6 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
             obligations,
         }];
     }
-    let pointer_for_call_alias = pointer.clone();
     let mut alias_cache = MemoryLoadAliasCache::default();
     // Function reads have an exact load-variable identity, including when
     // reading a borrowed callback table in an ordinary statement proof.
@@ -157,15 +156,6 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
             }
         }
     }
-    if !volatile && SpecificationReadScope::is_active() {
-        retain_call_read_aliases(
-            memory,
-            &pointer_for_call_alias,
-            value_type,
-            assumptions,
-            &mut paths,
-        );
-    }
     paths
 }
 
@@ -231,7 +221,6 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
         assumptions,
     );
     retain_indexed_scalar_cell_value(memory, &pointer, value_type, assumptions, &mut paths);
-    retain_call_read_aliases(memory, &pointer, value_type, assumptions, &mut paths);
     if let [path] = paths.as_slice()
         && let CExpressionOutcome::Value(value) = &path.outcome
     {
@@ -410,35 +399,6 @@ fn logical_read_names_its_version(value_type: CType) -> bool {
     ) || value_type.is_pointer()
 }
 
-/// Name the selected caller read with the existing scalar normalizer.
-/// No C access, pointer-carrier recovery, or whole-snapshot equality occurs.
-fn canonical_integer_read(memory: &CMemory, pointer: &Pointer, ty: CType) -> Option<MachineTerm> {
-    let kind = match ty {
-        CType::Bool | CType::UInt8 => LoadKind::UInt8,
-        CType::Int8 => LoadKind::Int8,
-        CType::Int16 => LoadKind::Int16,
-        CType::UInt16 => LoadKind::UInt16,
-        CType::Int32 => LoadKind::Int32,
-        CType::UInt32 => LoadKind::UInt32,
-        CType::Int64 | CType::UInt64 => LoadKind::Bits64,
-        _ => return None,
-    };
-    let value = canonical_form_of_load(
-        crate::kernel::intern_c_memory_ref(memory),
-        pointer.clone(),
-        kind,
-    );
-    Some(match ty {
-        // The byte rule (Stage 5): a `bool` cell's byte `b` is the `Bool`
-        // `b != 0`, carried as its cast.
-        CType::Bool => match crate::kernel::bool_value(value) {
-            CValue::Bool(word) => word,
-            _ => unreachable!("`bool_value` builds a `Bool`"),
-        },
-        _ => value,
-    })
-}
-
 /// A selected footprint supplies an equal address, not a replacement read
 /// term or access permission. Retain its stored word as a path-local equation.
 fn retain_indexed_scalar_cell_value(
@@ -476,66 +436,6 @@ fn retain_indexed_scalar_cell_value(
                 ConditionTerm::equal(read, stored),
                 true,
             ))
-        });
-    }
-}
-
-fn retain_call_read_aliases(
-    memory: &CMemory,
-    pointer: &Pointer,
-    value_type: CType,
-    _assumptions: &PureFactContext,
-    paths: &mut [CExpressionPath],
-) {
-    // A producer with alternative paths cannot install either arm into the
-    // shared input context. Likewise, unproved expression-local conditions
-    // must remain with their path instead of becoming checked definitions.
-    if paths.len() != 1 || paths[0].facts.iter().any(|fact| !fact.is_certified()) {
-        return;
-    }
-    let Some(source_memory) = super::super::functions::call_read_aliases::source_for(memory) else {
-        return;
-    };
-    let Some(source) = source_memory
-        .known_value(pointer)
-        .and_then(|stored| value_type.read_cell(&stored))
-        .and_then(|value| crate::kernel::spec::c_value_bitvector_term(&value))
-        .or_else(|| canonical_integer_read(&source_memory, pointer, value_type))
-    else {
-        return;
-    };
-    for path in paths {
-        let CExpressionOutcome::Value(value) = &path.outcome else {
-            continue;
-        };
-        let Some(value) = crate::kernel::spec::c_value_bitvector_term(value) else {
-            continue;
-        };
-        if source == value {
-            continue;
-        }
-        // Carry only the selected numeric equation. Ordinary fact admission
-        // installs it in the shared graph after scratch call contexts expire.
-        // An 8- or 16-bit read is a value of its own format, equated at it.
-        let equal = match value_type {
-            CType::Int64 => ConditionTerm::int64_equal(source.clone(), value),
-            CType::UInt64 => ConditionTerm::uint64_equal(source.clone(), value),
-            CType::Int8 | CType::UInt8 | CType::Int16 | CType::UInt16 => {
-                let Some(format) = MachineIntegerType::from_c_type(value_type) else {
-                    continue;
-                };
-                ConditionTerm::machine_compare(
-                    format,
-                    CompareRelation::Equal,
-                    source.clone(),
-                    value,
-                )
-            }
-            _ => ConditionTerm::equal(source.clone(), value),
-        };
-        path.facts.push(ExecutionPureFact {
-            logical_read_equation: true,
-            ..ExecutionPureFact::certified(Proposition::ConditionIs(equal, true))
         });
     }
 }
