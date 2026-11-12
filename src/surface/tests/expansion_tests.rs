@@ -3376,7 +3376,7 @@ theorem one_tactic_proofs(x: int32) {
     let position = expansion::position_at_offset(source, offset);
     let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column).unwrap();
     assert!(
-        expanded.contains("ensures 0 <= x by {\n        apply(helper(x)) using {"),
+        expanded.contains("ensures 0 <= x by {\n        have 0 <= x by {\n            assumption();\n        }\n        apply(helper(x)) using {"),
         "{expanded}"
     );
     assert!(
@@ -21804,5 +21804,32 @@ fn returned_branch_closers_replay_from_retained_decisions() {
             verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
         })
         .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+fn pure_apply_obligations_expand_to_explicit_have_and_using() {
+    let (source, _) = mdtest_sources("mdtests/pure_apply_obligations.md");
+    for (application, claim) in [
+        ("apply(nonnegative(n))", "positive.ensures_0"),
+        (
+            "apply(nonpositive(-9223372036854775809))",
+            "integer_literal_argument.ensures_0",
+        ),
+    ] {
+        let offset = source.find(application).unwrap();
+        let line = source[..offset]
+            .bytes()
+            .filter(|byte| *byte == b'\n')
+            .count()
+            + 1;
+        let column = offset - source[..offset].rfind('\n').map_or(0, |index| index + 1) + 1;
+        let expanded = expand_c0_tactic_source_at(&source, &[], line, column).unwrap();
+        assert!(expanded.contains("have "), "{expanded}");
+        assert!(expanded.contains("using"), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap();
     }
 }

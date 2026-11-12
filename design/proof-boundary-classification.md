@@ -188,7 +188,7 @@ The 6 `operation` records are not 6 independent slow walks:
 
 | Group | Records | Current interpretation and remaining evidence |
 | --- | ---: | --- |
-| Theorem application on `ProofDriver` | 1 | `apply_theorem_application` selects an application. Driver placement does not make explicit tactic checking search-free. Audit its selected-input bound and obligation/expansion route. ArithmeticUsing is already a smart step; its strategy sequence is now behind one explicit search dispatch. |
+| Theorem application on `ProofDriver` | 1 | Pure named applications first instantiate formal premise obligations without searching; the driver proves them with ordinary solve. `apply_theorem_application` still selects argument-domain evidence and non-pure applications. Driver placement does not make explicit tactic checking search-free. Audit its selected-input bound and obligation/expansion route. ArithmeticUsing is already a smart step; its strategy sequence is now behind one explicit search dispatch. |
 | Legacy explicit transport checking | 3 | `certified_fact_transport_reaches`, `check_fixed_state_fact_transport_using_facts_inner`, and `apply_pure_transport_using` call atomic derivation. Confirmed search access from the explicit transport route; migrate/retire under T1–T5, not a new independent bug per record. |
 | Definition validation | 2 | `symbolic_segment_covers_index` and `symbolic_segment_covers_range` join the mixed `segment_contains_pointer` record in one declaration-validation concern. There is no ordinary user obligation/expansion boundary established for these checks. |
 
@@ -220,7 +220,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 631 reference records, not 631 obligations to remove.
+The inventory contains 633 reference records, not 633 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this

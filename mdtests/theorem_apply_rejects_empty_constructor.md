@@ -17,5 +17,5 @@ theorem empty_is_not_nonempty() {
 ```
 
 ```expect
-fail: required exact fact for theorem `nonempty` is unavailable
+fail: theorem `nonempty` has an unproved obligation
 ```

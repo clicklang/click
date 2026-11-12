@@ -494,7 +494,7 @@ pub(super) fn requirement_search_miss(fact: &str) -> String {
     )
 }
 
-fn is_integer_range_fold_theorem_name(name: &str) -> bool {
+pub(super) fn is_integer_range_fold_theorem_name(name: &str) -> bool {
     matches!(
         name,
         "integer_range_fold_empty" | "integer_range_fold_append"

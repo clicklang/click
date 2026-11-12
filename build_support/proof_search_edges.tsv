@@ -629,3 +629,5 @@ src/surface/proof/driver/scripts.rs	driver	ProofDriver::run_addressed_linear_scr
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	apply_planned_outcome_fact_transport	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping	apply_arithmetic_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	driver	1
+src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_pure_theorem_requirements	try_solve_closure	1
+src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_pure_theorem_requirements	driver	2

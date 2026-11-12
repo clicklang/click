@@ -15,5 +15,5 @@ theorem altered_guard(x: Integer) {
 ```
 
 ```expect
-fail: required exact fact
+fail: theorem `guarded` has an unproved obligation
 ```

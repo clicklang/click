@@ -3,15 +3,25 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
-    /// Applies one bare theorem application without treating an unavailable
-    /// candidate as a smart-search miss. Source adapters that have already
-    /// committed to `apply(...)` use this strict form and retain the original
-    /// selector diagnostic, while still sharing the sole checked transition.
+    /// Instantiate a named pure theorem's premise obligations, then let the
+    /// driver prove them before selecting the application's remaining argument
+    /// evidence. Other proof contexts retain their existing selection route.
     pub(in crate::surface::proof) fn apply_theorem_application(
         &self,
         application: &TheoremApplication,
     ) -> Result<Proof<'a>, ClickError> {
-        let driver_proof = self.proof;
+        let prepared;
+        let driver_proof = if matches!(self.proof.context.as_ref(), ProofContext::Pure(_))
+            && application.name != "population_member_count_zero"
+            && !crate::surface::proof::theorem_application::is_integer_range_fold_theorem_name(
+                &application.name,
+            ) {
+            let requirements = self.proof.prepare_pure_theorem_requirements(application)?;
+            prepared = self.prove_pure_theorem_requirements(application, requirements)?;
+            &prepared
+        } else {
+            self.proof
+        };
         let Some(step) = crate::kernel::search::ProofSearch::select_theorem_application_step(
             driver_proof,
             application,
@@ -24,6 +34,29 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         driver_proof
             .driver()
             .apply_selected_theorem_application(step)
+    }
+
+    fn prove_pure_theorem_requirements(
+        &self,
+        application: &TheoremApplication,
+        requirements: Vec<ClickProposition>,
+    ) -> Result<Proof<'a>, ClickError> {
+        let mut current = self.proof.clone();
+        for requirement in requirements {
+            if implicit_solve_disabled() {
+                return Err(current.step_error("bare `apply` has implicit premise obligations; write `apply(...) using { ... }` to supply their proofs explicitly"));
+            }
+            let scope = current.driver().open_have(requirement.clone())?;
+            let Some(closed) = scope.driver().try_solve_closure()? else {
+                return Err(scope.body().step_error(format!(
+                    "theorem `{}` has an unproved obligation: `{}`",
+                    application.name,
+                    crate::surface::printing::source_click_proposition(&requirement),
+                )));
+            };
+            current = closed.join()?;
+        }
+        Ok(current)
     }
 
     pub(in crate::surface::proof) fn apply_selected_theorem_application(
