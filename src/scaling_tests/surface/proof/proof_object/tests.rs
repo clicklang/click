@@ -2723,3 +2723,113 @@ fn exact_goal_solve_stops_at_assumption_as_related_and_unrelated_facts_grow() {
         }
     }
 }
+
+#[test]
+fn fixed_state_application_proves_premises_and_replays_explicitly() {
+    let file = crate::surface::parse(
+        "theorem nonnegative(n: int32) { requires n >= 0; ensures n >= 0 by assumption(); }",
+    )
+    .unwrap();
+    let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let definitions = SpecDefinitions::new(&predicates, &functions);
+    let theorems = TheoremEnvironment::new(file.theorem_definitions());
+    let value = CValue::Int32(MachineTerm::Variable(Variable(8_900_000)));
+    let state = CState::new().with_local("x", value.clone());
+    let arguments = vec![CExpression::Value(value)];
+    let binding = ParameterBinding::new(parsed.parameters(), &arguments);
+    let snapshots = RecordedSnapshots::new();
+    let premise = ClickProposition::Comparison {
+        left: ContractExpression::Binding("x".into()),
+        operator: ComparisonOperator::GreaterThan,
+        right: ContractExpression::IntegerLiteral("0".into()),
+    };
+    let goal = ClickProposition::Comparison {
+        left: ContractExpression::Binding("x".into()),
+        operator: ComparisonOperator::GreaterEqual,
+        right: ContractExpression::IntegerLiteral("0".into()),
+    };
+    let lower = |p: &ClickProposition| {
+        lower_fixed_state_proposition_with_assumptions(
+            p,
+            &PureFactContext::new(),
+            binding,
+            FixedStateFrame::new(&state, &state, None, &snapshots),
+            definitions,
+        )
+        .unwrap()
+    };
+    let premise_kernel = lower(&premise);
+    let goal_kernel = lower(&goal);
+    let mut forms = SurfacePropositionMap::default();
+    forms.record_lowering(&premise, &premise_kernel).unwrap();
+    let application = TheoremApplication {
+        name: "nonnegative".into(),
+        arguments: vec![ContractExpression::Binding("x".into())],
+    };
+    let mut baseline = None;
+    for size in [4u32, 16, 64] {
+        let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
+        facts.push(premise_kernel.clone());
+        let root = Proof::for_fixed_state_goal(
+            "fixed theorem obligations",
+            0,
+            &facts,
+            goal_kernel.clone(),
+            binding,
+            &state,
+            &state,
+            &snapshots,
+            &forms,
+            definitions,
+            &theorems,
+            &[],
+            &[],
+        );
+        let (prepared, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.prepare_theorem_application(&application)
+        });
+        assert_eq!(prepared.unwrap().obligations.len(), 1);
+        assert!(
+            work <= *baseline.get_or_insert(work),
+            "{size} facts increased preparation work to {work}"
+        );
+        let completed = root
+            .driver()
+            .apply_theorem_application(&application)
+            .unwrap();
+        assert!(completed.is_complete());
+        let tactics = completed.certificate().to_proof_tactics();
+        assert!(matches!(tactics.first(), Some(ProofTactic::Have(_))));
+        let replay = crate::surface::without_implicit_solve(|| {
+            root.driver().try_authoritative_linear_script(&tactics)
+        })
+        .unwrap()
+        .unwrap();
+        assert!(replay.is_complete());
+        assert!(root.certificate().steps().is_empty());
+        let missing = Proof::for_fixed_state_goal(
+            "missing fixed premise",
+            0,
+            &[],
+            goal_kernel.clone(),
+            binding,
+            &state,
+            &state,
+            &snapshots,
+            &forms,
+            definitions,
+            &theorems,
+            &[],
+            &[],
+        );
+        assert!(
+            missing
+                .driver()
+                .apply_theorem_application(&application)
+                .is_err()
+        );
+        assert!(missing.certificate().steps().is_empty());
+    }
+}
