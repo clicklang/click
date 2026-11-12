@@ -1374,12 +1374,7 @@ fn polarity_equivalent_by(
     // A retained order observation and its native comparison are the same typed
     // claim. Read their syntax identities; never export a shared operand or
     // consult proof facts to recover the native spelling.
-    if retained_order_comparison_equivalent(
-        &left_condition,
-        left_value,
-        &right_condition,
-        right_value,
-    ) {
+    if retained_comparison_equivalent(&left_condition, left_value, &right_condition, right_value) {
         return true;
     }
     matches!(
@@ -1391,10 +1386,10 @@ fn polarity_equivalent_by(
     )
 }
 
-/// Exact written order direction and polarity, across native/shared carriers.
+/// Exact written comparison direction and polarity, across native/shared carriers.
 /// Native arithmetic imports reuse their syntax memo; shared keys retain IDs.
 /// Thus repeated growing shared queries do not revisit the expression DAG.
-fn retained_order_comparison_equivalent(
+fn retained_comparison_equivalent(
     left: &ConditionTerm,
     left_value: bool,
     right: &ConditionTerm,
@@ -1416,17 +1411,27 @@ fn retained_order_comparison_equivalent(
     ) else {
         return false;
     };
-    // Only order guards are migrated here. Equality matching has separate
-    // admission and search paths; accepting additional equalities here can
-    // introduce new automatic rewrite/transport branches.
-    if left.relation == CompareRelation::Equal
-        || left.format != right.format
-        || left.relation != right.relation
+    if left.relation != right.relation
         || (left_value ^ left.negated) != (right_value ^ right.negated)
     {
         return false;
     }
-    let format = left.format;
+    // Equality compares words, including their negated spellings; signedness
+    // only distinguishes order claims. The source and requested operands must
+    // still have exactly the same syntax at the same width.
+    let format = if left.relation == CompareRelation::Equal
+        && left.format.format().bits() == right.format.format().bits()
+    {
+        match left.format.format().bits() {
+            32 => MachineIntegerType::Int32,
+            64 => MachineIntegerType::Int64,
+            _ => return false,
+        }
+    } else if left.format == right.format {
+        left.format
+    } else {
+        return false;
+    };
     left.operands.iter().zip(&right.operands).all(|(a, b)| {
         let (a, b) = (a.operand_view(), b.operand_view());
         // A variable is its name, and cannot have the syntax of a compound
@@ -1932,10 +1937,10 @@ mod tests {
         let native = ConditionTerm::signed_less_than(x, y);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..32 {
-                assert!(retained_order_comparison_equivalent(
+                assert!(retained_comparison_equivalent(
                     &native, true, &retained, true
                 ));
-                assert!(!retained_order_comparison_equivalent(
+                assert!(!retained_comparison_equivalent(
                     &native, false, &retained, true
                 ));
             }
@@ -1947,7 +1952,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_premises_match_retained_machine_orders() {
+    fn exact_premises_match_retained_machine_comparisons() {
         use super::*;
         use crate::kernel::MachineOperandView as V;
         use crate::kernel::machine_integer::comparison::condition_for_operand_views;
@@ -1968,7 +1973,11 @@ mod tests {
                 .unwrap();
             let bound = constant(17);
             let exports = KernelTermExport::machine_export_count();
-            for relation in [CompareRelation::LessThan, CompareRelation::LessEqual] {
+            for relation in [
+                CompareRelation::Equal,
+                CompareRelation::LessThan,
+                CompareRelation::LessEqual,
+            ] {
                 let written = Proposition::ConditionIs(
                     ConditionTerm::machine_compare(format, relation, native.clone(), bound.clone()),
                     true,
@@ -1984,6 +1993,14 @@ mod tests {
                     "{format:?} {relation:?}: {required:?} versus {written:?}"
                 );
                 assert!(exact_fact_is_available(&written, &[required]));
+                let negative_written = match &written {
+                    Proposition::ConditionIs(c, _) => Proposition::ConditionIs(c.clone(), false),
+                    _ => unreachable!(),
+                };
+                assert!(exact_fact_is_available(
+                    &Proposition::ConditionIs(retained.clone(), false),
+                    &[negative_written]
+                ));
                 assert!(!exact_fact_is_available(
                     &Proposition::ConditionIs(retained, false),
                     &[written.clone()]

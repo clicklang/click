@@ -338,9 +338,9 @@ pub(super) fn from_shared(root: &KernelTerm) -> Option<SignedArithmeticAtom> {
 }
 
 /// The legacy canonicalizer keeps arithmetic operators raw and composes only
-/// generic casts. Shared machine operands already name their loads. Integer
-/// conversion leaves are opaque to both canonicalization passes and outside
-/// this certificate's atom grammar, so they are refused without an export.
+/// generic casts. Shared read leaves use that same selected-load canonicalizer;
+/// surrounding arithmetic stays shared. Integer conversion leaves remain outside
+/// this certificate's atom grammar and are refused without an export.
 pub(super) fn canonical_arithmetic(root: &KernelTerm) -> Option<KernelTerm> {
     CANONICAL.with(|cache| {
         let mut cache = cache.borrow_mut();

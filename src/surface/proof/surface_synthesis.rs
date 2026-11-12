@@ -2985,7 +2985,7 @@ fn synthesize_surface_integer(
 /// The shared term-to-surface boundary. Arithmetic and calls have common
 /// children; the legacy leaf dispatch is temporary and never projects away
 /// part of a value. Scoped binders retain their old refusal until migrated.
-fn raise_kernel_term(
+pub(super) fn raise_kernel_term(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &CState,

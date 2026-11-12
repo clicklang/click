@@ -146,6 +146,17 @@ pub(crate) fn condition_for_operand_views(
     }
     let [left, right] = operands.map(|operand| {
         if let Some(literal) = operand.literal() {
+            // Native wide equality uses an Int64 word comparison even when
+            // its literals were written as UInt64. Retain the word's bits
+            // while giving its Integer observation the comparison's sign.
+            let literal = match &literal {
+                MachineTerm::Constant { format: source, .. }
+                    if source.format().bits() == format.format().bits() =>
+                {
+                    MachineTerm::machine_integer_cast(*source, format, literal)
+                }
+                _ => literal,
+            };
             IntegerTerm::from_machine(format, literal).expect("typed comparison literal")
         } else {
             IntegerTerm::Machine(match operand {

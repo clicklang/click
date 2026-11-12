@@ -297,6 +297,10 @@ impl NodeKey {
             KernelTermNode::MachineUnary { operand, .. } => {
                 operand.has_conditional_machine_rewrites()
             }
+            // Opaque domain leaves can contain conditions (If, folds, calls).
+            // Their native walker owns those payloads; do not skip it merely
+            // because the surrounding arithmetic now has shared parents.
+            KernelTermNode::Legacy(value) => value.machine_operand().is_some(),
             _ => false,
         };
         let machine_constant = machine::constant_reading(&node);

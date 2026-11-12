@@ -1256,6 +1256,11 @@ impl PureFactContext {
             Relation,
             comparison::{comparison_view, condition_for_operand_views},
         };
+        // The shared constructor can settle an endpoint from the operand's
+        // intrinsic unsigned range before this adjacent-bound query runs.
+        if let ConditionTerm::Constant(value) = condition {
+            return Some(*value);
+        }
         let view = comparison_view(condition, true)?;
         if view.format != format {
             return None;

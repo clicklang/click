@@ -473,7 +473,8 @@ pub(super) fn observed_native_surface_comparison(
     // that reading too.
     if crate::kernel::machine_integer::comparison::integer_readings_with_promotions(kernel)
         .is_empty()
-        && crate::kernel::assumptions::native_reading_of_integer_observation_fact(kernel).is_none()
+        && !matches!(kernel, Proposition::ConditionIs(condition, _)
+            if crate::kernel::machine_integer::comparison::structural_comparison_view(condition).is_some())
         && !crate::kernel::machine_integer::comparison::reads_wide_integer_observations(kernel)
     {
         return written.clone();
@@ -481,16 +482,9 @@ pub(super) fn observed_native_surface_comparison(
     // A native comparison promotes byte and short operands to int32.
     // Preserve that carrier when its sides become Integer observations;
     // observing the original narrow source instead changes the certificate.
-    let native_int32 = matches!(
-        kernel,
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                ..
-            },
-            _
-        )
-    );
+    let native_int32 = matches!(kernel, Proposition::ConditionIs(condition, _)
+        if crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+            .is_some_and(|view| view.format == MachineIntegerType::Int32));
     // An operand already written as an Integer (an unsuffixed literal, an
     // observation, or arithmetic over one) keeps its spelling.
     // A literal inside machine arithmetic, the `1` of `value + 1`, is typed
@@ -3960,7 +3954,10 @@ fn same_canonical_word_comparison(left: &Proposition, right: &Proposition) -> bo
     al == bl && ar == br || equality && al == br && ar == bl
 }
 
-fn propositions_match_after_canonical_loads(left: &Proposition, right: &Proposition) -> bool {
+pub(super) fn propositions_match_after_canonical_loads(
+    left: &Proposition,
+    right: &Proposition,
+) -> bool {
     const MAX_NODES: usize = 4096;
     let mut work = vec![(left, right)];
     let mut visited = 0usize;

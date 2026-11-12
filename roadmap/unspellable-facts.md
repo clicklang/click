@@ -976,7 +976,21 @@ and alignment evidence remain the only inputs; no ambient proof search is added.
 Signed interval planning bounds and exports selected operands once for the
 existing public certificate payload; its affine evidence matcher reads shared
 claims directly. Shared cast raising keeps Surface operands, including snapshot
-selectors, instead of forcing them through C fragments.
+selectors, instead of forcing them through C fragments. Opaque conditional
+operands retain their interval rules and Surface conditional spelling. Resource
+body requirement matching recognizes retained comparison directions and exact
+stored reads. Guarded-consequent indexing, spelling and rewrite selection read
+shared comparisons, preserving explicit guard discharge and indexed candidate
+selection. Native/shared comparison transport uses the same selected operand
+rules. Proper-conjunct extraction keys native and retained observations alike,
+without admitting an independently held fact as a conjunction projection.
+Cited-condition rewriting visits opaque payloads and folds resolved conditional
+arithmetic; wide word equality retains the signed interpretation of high-bit
+literals. Difference-graph interval queries borrow retained opaque leaves and
+preserve their native branch rules without exporting surrounding arithmetic.
+Exact listed premises bridge equality and disequality as well as order claims;
+resource match/unfold consumers use the producer's paired clause records directly
+instead of rechecking them against a differently represented fact store.
 The public signed certificate's selected term payload is still native, as are
 the remaining producer families listed above. Steps 2–4 remain open.
 

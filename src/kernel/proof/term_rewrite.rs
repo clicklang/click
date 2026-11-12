@@ -5478,6 +5478,35 @@ impl<'a> TermRewrite<'a> {
                     [true, false]
                         .into_iter()
                         .find(|value| graph.knows_condition(condition, *value))
+                        .or_else(|| {
+                            use crate::kernel::machine_integer::{
+                                Relation, comparison::comparison_view,
+                            };
+                            let view = comparison_view(condition, true)?;
+                            if !matches!(
+                                view.format,
+                                MachineIntegerType::Int64 | MachineIntegerType::UInt64
+                            ) {
+                                return None;
+                            }
+                            let equal = match view.relation {
+                                Relation::Equal => true,
+                                Relation::NotEqual => false,
+                                _ => return None,
+                            };
+                            // A cited wide equality can fix both words to
+                            // different constants. This indexed class lookup
+                            // decides an If guard without any ambient facts.
+                            let [left, right] = view
+                                .operands
+                                .each_ref()
+                                .map(|operand| operand.operand_view());
+                            Some(
+                                (graph.uint64_constant_view(left)?
+                                    == graph.uint64_constant_view(right)?)
+                                    == equal,
+                            )
+                        })
                 })
             })
     }

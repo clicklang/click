@@ -14,5 +14,5 @@ theorem restricted(n: int32) {
 ```
 
 ```expect
-fail: induction hypothesis `ih` found no available fact for premise `to_integer((n - 1)) >= 5`
+fail: induction hypothesis `ih` found no available fact for premise `to_integer(((n - 1) as int32)) >= 5`
 ```

@@ -17,5 +17,5 @@ theorem bad_larger(n: int32) {
 ```
 
 ```expect
-fail: induction hypothesis `ih` found no available fact for premise `to_integer((n + 1)) < to_integer(n)`
+fail: induction hypothesis `ih` found no available fact for premise `to_integer(((n + 1) as int32)) < to_integer((n as int32))`
 ```

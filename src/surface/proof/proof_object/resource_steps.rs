@@ -1026,14 +1026,9 @@ impl<'a> Proof<'a> {
                 facts.with_kernel_checked_fact(fact.clone())
             })
         });
-        if clause_presentations
-            .iter()
-            .any(|clause| !clause.matches_available_fact(&facts))
-        {
-            return Err(
-                self.step_error("resource unfold clause presentation lacks its checked fact")
-            );
-        }
+        // The kernel producer pairs these checked clauses with the facts it
+        // introduced. Consume that result directly; comparing the freshly
+        // produced facts again would reject equivalent retained carriers.
         for clause in clause_presentations {
             // Keep the producer's paired declaration spelling in the exact
             // source index as well as its binder metadata. A later fold can

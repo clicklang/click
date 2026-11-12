@@ -67,6 +67,8 @@ impl<'a> Proof<'a> {
         let (surface_guard, surface_consequent) = self.with_guarded_term_speller(|speller| {
             Some((speller.guard(guard)?, speller.comparison(consequent)?))
         })?;
+        let surface_consequent =
+            super::smart_closures::observed_native_arithmetic(consequent, &surface_consequent);
         (self.surface_lowers_to(&surface_guard, guard)
             && self.surface_lowers_to(&surface_consequent, consequent))
         .then_some((surface_guard, surface_consequent))
@@ -88,7 +90,11 @@ impl<'a> Proof<'a> {
     fn surface_lowers_to(&self, surface: &ClickProposition, kernel: &Proposition) -> bool {
         self.lower_surface_proposition(surface, "guarded solve premise")
             .is_ok_and(|lowered| {
-                lowered == *kernel || condition_polarity_equivalent(&lowered, kernel)
+                lowered == *kernel
+                    || condition_polarity_equivalent(&lowered, kernel)
+                    || super::smart_closures::propositions_match_after_canonical_loads(
+                        &lowered, kernel,
+                    )
             })
     }
 
@@ -280,70 +286,26 @@ impl GuardedTermSpeller<'_, '_> {
         {
             return Some(whole);
         }
-        let (left, right, operator) = match condition {
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            } => (left, right, ComparisonOperator::Equal),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            } => (left, right, ComparisonOperator::LessThan),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            } => (left, right, ComparisonOperator::LessEqual),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            } => (left, right, ComparisonOperator::GreaterThan),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            } => (left, right, ComparisonOperator::GreaterEqual),
-            _ => return None,
+        let view =
+            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+        if !matches!(
+            view.format,
+            MachineIntegerType::Int32 | MachineIntegerType::Int64
+        ) && !(matches!(
+            view.format,
+            MachineIntegerType::UInt32 | MachineIntegerType::UInt64
+        ) && view.relation == CompareRelation::Equal)
+        {
+            return None;
+        }
+        let operator = match view.relation {
+            CompareRelation::Equal => ComparisonOperator::Equal,
+            CompareRelation::LessThan => ComparisonOperator::LessThan,
+            CompareRelation::LessEqual => ComparisonOperator::LessEqual,
+            CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
+            CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
         };
-        let operator = if *value {
+        let operator = if *value != view.negated {
             operator
         } else {
             match operator {
@@ -356,10 +318,59 @@ impl GuardedTermSpeller<'_, '_> {
             }
         };
         Some(ClickProposition::Comparison {
-            left: self.term(left)?,
+            left: self.operand(view.operands[0].operand_view())?,
             operator,
-            right: self.term(right)?,
+            right: self.operand(view.operands[1].operand_view())?,
         })
+    }
+
+    fn operand(&self, value: crate::kernel::MachineOperandView<'_>) -> Option<ContractExpression> {
+        use crate::kernel::MachineOperandView as V;
+        let V::Shared(root) = value else {
+            let V::Legacy(value) = value else {
+                unreachable!()
+            };
+            return self.term(value);
+        };
+        if let Some(value) = root
+            .machine_conversion_leaf()
+            .or_else(|| root.machine_read_leaf())
+        {
+            return self.term(value);
+        }
+        if let Some(value) = value
+            .literal()
+            .or_else(|| value.variable().copied().map(MachineTerm::Variable))
+        {
+            return self.term(&value);
+        }
+        if let Some((MachineIntegerType::Int32 | MachineIntegerType::Int64, op, [a, b])) =
+            value.binary()
+        {
+            let construct: BinaryExpression = match op {
+                MachineBinaryOp::Add => ContractExpression::Add,
+                MachineBinaryOp::Subtract => ContractExpression::Subtract,
+                MachineBinaryOp::Multiply => ContractExpression::Multiply,
+                _ => {
+                    return super::surface_synthesis::raise_kernel_term(
+                        root,
+                        self.view.parameter_binding,
+                        self.view.fixed_state.state,
+                        &self.bound,
+                    );
+                }
+            };
+            return Some(construct(
+                Box::new(self.operand(a)?),
+                Box::new(self.operand(b)?),
+            ));
+        }
+        super::surface_synthesis::raise_kernel_term(
+            root,
+            self.view.parameter_binding,
+            self.view.fixed_state.state,
+            &self.bound,
+        )
     }
 
     fn field_value<'s>(state: &'s CState, access: &ResourceFieldAccess) -> Option<&'s MachineTerm> {
