@@ -11486,10 +11486,12 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                     // The theorem concludes `0 <= selected`; the mirrored
                     // `selected >= 0` closes by `assumption`.
                     [
+                        ProofTactic::Have(premise),
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Assumption,
                     ] if application.name == "positive_is_nonnegative"
                             && premises.len() == 1
+                            && premise.proposition == premises[0]
                 )
         ),
         "{tactics:#?}"
