@@ -171,11 +171,15 @@ pub(in crate::surface) fn verify_theorem_definition(
 }
 
 /// The index type parameter of a kernel law stated over C indices, and the
-/// index types its kernel rule admits. `separation::elements` builds its
+/// index types its kernel rule admits. `separation::elements` and `separation::distinct_elements` build their
 /// descriptors at an `int32`, `int64`, or `uint64` index, the formats
 /// [`crate::kernel::prove_separation_elements`] accepts.
-fn kernel_law_index_types(name: &str) -> Option<(&'static str, [C0Type; 3])> {
-    (name == "click::separation::elements").then_some((
+pub(super) fn kernel_law_index_types(name: &str) -> Option<(&'static str, [C0Type; 3])> {
+    matches!(
+        name,
+        "click::separation::elements" | "click::separation::distinct_elements"
+    )
+    .then_some((
         "I",
         [
             C0Type::Int32,
@@ -191,6 +195,8 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
     theorem_environment: &TheoremEnvironment,
     function_environment: Option<&CExecutionEnvironment>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
+    #[cfg(test)]
+    crate::kernel::search::record_discovery("verify_concrete_theorem_definition");
     debug_assert!(theorem.type_parameters().is_empty());
     let context = pure_theorem_context(theorem, spec_definitions)?;
     theorem
@@ -2650,7 +2656,11 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
         || name == "click::separation::restrict"
         || matches!(
             name.split("::<").next(),
-            Some("click::separation::subrange" | "click::separation::elements")
+            Some(
+                "click::separation::subrange"
+                    | "click::separation::elements"
+                    | "click::separation::distinct_elements"
+            )
         )
         || integer_round_trip_destination(name).is_some()
         || crate::kernel::integer_truncation_law_requirements(name).is_some()
@@ -2687,7 +2697,13 @@ fn verify_kernel_standard_theorem_axiom(
         "click::integer::uint32_from_le_bytes" => (1, 3),
         "click::separation::restrict" => (4, 3),
         name if name.split("::<").next() == Some("click::separation::subrange") => (5, 3),
-        name if name.split("::<").next() == Some("click::separation::elements") => (3, 1),
+        name if matches!(
+            name.split("::<").next(),
+            Some("click::separation::elements" | "click::separation::distinct_elements")
+        ) =>
+        {
+            (3, 1)
+        }
         "click::nat::to_integer_zero" | "click::nat::to_nat_zero" => (0, 0),
         "click::nat::to_integer_succ"
         | "click::nat::to_integer_nonnegative"
@@ -2731,7 +2747,10 @@ fn verify_kernel_standard_theorem_axiom(
             ));
         };
         crate::kernel::prove_uint32_from_le_bytes(pointer.clone()).map_err(ClickError::new)?
-    } else if theorem.name().split("::<").next() == Some("click::separation::elements") {
+    } else if let Some(
+        law @ ("click::separation::elements" | "click::separation::distinct_elements"),
+    ) = theorem.name().split("::<").next()
+    {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
             Some(CValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
@@ -2756,7 +2775,11 @@ fn verify_kernel_standard_theorem_axiom(
         if format != other_format {
             return Err(ClickError::new("elements indices must have the same type"));
         }
-        crate::kernel::prove_separation_elements(pointer.clone(), width, format, i, j)
+        if law == "click::separation::elements" {
+            crate::kernel::prove_separation_elements(pointer.clone(), width, format, i, j)
+        } else {
+            crate::kernel::prove_separation_distinct_elements(pointer.clone(), width, format, i, j)
+        }
     } else if theorem.name().split("::<").next() == Some("click::separation::subrange") {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
@@ -4236,6 +4259,26 @@ mod tests {
         for invalid in [
             source.replace("requires i != j;", ""),
             source.replace("memory(p[j])", "memory(p[i])"),
+        ] {
+            assert!(verify_standard_declarations(&invalid).is_err(), "{invalid}");
+        }
+    }
+
+    /// The element-address law is checked like the element law: at each
+    /// admitted index type, against its kernel builder's proposition.
+    #[test]
+    fn generic_element_address_law_is_checked_at_each_admitted_index_type() {
+        let source = "theorem click::separation::distinct_elements<T, I>(p: T*, i: I, j: I) { requires i != j; ensures &p[i] != &p[j]; }";
+        let verified = verify_standard_declarations(source).expect("element address law");
+        assert_eq!(verified.len(), 3);
+        assert!(verified.iter().all(|result| {
+            result.theorem_definition.name() == "click::separation::distinct_elements"
+                && result.ensure_index == 0
+        }));
+        for invalid in [
+            source.replace("requires i != j;", ""),
+            source.replace("&p[j]", "&p[i]"),
+            source.replace("&p[i] != &p[j]", "&p[i] == &p[j]"),
         ] {
             assert!(verify_standard_declarations(&invalid).is_err(), "{invalid}");
         }

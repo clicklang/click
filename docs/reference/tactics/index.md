@@ -197,10 +197,13 @@ and
 [`a_written_step_does_not_open_a_folded_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/a_written_step_does_not_open_a_folded_resource.md).
 
 A C store into an array keeps a cached element of that array only on a
-stated disequality of the two `int32` index words (see
-[Verifier design](../../internals/verifier-design.md)); otherwise it drops the
-element. When a statement the implicit tail or `step_until` runs drops such
-an element, the tail spells that disequality, `((m - 1) as int32) != 0` say,
+stated disequality of the two index words, compared as `int32`, or as
+`uint64` or `int64` for two 64-bit indices of that signedness such as
+`size_t` ones (see [Verifier design](../../internals/verifier-design.md));
+otherwise it drops the element. When a statement the implicit tail or
+`step_until` runs drops such an element, the tail spells that disequality
+from the two index words, `((m - 1) as int32) != 0`,
+`((n - 1u64) as uint64) != 0u64` or `j != 0u64` say,
 proves it at the statement's pre-state, retains it as a `have`,
 and runs the statement again, which then keeps the element. It tries at most
 four dropped elements per statement, and proves each only by the signed
@@ -208,14 +211,29 @@ interval certificate over its variables' bounds, an order between the two
 indices by selected-premise arithmetic, or the disequality bridge of
 [`solve`'s arithmetic](#arithmetic-with-selected-premises) (a case split on the index
 equality), not by the rest of `solve`. Bounds such as `2 <= m` or `1 <= j`, or
-the Integer fact `m - 1 != 0`, suffice. Expansion writes the `have` before the
+the Integer fact `m - 1 != 0` where `m - 1` cannot wrap, suffice. Expansion writes the `have` before the
 statement's `step()`. A disequality it misses leaves the statement as it
-ran, and a later read of the element reports the store
-([`a_store_at_the_last_heap_element_keeps_the_first.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_the_last_heap_element_keeps_the_first.md),
+ran. The path keeps the miss (at most 32 per path): a later refusal whose
+goal reads the dropped element names the statement and the disequality the
+tail spelled, ``statement(3) may have overwritten `q[0]`; it is kept if you
+state `have … by { ... };` before statement(3)``, and `--trace-proof` marks
+the store that dropped it
+([`a_store_search_miss_names_the_store_and_the_fact_for_a_heap_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_search_miss_names_the_store_and_the_fact_for_a_heap_read.md),
+[`a_store_search_miss_names_the_store_and_the_fact_for_an_array_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_search_miss_names_the_store_and_the_fact_for_an_array_read.md),
+[`a_stated_store_search_fact_keeps_the_heap_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/a_stated_store_search_fact_keeps_the_heap_cell.md),
+[`a_store_at_the_last_heap_element_keeps_the_first.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_the_last_heap_element_keeps_the_first.md),
 [`a_store_at_another_symbolic_element_keeps_a_cached_one.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_another_symbolic_element_keeps_a_cached_one.md),
 [`a_store_at_an_index_that_may_be_the_cached_one_overwrites_it.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_an_index_that_may_be_the_cached_one_overwrites_it.md)).
-A `size_t` or other 64-bit index is not covered: the store-time check reads
-only `int32` index words.
+`size_t` and `long` indices work the same way
+([`a_store_at_the_last_size_t_heap_element_keeps_the_first.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_the_last_size_t_heap_element_keeps_the_first.md),
+[`a_size_t_store_index_fact_variants_keep_the_first.md`](https://github.com/clicklang/click/blob/master/mdtests/a_size_t_store_index_fact_variants_keep_the_first.md),
+[`a_size_t_store_search_miss_names_the_word_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/a_size_t_store_search_miss_names_the_word_fact.md),
+[`a_stated_size_t_store_search_fact_keeps_the_heap_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/a_stated_size_t_store_search_fact_keeps_the_heap_cell.md),
+[`a_size_t_store_at_an_index_that_may_be_the_cached_one_overwrites_it.md`](https://github.com/clicklang/click/blob/master/mdtests/a_size_t_store_at_an_index_that_may_be_the_cached_one_overwrites_it.md),
+[`a_wrapping_size_t_store_index_overwrites_the_cached_element.md`](https://github.com/clicklang/click/blob/master/mdtests/a_wrapping_size_t_store_index_overwrites_the_cached_element.md)).
+A pair of a 32-bit and a 64-bit index, or of two 64-bit indices of different
+signedness, has no index fact the store reads, and the store drops the
+element.
 
 A failed `have P` that the implicit closer proves names the written `P`,
 rather than an internal search step or subgoal. Exhausted verification
@@ -1916,6 +1934,19 @@ give `((u + 1) as uint32) != 0`
 [`an_integer_disequality_does_not_give_a_wrapping_word_one.md`](https://github.com/clicklang/click/blob/master/mdtests/an_integer_disequality_does_not_give_a_wrapping_word_one.md)).
 Expansion writes the proof `if`, the `have p == q` with its certificate, and
 the two `assumption()` steps.
+
+After that, a pointer disequality between two element addresses of one
+base, `&q[j] != &q[0]`, whose indices have one width and format (`int32`, or
+64-bit of one signedness), is reduced to its indices: `solve` states
+`have j != 0` (spelled from the index words, as the store search spells its
+fact: `((m - 1) as int32) != 0`, `j != 0u64`), proves it by `solve`, and
+closes the goal with
+`apply(click::separation::distinct_elements(q, j, 0)) using { j != 0; }`.
+Expansion writes that `have` and the `apply`. Where the indices may be equal
+the nested `solve` misses and the goal's ordinary refusal stands
+([`solve_proves_element_addresses_distinct_from_their_indices.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_element_addresses_distinct_from_their_indices.md),
+[`solve_proves_element_addresses_distinct_at_each_index_type.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_element_addresses_distinct_at_each_index_type.md),
+[`solve_does_not_prove_element_addresses_distinct_when_the_indices_may_be_equal.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_prove_element_addresses_distinct_when_the_indices_may_be_equal.md)).
 
 **Failure, checking, and tools:**
 

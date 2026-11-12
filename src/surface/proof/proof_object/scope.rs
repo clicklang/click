@@ -464,6 +464,8 @@ impl<'a> ProofScope<'a> {
     /// available in the enclosing proof while retaining the exact body.
     pub(in crate::surface::proof) fn join(self) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
+        let _operation = crate::kernel::search::FastOperationScope::enter("join");
+        #[cfg(test)]
         CHECKED_HAVE_OPERATIONS.with(|count| count.set(count.get() + 1));
         self.join_inner()
     }
@@ -674,6 +676,8 @@ impl<'a> ProofScope<'a> {
                             more_resources: 0,
                             origin: crate::surface::proof_trace::smart_origin(),
                             chosen: None,
+                            forgotten_cells: Vec::new(),
+                            history_stops: Vec::new(),
                         },
                     );
                     crate::surface::proof_trace::record_body(

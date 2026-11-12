@@ -46,6 +46,50 @@ pub(crate) fn prove_separation_elements(
     ))
 }
 
+/// Distinct indices of one typed array give distinct element addresses:
+/// `i != j` implies `&p[i] != &p[j]`. Like [`prove_separation_elements`], the
+/// addresses are the exact scaled offsets `p + i * width` and `p + j * width`,
+/// which are equal exactly when the indices are (memory resolution reads
+/// scaled offsets the same way), and the premise is the index disequality in
+/// the index format.
+pub(crate) fn prove_separation_distinct_elements(
+    base: CPointerValue,
+    width: u32,
+    format: MachineIntegerType,
+    i: MachineTerm,
+    j: MachineTerm,
+) -> Theorem {
+    assert!(
+        width > 0,
+        "element addresses require a nonzero storage width"
+    );
+    let (unsigned, wide) = match format {
+        MachineIntegerType::Int32 => (false, false),
+        MachineIntegerType::Int64 => (false, true),
+        MachineIntegerType::UInt64 => (true, true),
+        _ => panic!("element addresses require int32, int64, or uint64 indices"),
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    let address = |index: MachineTerm| {
+        base.pointer()
+            .offset_by_typed_elements(index, width, unsigned, wide)
+    };
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            if wide {
+                ConditionTerm::int64_equal(i.clone(), j.clone())
+            } else {
+                ConditionTerm::equal(i.clone(), j.clone())
+            },
+            false,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(address(i), address(j)),
+            false,
+        )),
+    ))
+}
+
 pub(crate) fn prove_separation_restrict(
     left: CResource,
     right: CResource,

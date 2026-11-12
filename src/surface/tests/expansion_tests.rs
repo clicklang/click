@@ -9695,9 +9695,10 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
         .expanded_proof_tactics()
         .expect("the checked execution apply should retain an expansion");
     assert!(matches!(
-        expanded.first(),
-        Some(ProofTactic::ApplyTheoremUsing { application, premises })
+        expanded.as_slice(),
+        [ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }, ..]
             if application.name == "click::integer::uint32_less_than_divisor_implies_remainder_is_value" && premises.len() == 1
+                && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
     ));
     let retained_source = verified[0]
         .expanded_proof_source()
@@ -10574,9 +10575,11 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
                 if matches!(
                     open.tactics.as_slice(),
                     [
+                        ProofTactic::Have(have),
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Step,
                     ] if application.name == "ordered_is_less_equal" && premises.len() == 1
+                        && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
                 )
         ),
         "{tactics:#?}"
@@ -11235,12 +11238,14 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
             Some(ProofTactic::Branch(branch))
                 if matches!(
                     branch.then_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
+                    [ProofTactic::Step, ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }]
                         if application.name == "ordered_is_less_equal" && premises.len() == 1
+                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
                 ) && matches!(
                     branch.else_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
+                    [ProofTactic::Step, ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }]
                         if application.name == "ordered_is_less_equal" && premises.len() == 1
+                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
                 )
         ),
         "{tactics:#?}"
@@ -11304,6 +11309,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             [
                 ProofTactic::Step,
                 ProofTactic::Branch(branch),
+                ProofTactic::Have(have),
                 ProofTactic::ApplyTheoremUsing { application, premises },
                 ProofTactic::Step,
                 ..
@@ -11318,6 +11324,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
                 && application.name == "ordered_is_less_equal"
                 && premises.len() == 1
+                && have.proposition == premises[0]
         ),
         "{tactics:#?}"
     );
@@ -11479,10 +11486,12 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                     // The theorem concludes `0 <= selected`; the mirrored
                     // `selected >= 0` closes by `assumption`.
                     [
+                        ProofTactic::Have(premise),
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Assumption,
                     ] if application.name == "positive_is_nonnegative"
                             && premises.len() == 1
+                            && premise.proposition == premises[0]
                 )
         ),
         "{tactics:#?}"
@@ -20592,10 +20601,118 @@ fn store_index_separation_expands_and_replays() {
     );
 }
 
+// The same for a `size_t` index: the retained `have` is the `uint64` word
+// fact `((n - 1u64) as uint64) != 0u64`. The program is the one function of
+// `a_store_at_the_last_size_t_heap_element_keeps_the_first.md` it replays.
+#[test]
+#[ignore = "nightly: 0.5s; the int32 store expansion and the size_t fixtures run in the gate"]
+fn wide_store_index_separation_expands_and_replays() {
+    let c = "#include <stddef.h>\n#include <stdlib.h>\nint read_first(size_t n) {\n    int *q = malloc(n * sizeof(int));\n    if (q == 0) {\n        return 0;\n    }\n    q[0] = 7;\n    q[n - 1] = 1;\n    int r = q[0];\n    free(q);\n    return r;\n}\n";
+    let source = r#"verifying "wide.c";
+int32 read_first(size_t n) {
+    requires 2u64 <= n and n <= 1000u64;
+    ensures result == 0 or result == 7;
+}
+"#;
+    let sources = [("wide.c", c)];
+    let expanded = expand_function_proof_source(source, &sources, "read_first")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("have ((n - 1u64) as uint64) != 0u64 by"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("read_first.ensures_0", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+// `solve` proves `&q[j] != &q[0]` by stating the index disequality and
+// applying `separation::distinct_elements`; expansion writes both steps, and
+// the expanded proof replays with no search. The nightly variants cover
+// 64-bit and arithmetic indices.
+#[test]
+fn element_address_disequality_expands_and_replays() {
+    let source = r#"verifying "addresses.c";
+int32 distinct(int32* q, int32 j) {
+    requires j != 0;
+    ensures result == 0;
+} by {
+    have &q[j] != &q[0] by solve();
+}
+"#;
+    element_address_disequality_replays(
+        source,
+        &[("addresses.c", "int distinct(int *q, int j) { return 0; }\n")],
+        "distinct",
+    );
+}
+
+#[test]
+#[ignore = "nightly: element address disequality variants expand and cold replay"]
+fn element_address_disequality_variants_expand_and_replay() {
+    for (fixture, functions) in [
+        (
+            "solve_proves_element_addresses_distinct_from_their_indices",
+            &["last"][..],
+        ),
+        (
+            "solve_proves_element_addresses_distinct_at_each_index_type",
+            &["words", "longs", "last64"][..],
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = c_sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        for function in functions {
+            element_address_disequality_replays(&source, &sources, function);
+        }
+    }
+}
+
+fn element_address_disequality_replays(source: &str, sources: &[(&str, &str)], function: &str) {
+    let expanded = expand_function_proof_source(source, sources, function)
+        .unwrap_or_else(|error| panic!("{function}: {}", error.report()));
+    let (_, body) = expanded
+        .split_once(&format!("int32 {function}("))
+        .unwrap_or_else(|| panic!("{function} is expanded: {expanded}"));
+    // The function's own proof, up to the next declaration.
+    let body = ["\nint32 ", "\ntheorem "]
+        .into_iter()
+        .filter_map(|next| body.find(next))
+        .min()
+        .map_or(body, |end| &body[..end]);
+    assert!(
+        body.contains("apply(click::separation::distinct_elements(q, ") && !body.contains("solve"),
+        "{function}: {body}"
+    );
+    without_implicit_solve_for_claim(&format!("{function}.contract"), || {
+        verify_c0_sources(&expanded, sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{function}: {error}\n{expanded}"));
+}
+
 #[test]
 #[ignore = "nightly: store index separation variants expand and cold replay"]
 fn store_index_separation_variants_expand_and_replay() {
     for (fixture, function, claim) in [
+        (
+            "a_size_t_store_index_fact_variants_keep_the_first",
+            "read_j",
+            "read_j.ensures_0",
+        ),
+        (
+            "a_size_t_store_index_fact_variants_keep_the_first",
+            "signed_long",
+            "signed_long.ensures_0",
+        ),
+        (
+            "a_size_t_store_index_fact_variants_keep_the_first",
+            "stated_integer",
+            "stated_integer.contract",
+        ),
         (
             "a_store_at_another_symbolic_element_keeps_a_cached_one",
             "at_parameter",
@@ -21832,4 +21949,135 @@ fn pure_apply_obligations_expand_to_explicit_have_and_using() {
         })
         .unwrap();
     }
+}
+
+#[test]
+fn live_apply_obligations_expand_at_the_original_frontier() {
+    let (source, sources) = mdtest_sources("mdtests/live_apply_obligations.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "increment").unwrap();
+    assert!(
+        expanded.contains("have ") && expanded.contains("using"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("increment.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+    let false_premise = source.replace("increased(old(x), x)", "increased(x, old(x))");
+    assert!(verify_c0_sources(&false_premise, &sources).is_err());
+}
+
+#[test]
+fn saved_array_application_obligation_expands_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/saved_array_theorem_obligation.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "keep").unwrap();
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn outcome_apply_obligations_retain_each_return_and_fold_evidence() {
+    for (fixture, function, claim) in [
+        (
+            "outcome_apply_obligations",
+            "choose_positive",
+            "choose_positive.ensures_0",
+        ),
+        (
+            "outcome_apply_obligations",
+            "increment_result",
+            "increment_result.ensures_0",
+        ),
+        (
+            "return_fold_uses_post_return_theorem_application",
+            "pick",
+            "pick.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        let expanded = expand_function_proof_source(&source, &sources, function).unwrap();
+        without_implicit_solve_for_claim(claim, || {
+            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[ignore = "nightly: population obligation expansion and cold replay"]
+fn empty_population_application_expands_its_obligation() {
+    let (source, sources) = mdtest_sources("mdtests/an_empty_population_counts_no_member.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+    assert!(expanded.contains("count(item(pool, _)) == 0"), "{expanded}");
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: range-fold guard expansion and cold replay"]
+fn bare_range_fold_application_expands_its_guards() {
+    let (source, _) = mdtest_sources("mdtests/fold_law_accepts_a_defined_endpoint.md");
+    let source = source.replace(
+        ")) using {\n            0 < hi;\n            to_integer(lo) <= to_integer(hi - 1);\n            to_integer(hi - 1) < 2147483647;\n        };",
+        "));",
+    );
+    assert!(!source.contains("using"));
+    verify_click_theorems(&source).unwrap();
+    let expanded = expand_c0_claim_source_by_label(
+        &source,
+        &[],
+        "fold_appends_at_a_predecessor_endpoint.ensures_0",
+    )
+    .unwrap();
+    assert!(expanded.contains("using"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = source.replace("    requires to_integer(lo) <= to_integer(hi - 1);\n", "");
+    assert!(verify_click_theorems(&missing).is_err());
+}
+
+#[test]
+#[ignore = "nightly: empty-fold guard expansion and cold replay"]
+fn bare_empty_range_fold_application_expands_its_guard() {
+    let source = r#"
+theorem empty(lo: int32, hi: int32) {
+    requires to_integer(hi) <= to_integer(lo);
+    ensures (lo..hi).fold(0, |acc, k| { acc + to_integer(k) }) == 0 by {
+        apply(integer_range_fold_empty((lo..hi).fold(0, |acc, k| { acc + to_integer(k) })));
+    }
+}
+"#;
+    let expanded = expand_c0_claim_source_by_label(source, &[], "empty.ensures_0").unwrap();
+    assert!(expanded.contains("using"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = source.replace("    requires to_integer(hi) <= to_integer(lo);\n", "");
+    let refusal = verify_click_theorems(&missing).unwrap_err();
+    assert!(
+        refusal.message().contains("unproved obligation"),
+        "{refusal}"
+    );
 }

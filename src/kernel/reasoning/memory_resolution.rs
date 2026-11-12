@@ -683,28 +683,28 @@ pub(in crate::kernel) fn pointers_directly_distinct_for_store(
     {
         return true;
     }
-    if let Some((left, right, _)) = common_base_element_indices(left, right)
-        && (assumptions.selected_comparison_value(&crate::kernel::assumptions::index_comparison(
-            CompareRelation::Equal,
-            left.operand_view(),
-            right.operand_view(),
-        )) == Some(false)
-            || assumptions.selected_comparison_value(
-                &crate::kernel::assumptions::index_comparison(
-                    CompareRelation::LessThan,
-                    left.operand_view(),
-                    right.operand_view(),
-                ),
-            ) == Some(true)
-            || assumptions.selected_comparison_value(
-                &crate::kernel::assumptions::index_comparison(
-                    CompareRelation::LessThan,
-                    right.operand_view(),
-                    left.operand_view(),
-                ),
-            ) == Some(true))
-    {
-        return true;
+    // The element indices of a common base, `int32` or 64-bit of one
+    // signedness, each read by its exact comparison fact in its own format.
+    // Native 64-bit equality facts keep their written orientation. Read
+    // both orientations while retaining shared query operands.
+    if let Some(indices) = common_base_store_indices(left, right) {
+        let denied = |swapped| {
+            assumptions
+                .selected_comparison_value(&indices.comparison(CompareRelation::Equal, swapped))
+                == Some(false)
+        };
+        let below = |swapped| {
+            assumptions
+                .selected_comparison_value(&indices.comparison(CompareRelation::LessThan, swapped))
+                == Some(true)
+        };
+        if denied(false)
+            || (indices.format != MachineIntegerType::Int32 && denied(true))
+            || below(false)
+            || below(true)
+        {
+            return true;
+        }
     }
     let private_local = |local: &Pointer, value: &Pointer| {
         matches!(value.block, PointerBlock::Symbolic(_))
@@ -2956,6 +2956,127 @@ pub(in crate::kernel) fn common_base_element_indices(
 ) -> Option<(SharedMachineIntegerTerm, SharedMachineIntegerTerm, u32)> {
     let (left_index, right_index) = common_base_index_offsets(left, right)?;
     element_indices_of(&left_index, &right_index)
+}
+
+/// Two element indices a store compares to keep a cached cell, and the
+/// machine format of the comparison it reads.
+pub(in crate::kernel) struct StoreElementIndices {
+    pub(in crate::kernel) left: SharedMachineIntegerTerm,
+    pub(in crate::kernel) right: SharedMachineIntegerTerm,
+    /// `Int32` for 32-bit scaled indices; `Int64` or `UInt64` for 64-bit
+    /// scaled indices of that signedness.
+    pub(in crate::kernel) format: MachineIntegerType,
+}
+
+impl StoreElementIndices {
+    /// The comparison `left relation right` (or `right relation left` when
+    /// `swapped`) in the indices' own format: the key of the exact fact the
+    /// store reads. An `int32` pair is compared as the Integer values of its
+    /// two words, as `index_comparison` builds it; a 64-bit pair as the
+    /// retained comparison its stated fact lowers to, such as
+    /// `((n - 1) as uint64) != 0`.
+    pub(in crate::kernel) fn comparison(
+        &self,
+        relation: CompareRelation,
+        swapped: bool,
+    ) -> ConditionTerm {
+        let (left, right) = if swapped {
+            (&self.right, &self.left)
+        } else {
+            (&self.left, &self.right)
+        };
+        if self.format == MachineIntegerType::Int32 {
+            return crate::kernel::assumptions::index_comparison(
+                relation,
+                left.operand_view(),
+                right.operand_view(),
+            );
+        }
+        crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            self.format,
+            relation,
+            [left.operand_view(), right.operand_view()],
+        )
+    }
+}
+
+/// The element indices of two addresses with a common base, in the format a
+/// store compares them: the `int32` indices of [`common_base_element_indices`],
+/// or two 64-bit scaled indices of one element width and one signedness, one
+/// of which may instead be a constant offset of whole elements (`q[0]`
+/// against `q[n - 1]` for a `size_t n`). A mixed 32/64-bit pair, a pair of
+/// different signedness or width, or a constant the index format cannot hold
+/// has none. This reads the two offsets' structure only.
+pub(in crate::kernel) fn common_base_store_indices(
+    left: &Pointer,
+    right: &Pointer,
+) -> Option<StoreElementIndices> {
+    let (left_index, right_index) = common_base_index_offsets(left, right)?;
+    if let Some((left, right, _)) = element_indices_of(&left_index, &right_index) {
+        return Some(StoreElementIndices {
+            left,
+            right,
+            format: MachineIntegerType::Int32,
+        });
+    }
+    wide_element_indices_of(&left_index, &right_index)
+}
+
+fn wide_element_indices_of(
+    left: &PointerOffsetTerm,
+    right: &PointerOffsetTerm,
+) -> Option<StoreElementIndices> {
+    let scaled = |offset: &PointerOffsetTerm| match offset {
+        PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width,
+            unsigned,
+        } if *byte_width > 0 => Some((value.clone(), *byte_width, *unsigned)),
+        _ => None,
+    };
+    let format = |unsigned: bool| {
+        if unsigned {
+            MachineIntegerType::UInt64
+        } else {
+            MachineIntegerType::Int64
+        }
+    };
+    // A constant offset of whole elements is that element's index, in the
+    // format of the scaled index beside it.
+    let constant = |offset: &PointerOffsetTerm, width: i64, unsigned: bool| {
+        let PointerOffsetTerm::Constant(bytes) = offset else {
+            return None;
+        };
+        if bytes % width != 0 {
+            return None;
+        }
+        let index = bytes / width;
+        let term = if unsigned {
+            MachineTerm::uint64_constant(u64::try_from(index).ok()?)
+        } else {
+            MachineTerm::int64_constant(index)
+        };
+        Some(SharedMachineIntegerTerm::intern(format(unsigned), term))
+    };
+    let (left, right, unsigned) = match (scaled(left), scaled(right)) {
+        (Some((left, left_width, left_unsigned)), Some((right, right_width, right_unsigned)))
+            if left_width == right_width && left_unsigned == right_unsigned =>
+        {
+            (left, right, left_unsigned)
+        }
+        (Some((index, width, unsigned)), None) => {
+            (index, constant(right, width, unsigned)?, unsigned)
+        }
+        (None, Some((index, width, unsigned))) => {
+            (constant(left, width, unsigned)?, index, unsigned)
+        }
+        _ => return None,
+    };
+    Some(StoreElementIndices {
+        left,
+        right,
+        format: format(unsigned),
+    })
 }
 
 /// Convert a cancelled index pair into element indices of their common

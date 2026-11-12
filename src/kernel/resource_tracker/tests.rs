@@ -436,10 +436,8 @@ fn a_release_of_another_object_keeps_one_version() {
         .free_heap_block(&fresh, &PureFactContext::new())
         .expect("the allocation is live, so it can be released");
 
-    // The release edge records a base that is not the pre-free state -- the
-    // producer interns it after dropping the live entry -- so this asks the
-    // walk directly whether it crossed the release rather than comparing two
-    // program points across it.
+    // This asks the walk directly whether it crossed the release rather than
+    // comparing two program points across it.
     let crossed = last_same(Resource::Block(&block("global:g")), &point(&freed))
         .expect("a block always has a last-same point");
     assert_ne!(
@@ -453,6 +451,36 @@ fn a_release_of_another_object_keeps_one_version() {
     assert_eq!(own.point, point(&freed));
     assert_eq!(own.stopped_by.change, Change::Free { allocation: fresh });
     assert_eq!(own.stopped_by.reason, StopReason::Affected);
+}
+
+/// A release edge's base is the memory the `free` started from, with the
+/// constructor that made it: a trace legend explains it, and a walk across
+/// the release reaches the history before it. A base interned after the
+/// release dropped its live entry was a snapshot no constructor recorded,
+/// printed as an internal error in every trace through a `free`.
+#[test]
+fn a_release_is_based_on_the_memory_it_started_from() {
+    let fresh = Pointer {
+        block: PointerBlock::Heap(1),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let live = entry_memory()
+        .with_heap_allocation_claim(fresh.clone(), HeapExtent::int32(16))
+        .expect("a fresh allocation claim");
+    let before = intern_c_memory(live.clone());
+    let freed = intern_c_memory(
+        live.free_heap_block(&fresh, &PureFactContext::new())
+            .expect("the allocation is live, so it can be released"),
+    );
+    let derivation = freed.derivation().expect("a release records its edge");
+    let CMemoryDerivation::HeapFreed { base, .. } = derivation.as_ref() else {
+        panic!("a release records a `HeapFreed` edge");
+    };
+    assert_eq!(base, &before, "the edge starts from the pre-free memory");
+    assert!(
+        base.memory().diagnostic_construction().is_some(),
+        "the base keeps the constructor that produced it"
+    );
 }
 
 /// An allocation the caller's object could be a subrange of is not separate

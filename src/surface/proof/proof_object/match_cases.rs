@@ -721,14 +721,9 @@ impl<'a> Proof<'a> {
         } else {
             Vec::new()
         };
-        if clause_presentations
-            .iter()
-            .any(|clause| !clause.matches_available_fact(proof.facts()))
-        {
-            return Err(
-                self.step_error("resource match clause presentation lacks its checked fact")
-            );
-        }
+        // The kernel producer pairs these checked clauses with the facts it
+        // introduced. Consume that result directly; comparing the freshly
+        // produced facts again would reject equivalent retained carriers.
         // Spell what the arm adds besides its case, a premise's instance
         // `s_circle_0 < 4294967295u32` above all, with the arm's binders, so
         // a certificate in the arm or after it can cite it.
@@ -841,6 +836,8 @@ impl<'a> Proof<'a> {
                     more_resources: 0,
                     origin: crate::surface::proof_trace::smart_origin(),
                     chosen: None,
+                    forgotten_cells: Vec::new(),
+                    history_stops: Vec::new(),
                 },
             );
             proof

@@ -34,7 +34,11 @@ pub(super) enum PropositionSpelling {
 // Population counts are int32 values. An unobserved machine comparison
 // must keep that type when reparsed: Integer specification arithmetic
 // otherwise promotes a comparison containing `count(...)`.
-fn comparison_operand(expression: &ContractExpression, mode: PropositionSpelling) -> String {
+fn comparison_operand(
+    expression: &ContractExpression,
+    other: &ContractExpression,
+    mode: PropositionSpelling,
+) -> String {
     fn typed_count_reference(expression: &ContractExpression) -> Option<String> {
         match expression {
             ContractExpression::ResourceCount(_) => Some(format!(
@@ -66,7 +70,7 @@ fn comparison_operand(expression: &ContractExpression, mode: PropositionSpelling
     // Generated machine arithmetic must retain its type when reparsed as
     // specification syntax, including arithmetic outside a snapshot.
     if mode == PropositionSpelling::Source
-        && let Some(machine_type) = machine_arithmetic(expression)
+        && let Some(machine_type) = machine_arithmetic(expression, integer_comparison_type(other))
     {
         return crate::surface::diagnostics::click_cast(
             &describe_contract_expression(expression),
@@ -76,10 +80,47 @@ fn comparison_operand(expression: &ContractExpression, mode: PropositionSpelling
     describe_contract_expression(expression)
 }
 
+/// The integer type a comparison operand fixes for the comparison: a typed
+/// machine constant, or arithmetic the barrier below already types. An
+/// `int32` zero is not one, since it also spells the null pointer. A
+/// comparison with such an operand compares integer words, so its other
+/// operand's `+` or `-` is word arithmetic, never pointer arithmetic.
+fn integer_comparison_type(other: &ContractExpression) -> Option<&'static str> {
+    let mut inner = other;
+    while let ContractExpression::Old(next)
+    | ContractExpression::At {
+        expression: next, ..
+    } = inner
+    {
+        inner = next;
+    }
+    match inner {
+        ContractExpression::CFragment(CExpression::Value(value)) => match value {
+            CValue::UInt32(_) => Some("uint32"),
+            CValue::Int64(_) => Some("int64"),
+            CValue::UInt64(_) => Some("uint64"),
+            CValue::Int32(term)
+                if matches!(term, crate::kernel::bits32_constant!(_))
+                    && !matches!(term, crate::kernel::bits32_constant!(0)) =>
+            {
+                Some("int32")
+            }
+            _ => None,
+        },
+        _ => machine_arithmetic(other, None),
+    }
+}
+
 /// Preserve the existing machine-arithmetic type barrier both at snapshots
 /// and in current-state comparison operands. Mathematical Integer operands
-/// do not receive a machine cast.
-fn machine_arithmetic(expression: &ContractExpression) -> Option<&'static str> {
+/// do not receive a machine cast. `comparison` is the integer type the
+/// comparison's other operand fixes, if it fixes one: then a current-state
+/// `+` or `-` is word arithmetic too, and receives the barrier, since the
+/// parser reads a comparison operand that does arithmetic as an Integer.
+fn machine_arithmetic(
+    expression: &ContractExpression,
+    comparison: Option<&'static str>,
+) -> Option<&'static str> {
     let mut inner = expression;
     let mut snapshot = false;
     while let ContractExpression::Old(next)
@@ -95,6 +136,7 @@ fn machine_arithmetic(expression: &ContractExpression) -> Option<&'static str> {
     // `a + (i + 1u64)` can be a pointer. Preserve its source semantics;
     // generated C arithmetic still receives the machine barrier below.
     if !snapshot
+        && comparison.is_none()
         && matches!(
             inner,
             ContractExpression::Add(..) | ContractExpression::Subtract(..)
@@ -126,6 +168,7 @@ fn machine_arithmetic(expression: &ContractExpression) -> Option<&'static str> {
     let mut contract_pending = vec![inner];
     let mut c_pending = Vec::new();
     let mut top = true;
+    let mut opaque = false;
     while let Some(expression) = contract_pending.pop() {
         match expression {
             ContractExpression::Add(left, right)
@@ -159,11 +202,13 @@ fn machine_arithmetic(expression: &ContractExpression) -> Option<&'static str> {
                 c_pending.push(fragment);
             }
             _ if top => return None,
-            _ => {}
+            _ => opaque = true,
         }
         top = false;
     }
-    if !machine {
+    // Arithmetic over C operands alone, in a comparison of integer words,
+    // is word arithmetic even with no typed operand of its own.
+    if !machine && (comparison.is_none() || opaque || c_pending.is_empty()) {
         return None;
     }
     while let Some(expression) = c_pending.pop() {
@@ -191,7 +236,7 @@ fn machine_arithmetic(expression: &ContractExpression) -> Option<&'static str> {
     // Current-state expressions without typed operands need their type
     // retained by the producer; do not infer it from variable spellings.
     if !snapshot && c_types.is_empty() {
-        return None;
+        return comparison;
     }
     let mut machine_type = "int32";
     for value in c_types {
@@ -227,8 +272,8 @@ pub(super) fn print_proposition(
             right,
         } => format!(
             "{} {operator} {}",
-            comparison_operand(left, mode),
-            comparison_operand(right, mode)
+            comparison_operand(left, right, mode),
+            comparison_operand(right, left, mode)
         ),
         ClickProposition::FloatClassification {
             expression,
@@ -2302,6 +2347,65 @@ mod tests {
                 panic!("expected comparisons before and after printing");
             };
             assert_eq!(original, reparsed, "{rendered}");
+        }
+    }
+
+    // A word's `+` or `-` compared with a typed word prints with its type
+    // barrier, so it reparses as the word operation: bare, `n - 1u64 != 0u64`
+    // reparses as the Integer comparison `to_integer(n) - 1 != 0`. The store
+    // search spells its `size_t` index fact this way
+    // (`mdtests/a_size_t_store_search_miss_names_the_word_fact.md`).
+    #[test]
+    fn word_arithmetic_compared_with_a_typed_word_reparses_as_the_word() {
+        fn requirement(source: &str) -> ClickProposition {
+            let parsed = parser::parse(source).unwrap();
+            let Requirement::Proposition(proposition) = &parsed.function_blocks()[0].requires()[0]
+            else {
+                panic!("expected a comparison requirement");
+            };
+            proposition.clone()
+        }
+        let word = |value: u64| {
+            ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
+                crate::kernel::MachineTerm::uint64_constant(value),
+            )))
+        };
+        let n = || ContractExpression::CFragment(CExpression::Variable("n".into()));
+        for (arithmetic, spelled, bare) in [
+            (
+                ContractExpression::Subtract(Box::new(n()), Box::new(word(1))),
+                "(n - 1u64) as uint64 != 0u64",
+                "n - 1u64 != 0u64",
+            ),
+            (
+                ContractExpression::Add(Box::new(n()), Box::new(n())),
+                "(n + n) as uint64 != 0u64",
+                "n + n != 0u64",
+            ),
+        ] {
+            let synthesized = ClickProposition::Comparison {
+                left: arithmetic,
+                operator: ComparisonOperator::NotEqual,
+                right: word(0),
+            };
+            let rendered = source_click_proposition(&synthesized);
+            assert_eq!(rendered, spelled);
+            let context =
+                |text: &str| format!("void f(uint64 n) {{ requires {text}; ensures n == n; }}");
+            let reparsed = requirement(&context(&rendered));
+            let bare = requirement(&context(bare));
+            assert!(
+                !format!("{reparsed:?}").contains("to_integer"),
+                "{rendered} reparsed as an Integer comparison: {reparsed:?}"
+            );
+            assert!(
+                format!("{bare:?}").contains("to_integer"),
+                "the bare spelling no longer reads as an Integer comparison: {bare:?}"
+            );
+            // The reparsed cast is the parser's own `as` form; it prints
+            // and reparses to itself.
+            let again = requirement(&context(&source_click_proposition(&reparsed)));
+            assert_eq!(again, reparsed, "{rendered}");
         }
     }
 

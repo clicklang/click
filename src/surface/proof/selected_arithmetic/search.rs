@@ -2,12 +2,174 @@
 use super::*;
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    fn establish_carried_arithmetic(
+        proof: &Proof<'a>,
+        carried: &Carried,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("establish_carried_arithmetic");
+        #[cfg(test)]
+        BRIDGE_ESTABLISHMENTS.with(|count| count.set(count.get() + 1));
+        match &carried.establish {
+            Establish::Steps(steps) => Ok(steps
+                .iter()
+                .try_fold(proof.clone(), |proof, step| {
+                    proof.driver().apply_step(step.clone())
+                })
+                .ok()),
+            Establish::Operation {
+                operation,
+                left,
+                right,
+                subtract,
+                format,
+            } => {
+                let exact = if *subtract {
+                    ContractExpression::Subtract(
+                        Box::new(to_integer(left)),
+                        Box::new(to_integer(right)),
+                    )
+                } else {
+                    ContractExpression::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
+                };
+                let (minimum, maximum) = format.bounds();
+                let (minimum, maximum) = (minimum.to_string(), maximum.to_string());
+                let (lower, upper) = (
+                    relate(
+                        integer_literal(&minimum),
+                        exact.clone(),
+                        Relation::LessEqual,
+                    ),
+                    relate(
+                        exact.clone(),
+                        integer_literal(&maximum),
+                        Relation::LessEqual,
+                    ),
+                );
+                // The identity, once both constant bounds of the exact value
+                // are facts.
+                let observe = |proof: &Proof<'a>| {
+                    proof
+                        .driver()
+                        .apply_step(have(
+                            carried.surface.clone(),
+                            vec![operation_identity(
+                                lower.clone(),
+                                upper.clone(),
+                                carried.surface.clone(),
+                            )],
+                        ))
+                        .ok()
+                };
+                if format.is_signed() {
+                    // Definedness already is the pair of ordinary bounds.
+                    // Cite each bound with the ordinary conjunction/assumption
+                    // rule before checking the mathematical observation.
+                    let bounded =
+                        [&lower, &upper]
+                            .into_iter()
+                            .try_fold(proof.clone(), |proof, bound| {
+                                proof
+                                    .driver()
+                                    .apply_step(have(bound.clone(), vec![ProofStep::Assumption]))
+                                    .ok()
+                            });
+                    if let Some(observed) = bounded.as_ref().and_then(observe) {
+                        return Ok(Some(observed));
+                    }
+                    let Some(_operation_scope) = OperationBridgeScope::enter(operation) else {
+                        return Ok(None);
+                    };
+                    // Not yet known to be defined: prove both Integer bounds
+                    // of the exact value, which together are its
+                    // definedness, then observe. Each operand's type range,
+                    // which the far bound of the exact value usually rests
+                    // on, is stated first.
+                    let mut ranged = proof.clone();
+                    for operand in [left, right] {
+                        if matches!(to_integer(operand), ContractExpression::IntegerLiteral(_)) {
+                            continue;
+                        }
+                        for bound in [
+                            relate(
+                                integer_literal(&minimum),
+                                to_integer(operand),
+                                Relation::LessEqual,
+                            ),
+                            relate(
+                                to_integer(operand),
+                                integer_literal(&maximum),
+                                Relation::LessEqual,
+                            ),
+                        ] {
+                            if let Ok(next) = ranged
+                                .driver()
+                                .apply_step(have(bound.clone(), vec![type_range(bound)]))
+                            {
+                                ranged = next;
+                            }
+                        }
+                    }
+                    let Some(next) =
+                        crate::kernel::search::ProofSearch::prove_stated_fact(&(ranged), &lower)?
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(next) =
+                        crate::kernel::search::ProofSearch::prove_stated_fact(&(next), &upper)?
+                    else {
+                        return Ok(None);
+                    };
+                    return Ok(observe(&next));
+                }
+                // An unsigned operation that does not wrap: a sum at most
+                // the type's maximum, a difference whose subtrahend is at
+                // most its minuend.
+                let guard = if *subtract {
+                    relate(to_integer(right), to_integer(left), Relation::LessEqual)
+                } else {
+                    upper.clone()
+                };
+                let unsigned = |proof: &Proof<'a>| -> Result<Option<Proof<'a>>, ClickError> {
+                    let Some(bounded) =
+                        crate::kernel::search::ProofSearch::prove_stated_fact(proof, &lower)?
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(bounded) =
+                        crate::kernel::search::ProofSearch::prove_stated_fact(&(bounded), &upper)?
+                    else {
+                        return Ok(None);
+                    };
+                    Ok(observe(&bounded))
+                };
+                let Some(_operation_scope) = OperationBridgeScope::enter(operation) else {
+                    return Ok(None);
+                };
+                if let Ok(next) = proof
+                    .driver()
+                    .apply_step(have(guard.clone(), vec![ProofStep::Assumption]))
+                {
+                    return unsigned(&next);
+                }
+                let Some(next) =
+                    crate::kernel::search::ProofSearch::prove_stated_fact(proof, &guard)?
+                else {
+                    return Ok(None);
+                };
+                unsigned(&next)
+            }
+        }
+    }
+
     /// The equality `a == b` a disequality goal `a != b` over integers
     /// (machine or `Integer`) denies, in kernel and source form: the fact
     /// `intro()` adds when it opens the goal's refutation.
     pub(in crate::surface::proof) fn disequality_goal_equality(
         search_input: &Proof<'a>,
     ) -> Option<(Proposition, ClickProposition)> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("disequality_goal_equality");
         let kernel = match search_input.goal()? {
             Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true) => {
                 Proposition::ConditionIs(
@@ -72,6 +234,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         premises: &[ClickProposition],
     ) -> Option<Result<Proof<'a>, ClickError>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("disequality_by_refutation");
         let (_, equality) =
             crate::kernel::search::ProofSearch::disequality_goal_equality(search_input)?;
         let introduced = match search_input.driver().apply_step(ProofStep::Intro) {
@@ -93,6 +257,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_disequality_by_selected_refutation(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_disequality_by_selected_refutation");
         let Some((_, ClickProposition::Comparison { left, right, .. })) =
             crate::kernel::search::ProofSearch::disequality_goal_equality(search_input)
         else {
@@ -135,6 +301,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_bridged_selected_arithmetic(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_bridged_selected_arithmetic");
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
         else {
             return Ok(None);
@@ -268,7 +436,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     established.insert(index);
                     continue;
                 }
-                match item.establish(&proof)? {
+                match Self::establish_carried_arithmetic(&proof, item)? {
                     Some(next) => {
                         proof = next;
                         established.insert(index);
@@ -322,6 +490,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_equality_by_bounds_early(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_equality_by_bounds_early");
         if let (
             Some(Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -346,6 +516,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_equality_by_bounds(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_equality_by_bounds");
         crate::kernel::search::ProofSearch::equality_by_bounds(search_input, false)
     }
 
@@ -357,6 +529,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         plain_32_bit: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("equality_by_bounds");
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
         else {
             return Ok(None);
@@ -479,6 +653,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_single_rewrite_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_single_rewrite_closure");
         use crate::kernel::proof::equality_rewrite::{equality_rewrite_applies, reverse_equality};
         let Some(goal) = search_input.goal() else {
             return Ok(None);
@@ -548,6 +724,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         closers: RewriteClosers<'_>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_connected_equality_chain_closure");
         use crate::kernel::proof::equality_rewrite::{equality_rewrite_applies, reverse_equality};
         let Some(goal) = search_input.goal() else {
             return Ok(None);
@@ -649,6 +827,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         premise_pairs: &[(Proposition, ClickProposition)],
         closers: RewriteClosers<'_>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_premise_equality_chain_closure");
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
@@ -686,6 +866,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_constructor_join_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_constructor_join_closure");
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
@@ -788,6 +970,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_definition_condition_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_definition_condition_closure");
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
         else {
             return Ok(None);
@@ -997,6 +1181,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         call_left: bool,
         truth: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("read_definition_condition");
         let ClickProposition::Comparison { left, right, .. } = &fact else {
             return Ok(None);
         };
@@ -1077,6 +1263,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         meets_goal: &mut bool,
         unfolds: &[ClickFunctionApplication],
     ) -> Option<DefinitionPlan> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("definition_condition_plan");
         match body {
             ContractExpression::If {
                 condition,
@@ -1206,6 +1394,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         refutation: &DefinitionRefutation,
         taken: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("refute_definition_ends");
         check_verification_deadline()?;
         match plan {
             DefinitionPlan::End { unfolds } => {
@@ -1293,6 +1483,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         budget: &mut RewriteBudget,
         closers: RewriteClosers<'_>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("rewrite_search");
         let Some(current) = search_input.goal() else {
             return Ok(None);
         };
@@ -1363,6 +1555,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         budget: &mut RewriteBudget,
         closers: RewriteClosers<'_>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_close_after_rewrite");
         // Inside a `have`, the stated fact is the focused goal; the proof
         // around it is not complete yet.
         let closes = |proof: &Proof<'a>| proof.focused_discharged() || proof.is_complete();
@@ -1457,6 +1651,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         fact: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("prove_stated_fact");
         let Ok(scope) = search_input.driver().open_have(fact.clone()) else {
             return Ok(None);
         };
@@ -1472,6 +1668,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_definedness_by_bounds(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_definedness_by_bounds");
         let Some(ClickProposition::Defined { expression }) = search_input.surface_goal() else {
             return Ok(None);
         };
@@ -1546,6 +1744,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_machine_goal_through_integer(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_machine_goal_through_integer");
         crate::kernel::search::ProofSearch::try_machine_goal_through_integer_for(
             search_input,
             false,
@@ -1559,6 +1759,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_wide_equality_through_integer(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_wide_equality_through_integer");
         crate::kernel::search::ProofSearch::try_machine_goal_through_integer_for(search_input, true)
     }
 
@@ -1566,6 +1768,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         wide_equality: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_machine_goal_through_integer_for");
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
         else {
             return Ok(None);
@@ -1637,6 +1841,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         candidates: &[Proposition],
     ) -> Vec<ContractExpression> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("defined_operations");
         fn operation(surface: ClickProposition) -> Option<ContractExpression> {
             match surface {
                 ClickProposition::Defined { expression } => match expression {
@@ -1710,6 +1916,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         candidates: &[Proposition],
     ) -> Vec<Carried> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("carried_machine_facts");
         let mut carried = Vec::new();
         let mut ranged: Vec<ContractExpression> = Vec::new();
         for candidate in candidates {

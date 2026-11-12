@@ -811,7 +811,21 @@ impl<'a> Proof<'a> {
         chosen: Option<String>,
         fact_limit: usize,
         read_checkpoint: Option<&crate::kernel::ReadEqualityCheckpoint>,
+        cell_walks: Vec<crate::kernel::TransportCellWalkDiagnostic>,
     ) {
+        // A read follows at most one recorded transition; show the walks this
+        // step made that stopped without reaching the value, at that limit or
+        // at a transition not shown separate, not every query.
+        let history_stops = cell_walks
+            .into_iter()
+            .filter(|walk| {
+                matches!(
+                    walk.reason,
+                    "hop limit reached" | "step not proved separate from the queried bytes"
+                )
+            })
+            .take(TRACE_HISTORY_STOP_LIMIT)
+            .collect();
         let location = self
             .site()
             .path()
@@ -836,6 +850,8 @@ impl<'a> Proof<'a> {
             more_resources: 0,
             origin: crate::surface::proof_trace::smart_origin(),
             chosen,
+            forgotten_cells: Vec::new(),
+            history_stops,
         };
         if tactic == "transport"
             && let [source, target] = next.state().checked_facts()
@@ -875,6 +891,30 @@ impl<'a> Proof<'a> {
         }
         detail.more_facts = visible.count().saturating_sub(fact_limit);
         if let (Some(before), Some(after)) = (self.branch_execution(), next.branch_execution()) {
+            // The cells this step dropped beside its own stores: the diff of
+            // the two memories visits only the changed cells, and at most
+            // `TRACE_FORGOTTEN_CELL_LIMIT` pairs are kept.
+            detail.forgotten_cells =
+                crate::kernel::search::store_separation::cells_forgotten_beside_stores(
+                    before.core.state.memory(),
+                    after.core.state.memory(),
+                    TRACE_FORGOTTEN_CELL_LIMIT,
+                )
+                .into_iter()
+                .map(
+                    |forgotten| crate::surface::proof_trace::TraceForgottenCell {
+                        spelled: [&forgotten.cell, &forgotten.store].map(|pointer| {
+                            crate::surface::diagnostics::describe_source_cell_at_state(
+                                pointer,
+                                &before.core.state,
+                            )
+                        }),
+                        cell: forgotten.cell,
+                        store: forgotten.store,
+                        indices_differ: forgotten.indices_differ,
+                    },
+                )
+                .collect();
             let before_frontier = &before.core.frontier;
             let after_frontier = &after.core.frontier;
             let before_position = trace_frontier(before_frontier);
@@ -1837,26 +1877,40 @@ impl<'a> Proof<'a> {
                 return Err(proof
                     .step_error("signed_int32 certificate term did not lower to a proposition"));
             };
-            let term = match condition {
-                crate::kernel::ConditionTerm::Compare {
-                    format:
-                        crate::kernel::MachineIntegerType::Int32
-                        | crate::kernel::MachineIntegerType::UInt32,
-                    relation: crate::kernel::CompareRelation::Equal,
-                    left,
-                    right,
-                } if matches!(right.as_ref(), bits32_constant!(0)) => left.as_ref().clone(),
-                crate::kernel::ConditionTerm::Compare {
-                    format:
-                        crate::kernel::MachineIntegerType::Int32
-                        | crate::kernel::MachineIntegerType::UInt32,
-                    relation: crate::kernel::CompareRelation::Equal,
-                    left,
-                    right,
-                } if matches!(left.as_ref(), bits32_constant!(0)) => right.as_ref().clone(),
-                _ => {
-                    return Err(proof
-                        .step_error("signed_int32 certificate term must be an int32 expression"));
+            let view =
+                crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+                    .filter(|view| {
+                        matches!(
+                            view.format,
+                            crate::kernel::MachineIntegerType::Int32
+                                | crate::kernel::MachineIntegerType::UInt32
+                        ) && view.relation == crate::kernel::CompareRelation::Equal
+                            && !view.negated
+                    })
+                    .ok_or_else(|| {
+                        proof
+                            .step_error("signed_int32 certificate term must be an int32 expression")
+                    })?;
+            let [left, right] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            let operand = if right.word32_constant() == Some(0) {
+                left
+            } else if left.word32_constant() == Some(0) {
+                right
+            } else {
+                return Err(
+                    proof.step_error("signed_int32 certificate term must be an int32 expression")
+                );
+            };
+            // The public signed certificate still stores a native term. Export
+            // only its explicitly selected payload, after recognizing the shared comparison.
+            let term = match operand {
+                crate::kernel::MachineOperandView::Legacy(term) => term.clone(),
+                crate::kernel::MachineOperandView::Shared(root) => {
+                    crate::kernel::KernelTermExport::machine(root)
+                        .map_err(|error| proof.step_error(error))?
                 }
             };
             let term = crate::kernel::canonical_term(&term);
@@ -3930,3 +3984,9 @@ fn trace_function_pointer_load(
 
 #[path = "../driver/steps.rs"]
 mod driver;
+
+/// How many dropped cached cells one traced step lists.
+const TRACE_FORGOTTEN_CELL_LIMIT: usize = 4;
+
+/// How many stopped read-history walks one traced step lists.
+const TRACE_HISTORY_STOP_LIMIT: usize = 4;

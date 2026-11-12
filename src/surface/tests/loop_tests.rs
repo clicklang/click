@@ -2570,7 +2570,14 @@ fn theorem_application_expands_with_a_recorded_historical_byte_premise() {
     let (click, sources) = loop_fixture("theorem_application_reuses_recorded_historical_premise");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "f").unwrap();
-    assert!(expanded.contains("p[0] == old(p)[index];"), "{expanded}");
+    assert!(
+        expanded.contains("have p[0] == old(p)[index] by {"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("(p[0] as int32) == (old(p)[index] as int32);"),
+        "{expanded}"
+    );
     verify_c0_sources(&expanded, &sources).unwrap();
     let missing = expanded.replace("requires index == 0;", "");
     verify_c0_sources(&missing, &sources)

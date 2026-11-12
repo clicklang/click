@@ -12,5 +12,5 @@ theorem erased_domain(n: Integer, d: Integer) {
 ```
 
 ```expect
-fail: could not lower theorem requirements
+fail: has an unproved obligation
 ```

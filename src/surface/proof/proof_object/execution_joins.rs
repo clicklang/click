@@ -1371,6 +1371,7 @@ impl<'a> Proof<'a> {
     ) -> Result<(), ClickError> {
         self.merge_branch_generated_load_bindings(execution, parent, arms)?;
         self.merge_branch_generated_load_source_events(execution, parent, arms)?;
+        merge_branch_store_separation_misses(execution, parent, arms);
         // A chosen existential projection is usable only when both sibling
         // paths retained the same checked source record.  Otherwise it is
         // branch-local presentation and must not leak through the join.
@@ -3197,107 +3198,6 @@ impl<'a> Proof<'a> {
             .map(Some)
     }
 
-    /// Splits the proof on `split`, the variants of the enum a Rust `match`
-    /// selects among, and runs each arm to function exit: the proof `match`
-    /// a sidecar would write, each arm running to function exit. Arms the facts
-    /// rule out are not run. Expansion prints the `match`.
-    fn execute_enum_match_to_exit(
-        &self,
-        split: &Arc<ProofMatch>,
-        enclosing: &[&ExecutionSplit<'a>],
-        retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
-        steps: &mut usize,
-    ) -> Result<Option<Self>, ClickError> {
-        let tactic_index = match self.context.as_ref() {
-            ProofContext::Execution(context) => context.tactic_index,
-            _ => return Err(self.step_error("a Rust `match` split requires an execution proof")),
-        };
-        let prepared = self.prepare_execution_match(false, tactic_index)?;
-        let marker = prepared.checkpoint();
-        let plan = prepared.plan_execution_match(split, |_| usize::MAX)?;
-        let live = plan.live_cases();
-        let mut certificates = vec![None; split.arms.len()];
-        let Some(proof) = prepared.execute_enum_match_group(
-            &plan,
-            &live,
-            &mut certificates,
-            enclosing,
-            retried_requirements,
-            steps,
-        )?
-        else {
-            return Ok(None);
-        };
-        let Some(certificates) = certificates.into_iter().collect::<Option<Vec<_>>>() else {
-            return Err(
-                proof.step_error("a Rust `match` split left a variant without a checked arm")
-            );
-        };
-        Ok(Some(proof.finish_execution_match(
-            &marker,
-            split,
-            certificates,
-            plan.take_trace(),
-        )?))
-    }
-
-    /// Runs one group of live variant arms to function exit, halving the
-    /// group at a frontier split until one arm remains, as a written proof
-    /// `match` does.
-    fn execute_enum_match_group(
-        &self,
-        plan: &super::ExecutionMatchPlan,
-        live: &[usize],
-        certificates: &mut [Option<ProofCertificate>],
-        enclosing: &[&ExecutionSplit<'a>],
-        retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
-        steps: &mut usize,
-    ) -> Result<Option<Self>, ClickError> {
-        let [index] = live else {
-            let (left, right) = live.split_at(live.len() / 2);
-            if left.is_empty() {
-                return Err(self.step_error("a Rust `match` split has no live variant"));
-            }
-            let (mut proof, record) = self.split_execution_match_group(plan.condition(left))?;
-            for (take_left, group) in [(true, left), (false, right)] {
-                let focused = proof.focus_execution_if_arm(&record, take_left)?;
-                let Some(next) = focused.execute_enum_match_group(
-                    plan,
-                    group,
-                    certificates,
-                    enclosing,
-                    retried_requirements,
-                    steps,
-                )?
-                else {
-                    return Ok(None);
-                };
-                proof = next;
-            }
-            return Ok(Some(proof.join_focused_execution_if_terminal(&record)?));
-        };
-        let index = *index;
-        let entered = self.enter_execution_match_arm(plan, index)?;
-        let marker = entered.checkpoint();
-        let Some(proof) = crate::kernel::search::ProofSearch::try_focused_execute_to_exit_within(
-            &(entered),
-            enclosing.to_vec(),
-            retried_requirements,
-            steps,
-            None,
-            None,
-        )?
-        else {
-            return Ok(None);
-        };
-        if !proof.is_at_function_exit() {
-            return Ok(None);
-        }
-        certificates[index] = Some(proof.execution_match_arm_certificate(&marker)?);
-        proof.record_execution_match_arm_trace(plan, index, &marker);
-        Ok(Some(proof.leave_terminal_execution_match_arm(plan)?))
-    }
-
     fn prepare_focused_execute_cases(
         &self,
         condition: ClickProposition,
@@ -4349,3 +4249,31 @@ mod search;
 
 #[path = "../driver/joins.rs"]
 mod driver;
+
+/// Carries the store-search misses each arm recorded after the split root,
+/// so a refusal after the join still names the store that dropped a cell it
+/// reads. Diagnostic presentation only, output-sized in the arms' suffixes;
+/// an arm that does not descend from the root contributes none.
+fn merge_branch_store_separation_misses(
+    execution: &mut ExecutionProofState,
+    parent: &ExecutionProofState,
+    arms: [&ExecutionProofState; 2],
+) {
+    for arm in arms {
+        let Some(introduced) = arm
+            .presentation
+            .store_separation_misses
+            .suffix_since(&parent.presentation.store_separation_misses)
+        else {
+            continue;
+        };
+        for miss in introduced {
+            if execution.presentation.store_separation_misses.len()
+                >= crate::surface::proof::smart_closures::MAX_RECORDED_STORE_SEPARATION_MISSES
+            {
+                return;
+            }
+            execution.presentation.store_separation_misses.push(miss);
+        }
+    }
+}

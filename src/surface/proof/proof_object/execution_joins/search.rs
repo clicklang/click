@@ -1,6 +1,117 @@
 //! Discovery adapters over the existing persistent proof.
 use super::*;
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Splits the proof on `split`, the variants of the enum a Rust `match`
+    /// selects among, and runs each arm to function exit: the proof `match`
+    /// a sidecar would write, each arm running to function exit. Arms the facts
+    /// rule out are not run. Expansion prints the `match`.
+    pub(in crate::surface::proof) fn execute_enum_match_to_exit(
+        search_input: &Proof<'a>,
+        split: &Arc<ProofMatch>,
+        enclosing: &[&ExecutionSplit<'a>],
+        retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
+        steps: &mut usize,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("execute_enum_match_to_exit");
+        let tactic_index = match search_input.context.as_ref() {
+            ProofContext::Execution(context) => context.tactic_index,
+            _ => {
+                return Err(
+                    search_input.step_error("a Rust `match` split requires an execution proof")
+                );
+            }
+        };
+        let prepared = search_input.prepare_execution_match(false, tactic_index)?;
+        let marker = prepared.checkpoint();
+        let plan = prepared.plan_execution_match(split, |_| usize::MAX)?;
+        let live = plan.live_cases();
+        let mut certificates = vec![None; split.arms.len()];
+        let Some(proof) = Self::execute_enum_match_group(
+            &prepared,
+            &plan,
+            &live,
+            &mut certificates,
+            enclosing,
+            retried_requirements,
+            steps,
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(certificates) = certificates.into_iter().collect::<Option<Vec<_>>>() else {
+            return Err(
+                proof.step_error("a Rust `match` split left a variant without a checked arm")
+            );
+        };
+        Ok(Some(proof.finish_execution_match(
+            &marker,
+            split,
+            certificates,
+            plan.take_trace(),
+        )?))
+    }
+    /// Runs one group of live variant arms to function exit, halving the
+    /// group at a frontier split until one arm remains, as a written proof
+    /// `match` does.
+    pub(in crate::surface::proof) fn execute_enum_match_group(
+        search_input: &Proof<'a>,
+        plan: &ExecutionMatchPlan,
+        live: &[usize],
+        certificates: &mut [Option<ProofCertificate>],
+        enclosing: &[&ExecutionSplit<'a>],
+        retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
+        steps: &mut usize,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("execute_enum_match_group");
+        let [index] = live else {
+            let (left, right) = live.split_at(live.len() / 2);
+            if left.is_empty() {
+                return Err(search_input.step_error("a Rust `match` split has no live variant"));
+            }
+            let (mut proof, record) =
+                search_input.split_execution_match_group(plan.condition(left))?;
+            for (take_left, group) in [(true, left), (false, right)] {
+                let focused = proof.focus_execution_if_arm(&record, take_left)?;
+                let Some(next) = Self::execute_enum_match_group(
+                    &focused,
+                    plan,
+                    group,
+                    certificates,
+                    enclosing,
+                    retried_requirements,
+                    steps,
+                )?
+                else {
+                    return Ok(None);
+                };
+                proof = next;
+            }
+            return Ok(Some(proof.join_focused_execution_if_terminal(&record)?));
+        };
+        let index = *index;
+        let entered = search_input.enter_execution_match_arm(plan, index)?;
+        let marker = entered.checkpoint();
+        let Some(proof) = crate::kernel::search::ProofSearch::try_focused_execute_to_exit_within(
+            &(entered),
+            enclosing.to_vec(),
+            retried_requirements,
+            steps,
+            None,
+            None,
+        )?
+        else {
+            return Ok(None);
+        };
+        if !proof.is_at_function_exit() {
+            return Ok(None);
+        }
+        certificates[index] = Some(proof.execution_match_arm_certificate(&marker)?);
+        proof.record_execution_match_arm_trace(plan, index, &marker);
+        Ok(Some(proof.leave_terminal_execution_match_arm(plan)?))
+    }
+
     /// Runs nested execution arms with an explicit continuation stack. Each
     /// frame retains the checked split and its parent region chain; completing
     /// an arm either focuses its sibling or joins the checked descendants.
@@ -14,6 +125,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         mut introduced: Option<&mut Vec<Proposition>>,
         until: Option<StepUntilTarget>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_focused_execute_to_exit_within");
         enum Pending<'a> {
             Branch {
                 record: ExecutionSplit<'a>,
@@ -185,7 +298,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 Err(error) if error.path_case_match().is_some() => {
                     let split = Arc::new(error.path_case_match().expect("checked").clone());
                     let parents = enclosing.iter().collect::<Vec<_>>();
-                    let Some(next) = proof.execute_enum_match_to_exit(
+                    let Some(next) = Self::execute_enum_match_to_exit(
+                        &proof,
                         &split,
                         &parents,
                         retried_requirements,

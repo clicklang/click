@@ -1665,6 +1665,9 @@ pub(super) fn describe_runtime_error(
         crate::kernel::CRuntimeError::HeapAllocationSizeAboveInt32 => {
             crate::kernel::CRuntimeError::HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE.to_string()
         }
+        crate::kernel::CRuntimeError::WideRangeRespellingMayWrap(no_wrap) => {
+            describe_wide_range_no_wrap(no_wrap, parameter_binding)
+        }
         crate::kernel::CRuntimeError::LoadTypeMismatch {
             pointer,
             value_type,
@@ -3598,9 +3601,27 @@ pub(super) fn describe_proposition_version_mismatch(
     premise_point: &str,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
+    describe_proposition_version_mismatch_explained(
+        goal,
+        premises,
+        premise_point,
+        parameter_binding,
+    )
+    .map(|(message, _)| message)
+}
+
+/// [`describe_proposition_version_mismatch`] with the explanation it
+/// describes, so a caller can add what its own path recorded about the
+/// blocking step without walking the history again.
+pub(super) fn describe_proposition_version_mismatch_explained(
+    goal: &Proposition,
+    premises: &[&Proposition],
+    premise_point: &str,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<(String, resource_tracker::Explanation)> {
     let (explanation, internal) =
         proposition_version_explanation(goal, premises, parameter_binding)?;
-    describe_resource_version_mismatch(
+    let message = describe_resource_version_mismatch(
         &explanation,
         if internal {
             "the snapshot the other side reads"
@@ -3609,7 +3630,38 @@ pub(super) fn describe_proposition_version_mismatch(
         },
         premises,
         parameter_binding,
+    )?;
+    Some((message, explanation))
+}
+
+/// The statement whose store dropped `cell`, and the index disequality the
+/// implicit tail's store search spelled and could not prove before it.
+/// `fact` is that search's own spelling; the cell is spelled as the history
+/// explanation spells it, and is left unnamed where that has no spelling.
+pub(in crate::surface) fn describe_store_separation_miss(
+    statement: &str,
+    cell: Option<&str>,
+    fact: &str,
+) -> String {
+    let overwritten = cell
+        .map(|cell| format!("`{cell}`"))
+        .unwrap_or_else(|| "the cell this goal reads".to_string());
+    format!(
+        "{statement} may have overwritten {overwritten}; it is kept if you state \
+         `have {fact} by {{ ... }};` before {statement}"
     )
+}
+
+/// `pointer`'s cell as the C locals of `state` spell it (`q[0]` through a
+/// pointer local `q`), the way a memory-history explanation spells a cell
+/// through the function's parameters.
+pub(in crate::surface) fn describe_source_cell_at_state(
+    pointer: &Pointer,
+    state: &CState,
+) -> Option<String> {
+    let (parameters, arguments) = local_naming_tables(state);
+    describe_source_cell(pointer, ParameterBinding::new(&parameters, &arguments))
+        .map(|cell| cell.text())
 }
 
 /// Recover the bounded history comparison without discarding its exact addresses.
@@ -5347,6 +5399,37 @@ fn typed_literal_spelling(spelled: String, suffix: &str) -> String {
     } else {
         spelled
     }
+}
+
+/// A wide range held in one element width and required in another: name
+/// the range whose endpoint is the product and the product's no-wrap
+/// condition, `range p[0u64..n] of 8-byte elements needs n * 8 to not wrap
+/// (n * 8 <= UINT64_MAX)`.
+fn describe_wide_range_no_wrap(
+    no_wrap: &crate::kernel::WideRangeNoWrap,
+    parameter_binding: ParameterBinding<'_>,
+) -> String {
+    let range = render_resource_fact_diagnostic(&no_wrap.range, parameter_binding);
+    let range = range.strip_prefix("owns ").unwrap_or(&range);
+    let width = no_wrap
+        .range
+        .memory_range()
+        .map_or(0, crate::kernel::CMemoryRange::element_width);
+    let product = format!(
+        "{} * {}",
+        describe_c_value(&CValue::UInt64(no_wrap.count.clone()), parameter_binding),
+        no_wrap.factor
+    );
+    let elements = if width == 1 {
+        "bytes".to_string()
+    } else {
+        format!("{width}-byte elements")
+    };
+    format!(
+        "range `{range}` of {elements} needs `{product}` to not wrap (`{product} <= UINT64_MAX`): \
+         a wide range stands for one of another element width only where that product is \
+         decided, for example by a bound on the count"
+    )
 }
 
 pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBinding<'_>) -> String {
@@ -7267,6 +7350,25 @@ pub(super) fn describe_program_point_ref(point: &ProgramPointRef) -> String {
         });
     }
     describe_program_point_ref_as_recorded(point)
+}
+
+/// The statement at `region` as a proof names it: the path through the
+/// statements as written (`statement(5)`) when the function being checked
+/// has one, as [`describe_program_point_ref`] spells its points, and
+/// `region(N)` otherwise. Both lower back to this statement.
+pub(in crate::surface) fn describe_statement_region(region: usize) -> String {
+    let point = ProgramPointRef {
+        region: CodeRegionRef::Region(region),
+        kind: ProgramPointKind::Entry,
+    };
+    if let Some(steps) = SPELLING_LAYOUT.with(|slot| {
+        slot.borrow()
+            .as_ref()?
+            .source_path_spelling(region, point.kind)
+    }) {
+        return describe_code_region_ref(&CodeRegionRef::Path(steps));
+    }
+    describe_code_region_ref(&point.region)
 }
 
 /// `point` exactly as it is spelled, `region(N)` included.

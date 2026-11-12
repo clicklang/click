@@ -83,6 +83,47 @@ impl<'ast> Visit<'ast> for Inventory {
                 self.owner
             ));
         }
+        if (self.owner == "ProofScope" && name == "join")
+            || self.owner == "Proof"
+                && matches!(
+                    name.as_str(),
+                    "apply_theorem_using"
+                        | "prepare_theorem_application"
+                        | "finish_prepared_theorem_application"
+                        | "finish_prepared_step"
+                )
+        {
+            let guarded = matches!(item.block.stmts.first(), Some(syn::Stmt::Local(local))
+                if test_only(&local.attrs)
+                && matches!(&local.pat, syn::Pat::Ident(_))
+                && local.init.as_ref().is_some_and(|init| matches!(init.expr.as_ref(),
+                    syn::Expr::Call(call)
+                    if matches!(call.func.as_ref(), syn::Expr::Path(path)
+                        if path.path.segments.iter().map(|s| s.ident.to_string()).collect::<Vec<_>>()
+                            == ["crate", "kernel", "search", "FastOperationScope", "enter"])
+                    && matches!(call.args.first(), Some(syn::Expr::Lit(lit))
+                        if matches!(&lit.lit, syn::Lit::Str(value) if value.value() == name)))));
+            if !guarded {
+                self.errors.push(format!(
+                    "migrated operation must enter its no-discovery scope: {name}"
+                ));
+            }
+        }
+        if self.owner == "ProofSearch" {
+            let guarded = matches!(item.block.stmts.first(), Some(syn::Stmt::Expr(
+                syn::Expr::Call(call), Some(_)
+            )) if matches!(call.func.as_ref(), syn::Expr::Path(path)
+                if path.path.segments.iter().map(|s| s.ident.to_string()).collect::<Vec<_>>()
+                    == ["crate", "kernel", "search", "record_discovery"])
+                && test_only(&call.attrs)
+                && matches!(call.args.first(), Some(syn::Expr::Lit(lit))
+                    if matches!(&lit.lit, syn::Lit::Str(value) if value.value() == name)));
+            if !guarded {
+                self.errors.push(format!(
+                    "ProofSearch entry must record discovery before doing work: {name}"
+                ));
+            }
+        }
         if self.owner == "ProofSearch" && !TARGETS.lines().any(|n| n == name) {
             self.errors
                 .push(format!("unclassified ProofSearch entry point: {name}"));

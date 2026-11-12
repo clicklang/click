@@ -1710,6 +1710,29 @@ impl PureFactContext {
         self.decide_uint64_equality_extras_citing(left, right, &mut used)
     }
 
+    /// Retain a written 64-bit equality through evidence selection and replay.
+    pub(in crate::kernel) fn decide_pointer_comparison_citing(
+        &self,
+        condition: &ConditionTerm,
+        used: &mut crate::kernel::eval::pointer_tags::UsedFacts,
+    ) -> Option<bool> {
+        let view =
+            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+        if view.format.format().bits() != 64 || view.relation != CompareRelation::Equal {
+            return None;
+        }
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let decided = if let (Some(left), Some(right)) = (left.read_source(), right.read_source()) {
+            self.decide_pointer_word_equality_citing(&left, &right, used)
+        } else {
+            self.decide_uint64_equality_extras_views(left, right, used)
+        }?;
+        Some(decided != view.negated)
+    }
+
     /// The complete pointer-word decision for a 64-bit equality, citing the
     /// exact facts used: the address rule, the alignment rule, and the tag
     /// extras, in that order.

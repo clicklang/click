@@ -3,8 +3,7 @@
 `loop.rs` retains an ordinary stored `ChunksExact` iterator and passes its
 shared subslices to a helper that reads the first byte. The locked native
 Charon artifact retains that source and control flow. `loop.click` proves the
-helper's read and a terminating loop over sixteen bytes. The unit sets
-`"iterators": "library"`, so the iterator is a value of the library's
+helper's read and a terminating loop over sixteen bytes. The iterator is a value of the library's
 `ChunksExact` and the proof cites its contract
 (`examples/rust-chunks-exact/README.md`).
 

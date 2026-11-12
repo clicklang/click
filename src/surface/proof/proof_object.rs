@@ -633,6 +633,28 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// A surface-stated existential can retain spellings of its checked body
     /// leaves without referring to a numbered contract requirement.
     pub(in crate::surface::proof) existential_projection: Option<ExistentialProjection>,
+    /// Index disequalities the implicit tail's store search spelled but could
+    /// not prove before a store that then dropped a cached cell. Diagnostic
+    /// only: a later refusal reading that cell names the fact to state. Never
+    /// read while checking.
+    pub(in crate::surface::proof) store_separation_misses: PersistentSequence<StoreSeparationMiss>,
+}
+
+/// One cached cell a store dropped because the store search could not prove
+/// the index disequality that keeps it. Everything here was constructed by
+/// that search; a report prints it and searches nothing.
+#[derive(Clone, Debug)]
+pub(in crate::surface::proof) struct StoreSeparationMiss {
+    /// The statement that ran, as a proof names it (`statement(5)`).
+    pub(in crate::surface::proof) statement: String,
+    /// The cached cell the store dropped.
+    pub(in crate::surface::proof) cell: crate::kernel::Pointer,
+    /// The dropped cell as the statement's C locals spell it, `q[0]`.
+    pub(in crate::surface::proof) cell_text: Option<String>,
+    /// The cell the store wrote.
+    pub(in crate::surface::proof) store: crate::kernel::Pointer,
+    /// The spelled disequality the search tried at the statement's pre-state.
+    pub(in crate::surface::proof) fact: ClickProposition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -828,6 +850,7 @@ impl ExecutionProofState {
                 generated_load_source_events: PersistentSequence::default(),
                 chosen_projection: None,
                 existential_projection: None,
+                store_separation_misses: PersistentSequence::default(),
                 loop_fact_list: None,
                 loop_rule_environment: None,
                 loop_annotation: None,
@@ -2251,8 +2274,23 @@ impl Proof<'_> {
                 &premises,
                 ParameterBinding::new(parameters, arguments),
             )
-            .map(|(explanation, _)| {
-                crate::surface::proof_diagnostics::MemoryHistoryDiagnostic::capture(explanation)
+            .map(|(explanation, _)| (self.store_separation_miss(&explanation), explanation))
+            .or_else(|| {
+                self.store_separation_miss_for_goal(goal)
+                    .map(|(miss, explanation)| (Some(miss), explanation))
+            })
+            .map(|(miss, explanation)| {
+                let miss = miss.map(|miss| crate::surface::proof_diagnostics::StoreSearchMiss {
+                    statement: miss.statement,
+                    cell: miss.cell_text,
+                    fact: crate::surface::printing::source_click_proposition(&miss.fact),
+                });
+                let mut history =
+                    crate::surface::proof_diagnostics::MemoryHistoryDiagnostic::capture(
+                        explanation,
+                    );
+                history.store_search_miss = miss;
+                history
             })
         });
         ProofDiagnosticProofState(

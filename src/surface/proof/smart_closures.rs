@@ -1,10 +1,7 @@
 //! Smart closure search and linear script interpretation.
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_term;
-use crate::kernel::{MachineCastSpelling, cast_term};
-use crate::kernel::{
-    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
-    uint64_constant,
-};
+use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};
 use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
 
 use super::selected_arithmetic::RewriteClosers;
@@ -344,100 +341,6 @@ fn collect_signed_surface_proposition_terms<'a>(
     }
 }
 
-/// Compare the bounded arithmetic term fragment iteratively.  Certificate
-/// expansion must recover the original source spelling for operation nodes;
-/// leaf-atom comparison alone would silently decline deep but valid plans.
-fn signed_surface_terms_equal(
-    left: &crate::kernel::MachineTerm,
-    right: &crate::kernel::MachineTerm,
-) -> bool {
-    let left = crate::kernel::canonical_term(left);
-    let right = crate::kernel::canonical_term(right);
-    let mut pending = vec![(&left, &right)];
-    let mut visited = 0usize;
-    while let Some((left, right)) = pending.pop() {
-        visited += 1;
-        if visited > 4096 {
-            return false;
-        }
-        match (left, right) {
-            (int32_constant!(left), int32_constant!(right))
-                if constant_u32(*left) == constant_u32(*right) => {}
-            (int64_constant!(left), int64_constant!(right))
-                if constant_i64(*left) == constant_i64(*right) => {}
-            (uint64_constant!(left), uint64_constant!(right))
-                if constant_u64(*left) == constant_u64(*right) => {}
-            (
-                crate::kernel::MachineTerm::Variable(left),
-                crate::kernel::MachineTerm::Variable(right),
-            ) if left == right => {}
-            (
-                crate::kernel::MachineTerm::MemoryLoad(left_memory, left_pointer, left_kind),
-                crate::kernel::MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind),
-            ) if left_memory == right_memory
-                && left_pointer == right_pointer
-                && left_kind == right_kind => {}
-            (cast_term!(UInt32From64, left), cast_term!(UInt32From64, right)) => {
-                pending.push((left, right))
-            }
-            // A conversion, such as an 8- or 16-bit value's `int32`
-            // widening, is the same term when its formats and operand are.
-            (
-                crate::kernel::MachineTerm::Cast {
-                    spelling: MachineCastSpelling::Generic,
-                    value: left,
-                    from: left_source,
-                    to: left_destination,
-                },
-                crate::kernel::MachineTerm::Cast {
-                    spelling: MachineCastSpelling::Generic,
-                    value: right,
-                    from: right_source,
-                    to: right_destination,
-                },
-            ) if left_source == right_source && left_destination == right_destination => {
-                pending.push((left, right))
-            }
-            _ => {
-                use crate::kernel::BitvectorBinaryOp as Op;
-                let (Some((operator, left, right)), Some((other, other_left, other_right))) =
-                    (left.as_binary(), right.as_binary())
-                else {
-                    return false;
-                };
-                let signed_or_native = (operator.is_bitvector32()
-                    && !matches!(
-                        operator,
-                        Op::Machine(
-                            crate::kernel::MachineIntegerType::UInt32,
-                            crate::kernel::MachineBinaryOp::Divide
-                        ) | Op::Machine(
-                            crate::kernel::MachineIntegerType::UInt32,
-                            crate::kernel::MachineBinaryOp::Remainder
-                        )
-                    ))
-                    || matches!(
-                        operator,
-                        Op::Machine(
-                            MachineIntegerType::UInt64,
-                            MachineBinaryOp::Add
-                                | MachineBinaryOp::Subtract
-                                | MachineBinaryOp::Multiply
-                                | MachineBinaryOp::Divide
-                                | MachineBinaryOp::Remainder
-                        )
-                    );
-                if operator != other || !signed_or_native {
-                    return false;
-                }
-                pending.push((left, other_left));
-                pending.push((right, other_right));
-            }
-        }
-    }
-    true
-}
-
 /// The spelling of a certificate's `int32` atom by a source expression that
 /// names it. An 8- or 16-bit value's atom is its `int32` widening, so an
 /// expression of the narrow value is spelled with its explicit cast,
@@ -570,7 +473,8 @@ pub(super) fn observed_native_surface_comparison(
     // that reading too.
     if crate::kernel::machine_integer::comparison::integer_readings_with_promotions(kernel)
         .is_empty()
-        && crate::kernel::assumptions::native_reading_of_integer_observation_fact(kernel).is_none()
+        && !matches!(kernel, Proposition::ConditionIs(condition, _)
+            if crate::kernel::machine_integer::comparison::structural_comparison_view(condition).is_some())
         && !crate::kernel::machine_integer::comparison::reads_wide_integer_observations(kernel)
     {
         return written.clone();
@@ -578,16 +482,9 @@ pub(super) fn observed_native_surface_comparison(
     // A native comparison promotes byte and short operands to int32.
     // Preserve that carrier when its sides become Integer observations;
     // observing the original narrow source instead changes the certificate.
-    let native_int32 = matches!(
-        kernel,
-        Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                ..
-            },
-            _
-        )
-    );
+    let native_int32 = matches!(kernel, Proposition::ConditionIs(condition, _)
+        if crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+            .is_some_and(|view| view.format == MachineIntegerType::Int32));
     // An operand already written as an Integer (an unsuffixed literal, an
     // observation, or arithmetic over one) keeps its spelling.
     // A literal inside machine arithmetic, the `1` of `value + 1`, is typed
@@ -1905,24 +1802,36 @@ impl<'a> Proof<'a> {
             else {
                 continue;
             };
-            let Proposition::ConditionIs(
-                crate::kernel::ConditionTerm::Compare {
-                    format:
-                        crate::kernel::MachineIntegerType::Int32
-                        | crate::kernel::MachineIntegerType::UInt32,
-                    relation: crate::kernel::CompareRelation::Equal,
-                    left,
-                    right,
-                },
-                true,
-            ) = lowered
+            let Proposition::ConditionIs(condition, true) = lowered else {
+                continue;
+            };
+            let Some(view) =
+                crate::kernel::machine_integer::comparison::structural_comparison_view(&condition)
             else {
                 continue;
             };
-            let names_term = (right.as_ref().as_const() == Some(0)
-                && signed_surface_terms_equal(left.as_ref(), term))
-                || (left.as_ref().as_const() == Some(0)
-                    && signed_surface_terms_equal(right.as_ref(), term));
+            if !matches!(
+                view.format,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32
+            ) || view.relation != crate::kernel::CompareRelation::Equal
+                || view.negated
+            {
+                continue;
+            }
+            let [left, right] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            let equal = |operand| {
+                use crate::kernel::proof::signed_arithmetic::SignedArithmeticAtom as Atom;
+                Atom::from_canonical_operand(operand)
+                    .zip(Atom::from_canonical_operand(
+                        crate::kernel::MachineOperandView::Legacy(term),
+                    ))
+                    .is_some_and(|(left, right)| left == right)
+            };
+            let names_term = (right.word32_constant() == Some(0) && equal(left))
+                || (left.word32_constant() == Some(0) && equal(right));
             if names_term && self.signed_surface_term_is_int32(candidate, term) {
                 return Some(int32_widening_spelling(term, (*candidate).clone()));
             }
@@ -1946,19 +1855,29 @@ impl<'a> Proof<'a> {
             operator: ComparisonOperator::LessThan,
             right: ContractExpression::IntegerLiteral("0".into()),
         };
-        let Ok(Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::Compare {
-                format: crate::kernel::MachineIntegerType::Int32,
-                relation: crate::kernel::CompareRelation::LessThan,
-                left,
-                right,
-            },
-            true,
-        )) = self.lower_surface_proposition_direct(&probe, "signed arithmetic certificate term")
+        let Ok(Proposition::ConditionIs(condition, true)) =
+            self.lower_surface_proposition_direct(&probe, "signed arithmetic certificate term")
         else {
             return false;
         };
-        right.as_ref().as_const() == Some(0) && signed_surface_terms_equal(left.as_ref(), term)
+        let Some(view) =
+            crate::kernel::machine_integer::comparison::structural_comparison_view(&condition)
+        else {
+            return false;
+        };
+        if view.format != MachineIntegerType::Int32
+            || view.relation != crate::kernel::CompareRelation::LessThan
+            || view.negated
+        {
+            return false;
+        }
+        use crate::kernel::proof::signed_arithmetic::SignedArithmeticAtom as Atom;
+        view.operands[1].operand_view().word32_constant() == Some(0)
+            && Atom::from_canonical_operand(view.operands[0].operand_view())
+                .zip(Atom::from_canonical_operand(
+                    crate::kernel::MachineOperandView::Legacy(term),
+                ))
+                .is_some_and(|(left, right)| left == right)
     }
 
     /// The explicit arithmetic certificate proving `goal` from exactly the
@@ -3393,12 +3312,152 @@ impl<'a> Proof<'a> {
             return None;
         }
         let premises = self.facts().propositions().collect::<Vec<_>>();
-        crate::surface::diagnostics::describe_proposition_version_mismatch(
-            goal,
-            &premises,
-            "the available fact was stated",
-            ParameterBinding::new(parameters, arguments),
+        let binding = ParameterBinding::new(parameters, arguments);
+        let Some((mut message, explanation)) =
+            crate::surface::diagnostics::describe_proposition_version_mismatch_explained(
+                goal,
+                &premises,
+                "the available fact was stated",
+                binding,
+            )
+        else {
+            // No fact compares versions, but the goal may read a cell a
+            // store on this path dropped because the store search missed.
+            return self
+                .store_separation_miss_for_goal(goal)
+                .map(|(miss, _)| describe_recorded_store_separation_miss(&miss));
+        };
+        if let Some(miss) = self.store_separation_miss(&explanation) {
+            message.push_str("\n  ");
+            message.push_str(&describe_recorded_store_separation_miss(&miss));
+        }
+        Some(message)
+    }
+
+    /// The store-search miss this path retained for the store that stopped
+    /// `explanation`'s walk at the cell it reads: the same written cell and
+    /// the same dropped cell. It reads the path's bounded record only.
+    pub(in crate::surface::proof) fn store_separation_miss(
+        &self,
+        explanation: &crate::kernel::resource_tracker::Explanation,
+    ) -> Option<crate::surface::proof::proof_object::StoreSeparationMiss> {
+        let (_, stop) = explanation.outcome.blocking_step()?;
+        let crate::kernel::resource_tracker::Change::Store { pointer: written } = &stop.change
+        else {
+            return None;
+        };
+        let crate::kernel::resource_tracker::OwnedResource::Cell { pointer: read, .. } =
+            &explanation.resource
+        else {
+            return None;
+        };
+        let execution = self.execution()?;
+        execution
+            .presentation
+            .store_separation_misses
+            .recent(MAX_RECORDED_STORE_SEPARATION_MISSES)
+            .into_iter()
+            .find(|miss| &miss.cell == read && &miss.store == written)
+            .cloned()
+    }
+
+    /// The store-search miss for a cell `goal` reads, with the history
+    /// explanation that ties the read to that miss's store: the read's last
+    /// stretch of agreement ends at the store that dropped the cell. Only
+    /// the reads of `goal` whose cell this path recorded a miss for are
+    /// explained, each by one bounded history walk; diagnostics only.
+    pub(in crate::surface::proof) fn store_separation_miss_for_goal(
+        &self,
+        goal: &Proposition,
+    ) -> Option<(
+        crate::surface::proof::proof_object::StoreSeparationMiss,
+        crate::kernel::resource_tracker::Explanation,
+    )> {
+        use crate::kernel::resource_tracker::{Change, OwnedResource};
+        let misses = self
+            .execution()?
+            .presentation
+            .store_separation_misses
+            .recent(MAX_RECORDED_STORE_SEPARATION_MISSES);
+        if misses.is_empty() {
+            return None;
+        }
+        crate::kernel::resource_tracker::reads_of_proposition(goal)
+            .into_iter()
+            .take(MAX_EXPLAINED_STORE_SEPARATION_READS)
+            .find_map(|read| {
+                let OwnedResource::Cell { pointer, .. } = &read.resource else {
+                    return None;
+                };
+                let miss = misses.iter().find(|miss| &miss.cell == pointer)?;
+                let explanation = crate::kernel::resource_tracker::explain_last_same(
+                    read.resource.as_resource(),
+                    &read.point,
+                );
+                let (_, stop) = explanation.outcome.blocking_step()?;
+                matches!(&stop.change, Change::Store { pointer } if *pointer == miss.store)
+                    .then(|| ((*miss).clone(), explanation))
+            })
+    }
+
+    /// The disequality a store's index check reads for `forgotten`, spelled
+    /// at this frontier from the two index words the store search compared
+    /// (`surface_synthesis::synthesize_store_index_disequality`).
+    pub(in crate::surface::proof) fn store_index_disequality_surface(
+        &self,
+        forgotten: &crate::kernel::search::store_separation::ForgottenStoreCell,
+    ) -> Option<ClickProposition> {
+        self.index_disequality_surface(
+            &forgotten.store_index,
+            &forgotten.cell_index,
+            forgotten.format,
         )
+    }
+
+    /// `left != right` for two element index words compared in `format`,
+    /// spelled at this frontier by
+    /// `surface_synthesis::synthesize_store_index_disequality`: in a pure
+    /// proof over its source names, at an execution frontier over its state
+    /// with the frontier's recorded points and qualified sources in scope, as
+    /// a requirement's spelling has them. Other contexts have none.
+    pub(in crate::surface::proof) fn index_disequality_surface(
+        &self,
+        left: &crate::kernel::SharedMachineIntegerTerm,
+        right: &crate::kernel::SharedMachineIntegerTerm,
+        format: crate::kernel::MachineIntegerType,
+    ) -> Option<ClickProposition> {
+        match self.context.as_ref() {
+            ProofContext::Pure(context) => {
+                super::surface_synthesis::synthesize_store_index_disequality(
+                    left.structural_value(),
+                    right.structural_value(),
+                    format,
+                    ParameterBinding::new(&[], &[]),
+                    &context.source_state,
+                    &context.source_names,
+                )
+            }
+            ProofContext::Execution(context) => {
+                let execution = self.execution()?;
+                let execution_view = execution.view(context);
+                let _recorded_points =
+                    super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+                        execution_view.recorded_snapshots,
+                    );
+                let _qualified_sources = super::surface_synthesis::QualifiedSynthesisScope::enter(
+                    execution_view.surface_propositions,
+                );
+                super::surface_synthesis::synthesize_store_index_disequality(
+                    left.structural_value(),
+                    right.structural_value(),
+                    format,
+                    context.parameter_binding(),
+                    &execution.core.state,
+                    &BTreeMap::new(),
+                )
+            }
+            ProofContext::FixedState(_) => None,
+        }
     }
 
     /// Continues one checked smart statement after its initial checked attempt
@@ -3420,7 +3479,14 @@ impl<'a> Proof<'a> {
         if let Some(surface) = &requirement.surface {
             return Ok(self
                 .lower_surface_goal(surface, "tactic requirement")
-                .is_ok_and(|lowered| lowered_states_requirement(&lowered, requirement))
+                .is_ok_and(|lowered| {
+                    lowered_states_requirement(&lowered, requirement)
+                        || crate::kernel::listed_premise_holds(&requirement.proposition, |part| {
+                            crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(
+                                &lowered, part,
+                            )
+                        })
+                })
                 .then(|| RequirementSpelling {
                     surface: surface.clone(),
                 }));
@@ -3605,6 +3671,14 @@ const MAX_AUTO_OPENINGS_PER_STATEMENT: usize = 4;
 /// statement's stores. Each costs one `solve` of an index disequality.
 const MAX_STORE_SEPARATIONS_PER_STATEMENT: usize = 4;
 
+/// How many reads of one failed goal are compared with the path's
+/// store-search misses.
+const MAX_EXPLAINED_STORE_SEPARATION_READS: usize = 8;
+
+/// How many store-search misses one execution path retains for its reports.
+/// Recording stops at the cap; a report names only a miss it retained.
+pub(in crate::surface::proof) const MAX_RECORDED_STORE_SEPARATION_MISSES: usize = 32;
+
 /// How many available disequalities `solve` tries, in turn, as the fact an
 /// assumed equality of its disequality goal contradicts.
 const MAX_REFUTED_EQUALITY_PREMISES: usize = 4;
@@ -3625,6 +3699,7 @@ enum SolveFallback {
     StoredValue = 16,
     MatchArithmetic = 32,
     RefutedEquality = 64,
+    ElementAddress = 128,
 }
 
 /// A candidate can try the other fallback and descend through logical
@@ -4004,7 +4079,41 @@ pub(super) fn lowered_states_requirement(
     false
 }
 
-fn propositions_match_after_canonical_loads(left: &Proposition, right: &Proposition) -> bool {
+// The selected source and requirement can use native or retained comparisons.
+// Compare their normalized direction and canonical read operands, without
+// exporting a retained arithmetic tree or consulting the proof context.
+fn same_canonical_word_comparison(left: &Proposition, right: &Proposition) -> bool {
+    use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+    use crate::kernel::proof::signed_arithmetic::SignedArithmeticAtom as Atom;
+    let (Proposition::ConditionIs(a, av), Proposition::ConditionIs(b, bv)) = (left, right) else {
+        return false;
+    };
+    let (Some(a), Some(b)) = (comparison_view(a, *av), comparison_view(b, *bv)) else {
+        return false;
+    };
+    if a.format.format().bits() != 32 || b.format.format().bits() != 32 || a.relation != b.relation
+    {
+        return false;
+    }
+    let equality = matches!(a.relation, Relation::Equal | Relation::NotEqual);
+    if !equality && a.format != b.format {
+        return false;
+    }
+    let atoms = |view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>| {
+        view.operands
+            .each_ref()
+            .map(|v| Atom::from_canonical_operand(v.operand_view()))
+    };
+    let ([Some(al), Some(ar)], [Some(bl), Some(br)]) = (atoms(&a), atoms(&b)) else {
+        return false;
+    };
+    al == bl && ar == br || equality && al == br && ar == bl
+}
+
+pub(super) fn propositions_match_after_canonical_loads(
+    left: &Proposition,
+    right: &Proposition,
+) -> bool {
     const MAX_NODES: usize = 4096;
     let mut work = vec![(left, right)];
     let mut visited = 0usize;
@@ -4034,7 +4143,9 @@ fn propositions_match_after_canonical_loads(left: &Proposition, right: &Proposit
             (Proposition::ConditionIs(_, _), Proposition::ConditionIs(_, _)) => {
                 let left = crate::kernel::canonical_condition_fact(left);
                 let right = crate::kernel::canonical_condition_fact(right);
-                if !propositions_are_alpha_equal(&left, &right) {
+                if !propositions_are_alpha_equal(&left, &right)
+                    && !same_canonical_word_comparison(&left, &right)
+                {
                     return false;
                 }
             }
@@ -4839,14 +4950,83 @@ mod synthesized_literal_tests {
         );
         let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
         let value = read(before.clone(), pointer.clone(), LoadKind::Int32);
-        assert!(signed_surface_terms_equal(&value, &value));
+        let atom = |term: &MachineTerm| {
+            crate::kernel::proof::signed_arithmetic::SignedArithmeticAtom::from_canonical_operand(
+                crate::kernel::MachineOperandView::Legacy(term),
+            )
+        };
+        assert_eq!(atom(&value), atom(&value));
         for other in [
             read(after, pointer.clone(), LoadKind::Int32),
             read(before.clone(), pointer.offset_by_bytes(4), LoadKind::Int32),
             read(before, pointer, LoadKind::UInt32),
         ] {
-            assert!(!signed_surface_terms_equal(&value, &other));
+            assert_ne!(atom(&value), atom(&other));
         }
+    }
+
+    #[test]
+    fn retained_requirements_match_mirrored_orders_and_stored_read_sources() {
+        use crate::kernel::{
+            CMemory, CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
+            MachineOperandView as V, Pointer, intern_c_memory,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let x = MachineTerm::Variable(Variable(71231));
+        let sum = MachineTerm::logical_machine_binary(ty, Op::Add, x, 1u32.into());
+        let pointer = Pointer::symbolic(Variable(71232));
+        let before = intern_c_memory(CMemory::new());
+        let after = intern_c_memory(
+            before
+                .memory()
+                .clone()
+                .store(pointer.clone(), CValue::Int32(sum.clone())),
+        );
+        let read =
+            |memory| MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32);
+        let retained = |relation, left: &MachineTerm, right: &MachineTerm| {
+            let roots =
+                [left, right].map(|v| KernelTerm::retained_machine_operand(ty, V::Legacy(v)));
+            Proposition::ConditionIs(
+                crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                    ty,
+                    relation,
+                    roots.each_ref().map(V::Shared),
+                ),
+                true,
+            )
+        };
+        let zero = MachineTerm::constant(0);
+        let order = retained(R::GreaterEqual, &sum, &zero);
+        let mirror = retained(R::LessEqual, &zero, &sum);
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        assert!(propositions_match_after_canonical_loads(&order, &mirror));
+        assert!(!propositions_match_after_canonical_loads(
+            &order,
+            &retained(R::LessThan, &zero, &sum)
+        ));
+        let native = Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: ty,
+                relation: R::Equal,
+                left: Box::new(sum.clone()),
+                right: Box::new(sum.clone()),
+            },
+            true,
+        );
+        assert!(propositions_match_after_canonical_loads(
+            &native,
+            &retained(R::Equal, &read(after), &sum)
+        ));
+        assert!(!propositions_match_after_canonical_loads(
+            &native,
+            &retained(R::Equal, &read(before), &sum)
+        ));
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
     }
 
     #[test]
@@ -5196,3 +5376,15 @@ impl<'a> Proof<'a> {
 
 #[path = "driver/scripts.rs"]
 mod driver;
+
+/// One line naming the statement that may have overwritten a cell and the
+/// fact that keeps it, as the store search spelled that fact.
+pub(in crate::surface::proof) fn describe_recorded_store_separation_miss(
+    miss: &crate::surface::proof::proof_object::StoreSeparationMiss,
+) -> String {
+    crate::surface::diagnostics::describe_store_separation_miss(
+        &miss.statement,
+        miss.cell_text.as_deref(),
+        &crate::surface::printing::source_click_proposition(&miss.fact),
+    )
+}

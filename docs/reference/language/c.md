@@ -2741,11 +2741,25 @@ field of `p[n]` is refused
 `mdtests/a_field_at_an_unbounded_index_of_a_size_t_struct_array_block_is_refused.md`).
 Its `allocation(p, n * 8u64)` token crosses a call as any 64-bit token does
 (`mdtests/a_size_t_struct_array_block_is_accessed_after_a_call_taking_its_allocation.md`),
-but its memory does not yet cross a clause that counts structs: `owns p[0..n]`
-for a struct pointer with a `size_t` `n` names `n` struct elements, which the
-block's byte range does not supply, so such a call requirement or loop
-`owns` clause is refused as missing (a loop without an `owns` clause keeps
-the block), and a callee holding `p[0..n]` cannot access its fields.
+and its memory crosses a clause that counts structs: `owns p[0..n]` for a
+struct pointer with a `size_t` `n` is the range `p[0u64..n]` of `k`-byte
+structs, and the block's byte range `p[0u64..n * k]` supplies it, and takes
+it back at the return, loop exit or `free`, where the facts decide that
+`n * k` does not wrap (`n <= UINT64_MAX / k`); the block's own admission
+decides that for its count. A callee or loop body holding `p[0..n]` reads
+and writes `p->field` and `p[i].field` under the same element rule, and a
+field of `p[n]`, a field at an index the facts do not bound by `n`, or a
+range longer than the block is refused
+(`mdtests/a_callee_owning_a_size_t_struct_range_reads_and_writes_its_fields.md`,
+`mdtests/a_callee_writes_fields_of_an_uninitialized_size_t_struct_range.md`,
+`mdtests/a_loop_owning_a_size_t_struct_range_writes_its_fields.md`,
+`mdtests/a_field_past_a_size_t_struct_range_in_a_callee_is_refused.md`,
+`mdtests/a_first_field_one_past_a_size_t_struct_range_in_a_callee_is_refused.md`,
+`mdtests/a_field_at_an_unbounded_index_of_a_size_t_struct_range_is_refused.md`,
+`mdtests/a_callee_struct_range_longer_than_its_block_is_refused.md`). Where
+the facts do not decide the product, a call is refused naming it:
+``range `p[0u64..n]` of 8-byte elements needs `n * 8` to not wrap
+(`n * 8 <= UINT64_MAX`)``.
 
 `realloc` resizes a 64-bit block, and resizes any block to a 64-bit size,
 under the same proof as `malloc`: `realloc(data, n * w)` with a 64-bit `n`

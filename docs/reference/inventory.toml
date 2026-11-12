@@ -3668,6 +3668,10 @@ id = "library.theorem.separation::elements"
 path = "reference/library/index.md#separationelements"
 
 [[item]]
+id = "library.theorem.separation::distinct_elements"
+path = "reference/library/index.md#separationdistinct_elements"
+
+[[item]]
 id = "library.function.i8::min"
 path = "reference/library/index.md#i8min"
 

@@ -1,7 +1,31 @@
 use super::*;
+use crate::kernel::proof::fact_reasoning::listed_comparison_fact_is_available;
 
 thread_local! {
     static APPLICATION_SOURCE: std::cell::RefCell<Option<std::rc::Rc<TheoremApplication>>> = const { std::cell::RefCell::new(None) };
+}
+
+thread_local! {
+    static PREPARING_APPLICATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub(in crate::surface::proof) fn preparing_application() -> bool {
+    PREPARING_APPLICATION.with(std::cell::Cell::get)
+}
+
+pub(in crate::surface::proof) fn with_application_preparation<T>(prepare: impl FnOnce() -> T) -> T {
+    with_application_preparation_mode(true, prepare)
+}
+
+fn with_application_preparation_mode<T>(active: bool, operation: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            PREPARING_APPLICATION.with(|active| active.set(self.0));
+        }
+    }
+    let _restore = Restore(PREPARING_APPLICATION.with(|current| current.replace(active)));
+    operation()
 }
 
 /// The checker resolves proof bindings to values. Retain just this tactic's
@@ -166,29 +190,14 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             ),
         )
     })?;
-    let theorem = resolve_generic_theorem_application(
+    let theorem = instantiate_generic_theorem_application_definition(
         theorem,
         application,
-        theorem_environment,
         lowering_assumptions,
         context,
         spec_definitions,
     )
     .map_err(|message| theorem_application_error(claim_label, path_index, tactic_index, message))?;
-    if application.arguments.len() != theorem.parameters().len() {
-        return Err(theorem_application_error(
-            claim_label,
-            path_index,
-            tactic_index,
-            format!(
-                "theorem `{}` expects {} argument(s), got {}",
-                theorem.name(),
-                theorem.parameters().len(),
-                application.arguments.len()
-            ),
-        ));
-    }
-
     let (values, array_refs, algebraic_values, integer_values) = theorem_application_bindings(
         &theorem,
         application,
@@ -247,6 +256,20 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         crate::surface::proof::pure_theorems::theorem_requirement_propositions(&theorem).map_err(
             |error| theorem_application_error(claim_label, path_index, tactic_index, error.message),
         )?;
+    let prepared_substitutions = preparing_application().then(|| {
+        requirement_source_bindings(&theorem, application)
+            .into_iter()
+            .zip(theorem.parameters())
+            .map(|((name, value), parameter)| {
+                let value = if parameter.click_type() == &ClickType::Integer {
+                    crate::surface::proof::surface_synthesis::integer_typed_expression(value)
+                } else {
+                    value
+                };
+                (name, value)
+            })
+            .collect()
+    });
     for (requirement_index, requirement) in requirements.iter().enumerate() {
         let mut lowered = lower(requirement).map_err(|error| {
             theorem_application_error(
@@ -271,6 +294,29 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             })?;
         }
         lowered = lowered.clone();
+        if let Some(substitutions) = &prepared_substitutions {
+            let written =
+                observe_machine_parameters(requirement, theorem.parameters(), substitutions);
+            let surface =
+                substitute_click_proposition(&written, substitutions).map_err(ClickError::new)?;
+            crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                ClickError::new("theorem application has a premise obligation")
+                    .with_spelled_requirement(
+                        lowered.clone(),
+                        surface,
+                        format!("theorem `{}` premise", theorem.name()),
+                    ),
+            )?;
+            for guard in crate::kernel::stated_loadable_extent_guards(&lowered) {
+                crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                    ClickError::new("theorem range requires a valid extent")
+                        .with_unresolved_requirement(&ProofObligation::verification_condition(
+                            guard,
+                        )),
+                )?;
+            }
+            continue;
+        }
         // A named `using` premise may be a checked conjunction, such as the
         // `defined(x + y)` fact emitted for a C addition.  The theorem may
         // require one of that fact's proper conjuncts (the no-overflow
@@ -285,10 +331,10 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         let mirrored_order_listed = || {
             crate::kernel::proof::fact_reasoning::order_claim_forms(&lowered)
                 .iter()
-                .any(|form| exact_fact_is_available(form, available))
+                .any(|form| listed_comparison_fact_is_available(form, available))
         };
         if !crate::kernel::listed_premise_holds(&lowered, |premise| {
-            exact_fact_is_available(premise, available)
+            listed_comparison_fact_is_available(premise, available)
         }) && !mirrored_order_listed()
             && !matches!(normalize_proposition(&lowered), NormalizedProposition::True)
         {
@@ -313,7 +359,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         // the valid-extent fact it never established. The guards are spelled
         // over the element count, which is the spelling a proof can write.
         for guard in crate::kernel::stated_loadable_extent_guards(&lowered) {
-            if exact_fact_is_available(&guard, available)
+            if listed_comparison_fact_is_available(&guard, available)
                 || matches!(normalize_proposition(&guard), NormalizedProposition::True)
             {
                 continue;
@@ -593,6 +639,15 @@ fn instantiate_integer_range_fold_theorem_application(
     let mut required = Vec::new();
     collect_conjunctive_guard_facts(guard, &mut required);
     for premise in required {
+        if preparing_application() {
+            crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                ClickError::new("Integer fold theorem has a premise obligation")
+                    .with_unresolved_requirement(&ProofObligation::verification_condition(
+                        premise.clone(),
+                    )),
+            )?;
+            continue;
+        }
         if !exact_fact_is_available(premise, available)
             && !matches!(normalize_proposition(premise), NormalizedProposition::True)
         {
@@ -716,7 +771,27 @@ fn instantiate_population_member_count_zero(
             "the population law did not produce a guarded theorem".to_string(),
         ));
     };
-    if !exact_fact_is_available(guard, available) {
+    if preparing_application() {
+        let mut population = resource.as_ref().clone();
+        if let ResourceClause::Declared { arguments, .. } = &mut population {
+            for argument in arguments.iter_mut().skip(1) {
+                *argument = ContractExpression::ResourceWildcard;
+            }
+        }
+        let surface = ClickProposition::Comparison {
+            left: ContractExpression::ResourceCount(Box::new(population)),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::IntegerLiteral("0".into()),
+        };
+        crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+            ClickError::new("population theorem has a premise obligation")
+                .with_spelled_requirement(
+                    guard.as_ref().clone(),
+                    surface,
+                    "empty population".into(),
+                ),
+        )?;
+    } else if !exact_fact_is_available(guard, available) {
         return Err(error(format!(
             "required exact fact is unavailable: the population's count is zero ({})",
             describe_pure_fact(guard, ParameterBinding::default())
@@ -738,48 +813,6 @@ fn collect_conjunctive_guard_facts<'a>(
     }
 }
 
-fn resolve_generic_theorem_application(
-    definition: &TheoremDefinition,
-    application: &TheoremApplication,
-    theorem_environment: &TheoremEnvironment,
-    assumptions: &PureFactContext,
-    context: &TheoremApplicationContext<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-) -> Result<TheoremDefinition, String> {
-    let concrete = instantiate_generic_theorem_application_definition(
-        definition,
-        application,
-        assumptions,
-        context,
-        spec_definitions,
-    )?;
-    if definition.type_parameters().is_empty() {
-        return Ok(concrete);
-    }
-    if theorem_environment.generic_instance_is_verified(concrete.name()) {
-        return Ok(concrete);
-    }
-    if !theorem_environment.begin_generic_instance_verification(concrete.name()) {
-        return Err(format!(
-            "cyclic verification of generic theorem instance `{}`",
-            concrete.name()
-        ));
-    }
-    let result =
-        verify_concrete_theorem_definition(&concrete, spec_definitions, theorem_environment, None)
-            .map(|_| ())
-            .map_err(|error| {
-                format!(
-                    "generic theorem instance `{}` failed verification: {}",
-                    concrete.name(),
-                    error.raw_summary()
-                )
-            });
-    theorem_environment.finish_generic_instance_verification(concrete.name(), result.is_ok());
-    result?;
-    Ok(concrete)
-}
-
 pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definition(
     definition: &TheoremDefinition,
     application: &TheoremApplication,
@@ -787,11 +820,16 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
     context: &TheoremApplicationContext<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<TheoremDefinition, String> {
-    if definition.type_parameters().is_empty() {
-        return Ok(definition.clone());
-    }
     if application.arguments.len() != definition.parameters().len() {
-        return Ok(definition.clone());
+        return Err(format!(
+            "theorem `{}` expects {} argument(s), got {}",
+            definition.name(),
+            definition.parameters().len(),
+            application.arguments.len()
+        ));
+    }
+    if definition.type_parameters().is_empty() {
+        return generics::instantiate_theorem_statement(definition, &BTreeMap::new());
     }
     // An `Integer` parameter decides no type argument, and its argument,
     // a loop's `iterations` for one, is no C expression to read a type from.
@@ -816,7 +854,45 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
             .map(|parameter| parameter.click_type().clone()),
         argument_types,
     )?;
-    generics::instantiate_theorem(definition, &substitution)
+    if let Some((index, formats)) = pure_theorems::kernel_law_index_types(definition.name()) {
+        let admitted = match substitution
+            .get(index)
+            .and_then(generics::TypeArgument::value)
+        {
+            Some(ClickType::C(actual)) => formats
+                .iter()
+                .any(|allowed| allowed.to_kernel_type() == actual.to_kernel_type()),
+            _ => false,
+        };
+        if !admitted {
+            return Err("elements indices must be int32, int64, or uint64".into());
+        }
+    }
+    let concrete = generics::instantiate_theorem_statement(definition, &substitution)?;
+    if matches!(
+        definition.name(),
+        "click::separation::elements"
+            | "click::separation::distinct_elements"
+            | "click::separation::subrange"
+    ) {
+        let parameter = &concrete.parameters()[0];
+        let element = parameter
+            .c_type()
+            .pointee_type()
+            .ok_or_else(|| "expected a sized pointer element".to_string())?;
+        let width = match parameter.struct_name().filter(|_| !element.is_pointer()) {
+            Some(name) => spec_definitions
+                .struct_sizes
+                .and_then(|sizes| sizes.get(name))
+                .copied()
+                .ok_or_else(|| format!("struct `{name}` has no known layout"))?,
+            None => element.to_kernel_type().byte_width(),
+        };
+        if width == 0 {
+            return Err("separation law requires a nonzero element width".into());
+        }
+    }
+    Ok(concrete)
 }
 
 fn theorem_application_argument_type(
@@ -1114,6 +1190,22 @@ pub(super) fn theorem_application_bindings(
                     value.algebraic_type.name
                 ));
             }
+            if preparing_application() {
+                for guard in crate::kernel::algebraic_argument_evaluation_guards(
+                    context.post_state,
+                    &value,
+                    Some(context.pre_state),
+                    assumptions,
+                )? {
+                    crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                        ClickError::new("model theorem argument has an evaluation obligation")
+                            .with_unresolved_requirement(&ProofObligation::verification_condition(
+                                guard,
+                            )),
+                    )
+                    .map_err(|error| error.message().to_owned())?;
+                }
+            }
             algebraic_values.insert(parameter.name().to_string(), value);
             continue;
         };
@@ -1187,7 +1279,7 @@ pub(super) fn theorem_application_bindings(
                     spec_definitions,
                     &active_functions,
                 )?;
-                if !crate::kernel::refine_object_pointer_argument(
+                if !crate::kernel::refine_object_pointer_argument_using_facts(
                     &mut value,
                     &class,
                     context.post_state.memory(),
@@ -1460,6 +1552,29 @@ mod observed_integer_argument_tests {
                 "accepted {before} -> {after}"
             );
         }
+    }
+
+    #[test]
+    fn pure_argument_obligations_solve_and_expand_without_evidence_selection() {
+        let source = r#"
+            theorem identity(value: int32) { ensures value == value by assumption(); }
+            theorem use_argument(x: int32) {
+                requires 0 <= x;
+                requires x < 10;
+                ensures x == x by { apply(identity(x + 1)); assumption(); }
+            }
+        "#;
+        verify_c0_sources(source, &[]).unwrap();
+        let expanded =
+            expand_c0_claim_source_by_label(source, &[], "use_argument.ensures_0").unwrap();
+        assert!(expanded.contains("have "), "{expanded}");
+        crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
+        assert!(verify_c0_sources(&source.replace("requires x < 10;", ""), &[]).is_err());
+        let explicit_without_guard = source.replace(
+            "apply(identity(x + 1));",
+            "apply(identity(x + 1)) using {}; ",
+        );
+        assert!(verify_c0_sources(&explicit_without_guard, &[]).is_err());
     }
 
     #[test]

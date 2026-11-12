@@ -2534,6 +2534,139 @@ fn store_distinctness_does_not_search_same_block_range_candidates() {
     eprintln!("store distinctness misses: {samples:?}");
 }
 
+/// A store keeps a cached cell of the same array beside a 64-bit scaled index
+/// on one exact comparison fact in the indices' own format (`size_t` or
+/// `long`), the second key shape of `pointers_directly_distinct_for_store`.
+/// Its lookups are keyed by the two indices, so growing unrelated facts, and
+/// facts about other cells of the same array, leaves a hit and a miss at
+/// fixed work; a store over many same-array cells pays one keyed check per
+/// cell. A mixed 32/64-bit or mixed-signedness pair has no key.
+#[test]
+fn wide_store_index_lookup_ignores_unrelated_facts_and_same_array_cells() {
+    for unsigned in [true, false] {
+        let format = if unsigned {
+            MachineIntegerType::UInt64
+        } else {
+            MachineIntegerType::Int64
+        };
+        let index = |i: u64| MachineTerm::Variable(Variable(999_100 + i));
+        let pointer = |i: u64| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int64(index(i), 4, unsigned),
+        };
+        let differ = |i: u64, j: u64| {
+            ConditionTerm::machine_compare(format, CompareRelation::Equal, index(i), index(j))
+        };
+        let mut lookups = Vec::new();
+        let mut stores = Vec::new();
+        for size in [4u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut facts = PureFactContext::new();
+            let mut memory = CMemory::new();
+            for k in 0..size {
+                // Unrelated index facts, and the written index against
+                // other cells of the same array.
+                facts = facts
+                    .assume_condition(differ(2 * k + 1000, 2 * k + 1001), false)
+                    .assume_condition(
+                        ConditionTerm::machine_compare(
+                            format,
+                            CompareRelation::LessThan,
+                            index(3 * k + 5000),
+                            index(3 * k + 5001),
+                        ),
+                        true,
+                    )
+                    .assume_condition(differ(0, k + 10), false);
+                memory = memory.store(pointer(k + 10), scaling_value(k as usize));
+            }
+            let hit = facts.clone().assume_condition(differ(0, 1), false);
+            let below = facts.clone().assume_condition(
+                ConditionTerm::machine_compare(
+                    format,
+                    CompareRelation::LessThan,
+                    index(1),
+                    index(0),
+                ),
+                true,
+            );
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..4 {
+                    assert!(
+                        crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &pointer(1),
+                            &pointer(0),
+                            &hit
+                        )
+                    );
+                    assert!(
+                        crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &pointer(0),
+                            &pointer(1),
+                            &hit
+                        )
+                    );
+                    assert!(
+                        crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &pointer(1),
+                            &pointer(0),
+                            &below
+                        )
+                    );
+                    assert!(
+                        !crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &pointer(1),
+                            &pointer(0),
+                            &facts
+                        )
+                    );
+                }
+            });
+            lookups.push((size, work));
+            // Every same-array cell is kept by its own stated fact.
+            let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
+                memory.without_possible_aliasing_cells(&pointer(0), 4, &facts)
+            });
+            assert!(
+                (0..size).all(|k| after.has_known_cell_at(&pointer(k + 10))),
+                "a stated wide index disequality kept every cell at {size}"
+            );
+            stores.push((size, work));
+            // The other signedness, and a 32-bit index, have no key.
+            let other = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int64(index(1), 4, !unsigned),
+            };
+            let narrow = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(index(1), 4),
+            };
+            for declined in [other, narrow] {
+                assert!(
+                    !crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                        &declined,
+                        &pointer(0),
+                        &hit
+                    )
+                );
+            }
+        }
+        assert!(
+            lookups.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "unsigned={unsigned}: wide index lookups grew with facts: {lookups:?}"
+        );
+        // Four times the cells: one keyed check per cell, with persistent
+        // map factors.
+        assert!(
+            stores.windows(2).all(|pair| pair[1].1 <= pair[0].1 * 5),
+            "unsigned={unsigned}: store work grew faster than its cells: {stores:?}"
+        );
+        eprintln!(
+            "wide store index lookups (unsigned={unsigned}): {lookups:?}; stores: {stores:?}"
+        );
+    }
+}
+
 #[test]
 fn store_ownership_selection_bounds_same_base_candidates() {
     for explicit_owner in [false, true] {
@@ -3467,4 +3600,94 @@ fn compact_run_partial_store_checks_overlapping_value_widths() {
         )
         .1
     );
+}
+
+#[test]
+fn wide_store_comparisons_keep_retained_arithmetic_and_exact_sources() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, MachineOperandView,
+        SharedMachineIntegerTerm,
+    };
+    for unsigned in [false, true] {
+        let format = if unsigned {
+            MachineIntegerType::UInt64
+        } else {
+            MachineIntegerType::Int64
+        };
+        let mut previous_work = None;
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(999_300));
+            let one = KernelTerm::retained_native_machine_operand(
+                format,
+                &MachineTerm::int64_constant(1),
+            );
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Subtract,
+                    [root, one.clone()],
+                );
+            }
+            let index = SharedMachineIntegerTerm::observe_shared(format, root.clone()).unwrap();
+            let zero = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Constant(0.into()),
+            };
+            let selected = Pointer {
+                block: zero.block.clone(),
+                offset: PointerOffsetTerm::Int64Scaled {
+                    value: index,
+                    byte_width: 4,
+                    unsigned,
+                },
+            };
+            let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format,
+                CompareRelation::Equal,
+                [
+                    MachineOperandView::Shared(&root),
+                    MachineOperandView::Legacy(&MachineTerm::int64_constant(0)),
+                ],
+            );
+            let empty = PureFactContext::new();
+            let same = empty.clone().assume_condition(condition.clone(), true);
+            let different = empty.clone().assume_condition(condition, false);
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..4 {
+                    assert!(
+                        crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &zero, &selected, &different
+                        )
+                    );
+                    assert!(
+                        crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &selected, &zero, &different
+                        )
+                    );
+                    assert!(
+                        !crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &zero, &selected, &empty
+                        )
+                    );
+                    assert!(
+                        !crate::kernel::reasoning::pointers_directly_distinct_for_store(
+                            &zero, &selected, &same
+                        )
+                    );
+                }
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            // Sixteen selected queries may walk the selected arithmetic;
+            // quadrupling that arithmetic must not cause superlinear work.
+            if let Some(previous) = previous_work {
+                assert!(
+                    work <= previous * 5,
+                    "size={size}, work={work}, previous={previous}"
+                );
+            }
+            previous_work = Some(work);
+        }
+    }
 }

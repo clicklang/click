@@ -4,7 +4,6 @@
 //! Target-language frontends belong under `crate::languages`; proof checking
 //! uses the shared kernel.
 
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -466,7 +465,7 @@ pub(crate) fn rust_iterator_accessors(kind: syntax::RustIteratorKind) -> &'stati
         syntax::RustIteratorKind::Enumerate => &["len()"],
         syntax::RustIteratorKind::Range => &["start", "end", "len()"],
         syntax::RustIteratorKind::RangeInclusive => &["start()", "end()"],
-        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::ChunksLibrary => &[],
+        syntax::RustIteratorKind::Chunks => &[],
     }
 }
 
@@ -474,7 +473,7 @@ pub(crate) fn rust_iterator_accessors(kind: syntax::RustIteratorKind) -> &'stati
 /// of a Click library type: a proof names it `iter` and reads it with that
 /// type's methods.
 pub(crate) fn rust_library_iterator(iterator: &syntax::RustLoopIterator) -> Option<&str> {
-    (iterator.kind == syntax::RustIteratorKind::ChunksLibrary).then_some(iterator.local.as_str())
+    (iterator.kind == syntax::RustIteratorKind::Chunks).then_some(iterator.local.as_str())
 }
 
 /// The Click type of a library-valued loop iterator, `ChunksExact<uint8>`.
@@ -521,7 +520,7 @@ pub(crate) fn rust_iterator_method(
                     K::Enumerate => "enumerated",
                     K::Range => "range",
                     K::RangeInclusive => "inclusive range",
-                    K::Chunks | K::ChunksLibrary => "`chunks_exact`",
+                    K::Chunks => "`chunks_exact`",
                 },
                 match rust_iterator_accessors(iterator.kind) {
                     [] => " (it has none yet)".to_string(),
@@ -7913,8 +7912,6 @@ struct TheoremEnvironment {
     /// resolved every citation to one: a library theorem's is qualified, so
     /// no file theorem shares it, and a file refuses a duplicate theorem.
     definitions: BTreeMap<String, TheoremDefinition>,
-    verified_generic_instances: RefCell<BTreeSet<String>>,
-    active_generic_instances: RefCell<BTreeSet<String>>,
 }
 
 impl TheoremEnvironment {
@@ -7969,8 +7966,6 @@ impl TheoremEnvironment {
                     )
                 })
                 .collect(),
-            verified_generic_instances: RefCell::new(BTreeSet::new()),
-            active_generic_instances: RefCell::new(BTreeSet::new()),
         }
     }
 
@@ -7985,25 +7980,6 @@ impl TheoremEnvironment {
     fn insert(&mut self, definition: TheoremDefinition) {
         self.definitions
             .insert(definition.name().to_string(), definition);
-    }
-
-    fn generic_instance_is_verified(&self, name: &str) -> bool {
-        self.verified_generic_instances.borrow().contains(name)
-    }
-
-    fn begin_generic_instance_verification(&self, name: &str) -> bool {
-        self.active_generic_instances
-            .borrow_mut()
-            .insert(name.to_string())
-    }
-
-    fn finish_generic_instance_verification(&self, name: &str, verified: bool) {
-        self.active_generic_instances.borrow_mut().remove(name);
-        if verified {
-            self.verified_generic_instances
-                .borrow_mut()
-                .insert(name.to_string());
-        }
     }
 }
 

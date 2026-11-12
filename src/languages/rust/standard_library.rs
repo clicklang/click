@@ -153,12 +153,11 @@ pub(super) fn chunks_exact_function(operation: &str) -> String {
     name
 }
 
-/// Switches `export` to the library-iterator model: an iterator is a value
-/// of its Click library type. Declares the external functions a
-/// `chunks_exact` iterator's operations call, when the export has one.
-pub(super) fn use_library_iterators(export: &mut RustExport) {
+/// Declares the external functions a `chunks_exact` iterator's operations
+/// call, when the export has one: an iterator is a value of its Click
+/// library type, read through that library's contract.
+pub(super) fn declare_iterator_operations(export: &mut RustExport) {
     use super::schema::{Function, Place, Span};
-    export.library_iterators = true;
     let has_chunks = export.functions.iter().any(|function| {
         function.mir.as_ref().is_some_and(|mir| {
             mir.locals
@@ -244,7 +243,7 @@ fn chunks_exact_contract(function: &super::schema::Function, operation: &str) ->
         "after_next" => format!(
             "extern fn {name}(it: {iterator}) -> {iterator} {{\n    requires 0u64 < {LIBRARY}::len(it);\n    ensures result == {LIBRARY}::after_next(it);\n}}"
         ),
-        _ => unreachable!("declared by `use_library_iterators`"),
+        _ => unreachable!("declared by `declare_iterator_operations`"),
     };
     format!("\n{body}\n")
 }
@@ -382,7 +381,6 @@ mod tests {
             span: span.clone(),
         };
         let export = RustExport {
-            library_iterators: false,
             schema: super::super::schema::SCHEMA,
             compiler_commit: String::new(),
             target: String::new(),

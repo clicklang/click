@@ -4,6 +4,16 @@
 use super::*;
 use crate::kernel::{MachineCastSpelling as Encoding, MachineOperandView as View};
 
+fn unwrap_leaf(view: View<'_>) -> View<'_> {
+    match view {
+        View::Shared(root) => root
+            .machine_conversion_leaf()
+            .map(View::Legacy)
+            .unwrap_or(view),
+        _ => view,
+    }
+}
+
 pub(super) fn binary_supported(format: MachineIntegerType, op: MachineBinaryOp) -> bool {
     use MachineBinaryOp::*;
     matches!(
@@ -33,6 +43,7 @@ fn payload(root: View<'_>) -> Option<usize> {
     let mut pending = vec![root];
     let mut total = 0usize;
     while let Some(term) = pending.pop() {
+        let term = unwrap_leaf(term);
         if let View::Legacy(term) = term {
             total = total.checked_add(bitvector_payload(term)?)?;
         } else {
@@ -70,6 +81,10 @@ fn read_identity(view: View<'_>) -> Option<crate::kernel::KernelTerm> {
         View::Legacy(MachineTerm::Variable(variable)) => {
             crate::kernel::eval::registered_scalar_read_term(variable, MachineIntegerType::Int32)
         }
+        View::Legacy(value @ MachineTerm::MemoryLoad(..)) => {
+            crate::kernel::KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, value)
+        }
         _ => None,
     }
 }
@@ -85,6 +100,7 @@ pub(super) fn equal(left: View<'_>, right: View<'_>) -> bool {
     }
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
+        let (left, right) = (unwrap_leaf(left), unwrap_leaf(right));
         if let (View::Legacy(left), View::Legacy(right)) = (left, right) {
             if !legacy_bitvector_equal(left, right) {
                 return false;
@@ -165,6 +181,8 @@ mod tests {
         };
         let other_address = wrong(memory.clone(), address.offset_by_bytes(2), LoadKind::UInt16);
         let other_kind = wrong(memory.clone(), address.clone(), LoadKind::Int16);
+        let raw =
+            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::UInt16);
         let other_snapshot = wrong(
             crate::kernel::intern_c_memory(memory.memory().clone().store(
                 address.clone(),
@@ -175,6 +193,8 @@ mod tests {
         );
         let exports = KernelTermExport::machine_export_count();
         assert!(equal(View::Shared(&read), View::Legacy(&named)));
+        assert!(equal(View::Shared(&read), View::Legacy(&raw)));
+        assert!(equal(View::Legacy(&raw), View::Shared(&read)));
         for other in [&other_address, &other_kind, &other_snapshot] {
             assert!(!equal(View::Shared(&read), View::Shared(other)));
         }

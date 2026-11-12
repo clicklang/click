@@ -148,3 +148,67 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
             .unwrap();
     }
 }
+
+#[test]
+fn retained_conditional_sums_normalize_from_selected_conditions() {
+    use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
+    use crate::kernel::proof::ProofFacts;
+    let selected_index = MachineTerm::Variable(Variable(994_001));
+    let guard = Proposition::ConditionIs(
+        ConditionTerm::uint64_equal(selected_index.clone(), MachineTerm::uint64_constant(19)),
+        true,
+    );
+    let high = 10_000_000_000_000_000_000u64;
+    let mut costs = Vec::new();
+    for size in [32, 64, 128] {
+        let mut sum = MachineTerm::uint64_constant(0);
+        for i in 0..size {
+            let term = MachineTerm::if_then_else(
+                ConditionTerm::uint64_equal(
+                    selected_index.clone(),
+                    MachineTerm::uint64_constant(i),
+                ),
+                MachineTerm::uint64_constant(if i == 19 { high } else { 1 }),
+                MachineTerm::uint64_constant(0),
+            );
+            sum = MachineTerm::uint64_add(sum, term);
+        }
+        let native = ConditionTerm::uint64_equal(sum, MachineTerm::uint64_constant(high));
+        let retained = retained_arithmetic_comparison(&native).unwrap();
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&guard));
+        let goal = Proposition::ConditionIs(retained, true);
+        let exports = KernelTermExport::machine_export_count();
+        let (result, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            normalize_using_conditions(&goal, std::slice::from_ref(&guard), &facts)
+        });
+        result.unwrap();
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        normalize_using_conditions(
+            &Proposition::ConditionIs(native, true),
+            std::slice::from_ref(&guard),
+            &facts,
+        )
+        .unwrap();
+        assert!(normalize_using_conditions(&goal, &[], &facts).is_err());
+        assert!(
+            normalize_using_conditions(
+                &goal,
+                std::slice::from_ref(&guard),
+                &ProofFacts::from_ordered(&[])
+            )
+            .is_err()
+        );
+        let wrong_guard = Proposition::ConditionIs(
+            ConditionTerm::uint64_equal(selected_index.clone(), MachineTerm::uint64_constant(18)),
+            true,
+        );
+        let wrong_facts = ProofFacts::from_ordered(std::slice::from_ref(&wrong_guard));
+        assert!(normalize_using_conditions(&goal, &[wrong_guard], &wrong_facts).is_err());
+        costs.push(cost);
+    }
+    assert!(costs[0] > 0);
+    assert!(
+        costs.windows(2).all(|pair| pair[1] <= pair[0] * 3 + 64),
+        "{costs:?}"
+    );
+}

@@ -1064,6 +1064,56 @@ pub(in crate::surface) fn synthesize_surface_proposition(
     )
 }
 
+/// The disequality of two array element indices a store compares (or a
+/// pointer disequality's two element addresses differ by), spelled as a
+/// comparison of the index words: `((m - 1) as int32) != 0` for `int32`
+/// indices, `((n - 1u64) as uint64) != 0u64` or `j != 0u64` for `uint64`
+/// ones. Each word is spelled as [`synthesize_surface_bitvector`] spells it;
+/// a word that spells as arithmetic is converted to its format with `as`,
+/// since Click arithmetic on C operands is Integer arithmetic and the store
+/// compares the wrapped word. The caller states it for the kernel comparison
+/// it built from the same two words; the requirement's round trip checks the
+/// lowering.
+pub(in crate::surface) fn synthesize_store_index_disequality(
+    store_index: &MachineTerm,
+    cell_index: &MachineTerm,
+    format: MachineIntegerType,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ClickProposition> {
+    let _scope = SurfaceSynthesisScope::enter();
+    let word = |term: &MachineTerm| {
+        let expression =
+            synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
+        let ctype = match format {
+            MachineIntegerType::Int32 => CType::Int32,
+            MachineIntegerType::Int64 => CType::Int64,
+            MachineIntegerType::UInt64 => CType::UInt64,
+            _ => return None,
+        };
+        if matches!(
+            expression,
+            ContractExpression::Add(..)
+                | ContractExpression::Subtract(..)
+                | ContractExpression::Multiply(..)
+        ) {
+            synthesize_observation_operand(expression, ctype)
+        } else {
+            Some(expression)
+        }
+    };
+    // Both words are spelled before either refusal is read: synthesis
+    // charges work.
+    let left = word(store_index);
+    let right = word(cell_index);
+    Some(ClickProposition::Comparison {
+        left: left?,
+        operator: ComparisonOperator::NotEqual,
+        right: right?,
+    })
+}
+
 /// The source spelling of one machine term, for a diagnostic that has to name
 /// the written subterm a generated condition came from.
 ///
@@ -2686,6 +2736,64 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
+    // Arithmetic-producing comparisons keep machine Surface operands. Atomic
+    // observations and casts still need explicit `to_integer`: re-lowering a
+    // native atomic comparison would otherwise change its condition family.
+    if !matches!(condition, ConditionTerm::Compare { .. })
+        && let Some(view) =
+            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+        && matches!(
+            view.format,
+            MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int64
+                | MachineIntegerType::UInt64
+        )
+        && view.operands.iter().any(|operand| {
+            matches!(
+                operand.operand_view().binary(),
+                Some((
+                    _,
+                    MachineBinaryOp::Add
+                        | MachineBinaryOp::Subtract
+                        | MachineBinaryOp::Multiply
+                        | MachineBinaryOp::Divide
+                        | MachineBinaryOp::Remainder
+                        | MachineBinaryOp::ShiftLeft
+                        | MachineBinaryOp::ShiftRight,
+                    _
+                ))
+            )
+        })
+    {
+        let operator = match view.relation {
+            CompareRelation::Equal => ComparisonOperator::Equal,
+            CompareRelation::LessThan => ComparisonOperator::LessThan,
+            CompareRelation::LessEqual => ComparisonOperator::LessEqual,
+            CompareRelation::GreaterThan => ComparisonOperator::GreaterThan,
+            CompareRelation::GreaterEqual => ComparisonOperator::GreaterEqual,
+        };
+        let raise =
+            |operand: &crate::kernel::machine_integer::comparison::ComparisonOperand<'_>| {
+                let root = crate::kernel::KernelTerm::retained_machine_operand(
+                    view.format,
+                    operand.operand_view(),
+                );
+                raise_kernel_term(&root, parameter_binding, state, bound_variables).and_then(
+                    |expression| synthesize_observation_operand(expression, view.format.c_type()),
+                )
+            };
+        let comparison = ClickProposition::Comparison {
+            left: raise(&view.operands[0])?,
+            operator,
+            right: raise(&view.operands[1])?,
+        };
+        return Some(if *value != view.negated {
+            comparison
+        } else {
+            ClickProposition::Not(Box::new(comparison))
+        });
+    }
     let integer_comparison = match condition {
         ConditionTerm::IntegerLessThan(left, right) => {
             Some((left, ComparisonOperator::LessThan, right))
@@ -2927,7 +3035,7 @@ fn synthesize_surface_integer(
 /// The shared term-to-surface boundary. Arithmetic and calls have common
 /// children; the legacy leaf dispatch is temporary and never projects away
 /// part of a value. Scoped binders retain their old refusal until migrated.
-fn raise_kernel_term(
+pub(super) fn raise_kernel_term(
     term: &crate::kernel::KernelTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
@@ -3185,19 +3293,22 @@ fn raise_kernel_term(
                         synthesize_int32_operand(expression)?
                     };
                 }
-                SurfaceTerm::CFragment(CExpression::Cast {
-                    expression: Box::new(contract_expression_to_c_fragment(&expression)?),
-                    target_type: destination.c_type(),
-                    integer_mode: if *encoding == MachineCastSpelling::UInt32From64 {
-                        crate::kernel::CIntegerCastMode::Standard
-                    } else {
-                        crate::kernel::CIntegerCastMode::CConversion
+                SurfaceTerm::CUnary {
+                    operand: Box::new(expression),
+                    lowered: CExpression::Cast {
+                        expression: Box::new(CExpression::Value(int32(0))),
+                        target_type: destination.c_type(),
+                        integer_mode: if *encoding == MachineCastSpelling::UInt32From64 {
+                            crate::kernel::CIntegerCastMode::Standard
+                        } else {
+                            crate::kernel::CIntegerCastMode::CConversion
+                        },
+                        pointee_struct: None,
+                        pointee_volatile: false,
+                        pointee_constant: false,
+                        explicit_qualification: false,
                     },
-                    pointee_struct: None,
-                    pointee_volatile: false,
-                    pointee_constant: false,
-                    explicit_qualification: false,
-                })
+                }
             }
         }
     })
@@ -4442,7 +4553,31 @@ fn synthesize_surface_bitvector(
         } => Some(ContractExpression::BitwiseNot(Box::new(
             synthesize_surface_bitvector(operand, parameter_binding, state, bound_variables)?,
         ))),
-        MachineTerm::If { .. } | MachineTerm::RangeFold { .. } => None,
+        MachineTerm::If {
+            condition,
+            then_term,
+            else_term,
+        } => Some(ContractExpression::If {
+            condition: Box::new(synthesize_surface_proposition_with_bound_variables(
+                &Proposition::ConditionIs((**condition).clone(), true),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?),
+            then_branch: Box::new(synthesize_surface_bitvector(
+                then_term,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?),
+            else_branch: Box::new(synthesize_surface_bitvector(
+                else_term,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?),
+        }),
+        MachineTerm::RangeFold { .. } => None,
         MachineTerm::PureFunctionApplication {
             name,
             arguments: values,

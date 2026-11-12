@@ -262,3 +262,129 @@ fn deferred_results_and_integer_observations_retain_growing_prefixes() {
         previous = Some(work);
     }
 }
+
+#[test]
+fn opaque_results_observe_and_compare_without_expanding_prefixes() {
+    let mut previous = None;
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let leaf = MachineTerm::opaque_conversion(
+            "retained_opaque",
+            MachineTerm::Variable(Variable(992230)),
+        );
+        let mut root = KernelTerm::retained_native_machine_operand(format, &leaf);
+        let one =
+            KernelTerm::retained_native_machine_operand(format, &MachineTerm::uint64_constant(1));
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [root.clone(), one.clone()],
+                );
+                let value = SpecValue::Shared(root.clone());
+                assert!(value.observe().is_some());
+                assert!(
+                    value
+                        .comparison(CComparisonOperator::Equal, &value)
+                        .unwrap()
+                        .is_some()
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        if let Some(previous) = previous {
+            assert!(work <= previous * 5, "{size}: {work}, previous={previous}");
+        }
+        previous = Some(work);
+    }
+}
+
+#[test]
+fn deferred_opaque_shift_domains_keep_shared_prefixes() {
+    for op in [
+        MachineBinaryOp::ShiftLeft,
+        MachineBinaryOp::ShiftRight,
+        MachineBinaryOp::Divide,
+    ] {
+        let mut previous = None;
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let format = MachineIntegerType::UInt64;
+            let leaf = MachineTerm::opaque_conversion(
+                "deferred_domain",
+                MachineTerm::Variable(Variable(992240)),
+            );
+            let mut value =
+                SpecValue::Shared(KernelTerm::retained_native_machine_operand(format, &leaf));
+            let right = SpecValue::Native(CValue::UInt64(MachineTerm::Variable(Variable(992241))));
+            let mut execution = ExecutionBudget::new();
+            let mut budget = SpecEvaluation::logical(&mut execution);
+            budget.c_definedness = true;
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..size {
+                    let result = apply_values(Some(op), &value, &right, &budget).unwrap();
+                    assert!(!result.obligations.is_empty());
+                    value = SpecValue::Shared(result.value);
+                    assert!(value.observe().is_some());
+                }
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            if let Some(previous) = previous {
+                assert!(
+                    work <= previous * 5,
+                    "{op:?}: size={size}, work={work}, previous={previous}"
+                );
+            }
+            previous = Some(work);
+        }
+    }
+}
+
+#[test]
+fn same_format_casts_keep_deferred_prefixes_and_obligations() {
+    let mut previous = None;
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state =
+            CState::new().with_local("x", CValue::UInt64(MachineTerm::Variable(Variable(992200))));
+        let mut expression = SpecExpression::CExpression(CExpression::Variable("x".into()));
+        for _ in 0..size {
+            expression = SpecExpression::Cast(
+                Box::new(SpecExpression::Add(
+                    Box::new(expression),
+                    Box::new(SpecExpression::Value(CValue::UInt64(
+                        MachineTerm::uint64_constant(1),
+                    ))),
+                )),
+                CType::UInt64,
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut execution = ExecutionBudget::new();
+            evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                SpecScope::unbound(&state, None),
+                &expression,
+                &PureFactContext::new(),
+                &mut SpecEvaluation::logical(&mut execution),
+            )
+            .unwrap()
+        });
+        assert_eq!(paths.len(), 1);
+        assert!(matches!(paths[0].value, SpecValue::Shared(_)));
+        let observed = paths[0].value.observe().unwrap();
+        assert!(matches!(observed, IntegerTerm::Machine(_)));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        if let Some(previous) = previous {
+            assert!(
+                work <= previous * 5,
+                "size={size}, work={work}, previous={previous}"
+            );
+        }
+        previous = Some(work);
+    }
+}

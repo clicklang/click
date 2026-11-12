@@ -2584,3 +2584,131 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
     }
     assert_constant_plus_log_growth("matched input argument views", &samples, 4.0);
 }
+
+/// A wide range of 8-byte structs and the byte block of the same bytes stand
+/// for each other once `n * 8` is decided not to wrap
+/// (`wide_memory_range_respelled` in `primitives/resource_algebra.rs`). Taking
+/// the struct range `p[0u64..n]` from the byte block `p[0u64..n * 8u64]` (a
+/// call's or loop's entry), the byte block from the struct range (its exit, or
+/// `free`), a field read through the struct range, and the refusal that names
+/// the undecided product when `n` is unbounded, must each cost work that does
+/// not grow with unrelated wide blocks and struct ranges at other bases, nor
+/// with struct ranges at other addresses of the target's own block: the
+/// re-spelling is a rewrite of the two ranges' endpoints, one decision per
+/// symbolic endpoint, after the one indexed supplier is selected.
+#[test]
+fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ranges() {
+    let count = |identity: u64| MachineTerm::Variable(Variable((1 << 40) + identity));
+    let bytes = |identity: u64| {
+        MachineTerm::uint64_multiply(count(identity), MachineTerm::uint64_constant(8))
+    };
+    let zero = || MachineTerm::uint64_constant(0);
+    let byte_block =
+        |identity: u64| CMemoryRange::new_wide(heap_base(identity), zero(), bytes(identity), 1);
+    let struct_range =
+        |identity: u64| CMemoryRange::new_wide(heap_base(identity), zero(), count(identity), 8);
+    // A struct range at a symbolic element of the target block.
+    let same_block = |index: u64| {
+        CMemoryRange::new_wide(
+            Pointer {
+                block: PointerBlock::Heap(TARGET_HEAP),
+                offset: PointerOffsetTerm::scaled_int64_node(
+                    MachineTerm::Variable(Variable((1 << 41) + index)),
+                    8,
+                    true,
+                ),
+            },
+            zero(),
+            MachineTerm::uint64_constant(1),
+            8,
+        )
+    };
+    let index = MachineTerm::Variable(Variable(1 << 42));
+    let bounded = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::uint64_less_equal(count(TARGET_HEAP), MachineTerm::uint64_constant(100)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::uint64_less_than(index.clone(), count(TARGET_HEAP)),
+            true,
+        );
+    let unbounded = PureFactContext::new();
+    let frame = |size: usize, target: CMemoryRange, assumptions: &PureFactContext| {
+        let resources = ResourceContext::new_with_equalities(assumptions)
+            .unchecked_with_facts((1..=size as u64).flat_map(|identity| {
+                [
+                    CResourceFact::own_memory(byte_block(identity)),
+                    CResourceFact::own_memory(struct_range(TARGET_HEAP + identity)),
+                    CResourceFact::own_memory(same_block(identity)),
+                ]
+            }))
+            .unchecked_with_fact(CResourceFact::own_memory(target));
+        resources.synchronize_memory_equalities(assumptions);
+        resources
+    };
+    let field = Pointer {
+        block: PointerBlock::Heap(TARGET_HEAP),
+        offset: PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::scaled_int64_node(
+                MachineTerm::int64_multiply(index.clone(), MachineTerm::int64_constant(8)),
+                1,
+                false,
+            )),
+            Box::new(PointerOffsetTerm::Constant(4)),
+        ),
+    };
+    let mut take = Vec::new();
+    let mut give_back = Vec::new();
+    let mut read = Vec::new();
+    let mut refuse = Vec::new();
+    for size in [4, 8, 16] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let blocks = frame(size, byte_block(TARGET_HEAP), &bounded);
+        let structs = frame(size, struct_range(TARGET_HEAP), &bounded);
+        let (taken, work) = crate::instrumentation::measure_deterministic_work(|| {
+            blocks.clone().without_fact_incrementally(
+                &CResourceFact::own_memory(struct_range(TARGET_HEAP)),
+                &bounded,
+            )
+        });
+        assert!(
+            taken.is_some(),
+            "the struct range is taken from the byte block"
+        );
+        take.push((size, work));
+        let (returned, work) = crate::instrumentation::measure_deterministic_work(|| {
+            structs.clone().without_fact_incrementally(
+                &CResourceFact::own_memory(byte_block(TARGET_HEAP)),
+                &bounded,
+            )
+        });
+        assert!(
+            returned.is_some(),
+            "the byte block is taken from the struct range"
+        );
+        give_back.push((size, work));
+        let (permitted, work) = crate::instrumentation::measure_deterministic_work(|| {
+            structs.permits_memory_read(&field, 4, &bounded)
+        });
+        assert!(permitted, "a field is read through the struct range");
+        read.push((size, work));
+        let blocks = frame(size, byte_block(TARGET_HEAP), &unbounded);
+        let (refused, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let required = CResourceFact::own_memory(struct_range(TARGET_HEAP));
+            (
+                blocks
+                    .clone()
+                    .without_fact_incrementally(&required, &unbounded),
+                blocks.wide_range_respelling_refusal(&struct_range(TARGET_HEAP), &unbounded),
+            )
+        });
+        assert!(refused.0.is_none(), "an unbounded count may wrap");
+        assert!(refused.1.is_some(), "the refusal names the product");
+        refuse.push((size, work));
+    }
+    assert_constant_plus_log_growth("taking a struct range from a byte block", &take, 16.0);
+    assert_constant_plus_log_growth("taking a byte block from a struct range", &give_back, 16.0);
+    assert_constant_plus_log_growth("a field read through a struct range", &read, 16.0);
+    assert_constant_plus_log_growth("refusing an unbounded struct range", &refuse, 16.0);
+}

@@ -790,6 +790,19 @@ void make(int32* p, int32 n) {
 /// must stay as prompt: the false claim is refused at every size.
 #[test]
 fn store_index_separation_search_scales_with_unrelated_stores_and_facts() {
+    store_index_separation_search_scales("int", "int32", "");
+}
+
+/// [`store_index_separation_search_scales_with_unrelated_stores_and_facts`]
+/// with `size_t` indices: the store reads the `uint64` index-word
+/// disequality, and the search proves `j != 0u64` the same way.
+#[test]
+#[ignore = "nightly: 2.6s; the int32 sibling runs in the gate"]
+fn wide_store_index_separation_search_scales_with_unrelated_stores_and_facts() {
+    store_index_separation_search_scales("size_t", "size_t", "u64");
+}
+
+fn store_index_separation_search_scales(c_index: &str, click_index: &str, suffix: &str) {
     for hit in [true, false] {
         let mut samples = Vec::new();
         for size in [2, 4, 8, 16] {
@@ -798,7 +811,7 @@ fn store_index_separation_search_scales_with_unrelated_stores_and_facts() {
                 .map(|k| format!("    b[{k}] = x{k};\n    q[{}] = {k};\n", k + 1))
                 .collect::<String>();
             let c = format!(
-                "int read_first(int m, int j{parameters}) {{\n    int b[{size}];\n    int *q = malloc(m * sizeof(int));\n    if (q == 0) {{\n        return 7;\n    }}\n    q[0] = 7;\n{stores}    q[j] = 1;\n    int r = q[0];\n    free(q);\n    return r;\n}}\n"
+                "#include <stddef.h>\n#include <stdlib.h>\nint read_first({c_index} m, {c_index} j{parameters}) {{\n    int b[{size}];\n    int *q = malloc(m * sizeof(int));\n    if (q == 0) {{\n        return 7;\n    }}\n    q[0] = 7;\n{stores}    q[j] = 1;\n    int r = q[0];\n    free(q);\n    return r;\n}}\n"
             );
             let click_parameters = (0..size)
                 .map(|k| format!(", int32 x{k}"))
@@ -808,7 +821,7 @@ fn store_index_separation_search_scales_with_unrelated_stores_and_facts() {
                 .collect::<String>();
             let lower = if hit { 1 } else { 0 };
             let click = format!(
-                "verifying \"probe.c\";\nint32 read_first(int32 m, int32 j{click_parameters}) {{\n    requires {} <= m;\n    requires m <= 1000;\n    requires {lower} <= j;\n    requires j < m;\n{facts}    ensures result == 7;\n}}\n",
+                "verifying \"probe.c\";\nint32 read_first({click_index} m, {click_index} j{click_parameters}) {{\n    requires {}{suffix} <= m;\n    requires m <= 1000{suffix};\n    requires {lower}{suffix} <= j;\n    requires j < m;\n{facts}    ensures result == 7;\n}}\n",
                 size + 2
             );
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -824,9 +837,12 @@ fn store_index_separation_search_scales_with_unrelated_stores_and_facts() {
                 samples.push((size, work));
             }
         }
-        eprintln!("store index separation (hit: {hit}): {samples:?}");
+        eprintln!("store index separation ({c_index}, hit: {hit}): {samples:?}");
         for pair in samples.windows(2) {
-            assert!(pair[1].1 <= pair[0].1 * 3, "hit: {hit}: {samples:?}");
+            assert!(
+                pair[1].1 <= pair[0].1 * 3,
+                "{c_index}, hit: {hit}: {samples:?}"
+            );
         }
     }
 }

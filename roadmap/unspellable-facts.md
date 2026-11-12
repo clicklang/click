@@ -70,6 +70,25 @@ parts of them. Its old unchecked lists and historical accessor counts must not
 be treated as a current to-do list. The detailed evidence is preserved in
 [the pre-revision roadmap](https://github.com/clicklang/click/blob/93c5fe74cd6ff161782b65a9709ffe57cd3eca76/roadmap/unspellable-facts.md).
 
+## Authorized delivery sequence
+
+The next ten work packages each receive at least one PR. A package is closed
+only when its named boundaries and regression coverage are complete; these are
+not ten aliases for partial progress on one boundary. Keep one PR open at a time.
+
+| Chunk | Work package | State |
+| --- | --- | --- |
+| 1 | Let bindings and local value handoffs | Implemented and validated; specification bindings retain shared values through selected lookups, with shadowing and snapshot scope preserved. Awaiting integration. |
+| 2 | Symbolic conditional joins | Open |
+| 3 | Pure-function arguments and results | Open |
+| 4 | Mixed-width arithmetic and casts | Open |
+| 5 | C/Rust execution result carriers | Open |
+| 6 | Folds, binders and algebraic matches | Open |
+| 7 | Complete pointers and read addresses | Open |
+| 8 | Remaining Boolean and opaque expression payloads | Open |
+| 9 | Unified raising/lowering and certificate boundaries | Open |
+| 10 | Duplicate storage removal and final closure | Open |
+
 ## Ordered closure checklist
 
 ### 1. Close the remaining checker boundaries — closed
@@ -951,7 +970,7 @@ zero-export regressions cover the new boundaries. Steps 2–4 remain open.
 | Producer | Representation boundary still to close |
 | --- | --- |
 | `spec/shared_machine::prepare` | Same-format available 32/64-bit arithmetic, including division/remainder and shifts, retains common children and debts through `SpecExpressionPath::value`. |
-| `spec::evaluate_spec_expression_dispatch` | Deferred same-format 32/64-bit add/subtract/multiply/divide/remainder and scoped requirement handoffs retain results, debts and structural Integer observations. Opaque/read observation payloads and deferred partial operations over those payloads retain their native identity/domain boundary. Literal-right add chains evaluate iteratively with retained prefixes, including deferred bases. Deferred shifts, mixed/narrow/wide operations, casts, let bindings, symbolic conditional joins, folds, pure-call arguments, pointer indices, scalar comparison propositions and C execution/API outputs still have explicit native boundaries. |
+| `spec::evaluate_spec_expression_dispatch` | Deferred same-format 32/64-bit arithmetic, including shifts, and scoped requirement handoffs retain results and debts. Opaque/read operands retain shared surrounding arithmetic through domain construction and Integer observations; a session-local memo maps opaque leaves to the existing numeric observation identity without changing exact producer payloads. Same-format 32/64-bit scalar comparisons retain shared operands. Literal-right add chains evaluate iteratively with retained prefixes, including deferred bases. Same-format casts retain the existing result and debts. Specification let bindings retain shared machine values through a persistent lexical map and iterative binding evaluation, including nested values; native C expressions materialize only the lexical names they explicitly read. Mixed/narrow/wide operations, representation-changing casts, symbolic conditional joins, folds, pure-call arguments, pointer indices and C execution/API outputs still have explicit native boundaries. |
 | `eval/operators` and `eval/operators/spec_arithmetic` | C execution, Rust shifts, conversions, bitwise operations and wide operations construct native `CExpressionOutcome::Value` payloads. Runtime-error branches and logical specification debts have distinct rules. |
 | `ProofObligation::verification_condition` | Observation canonicalization now retains shared comparisons instead of exporting their prefixes, preserving polarity and native/shared checking equivalence. |
 
@@ -964,6 +983,49 @@ rerun, all 18 shared-producer regressions passed, and the final production
 fact-stability run passed all 5,188 mdtests with zero differences (the baseline
 also had zero). The final boundary fixes were checked by these targeted and
 corpus reruns; the combined gate was not rerun afterward. Steps 2–4 remain open.
+
+The deferred-domain/comparison increment removes the opaque-domain and deferred
+shift compatibility exclusions. Native observation inputs and shared producers
+now agree on numeric identity even after the producer is dropped. Signed claim
+recognition, certificate term selection and typed comparison spelling read the
+retained comparison view. The bounded tagged-address certificate evaluator
+borrows shared operands directly, retaining its payload limits, alignment
+requirements, relation-cycle refusal and tag rules. Its explicit source terms
+and alignment evidence remain the only inputs; no ambient proof search is added.
+Signed interval planning bounds and exports selected operands once for the
+existing public certificate payload; its affine evidence matcher reads shared
+claims directly. Shared cast raising keeps Surface operands, including snapshot
+selectors, instead of forcing them through C fragments. Opaque conditional
+operands retain their interval rules and Surface conditional spelling. Resource
+body requirement matching recognizes retained comparison directions and exact
+stored reads. Guarded-consequent indexing, spelling and rewrite selection read
+shared comparisons, preserving explicit guard discharge and indexed candidate
+selection. Native/shared comparison transport uses the same selected operand
+rules. Proper-conjunct extraction keys native and retained observations alike,
+without admitting an independently held fact as a conjunction projection.
+Cited-condition rewriting visits opaque payloads and folds resolved conditional
+arithmetic; wide word equality retains the signed interpretation of high-bit
+literals. Difference-graph interval queries borrow retained opaque leaves and
+preserve their native branch rules without exporting surrounding arithmetic.
+Theorem requirement selection and checking bridge listed equality and disequality
+premises as well as order claims. Goal completion checks the selected theorem's
+conclusions through the same bridge. General rewrite/transport candidate matching
+keeps its existing order-only admission. Resource match/unfold consumers use the
+producer's paired clause records directly instead of rechecking them against a
+differently represented fact store.
+The public signed certificate's selected term payload is still native, as are
+the remaining producer families listed above. Steps 2–4 remain open.
+
+Validation after integrating upstream through #2607: all 1,453 scaling tests
+passed. The gate's unit/API phase passed 7,242 of 7,243 tests; the one expansion
+failure exposed early completion of a mirrored order goal. Restricting the new
+completion bridge to equality fixed it, and all 106 selected tests passed on
+rerun, including the complete expansion suite and mutex-parity fixtures. All
+58 examples passed afterward. The production build and all 5,210 regular
+fixtures passed, with zero fact-stability differences (305 seconds). The two
+new upstream store-search diagnostic fixtures also passed with retained typed
+spellings, including the heap variant outside the regular corpus. The combined
+gate was not rerun after the fix; the nightly suite was not run.
 
 ### 3. Finish existing term families without redesigning their semantics
 

@@ -4,6 +4,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_guarded_consequent_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_guarded_consequent_closure");
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
@@ -53,25 +55,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             // An equality consequent names a goal operand: rewriting the goal
             // with it leaves the operands' own facts to close what remains.
-            if matches!(
-                consequent.as_ref(),
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                        relation: CompareRelation::Equal,
-                        ..
-                    } | ConditionTerm::Compare {
-                        format: MachineIntegerType::Int64,
-                        relation: CompareRelation::Equal,
-                        ..
-                    },
-                    true
-                )
-            ) && let Some(rewritten) = attempt::candidate_outcome(
-                extracted
-                    .driver()
-                    .apply_step(ProofStep::Rewrite(surface_consequent.clone())),
-            )? {
+            if matches!(consequent.as_ref(), Proposition::ConditionIs(condition, truth)
+                if crate::kernel::machine_integer::comparison::comparison_view(condition, *truth)
+                    .is_some_and(|v| v.relation == crate::kernel::machine_integer::Relation::Equal
+                        && matches!(v.format, MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int64 | MachineIntegerType::UInt64)))
+                && let Some(rewritten) = attempt::candidate_outcome(
+                    extracted
+                        .driver()
+                        .apply_step(ProofStep::Rewrite(surface_consequent.clone())),
+                )?
+            {
                 if rewritten.focused_discharged() {
                     return Ok(Some(rewritten));
                 }
@@ -97,6 +90,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surfaces: &[ClickProposition],
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_restricted_guarded_consequent");
         for (index, (kernel, surface)) in premise_pairs.iter().enumerate() {
             let Proposition::Implies(guard, consequent) = kernel else {
                 continue;
@@ -160,6 +155,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         antecedent: &Proposition,
     ) -> bool {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("antecedent_is_refuted");
         let mut pending = vec![antecedent];
         while let Some(proposition) = pending.pop() {
             match proposition {
@@ -188,6 +185,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_guard: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("prove_guard");
         let Some(scope) =
             attempt::candidate_outcome(search_input.driver().open_have(surface_guard.clone()))?
         else {

@@ -774,6 +774,47 @@ pub(super) fn instantiate_theorem(
     definition: &TheoremDefinition,
     substitution: &TypeSubstitution,
 ) -> Result<TheoremDefinition, String> {
+    instantiate_theorem_with_proof(definition, substitution, true)
+}
+
+/// Instantiate a checked declaration for application without visiting its proof.
+pub(super) fn instantiate_theorem_statement(
+    definition: &TheoremDefinition,
+    substitution: &TypeSubstitution,
+) -> Result<TheoremDefinition, String> {
+    if definition.type_parameters().is_empty() {
+        return Ok(TheoremDefinition {
+            axiom: definition.axiom,
+            generic_pointer_parameters: definition.generic_pointer_parameters.clone(),
+            body: parser::DeclarationBody::default(),
+            name: definition.name.clone(),
+            type_parameters: Vec::new(),
+            parameters: definition.parameters.clone(),
+            executes: definition.executes.clone(),
+            requires: definition.requires.clone(),
+            ensures: definition
+                .ensures
+                .iter()
+                .map(|ensure| EnsureClause {
+                    proof_bindings: ensure.proof_bindings.clone(),
+                    name: ensure.name.clone(),
+                    ensure: ensure.ensure.clone(),
+                    proof: SourceProof::Default,
+                    borrowed: ensure.borrowed,
+                    condition: ensure.condition.clone(),
+                })
+                .collect(),
+            ensure_claim_ids: definition.ensure_claim_ids.clone(),
+        });
+    }
+    instantiate_theorem_with_proof(definition, substitution, false)
+}
+
+fn instantiate_theorem_with_proof(
+    definition: &TheoremDefinition,
+    substitution: &TypeSubstitution,
+    include_proof: bool,
+) -> Result<TheoremDefinition, String> {
     let parameters = definition
         .parameters()
         .iter()
@@ -799,7 +840,11 @@ pub(super) fn instantiate_theorem(
     Ok(TheoremDefinition {
         axiom: definition.axiom,
         generic_pointer_parameters: definition.generic_pointer_parameters.clone(),
-        body: definition.parsed_body().clone(),
+        body: if include_proof {
+            definition.parsed_body().clone()
+        } else {
+            parser::DeclarationBody::default()
+        },
         executes: definition.executes.clone(),
         name: instance_name(
             definition.name(),
@@ -818,7 +863,14 @@ pub(super) fn instantiate_theorem(
         ensures: definition
             .ensures()
             .iter()
-            .map(|ensure| instantiate_ensure_clause(ensure, substitution, &algebraic_parameters))
+            .map(|ensure| {
+                instantiate_ensure_clause(
+                    ensure,
+                    substitution,
+                    &algebraic_parameters,
+                    include_proof,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?,
         ensure_claim_ids: definition.ensure_claim_ids.clone(),
     })
@@ -844,6 +896,7 @@ fn instantiate_ensure_clause(
     ensure: &EnsureClause,
     substitution: &TypeSubstitution,
     algebraic_parameters: &BTreeMap<String, ContractExpression>,
+    include_proof: bool,
 ) -> Result<EnsureClause, String> {
     let ensure_value = match ensure.ensure() {
         Ensure::Proposition(proposition) => Ensure::Proposition(substitute_click_proposition(
@@ -872,7 +925,11 @@ fn instantiate_ensure_clause(
             .collect::<Result<_, String>>()?,
         name: ensure.name.clone(),
         ensure: ensure_value,
-        proof: instantiate_source_proof(ensure.proof(), substitution, algebraic_parameters)?,
+        proof: if include_proof {
+            instantiate_source_proof(ensure.proof(), substitution, algebraic_parameters)?
+        } else {
+            SourceProof::Default
+        },
         borrowed: ensure.borrowed,
         condition: ensure
             .condition()
@@ -959,6 +1016,7 @@ fn instantiate_proof_tactic(
     substitution: &TypeSubstitution,
     algebraic_parameters: &BTreeMap<String, ContractExpression>,
 ) -> Result<ProofTactic, String> {
+    crate::instrumentation::record_deterministic_work(1);
     let expression = |value: &ContractExpression| {
         substitute_contract_expression(
             &instantiate_expression(value, substitution)?,
@@ -1467,4 +1525,34 @@ fn instantiate_proposition(
         },
         proposition => proposition.clone(),
     })
+}
+
+#[cfg(test)]
+mod theorem_statement_tests {
+    use super::*;
+
+    #[test]
+    fn application_instantiates_clauses_but_omits_proof_and_proof_locations() {
+        let file = crate::surface::parse("theorem identity<T>(x: T) { requires x == x; ensures x == x by { have x == x by solve(); assumption(); } }").unwrap();
+        let definition = &file.theorem_definitions()[0];
+        let substitution = BTreeMap::from([("T".into(), ClickType::C(C0Type::Int32).into())]);
+        let declaration = instantiate_theorem(definition, &substitution).unwrap();
+        let statement = instantiate_theorem_statement(definition, &substitution).unwrap();
+        assert_eq!(declaration.parameters(), statement.parameters());
+        assert_eq!(declaration.requires(), statement.requires());
+        assert_eq!(
+            declaration.ensures()[0].ensure(),
+            statement.ensures()[0].ensure()
+        );
+        assert!(matches!(
+            declaration.ensures()[0].proof(),
+            SourceProof::Script(_)
+        ));
+        assert!(matches!(
+            statement.ensures()[0].proof(),
+            SourceProof::Default
+        ));
+        assert!(statement.parsed_body().proof_clauses.is_empty());
+        assert!(statement.parsed_body().implicit_proofs.is_empty());
+    }
 }

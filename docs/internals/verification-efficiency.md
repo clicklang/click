@@ -831,3 +831,37 @@ Any new hot-path collection, cache, or clone answers these review questions:
 See [Testing Click](testing.md) for commands, budgets, and profiling. The open
 implementation work is ordered in
 [`roadmap/README.md`](https://github.com/clicklang/click/blob/master/roadmap/README.md).
+
+### Theorem operation discovery boundary
+
+Named theorem application has three primitive phases: prepare the selected
+arguments and instantiated conclusions while returning prerequisite obligations;
+prove those obligations in the driver with ordinary solve; publish the retained
+conclusions. Pure, fixed-state, live and returned-outcome applications share this
+route, including the population-member-count-zero and Integer range-fold
+built-ins. Explicit `apply(...) using { ... }` is the replay operation.
+
+In test builds, `FastOperationScope` surrounds preparation, publication and
+explicit theorem application and proposition/resource scope completion.
+Prepared statement/fold publication is guarded independently of obligation
+solving. Every `ProofSearch` method records entry before
+any work, including exact-fact shortcuts; constructing `SearchPermission` also
+records discovery. A search entry inside a guarded primitive panics, including
+when the primitive itself was called by search. Driver obligation solving runs
+outside the primitive scope. Nested scopes and unwinding restore the previous
+scope. The build boundary requires both the search-entry instrumentation and the
+migrated operation scopes.
+
+Generic declarations are proved at arbitrary rigid types before use. Application
+instantiates their statements without traversing proof bodies or re-running
+verification; there is no cold-instance proof cache or discovery-guard exception.
+The type-specific `separation::elements` and `separation::distinct_elements`
+laws retain explicit checks for their supported index types. Generic separation
+laws also retain the nonzero storage-width requirement. Declaration verification
+still instantiates proofs where required. `cold_theorem_application_ignores_declaration_proof_length`
+measures first and repeated explicit applications at growing declaration-proof
+lengths; the statement-instantiation regression also excludes proof locations.
+
+This is a discovery boundary, not a complexity proof: it does not detect an
+unregistered helper's loop, a scan in lowering, or expensive fact admission.
+Those still require the operation audit and deterministic scaling regressions.

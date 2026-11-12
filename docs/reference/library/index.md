@@ -6247,9 +6247,9 @@ a slice. `nth` is an observation that consumes nothing, not Rust's consuming
 `Iterator::nth`. The axioms say what `chunks_exact` builds and what one
 `next()` leaves; they are trusted, not proved. A value reads with its
 methods, `s.chunks_exact(4u64).nth(k).len()`
-([methods](../language/index.md#methods)). A Rust unit with `"iterators":
-"library"` imports its `chunks_exact` iterators as values of this type
-([Rust](../rust.md#library-iterators)); see `design/rust-iterators.md`.
+([methods](../language/index.md#methods)). A Rust unit imports its `chunks_exact` iterators as values of this type
+([Rust](../rust.md#exact-chunk-iterators-and-remainder)); see
+`design/rust-iterators.md`.
 
 ### `ChunksExact`
 
@@ -6592,6 +6592,28 @@ solve();`, which `solve` proves from the Integer fact where the facts keep
 
 **Verified use:** [`mdtests/separation_elements.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements.md) and [`mdtests/separation_elements_types.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_types.md). Signed indices and preservation are checked by [`mdtests/separation_elements_signed.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_signed.md) and [`mdtests/separation_elements_signed_store.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_signed_store.md).
 
+
+### `separation::distinct_elements`
+
+```click
+theorem distinct_elements<T, I>(p: T*, i: I, j: I) {
+    requires i != j;
+    ensures &p[i] != &p[j];
+}
+```
+
+**Meaning:** Unequal indices of one typed array give unequal element
+addresses. Like `separation::elements`, both indices have the same inferred
+type `I` (`int32`, `int64`, or `uint64`), the addresses are the exact scaled
+offsets `p + i * sizeof(T)` and `p + j * sizeof(T)`, and the premise is the
+disequality of the index values at type `I`, such as
+`((m - 1) as int32) != 0` or `j != 0u64`. The law states only the address
+disequality; it grants no ownership and checks no pointer arithmetic.
+`solve` applies it to a goal `&q[j] != &q[0]` after proving the index
+disequality, and its expansion writes the `apply` with an explicit `using`
+([tactics](../tactics/index.md#arithmetic-with-selected-premises)).
+
+**Verified use:** [`mdtests/solve_proves_element_addresses_distinct_from_their_indices.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_element_addresses_distinct_from_their_indices.md) applies it explicitly and through `solve`, and [`mdtests/solve_proves_element_addresses_distinct_at_each_index_type.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_element_addresses_distinct_at_each_index_type.md) at `uint64` and `int64` indices; [`mdtests/solve_does_not_prove_element_addresses_distinct_when_the_indices_may_be_equal.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_prove_element_addresses_distinct_when_the_indices_may_be_equal.md) refuses equal-possible indices.
 ### `separation::subrange`
 
 ```click

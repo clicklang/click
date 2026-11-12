@@ -25,6 +25,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         step: ProofStep,
         origin: Option<ProofStepOrigin>,
     ) -> Result<Proof<'a>, ClickError> {
+        self.observe_step(step, |step| self.apply_step_with_origin_inner(step, origin))
+    }
+
+    /// Retain diagnostics, tracing and synchronization for an already prepared
+    /// operation without evaluating its inputs again.
+    pub(in crate::surface::proof) fn observe_step(
+        &self,
+        step: ProofStep,
+        apply: impl FnOnce(ProofStep) -> Result<Proof<'a>, ClickError>,
+    ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         let read_checkpoint = crate::surface::proof_trace::enabled_for(driver_proof.claim_label())
             .then(|| {
@@ -48,14 +58,20 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             && crate::surface::proof_trace::smart_origin().is_some())
         .then(|| chosen_step_text(&step))
         .flatten();
-        let result = driver_proof
-            .driver()
-            .apply_step_with_origin_inner(step, origin)
-            .map_err(|error| {
-                driver_proof
-                    .attach_step_diagnostic(error)
-                    .with_failed_tactic(tactic)
-            });
+        // A trace observes the read-history queries already made by this
+        // operation, including publication of a retained application.
+        let run = || apply(step);
+        let (result, cell_walks) =
+            if crate::surface::proof_trace::enabled_for(driver_proof.claim_label()) {
+                crate::kernel::capture_step_cell_walks(TRACED_STEP_CELL_WALKS, run)
+            } else {
+                (run(), Vec::new())
+            };
+        let result = result.map_err(|error| {
+            driver_proof
+                .attach_step_diagnostic(error)
+                .with_failed_tactic(tactic)
+        });
         if let Ok(next) = &result
             && let Some(execution) = next.execution()
         {
@@ -87,6 +103,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 chosen,
                 8,
                 read_checkpoint.as_ref(),
+                cell_walks,
             );
         }
         if let Ok(next) = &result
@@ -666,3 +683,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         scope.join()
     }
 }
+
+/// How many read-history walks a traced step captures for its trace.
+const TRACED_STEP_CELL_WALKS: usize = 16;

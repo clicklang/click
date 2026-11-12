@@ -15,8 +15,7 @@
         "files": [
           "quad.rs"
         ]
-      },
-      "iterators": "library"
+      }
     }
   }
 }

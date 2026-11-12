@@ -202,7 +202,7 @@ impl TermRewrite<'_> {
                     KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(&value))
                 }
                 KernelTermNode::MachineBinary {
-                    format,
+                    format: operation_format,
                     operator,
                     arguments,
                 } => {
@@ -210,9 +210,27 @@ impl TermRewrite<'_> {
                         .each_ref()
                         .map(|arg| get(arg).expect("visited operand"));
                     if self.comparison_arithmetic {
-                        comparison_binary(*format, *operator, left, right)
+                        comparison_binary(*operation_format, *operator, left, right)
+                    } else if self.conditions.is_some()
+                        && let (Some(a), Some(b)) = (literal(&left), literal(&right))
+                    {
+                        // Selected conditions can turn opaque If operands into
+                        // literals. Fold only those fixed-size children, as the
+                        // native conditional rewriter does; retain symbolic DAGs.
+                        let folded =
+                            MachineTerm::machine_binary(*operation_format, *operator, a, b);
+                        // The root may be a signed word-equality reading of an
+                        // unsigned operation. Interpret a folded word in that
+                        // root's format before observing its mathematical value.
+                        let folded =
+                            MachineTerm::machine_integer_cast(*operation_format, format, folded);
+                        imported(format, folded)
                     } else {
-                        KernelTerm::machine_binary_shared(*format, *operator, [left, right])
+                        KernelTerm::machine_binary_shared(
+                            *operation_format,
+                            *operator,
+                            [left, right],
+                        )
                     }
                 }
                 KernelTermNode::MachineUnary {

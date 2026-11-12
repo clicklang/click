@@ -1211,6 +1211,8 @@ impl<'a> Proof<'a> {
         proved: &Self,
         discharged: &[UnresolvedRequirement],
     ) -> Result<Self, ClickError> {
+        #[cfg(test)]
+        let _operation = crate::kernel::search::FastOperationScope::enter("finish_prepared_step");
         let mut candidate = prepared?;
         // Every successful fold retains either its exchange or its outcome
         // definition-law presentation while the driver proves its premises.
@@ -1914,6 +1916,7 @@ impl<'a> Proof<'a> {
                 None,
                 usize::MAX,
                 read_checkpoint.as_ref(),
+                Vec::new(),
             );
         }
         Ok(next)

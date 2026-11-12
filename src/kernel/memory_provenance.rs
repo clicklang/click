@@ -89,6 +89,36 @@ pub(crate) fn with_bounded_cell_walk_diagnostics<T>(run: impl FnOnce() -> T) -> 
     })
 }
 
+/// The cell walks `run` performs, up to `limit`, for a trace of one checked
+/// step. An enclosing capture still receives them, within its own limit, as
+/// if it had recorded them itself, so a written check's observations do not
+/// change because a trace is on. Diagnostic only: no query changes.
+pub(crate) fn capture_step_cell_walks<T>(
+    limit: usize,
+    run: impl FnOnce() -> T,
+) -> (T, Vec<TransportCellWalkDiagnostic>) {
+    let (result, walks) = with_transport_cell_walk_diagnostics(|| {
+        TRANSPORT_CELL_WALKS.with(|slot| slot.borrow_mut().as_mut().unwrap().limit = Some(limit));
+        let result = run();
+        (result, take_transport_cell_walk_diagnostics())
+    });
+    TRANSPORT_CELL_WALKS.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(outer) = slot.as_mut() else {
+            return;
+        };
+        for walk in &walks {
+            if outer.limit.is_some_and(|limit| outer.walks.len() >= limit) {
+                break;
+            }
+            if outer.seen.insert(walk.clone()) {
+                outer.walks.push(walk.clone());
+            }
+        }
+    });
+    (result, walks)
+}
+
 pub(crate) fn take_transport_cell_walk_diagnostics() -> Vec<TransportCellWalkDiagnostic> {
     TRANSPORT_CELL_WALKS.with(|slot| {
         slot.borrow_mut()
@@ -6133,6 +6163,20 @@ pub(crate) fn certified_store_equations(
             // What the store wrote is the read of its own kind there,
             // equated at the stored value's format. Bool uses its byte carrier.
             let kind = LoadKind::of_value(&store.value)?;
+            // The store wrote a four-byte word, so the read naming it is a
+            // four-byte access. A word read without a recorded width is named
+            // under the eight-byte fallback, which the equality graph does
+            // not register as a word read, and a later typed read of the same
+            // cell names it under another width than this equation does.
+            // Record the width before naming the read, as a typed load
+            // producer does. Every other kind's fallback is its own width.
+            if kind.is_word32() {
+                crate::kernel::eval::record_load_access_width(
+                    &store.after,
+                    &store.pointer,
+                    store.value.byte_width(),
+                );
+            }
             // The store record establishes the value of this exact read.
             // Publish its registered version name, the same term logical
             // lowering constructs at the post-store snapshot. The private
@@ -8675,6 +8719,62 @@ fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
         };
         assert!(crate::kernel::condition_variable_widths(condition).is_ok());
     }
+}
+
+/// A store equation admitted before any typed read of its cell still joins
+/// the equality graph as a word read. Its read was named under the unrecorded
+/// fallback width, which the graph does not register as a four-byte read, and
+/// a later typed read of the same cell does not revisit a context that already
+/// holds the equation. A read at an index equal to the stored one then missed
+/// in that context, but not in one rebuilt from the same facts, so expanding
+/// `arena_write` replayed `assumption()` against a context that knew less.
+#[test]
+fn a_store_equation_admitted_before_a_typed_read_joins_reads_at_equal_indexes() {
+    use crate::kernel::{ExecutionFacts, ExecutionPureFact, PureFactContext};
+    let _session = crate::kernel::VerificationSession::enter();
+    let variable = |id| MachineTerm::Variable(Variable(id));
+    let cell = |index| Pointer {
+        block: "array".into(),
+        offset: PointerOffsetTerm::scale_int32(variable(index), 4),
+    };
+    let (stored, read, value) = (989_790, 989_791, 989_792);
+    let before = CMemory::new().with_block("array", 4096);
+    let after = before
+        .clone()
+        .store(cell(stored), CValue::Int32(variable(value)));
+    let facts: ExecutionFacts = vec![ExecutionPureFact::certified_store(
+        before,
+        after.clone(),
+        cell(stored),
+        CValue::Int32(variable(value)),
+        None,
+    )]
+    .into();
+    let equations = certified_store_equations(&facts);
+    // The incremental order: the step admits the store equation, the index
+    // equality follows, and only then does a typed C read of the stored cell
+    // record its width.
+    let context = equations
+        .into_iter()
+        .fold(PureFactContext::new(), PureFactContext::assume_proposition)
+        .assume_condition(ConditionTerm::equal(variable(stored), variable(read)), true);
+    let after = crate::kernel::intern_c_memory(after);
+    crate::kernel::eval::record_load_access_width(after.memory(), &cell(stored), 4);
+    crate::kernel::eval::record_load_access_width(after.memory(), &cell(read), 4);
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::equal(
+            crate::kernel::canonical_form_of_load(after, cell(read), LoadKind::Int32),
+            variable(value),
+        ),
+        true,
+    );
+    assert!(context.contains_known(&goal));
+}
+
+#[cfg(test)]
+mod store_equation_width_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/memory_provenance/store_equation_width_tests.rs");
 }
 
 #[cfg(test)]

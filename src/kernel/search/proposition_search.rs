@@ -156,6 +156,8 @@ fn connected_trial(
 /// Logical proposition discovery over the supplied kernel fact context.
 impl super::ProofSearch<PureFactContext> {
     pub(crate) fn proves(context: &PureFactContext, proposition: &Proposition) -> bool {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("proves");
         if reasoning_interrupted() {
             return false;
         }
@@ -310,6 +312,8 @@ impl super::ProofSearch<PureFactContext> {
         context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_proposition");
         crate::kernel::search::ProofSearch::derive_proposition_using(context, proposition, false)
             .map(|derivation| *derivation)
     }
@@ -318,6 +322,8 @@ impl super::ProofSearch<PureFactContext> {
         context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_solve_proposition");
         crate::kernel::search::ProofSearch::derive_proposition_using(context, proposition, true)
             .map(|derivation| *derivation)
     }
@@ -330,6 +336,8 @@ impl super::ProofSearch<PureFactContext> {
         context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_solve_proposition_without_exact_goal");
         if let Some(derivation) =
             crate::kernel::search::ProofSearch::derive_solve_proposition(context, proposition)
             && !derivation.context_premises().contains(proposition)
@@ -364,6 +372,8 @@ impl super::ProofSearch<PureFactContext> {
         context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_atomic_proposition");
         crate::kernel::search::ProofSearch::derive_atomic_proposition_using(
             context,
             proposition,
@@ -376,6 +386,8 @@ impl super::ProofSearch<PureFactContext> {
         context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_solve_atomic_proposition");
         crate::kernel::search::ProofSearch::derive_atomic_proposition_using(
             context,
             proposition,
@@ -388,6 +400,8 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivation> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_atomic_proposition_using");
         if solve_reasoning_interrupted() {
             return None;
         }
@@ -423,6 +437,8 @@ impl super::ProofSearch<PureFactContext> {
         extended_rules: bool,
         exclude_exact_goal: bool,
     ) -> Option<(PureFactContext, u64, AtomicPropositionDerivationEvidence)> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("atomic_derivation_premises");
         if !exclude_exact_goal && context.proves_exact(proposition) {
             let exact = PureFactContext::new().assume_proposition(proposition.clone());
             let (evidence, premises_id) =
@@ -826,6 +842,8 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<Box<PropositionDerivation>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_proposition_using");
         let _id_scope = PureFactContextIdScope::enter(context);
         if solve_reasoning_interrupted() {
             return None;
@@ -886,6 +904,8 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_structural_rule");
         // Range conjunctions are also conclusions of the signed arithmetic
         // theorems. Try those whole-goal certificates before splitting the
         // two bounds; retain the ordinary conjunction as their conclusion.
@@ -973,6 +993,8 @@ impl super::ProofSearch<PureFactContext> {
         right: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_and_rule");
         crate::kernel::search::ProofSearch::derive_proposition_using(context, left, extended_rules)
             .zip(
                 crate::kernel::search::ProofSearch::derive_proposition_using(
@@ -991,6 +1013,8 @@ impl super::ProofSearch<PureFactContext> {
         right: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_or_rule");
         // Unsigned arithmetic guards often lower to `false or bound`. Try
         // the bound before spending the context on contradiction search for
         // the false arm. Keep that arm as a fallback for inconsistent contexts.
@@ -1032,6 +1056,8 @@ impl super::ProofSearch<PureFactContext> {
         inner: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_double_negation_rule");
         crate::kernel::search::ProofSearch::derive_proposition_using(context, inner, extended_rules)
             .map(PropositionDerivationRule::DoubleNegation)
     }
@@ -1043,6 +1069,8 @@ impl super::ProofSearch<PureFactContext> {
         right: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_implies_rule");
         let antecedent = left.clone();
         let negated_antecedent = Proposition::Not(Box::new(antecedent.clone()));
         if context.proves_exact(&negated_antecedent) {
@@ -1081,6 +1109,8 @@ impl super::ProofSearch<PureFactContext> {
         body: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_forall_rule");
         let body_uses_binder = crate::kernel::proposition_has_free_bitvector_variable(body, var);
         let body_derivation = crate::kernel::search::ProofSearch::derive_proposition_using(
             context,
@@ -1123,6 +1153,8 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_atomic_rule");
         crate::kernel::search::ProofSearch::atomic_derivation_premises(
             context,
             proposition,
@@ -1145,6 +1177,8 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_by_algebraic_constructor_rules");
         if let Some(fields) = algebraic_constructor_field_equalities(proposition)
             && !fields.is_empty()
         {
@@ -1177,6 +1211,8 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_finite_forall");
         let mut instances = context.finite_forall_instantiations(proposition).peekable();
         instances.peek()?;
         instances
@@ -1202,6 +1238,8 @@ impl super::ProofSearch<PureFactContext> {
         sort: &Sort,
         body: &Proposition,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_exists_from_fact");
         let candidates = context
             .proposition_facts(SearchPermission::new())
             .filter_map(|source| {
@@ -1254,6 +1292,8 @@ impl super::ProofSearch<PureFactContext> {
         sort: &Sort,
         body: &Proposition,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_exists_from_witness");
         if sort != &Sort::CInt32 {
             return None;
         }
@@ -1295,6 +1335,8 @@ impl super::ProofSearch<PureFactContext> {
         context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_forall_loadable_range");
         let (premises, conclusion) = forall_loadable_range_parts(proposition)?;
         let Proposition::CMemoryLoadable { base, bytes, .. } = conclusion else {
             return None;
@@ -1325,6 +1367,8 @@ impl super::ProofSearch<PureFactContext> {
         sort: &Sort,
         body: &Proposition,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_exists_loadable_range");
         if sort != &Sort::CInt32 {
             return None;
         }
@@ -1356,6 +1400,8 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_by_singleton_substitution");
         let mut variables = BTreeSet::new();
         collect_proposition_connection_variables(proposition, &mut variables);
         let (variable, value, equality) = variables
@@ -1389,6 +1435,8 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("derive_by_disjunction_cases");
         // Each case re-enters the whole derivation, which splits again on
         // every remaining disjunction: with a dozen call outcomes in scope
         // (`result == 0 or result == 1` per call) a goal no case helps paid
@@ -1486,6 +1534,8 @@ impl super::ProofSearch<PureFactContext> {
         context: &PureFactContext,
         proposition: &Proposition,
     ) -> bool {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("proves_finite_forall");
         let mut variables = Vec::new();
         let body = collect_forall_chain(proposition, &mut variables);
         if variables.is_empty() {
@@ -1519,6 +1569,8 @@ impl super::ProofSearch<PureFactContext> {
         ranges: &[FiniteForAllRange],
         values: &mut Vec<i64>,
     ) -> bool {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("proves_finite_forall_instantiations");
         if values.len() == variables.len() {
             let mut instantiated = body.clone();
             for (variable, value) in variables.iter().zip(values.iter()) {
@@ -1549,6 +1601,8 @@ impl super::ProofSearch<PureFactContext> {
         context: &PureFactContext,
         proposition: &Proposition,
     ) -> bool {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("proves_by_singleton_substitution");
         let mut variables = BTreeSet::new();
         collect_proposition_connection_variables(proposition, &mut variables);
         let Some((variable, value)) = variables
@@ -1574,6 +1628,8 @@ impl super::ProofSearch<PureFactContext> {
     }
 
     pub(crate) fn proves_not(context: &PureFactContext, proposition: &Proposition) -> bool {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("proves_not");
         match proposition {
             Proposition::ConditionIs(condition, value) => {
                 context.decide(condition) == Some(!*value)

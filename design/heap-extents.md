@@ -521,18 +521,66 @@ the `UInt64` kind.
    `one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_blocks`
    (`memory_scaling_tests.rs`).
 
-   Still refused: a struct block's memory cannot cross a call or a loop
-   clause that names it as structs. A contract's `owns p[0..n]` on a struct
-   pointer with a `size_t` `n` is the wide range `p[0u64..n]` of `k`-byte
-   elements, the block is a byte range, and wide ranges of different
-   element widths are never respelled into each other
-   (`memory_range_covers_with_separation`: a wide range has no 32-bit byte
-   count to renormalize to), so such a requirement or loop `owns` clause is
-   missing. A loop with no `owns` clause, and a call taking only the
-   `allocation` token, work. Field access through such a contract range
-   (`p[i].field` in a callee holding `p[0u64..n]`) is also refused: the
-   whole-element rule places only `k`-byte accesses, and the formation
-   bound for a held range compares bytes with `n * k`.
+   **Done after stage 4: struct ranges of a 64-bit block.** A contract's
+   `owns p[0..n]` on a struct pointer with a `size_t` `n` is the wide range
+   `p[0u64..n]` of `k`-byte elements, and the block is the byte range
+   `p[0u64..n * k]`. Coverage and subtraction
+   (`memory_range_covers_by_routes`, `split_memory_range` in
+   `primitives/resource_algebra.rs`) now re-spell a wide range in the other
+   range's element width (`wide_memory_range_respelled`): narrowing the width
+   multiplies each symbolic endpoint by `m = from / to`, widening it reads an
+   endpoint `x * m` (a `uint64` product with the constant `m`) as `x`, and
+   constants are folded exactly. Each product carries its no-wrap condition
+   `x <= UINT64_MAX / m`, decided (one decision per symbolic endpoint) before
+   the re-spelling stands for the range: then both spellings name the same
+   bytes, so no byte is added or dropped. The requirement is re-spelled in
+   the owner's width first, keeping residues in the owner's coordinates, then
+   the owner in the requirement's. A block's count was admitted with
+   `n <= PTRDIFF_MAX / k` decided and a contract's struct range carries its
+   extent guard `n <= PTRDIFF_MAX / k`, so the condition is decided for
+   every block a caller allocated; it is open only for a byte range a
+   contract states over an unbounded count. That gives a call's or loop's
+   entry the struct range, and its exit, a `free` or a later call the byte
+   range back. Field access through a held struct range reuses the
+   struct-array rule over the range's own count
+   (`wide_struct_array_count` and `field_access_in_wide_struct_array`,
+   `assumptions/memory_reasoning.rs`, now for a byte range `p[0..m * k]` or a
+   `k`-byte element range `p[0..m]`), as do element and field addresses
+   (`position_in_wide_struct_array`, read by `pointer_formation_in_range`)
+   and a field-sized footprint's coverage
+   (`memory_range_covers_struct_array_field`). The rule also now refuses a
+   negative constant offset whose access ends inside the range. When a
+   call's owned memory requirement is missing and the one supplier coverage
+   selected is a wide range of another width whose designation matches, the
+   refusal names the undecided product
+   (`CRuntimeError::WideRangeRespellingMayWrap`,
+   `wide_range_respelling_refusal`): ``range `p[0u64..n]` of 8-byte elements
+   needs `n * 8` to not wrap (`n * 8 <= UINT64_MAX`)``. It does so only when
+   neither re-spelling is decided. Regressions (mdtests):
+   `a_callee_owning_a_size_t_struct_range_reads_and_writes_its_fields`
+   (`calloc`), `a_callee_writes_fields_of_an_uninitialized_size_t_struct_range`
+   (`malloc`), `a_loop_owning_a_size_t_struct_range_writes_its_fields`,
+   `a_field_past_a_size_t_struct_range_in_a_callee_is_refused`,
+   `a_first_field_one_past_a_size_t_struct_range_in_a_callee_is_refused`,
+   `a_field_at_an_unbounded_index_of_a_size_t_struct_range_is_refused`,
+   `a_callee_struct_range_longer_than_its_block_is_refused`. Kernel unit tests
+   (`tests/resource_tests.rs`):
+   `a_wide_struct_range_and_its_byte_range_are_respelled_under_no_wrap`,
+   `a_field_access_in_a_wide_struct_range_is_placed_over_its_count`,
+   `a_wide_respelling_refusal_names_the_undecided_product`. Scaling
+   (`resource_scaling_tests.rs`):
+   `respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ranges`.
+
+   Still refused: a byte range a contract spells through a cast,
+   `owns (p as (uint8 *))[0..m * 8u64]`, does not supply `owns p[0..m]` to a
+   callee, bounded or not: the cast range keeps the cast's designation, which
+   the struct requirement's typed carrier does not match. (That is why the
+   no-wrap refusal has no mdtest: a byte range over an unbounded count reaches
+   a struct requirement only through such a cast.) A 32-bit (`int`) count
+   range `p[0..n]` from a `malloc(n * sizeof(struct T))` block with an `int`
+   `n` (a wide block) is not supplied either: re-spelling is between wide
+   ranges, and the narrow range's bound is not read as the block's
+   `uint64` count; the `calloc` form, whose extent is 32-bit, is supplied.
 
 Soundness of (a): a `UInt64` extent `E` is admitted only with `0 < E <= i64::MAX`
 decided (raw) or `1 <= n <= i64::MAX / w` and `E = n*w` (element, no wrap, so

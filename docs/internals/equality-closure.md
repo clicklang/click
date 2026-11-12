@@ -567,7 +567,13 @@ refute one. `wrapped_index_sum_does_not_decide_pointer_offsets_equal` and
 direct memory-resolution regressions protect this boundary across element
 widths. Resolved-load value comparisons require a recorded four-byte read;
 a byte, short, or wide read cannot acquire int32 semantics by resolving its
-stored term. The general memory and expression reasoning APIs still perform
+stored term. A certified store equation for a four-byte word records that
+width at its cell before naming the read, as a typed load producer does. The graph then
+registers that read as a word read when the step admits the equation. A
+context that admitted it under the unrecorded fallback width would never
+revisit it after a later typed read of the cell, and would know less than one
+rebuilt from the same facts
+(`a_store_equation_admitted_before_a_typed_read_joins_reads_at_equal_indexes`). The general memory and expression reasoning APIs still perform
 their explicit checked judgments; the known-value query does no arithmetic
 search or snapshot transport.
 

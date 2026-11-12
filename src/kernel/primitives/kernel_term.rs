@@ -118,6 +118,7 @@ pub struct KernelLegacyTerm {
 enum LegacyIdentity {
     Integer(u64),
     Machine(u64),
+    MachineObservation(SharedMachineIntegerTerm),
     ApplicationArgument(SharedPureApplication, usize),
     Fresh(u64),
 }
@@ -243,7 +244,10 @@ impl NodeKey {
         let shared_machine_operand = match &node {
             KernelTermNode::MachineLiteral(_) | KernelTermNode::MemoryLoad { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
-            KernelTermNode::Legacy(value) => matches!(value.identity, LegacyIdentity::Machine(_)),
+            KernelTermNode::Legacy(value) => matches!(
+                value.identity,
+                LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
+            ),
             KernelTermNode::Variable(_) => {
                 matches!(&ty, KernelType::C(c) if MachineIntegerType::from_c_type(*c).is_some())
             }
@@ -256,7 +260,10 @@ impl NodeKey {
         };
         let machine_conversions = match &node {
             KernelTermNode::IntegerToMachine { .. } => true,
-            KernelTermNode::Legacy(value) => matches!(value.identity, LegacyIdentity::Machine(_)),
+            KernelTermNode::Legacy(value) => matches!(
+                value.identity,
+                LegacyIdentity::Machine(_) | LegacyIdentity::MachineObservation(_)
+            ),
             KernelTermNode::MachineBinary { arguments, .. } => {
                 arguments.iter().any(KernelTerm::has_machine_conversions)
             }
@@ -290,6 +297,10 @@ impl NodeKey {
             KernelTermNode::MachineUnary { operand, .. } => {
                 operand.has_conditional_machine_rewrites()
             }
+            // Opaque domain leaves can contain conditions (If, folds, calls).
+            // Their native walker owns those payloads; do not skip it merely
+            // because the surrounding arithmetic now has shared parents.
+            KernelTermNode::Legacy(value) => value.machine_operand().is_some(),
             _ => false,
         };
         let machine_constant = machine::constant_reading(&node);
@@ -617,6 +628,20 @@ impl KernelTerm {
                     LegacyIdentity::Machine(id),
                 )
             })
+    }
+
+    /// Numeric observation identity is distinct from a producer's exact payload
+    /// identity. Only observation construction uses this leaf; address indices
+    /// and stored results retain their original producer metadata.
+    pub(crate) fn machine_observation_leaf(
+        format: MachineIntegerType,
+        value: MachineTerm,
+        identity: SharedMachineIntegerTerm,
+    ) -> Self {
+        Self::legacy_at(
+            PureFunctionArgument::Value(machine::wrap_exact(format, value)),
+            LegacyIdentity::MachineObservation(identity),
+        )
     }
 
     fn legacy_at(argument: PureFunctionArgument, identity: LegacyIdentity) -> Self {

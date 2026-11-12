@@ -27,13 +27,13 @@
               "path": ".click/loop/loop.rs.ullbc",
               "sha256": "e239d3e119152d1ae38068cb7808cba282cda697f4bbd13a9288326645483ea9"
             },
-            "identity": "711ce61e3bd1e7141636e1213ebe3534e229f696af52b211893e0856f8d237c9",
+            "identity": "b3ce28550d44f1ff967c84307c7401aa97f98eb781d659fd9b407500786a9432",
             "inputs": {
               "loop.rs": "309a1cf4bc23114b252e51edf37e3d8b531744abb23a5149ab0b8046b0f44f50"
             }
           }
         },
-        "unit": "7543b63efb3915176c0d7755c4d159c2325e4e0a87365598f78328ca28f2660f"
+        "unit": "66e3de1b0af552e56929e0e0fb514772c8efc3ff147b757ae60ca761509b2380"
       }
     }
   }

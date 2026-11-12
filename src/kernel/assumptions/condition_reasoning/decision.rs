@@ -910,6 +910,11 @@ impl PureFactContext {
     /// literal storage never counts: two occurrences with identical bytes
     /// may be one object, so their ranges are deliberately never separated.
     fn pointers_distinct_by_owned_anchors(&self, left: &Pointer, right: &Pointer) -> Option<bool> {
+        // Intrinsic condition evaluation has no ownership compositions.
+        // Keep this empty-domain decision outside the discovery interface.
+        if self.resource_compositions.is_empty() {
+            return None;
+        }
         crate::kernel::search::ProofSearch::<PureFactContext>::owned_anchor_distinctness(
             self, left, right,
         )
@@ -1256,6 +1261,11 @@ impl PureFactContext {
             Relation,
             comparison::{comparison_view, condition_for_operand_views},
         };
+        // The shared constructor can settle an endpoint from the operand's
+        // intrinsic unsigned range before this adjacent-bound query runs.
+        if let ConditionTerm::Constant(value) = condition {
+            return Some(*value);
+        }
         let view = comparison_view(condition, true)?;
         if view.format != format {
             return None;
@@ -2941,6 +2951,48 @@ mod shared_order_pipeline_tests {
     use super::*;
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
     use crate::kernel::{KernelTermImport, MachineBinaryOp as Op};
+
+    #[test]
+    fn retained_model_arithmetic_uses_native_facts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let x = MachineTerm::Variable(Variable(997691));
+        let y = MachineTerm::Variable(Variable(997692));
+        let sum = MachineTerm::logical_machine_binary(ty, Op::Add, x.clone(), 1u32.into());
+        let native = ConditionTerm::signed_less_equal(0u32.into(), sum.clone());
+        let shared =
+            crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(&native)
+                .unwrap();
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(0u32.into(), x.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_equal(x.clone(), 2u32.into()),
+                true,
+            );
+        assert_eq!(facts.decide(&native), Some(true));
+        assert_eq!(facts.decide(&shared), Some(true), "{shared:?}");
+        let difference = MachineTerm::logical_machine_binary(ty, Op::Subtract, x, y.clone());
+        let native = ConditionTerm::equal(y, difference);
+        let shared =
+            crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(&native)
+                .unwrap();
+        let empty = PureFactContext::new();
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        assert!(empty.condition_matches(&native, &shared));
+        assert!(empty.condition_matches(&shared, &native));
+        assert!(!empty.condition_matches(&shared, &ConditionTerm::equal(0u32.into(), 1u32.into())));
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
+        assert_eq!(
+            empty.assume_condition(native, true).decide(&shared),
+            Some(true)
+        );
+    }
 
     // Keep each ordinary regression small while covering the same operation,
     // literal, equality-context and comparison combinations.

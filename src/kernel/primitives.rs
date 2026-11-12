@@ -1918,20 +1918,6 @@ macro_rules! binary_bitvector32_term {
 }
 pub(crate) use binary_bitvector32_term;
 
-/// Matches every two-operand unsigned 64-bit [`MachineTerm`] operation, binding the operands to
-/// `$left` and `$right`.
-macro_rules! binary_uint64_term {
-    ($left:pat, $right:pat) => {
-        $crate::kernel::MachineTerm::Binary {
-            format: $crate::kernel::MachineIntegerType::UInt64,
-            op: _,
-            left: $left,
-            right: $right,
-        }
-    };
-}
-pub(crate) use binary_uint64_term;
-
 /// Matches every two-operand [`MachineTerm`] operation that is not at a 32-bit format, binding
 /// the operands to `$left` and `$right`. Only the 64-bit formats, signed or unsigned, are built
 /// there (see [`MachineTerm::Binary`]); the others are listed so that this and
@@ -7465,6 +7451,16 @@ pub enum CInvalidFree {
 /// starts with the function's name.
 pub const RETURN_TYPE_MISMATCH: &str = "returned a value that does not match its declared type";
 
+/// The undecided no-wrap condition of a wide range re-spelled in another
+/// element width: `range`'s endpoint `count`, multiplied by `factor`, must
+/// stay at most `UINT64_MAX` for the two spellings to name the same bytes.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct WideRangeNoWrap {
+    pub range: CResourceFact,
+    pub count: MachineTerm,
+    pub factor: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CRuntimeError {
     UnboundVariable(String),
@@ -7502,6 +7498,11 @@ pub enum CRuntimeError {
     MissingResource {
         resource: Box<CResourceFact>,
     },
+    /// A required wide memory range is held in another element width, and
+    /// the two name the same bytes only when `count * factor` does not wrap,
+    /// which the facts do not decide. `range` is the range whose endpoint
+    /// `count` is, or becomes, that product. Diagnostic only.
+    WideRangeRespellingMayWrap(Box<WideRangeNoWrap>),
     /// An operation requires the current initialization's lifecycle owner.
     MissingMutexLive {
         mutex: Pointer,
@@ -13879,6 +13880,7 @@ impl ReasoningPolicy {
     /// A held resource carries the arithmetic domains established by its fold.
     pub(super) const ASSUME_HELD_RESOURCE_DOMAINS: Self = Self(1 << 9);
     pub(super) const RETAIN_REQUIRED_OBLIGATIONS: Self = Self(1 << 10);
+    pub(super) const RETAIN_ARGUMENT_DOMAINS: Self = Self(1 << 11);
 
     pub(super) fn contains(self, choice: Self) -> bool {
         self.0 & choice.0 != 0

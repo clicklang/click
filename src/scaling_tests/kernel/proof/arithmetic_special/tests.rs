@@ -669,3 +669,52 @@ fn arithmetic_read_atoms_keep_snapshot_identity_without_scanning_storage() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn shared_tagged_word_certificates_preserve_bounds_without_exports() {
+    use crate::kernel::{KernelTerm, KernelTermExport, MachineOperandView as View};
+    let mut previous = None;
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let address = MachineTerm::PointerAddress(
+            Box::new(pointer(PointerOffsetTerm::Constant(0))),
+            crate::kernel::AddressObjectClass::NONE,
+        );
+        let mut root = KernelTerm::retained_machine_operand(format, View::Legacy(&address));
+        let one = KernelTerm::retained_machine_operand(
+            format,
+            View::Legacy(&MachineTerm::uint64_constant(1)),
+        );
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root, one.clone()],
+            );
+        }
+        let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            format,
+            CompareRelation::Equal,
+            [View::Shared(&root), View::Shared(&root)],
+        );
+        let goal = Proposition::ConditionIs(condition.clone(), true);
+        let exports = KernelTermExport::machine_export_count();
+        let (valid, work) = crate::instrumentation::measure_deterministic_work(|| {
+            pointer_word_from_alignment(&[], &goal)
+        });
+        assert!(valid, "size={size}");
+        assert!(!pointer_word_from_alignment(
+            &[],
+            &Proposition::ConditionIs(condition, false)
+        ));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        if let Some(previous) = previous {
+            assert!(
+                work <= previous * 5,
+                "size={size}, work={work}, previous={previous}"
+            );
+        }
+        previous = Some(work);
+    }
+}
