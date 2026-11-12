@@ -48,10 +48,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let mut current = self.proof.clone();
         let mut premises = Vec::new();
         for requirement in obligations {
-            if matches!(
-                normalize_proposition(&requirement.proposition),
-                NormalizedProposition::True
-            ) {
+            if requirement.surface.is_none()
+                && matches!(
+                    normalize_proposition(&requirement.proposition),
+                    NormalizedProposition::True
+                )
+            {
                 continue;
             }
             let surface = current
