@@ -1,0 +1,126 @@
+{
+  "schema": 1,
+  "units": {
+    "counters": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "client.cpp": {
+              "compilation_database_sha256": "c5305317fb1421168007f34c7929b419f22f60e6a7df6ca1bdbda7981fdc68d7",
+              "dependencies": {
+                "counter.h": "7ae072b831f19b16d5b488847c887671eee0f823236a5aca2b1c8ca070a3eddb"
+              },
+              "logical_source_sha256": "a98afac98f7d33fc31594f3f8abb45b9e4c0b82c0b9f31d73ae54c63cec4bea7",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "client.cpp",
+                  "-o",
+                  "client.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "client.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "a98afac98f7d33fc31594f3f8abb45b9e4c0b82c0b9f31d73ae54c63cec4bea7"
+            },
+            "counter.cpp": {
+              "compilation_database_sha256": "6bcc2207aef3f2e913173e7e484f7edbd4b89208fbc51ffe9007fc0c7d9db386",
+              "dependencies": {},
+              "logical_source_sha256": "63e57aa316b5fd310b416f4be6d5e515a9a24f6303f167d768d6fbcb8980e4bd",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "counter.cpp",
+                  "-o",
+                  "counter.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "counter.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "63e57aa316b5fd310b416f4be6d5e515a9a24f6303f167d768d6fbcb8980e4bd"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
+          "name": "clang"
+        },
+        "sources": {
+          "client.cpp": {
+            "artifact": {
+              "bytes": 14010,
+              "path": ".click/counters/client.cpp.click-cpp.json",
+              "sha256": "11c2f56160bc3d64a954710795416daa94f586856025ec1dbd76ac5133bcebdd"
+            },
+            "identity": "13b8e187e89734435d4c3e6e5c8556f7ba1616c8d2fa25f3a85e2339794d6996",
+            "inputs": {
+              "$unit/client.cpp": "a98afac98f7d33fc31594f3f8abb45b9e4c0b82c0b9f31d73ae54c63cec4bea7",
+              "$unit/counter.h": "7ae072b831f19b16d5b488847c887671eee0f823236a5aca2b1c8ca070a3eddb"
+            }
+          },
+          "counter.cpp": {
+            "artifact": {
+              "bytes": 11775,
+              "path": ".click/counters/counter.cpp.click-cpp.json",
+              "sha256": "50bd29eae1b387d55ffc5831ea103f532868a853ff5721514c0b51b821b1a386"
+            },
+            "identity": "b9eb8291127cbdf206b90a8f660c390ab407b5734bb9b453d6e8b17b5125387b",
+            "inputs": {
+              "$unit/counter.cpp": "63e57aa316b5fd310b416f4be6d5e515a9a24f6303f167d768d6fbcb8980e4bd",
+              "$unit/counter.h": "7ae072b831f19b16d5b488847c887671eee0f823236a5aca2b1c8ca070a3eddb"
+            }
+          }
+        },
+        "unit": "1b7b6b319c337319a5b74f0b2e1397c5f2281622fd51e4981662c970a67e0cc8"
+      }
+    }
+  }
+}

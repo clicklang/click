@@ -156,12 +156,13 @@ What already works and should be kept:
    This is about project structure, not language coverage; the constructs
    admitted inside each unit stay as documented.
 
-   Status: a call into a function another translation unit defines is
-   exported as an external interface and checked against a sidecar `extern`
-   contract ([calls into another translation unit](../docs/reference/cli/import.md#calls-into-another-translation-unit)).
-   That contract is still an assumption: linking several C++ sources in one
-   sidecar, so the callee's contract is proved against its own body, and the
-   one-definition check remain.
+   Status: delivered. A call into a function another translation unit
+   defines exports the callee's interface; a sidecar that verifies several
+   sources of one unit links them, binding each declaration to its
+   definition and checking the one-definition rule
+   ([calls into another translation unit](../docs/reference/cli/import.md#calls-into-another-translation-unit),
+   [`examples/multifile-cpp`](../examples/multifile-cpp/README.md)). A
+   callee no linked source defines needs a sidecar `extern` contract.
 
 The build description, lean per-project configuration, portable locks, and
 diagnostics for unsupported flags and stale locks are delivered by the
@@ -232,6 +233,10 @@ function defined in the other. It locks and verifies offline in the same
 installed layout. Two refusals are checked: a caller whose callee has
 neither a verified body nor a contract, and two units whose definitions of
 one entity differ.
+Delivered as [`examples/multifile-cpp`](../examples/multifile-cpp/README.md),
+which `the_installed_cpp_front_end_reproduces_the_committed_imports` also
+locks and verifies from the installed layout, and
+`linked_cpp_sources_refuse_an_unproved_callee_and_differing_definitions`.
 
 ## Violated invariant
 

@@ -1,0 +1,12 @@
+{
+  "units": {
+    "counters": {
+      "language": "c++",
+      "args": ["-ffreestanding", "-nostdinc", "-nostdinc++"],
+      "sources": {
+        "counter.cpp": {"functions": ["counter_add", "counter_double"]},
+        "client.cpp": {"functions": ["bump_then_double"], "dependencies": ["counter.h"]}
+      }
+    }
+  }
+}

@@ -51,7 +51,7 @@ verification then runs offline.
 | --- | --- | --- | --- |
 | Verify without a compiler | Supported: Click parses C directly; `mdtests/local_array.md` | Not supported: needs the pinned Clang exporter at lock time | Not supported: needs pinned Charon at lock time |
 | Compiler-backed import, verified offline | Partial: GCC preprocessing only, fixed flag profiles, with Click's modeled system headers; `tests/compiler_import.rs::compiler_import_supplies_clicks_modeled_headers_beside_project_flags` | Partial: one C++20 translation unit, one selected function and its reachable graph, Clang 19.1.7; `examples/basic-cpp/` | Partial: one file, or an explicit crate module closure without dependencies; `examples/basic-rust/` |
-| Multiple files and modules | Supported: bundles of translation units and local headers; `examples/multifile-registry/` | Partial: definitions from one logical source; `tests/cpp_import.rs::included_header_definition_is_selected_locked_and_validated` | Partial: locked crate module closure, no third-party crates; `tests/rust_import/crate_inputs.rs::rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls` |
+| Multiple files and modules | Supported: bundles of translation units and local headers; `examples/multifile-registry/` | Supported: several translation units of one unit, linked by the sidecar that verifies them, with the one-definition rule checked; `examples/multifile-cpp/` | Partial: locked crate module closure, no third-party crates; `tests/rust_import/crate_inputs.rs::rust_crate_locks_all_compiler_inputs_and_preserves_qualified_calls` |
 
 ## Target and ABI
 
