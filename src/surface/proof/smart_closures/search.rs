@@ -1320,6 +1320,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 None,
             )? {
                 Ok((proof, established)) => {
+                    // A cited product whose bounds missed is left out; plan
+                    // again without it, as for any identity that missed.
+                    if let Some((_, _, skipped)) = used.iter().find(|(_, _, identity)| {
+                        !established.iter().any(|(fact, _)| fact == identity)
+                    }) {
+                        let skipped = skipped.clone();
+                        identities.retain(|(_, _, identity)| identity != &skipped);
+                        continue;
+                    }
                     return crate::kernel::search::ProofSearch::selected_arithmetic(
                         &(proof),
                         false,
@@ -1350,10 +1359,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         use crate::kernel::IntegerTerm;
         let mut proof = search_input.clone();
         let mut established: Vec<(Proposition, ClickProposition)> = Vec::new();
-        for (observed, value, failed) in identities.iter().rev().copied() {
+        'identities: for (observed, value, failed) in identities.iter().rev().copied() {
             let IntegerTerm::Machine(machine) = observed else {
                 return Ok(Err(failed.clone()));
             };
+            // A product whose bounds miss is left out rather than failing the
+            // others: before products were planned its identity was never
+            // proved, and an identity over it still needs its own bounds.
+            // A caller that cited it sees it missing from `established`.
+            let product = matches!(value, IntegerTerm::Multiply(left, right)
+                if left.as_const().is_none() && right.as_const().is_none());
+            let before_product = proof.clone();
             let Some(spelled_observed) = search_input.spell_integer_observation(observed, written)
             else {
                 return Ok(Err(failed.clone()));
@@ -1422,10 +1438,40 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .driver()
                         .try_selected_arithmetic_without_identities()?
                 };
+                let closed = match closed {
+                    Some(closed) => Some(closed.join()?),
+                    None if product => {
+                        let IntegerTerm::Multiply(left, right) = value else {
+                            unreachable!("a product identity's value is a product")
+                        };
+                        let ContractExpression::Multiply(spelled_left, spelled_right) =
+                            &spelled_value
+                        else {
+                            unreachable!("a product is spelled as one")
+                        };
+                        let (target, lower) = if std::ptr::eq(bound, &lower) {
+                            (&min, true)
+                        } else {
+                            (&max, false)
+                        };
+                        crate::kernel::search::ProofSearch::prove_product_bound_from_ranges(
+                            &proof,
+                            [(left, spelled_left), (right, spelled_right)],
+                            bound,
+                            target,
+                            lower,
+                        )?
+                    }
+                    None => None,
+                };
                 let Some(closed) = closed else {
+                    if product {
+                        proof = before_product;
+                        continue 'identities;
+                    }
                     return Ok(Err(failed.clone()));
                 };
-                proof = closed.join()?;
+                proof = closed;
                 established.extend(
                     proof
                         .added_facts()
@@ -1469,6 +1515,90 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             );
         }
         Ok(Ok((proof, established)))
+    }
+
+    /// A bound `target <= a * b` (`lower`) or `a * b <= target` on a product
+    /// of two machine observations, from the operands' type ranges by
+    /// `integer_product_bounds`: each operand's two range bounds as a
+    /// `have`, then the bound by the certificate over those four premises,
+    /// the shape `click expand` writes. The four corner products of the
+    /// ranges are compared with `target` first, so a range that cannot give
+    /// the bound costs no step. Reads no fact and no other premise: the work
+    /// is the two operands' formats and four constant products.
+    pub(in crate::surface::proof) fn prove_product_bound_from_ranges(
+        search_input: &Proof<'a>,
+        operands: [(&crate::kernel::SharedIntegerTerm, &Box<ContractExpression>); 2],
+        bound: &ClickProposition,
+        target: &num_bigint::BigInt,
+        lower: bool,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("prove_product_bound_from_ranges");
+        use crate::kernel::IntegerTerm;
+        let mut ranges = Vec::with_capacity(2);
+        for (operand, _) in &operands {
+            let IntegerTerm::Machine(read) = operand.value_read() else {
+                return Ok(None);
+            };
+            ranges.push(read.ty().format().bounds());
+        }
+        let follows = [&ranges[0].0, &ranges[0].1].into_iter().all(|left| {
+            [&ranges[1].0, &ranges[1].1].into_iter().all(|right| {
+                let corner = left * right;
+                if lower {
+                    target <= &corner
+                } else {
+                    &corner <= target
+                }
+            })
+        });
+        if !follows {
+            return Ok(None);
+        }
+        let mut proof = search_input.clone();
+        let mut premises = Vec::with_capacity(4);
+        for ((_, spelled), (min, max)) in operands.iter().zip(&ranges) {
+            for range_bound in [
+                ClickProposition::Comparison {
+                    left: surface_signed_integer_literal(min),
+                    operator: ComparisonOperator::LessEqual,
+                    right: spelled.as_ref().clone(),
+                },
+                ClickProposition::Comparison {
+                    left: spelled.as_ref().clone(),
+                    operator: ComparisonOperator::LessEqual,
+                    right: surface_signed_integer_literal(max),
+                },
+            ] {
+                let scope = proof.driver().open_have(range_bound.clone())?;
+                let closed = match scope.driver().try_direct_logical_closure()? {
+                    Some(closed) => Some(closed),
+                    None => scope
+                        .driver()
+                        .try_selected_arithmetic_without_identities()?,
+                };
+                let Some(closed) = closed else {
+                    return Ok(None);
+                };
+                proof = closed.join()?;
+                premises.push(range_bound);
+            }
+        }
+        let scope = proof.driver().open_have(bound.clone())?;
+        let step = ProofStep::ArithmeticCertificate(ArithmeticCertificate::special(
+            SpecialArithmeticCertificate {
+                premises,
+                nodes: vec![SpecialArithmeticNode::IntegerProductBounds {
+                    bounds: vec![0, 1, 2, 3],
+                    result: bound.clone(),
+                }],
+                conclusion: 0,
+            },
+        ));
+        let Ok(closed) = scope.driver().apply_step(step) else {
+            return Ok(None);
+        };
+        Ok(Some(closed.join()?))
     }
 
     /// Establish the in-range machine `+` and `-` identities of the

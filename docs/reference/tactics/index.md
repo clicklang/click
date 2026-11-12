@@ -3118,8 +3118,10 @@ On an implication `A implies B`, `solve` introduces `A` and closes `B`, with
 this arithmetic and the searches below, as for `result == 1 implies cap ==
 old(cap) + 1` on a path where the antecedent reads `true`
 ([`solve_proves_an_implication_whose_consequent_needs_the_solver.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_an_implication_whose_consequent_needs_the_solver.md)).
-The in-range `+` and `-` identities, `*` identities with a constant factor
-([`solve_observes_a_product_by_a_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_observes_a_product_by_a_constant.md)),
+The in-range `+`, `-` and `*` identities, a product's bounds from its
+operands' type ranges by `integer_product_bounds` included
+([`solve_observes_a_product_by_a_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_observes_a_product_by_a_constant.md),
+[`a_product_of_64_bit_values_is_its_exact_product.md`](https://github.com/clicklang/click/blob/master/mdtests/a_product_of_64_bit_values_is_its_exact_product.md)),
 and integral-cast identities this arithmetic uses, nested ones included, are
 described in [mathematical integers](../../internals/mathematical-integers.md#in-range-machine-sums-differences-and-products).
 

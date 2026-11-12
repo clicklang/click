@@ -323,6 +323,9 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::increment_headroo
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::proposed_surface_goal	surface_fact_raw_for_purpose	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	driver	6
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	try_direct_logical_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	prove_product_bound_from_ranges	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_product_bound_from_ranges	driver	5
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_product_bound_from_ranges	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::resolve_solve_premises	resolve_solve_premises_unmeasured	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::resolve_solve_premises_unmeasured	available_surface_fact	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::retry_statement_after_refusal	driver	3

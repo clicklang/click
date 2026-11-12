@@ -118,10 +118,6 @@ enum Gap {
     /// only; the Integer certificate has no `!=` step, so `a <= b`,
     /// `a != b` gives `a < b` at `int32` alone (and not over `Integer`).
     NotEqualOrder,
-    /// `solve` plans in-range identities for `+` and `-` only; a product's
-    /// identity needs its Integer bounds from `integer_product_bounds` and an
-    /// explicit `integer_operation_identity` certificate.
-    ProductIdentity,
     /// `to_T(z)` lowers to an opaque bounded operation that no rule relates
     /// to `z`; the library's `to_*_round_trip` laws are kernel standard
     /// theorems.
@@ -438,9 +434,7 @@ const FAMILIES: &[Family] = &[
         name: "multiply_to_integer",
         applies: Applies::WithOperations,
         statement: |f| identity(f, "*", PRODUCT, f.signed(), true),
-        gaps: gaps_at!(Gap::ProductIdentity;
-            Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16,
-            Ty::Int32, Ty::UInt32, Ty::Int64, Ty::UInt64),
+        gaps: &[],
     },
     // Increment and predecessor forms.
     Family {
@@ -601,7 +595,7 @@ const FAMILIES: &[Family] = &[
         name: "defined_multiply_to_integer",
         applies: Applies::WhereDefinednessIsFiled,
         statement: |f| defined_identity(f, "*", PRODUCT),
-        gaps: gaps_at!(Gap::ProductIdentity; Ty::Int32, Ty::Int64),
+        gaps: &[],
     },
 ];
 

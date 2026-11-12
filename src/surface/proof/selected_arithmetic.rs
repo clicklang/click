@@ -641,6 +641,41 @@ theorem identity(x: {ty}) {{
         check_listed_operation_identity("uint64", "x > 0u64", "x - 1u64");
     }
 
+    /// `solve` plans a product's in-range identity at a format other than
+    /// `int32`. At `uint16` the lower bound `0 <= to_integer(a) *
+    /// to_integer(b)` is no fact; it comes from the operands' type ranges by
+    /// `integer_product_bounds`. The expansion writes that certificate and
+    /// the identity, and replays with no search.
+    #[test]
+    fn solve_plans_a_product_identity_from_its_operand_ranges() {
+        let source = r#"
+theorem product_identity(a: uint16, b: uint16) {
+    requires to_integer(a) * to_integer(b) <= 65535;
+    let r: uint16 = a * b;
+    ensures to_integer(r) == to_integer(a) * to_integer(b) by {
+        have to_integer(r) == to_integer(a) * to_integer(b) by solve();
+        assumption();
+    }
+}
+"#;
+        crate::surface::verify_click_theorems(source).unwrap();
+        let line = source
+            .lines()
+            .position(|line| line.contains("by solve()"))
+            .unwrap();
+        let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
+        let expanded =
+            crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+        for rule in ["integer_product_bounds", "integer_operation_identity"] {
+            assert_eq!(expanded.matches(rule).count(), 1, "{rule}: {expanded}");
+        }
+        without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
+        // Without the upper bound the product may wrap; nothing gives it.
+        let unbounded =
+            source.replace("    requires to_integer(a) * to_integer(b) <= 65535;\n", "");
+        assert!(crate::surface::verify_click_theorems(&unbounded).is_err());
+    }
+
     #[test]
     fn solve_proves_an_equality_operation_identity_once() {
         // Each bound of the split equality is proved inside its own `have`,

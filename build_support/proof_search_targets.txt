@@ -60,6 +60,7 @@ pointers_distinct_by_owned_anchors
 proposed_surface_goal
 prove_guard
 prove_operation_identities
+prove_product_bound_from_ranges
 prove_stated_fact
 proves
 proves_by_singleton_substitution

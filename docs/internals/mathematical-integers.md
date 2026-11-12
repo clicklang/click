@@ -1345,11 +1345,22 @@ operation bound of each quotient, shift, or remainder by a constant,
 and the bound each disequality with a type endpoint gives
 (`mdtests/solve_bounds_an_unsigned_quotient_by_its_operand.md`,
 `mdtests/solve_refuses_a_quotient_bound_past_the_floor.md`). When that
-also fails, it may assume the identity of each machine `+` or `-` it sees,
-and of each `*` with a constant factor, whose exact value is affine;
+also fails, it may assume the identity of each machine `+`, `-` or `*` it
+sees, reading a product of two observations as one opaque atom;
 for each identity the refutation uses, it proves the two bounds with the
 same arithmetic, applies `integer_operation_identity`, and then proves the
-goal. So
+goal. When the arithmetic misses a bound of a product `to_integer(a) *
+to_integer(b)`, the bound may still follow from the operands' type ranges:
+`solve` compares the four corner products with it and, when they give it,
+states each operand's two range bounds and proves the bound by
+`integer_product_bounds` over them, which is what `click expand` writes. So
+a `uint64` product's `0 <= to_integer(w) * to_integer(h)` needs no
+requirement, and `to_integer(w * h) == to_integer(w) * to_integer(h)`
+follows from the upper bound alone
+(`mdtests/a_product_of_64_bit_values_is_its_exact_product.md`,
+`mdtests/a_wrapping_64_bit_product_is_not_its_exact_product.md`). A product
+whose bounds still miss is left unplanned and the other identities are kept.
+So
 `ensures result == x - 1;` for an unsigned
 `x - 1u` verifies from `requires 1 <= x;` alone
 (`mdtests/solve_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The
