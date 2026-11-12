@@ -59,7 +59,8 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
         let SpecValue::Native(CValue::UInt32(MachineTerm::ClickFunctionApplication {
             arguments,
             ..
-        })) = &calls[0].value else {
+        })) = &calls[0].value
+        else {
             panic!("expected a scalar call payload");
         };
         let [PureFunctionArgument::SharedMachine(value)] = arguments.as_slice() else {

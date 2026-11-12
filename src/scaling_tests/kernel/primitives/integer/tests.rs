@@ -317,7 +317,8 @@ fn repeated_call_payloads_share_identity_without_accumulating_versions() {
             SharedMachineIntegerTerm::from_shared(
                 MachineIntegerType::UInt32,
                 KernelTerm::variable(KernelType::C(CType::UInt32), variable),
-            ).unwrap(),
+            )
+            .unwrap(),
         );
         let original = interner.intern("same_call".into(), vec![native.clone()]);
         let mut versions = Vec::new();
