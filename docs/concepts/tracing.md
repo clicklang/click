@@ -77,7 +77,9 @@ facts established in both arms are available. A failed back-edge obligation
 there names the branch, not an arm's successful last step. Use
 `branch ensuring { ... }` to carry a shared fact across the join, or a proof
 `if` to keep the cases apart. A trace targeted inside an arm still shows that
-arm and its own checked steps.
+arm and its own checked steps. When both arms end at function exit, as the
+implicit tail's early `return` does, a failure on one outcome path shows the
+arm that produced that path, with its steps, instead of `(joined)`.
 
 A goal about memory, such as a `transport` target or any goal that reads
 `read<...>(snapshot#N, pointer=value#M)`, depends on what its labels denote.

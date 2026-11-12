@@ -947,6 +947,7 @@ impl<'a> Proof<'a> {
                         .count()
                         .saturating_sub(8),
                     continuation_arm: None,
+                    arm_paths: None,
                     _retained: Box::new(self.node.clone()),
                 },
             );

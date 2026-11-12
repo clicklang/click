@@ -78,6 +78,11 @@ pub(super) struct TraceJoin {
     pub more_facts: usize,
     /// One arm ran the source continuation before a terminal join.
     pub continuation_arm: Option<usize>,
+    /// How many function outcome paths each arm of a terminal join
+    /// contributes, then-arm paths first; `None` for a join whose arms
+    /// continue. Recorded only while tracing, it selects the arm that holds
+    /// a failing path.
+    pub arm_paths: Option<[usize; 2]>,
     /// Keeps arm provenance alive so later proof attempts cannot recycle its
     /// pointer identities.
     pub _retained: Box<dyn Any>,
@@ -411,6 +416,7 @@ impl ProofDiagnosticState for CertificationTraceState {
         _branch_arm: &dyn Fn(&[usize], &SourcePosition) -> Option<usize>,
         _have_body_contains: &dyn Fn(&[usize], &SourcePosition) -> bool,
         _target: Option<&SourcePosition>,
+        _failing_path: Option<usize>,
     ) -> Option<String> {
         let mut output =
             String::from("  certification trace (facts available at the failed check):");
@@ -719,6 +725,7 @@ pub(super) fn render(
     branch_arm: &dyn Fn(&[usize], &SourcePosition) -> Option<usize>,
     have_body_contains: &dyn Fn(&[usize], &SourcePosition) -> bool,
     target: Option<&SourcePosition>,
+    failing_path: Option<usize>,
 ) -> Option<String> {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
     CAPTURE.with(|slot| {
@@ -735,6 +742,7 @@ pub(super) fn render(
             branch_arm,
             have_body_contains,
             target,
+            failing_path,
         );
         if let Some(target) = target
             && !reached
@@ -759,6 +767,7 @@ pub(super) fn render(
                     branch_arm,
                     have_body_contains,
                     Some(target),
+                    None,
                 );
                 if reached {
                     *labels = path_labels;
@@ -830,6 +839,7 @@ pub(crate) fn render_accepted(
                 &arm,
                 &body,
                 target,
+                None,
             );
             if target.is_none() || reached {
                 *labels = path_labels;
@@ -859,6 +869,9 @@ pub(crate) fn render_accepted(
     })
 }
 
+/// `failing_path` is the index of the function outcome path a failure
+/// lies on, when the failure names one: a terminal join shows the arm that
+/// holds it.
 fn render_lineage(
     capture: &Capture,
     lineage: &[TracePathNode],
@@ -867,6 +880,7 @@ fn render_lineage(
     branch_arm: &dyn Fn(&[usize], &SourcePosition) -> Option<usize>,
     have_body_contains: &dyn Fn(&[usize], &SourcePosition) -> bool,
     target: Option<&SourcePosition>,
+    failing_path: Option<usize>,
 ) -> (String, bool) {
     let mut output = String::from("  proof trace (checked tactics and branch facts):");
     let mut segments = vec![lineage];
@@ -895,6 +909,7 @@ fn render_lineage(
             branch_arm,
             have_body_contains,
             target,
+            failing_path,
             depth,
             &mut shown,
             &mut done,
@@ -928,6 +943,7 @@ fn append_path(
     branch_arm: &dyn Fn(&[usize], &SourcePosition) -> Option<usize>,
     have_body_contains: &dyn Fn(&[usize], &SourcePosition) -> bool,
     target: Option<&SourcePosition>,
+    failing_path: Option<usize>,
     mut depth: usize,
     shown: &mut usize,
     done: &mut bool,
@@ -994,6 +1010,7 @@ fn append_path(
                     branch_arm,
                     have_body_contains,
                     target,
+                    None,
                     depth + 1,
                     shown,
                     done,
@@ -1035,7 +1052,24 @@ fn append_path(
                                 .flatten()
                         })
                     });
+                // A failure on one outcome path of a terminal join lies in
+                // the arm that contributed that path; within the arm, its
+                // index counts from the arm's first path.
+                let failing_arm = failing_path.zip(join.arm_paths).and_then(|(path, counts)| {
+                    if path < counts[0] {
+                        Some((0, path))
+                    } else {
+                        (path - counts[0] < counts[1]).then(|| (1, path - counts[0]))
+                    }
+                });
+                let continues = selected_arm.is_none() && failing_arm.is_some();
+                let selected_arm = selected_arm.or(failing_arm.map(|(arm, _)| arm));
                 if let Some(arm) = selected_arm {
+                    let arm_failing_path = match failing_arm {
+                        Some((failing, index)) if failing == arm => Some(index),
+                        _ if join.arm_paths.is_none() => failing_path,
+                        _ => None,
+                    };
                     detail.push_str(&format!(
                         "\n{indent}{header} ({} arm)",
                         branch.arm_names[arm]
@@ -1057,12 +1091,18 @@ fn append_path(
                         branch_arm,
                         have_body_contains,
                         target,
+                        arm_failing_path,
                         depth + 1,
                         shown,
                         done,
                         reached,
                     );
-                    *done = true;
+                    // The arm a target selected ran the rest of the source;
+                    // the arm a failing path selected ends at function exit,
+                    // and the outcome proof's own steps follow the join.
+                    if !continues {
+                        *done = true;
+                    }
                 } else {
                     detail.push_str(&format!("\n{indent}{header} (joined)"));
                     append_added_facts(&mut detail, &join.facts, labels, &format!("{indent}  "));
@@ -1286,6 +1326,7 @@ fn append_path(
                 branch_arm,
                 have_body_contains,
                 target,
+                None,
                 depth + 1,
                 shown,
                 done,
@@ -1563,6 +1604,7 @@ mod tests {
         let earlier = fact(first);
         let later = fact(second);
         let diagnostic = ProofFailureDiagnostic {
+            failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
                 stage: "proof step".into(),
@@ -1683,6 +1725,7 @@ mod tests {
                 &|_, _| None,
                 &|_, _| false,
                 None,
+                None,
             )
             .unwrap();
             assert!(goal.contains("snapshot#1"), "{goal}");
@@ -1771,6 +1814,7 @@ mod tests {
                 &|_| None,
                 &|_, _| None,
                 &|_, _| false,
+                None,
                 None,
             )
             .unwrap();
@@ -1892,6 +1936,7 @@ mod tests {
                     }],
                     more_facts: 0,
                     continuation_arm: None,
+                    arm_paths: None,
                     _retained: Box::new(()),
                 },
             );
@@ -1906,6 +1951,7 @@ mod tests {
                 &|_, _| Some(0),
                 &|_, _| false,
                 Some(&SourcePosition::new(2, 1)),
+                None,
             )
             .unwrap();
             assert!(trace.contains("tactic@1: branch (then arm)"), "{trace}");
@@ -1925,6 +1971,7 @@ mod tests {
                 &|_, _| None,
                 &|_, _| false,
                 Some(&SourcePosition::new(3, 1)),
+                None,
             )
             .unwrap();
             assert!(summary.contains("adds: true"), "{summary}");
@@ -2000,6 +2047,7 @@ mod tests {
                 &|_, _| None,
                 &|_, _| false,
                 None,
+                None,
             )
             .unwrap();
             assert!(report.contains("source tactic 2: have x == x"), "{report}");
@@ -2023,6 +2071,7 @@ mod tests {
                 &|_, _| None,
                 &|path, _| path == [2],
                 Some(&SourcePosition::new(3, 1)),
+                None,
             )
             .unwrap();
             assert!(inside.contains("tactic@3: normalize()"), "{inside}");
@@ -2119,6 +2168,7 @@ mod tests {
                 &|_, _| None,
                 &|_, _| false,
                 Some(&SourcePosition::new(2, 1)),
+                None,
             )
             .unwrap();
             assert!(targeted.contains("accepted"), "{targeted}");
@@ -2164,6 +2214,7 @@ mod tests {
                 &|_, _| None,
                 &|_, _| false,
                 Some(&target),
+                None,
             )
             .unwrap();
             assert!(unfinished.contains("unfinished arm"), "{unfinished}");
