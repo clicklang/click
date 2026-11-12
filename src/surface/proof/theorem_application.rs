@@ -762,7 +762,27 @@ fn instantiate_population_member_count_zero(
             "the population law did not produce a guarded theorem".to_string(),
         ));
     };
-    if !exact_fact_is_available(guard, available) {
+    if preparing_application() {
+        let mut population = resource.as_ref().clone();
+        if let ResourceClause::Declared { arguments, .. } = &mut population {
+            for argument in arguments.iter_mut().skip(1) {
+                *argument = ContractExpression::ResourceWildcard;
+            }
+        }
+        let surface = ClickProposition::Comparison {
+            left: ContractExpression::ResourceCount(Box::new(population)),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::IntegerLiteral("0".into()),
+        };
+        crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+            ClickError::new("population theorem has a premise obligation")
+                .with_spelled_requirement(
+                    guard.as_ref().clone(),
+                    surface,
+                    "empty population".into(),
+                ),
+        )?;
+    } else if !exact_fact_is_available(guard, available) {
         return Err(error(format!(
             "required exact fact is unavailable: the population's count is zero ({})",
             describe_pure_fact(guard, ParameterBinding::default())

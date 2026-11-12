@@ -22020,3 +22020,20 @@ fn outcome_apply_obligations_retain_each_return_and_fold_evidence() {
         .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
 }
+
+#[test]
+#[ignore = "nightly: population obligation expansion and cold replay"]
+fn empty_population_application_expands_its_obligation() {
+    let (source, sources) = mdtest_sources("mdtests/an_empty_population_counts_no_member.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+    assert!(expanded.contains("count(item(pool, _)) == 0"), "{expanded}");
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
