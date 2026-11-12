@@ -639,6 +639,15 @@ fn instantiate_integer_range_fold_theorem_application(
     let mut required = Vec::new();
     collect_conjunctive_guard_facts(guard, &mut required);
     for premise in required {
+        if preparing_application() {
+            crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                ClickError::new("Integer fold theorem has a premise obligation")
+                    .with_unresolved_requirement(&ProofObligation::verification_condition(
+                        premise.clone(),
+                    )),
+            )?;
+            continue;
+        }
         if !exact_fact_is_available(premise, available)
             && !matches!(normalize_proposition(premise), NormalizedProposition::True)
         {
