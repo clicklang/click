@@ -58,7 +58,14 @@ constexpr unsigned kMaxLocalDeclarations = 1024;
 constexpr unsigned kMaxCleanupScopes = 256;
 constexpr std::size_t kMaxScalarConversions = 256;
 
-constexpr const char *kClangVersion = "19.1.7";
+#if !defined(CLICK_CPP_EXPORTER_VERSION) || !defined(CLICK_CPP_CLANG_VERSION) || \
+    !defined(CLICK_CPP_ARTIFACT_SCHEMA)
+#error "build with scripts/build-cpp-exporter.sh, which reads src/languages/cpp/frontend-profile.json"
+#endif
+// The pinned front end, from src/languages/cpp/frontend-profile.json.
+constexpr const char *kExporterVersion = CLICK_CPP_EXPORTER_VERSION;
+constexpr const char *kClangVersion = CLICK_CPP_CLANG_VERSION;
+constexpr int kArtifactSchema = CLICK_CPP_ARTIFACT_SCHEMA;
 #ifndef CLICK_CLANG_RESOURCE_DIR
 #error "build with scripts/build-cpp-exporter.sh, which defines CLICK_CLANG_RESOURCE_DIR"
 #endif
@@ -402,7 +409,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 60;
+    artifact["schema"] = kArtifactSchema;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -6685,6 +6692,13 @@ int main(int argc, const char **argv) {
   // The pinned Clang's resource directory, which Click labels in a lock so
   // the builtin headers read from it are not named by this installation's
   // path.
+  // Click compares this line with its own pin before running an export.
+  if (argc == 2 && std::string(argv[1]) == "--identity") {
+    llvm::outs() << "click-cpp-exporter " << kExporterVersion << "; schema "
+                 << kArtifactSchema << "; clang " << clang::getClangFullVersion()
+                 << "\n";
+    return 0;
+  }
   if (argc == 2 && std::string(argv[1]) == "--print-resource-dir") {
     llvm::outs() << kClangResourceDir << "\n";
     return 0;

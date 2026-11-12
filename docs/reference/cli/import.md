@@ -160,6 +160,17 @@ parameters, `"templates": ["Stack<T>"]`
 }
 ```
 
+### C++ exporter identity
+
+Before its first export, `click import lock` runs the exporter with
+`--identity`. The exporter answers with its own version, the artifact schema
+it emits and its Clang version. Click compares that line with the pinned front
+end in `src/languages/cpp/frontend-profile.json`, the one definition the
+exporter build also reads, and refuses any other exporter with
+`C++ exporter version mismatch; expected click-cpp-exporter …`. An exporter
+that does not answer `--identity`, such as one built before this check, is
+refused with an instruction to rebuild it.
+
 ### C++ unit arguments
 
 Click sets the standard, target, exception and RTTI modes, the project's
