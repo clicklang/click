@@ -441,6 +441,11 @@ pub struct CppFunction {
     /// Click supplies the contract the call is checked against.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axiom: Option<CppAxiom>,
+    /// A project function this translation unit declares but does not
+    /// define: its definition is in another translation unit. Only its
+    /// interface is exported, and a call is checked against its contract.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub external: bool,
     /// Present for a virtual method: a call through it is checked against
     /// its contract, which each of its overrides must refine.
     #[serde(default, rename = "virtual", skip_serializing_if = "Option::is_none")]
@@ -467,6 +472,12 @@ pub struct CppVirtual {
 }
 
 impl CppFunction {
+    /// Whether the function is only an interface, checked against its
+    /// contract: a standard-library axiom or an external project function.
+    pub(crate) fn is_interface_only(&self) -> bool {
+        self.axiom.is_some() || self.external
+    }
+
     pub(crate) fn is_pure_virtual(&self) -> bool {
         self.virtual_method
             .as_ref()
@@ -1475,6 +1486,9 @@ impl CppExport {
             if function.axiom.is_some() {
                 return Err("the selected C++ function cannot be a standard-library axiom".into());
             }
+            if function.external {
+                return Err("the selected C++ function must be defined in its source".into());
+            }
             function.span.validate(logical_source)?;
         }
         let mut functions = BTreeMap::new();
@@ -1514,6 +1528,26 @@ impl CppExport {
                         source.name
                     ));
                 }
+                if functions
+                    .insert(source.declaration_id.clone(), source)
+                    .is_some()
+                {
+                    return Err(format!(
+                        "duplicate C++ function declaration identity `{}`",
+                        source.declaration_id
+                    ));
+                }
+                continue;
+            }
+            if source.external {
+                if source.axiom.is_some() {
+                    return Err(format!(
+                        "C++ function `{}` cannot be both external and a standard-library axiom",
+                        source.name
+                    ));
+                }
+                source.span.validate_in(&declaration_sources)?;
+                source.validate_external(&records)?;
                 if functions
                     .insert(source.declaration_id.clone(), source)
                     .is_some()
@@ -2492,6 +2526,30 @@ impl CppFunction {
 
     /// An axiom has an interface and no body; its record references must
     /// still name checked records.
+    fn validate_external(&self, records: &RecordIndex<'_>) -> Result<(), String> {
+        if !self.body.is_empty()
+            || !self.declared_noexcept
+            || self.virtual_method.is_some()
+            || self.generic_instance.is_some()
+            || !matches!(
+                self.function_kind,
+                CppFunctionKind::Free
+                    | CppFunctionKind::StaticMethod { .. }
+                    | CppFunctionKind::Method { .. }
+            )
+        {
+            return Err(format!(
+                "external C++ function `{}` must be a noexcept free function or ordinary method without a body",
+                self.name
+            ));
+        }
+        if self.return_type == CppType::Void {
+            Ok(())
+        } else {
+            require_function_return_type(&self.return_type, records, "function return type")
+        }
+    }
+
     fn validate_axiom(&self, records: &RecordIndex<'_>) -> Result<(), String> {
         if !self.body.is_empty() || !self.declared_noexcept {
             return Err(format!(
@@ -7212,7 +7270,7 @@ fn validate_function_address(
         target.function_kind,
         CppFunctionKind::Free | CppFunctionKind::StaticMethod { .. }
     ) || !target.declared_noexcept
-        || target.axiom.is_some()
+        || target.is_interface_only()
     {
         return Err(format!(
             "C++ function address `&{}` requires a noexcept free or static member function \
@@ -7489,6 +7547,7 @@ mod tests {
         };
         let mut function = CppFunction {
             axiom: None,
+            external: false,
             virtual_method: None,
             generic_instance: None,
             declaration_id: "root".into(),
@@ -7649,6 +7708,7 @@ mod tests {
     fn static_helper_artifacts_require_class_identity_and_scalar_signature() {
         let mut function = CppFunction {
             axiom: None,
+            external: false,
             virtual_method: None,
             generic_instance: None,
             declaration_id: "static_function".into(),
@@ -7976,6 +8036,7 @@ mod tests {
         );
         let function = |name: &str, body, parameters| CppFunction {
             axiom: None,
+            external: false,
             virtual_method: None,
             generic_instance: None,
             declaration_id: name.into(),
@@ -8055,6 +8116,7 @@ mod tests {
         };
         let function = |name: &str, body, parameters| CppFunction {
             axiom: None,
+            external: false,
             virtual_method: None,
             generic_instance: None,
             declaration_id: name.into(),
@@ -8167,6 +8229,7 @@ mod tests {
     fn return_call_graphs_check_callee_identity_destination_arguments_and_cycles() {
         let function = |name: &str, body| CppFunction {
             axiom: None,
+            external: false,
             virtual_method: None,
             generic_instance: None,
             declaration_id: name.into(),
@@ -8318,6 +8381,7 @@ mod tests {
         };
         let mut function = CppFunction {
             axiom: None,
+            external: false,
             virtual_method: None,
             generic_instance: None,
             declaration_id: "method".into(),
@@ -8454,6 +8518,7 @@ mod tests {
         let sources = BTreeSet::from(["fixture.cpp".into()]);
         let mut function = CppFunction {
             axiom: None,
+            external: false,
             virtual_method: None,
             generic_instance: None,
             declaration_id: "root".into(),
@@ -8840,6 +8905,7 @@ mod tests {
         };
         let mut function = CppFunction {
             axiom: None,
+            external: false,
             virtual_method: None,
             generic_instance: None,
             declaration_id: "root".into(),

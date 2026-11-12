@@ -19529,3 +19529,66 @@ fn the_installed_cpp_front_end_reproduces_the_committed_imports() {
     }
     let _ = fs::remove_dir_all(home);
 }
+
+/// A call to a project function another translation unit defines exports
+/// the callee's interface only, marked external. The caller verifies against
+/// a contract its sidecar states and is refused without one.
+#[test]
+fn a_call_into_another_translation_unit_is_checked_against_a_contract() {
+    let project = Project::with_fixture(
+        "a.cpp",
+        "add_two",
+        "#include \"b.h\"\nint add_two(int value) noexcept {\n    int once = add_one(value);\n    return add_one(once);\n}\n",
+    );
+    fs::write(
+        project.directory.join("b.h"),
+        "int add_one(int value) noexcept;\n",
+    )
+    .unwrap();
+    let project_file = project.directory.join(click::project::FILE_NAME);
+    fs::write(
+        &project_file,
+        serde_json::json!({"units": {"demo": {
+            "language": "c++",
+            "args": ["-ffreestanding", "-nostdinc", "-nostdinc++"],
+            "sources": {"a.cpp": {"functions": ["add_two"], "dependencies": ["b.h"]}},
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    click::project::Project::load(&project_file)
+        .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)))
+        .unwrap();
+    let artifact: serde_json::Value = serde_json::from_slice(
+        &fs::read(project.directory.join(".click/demo/a.cpp.click-cpp.json")).unwrap(),
+    )
+    .unwrap();
+    let callee = &artifact["reachable_functions"][0];
+    assert_eq!(callee["name"], "add_one", "{artifact}");
+    assert_eq!(callee["external"], true, "{artifact}");
+    assert_eq!(callee["body"], serde_json::json!([]), "{artifact}");
+    let source = project.directory.join("a.cpp");
+    let import = match click::project::Project::load(&project_file)
+        .unwrap()
+        .prepared_sources(&[("a.cpp".into(), fs::canonicalize(&source).ok())])
+        .unwrap()
+    {
+        Some(click::project::UnitSelection::Program(click::languages::PreparedProgram::Cpp(
+            import,
+        ))) => import,
+        _ => panic!("expected the prepared C++ unit"),
+    };
+    let caller =
+        "int32 add_two(int32 value) {\n requires value < 50;\n ensures result == value + 2;\n}\n";
+    let contract = "extern int32 add_one(int32 value) {\n requires value < 100;\n ensures result == value + 1;\n}\n";
+    let path = project.directory.join("a.click");
+    let with_contract = format!("verifying \"a.cpp\";\n{contract}{caller}");
+    fs::write(&path, &with_contract).unwrap();
+    verify_program_prepared_project(&read_click_project(&path, &with_contract).unwrap(), &import)
+        .unwrap();
+    let without = format!("verifying \"a.cpp\";\n{caller}");
+    let error =
+        verify_program_prepared_project(&read_click_project(&path, &without).unwrap(), &import)
+            .unwrap_err();
+    assert!(error.to_string().contains("add_one"), "{error}");
+}

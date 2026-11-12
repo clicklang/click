@@ -93,6 +93,7 @@ fn graph_reference_checks_index_growing_caller_places_once() {
         };
         let mut caller = CppFunction {
             axiom: None,
+            external: false,
             virtual_method: None,
             generic_instance: None,
             declaration_id: "caller".into(),
@@ -141,6 +142,7 @@ fn graph_reference_checks_index_growing_caller_places_once() {
         }
         let callee = CppFunction {
             axiom: None,
+            external: false,
             virtual_method: None,
             generic_instance: None,
             declaration_id: "read".into(),
@@ -192,6 +194,7 @@ fn call_depth_budget_accounts_for_previously_checked_subgraphs() {
         let mut functions = (0..size)
             .map(|index| CppFunction {
                 axiom: None,
+                external: false,
                 virtual_method: None,
                 generic_instance: None,
                 declaration_id: format!("f{index}"),
@@ -338,6 +341,7 @@ fn record_inventory_reachability_rejects_unused_layouts() {
     );
     let function = CppFunction {
         axiom: None,
+        external: false,
         virtual_method: None,
         generic_instance: None,
         declaration_id: "function".into(),
@@ -687,6 +691,7 @@ fn cross_header_call_origins_have_linear_graph_work() {
     };
     let function = |name: String, source: String, body| CppFunction {
         axiom: None,
+        external: false,
         virtual_method: None,
         generic_instance: None,
         declaration_id: name.clone(),
