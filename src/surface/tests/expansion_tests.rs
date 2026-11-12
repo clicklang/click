@@ -9695,9 +9695,10 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
         .expanded_proof_tactics()
         .expect("the checked execution apply should retain an expansion");
     assert!(matches!(
-        expanded.first(),
-        Some(ProofTactic::ApplyTheoremUsing { application, premises })
+        expanded.as_slice(),
+        [ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }, ..]
             if application.name == "click::integer::uint32_less_than_divisor_implies_remainder_is_value" && premises.len() == 1
+                && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
     ));
     let retained_source = verified[0]
         .expanded_proof_source()
@@ -10574,9 +10575,11 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
                 if matches!(
                     open.tactics.as_slice(),
                     [
+                        ProofTactic::Have(have),
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Step,
                     ] if application.name == "ordered_is_less_equal" && premises.len() == 1
+                        && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
                 )
         ),
         "{tactics:#?}"
@@ -11235,12 +11238,14 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
             Some(ProofTactic::Branch(branch))
                 if matches!(
                     branch.then_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
+                    [ProofTactic::Step, ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }]
                         if application.name == "ordered_is_less_equal" && premises.len() == 1
+                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
                 ) && matches!(
                     branch.else_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::ApplyTheoremUsing { application, premises }]
+                    [ProofTactic::Step, ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }]
                         if application.name == "ordered_is_less_equal" && premises.len() == 1
+                            && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Assumption]))
                 )
         ),
         "{tactics:#?}"
@@ -11304,6 +11309,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             [
                 ProofTactic::Step,
                 ProofTactic::Branch(branch),
+                ProofTactic::Have(have),
                 ProofTactic::ApplyTheoremUsing { application, premises },
                 ProofTactic::Step,
                 ..
@@ -11318,6 +11324,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
                 && application.name == "ordered_is_less_equal"
                 && premises.len() == 1
+                && have.proposition == premises[0]
         ),
         "{tactics:#?}"
     );
@@ -11479,10 +11486,12 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
                     // The theorem concludes `0 <= selected`; the mirrored
                     // `selected >= 0` closes by `assumption`.
                     [
+                        ProofTactic::Have(premise),
                         ProofTactic::ApplyTheoremUsing { application, premises },
                         ProofTactic::Assumption,
                     ] if application.name == "positive_is_nonnegative"
                             && premises.len() == 1
+                            && premise.proposition == premises[0]
                 )
         ),
         "{tactics:#?}"
@@ -21940,4 +21949,40 @@ fn pure_apply_obligations_expand_to_explicit_have_and_using() {
         })
         .unwrap();
     }
+}
+
+#[test]
+fn live_apply_obligations_expand_at_the_original_frontier() {
+    let (source, sources) = mdtest_sources("mdtests/live_apply_obligations.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "increment").unwrap();
+    assert!(
+        expanded.contains("have ") && expanded.contains("using"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("increment.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+    let false_premise = source.replace("increased(old(x), x)", "increased(x, old(x))");
+    assert!(verify_c0_sources(&false_premise, &sources).is_err());
+}
+
+#[test]
+fn saved_array_application_obligation_expands_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/saved_array_theorem_obligation.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "keep").unwrap();
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }

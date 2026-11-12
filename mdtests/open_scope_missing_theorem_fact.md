@@ -23,5 +23,5 @@ void touch(int32* p) {
 ```
 
 ```expect
-fail: value == 0
+fail: theorem `needs_zero` has an unproved obligation: `p[0] == 0`
 ```
