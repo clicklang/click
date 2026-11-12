@@ -1174,6 +1174,21 @@ pub(crate) fn listed_comparison_fact_is_available(
     false
 }
 
+/// Complete an explicit theorem application across an equality representation
+/// boundary. Order claims retain their existing explicit assumption step.
+pub(crate) fn listed_equality_fact_is_available(
+    required: &Proposition,
+    available: &[Proposition],
+) -> bool {
+    let Some((condition, _)) = crate::kernel::spec::proposition_as_single_condition(required)
+    else {
+        return false;
+    };
+    crate::kernel::machine_integer::comparison::structural_comparison_view(&condition)
+        .is_some_and(|view| view.relation == CompareRelation::Equal)
+        && listed_comparison_fact_is_available(required, available)
+}
+
 /// Structural proposition equality whose condition leaves are decided by the
 /// kernel's snapshot bridge: two forms of one compound fact whose load
 /// atoms carry different certified snapshots. Structure must match exactly,

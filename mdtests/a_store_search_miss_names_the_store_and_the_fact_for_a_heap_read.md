@@ -38,5 +38,5 @@ int32 read_first(int32 m) {
 ```
 
 ```expect
-fail: statement(3) may have overwritten `q[0]`; it is kept if you state `have not (let integer_value: Integer = to_integer(((m - 1) as int32)); integer_value) == 0 by { ... };` before statement(3)
+fail: statement(3) may have overwritten `q[0]`; it is kept if you state `have not ((m - 1) as int32) == (0 as int32) by { ... };` before statement(3)
 ```

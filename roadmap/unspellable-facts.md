@@ -997,6 +997,17 @@ differently represented fact store.
 The public signed certificate's selected term payload is still native, as are
 the remaining producer families listed above. Steps 2–4 remain open.
 
+Validation after integrating upstream through #2607: all 1,453 scaling tests
+passed. The gate's unit/API phase passed 7,242 of 7,243 tests; the one expansion
+failure exposed early completion of a mirrored order goal. Restricting the new
+completion bridge to equality fixed it, and all 106 selected tests passed on
+rerun, including the complete expansion suite and mutex-parity fixtures. All
+58 examples passed afterward. The production build and all 5,210 regular
+fixtures passed, with zero fact-stability differences (305 seconds). The two
+new upstream store-search diagnostic fixtures also passed with retained typed
+spellings, including the heap variant outside the regular corpus. The combined
+gate was not rerun after the fix; the nightly suite was not run.
+
 ### 3. Finish existing term families without redesigning their semantics
 
 `KernelTermNode::Legacy` and `LegacyBool` are explicitly temporary bridges.
