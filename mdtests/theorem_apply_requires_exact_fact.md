@@ -2,8 +2,9 @@
 
 `x > 0` implies `x >= 0`, but `apply ... using` is a simple tactic and does
 not search for that derivation. Each listed premise must be present as an
-exact pure fact. The bare `apply(needs_nonnegative(x))` does not prove it
-either; a proof states it first with `have`
+exact pure fact. The bare `apply(needs_nonnegative(x))` in a pure theorem proof generates
+an obligation and runs implicit `solve`; the explicit `using` form instead
+requires the proof to state it first with `have`
 ([`apply_cites_a_premise_stated_first.md`](apply_cites_a_premise_stated_first.md)).
 
 ```click

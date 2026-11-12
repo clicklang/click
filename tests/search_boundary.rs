@@ -1404,3 +1404,38 @@ fn outcome_transport_planning_stays_in_search() {
         );
     }
 }
+
+#[test]
+fn smart_arithmetic_dispatch_is_separate_from_operation_search() {
+    let path = "src/surface/proof/driver/steps.rs";
+    let source = "impl ProofDriver { fn apply_step_without_outcome_wrapping(&self) { ProofSearch::apply_arithmetic_using(self.proof, premises); ProofSearch::try_wide_arithmetic_using(self.proof, premises); } }";
+    let file = syn::parse_file(source).unwrap();
+    let records = proof_search_boundary::inventory(path, &file);
+    assert!(
+        records
+            .keys()
+            .any(|key| key.contains("\tdriver\t") && key.ends_with("\tapply_arithmetic_using"))
+    );
+    assert!(
+        records.keys().any(
+            |key| key.contains("\toperation\t") && key.ends_with("\ttry_wide_arithmetic_using")
+        )
+    );
+    let file = syn::parse_file("impl Proof { fn apply_arithmetic_using(&self) {} }").unwrap();
+    assert!(
+        proof_search_boundary::check("src/surface/proof/proof_object/step_application.rs", &file)
+            .is_err()
+    );
+}
+
+#[test]
+fn statement_preparation_cannot_search_for_atomic_prerequisites() {
+    let file = syn::parse_file("fn certified_transitions_from_execution() { ProofSearch::derive_atomic_proposition(context, goal); }").unwrap();
+    assert!(
+        proof_search_boundary::check(
+            "src/surface/proof/execution_planning/transition_certification.rs",
+            &file,
+        )
+        .is_err()
+    );
+}

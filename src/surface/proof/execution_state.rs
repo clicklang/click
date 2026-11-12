@@ -1113,68 +1113,6 @@ pub(super) fn append_surface_tactics_at_branch_path(
     append(tactics, branch_path, 0, suffix)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn surface_branch_path_for_outcome(
-    tactics: &[ProofTactic],
-    available: &(impl PropositionSource + ?Sized),
-    parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    post_state: &CState,
-    result: &CValue,
-    recorded_snapshots: &RecordedSnapshots,
-    spec_definitions: SpecDefinitions<'_>,
-) -> Result<Vec<bool>, String> {
-    let mut branch_path = Vec::new();
-    let mut current = tactics;
-    loop {
-        let Some(proof_if) = current.iter().rev().find_map(|tactic| match tactic {
-            ProofTactic::If(proof_if) => Some(proof_if),
-            _ => None,
-        }) else {
-            return Ok(branch_path);
-        };
-        let lowered = lower_outcome_proposition_with_recorded_snapshots(
-            parameter_binding,
-            pre_state,
-            post_state,
-            result,
-            available,
-            &proof_if.condition,
-            spec_definitions,
-            recorded_snapshots,
-        )?;
-        let assumptions = assumptions_from_propositions(available);
-        let is_true = exact_fact_is_available(&lowered, available)
-            || crate::kernel::search::ProofSearch::proves(&(assumptions), &lowered);
-        let is_false = available
-            .propositions()
-            .any(|fact| propositions_are_exact_negations(fact, &lowered))
-            || fact_conflicts_with_assumptions(&lowered, &assumptions);
-        let selected_then = match (is_true, is_false) {
-            (true, false) => true,
-            (false, true) => false,
-            (false, false) => {
-                return Err(format!(
-                    "execution path does not decide surface branch `{}`",
-                    describe_click_proposition(&proof_if.condition)
-                ));
-            }
-            (true, true) => {
-                return Err(format!(
-                    "execution path proves both sides of surface branch `{}`",
-                    describe_click_proposition(&proof_if.condition)
-                ));
-            }
-        };
-        branch_path.push(selected_then);
-        current = if selected_then {
-            &proof_if.then_tactics
-        } else {
-            &proof_if.else_tactics
-        };
-    }
-}
-
 /// Keeps the outermost surface case split of an already-admitted certificate,
 /// recursively. Every retained step came from an admitted certificate.
 pub(super) fn surface_branch_skeleton(steps: &[ProofStep]) -> Vec<ProofStep> {

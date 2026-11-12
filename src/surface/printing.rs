@@ -475,7 +475,10 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             line(output, &prefix, &format!("{};", step_head_spelling(tactic)))
         }
         ProofTactic::StepProved { step, proof } => {
-            let (head, record) = if matches!(step.as_ref(), ProofTactic::FoldResource(_)) {
+            let (head, record) = if matches!(
+                step.as_ref(),
+                ProofTactic::FoldResource(_) | ProofTactic::UserTactic(_)
+            ) {
                 let mut written = String::new();
                 write_tactic(&mut written, step, 0);
                 let written = written.trim_end();

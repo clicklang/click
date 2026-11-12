@@ -11,5 +11,5 @@ theorem missing_word(p: uint32*) {
 ```
 
 ```expect
-fail: required exact fact
+fail: theorem `click::integer::uint32_from_le_bytes` has an unproved obligation
 ```
