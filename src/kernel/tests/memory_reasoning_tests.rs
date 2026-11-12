@@ -8215,3 +8215,38 @@ fn loadability_coverage_ignores_other_blocks() {
         "unrelated blocks changed the coverage check's work: {work:?}"
     );
 }
+
+#[test]
+fn constant_byte_containment_checks_the_complete_child_span() {
+    let base = Pointer {
+        block: "byte-containment".into(),
+        offset: PointerOffsetTerm::Variable(Variable(9_810_000)),
+    };
+    for (parent_width, parent_count, offset, child_width, expected) in [
+        (8, 1, 7, 1, true),
+        (8, 1, 8, 1, false),
+        (8, 1, 7, 2, false),
+        (4, 1, 0, 8, false),
+        (4, 2, 0, 8, true),
+    ] {
+        let goal = Proposition::CResourceContains {
+            parent: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                base.clone(),
+                0u32.into(),
+                MachineTerm::constant(parent_count),
+                parent_width,
+            ))),
+            child: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                base.offset_by_bytes(offset),
+                0u32.into(),
+                1u32.into(),
+                child_width,
+            ))),
+        };
+        assert_eq!(
+            crate::kernel::proof::fact_reasoning::normalizes_context_free_leaf(&goal),
+            expected,
+            "{goal:?}",
+        );
+    }
+}
