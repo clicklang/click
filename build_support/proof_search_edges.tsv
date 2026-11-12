@@ -240,8 +240,6 @@ src/surface/proof/pure_theorems.rs	mixed	::check_pure_script_with_proof	driver	3
 src/surface/proof/pure_theorems.rs	mixed	::check_pure_structural_induction	driver	1
 src/surface/proof/pure_theorems.rs	mixed	::verify_contract_refinement_theorem	driver	1
 src/surface/proof/pure_theorems.rs	mixed	::verify_theorem_ensure	driver	2
-src/surface/proof/selected_arithmetic.rs	mixed	Carried::establish	driver	5
-src/surface/proof/selected_arithmetic.rs	mixed	Carried::establish	prove_stated_fact	5
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::carried_machine_facts	resolve_solve_premises	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::definition_condition_plan	definition_condition_plan	5
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::disequality_by_refutation	disequality_goal_equality	1
@@ -249,6 +247,8 @@ src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::disequality_
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::equality_by_bounds	driver	6
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::equality_by_bounds	try_arithmetic_fact_closure	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::equality_by_bounds	with_goal_operation_identities	1
+src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::establish_carried_arithmetic	driver	5
+src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::establish_carried_arithmetic	prove_stated_fact	5
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::prove_stated_fact	driver	2
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::prove_stated_fact	try_arithmetic_fact_closure	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::read_definition_condition	driver	1
@@ -261,6 +261,7 @@ src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::rewrite_sear
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_bridged_selected_arithmetic	carried_machine_facts	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_bridged_selected_arithmetic	defined_operations	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_bridged_selected_arithmetic	driver	1
+src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_bridged_selected_arithmetic	establish_carried_arithmetic	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_bridged_selected_arithmetic	resolve_solve_premises	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_close_after_rewrite	driver	5
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_close_after_rewrite	try_direct_logical_closure	3
