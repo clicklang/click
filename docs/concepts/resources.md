@@ -201,8 +201,9 @@ The caller must have a resource that covers every callee resource requirement.
 `step()` checks the pure and resource preconditions, advances across the
 entire call, transfers the declared resources, applies the memory effect, and
 adds the pure postconditions. It does not execute the callee body. The callee
-must therefore have been verified earlier in the file; otherwise Click reports
-that its contract has not been verified yet. A viewed range rooted in a caller
+must therefore have a contract in the sidecar, as a function the sidecar
+verifies (in any order) or as an `extern` declaration; otherwise Click reports
+that the sidecar states no contract for it. A viewed range rooted in a caller
 local is borrowed from the caller frame's implicit ownership; external ranges
 still require explicit resource facts.
 

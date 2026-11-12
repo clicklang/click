@@ -1777,7 +1777,7 @@ pub(super) fn describe_runtime_error(
             render_resource_fact_diagnostic(view, parameter_binding)
         ),
         crate::kernel::CRuntimeError::MissingVerifiedFunctionRule(name) => format!(
-            "cannot execute call to `{name}` opaquely: its contract has not been verified yet"
+            "cannot execute call to `{name}`: the sidecar states no contract for it; state one, as a function this sidecar verifies or as an `extern` declaration"
         ),
         crate::kernel::CRuntimeError::UnsupportedOpaqueFunctionContract(name) => format!(
             "cannot execute call to `{name}` opaquely: its contract refers to an internal program point that is unavailable at the call site"

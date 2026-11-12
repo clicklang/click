@@ -19,7 +19,22 @@ pub(crate) fn resolve_exporter() -> Result<PathBuf, String> {
     resolve_exporter_from(
         std::env::var_os("CLICK_CPP_EXPORTER").filter(|value| !value.is_empty()),
         click_home(),
+        PREBUILT_HOST,
     )
+}
+
+/// Whether releases ship a prebuilt C++ front end for the host Click runs
+/// on, which `click install VERSION --cpp` installs. Other hosts build the
+/// exporter from a Click checkout.
+const PREBUILT_HOST: bool = cfg!(all(
+    target_os = "linux",
+    target_arch = "x86_64",
+    target_env = "gnu"
+));
+
+/// The host, as a diagnostic names it.
+fn host_description() -> String {
+    format!("{} {}", std::env::consts::OS, std::env::consts::ARCH)
 }
 
 fn click_home() -> Option<PathBuf> {
@@ -36,6 +51,7 @@ fn click_home() -> Option<PathBuf> {
 fn resolve_exporter_from(
     override_path: Option<std::ffi::OsString>,
     home: Option<PathBuf>,
+    prebuilt_host: bool,
 ) -> Result<PathBuf, String> {
     if let Some(path) = override_path {
         let path = PathBuf::from(path);
@@ -57,6 +73,12 @@ fn resolve_exporter_from(
     if exporter.is_file() {
         return Ok(exporter);
     }
+    if !prebuilt_host {
+        return Err(format!(
+            "no prebuilt C++ front end is available for this platform ({}); build the exporter from a Click checkout with scripts/build-cpp-exporter.sh and set CLICK_CPP_EXPORTER to the path it prints",
+            host_description()
+        ));
+    }
     Err(format!(
         "the C++ front end is not installed for Click {VERSION} (expected `{}`); install it with `click install {VERSION} --cpp`, or set CLICK_CPP_EXPORTER to an exporter built with scripts/build-cpp-exporter.sh",
         exporter.display()
@@ -73,8 +95,17 @@ mod tests {
         let installed = installed_frontend(&home).join(EXPORTER_NAME);
         let _ = std::fs::remove_dir_all(&home);
 
-        let missing = resolve_exporter_from(None, Some(home.clone())).unwrap_err();
+        let missing = resolve_exporter_from(None, Some(home.clone()), true).unwrap_err();
         assert!(missing.contains("not installed for Click"), "{missing}");
+        assert!(missing.contains("--cpp"), "{missing}");
+        // A host releases ship no front end for says so, rather than
+        // pointing at an install that would fail.
+        let unbuilt = resolve_exporter_from(None, Some(home.clone()), false).unwrap_err();
+        assert!(
+            unbuilt.contains("no prebuilt C++ front end is available for this platform"),
+            "{unbuilt}"
+        );
+        assert!(!unbuilt.contains("--cpp"), "{unbuilt}");
         assert!(
             missing.contains(&installed.display().to_string()),
             "{missing}"
@@ -83,22 +114,23 @@ mod tests {
         std::fs::create_dir_all(installed.parent().unwrap()).unwrap();
         std::fs::write(&installed, b"").unwrap();
         assert_eq!(
-            resolve_exporter_from(None, Some(home.clone())),
+            resolve_exporter_from(None, Some(home.clone()), true),
             Ok(installed.clone())
         );
 
         let override_path = home.join("dev-exporter");
         std::fs::write(&override_path, b"").unwrap();
         assert_eq!(
-            resolve_exporter_from(Some(override_path.clone().into()), Some(home.clone())),
+            resolve_exporter_from(Some(override_path.clone().into()), Some(home.clone()), true),
             Ok(override_path)
         );
-        let wrong = resolve_exporter_from(Some(home.join("absent").into()), Some(home.clone()))
-            .unwrap_err();
+        let wrong =
+            resolve_exporter_from(Some(home.join("absent").into()), Some(home.clone()), true)
+                .unwrap_err();
         assert!(wrong.contains("CLICK_CPP_EXPORTER names"), "{wrong}");
 
         assert!(
-            resolve_exporter_from(None, None)
+            resolve_exporter_from(None, None, true)
                 .unwrap_err()
                 .contains("CLICK_HOME")
         );
