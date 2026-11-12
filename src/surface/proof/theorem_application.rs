@@ -13,14 +13,26 @@ pub(in crate::surface::proof) fn preparing_application() -> bool {
 }
 
 pub(in crate::surface::proof) fn with_application_preparation<T>(prepare: impl FnOnce() -> T) -> T {
+    with_application_preparation_mode(true, prepare)
+}
+
+fn with_application_preparation_mode<T>(active: bool, operation: impl FnOnce() -> T) -> T {
     struct Restore(bool);
     impl Drop for Restore {
         fn drop(&mut self) {
             PREPARING_APPLICATION.with(|active| active.set(self.0));
         }
     }
-    let _restore = Restore(PREPARING_APPLICATION.with(|active| active.replace(true)));
-    prepare()
+    let _restore = Restore(PREPARING_APPLICATION.with(|current| current.replace(active)));
+    operation()
+}
+
+/// A generic declaration proves its own prerequisites. They must never become
+/// conditional debts of the application which requested that declaration.
+fn with_independent_declaration_proof<T>(check: impl FnOnce() -> T) -> T {
+    with_application_preparation_mode(false, || {
+        super::execution_planning::without_open_obligation_probe(check)
+    })
 }
 
 /// The checker resolves proof bindings to values. Retain just this tactic's
@@ -821,16 +833,17 @@ fn resolve_generic_theorem_application(
             concrete.name()
         ));
     }
-    let result =
+    let result = with_independent_declaration_proof(|| {
         verify_concrete_theorem_definition(&concrete, spec_definitions, theorem_environment, None)
-            .map(|_| ())
-            .map_err(|error| {
-                format!(
-                    "generic theorem instance `{}` failed verification: {}",
-                    concrete.name(),
-                    error.raw_summary()
-                )
-            });
+    })
+    .map(|_| ())
+    .map_err(|error| {
+        format!(
+            "generic theorem instance `{}` failed verification: {}",
+            concrete.name(),
+            error.raw_summary()
+        )
+    });
     theorem_environment.finish_generic_instance_verification(concrete.name(), result.is_ok());
     result?;
     Ok(concrete)
@@ -1807,6 +1820,31 @@ theorem nested_count(value: int32) {
 #[cfg(test)]
 mod diagnostic_source_tests {
     use super::*;
+
+    #[test]
+    fn generic_declaration_proof_does_not_inherit_application_preparation() {
+        use super::super::execution_planning::{
+            collecting_step_requirements, probe_step_obligations,
+        };
+        assert!(!preparing_application());
+        probe_step_obligations(|| {
+            with_application_preparation(|| {
+                assert!(collecting_step_requirements());
+                let result = std::panic::catch_unwind(|| {
+                    with_independent_declaration_proof(|| {
+                        assert!(!preparing_application());
+                        assert!(!collecting_step_requirements());
+                        panic!("declaration refusal");
+                    })
+                });
+                assert!(result.is_err());
+                assert!(preparing_application());
+                assert!(collecting_step_requirements());
+            })
+        });
+        assert!(!preparing_application());
+        assert!(!collecting_step_requirements());
+    }
 
     #[test]
     fn application_diagnostic_source_restores_after_nested_failures() {
