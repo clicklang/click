@@ -336,9 +336,15 @@ void keep(int32* p) {
 
     #[test]
     fn rigid_algebraic_conditions_in_list_facts_are_spelled() {
-        check_algebraic_condition_fixture(include_str!(
-            "../../../mdtests/algebraic_parametric_theorems.md"
-        ));
+        // Exercise the generic proof itself: applications instantiate the
+        // checked statement and no longer replay the library theorem's body.
+        let library = include_str!("../../../library/list.click");
+        let start = library.find("theorem contains_append<T>").unwrap();
+        let rest = &library[start..];
+        let end = rest[1..].find("\ntheorem ").map_or(rest.len(), |i| i + 1);
+        let theorem =
+            rest[..end].replace("theorem contains_append", "theorem rigid_contains_append");
+        check_algebraic_condition_fixture(&format!("```click\n{theorem}\n```"));
     }
 
     #[test]
