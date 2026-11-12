@@ -6612,7 +6612,7 @@ disequality, and its expansion writes the `apply` with an explicit `using`
 ### `separation::subrange`
 
 ```click
-theorem subrange<T>(p: T*, lo: int32, hi: int32, inner_lo: int32, inner_hi: int32) {
+theorem subrange<T, I>(p: T*, lo: I, hi: I, inner_lo: I, inner_hi: I) {
     requires lo <= inner_lo;
     requires inner_lo <= inner_hi;
     requires inner_hi <= hi;
@@ -6620,8 +6620,9 @@ theorem subrange<T>(p: T*, lo: int32, hi: int32, inner_lo: int32, inner_hi: int3
 }
 ```
 
-**Meaning:** Nested element intervals describe contained resources. Bounds are
-in elements of the inferred type `T`, not bytes. Both descriptors retain the
+**Meaning:** Nested element intervals describe contained resources. Index type
+`I` is `int32` or `uint64`; all four bounds have that same type. Bounds are in
+elements of the inferred type `T`, not bytes. Both descriptors retain the
 same pointer origin and element width. The law grants no ownership or read
 permission. It constructs the containment implication directly, without
 searching facts, enumerating elements, or traversing memory history.
@@ -6629,7 +6630,7 @@ Applications supply all three bound premises explicitly. Empty inner intervals
 are permitted. Memory access and separation still require their usual validity
 conditions.
 
-**Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md) and [`mdtests/generic_pointer_struct_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_struct_parameters.md), including padded structs and struct-pointer elements.
+**Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md) and [`mdtests/generic_pointer_struct_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_struct_parameters.md), including padded structs and struct-pointer elements. [`mdtests/separation_subrange_supports_wide_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_subrange_supports_wide_bounds.md) covers unsigned 64-bit bounds.
 
 ## Namespace and extension rules
 

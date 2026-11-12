@@ -19,7 +19,7 @@ theorem distinct_elements<T, I>(p: T*, i: I, j: I) {
 }
 
 // Bounds are in elements of T, not bytes. Descriptors grant no ownership.
-theorem subrange<T>(p: T*, lo: int32, hi: int32, inner_lo: int32, inner_hi: int32) {
+theorem subrange<T, I>(p: T*, lo: I, hi: I, inner_lo: I, inner_hi: I) {
     requires lo <= inner_lo;
     requires inner_lo <= inner_hi;
     requires inner_hi <= hi;
