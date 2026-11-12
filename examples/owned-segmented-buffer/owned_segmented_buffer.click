@@ -153,6 +153,10 @@ int32 owned_segmented_buffer_set_first(
             0 <= index; index < owner->first_len;
         };
     }
+    have contains(memory(owner->first_data[0..owner->first_len]), memory(owner->first_data[index])) by {
+        apply(separation::contains_element(owner->first_data, 0, owner->first_len, index)) using { 0 <= index; index < owner->first_len; };
+    }
+    have separate(memory(owner->first_data[index]), memory(*owner)) by { solve(); }
     step();
     have separate(statement(0).footprint, memory(owner->first_data)) by {
         normalize() using { at(before_store, separate(memory(owner->first_data), memory(owner->first_data[index]))); };
@@ -217,6 +221,10 @@ int32 owned_segmented_buffer_set_second(
             0 <= index; index < owner->second_len;
         };
     }
+    have contains(memory(owner->second_data[0..owner->second_len]), memory(owner->second_data[index])) by {
+        apply(separation::contains_element(owner->second_data, 0, owner->second_len, index)) using { 0 <= index; index < owner->second_len; };
+    }
+    have separate(memory(owner->second_data[index]), memory(*owner)) by { solve(); }
     step();
     have separate(statement(0).footprint, memory(owner->first_data)) by {
         normalize() using { at(before_store, separate(memory(owner->first_data), memory(owner->second_data[index]))); };

@@ -140,6 +140,11 @@ int32 vector_copy(
             }
         }
         preserve by {
+            have i < dst_capacity by { solve(); }
+            have contains(memory(dst[0..dst_capacity]), memory(dst[i])) by {
+                apply(separation::contains_element(dst, 0, dst_capacity, i)) using { 0 <= i; i < dst_capacity; };
+            }
+            have separate(memory(dst[i]), memory(src[0..src_capacity])) by { solve(); }
             step();
             step();
             have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {

@@ -136,6 +136,10 @@ void *fill_range(void *argument) {
                     separate(memory(job->value), memory(job->output[index]));
                 };
             }
+            have contains(memory(job->output[job->begin..job->end]), memory(job->output[index])) by {
+                apply(separation::contains_element(job->output, job->begin, job->end, index)) using { job->begin <= index; index < job->end; };
+            }
+            have separate(memory(job->output[index]), memory(*job)) by { solve(); }
             mark iteration;
             step();
             have at(iteration, separate(loop(0).statement(0).footprint, memory(job->output))) by { normalize() using {
@@ -238,6 +242,19 @@ int fill_parallel(int output[4]) {
     step_until(statement(5));
     have first_job.output == output;
     have second_job.output == output;
+    have separate(memory(first_job), memory(output[0..4])) by { solve(); }
+    have contains(memory(output[0..4]), memory(output[0..2])) by {
+        apply(separation::subrange(output, 0, 4, 0, 2)) using { 0 <= 0; 0 <= 2; 2 <= 4; };
+    }
+    have separate(memory(first_job), memory(output[0..2])) by { solve(); }
+    have first_job.begin == 0;
+    have first_job.end == 2;
+    have separate(memory(first_job), memory(first_job.output[first_job.begin..first_job.end])) by {
+        rewrite(first_job.output == output);
+        rewrite(first_job.begin == 0);
+        rewrite(first_job.end == 2);
+        assumption();
+    }
     step();
     branch {
         step_until(function.exit);
