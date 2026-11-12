@@ -50,23 +50,26 @@ verifies offline on a fresh clone of the user's project on another machine.
 
 Audit of the current path, from a user's point of view:
 
-1. **The exporter is built from source.** `scripts/build-cpp-exporter.sh`
-   needs LLVM 19.1.7 development tools (`llvm-config`, `libclang-cpp`) and
-   working libstdc++ headers. It compiles the 4,800-line
-   `tools/cpp-exporter/main.cpp` into `target/cpp-exporter/` inside the Click
-   checkout. The binary links `libclang-cpp` dynamically with an rpath into
-   the host's LLVM `libdir`, so it cannot be moved to another machine. The
-   installer (`install.sh`, `install.ps1`, and the cargo-dist configuration
-   in `Cargo.toml`) ships only `click`. CI already tars the built exporter
-   to share it between test shards (`scripts/check.sh`), but releases do not
-   include it.
+1. **Releases ship a Linux x86-64 exporter; other hosts build it.**
+   `scripts/build-cpp-exporter.sh --release` links the pinned Clang, LLVM
+   and C++ runtime statically and copies Clang's builtin headers beside the
+   exporter as `clang-resource/`, which it finds relative to itself; only
+   the system C library stays dynamic.
+   `.github/workflows/cpp-frontend.yml` packages that bundle for each
+   release tag as `click-cpp-frontend-x86_64-unknown-linux-gnu.tar.gz`,
+   tests it with `tests/cpp_release_install.rs`, and attaches it, and
+   `click install VERSION --cpp` installs it. `install.sh` and
+   `install.ps1` still install only `click`, and macOS and Windows have no
+   bundle: there the development build (LLVM 19.1.7 development tools,
+   `libclang-cpp` linked with an rpath into the host's LLVM `libdir`, not
+   movable) is the only exporter.
 2. **One resolution order, nothing installed yet.** Click finds the
    exporter through `CLICK_CPP_EXPORTER`, else
    `$CLICK_HOME/versions/<version>/frontends/cpp/click-cpp-exporter`, else
    reports where it expected one (`src/languages/cpp/runtime.rs`), for
    project locking and C++ mdtests alike. Configs name no exporter and no
-   build-machine path is compiled in. Releases do not install anything there
-   yet, so users still set the override.
+   build-machine path is compiled in. `click install VERSION --cpp`
+   installs there on Linux x86-64.
 3. **The version handshake is in place; lock identities are not.** The
    exporter reports its version, artifact schema and Clang version for
    `--identity`, Click checks that before exporting, and all three are

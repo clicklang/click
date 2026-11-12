@@ -43,8 +43,8 @@ executable, with `charon-driver` beside it. Verification never reads it.
 C++ exporter when it prepares a C++ unit of a project; it is for development,
 with an exporter built by `scripts/build-cpp-exporter.sh`. Unset, Click uses
 the exporter installed for its own version,
-`$CLICK_HOME/versions/<version>/frontends/cpp/click-cpp-exporter`, and
-otherwise reports that the C++ front end is not installed and where it was
+`$CLICK_HOME/versions/<version>/frontends/cpp/click-cpp-exporter`, which
+`click install VERSION --cpp` installs, and otherwise reports that the C++ front end is not installed and where it was
 expected. A path that is not a file is refused. The test harnesses read it
 too. Verification never reads it.
 

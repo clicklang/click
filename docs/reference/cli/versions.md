@@ -8,7 +8,7 @@ otherwise runs the launcher's own version.
 ## Synopsis
 
 ```text
-usage: click install <VERSION|latest> [--rust]
+usage: click install <VERSION|latest> [--rust] [--cpp]
        click use [VERSION|--unset]
        click default [VERSION]
        click versions
@@ -40,6 +40,8 @@ set `CLICK_HOME`. The directory contains the following:
 - `versions/VERSION/bin/click`: one installed version. A version counts as
   installed only when this file exists.
 - `versions/VERSION/frontends/rust/`: the optional pinned Rust frontend and compiler runtime.
+- `versions/VERSION/frontends/cpp/`: the optional pinned C++ exporter, with
+  the pinned Clang's builtin headers in `clang-resource/`.
 - `default`: the global default version, written by `click default`.
 - `tmp/`: staging directories for `click install`, removed after each install.
 
@@ -77,7 +79,15 @@ unavailable-platform diagnostic. The command downloads
 checks the manifest's version and layout, and stages the bundle before making
 it visible under `versions/VERSION/frontends/rust`. An existing valid bundle
 is retained. `click versions` lists installed Rust frontends with their Charon versions.
-The normal install without `--rust` remains the Click executable alone.
+
+`click install VERSION --cpp` installs that release's pinned C++ exporter the
+same way, from `click-cpp-frontend-TARGET.tar.gz`, into
+`versions/VERSION/frontends/cpp`, where `click import lock` finds it. Its
+manifest must name the exporter version, Clang version and artifact schema
+that this Click pins; the bundle is available for `x86_64-unknown-linux-gnu`
+only. `click versions` lists an installed C++ frontend with its exporter and
+Clang versions. The flags combine, and each may be given once.
+The normal install without `--rust` or `--cpp` remains the Click executable alone.
 
 ## `click use`
 
