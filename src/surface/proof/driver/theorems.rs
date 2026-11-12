@@ -3,20 +3,22 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
-    /// Retain a pure application's evaluated arguments and instantiated result,
+    /// Retain a pure or fixed-state application's evaluated arguments and instantiated result,
     /// then prove its argument and premise obligations before publication.
     /// Other proof contexts retain their existing selection route.
     pub(in crate::surface::proof) fn apply_theorem_application(
         &self,
         application: &TheoremApplication,
     ) -> Result<Proof<'a>, ClickError> {
-        if matches!(self.proof.context.as_ref(), ProofContext::Pure(_))
-            && application.name != "population_member_count_zero"
+        if matches!(
+            self.proof.context.as_ref(),
+            ProofContext::Pure(_) | ProofContext::FixedState(_)
+        ) && application.name != "population_member_count_zero"
             && !crate::surface::proof::theorem_application::is_integer_range_fold_theorem_name(
                 &application.name,
             )
         {
-            let prepared = self.proof.prepare_pure_theorem_application(application)?;
+            let prepared = self.proof.prepare_theorem_application(application)?;
             let (current, premises) =
                 self.prove_theorem_application_obligations(application, &prepared.obligations)?;
             let step = ProofStep::ApplyTheoremUsing {

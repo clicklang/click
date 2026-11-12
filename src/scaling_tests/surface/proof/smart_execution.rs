@@ -121,7 +121,7 @@ fn model_argument_guard_work(prepare: bool) {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::persistent::measure_persistent_work(|| {
                     if prepare {
-                        root.prepare_pure_theorem_application(&application)
+                        root.prepare_theorem_application(&application)
                             .map(|prepared| {
                                 assert!(!prepared.obligations.is_empty());
                                 vec![guard.clone()]

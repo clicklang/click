@@ -763,21 +763,20 @@ impl<'a> Proof<'a> {
         })
     }
 
-    pub(in crate::surface::proof) fn prepare_pure_theorem_application(
+    pub(in crate::surface::proof) fn prepare_theorem_application(
         &self,
         application: &TheoremApplication,
     ) -> Result<PreparedTheoremApplication, ClickError> {
-        let ProofContext::Pure(context) = self.context.as_ref() else {
-            return Err(self.step_error("pure theorem preparation requires a pure proof"));
-        };
-        let application_resolved = self.resolve_theorem_application(application)?;
+        if !matches!(
+            self.context.as_ref(),
+            ProofContext::Pure(_) | ProofContext::FixedState(_)
+        ) {
+            return Err(self.step_error("theorem preparation requires a pure or fixed-state proof"));
+        }
         let (prepared, probe) =
             crate::surface::proof::execution_planning::probe_step_obligations(|| {
                 crate::surface::proof::theorem_application::with_application_preparation(|| {
-                    crate::surface::proof::theorem_application::with_application_source(
-                        application,
-                        || self.apply_pure_theorem_using(context, &application_resolved, &[]),
-                    )
+                    self.apply_theorem_using(application, &[])
                 })
             });
         Ok(PreparedTheoremApplication {
