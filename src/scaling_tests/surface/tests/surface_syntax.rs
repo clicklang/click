@@ -317,7 +317,10 @@ fn requirement_spelling_selects_one_recorded_enclosing_clause() {
             };
             let guarded = Proposition::And(
                 Box::new(target.clone()),
-                Box::new(Proposition::ConditionIs(ConditionTerm::Variable(Variable(index)), true)),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::Variable(Variable(index)),
+                    true,
+                )),
             );
             spellings.record_lowering(&surface, &guarded).unwrap();
             latest = Some(surface);
@@ -327,7 +330,11 @@ fn requirement_spelling_selects_one_recorded_enclosing_clause() {
             spellings.recorded_requirement_surface(&target)
         });
         assert_eq!(selected, latest.as_ref());
-        assert!(spellings.recorded_requirement_surface(&Proposition::Not(Box::new(target.clone()))).is_none());
+        assert!(
+            spellings
+                .recorded_requirement_surface(&Proposition::Not(Box::new(target.clone())))
+                .is_none()
+        );
         work.push(cost);
     }
     assert!(work.iter().all(|cost| *cost == work[0]), "{work:?}");
