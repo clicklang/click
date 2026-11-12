@@ -2125,6 +2125,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_element_address_disequality(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_element_address_disequality");
         /// The base of a written element address `&p[i]`.
         fn element_address_base(expression: &ContractExpression) -> Option<&CExpression> {
             let ContractExpression::CFragment(CExpression::AddressOf(target)) = expression else {
