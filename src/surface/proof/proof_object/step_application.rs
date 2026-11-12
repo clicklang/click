@@ -1000,17 +1000,42 @@ impl<'a> Proof<'a> {
         crate::surface::proof_trace::record(Arc::as_ptr(&next.node) as usize, detail);
     }
 
-    /// Searches for a terminal frame candidate and submits the selected
-    /// Surface-operation plan directly to this Proof. Successful search returns
-    /// the already-checked descendant; it does not export outcomes or check
-    /// the candidate through a second semantic representation.
+    /// Apply exact facts and the selected live-partition separation rule.
+    /// No ambient compositions or candidate resources are enumerated.
     pub(super) fn apply_assumption(&self) -> Result<KernelProofHandle, ClickError> {
         let context = match self.context.as_ref() {
             ProofContext::FixedState(_) => PropositionAssumptionContext::Pure,
             ProofContext::Execution(_) => PropositionAssumptionContext::Materialized,
             ProofContext::Pure(_) => PropositionAssumptionContext::Exact,
         };
-        self.state
+        // A completed outcome owns its post-state; the execution branch may
+        // still retain an earlier frontier. Never use that stale partition.
+        let resources = match self.context.as_ref() {
+            ProofContext::Pure(_) => None,
+            ProofContext::FixedState(context) => Some(context.fixed_state.state.resources()),
+            ProofContext::Execution(_) => match self.focused_outcome_data() {
+                Some(outcome) => Some(outcome.core.state.resources()),
+                None => self
+                    .execution()
+                    .map(|execution| execution.core.state.resources()),
+            },
+        };
+        let state = if let (Some(goal), Some(resources)) = (self.goal(), resources) {
+            let facts = self
+                .facts()
+                .with_exact_partition_separation(goal, resources);
+            self.state
+                .replace_focused_obligation_and_facts(
+                    self.focused_obligation()
+                        .expect("a proposition goal is focused")
+                        .clone(),
+                    facts,
+                )
+                .map_err(|_| self.step_error("assumption requires an open goal"))?
+        } else {
+            self.state.clone()
+        };
+        state
             .apply_assumption(context)
             .map_err(|error| match error {
                 PropositionCloseError::NotProposition => {

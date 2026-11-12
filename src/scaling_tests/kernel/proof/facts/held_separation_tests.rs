@@ -95,3 +95,43 @@ fn held_separation_transitive_alias_uses_the_shared_resource_index() {
         "transitive selected ownership visited unrelated inputs: {samples:?}"
     );
 }
+
+#[test]
+fn exact_partition_assumption_ignores_unselected_members_and_refuses_two_views() {
+    let mut work = Vec::new();
+    for count in [4, 16, 64, 256] {
+        let owned = cell(0);
+        let viewed = cell(1);
+        let resources = ResourceContext::new().unchecked_with_facts(
+            std::iter::once(CResourceFact::own(owned.clone()))
+                .chain(std::iter::once(CResourceFact::View(viewed.clone())))
+                .chain((2..count).map(|i| CResourceFact::View(cell(i)))),
+        );
+        let goal = separation(owned.clone(), viewed.clone());
+        let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            let _guard =
+                crate::kernel::search::FastOperationScope::enter("exact partition assumption");
+            let facts = ProofFacts::default().with_exact_partition_separation(&goal, &resources);
+            assert!(facts.contains(&goal));
+            assert!(resources.proves_exact_partition_separation(&viewed, &owned));
+            assert!(!resources.proves_exact_partition_separation(&viewed, &cell(2)));
+            assert!(!resources.proves_exact_partition_separation(&owned, &owned));
+            assert!(!resources.proves_exact_partition_separation(&owned, &cell(count + 1)));
+        });
+        work.push(cost);
+    }
+    assert!(
+        work.windows(2).all(|pair| pair[1] <= pair[0] + 32),
+        "{work:?}"
+    );
+}
+
+#[test]
+fn exact_partition_assumption_does_not_treat_supported_views_as_independent() {
+    let owner = CResourceFact::own(range(0, 0, 2, 4));
+    let projected = range(0, 0, 1, 4);
+    let resources = ResourceContext::new()
+        .unchecked_with_facts([owner.clone()])
+        .unchecked_with_supported_facts(&owner, [CResourceFact::View(projected.clone())]);
+    assert!(!resources.proves_exact_partition_separation(owner.resource(), &projected));
+}

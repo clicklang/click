@@ -76,7 +76,7 @@ other concerns need separate treatment: remaining orchestration adapters on
 operations and declaration validation that searches outside proof scripts.
 
 The known direct operation/search dependencies remain: this classification does
-not eliminate the seven kernel bridges, their 22 caller records, or the 6
+not eliminate the six kernel bridges, their 21 caller records, or the 6
 Surface operation/search records. In particular, explicit premises are not an
 explicit derivation: `transport(...) using {...}` is classified Simple in
 `src/surface.rs`, but its application can still call `derive_atomic_proposition`.
@@ -190,10 +190,10 @@ The 6 `operation` records are not 6 independent slow walks:
 | Legacy explicit transport checking | 3 | `certified_fact_transport_reaches`, `check_fixed_state_fact_transport_using_facts_inner`, and `apply_pure_transport_using` call atomic derivation. Confirmed search access from the explicit transport route; migrate/retire under T1–T5, not a new independent bug per record. |
 | Definition validation | 2 | `symbolic_segment_covers_index` and `symbolic_segment_covers_range` join the mixed `segment_contains_pointer` record in one declaration-validation concern. There is no ordinary user obligation/expansion boundary established for these checks. |
 
-The seven kernel bridges and their 22 callers map to five roadmap groups:
+The six kernel bridges and their 21 callers map to four roadmap groups:
 L1 has loan aliases and loan access; R2 has ownership candidates and overlap;
-F1 has owned-anchor distinctness; F2 has composition reconstruction; C1 has
-call framing. These five candidate groups cover seven bridges; they are not seven measured
+F1 has owned-anchor distinctness; C1 has call framing.
+These four candidate groups cover six bridges; they are not six measured
 defects. R1 is a separate reachability question. Their source
 traversals remain candidates until complete-operation red curves fix the input
 and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.md).
@@ -208,7 +208,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
 - **Legitimate expandable work:** omitted-obligation solve, explicit smart
   tactics, and discovery planners. Their generated operations still owe the
   fast-checking guarantee; being called from search grants no exemption.
-- **Unmeasured/coverage work:** the five bridge groups, transition checks, declaration validation, and operation-map growth axes.
+- **Unmeasured/coverage work:** the four bridge groups, transition checks, declaration validation, and operation-map growth axes.
   An unresolved label is an investigation task, not proof of a bug.
 - **Owned elsewhere:** `roadmap/unspellable-facts.md` owns the remaining
   shared-term representation boundaries. Its original R1–R7 reproductions are
@@ -218,7 +218,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 639 reference records, not 639 obligations to remove.
+The inventory contains 637 reference records, not 637 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this
@@ -235,11 +235,10 @@ registered search, not uninstrumented loops or copying.
 
 The same guard probes cannot yet be retained on `begin_have`,
 `begin_contract_claim`, or `prepare_step`. The gate mdtest corpus reproduces
-seven operation/entry pairs across those three operations:
+six operation/entry pairs across those three operations:
 
 | Operation | Discovery entry | Reproduction (`mdtests/`) |
 | --- | --- | --- |
-| `begin_have` | `composition_context` | `a_cast_contract_a_saved_word_keeps_its_historical_relationship.md` |
 | `begin_have` | `owned_anchor_distinctness` | `a_held_matched_instance_without_a_typed_arm_does_not_type_its_argument.md` |
 | `begin_contract_claim` | `owned_anchor_distinctness` | `composite_resource_nested_observe_not_automatic.md` |
 | `prepare_step` | `loan_access` | `a_32_bit_cell_read_at_the_other_signedness_is_its_sign_cast.md` |
@@ -247,12 +246,13 @@ seven operation/entry pairs across those three operations:
 | `prepare_step` | `ownership_overlap` | `a_call_map_gives_an_imported_let_parameter_its_value.md` |
 | `prepare_step` | `ownership_validity_candidates` | `a_callee_owns_a_window_of_a_64_bit_range.md` |
 
-These reuse five existing bridge entries; they are not seven new independent
+These reuse four existing bridge entries; they are not six new independent
 walks. A first guard failure can mask a later dependency. No guard escape was
 added, and the existing source dependency records remain frozen.
 
-Have opening can copy the composition context and derive separation before the
-written proof runs. `single_write_resource_transport_expands_to_preserve_without_search`
+Have opening no longer reconstructs a composition-only context. Other selected
+observation routes can still derive separation before the written proof runs.
+`single_write_resource_transport_expands_to_preserve_without_search`
 is a focused positive reproduction. Claim opening's captured stack is
 `focus_contract_claim` → `with_selected_resource_separation` → resource
 containment/range equality → pointer disequality → owned-anchor discovery.

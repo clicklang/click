@@ -1094,7 +1094,6 @@ fn extracted_legacy_search_retains_the_existing_operation_guards() {
         "src/kernel/loans/legacy_search.rs",
         "src/kernel/primitives/resource_algebra/legacy_search.rs",
         "src/kernel/assumptions/condition_reasoning/decision/legacy_search.rs",
-        "src/kernel/assumptions/legacy_search.rs",
         "src/kernel/functions/legacy_search.rs",
     ] {
         let source = std::fs::read_to_string(root.join(path)).unwrap();
