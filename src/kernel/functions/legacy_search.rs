@@ -9,6 +9,8 @@ impl crate::kernel::search::ProofSearch<CFunction> {
         state: &CState,
         assumptions: &PureFactContext,
     ) -> CallKeptOwnership {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("call_frame");
         let mut ranges = Vec::new();
         let mut premises = Vec::new();
         for fact in residual.owned_instances() {

@@ -910,6 +910,11 @@ impl PureFactContext {
     /// literal storage never counts: two occurrences with identical bytes
     /// may be one object, so their ranges are deliberately never separated.
     fn pointers_distinct_by_owned_anchors(&self, left: &Pointer, right: &Pointer) -> Option<bool> {
+        // Intrinsic condition evaluation has no ownership compositions.
+        // Keep this empty-domain decision outside the discovery interface.
+        if self.resource_compositions.is_empty() {
+            return None;
+        }
         crate::kernel::search::ProofSearch::<PureFactContext>::owned_anchor_distinctness(
             self, left, right,
         )

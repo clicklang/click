@@ -118,8 +118,8 @@ Roles distinguish the work remaining:
 The inventory after diagnostic stepping removal, match-arm dispatch relocation
 and signed-definedness/unsigned-order search extraction contains 633 records: 7 legacy bridges, 22 kernel callers,
 6 Surface operation dependencies, 0 operation-to-driver dependencies,
-123 driver records, 6 presentation records,
-448 search-internal records, 19 mixed records and 2 imports. These are reference
+122 driver records, 6 presentation records,
+448 search-internal records, 20 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several
@@ -129,7 +129,15 @@ expected. The `operation`, `operation-to-driver` and legacy rows are the migrati
 not certify their callees as fast. One operation record belongs to theorem application implemented
 on `ProofDriver`: moving dispatch must not hide those search dependencies or
 reclassify them as legitimate implicit solving. Driver placement alone is not
-an efficiency guarantee.
+an efficiency guarantee. Named theorem applications now use retained preparation,
+driver-solved obligations and publication in pure, fixed-state, live and returned
+contexts. The remaining selector edge covers special population/range built-ins
+and unsupported outcome dispatch. The three migrated primitives have test-build
+no-discovery scopes; every `ProofSearch` entry records discovery before work,
+even when called from another search. Cold generic-instance verification retains
+one named declaration-proof exception, recorded in the inventory; it remains a
+fast-to-slow dependency to remove. See the theorem boundary section in the
+[efficiency contract](../docs/internals/verification-efficiency.md).
 
 Seven kernel bridges preserve these implementations:
 

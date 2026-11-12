@@ -1439,3 +1439,56 @@ fn statement_preparation_cannot_search_for_atomic_prerequisites() {
         .is_err()
     );
 }
+
+#[test]
+fn search_entries_cannot_omit_or_delay_runtime_discovery_recording() {
+    for body in [
+        "{}",
+        r#"{ work(); #[cfg(test)] crate::kernel::search::record_discovery("proves"); }"#,
+        r#"{ #[cfg(test)] crate::kernel::search::record_discovery("other"); }"#,
+    ] {
+        let source = format!("impl ProofSearch<P> {{ fn proves() {body} }}");
+        let errors =
+            proof_search_boundary::check("src/new_search.rs", &syn::parse_file(&source).unwrap())
+                .unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.contains("must record discovery")),
+            "{errors:?}"
+        );
+    }
+    let source = r#"impl ProofSearch<P> { fn proves() {
+        #[cfg(test)] crate::kernel::search::record_discovery("proves");
+    } }"#;
+    proof_search_boundary::check("src/new_search.rs", &syn::parse_file(source).unwrap()).unwrap();
+}
+
+#[test]
+fn migrated_theorem_operations_cannot_drop_their_discovery_guard() {
+    for name in [
+        "apply_theorem_using",
+        "prepare_theorem_application",
+        "finish_prepared_theorem_application",
+    ] {
+        let source = format!("impl Proof {{ fn {name}() {{}} }}");
+        let errors = proof_search_boundary::check(
+            "src/new_operation.rs",
+            &syn::parse_file(&source).unwrap(),
+        )
+        .unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("must enter its no-discovery scope")),
+            "{errors:?}"
+        );
+    }
+}
+
+#[test]
+fn declaration_validation_exception_cannot_spread_to_other_callers() {
+    let file = syn::parse_file(
+        "fn ordinary_operation() { FastOperationScope::enter_declaration_validation(); }",
+    )
+    .unwrap();
+    assert!(proof_search_boundary::check("src/new_operation.rs", &file).is_err());
+}

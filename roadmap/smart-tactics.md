@@ -386,5 +386,12 @@ not reconstruct identities or search for intermediate states.
 
 Theorem application migration: pure, fixed-state, live-execution and returned-outcome named applications now retain their
 instantiated result and return argument-domain and formal-premise obligations.
-The final migration needs strict no-discovery replay coverage. Special built-in
+Preparation, publication and explicit replay now have test-build discovery guards;
+all other operations still need guard coverage and their cost audit. Special built-in
 population/range applications remain separately classified.
+
+The theorem-operation guard found cold generic-instance verification nested in
+application. Its independent declaration proof has one named guard exception,
+`verify_concrete_theorem_definition -> enter_declaration_validation`; nested
+primitives remain guarded. Moving this validation out of fast application is
+still required before claiming cold expanded applications are search-free.
