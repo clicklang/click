@@ -5,10 +5,10 @@ Priority: P1.
 Soundness: soundness-adjacent. No false acceptance is known, and unsupported
 C++ constructs are refused. The Clang exporter is a documented trusted front
 end, but Click does not establish which exporter it trusted. `click import
-lock` runs whatever executable the config's `exporter` path names. It checks
-only that the output is artifact schema 60 and that the exporter's
-self-reported `frontend_version` contains `19.1.7`
-(`src/languages/cpp/schema.rs`). The lock records the SHA-256 of a locally
+lock` runs whatever executable the config's `exporter` path names. Before
+exporting it checks the exporter's `--identity` report against the pinned
+front end (`src/languages/cpp/frontend-profile.json`), but that report is the
+exporter's own claim. The lock records the SHA-256 of a locally
 built binary, but nothing compares that hash with a released exporter. A
 reviewer would ask how a user knows that the trusted front end is the one
 Click was released with. This issue answers that question.
@@ -73,11 +73,10 @@ Audit of the current path, from a user's point of view:
    `src/cli.rs`), so an installed `click` points at the build machine's
    checkout. The tests use the environment variable (`tests/cpp_import.rs`,
    `tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`).
-3. **There is no version handshake.** The exporter has no version command.
-   The artifact schema number is hard-coded twice: `artifact["schema"] = 60`
-   in `main.cpp` and `EXPORT_SCHEMA` in `src/languages/cpp/schema.rs`. The
-   Clang version is checked only as a substring of a string the exporter
-   reports about itself (see Soundness). The lock's `exporter_sha256` is the
+3. **The version handshake is in place; lock identities are not.** The
+   exporter reports its version, artifact schema and Clang version for
+   `--identity`, Click checks that before exporting, and all three are
+   defined once in `src/languages/cpp/frontend-profile.json`. The lock's `exporter_sha256` is the
    hash of the local build, so the same inputs locked on two machines give
    two different import identities.
 4. **The demonstration is reproducible only inside the repository.** Every
