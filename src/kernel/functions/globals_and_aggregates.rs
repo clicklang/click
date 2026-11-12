@@ -1636,6 +1636,16 @@ pub(super) fn copy_aggregate_union_member(
     if aggregate_copy_source_holds_nothing(memory, source_field, element_type) {
         return None;
     }
+    // An unknown object pointer is the value read from this cell, as an
+    // ordinary pointer field's is: not an address in the object holding it.
+    if element_type.is_object_pointer() {
+        return crate::kernel::eval::symbolic_storage_cell_value(
+            memory,
+            source_field,
+            element_type,
+            true,
+        );
+    }
     let load = crate::kernel::canonical_form_of_load(
         crate::kernel::intern_c_memory(memory.clone()),
         source_field.clone(),

@@ -574,7 +574,7 @@ pub(in crate::surface) fn initial_call_state(
         // aggregate image using the same typed copy operation as C calls,
         // before resource clauses follow any pointer fields. This image is
         // caller storage; the callee still receives its own fresh copy.
-        state = crate::kernel::c_function_entry_state(&state, function, &arguments)
+        state = crate::kernel::c_function_input_objects_state(&state, function, &arguments)
             .ok_or_else(|| ClickError::new("could not materialize aggregate argument values"))?;
         for (index, (parameter, argument)) in parameters.iter().zip(&mut arguments).enumerate() {
             if parameter.is_struct_value() {

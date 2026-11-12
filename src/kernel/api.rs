@@ -3739,6 +3739,27 @@ pub fn c_function_entry_state(
     function: &CFunction,
     arguments: &[CExpression],
 ) -> Option<CState> {
+    c_function_entry_state_with(caller_state, function, arguments, false)
+}
+
+/// The state that declares a function proof's by-value aggregate inputs:
+/// [`c_function_entry_state`], except that each such parameter's object is
+/// declared and not copied into. It is the argument the proof is about, so
+/// the caller names its cells as their own entry values.
+pub fn c_function_input_objects_state(
+    caller_state: &CState,
+    function: &CFunction,
+    arguments: &[CExpression],
+) -> Option<CState> {
+    c_function_entry_state_with(caller_state, function, arguments, true)
+}
+
+fn c_function_entry_state_with(
+    caller_state: &CState,
+    function: &CFunction,
+    arguments: &[CExpression],
+    input_aggregates: bool,
+) -> Option<CState> {
     let values = arguments
         .iter()
         .map(|argument| match argument {
@@ -3746,7 +3767,12 @@ pub fn c_function_entry_state(
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;
-    let mut entry = bind_c_function_arguments(caller_state, function, &values)?;
+    let mut entry = crate::kernel::functions::bind_c_function_arguments_with(
+        caller_state,
+        function,
+        &values,
+        input_aggregates,
+    )?;
     if let Some(events) = caller_state
         .population_effects
         .creation
