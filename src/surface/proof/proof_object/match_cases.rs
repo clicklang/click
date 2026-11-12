@@ -836,6 +836,8 @@ impl<'a> Proof<'a> {
                     more_resources: 0,
                     origin: crate::surface::proof_trace::smart_origin(),
                     chosen: None,
+                    forgotten_cells: Vec::new(),
+                    history_stops: Vec::new(),
                 },
             );
             proof

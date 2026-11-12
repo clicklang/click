@@ -3613,7 +3613,7 @@ impl ResourceContext {
         {
             (!required.typed_carrier
                 || assumptions.access_designations_match(required.access_designation(), &available))
-                && memory_range_covers_with_separation(&available, required, assumptions, false)
+                && memory_range_covers_by_routes(&available, required, assumptions)
         } else {
             resource_fact_entails(available, required, assumptions)
         }
@@ -10351,7 +10351,7 @@ pub(in crate::kernel) fn memory_range_covers(
     required: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
-    memory_range_covers_with_separation(available, required, assumptions, true)
+    memory_range_covers_by_routes(available, required, assumptions)
 }
 
 /// A field-sized footprint lies in one whole element of an unscaled range.
@@ -10441,20 +10441,18 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
     )
 }
 
-fn memory_range_covers_with_separation(
+/// Whether `available` holds every byte of `required`, by the indexed and
+/// structural routes below. A stated separation never vetoes a coverage
+/// they prove: one range covering a nonempty other and being disjoint from it
+/// are contradictory facts, under which either answer is sound, so asking
+/// would only walk the separation facts for nothing.
+fn memory_range_covers_by_routes(
     available: &CMemoryRange,
     required: &CMemoryRange,
     assumptions: &PureFactContext,
-    use_separation: bool,
 ) -> bool {
     if available.element_width() != required.element_width() {
-        if memory_range_covers_interior_element(available, required, assumptions)
-            && (!use_separation
-                || !assumptions
-                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
-                        available, required,
-                    ))
-        {
+        if memory_range_covers_interior_element(available, required, assumptions) {
             return true;
         }
         // A footprint is bytes and the element width is only how the bytes
@@ -10464,14 +10462,7 @@ fn memory_range_covers_with_separation(
         // the bases and endpoints the equal-width paths reason about.
         if required.wide_bounds().is_none()
             && memory_range_in_element_width(required, available.element_width()).is_some_and(
-                |required| {
-                    memory_range_covers_with_separation(
-                        available,
-                        &required,
-                        assumptions,
-                        use_separation,
-                    )
-                },
+                |required| memory_range_covers_by_routes(available, &required, assumptions),
             )
         {
             return true;
@@ -10481,11 +10472,10 @@ fn memory_range_covers_with_separation(
         if available.wide_bounds().is_some() || required.wide_bounds().is_some() {
             return false;
         }
-        return memory_range_covers_with_separation(
+        return memory_range_covers_by_routes(
             &byte_normalized_memory_range(available),
             &byte_normalized_memory_range(required),
             assumptions,
-            use_separation,
         );
     }
     if available == required {
@@ -10494,25 +10484,7 @@ fn memory_range_covers_with_separation(
     if available.base().blocks_proven_distinct(required.base()) {
         return false;
     }
-    // An explicit separation only vetoes a coverage another route proves, so
-    // it is asked last, and only of a pair some route covers. Asked first, it
-    // ran for every candidate range a coverage lookup scans, and each run
-    // walks the context's separation facts: a contract with `N` views beside
-    // one owner paid `N` lookups x `N` candidates x `N` facts at entry. The
-    // answer is the same conjunction either way.
     memory_range_covered_by_some_route(available, required, assumptions)
-        && (!use_separation
-            || !crate::instrumentation::measure_operation(
-                "kernel",
-                "memory range coverage",
-                "memory range coverage: explicit separation",
-                || {
-                    assumptions
-                        .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
-                            available, required,
-                        )
-                },
-            ))
 }
 
 /// Interpret a signed endpoint as a native coordinate only when its complete
@@ -13014,5 +12986,8 @@ mod shared_wide_bound_tests {
     mod scaling_tests {
         use super::*;
         include!("../../scaling_tests/kernel/primitives/resource_algebra/shared_wide_bounds.rs");
+        include!(
+            "../../scaling_tests/kernel/primitives/resource_algebra/coverage_separation_tests.rs"
+        );
     }
 }

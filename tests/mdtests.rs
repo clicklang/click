@@ -43,6 +43,10 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    // 0.78s focused, 0.57s in the parallel gate; the automatic-array refusal
+    // `a_store_search_miss_names_the_store_and_the_fact_for_an_array_read.md`
+    // keeps the store-search miss line in the gate.
+    "a_store_search_miss_names_the_store_and_the_fact_for_a_heap_read.md",
     // 0.75s focused; nested-read identity and the positive C case stay in the gate.
     "nested_index_read_does_not_use_the_changed_index.md",
     "a_decreases_measure_sum_is_an_integer.md", // 2.4s: original disjunctive-guard regression

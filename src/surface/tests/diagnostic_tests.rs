@@ -4591,3 +4591,46 @@ fn explicit_call_constant_proofs_reject_changed_values() {
         );
     }
 }
+
+/// A store the implicit tail could not keep a cached element across is
+/// marked in the trace with the index fact it lacked, the read after it
+/// shows where its history stopped, and the refusal names the statement and
+/// the fact the store search spelled.
+#[test]
+#[ignore = "nightly: 0.71s alone; the failing implicit tail's closing search dominates"]
+fn trace_marks_a_dropped_cell_and_the_read_history_stop() {
+    let source = r#"verifying "f.c";
+        int32 read_first(int32 j) {
+            requires 1 <= j;
+            requires j <= 4;
+            requires j != 1;
+            ensures result == 7;
+        }
+    "#;
+    let c = "int32 read_first(int32 j) { int32 a[4]; a[0] = 7; a[j - 1] = 1; int32 r = a[0]; return r; }";
+    with_proof_trace("read_first", || {
+        let error = verify_c0_sources(source, &[("f.c", c)])
+            .expect_err("the store search misses `((j - 1) as int32) != 0`");
+        assert!(
+            error.message().contains(
+                "may have overwritten `a`; it is kept if you state `have not (let integer_value: Integer = to_integer(((j - 1) as int32)); integer_value) == 0 by { ... };` before "
+            ),
+            "{}",
+            error.message()
+        );
+        let trace = error
+            .trace_context_report()
+            .expect("the checked steps are traced");
+        let (store, read) = trace
+            .split_once("steps through: r = a[0]")
+            .unwrap_or_else(|| panic!("the read is traced: {trace}"));
+        assert!(
+            store.contains("forgets cached `a` beside the store to `a[…]`: the store keeps it only on the stated fact "),
+            "{trace}"
+        );
+        assert!(
+            read.contains("read history stopped after crossing 0 recorded transitions (a read follows at most one)"),
+            "{trace}"
+        );
+    });
+}

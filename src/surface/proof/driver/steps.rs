@@ -48,14 +48,25 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             && crate::surface::proof_trace::smart_origin().is_some())
         .then(|| chosen_step_text(&step))
         .flatten();
-        let result = driver_proof
-            .driver()
-            .apply_step_with_origin_inner(step, origin)
-            .map_err(|error| {
-                driver_proof
-                    .attach_step_diagnostic(error)
-                    .with_failed_tactic(tactic)
-            });
+        // A trace shows the read-history walks this step makes; the capture
+        // records queries already made and passes them on to any enclosing
+        // check's own capture.
+        let apply = || {
+            driver_proof
+                .driver()
+                .apply_step_with_origin_inner(step, origin)
+        };
+        let (result, cell_walks) =
+            if crate::surface::proof_trace::enabled_for(driver_proof.claim_label()) {
+                crate::kernel::capture_step_cell_walks(TRACED_STEP_CELL_WALKS, apply)
+            } else {
+                (apply(), Vec::new())
+            };
+        let result = result.map_err(|error| {
+            driver_proof
+                .attach_step_diagnostic(error)
+                .with_failed_tactic(tactic)
+        });
         if let Ok(next) = &result
             && let Some(execution) = next.execution()
         {
@@ -87,6 +98,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 chosen,
                 8,
                 read_checkpoint.as_ref(),
+                cell_walks,
             );
         }
         if let Ok(next) = &result
@@ -666,3 +678,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         scope.join()
     }
 }
+
+/// How many read-history walks a traced step captures for its trace.
+const TRACED_STEP_CELL_WALKS: usize = 16;

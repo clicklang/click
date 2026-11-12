@@ -3312,12 +3312,92 @@ impl<'a> Proof<'a> {
             return None;
         }
         let premises = self.facts().propositions().collect::<Vec<_>>();
-        crate::surface::diagnostics::describe_proposition_version_mismatch(
-            goal,
-            &premises,
-            "the available fact was stated",
-            ParameterBinding::new(parameters, arguments),
-        )
+        let binding = ParameterBinding::new(parameters, arguments);
+        let Some((mut message, explanation)) =
+            crate::surface::diagnostics::describe_proposition_version_mismatch_explained(
+                goal,
+                &premises,
+                "the available fact was stated",
+                binding,
+            )
+        else {
+            // No fact compares versions, but the goal may read a cell a
+            // store on this path dropped because the store search missed.
+            return self
+                .store_separation_miss_for_goal(goal)
+                .map(|(miss, _)| describe_recorded_store_separation_miss(&miss));
+        };
+        if let Some(miss) = self.store_separation_miss(&explanation) {
+            message.push_str("\n  ");
+            message.push_str(&describe_recorded_store_separation_miss(&miss));
+        }
+        Some(message)
+    }
+
+    /// The store-search miss this path retained for the store that stopped
+    /// `explanation`'s walk at the cell it reads: the same written cell and
+    /// the same dropped cell. It reads the path's bounded record only.
+    pub(in crate::surface::proof) fn store_separation_miss(
+        &self,
+        explanation: &crate::kernel::resource_tracker::Explanation,
+    ) -> Option<crate::surface::proof::proof_object::StoreSeparationMiss> {
+        let (_, stop) = explanation.outcome.blocking_step()?;
+        let crate::kernel::resource_tracker::Change::Store { pointer: written } = &stop.change
+        else {
+            return None;
+        };
+        let crate::kernel::resource_tracker::OwnedResource::Cell { pointer: read, .. } =
+            &explanation.resource
+        else {
+            return None;
+        };
+        let execution = self.execution()?;
+        execution
+            .presentation
+            .store_separation_misses
+            .recent(MAX_RECORDED_STORE_SEPARATION_MISSES)
+            .into_iter()
+            .find(|miss| &miss.cell == read && &miss.store == written)
+            .cloned()
+    }
+
+    /// The store-search miss for a cell `goal` reads, with the history
+    /// explanation that ties the read to that miss's store: the read's last
+    /// stretch of agreement ends at the store that dropped the cell. Only
+    /// the reads of `goal` whose cell this path recorded a miss for are
+    /// explained, each by one bounded history walk; diagnostics only.
+    pub(in crate::surface::proof) fn store_separation_miss_for_goal(
+        &self,
+        goal: &Proposition,
+    ) -> Option<(
+        crate::surface::proof::proof_object::StoreSeparationMiss,
+        crate::kernel::resource_tracker::Explanation,
+    )> {
+        use crate::kernel::resource_tracker::{Change, OwnedResource};
+        let misses = self
+            .execution()?
+            .presentation
+            .store_separation_misses
+            .recent(MAX_RECORDED_STORE_SEPARATION_MISSES);
+        if misses.is_empty() {
+            return None;
+        }
+        crate::kernel::resource_tracker::reads_of_proposition(goal)
+            .into_iter()
+            .take(MAX_EXPLAINED_STORE_SEPARATION_READS)
+            .find_map(|read| {
+                let OwnedResource::Cell { pointer, .. } = &read.resource else {
+                    return None;
+                };
+                let miss = misses.iter().find(|miss| &miss.cell == pointer)?;
+                let explanation = crate::kernel::resource_tracker::explain_last_same(
+                    read.resource.as_resource(),
+                    &read.point,
+                );
+                let (_, stop) = explanation.outcome.blocking_step()?;
+                matches!(&stop.change, Change::Store { pointer } if *pointer == miss.store)
+                    .then(|| ((*miss).clone(), explanation))
+            })
     }
 
     /// Continues one checked smart statement after its initial checked attempt
@@ -3523,6 +3603,14 @@ const MAX_AUTO_OPENINGS_PER_STATEMENT: usize = 4;
 /// How many forgotten cells the implicit tail tries to keep across one C
 /// statement's stores. Each costs one `solve` of an index disequality.
 const MAX_STORE_SEPARATIONS_PER_STATEMENT: usize = 4;
+
+/// How many reads of one failed goal are compared with the path's
+/// store-search misses.
+const MAX_EXPLAINED_STORE_SEPARATION_READS: usize = 8;
+
+/// How many store-search misses one execution path retains for its reports.
+/// Recording stops at the cap; a report names only a miss it retained.
+pub(in crate::surface::proof) const MAX_RECORDED_STORE_SEPARATION_MISSES: usize = 32;
 
 /// How many available disequalities `solve` tries, in turn, as the fact an
 /// assumed equality of its disequality goal contradicts.
@@ -5220,3 +5308,15 @@ impl<'a> Proof<'a> {
 
 #[path = "driver/scripts.rs"]
 mod driver;
+
+/// One line naming the statement that may have overwritten a cell and the
+/// fact that keeps it, as the store search spelled that fact.
+pub(in crate::surface::proof) fn describe_recorded_store_separation_miss(
+    miss: &crate::surface::proof::proof_object::StoreSeparationMiss,
+) -> String {
+    crate::surface::diagnostics::describe_store_separation_miss(
+        &miss.statement,
+        miss.cell_text.as_deref(),
+        &crate::surface::printing::source_click_proposition(&miss.fact),
+    )
+}

@@ -5,12 +5,18 @@
 //! (`reasoning::pointers_directly_distinct_for_store`), and a miss forgets the
 //! value. The implicit tail reads here which index disequalities would have
 //! kept the forgotten cells, proves the ones it can before the statement, and
-//! runs the statement again. Checking never calls this.
+//! runs the statement again. A requested `--trace-proof` reads the same
+//! inspection to show which cells a traced step dropped. Checking never calls
+//! this.
 use crate::kernel::primitives::SnapshotMapChange;
-use crate::kernel::{CMemory, CompareRelation, Proposition};
+use crate::kernel::{CMemory, CompareRelation, Pointer, Proposition};
 
 /// One cached cell a statement forgot beside a store into the same array.
 pub(crate) struct ForgottenStoreCell {
+    /// The cached cell the statement no longer holds.
+    pub(crate) cell: Pointer,
+    /// The cell the statement wrote beside it.
+    pub(crate) store: Pointer,
     /// The fact the store-time check reads: the two element indices differ.
     pub(crate) indices_differ: Proposition,
 }
@@ -62,6 +68,8 @@ pub(crate) fn cells_forgotten_beside_stores(
                 cell_index.operand_view(),
             );
             pairs.push(ForgottenStoreCell {
+                cell: cell.clone(),
+                store: (*store).clone(),
                 indices_differ: Proposition::ConditionIs(equal, false),
             });
         }
