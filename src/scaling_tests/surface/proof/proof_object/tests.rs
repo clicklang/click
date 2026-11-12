@@ -2769,7 +2769,7 @@ fn fixed_state_application_proves_premises_and_replays_explicitly() {
         arguments: vec![ContractExpression::Binding("x".into())],
     };
     let mut baseline = None;
-    for size in [4usize, 16, 64] {
+    for size in [4u32, 16, 64] {
         let mut facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
         facts.push(premise_kernel.clone());
         let root = Proof::for_fixed_state_goal(
