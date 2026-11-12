@@ -67,14 +67,6 @@ pub(in crate::kernel) struct InputData {
         Pointer,
         crate::persistent::PersistentMap<Pointer, ConditionTerm>,
     >,
-    /// The keys of `pointer_block_aliases` again, filed under each
-    /// pointer's offset term. A same-block comparison names only its two
-    /// offsets, so this is what recovers, by one keyed lookup, the block
-    /// spellings an offset was proved equal to across blocks.
-    pub(in crate::kernel) pointer_block_aliases_by_offset: crate::persistent::PersistentMap<
-        PointerOffsetTerm,
-        crate::persistent::PersistentSet<Pointer>,
-    >,
     /// Cross-block alias endpoints grouped by object. External arguments
     /// use their offset stem, since all parameters share one block; other
     /// blocks use one bucket. Derived incrementally from exact aliases.

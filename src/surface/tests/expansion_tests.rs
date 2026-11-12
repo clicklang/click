@@ -22081,3 +22081,18 @@ theorem empty(lo: int32, hi: int32) {
         "{refusal}"
     );
 }
+
+#[test]
+fn explicit_partition_pointer_distinctness_expands_and_replays() {
+    let (source, sources) =
+        mdtest_sources("mdtests/explicit_partition_separation_proves_pointer_distinctness.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "distinct").unwrap();
+    without_implicit_solve_for_claim("distinct.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|e| e.report())
+    })
+    .unwrap();
+}

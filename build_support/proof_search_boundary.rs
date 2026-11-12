@@ -93,6 +93,7 @@ impl<'ast> Visit<'ast> for Inventory {
                         | "finish_prepared_theorem_application"
                         | "finish_prepared_step"
                         | "begin_contract_claim"
+                        | "begin_have"
                 )
         {
             let guarded = matches!(item.block.stmts.first(), Some(syn::Stmt::Local(local))

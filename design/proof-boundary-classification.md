@@ -190,10 +190,10 @@ The 6 `operation` records are not 6 independent slow walks:
 | Legacy explicit transport checking | 3 | `certified_fact_transport_reaches`, `check_fixed_state_fact_transport_using_facts_inner`, and `apply_pure_transport_using` call atomic derivation. Confirmed search access from the explicit transport route; migrate/retire under T1–T5, not a new independent bug per record. |
 | Definition validation | 2 | `symbolic_segment_covers_index` and `symbolic_segment_covers_range` join the mixed `segment_contains_pointer` record in one declaration-validation concern. There is no ordinary user obligation/expansion boundary established for these checks. |
 
-The six kernel bridges and their 21 callers map to four roadmap groups:
+The five kernel bridges and their 19 callers map to three roadmap groups:
 L1 has loan aliases and loan access; R2 has ownership candidates and overlap;
-F1 has owned-anchor distinctness; C1 has call framing.
-These four candidate groups cover six bridges; they are not six measured
+C1 has call framing.
+These three candidate groups cover five bridges; they are not five measured
 defects. R1 is a separate reachability question. Their source
 traversals remain candidates until complete-operation red curves fix the input
 and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.md).
@@ -208,7 +208,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
 - **Legitimate expandable work:** omitted-obligation solve, explicit smart
   tactics, and discovery planners. Their generated operations still owe the
   fast-checking guarantee; being called from search grants no exemption.
-- **Unmeasured/coverage work:** the four bridge groups, transition checks, declaration validation, and operation-map growth axes.
+- **Unmeasured/coverage work:** the three bridge groups, transition checks, declaration validation, and operation-map growth axes.
   An unresolved label is an investigation task, not proof of a bug.
 - **Owned elsewhere:** `roadmap/unspellable-facts.md` owns the remaining
   shared-term representation boundaries. Its original R1–R7 reproductions are
@@ -218,7 +218,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 637 reference records, not 637 obligations to remove.
+The inventory contains 634 reference records, not 634 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this
@@ -228,25 +228,22 @@ a claim that expanded proofs cannot create `ProofSearch`.
 ## Operation discovery guards and reproduced crossings
 
 Test-build discovery guards enforce `ProofScope::join`,
-`Proof::finish_prepared_step`, `Proof::begin_contract_claim`, and kernel
+`Proof::finish_prepared_step`, `Proof::begin_have`, `Proof::begin_contract_claim`, and kernel
 `ProofObject::focus_contract_claim`, in addition to the three theorem-application
 primitives. Driver obligation solving runs outside those operations. Source
 mutation tests prevent deleting or postponing their guards. The guards detect
 registered search, not uninstrumented loops or copying.
 
-The same guard probes cannot yet be retained on `begin_have` or `prepare_step`.
-The gate mdtest corpus reproduces five operation/entry pairs across those two
-operations:
+The same guard cannot yet be retained on `prepare_step`.
+The gate mdtest corpus reproduces three remaining operation/entry pairs:
 
 | Operation | Discovery entry | Reproduction (`mdtests/`) |
 | --- | --- | --- |
-| `begin_have` | `owned_anchor_distinctness` | `a_held_matched_instance_without_a_typed_arm_does_not_type_its_argument.md` |
 | `prepare_step` | `loan_access` | `a_32_bit_cell_read_at_the_other_signedness_is_its_sign_cast.md` |
-| `prepare_step` | `owned_anchor_distinctness` | `a_32_bit_allocation_spelling_of_a_64_bit_block_is_refused.md` |
 | `prepare_step` | `ownership_overlap` | `a_call_map_gives_an_imported_let_parameter_its_value.md` |
 | `prepare_step` | `ownership_validity_candidates` | `a_callee_owns_a_window_of_a_64_bit_range.md` |
 
-These reuse four existing bridge entries; they are not five new independent
+These reuse three existing bridge entries; they are not three new independent
 walks. A first guard failure can mask a later dependency. No guard escape was
 added, and the existing source dependency records remain frozen.
 
@@ -269,3 +266,9 @@ its explicit evidence before changing loan safety behavior.
 These guards establish absence of registered discovery on their exercised
 routes, not fresh complete-operation scaling curves or a global fast-proof
 guarantee. Have opening and statement preparation remain separate work.
+
+Pointer decisions no longer discover separation from owned compositions or
+pointer alias components. An explicit separation fact supplies the indexed
+disequality consequence. The complete-query alias scaling control and source
+partition proof cover this route; other condition-decision walks need their
+own evidence.

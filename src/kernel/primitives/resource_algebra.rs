@@ -5147,51 +5147,6 @@ impl ResourceContext {
         Some(nominees)
     }
 
-    /// Whether two distinct owned members of one block that the composition
-    /// law separates have their first elements at `left` and `right`: the
-    /// anchor form of [`Self::separated_owned_members`], read from
-    /// the anchor index by two keyed lookups.
-    pub(in crate::kernel) fn separates_owned_anchors(
-        &self,
-        left: &PointerOffsetTerm,
-        right: &PointerOffsetTerm,
-    ) -> bool {
-        crate::instrumentation::record_deterministic_work(1);
-        let index = &self.storage.index;
-        let (Some(lefts), Some(rights)) = (
-            index.owned_memory_by_anchor.get(left),
-            index.owned_memory_by_anchor.get(right),
-        ) else {
-            return false;
-        };
-        for left_entry in lefts.iter() {
-            for right_entry in rights.iter() {
-                crate::instrumentation::record_deterministic_work(1);
-                if left_entry == right_entry {
-                    continue;
-                }
-                let (Some(left_range), Some(right_range)) = (
-                    self.fact(*left_entry).memory_own_range(),
-                    self.fact(*right_entry).memory_own_range(),
-                ) else {
-                    continue;
-                };
-                if left_range.base().block != right_range.base().block
-                    || resources_structurally_separate(
-                        &CResource::Memory(left_range.clone()),
-                        &CResource::Memory(right_range.clone()),
-                    )
-                {
-                    continue;
-                }
-                if self.separates_owned_members_in_block(&left_range.base().block) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     /// Pointer projection using an explicitly bounded caller-supplied
     /// containment relation. The context contributes only indexed candidates,
     /// so callers can recognize shallow equality forms without expanding

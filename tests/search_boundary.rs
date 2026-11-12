@@ -1093,7 +1093,6 @@ fn extracted_legacy_search_retains_the_existing_operation_guards() {
     for path in [
         "src/kernel/loans/legacy_search.rs",
         "src/kernel/primitives/resource_algebra/legacy_search.rs",
-        "src/kernel/assumptions/condition_reasoning/decision/legacy_search.rs",
         "src/kernel/functions/legacy_search.rs",
     ] {
         let source = std::fs::read_to_string(root.join(path)).unwrap();
@@ -1469,6 +1468,7 @@ fn migrated_operations_cannot_drop_their_discovery_guard() {
         "finish_prepared_theorem_application",
         "finish_prepared_step",
         "begin_contract_claim",
+        "begin_have",
     ] {
         let source = format!("impl Proof {{ fn {name}() {{}} }}");
         let errors = proof_search_boundary::check(

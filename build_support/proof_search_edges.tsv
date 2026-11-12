@@ -1,6 +1,3 @@
-src/kernel/assumptions/condition_reasoning/decision.rs	legacy-bridge	PureFactContext::pointers_distinct_by_owned_anchors	owned_anchor_distinctness	1
-src/kernel/assumptions/condition_reasoning/decision.rs	legacy-caller	PureFactContext::decide_pointer_disequality	pointers_distinct_by_owned_anchors	1
-src/kernel/assumptions/condition_reasoning/decision.rs	legacy-caller	PureFactContext::offsets_distinct_by_owned_anchors	pointers_distinct_by_owned_anchors	2
 src/kernel/functions.rs	legacy-bridge	::call_kept_ownership	call_frame	1
 src/kernel/functions.rs	legacy-caller	::execute_verified_function_applications_with_suspension	call_kept_ownership	1
 src/kernel/loans.rs	legacy-bridge	::memory_range_aliases	loan_aliases	1

@@ -137,6 +137,7 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
         _branch_arm: &dyn Fn(&[usize], &crate::source::SourcePosition) -> Option<usize>,
         _have_body_contains: &dyn Fn(&[usize], &crate::source::SourcePosition) -> bool,
         _target: Option<&crate::source::SourcePosition>,
+        _failing_path: Option<usize>,
     ) -> Option<String> {
         None
     }
@@ -157,6 +158,9 @@ pub(crate) struct ProofFailureDiagnostic {
     pub reason: String,
     pub checks: Option<Arc<CheckObservations>>,
     pub state: Option<Arc<dyn ProofDiagnosticState>>,
+    /// The function outcome path the failure lies on, when it names one.
+    /// The trace shows the arm of a terminal join that holds it.
+    pub failing_path: Option<usize>,
 }
 
 /// Bounded observations of queries actually executed by one written check.
@@ -292,6 +296,7 @@ impl PartialEq for ProofFailureDiagnostic {
         self.origin == other.origin
             && self.claim_label == other.claim_label
             && self.reason == other.reason
+            && self.failing_path == other.failing_path
             && match (&self.checks, &other.checks) {
                 (None, None) => true,
                 (Some(left), Some(right)) => Arc::ptr_eq(left, right),
@@ -837,6 +842,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
+            failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
                 stage: "proof step".into(),
@@ -875,6 +881,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
+            failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
                 stage: "proof step".into(),
@@ -920,6 +927,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
+            failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
                 stage: "step".into(),
@@ -967,6 +975,7 @@ mod tests {
                 branch_arm: &dyn Fn(&[usize], &crate::source::SourcePosition) -> Option<usize>,
                 have_body_contains: &dyn Fn(&[usize], &crate::source::SourcePosition) -> bool,
                 target: Option<&crate::source::SourcePosition>,
+                failing_path: Option<usize>,
             ) -> Option<String> {
                 crate::surface::proof_trace::render(
                     claim,
@@ -979,6 +988,7 @@ mod tests {
                     branch_arm,
                     have_body_contains,
                     target,
+                    failing_path,
                 )
             }
         }
@@ -1017,6 +1027,7 @@ mod tests {
                 },
             );
             let diagnostic = ProofFailureDiagnostic {
+                failing_path: None,
                 checks: None,
                 origin: ProofDiagnosticOrigin {
                     stage: "proof step".into(),
@@ -1063,6 +1074,7 @@ mod tests {
             calls: AtomicUsize::new(0),
         });
         let diagnostic = Arc::new(ProofFailureDiagnostic {
+            failing_path: None,
             checks: None,
             origin: ProofDiagnosticOrigin {
                 stage: "proof step".into(),
@@ -1076,6 +1088,7 @@ mod tests {
         let report = render_terminal_message(
             "closure failed",
             &ProofFailureDiagnostic {
+                failing_path: None,
                 checks: None,
                 origin: ProofDiagnosticOrigin {
                     stage: "proof step".into(),
