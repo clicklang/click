@@ -786,7 +786,6 @@ mod tests {
             assert_eq!(flow.order.len(), 4 * count + 1);
             assert_eq!(flow.loops.len(), count);
             let export = RustExport {
-                library_iterators: false,
                 schema: 2,
                 compiler_commit: String::new(),
                 target: String::new(),

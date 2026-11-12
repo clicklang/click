@@ -1401,65 +1401,24 @@ The core shared byte-slice `chunks_exact(size)` method supports stored local
 iterators, `for chunk in chunks`, `for chunk in &mut chunks`, and direct or
 nested `for chunk in bytes.chunks_exact(size)` loops. The exporter checks the
 resolved core slice method, the concrete `ChunksExact<u8>` type, and the
-compiler's standard iterator/Option desugaring. It retains `ChunkDeclare`
-and `ChunkFor` operations. `chunks.remainder()` checks the resolved core
-inherent method and retains a `ChunkRemainder` expression. The receiver is
-a shared byte-slice local; parameters or returns of iterator type, iterator
-assignment/copying, adapters, and explicit `next()` calls are unsupported.
+compiler's standard iterator/Option desugaring. `chunks.remainder()` checks
+the resolved core inherent method and retains a `ChunkRemainder` expression.
+The receiver is a shared byte-slice local; parameters or returns of iterator
+type, adapters, and explicit `next()` calls are unsupported. Mutable chunk
+iterators and chunks of non-byte slices remain unsupported.
 
-Construction captures the receiver before evaluating the size once, then
-checks `size != 0`. Input lengths retain the locked target’s `usize` width.
-For an iterator named `chunks`, the sidecar sees `chunks_cursor`,
-`chunks_remaining`, `chunks_size`, `chunks_tail`, and `chunks_tail_len`.
-The complete range has length `length - length % size`; its cursor initially
-points at the original input. The fixed tail begins at the end of that
-range and has length `length % size`. Chunk sizes and tail lengths retain
-64 bits, as does the complete range's remaining length. The iterator does not
-truncate metadata or impose an artificial `i32::MAX` construction limit.
-Sidecars that express prefixes with signed indices must prove the relevant
-range and value-preserving conversions.
+Each iterator is one value of the library's `ChunksExact<uint8>`
+([`click::rust::chunks_exact`](library/index.md#clickrustchunks_exact)),
+read through that library's contract (`design/rust-iterators.md`). No
+cursor, remaining-byte count or other generated state is named.
+Construction captures the receiver before evaluating the size once. Input
+lengths and chunk sizes keep the locked target's `usize` width, with no
+artificial `i32::MAX` limit. The compiler enforces moves and borrows.
+Neither `next()` nor `remainder()` copies bytes or creates write authority:
+reads through chunks, aliases, calls, and tails need the original input's
+views.
 
-Each successful `next` binds a shared byte subslice of length `size`, then
-advances the cursor and subtracts that size from the remaining complete
-range before the source body runs. The exhausted case performs no reads or
-pointer advance. `remainder()` exposes the fixed tail, independently of how
-many complete chunks were consumed. A saved remainder can be used after
-consumption by value; borrowing the iterator allows subsequent method calls.
-The compiler enforces moves and borrows. Neither method copies bytes or
-creates write authority. Reads through chunks, aliases, calls, and tails
-retain the original input's view requirements.
-
-The [exact-chunk fixture](https://github.com/clicklang/click/tree/master/examples/rust-chunks-exact)
-no longer uses this model: its unit sets `"iterators": "library"` and its
-proof cites the library contract ([library iterators](#library-iterators)).
-The fixtures under `design/charon-trial` that still name the state above
-move the same way, after which this model is removed. Regressions cover
-empty input, exact multiples, short tails, nested loops, full-width chunk
-sizes, zero-size rejection, false claims, missing bounds/views, and expanded
-proofs.
-Mutable chunk iterators and chunks of non-byte slices remain unsupported.
-
-## Library iterators
-
-A Rust unit with `"iterators": "library"` imports each `chunks_exact`
-iterator as one value of the library's `ChunksExact<uint8>`
-([`click::rust::chunks_exact`](library/index.md#clickrustchunks_exact)), not
-as the cursor and remaining-byte locals above:
-
-```json
-"chunks": {
-  "language": "rust",
-  "iterators": "library",
-  "sources": {"chunks.rs": {}}
-}
-```
-
-`library` is the only value, and only a Rust unit takes the field. It is
-temporary: it exists while fixtures move to the library model
-(`design/rust-iterators.md`), after which that model is the only one and the
-field is removed.
-
-Under it `bytes.chunks_exact(size)` is a call whose contract requires
+`bytes.chunks_exact(size)` is a call whose contract requires
 `size != 0` and gives `chunks_exact::chunks_exact(Slice<u8>::Slice(bytes,
 bytes.len()), size)`. A test for another chunk reads `it.len()`, and
 `next()` on an iterator that has one yields `it.nth(0u64)` and leaves

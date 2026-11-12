@@ -6247,9 +6247,9 @@ a slice. `nth` is an observation that consumes nothing, not Rust's consuming
 `Iterator::nth`. The axioms say what `chunks_exact` builds and what one
 `next()` leaves; they are trusted, not proved. A value reads with its
 methods, `s.chunks_exact(4u64).nth(k).len()`
-([methods](../language/index.md#methods)). A Rust unit with `"iterators":
-"library"` imports its `chunks_exact` iterators as values of this type
-([Rust](../rust.md#library-iterators)); see `design/rust-iterators.md`.
+([methods](../language/index.md#methods)). A Rust unit imports its `chunks_exact` iterators as values of this type
+([Rust](../rust.md#exact-chunk-iterators-and-remainder)); see
+`design/rust-iterators.md`.
 
 ### `ChunksExact`
 

@@ -19,14 +19,6 @@ pub struct RustExport {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enums: Vec<Enum>,
     pub functions: Vec<Function>,
-    /// Whether an iterator is a value of its Click library type, read
-    /// through that library's contract, where an iterator type has one
-    /// (`design/rust-iterators.md`). Otherwise each iterator kind is the
-    /// importer's own hidden cursor state. A unit opts in with
-    /// `"iterators": "library"` while proofs migrate; the hidden-state model
-    /// and this switch go when they have.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub library_iterators: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -434,16 +426,6 @@ pub enum Expression {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Statement {
-    ChunkDeclare {
-        iterator: String,
-        slice: Expression,
-        size: Expression,
-    },
-    ChunkFor {
-        iterator: String,
-        binding: Place,
-        body: Vec<Self>,
-    },
     // Compiler-resolved shared slice split, with the tuple destructured locally.
     SliceSplit {
         slice: Expression,

@@ -246,11 +246,10 @@ writes through shared chunks, reuse after an owned move, and unmodeled protocols
 This increment accepts the assessed owned-loop and explicit-match shapes.
 Borrowed `for` loops, mutable chunks, general iterator adapters,
 iterator parameters/returns, and non-byte elements remain migration gates.
-The fixture's unit now sets `"iterators": "library"`: its sidecar names the
-loop's iterator as `iter` and cites the `click::rust::chunks_exact` contract,
-with no cursor or remaining-count local (`../rust-iterators.md`). The state
-described above is the hidden-state model, which remains for the fixtures
-not yet moved. Under the library model an iterator is a value, so a repeated
+The fixture now imports its iterator as a library value: its sidecar names
+the loop's iterator as `iter` and cites the `click::rust::chunks_exact`
+contract, with no cursor or remaining-count local (`../rust-iterators.md`).
+The state described above is the removed hidden-state model. Under the library model an iterator is a value, so a repeated
 move in a tampered artifact copies it and is no longer refused; a missing
 construction still is. The nested iterator checkpoint below now exercises that composition.
 

@@ -466,7 +466,7 @@ pub(crate) fn rust_iterator_accessors(kind: syntax::RustIteratorKind) -> &'stati
         syntax::RustIteratorKind::Enumerate => &["len()"],
         syntax::RustIteratorKind::Range => &["start", "end", "len()"],
         syntax::RustIteratorKind::RangeInclusive => &["start()", "end()"],
-        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::ChunksLibrary => &[],
+        syntax::RustIteratorKind::Chunks => &[],
     }
 }
 
@@ -474,7 +474,7 @@ pub(crate) fn rust_iterator_accessors(kind: syntax::RustIteratorKind) -> &'stati
 /// of a Click library type: a proof names it `iter` and reads it with that
 /// type's methods.
 pub(crate) fn rust_library_iterator(iterator: &syntax::RustLoopIterator) -> Option<&str> {
-    (iterator.kind == syntax::RustIteratorKind::ChunksLibrary).then_some(iterator.local.as_str())
+    (iterator.kind == syntax::RustIteratorKind::Chunks).then_some(iterator.local.as_str())
 }
 
 /// The Click type of a library-valued loop iterator, `ChunksExact<uint8>`.
@@ -521,7 +521,7 @@ pub(crate) fn rust_iterator_method(
                     K::Enumerate => "enumerated",
                     K::Range => "range",
                     K::RangeInclusive => "inclusive range",
-                    K::Chunks | K::ChunksLibrary => "`chunks_exact`",
+                    K::Chunks => "`chunks_exact`",
                 },
                 match rust_iterator_accessors(iterator.kind) {
                     [] => " (it has none yet)".to_string(),
