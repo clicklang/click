@@ -2559,10 +2559,9 @@ mod owned_anchor_tests {
 
     mod scaling_tests {
         use super::*;
-        include!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/scaling_tests/kernel/assumptions/condition_reasoning/decision/owned_anchor_tests.rs"
-        ));
+        include!(
+            "../../../scaling_tests/kernel/assumptions/condition_reasoning/decision/owned_anchor_tests.rs"
+        );
     }
 }
 
