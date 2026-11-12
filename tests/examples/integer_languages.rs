@@ -485,7 +485,7 @@ fn rust_import_matches_live_charon_extraction() {
     let checked_in = unit_import(&rust, "integers_rust", artifact);
     let extracted = unit_import(&scratch.0, "integers_rust", artifact);
     assert!(
-        cpp_imports::same_import(&checked_in, &extracted),
+        cpp_imports::same_import_apart_from_build(&checked_in, &extracted),
         "the fixture's Rust import differs from live extraction; run `click import lock examples/integer-languages/rust`: {}",
         cpp_imports::first_import_difference(&checked_in, &extracted)
     );

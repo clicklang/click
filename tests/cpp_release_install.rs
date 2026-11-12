@@ -7,7 +7,6 @@ mod release_assets;
 #[test]
 #[ignore = "release packaging: requires CLICK_CPP_FRONTEND_ARCHIVE from a release exporter build"]
 fn cpp_release_archive_installs_and_locks() {
-    use sha2::{Digest, Sha256};
     use std::{
         fs,
         path::{Path, PathBuf},
@@ -111,38 +110,26 @@ fn cpp_release_archive_installs_and_locks() {
     ));
 
     // Locking the committed example with the installed exporter reproduces
-    // its committed artifacts, and the lock names that exporter by digest.
+    // its committed lock and artifacts byte for byte: they record the pinned
+    // front end, not the build that wrote them.
     let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/basic-cpp");
     let basic = t.path().join("basic");
     copy(&example, &basic);
     fs::remove_dir_all(basic.join(".click")).unwrap();
     fs::remove_file(basic.join("click.project.lock.json")).unwrap();
     success(cli(&binary, &relocated, &basic, &["import", "lock"]));
-    for source in [
-        "increment.cpp",
-        "with_restore.cpp",
-        "with_restore_caller.cpp",
+    for file in [
+        "click.project.lock.json",
+        ".click/basic/increment.cpp.click-cpp.json",
+        ".click/basic/with_restore.cpp.click-cpp.json",
+        ".click/basic/with_restore_caller.cpp.click-cpp.json",
     ] {
-        let artifact = format!(".click/basic/{source}.click-cpp.json");
         assert_eq!(
-            fs::read(basic.join(&artifact)).unwrap(),
-            fs::read(example.join(&artifact)).unwrap(),
-            "{artifact}"
+            fs::read(basic.join(file)).unwrap(),
+            fs::read(example.join(file)).unwrap(),
+            "{file}"
         );
     }
-    let exporter = installed.join("frontends/cpp/click-cpp-exporter");
-    let digest = format!("{:x}", Sha256::digest(fs::read(&exporter).unwrap()));
-    let lock = fs::read(basic.join("click.project.lock.json")).unwrap();
-    let parsed: serde_json::Value = serde_json::from_slice(&lock).unwrap();
-    assert_eq!(
-        parsed["units"]["basic"]["lock"]["frontend"]["identity"], digest,
-        "{parsed}"
-    );
-    success(cli(&binary, &relocated, &basic, &["import", "lock"]));
-    assert_eq!(
-        fs::read(basic.join("click.project.lock.json")).unwrap(),
-        lock
-    );
     for sidecar in [
         "increment.click",
         "with_restore.click",

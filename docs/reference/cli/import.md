@@ -171,6 +171,12 @@ exporter build also reads, and refuses any other exporter with
 that does not answer `--identity`, such as one built before this check, is
 refused with an instruction to rebuild it.
 
+The lock records the pinned front end, not the build that ran: its front-end
+`identity` is the SHA-256 of the pinned profile, and each artifact's
+`frontend_version` is the pinned `clang version 19.1.7`, however that Clang
+was packaged. Every exporter that passes the handshake therefore writes the
+same lock and artifacts for the same inputs, on any machine.
+
 ### C++ unit arguments
 
 Click sets the standard, target, exception and RTTI modes, the project's

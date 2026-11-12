@@ -38,7 +38,7 @@
                 "compilation_file": "boxed.cpp",
                 "exceptions": false,
                 "frontend": "clang",
-                "frontend_version": "clang version 19.1.7 (/home/runner/work/llvm-project/llvm-project/clang cd708029e0b2869e80abe31ddb175f7c35361f90)",
+                "frontend_version": "clang version 19.1.7",
                 "rtti": false,
                 "standard": "c++20",
                 "target": "x86_64-unknown-linux-gnu"
@@ -50,17 +50,17 @@
         },
         "envelope": 1,
         "frontend": {
-          "identity": "d9b11d4160d1ada8d3b3d5a0c967857e435daf6a3d2ea2faeea38435d2d1226a",
+          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
           "name": "clang"
         },
         "sources": {
           "boxed.cpp": {
             "artifact": {
-              "bytes": 20644,
+              "bytes": 20551,
               "path": ".click/fixture/boxed.cpp.click-cpp.json",
-              "sha256": "70592079c6fbe3911766cf8baf01d4e630315448b0e1b0898939445ce9554339"
+              "sha256": "12331c07608de5c8bcff4e3e47f949f72d111d9f59dde62413ccab7fdee6dc98"
             },
-            "identity": "4db981a5200941d8265d5896a9bdbaa096b926dfdbcb0e953eba64951782f72b",
+            "identity": "70633c94883ddfa4f5d08dc3663e8c61cda907d51e307a8a6d20a33ae29d4536",
             "inputs": {
               "$unit/boxed.cpp": "74d19ffd27d1578263bd4ab552a1106b0fe7fa50b517647a4c6d7a33b016bbe9"
             }

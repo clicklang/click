@@ -1,19 +1,28 @@
-//! Comparing a checked-in C++ import (its lock and semantic artifacts) with a
-//! fresh export by the pinned exporter, for the import freshness checks of
-//! `tests/mdtests.rs` and the cross-language integer fixture in
-//! `tests/examples/integer_languages.rs`.
+//! Comparing a checked-in import (its lock and artifacts) with a fresh export,
+//! for the C++ import freshness checks of `tests/mdtests.rs` and the
+//! cross-language integer fixture in `tests/examples/integer_languages.rs`,
+//! and that fixture's Rust extraction check.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Whether two imports hold the same lock and artifacts apart from which
-/// build of the pinned toolchain exported them. Every machine builds its own
-/// exporter, whose digest and the identities derived from it differ, and the
-/// pinned Clang 19.1.7 may be packaged differently (a source build or a
-/// distribution package of the same release), which only its version string
-/// records. The artifacts themselves are compared, so the lock's record of
-/// their digest and size is left out too.
+/// Whether two imports hold the same lock and artifacts, byte for byte. The
+/// lock records the pinned front end's identity and the artifacts its pinned
+/// Clang version, not the build that exported them, so every machine's
+/// pinned exporter writes the same import.
 pub(crate) fn same_import(
+    left: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
+    right: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
+) -> bool {
+    left == right
+}
+
+/// Whether two Rust imports hold the same lock and artifacts apart from
+/// which build of the pinned toolchain extracted them: the identities derived
+/// from the build, and the lock's record of the artifacts' digest and size
+/// (the artifacts themselves are compared).
+#[allow(dead_code)] // Used by the Rust extraction check, not the mdtest imports.
+pub(crate) fn same_import_apart_from_build(
     left: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
     right: &std::collections::BTreeMap<PathBuf, Vec<u8>>,
 ) -> bool {
@@ -83,7 +92,7 @@ pub(crate) fn first_import_difference(
             context(new)
         );
     }
-    "the lock differs only in its exporter identity".into()
+    "the imports hold the same files".into()
 }
 
 /// The files under `directory`, by their paths inside it.
