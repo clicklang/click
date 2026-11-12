@@ -15,19 +15,26 @@ the Clang arguments of the build and, for each source, the functions its
 sidecar verifies. The committed `click.project.lock.json` and `.click/basic/`
 artifacts verify offline, on any machine and after the checkout moves:
 
-```sh
-cargo run --bin click -- verify examples/basic-cpp/increment.click
-cargo run --bin click -- verify examples/basic-cpp/with_restore.click
-cargo run --bin click -- verify examples/basic-cpp/with_restore_caller.click
-```
-
-To refresh the lock after changing a source, build the pinned Clang exporter
-and lock the project:
+From this directory, or from a copy of it anywhere, with an installed
+`click`:
 
 ```sh
-CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)" \
-  cargo run --bin click -- import lock examples/basic-cpp
+click verify increment.click
+click verify with_restore.click
+click verify with_restore_caller.click
 ```
+
+To refresh the lock after changing a source, install the pinned C++ front end
+for your Click version (Linux x86-64) and lock the project:
+
+```sh
+click install VERSION --cpp
+click import lock
+```
+
+Every pinned exporter writes the same lock and artifacts for the same inputs.
+In a Click checkout, or on another host, build the exporter instead and name
+it with `CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"`.
 
 Click writes the compilation database it hands the exporter itself, from the
 unit's arguments; there is no `compile_commands.json` to maintain.
