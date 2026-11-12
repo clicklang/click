@@ -6622,6 +6622,156 @@ fn a_field_access_in_a_wide_struct_array_byte_range_is_placed_over_elements() {
     assert!(nonempty.pointer_access_in_wide_range(&first, 4, &range));
 }
 
+/// A wide range of `k`-byte structs and the byte range of the same bytes
+/// stand for each other, in coverage and subtraction, once the product
+/// relating them is decided not to wrap; never before.
+#[test]
+fn a_wide_struct_range_and_its_byte_range_are_respelled_under_no_wrap() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer::symbolic(Variable(983_420));
+    let count = MachineTerm::Variable(Variable(983_421));
+    let zero = MachineTerm::uint64_constant(0);
+    let bytes = MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(8));
+    let block = CMemoryRange::new_wide(base.clone(), zero.clone(), bytes, 1);
+    let structs = CMemoryRange::new_wide(base.clone(), zero.clone(), count.clone(), 8);
+    let bounded = PureFactContext::new().assume_condition(
+        ConditionTerm::uint64_less_equal(count.clone(), MachineTerm::uint64_constant(100)),
+        true,
+    );
+    let unbounded = PureFactContext::new();
+    for (available, required) in [(&block, &structs), (&structs, &block)] {
+        assert!(crate::kernel::memory_range_covers(
+            available, required, &bounded
+        ));
+        assert_eq!(
+            crate::kernel::primitives::split_memory_range(available, required, &bounded),
+            Some(Vec::new())
+        );
+        // `n * 8` may wrap: the byte range may hold fewer than `n` structs.
+        assert!(!crate::kernel::memory_range_covers(
+            available, required, &unbounded
+        ));
+        assert!(
+            crate::kernel::primitives::split_memory_range(available, required, &unbounded)
+                .is_none()
+        );
+    }
+    // Taking the first struct of `n` leaves the other `n - 1`, in the owner's
+    // width: the requirement's bytes `0..8` are not decided inside
+    // `n * 8u64`, so the owner is re-spelled as structs instead.
+    let nonempty = bounded.clone().assume_condition(
+        ConditionTerm::uint64_less_equal(MachineTerm::uint64_constant(1), count.clone()),
+        true,
+    );
+    let first = CMemoryRange::new_wide(
+        base.clone(),
+        zero.clone(),
+        MachineTerm::uint64_constant(1),
+        8,
+    );
+    assert!(crate::kernel::memory_range_covers(
+        &block, &first, &nonempty
+    ));
+    let residues =
+        crate::kernel::primitives::split_memory_range(&block, &first, &nonempty).unwrap();
+    assert_eq!(residues.len(), 1);
+    assert_eq!(residues[0].element_width(), 8);
+    // A struct width that does not divide the other has no re-spelling.
+    let pairs = CMemoryRange::new_wide(base, zero, count, 12);
+    assert!(!crate::kernel::memory_range_covers(
+        &block, &pairs, &bounded
+    ));
+}
+
+/// A struct range required from a byte range whose struct count is not
+/// bounded names the product that must not wrap; a bounded one is covered
+/// and names nothing.
+#[test]
+fn a_wide_respelling_refusal_names_the_undecided_product() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer::symbolic(Variable(983_440));
+    let count = MachineTerm::Variable(Variable(983_441));
+    let zero = MachineTerm::uint64_constant(0);
+    let bytes = MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(8));
+    let held = CMemoryRange::new_wide(base.clone(), zero.clone(), bytes, 1);
+    let required = CMemoryRange::new_wide(base, zero, count.clone(), 8);
+    let bounded = PureFactContext::new().assume_condition(
+        ConditionTerm::uint64_less_equal(count.clone(), MachineTerm::uint64_constant(100)),
+        true,
+    );
+    let refusal = |facts: &PureFactContext| {
+        ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(held.clone()))
+            .normalized(facts)
+            .wide_range_respelling_refusal(&required, facts)
+    };
+    let no_wrap = refusal(&PureFactContext::new()).expect("the product is not decided");
+    assert_eq!(no_wrap.range, CResourceFact::own_memory(required.clone()));
+    assert_eq!(no_wrap.count, count);
+    assert_eq!(no_wrap.factor, 8);
+    assert!(refusal(&bounded).is_none());
+}
+
+/// A field of a struct in a held range of `k`-byte structs, and its element
+/// address, are placed over the range's count, as they are in a byte block.
+#[test]
+fn a_field_access_in_a_wide_struct_range_is_placed_over_its_count() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer::symbolic(Variable(983_430));
+    let count = MachineTerm::Variable(Variable(983_431));
+    let index = MachineTerm::Variable(Variable(983_432));
+    let range = CMemoryRange::new_wide(
+        base.clone(),
+        MachineTerm::uint64_constant(0),
+        count.clone(),
+        8,
+    );
+    let at = |offset: PointerOffsetTerm| Pointer {
+        block: base.block.clone(),
+        offset,
+    };
+    let signed = PointerOffsetTerm::scaled_int64_node(
+        MachineTerm::int64_multiply(index.clone(), MachineTerm::int64_constant(8)),
+        1,
+        false,
+    );
+    let field = |bytes: i64| {
+        at(PointerOffsetTerm::Add(
+            Box::new(signed.clone()),
+            Box::new(PointerOffsetTerm::Constant(bytes)),
+        ))
+    };
+    let assume = |facts: PureFactContext, condition| facts.assume_condition(condition, true);
+    let bounded = assume(
+        PureFactContext::new(),
+        ConditionTerm::uint64_less_equal(count.clone(), MachineTerm::uint64_constant(100)),
+    );
+    let below = assume(
+        bounded.clone(),
+        ConditionTerm::uint64_less_than(index.clone(), count.clone()),
+    );
+    assert!(below.pointer_access_in_wide_range(&field(4), 4, &range));
+    assert!(below.position_in_wide_struct_array(&field(4), &range));
+    assert!(!below.pointer_access_in_wide_range(&field(4), 8, &range));
+    // `i <= m` forms `&p[m]` but no field of it.
+    let at_most = assume(
+        bounded,
+        ConditionTerm::uint64_less_equal(index.clone(), count.clone()),
+    );
+    assert!(at_most.position_in_wide_struct_array(&field(0), &range));
+    assert!(!at_most.position_in_wide_struct_array(&field(4), &range));
+    assert!(!at_most.pointer_access_in_wide_range(&field(4), 4, &range));
+    // Without `m <= PTRDIFF_MAX / 8` nothing is placed.
+    let unbounded = assume(
+        PureFactContext::new(),
+        ConditionTerm::uint64_less_than(index, count),
+    );
+    assert!(!unbounded.pointer_access_in_wide_range(&field(4), 4, &range));
+    assert!(!unbounded.position_in_wide_struct_array(&field(4), &range));
+    // A constant offset before the range is outside it.
+    assert!(!below.pointer_access_in_wide_range(&at(PointerOffsetTerm::Constant(-2)), 4, &range));
+}
+
 #[test]
 fn native_range_coverage_checks_complete_signed_observations() {
     let _session = crate::kernel::VerificationSession::enter();

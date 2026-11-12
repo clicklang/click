@@ -6729,6 +6729,61 @@ impl ResourceContext {
         false
     }
 
+    /// The undecided no-wrap condition that keeps an owned range at the
+    /// required wide range's base from standing for it, when the two are
+    /// spelled in different element widths: `p[0u64..n]` of 8-byte elements
+    /// required from the held byte range `p[0u64..n * 8u64]` needs `n * 8`
+    /// not to wrap. The owner is the one indexed supplier coverage selects
+    /// for the requirement; `None` when there is none, the widths agree, neither range is
+    /// wide, the requirement's designation does not match the owner's, or
+    /// one re-spelling has every product decided (coverage then refused for
+    /// another reason). Diagnostic only: it runs after coverage has refused,
+    /// with at most two re-spellings and one decision per product.
+    pub(in crate::kernel) fn wide_range_respelling_refusal(
+        &self,
+        required: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Option<crate::kernel::WideRangeNoWrap> {
+        let entry = self
+            .memory_fact_candidates(required, true, assumptions)
+            .entries
+            .single_supplier()?;
+        crate::instrumentation::record_deterministic_work(1);
+        let held = self.fact(entry).memory_own_range()?;
+        if (required.typed_carrier
+            && !assumptions.access_designations_match(required.access_designation(), held))
+            || held.element_width() == required.element_width()
+            || (held.wide_bounds().is_none() && required.wide_bounds().is_none())
+        {
+            return None;
+        }
+        // Coverage tries the requirement in the owner's width, then the
+        // owner in the requirement's. When either re-spelling has every
+        // product decided, coverage failed for another reason.
+        let mut undecided = None;
+        for (source, width) in [
+            (required, held.element_width()),
+            (held, required.element_width()),
+        ] {
+            let Some(respelled) = wide_memory_range_respelled(source, width) else {
+                continue;
+            };
+            match respelled.no_wrap.into_iter().find(|(count, factor)| {
+                assumptions.decide(&wide_respelling_no_wrap_condition(count, *factor)) != Some(true)
+            }) {
+                None => return None,
+                Some((count, factor)) => {
+                    undecided.get_or_insert(crate::kernel::WideRangeNoWrap {
+                        range: CResourceFact::own_memory(source.clone()),
+                        count,
+                        factor,
+                    });
+                }
+            }
+        }
+        undecided
+    }
+
     /// A bulk read covers physical bytes, even when its width happens
     /// to equal the ABI pointer width. Scalar pointer-cell conventions do
     /// not shorten an array copy's footprint.
@@ -10250,6 +10305,112 @@ fn memory_range_in_element_width(range: &CMemoryRange, width: u32) -> Option<CMe
     )
 }
 
+/// A wide range re-spelled in another element width, before its no-wrap
+/// conditions are decided: the respelled range and, for each symbolic
+/// endpoint `x` that was or became a product `x * m`, the pair `(x, m)`.
+pub(in crate::kernel) struct WideRangeRespelling {
+    pub(in crate::kernel) range: CMemoryRange,
+    pub(in crate::kernel) no_wrap: Vec<(MachineTerm, u64)>,
+}
+
+/// The structural re-spelling of a wide range in `width`-byte elements.
+///
+/// A wide range's endpoints are unsigned 64-bit element indices, so
+/// `p[0u64..n]` of 8-byte elements and `p[0u64..n * 8u64]` of bytes name the
+/// same footprint exactly when the `uint64` product `n * 8` does not wrap.
+/// Narrowing the width multiplies each endpoint by `m = from / to`; widening
+/// it reads an endpoint that is a `uint64` product `x * m` (either order) or a
+/// constant multiple of `m` as `x`. Each symbolic product is returned with its
+/// no-wrap condition `x <= UINT64_MAX / m`; a constant is folded only when it
+/// does not overflow. `None` for a narrow range, widths that do not divide,
+/// or an endpoint with no such reading. A wide range has no 32-bit byte count,
+/// so this is the only width conversion wide ranges have.
+pub(in crate::kernel) fn wide_memory_range_respelled(
+    range: &CMemoryRange,
+    width: u32,
+) -> Option<WideRangeRespelling> {
+    let (start, end) = range.wide_bounds()?;
+    let from = u64::from(range.element_width());
+    let to = u64::from(width);
+    if from == 0 || to == 0 {
+        return None;
+    }
+    let mut no_wrap = Vec::new();
+    let mut convert = |endpoint: &MachineTerm| -> Option<MachineTerm> {
+        if from == to {
+            return Some(endpoint.clone());
+        }
+        if from.is_multiple_of(to) {
+            let factor = from / to;
+            if let Some(value) = endpoint.uint64_as_const() {
+                return value.checked_mul(factor).map(MachineTerm::uint64_constant);
+            }
+            no_wrap.push((endpoint.clone(), factor));
+            return Some(MachineTerm::uint64_multiply(
+                endpoint.clone(),
+                MachineTerm::uint64_constant(factor),
+            ));
+        }
+        if !to.is_multiple_of(from) {
+            return None;
+        }
+        let factor = to / from;
+        if let Some(value) = endpoint.uint64_as_const() {
+            return value
+                .is_multiple_of(factor)
+                .then(|| MachineTerm::uint64_constant(value / factor));
+        }
+        let binary_term!(UInt64, Multiply, left, right) = endpoint else {
+            return None;
+        };
+        let count = match (left.uint64_as_const(), right.uint64_as_const()) {
+            (_, Some(constant)) if constant == factor => left.as_ref(),
+            (Some(constant), _) if constant == factor => right.as_ref(),
+            _ => return None,
+        };
+        no_wrap.push((count.clone(), factor));
+        Some(count.clone())
+    };
+    let start = convert(start)?;
+    let end = convert(end)?;
+    Some(WideRangeRespelling {
+        range: CMemoryRange::new_wide(range.base().clone(), start, end, width)
+            .with_carrier_of(range),
+        no_wrap,
+    })
+}
+
+/// The no-wrap condition `count <= UINT64_MAX / factor` of one re-spelled
+/// endpoint.
+pub(in crate::kernel) fn wide_respelling_no_wrap_condition(
+    count: &MachineTerm,
+    factor: u64,
+) -> ConditionTerm {
+    ConditionTerm::uint64_less_equal(
+        count.clone(),
+        MachineTerm::uint64_constant(u64::MAX / factor),
+    )
+}
+
+/// [`wide_memory_range_respelled`] once each of its no-wrap conditions is
+/// decided: then every product is the mathematical value and the two ranges
+/// name the same bytes, so either may stand for the other in coverage and
+/// subtraction. One decision per symbolic endpoint; nothing is scanned.
+fn wide_memory_range_in_element_width(
+    range: &CMemoryRange,
+    width: u32,
+    assumptions: &PureFactContext,
+) -> Option<CMemoryRange> {
+    let respelled = wide_memory_range_respelled(range, width)?;
+    respelled
+        .no_wrap
+        .iter()
+        .all(|(count, factor)| {
+            assumptions.decide(&wide_respelling_no_wrap_condition(count, *factor)) == Some(true)
+        })
+        .then_some(respelled.range)
+}
+
 /// Bounds geometry shared by held ranges and opaque-domain coverage facts.
 /// This constructs no read authority and includes the one-past position.
 pub(in crate::kernel) fn pointer_formation_in_range(
@@ -10327,6 +10488,8 @@ pub(in crate::kernel) fn pointer_formation_in_range(
         narrow_contains(position, 0)
             || narrow_contains(position, 1)
             || wide_window(position, 0, 0)
+            // An element or field address of a struct array, over its count.
+            || assumptions.position_in_wide_struct_array(position, range)
             || position
                 .offset_from_base(operand)
                 .and_then(|offset| offset.as_const())
@@ -10441,6 +10604,30 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
     )
 }
 
+/// A constant-length footprint inside one struct of a wide struct array
+/// (`p[0u64..m]` of `k`-byte structs, or the byte block `p[0u64..m * k]`):
+/// the field rule of [`PureFactContext::field_access_in_wide_struct_array`],
+/// which places the footprint's first byte over the struct count instead of
+/// comparing bytes with the wrapping product `m * k`.
+fn memory_range_covers_struct_array_field(
+    available: &CMemoryRange,
+    required: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    if required.wide_bounds().is_some() || available.wide_bounds().is_none() {
+        return false;
+    }
+    let Some(bytes) = constant_range_extent(required)
+        .and_then(|(_, count)| count.checked_mul(i64::from(required.element_width())))
+        .and_then(|bytes| u32::try_from(bytes).ok())
+        .filter(|bytes| *bytes > 0)
+    else {
+        return false;
+    };
+    let (start, _) = required.byte_footprint();
+    assumptions.field_access_in_wide_struct_array(&start, bytes, available)
+}
+
 /// Whether `available` holds every byte of `required`, by the indexed and
 /// structural routes below. A stated separation never vetoes a coverage
 /// they prove: one range covering a nonempty other and being disjoint from it
@@ -10452,7 +10639,9 @@ fn memory_range_covers_by_routes(
     assumptions: &PureFactContext,
 ) -> bool {
     if available.element_width() != required.element_width() {
-        if memory_range_covers_interior_element(available, required, assumptions) {
+        if memory_range_covers_interior_element(available, required, assumptions)
+            || memory_range_covers_struct_array_field(available, required, assumptions)
+        {
             return true;
         }
         // A footprint is bytes and the element width is only how the bytes
@@ -10467,10 +10656,27 @@ fn memory_range_covers_by_routes(
         {
             return true;
         }
-        // A wide range has no 32-bit byte count to renormalize to, so a
-        // width mismatch the routes above do not settle is not covered.
+        // A wide range has no 32-bit byte count to renormalize to. Two wide
+        // ranges of different widths are rewritten into one width when the
+        // products that relate them are decided not to wrap; the requirement
+        // is rewritten first, keeping the owner's coordinates, then the
+        // owner. At most two attempts, each one re-spelling.
         if available.wide_bounds().is_some() || required.wide_bounds().is_some() {
-            return false;
+            if wide_memory_range_in_element_width(required, available.element_width(), assumptions)
+                .is_some_and(|required| {
+                    memory_range_covers_by_routes(available, &required, assumptions)
+                })
+            {
+                return true;
+            }
+            return wide_memory_range_in_element_width(
+                available,
+                required.element_width(),
+                assumptions,
+            )
+            .is_some_and(|available| {
+                memory_range_covers_by_routes(&available, required, assumptions)
+            });
         }
         return memory_range_covers_by_routes(
             &byte_normalized_memory_range(available),
@@ -11339,7 +11545,24 @@ pub(in crate::kernel) fn split_memory_range(
 ) -> Option<Vec<CMemoryRange>> {
     if available.wide_bounds().is_some() || required.wide_bounds().is_some() {
         if available.element_width() != required.element_width() {
-            return None;
+            // As coverage does: rewrite the requirement into the owner's
+            // width, keeping the residues in the owner's coordinates, else
+            // the owner into the requirement's. Both need their products
+            // decided not to wrap, so no byte is added or dropped.
+            return wide_memory_range_in_element_width(
+                required,
+                available.element_width(),
+                assumptions,
+            )
+            .and_then(|required| split_memory_range(available, &required, assumptions))
+            .or_else(|| {
+                let available = wide_memory_range_in_element_width(
+                    available,
+                    required.element_width(),
+                    assumptions,
+                )?;
+                split_memory_range(&available, required, assumptions)
+            });
         }
         let (start, end) = shared_wide_range_bounds(available, assumptions)?;
         // A window at another spelling of the base, `(bytes + index)[0..4]`

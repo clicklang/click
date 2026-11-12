@@ -7465,6 +7465,16 @@ pub enum CInvalidFree {
 /// starts with the function's name.
 pub const RETURN_TYPE_MISMATCH: &str = "returned a value that does not match its declared type";
 
+/// The undecided no-wrap condition of a wide range re-spelled in another
+/// element width: `range`'s endpoint `count`, multiplied by `factor`, must
+/// stay at most `UINT64_MAX` for the two spellings to name the same bytes.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct WideRangeNoWrap {
+    pub range: CResourceFact,
+    pub count: MachineTerm,
+    pub factor: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CRuntimeError {
     UnboundVariable(String),
@@ -7502,6 +7512,11 @@ pub enum CRuntimeError {
     MissingResource {
         resource: Box<CResourceFact>,
     },
+    /// A required wide memory range is held in another element width, and
+    /// the two name the same bytes only when `count * factor` does not wrap,
+    /// which the facts do not decide. `range` is the range whose endpoint
+    /// `count` is, or becomes, that product. Diagnostic only.
+    WideRangeRespellingMayWrap(Box<WideRangeNoWrap>),
     /// An operation requires the current initialization's lifecycle owner.
     MissingMutexLive {
         mutex: Pointer,

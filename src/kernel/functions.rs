@@ -10985,11 +10985,20 @@ fn prepare_contract_resource_transfer(
     // Memory a live mutex's initialization consumed is missing because the
     // mutex holds it; name the mutex rather than the bytes.
     // An allocation the caller holds only in the other extent format is
-    // named with both formats (D5).
+    // named with both formats (D5). A wide range held in another element
+    // width names the product that must not wrap.
     Ok(transfer.map_err(|error| match &error {
         CRuntimeError::MissingResource { resource } => match resource.as_ref() {
             CResourceFact::Own(CResource::Memory(range), _) => {
                 super::mutexes::consumed_storage_refusal(caller_state, range, assumptions)
+                    .or_else(|| {
+                        caller_state
+                            .resources
+                            .wide_range_respelling_refusal(range, assumptions)
+                            .map(|no_wrap| {
+                                CRuntimeError::WideRangeRespellingMayWrap(Box::new(no_wrap))
+                            })
+                    })
                     .unwrap_or(error)
             }
             fact if fact.allocation().is_some() => {
