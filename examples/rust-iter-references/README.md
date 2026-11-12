@@ -7,24 +7,21 @@ empty input, with safe additions and termination.
 
 The Charon adapter checks the resolved standard core slice `.iter()` method and
 compiler iterator desugaring. The artifact retains the iterator operation rather
-than rewriting it into an index loop. Each successful `next()` saves a shared
-address, `bytes.len() - iter.len()` into the slice, and reduces the remaining
-slice length before the
-source body binds `byte`. Dereferencing it requires input views; shared-reference
-qualifiers survive local declarations. Rust rejects writing through the
-reference. Both reference and copied patterns also work over direct slices.
+than rewriting it into an index loop. The unit sets `"iterators": "library"`
+(`docs/reference/rust.md`, Slice iterators as library values), so the iterator
+is one value of the library's `SliceIter<uint8>`: each successful `next()`
+yields `iter.as_slice().as_ptr()` and leaves an iterator whose remaining slice
+starts one element later and is one shorter. No base, length or
+remaining-count local is named. Dereferencing the yielded reference requires
+input views; Rust rejects writing through it.
 
-The proof observes `iter.len()`, without MIR IDs or a
-generated processed count. It derives a prefix length from original length
-minus remaining length and bounds each sum by 255
-times that prefix length. `let { result: loaded_byte } = step();` names the actual checked
-scalar read, retaining its value after compiler temporaries leave scope.
-Remaining slice length proves termination and obeys the shared memory model's
-signed-word length limit. Empty iterators exit without reading or advancing a
-pointer.
+The proof carries where the iterator stands as an invariant,
+`iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len())`, and bounds
+each sum by 255 times the prefix length `bytes.len() - iter.len()`.
+`let { result: loaded_byte } = step();` names the checked scalar read. The
+remaining length `iter.len()` ranks the loop. An empty iterator exits without
+reading.
 
-Shared scalar array iteration uses the same state; stored `.chunks_exact()`
-iterators still hold a cursor and remaining length; see the [exact-chunk example](../rust-chunks-exact/README.md).
 This fixture covers immutable shared bytes. The pinned checksum libraries remain unverified.
 
 Build the pinned Charon with `scripts/build-charon.sh --install-toolchain`, then run:

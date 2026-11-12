@@ -56,6 +56,17 @@ impl Project {
         .unwrap();
         p
     }
+    /// [`Project::new`] with the unit's slice iterators imported as values
+    /// of their library type (`design/rust-iterators.md`).
+    fn with_library_iterators(source: &str) -> Self {
+        let p = Self::isolated(source);
+        fs::write(
+            p.project_file(),
+            r#"{"units": {"borrow": {"language": "rust", "iterators": "library", "sources": {"borrow.rs": {}}}}}"#,
+        )
+        .unwrap();
+        p
+    }
     /// Where a test writes an import description in the per-sidecar config
     /// format of earlier releases, for [`Project::adopt_config`] to translate.
     fn config(&self) -> PathBuf {
@@ -1326,7 +1337,7 @@ fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
             "                    (bytes.len() - iter.len()) < 18446744073709551615u64;\n",
         );
     assert!(sidecar.contains("(bytes.len() - iter.len()) < 18446744073709551615u64;"));
-    let p = Project::new(source);
+    let p = Project::with_library_iterators(source);
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
     p.refresh().unwrap();
     let output = p.cli(&["verify"]);
@@ -1338,7 +1349,7 @@ fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
     );
     assert!(
         error.contains(
-            "the append-last-cell equation needs `to_integer(bytes.len() - iter.len()) < 18446744073709551615`"
+            "the append-last-cell equation needs `to_integer(bytes.len() - click::rust::slice_iter::len::<uint8>(<unnamed A>)) < 18446744073709551615`"
         ),
         "{error}"
     );
@@ -1679,6 +1690,28 @@ fn charon_slice_iter_sums_bytes_by_its_library_contract() {
         assert!(
             C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
             "accepted {before} -> {after}"
+        );
+    }
+}
+
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+#[ignore = "nightly: slice-iterator library model proof-tool agreement"]
+fn charon_slice_iter_tools_recheck_expanded_certificate() {
+    let p = Project::from_fixture("design/charon-trial/slice-iter");
+    fs::write(p.root.join("borrow.click"), SLICE_ITER_PROOF).unwrap();
+    for args in [
+        vec!["verify"],
+        vec!["expand", "--claim", "sum.contract", "--in-place"],
+        vec!["verify"],
+        vec!["profile"],
+        vec!["audit"],
+    ] {
+        let result = p.cli(&args);
+        assert!(
+            result.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&result.stderr)
         );
     }
 }
@@ -5397,7 +5430,7 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
     // Shared references from both the implicit slice iterator and .iter()
     // have the same checked address and dereference semantics.
     for source in [source.to_string(), source.replace("bytes.iter()", "bytes")] {
-        let p = Project::new(&source);
+        let p = Project::with_library_iterators(&source);
         p.refresh().unwrap();
         assert_slice_iterator_artifact(&p);
         let prepared = p.prepared().unwrap();

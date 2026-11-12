@@ -2,6 +2,7 @@
   "units": {
     "sum": {
       "language": "rust",
+      "iterators": "library",
       "sources": {
         "sum.rs": {}
       }

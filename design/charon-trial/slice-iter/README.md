@@ -20,6 +20,9 @@ The nightly test `charon_slice_iter_sums_bytes_by_its_library_contract`
 verifies the proof and rejects a missing view, a false result, a shifted
 position invariant, a wrong step and a non-decreasing measure.
 
-`click expand --claim sum.contract` does not yet re-verify on this proof: an
-expanded `have` proved by `rewrite; normalize` leaves the following `peel`
-without its guard, where the same `have` proved by `solve` does not.
+The base case is proved at the literal `0u64`: the proof first states
+`bytes.len() - loop(0).iter.len() == 0u64` and rewrites with it. Stating it
+at the iterator's own length also verifies, but its expansion does not
+re-verify (`bugs/peel-rejects-a-listed-guard-after-a-have-proved-by-rewrite-and-normalize.md`).
+The tools test `charon_slice_iter_tools_recheck_expanded_certificate`
+expands and re-verifies the proof.

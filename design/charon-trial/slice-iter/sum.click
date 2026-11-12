@@ -23,11 +23,12 @@ fn sum(bytes: &[u8]) -> i32 {
     step_until(loop(0));
     have loop(0).iter.len() == bytes.len();
     have loop(0).iter.as_slice().as_ptr() == bytes;
+    have bytes.len() - loop(0).iter.len() == 0u64;
     have prefix(bytes, bytes.len() - loop(0).iter.len()) == 0 by {
-        have to_integer(bytes.len() - loop(0).iter.len()) <= to_integer(0u64);
-        peel(prefix(bytes, bytes.len() - loop(0).iter.len())) using {
-            to_integer(bytes.len() - loop(0).iter.len()) <= to_integer(0u64);
-        }; solve();
+        rewrite(bytes.len() - loop(0).iter.len() == 0u64);
+        have 0u64 <= 0u64;
+        peel(prefix(bytes, 0u64)) using { 0u64 <= 0u64; };
+        solve();
     }
     loop {
         decreases iter.len();
