@@ -70,6 +70,25 @@ parts of them. Its old unchecked lists and historical accessor counts must not
 be treated as a current to-do list. The detailed evidence is preserved in
 [the pre-revision roadmap](https://github.com/clicklang/click/blob/93c5fe74cd6ff161782b65a9709ffe57cd3eca76/roadmap/unspellable-facts.md).
 
+## Authorized delivery sequence
+
+The next ten work packages each receive at least one PR. A package is closed
+only when its named boundaries and regression coverage are complete; these are
+not ten aliases for partial progress on one boundary. Keep one PR open at a time.
+
+| Chunk | Work package | State |
+| --- | --- | --- |
+| 1 | Let bindings and local value handoffs | Implemented and validated; specification bindings retain shared values through selected lookups, with shadowing and snapshot scope preserved. Awaiting integration. |
+| 2 | Symbolic conditional joins | Open |
+| 3 | Pure-function arguments and results | Open |
+| 4 | Mixed-width arithmetic and casts | Open |
+| 5 | C/Rust execution result carriers | Open |
+| 6 | Folds, binders and algebraic matches | Open |
+| 7 | Complete pointers and read addresses | Open |
+| 8 | Remaining Boolean and opaque expression payloads | Open |
+| 9 | Unified raising/lowering and certificate boundaries | Open |
+| 10 | Duplicate storage removal and final closure | Open |
+
 ## Ordered closure checklist
 
 ### 1. Close the remaining checker boundaries — closed
@@ -951,7 +970,7 @@ zero-export regressions cover the new boundaries. Steps 2–4 remain open.
 | Producer | Representation boundary still to close |
 | --- | --- |
 | `spec/shared_machine::prepare` | Same-format available 32/64-bit arithmetic, including division/remainder and shifts, retains common children and debts through `SpecExpressionPath::value`. |
-| `spec::evaluate_spec_expression_dispatch` | Deferred same-format 32/64-bit arithmetic, including shifts, and scoped requirement handoffs retain results and debts. Opaque/read operands retain shared surrounding arithmetic through domain construction and Integer observations; a session-local memo maps opaque leaves to the existing numeric observation identity without changing exact producer payloads. Same-format 32/64-bit scalar comparisons retain shared operands. Literal-right add chains evaluate iteratively with retained prefixes, including deferred bases. Same-format casts retain the existing result and debts. Mixed/narrow/wide operations, representation-changing casts, let bindings, symbolic conditional joins, folds, pure-call arguments, pointer indices and C execution/API outputs still have explicit native boundaries. |
+| `spec::evaluate_spec_expression_dispatch` | Deferred same-format 32/64-bit arithmetic, including shifts, and scoped requirement handoffs retain results and debts. Opaque/read operands retain shared surrounding arithmetic through domain construction and Integer observations; a session-local memo maps opaque leaves to the existing numeric observation identity without changing exact producer payloads. Same-format 32/64-bit scalar comparisons retain shared operands. Literal-right add chains evaluate iteratively with retained prefixes, including deferred bases. Same-format casts retain the existing result and debts. Specification let bindings retain shared machine values through a persistent lexical map and iterative binding evaluation, including nested values; native C expressions materialize only the lexical names they explicitly read. Mixed/narrow/wide operations, representation-changing casts, symbolic conditional joins, folds, pure-call arguments, pointer indices and C execution/API outputs still have explicit native boundaries. |
 | `eval/operators` and `eval/operators/spec_arithmetic` | C execution, Rust shifts, conversions, bitwise operations and wide operations construct native `CExpressionOutcome::Value` payloads. Runtime-error branches and logical specification debts have distinct rules. |
 | `ProofObligation::verification_condition` | Observation canonicalization now retains shared comparisons instead of exporting their prefixes, preserving polarity and native/shared checking equivalence. |
 
