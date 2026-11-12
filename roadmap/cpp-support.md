@@ -60,19 +60,13 @@ Audit of the current path, from a user's point of view:
    in `Cargo.toml`) ships only `click`. CI already tars the built exporter
    to share it between test shards (`scripts/check.sh`), but releases do not
    include it.
-2. **There is no single way to locate the exporter.** Each import config
-   names the exporter by a path relative to the config. Every checked-in
-   config points into the repository's build output:
-   `../../target/cpp-exporter/click-cpp-exporter` in
-   `integrations/bitcoin-core-money-range/MoneyRange.click.import.json`.
-   Project units, such as `examples/basic-cpp`, take the exporter from
-   `CLICK_CPP_EXPORTER` at lock time only.
-   C++ mdtests take a different route: they read `CLICK_CPP_EXPORTER`. If it
-   is unset they fall back to `CARGO_MANIFEST_DIR/target/cpp-exporter/...`,
-   a path compiled into the binary (`prepare_mdtest_inputs` in
-   `src/cli.rs`), so an installed `click` points at the build machine's
-   checkout. The tests use the environment variable (`tests/cpp_import.rs`,
-   `tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`).
+2. **One resolution order, nothing installed yet.** Click finds the
+   exporter through `CLICK_CPP_EXPORTER`, else
+   `$CLICK_HOME/versions/<version>/frontends/cpp/click-cpp-exporter`, else
+   reports where it expected one (`src/languages/cpp/runtime.rs`), for
+   project locking and C++ mdtests alike. Configs name no exporter and no
+   build-machine path is compiled in. Releases do not install anything there
+   yet, so users still set the override.
 3. **The version handshake is in place; lock identities are not.** The
    exporter reports its version, artifact schema and Clang version for
    `--identity`, Click checks that before exporting, and all three are
