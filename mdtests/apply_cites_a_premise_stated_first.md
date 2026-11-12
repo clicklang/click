@@ -1,11 +1,9 @@
-# `apply` cites a premise stated first with `have`
+# `apply` accepts a premise stated first with `have`
 
-`apply(theorem(args))` looks each of the theorem's premises up among the
-available facts and proves none. A premise that is not yet a fact is stated
-first with a `have`, and the application cites it: here `x >= 0` from `x > 0`,
-and `left == Tree::Leaf` from `left_of(tree) == Tree::Leaf` and the
-constructor equation for `tree`. Without the `have`, the application is a
-search miss (`apply_does_not_prove_a_missing_premise.md`).
+A pure theorem application exposes its formal premises as obligations. A
+preceding `have` makes their implicit proofs immediate; otherwise ordinary
+`solve` attempts them. Explicit `apply using` still requires selected evidence
+(`apply_does_not_prove_a_missing_premise.md`).
 
 ```click
 theorem needs_nonnegative(x: int32) {

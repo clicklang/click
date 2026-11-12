@@ -150,6 +150,13 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
             let role = if caller.is_empty() {
                 "import"
             } else if owner == "ProofDriver"
+                && caller == "apply_step_without_outcome_wrapping"
+                && target == "apply_arithmetic_using"
+            {
+                // ArithmeticUsing is a smart step, not a certificate checker.
+                // This one dispatch is distinct from arbitrary operation search.
+                "driver"
+            } else if owner == "ProofDriver"
                 && target != "driver"
                 && matches!(
                     caller.as_str(),

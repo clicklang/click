@@ -3551,36 +3551,14 @@ pub(super) fn finish_ordered_proof<'a>(
                     {
                         continue 'execution_path;
                     }
-                    let path_requirements = outcome_proof
-                        .as_ref()
-                        .map_or_else(|| proof.facts().clone(), |root| root.facts().clone());
                     // `None` marks a path-independent capture: an abstracted post-join
                     // path cannot decide the pre-join surface branches, and the tactic
                     // it carries belongs on every leaf.
                     let deferred_capture_branch_path = if let Some(deferred) = path_capture {
-                        // Call-arm provenance applies to both returned and
-                        // thrown outcomes, including paths that never reach
-                        // the selected source occurrence. Only legacy return
-                        // paths need the post-state guard fallback.
-                        direct_view
-                            .surface_branch_path(path_index, &deferred.branch_skeleton)
-                            .or_else(|| match &outcome {
-                                CFunctionOutcome::Return {
-                                    value: result,
-                                    state: post_state,
-                                } => surface_branch_path_for_outcome(
-                                    &deferred.branch_skeleton,
-                                    &path_requirements,
-                                    parameter_binding,
-                                    pre_state,
-                                    post_state,
-                                    result,
-                                    &proof_execution.presentation.recorded_snapshots,
-                                    spec_definitions,
-                                )
-                                .ok(),
-                                _ => None,
-                            })
+                        // Expansion follows the decisions retained at each split.
+                        // A joined path has no single pre-join route; its suffix
+                        // belongs on every leaf, as represented by None.
+                        direct_view.surface_branch_path(path_index, &deferred.branch_skeleton)
                     } else {
                         Some(Vec::new())
                     };

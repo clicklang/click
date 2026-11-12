@@ -2200,20 +2200,6 @@ thread_local! {
     static HIDDEN_PREREQUISITES_ON_THREAD: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-pub(crate) fn record_hidden_prerequisite(route: HiddenPrerequisiteRoute, rule: &'static str) {
-    // A tactic search is not a statement's: it counts in the corpus census,
-    // not in a step's planning count.
-    #[cfg(test)]
-    if !matches!(route, HiddenPrerequisiteRoute::TacticSearch) {
-        HIDDEN_PREREQUISITES_ON_THREAD.with(|count| count.set(count.get() + 1));
-    }
-    *HIDDEN_PREREQUISITE_CENSUS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .entry((route, rule))
-        .or_default() += 1;
-}
-
 /// Hidden prerequisite derivations recorded on this thread so far. A caller
 /// compares two readings to attribute derivations to one operation.
 #[cfg(test)]

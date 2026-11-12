@@ -486,7 +486,7 @@ impl<'a> Proof<'a> {
                     .get(name.as_str())
                     .ok_or_else(|| self.step_error(format!("missing fold field `{name}`")))?;
                 let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
-                let value = capture_resource_field_initializer(
+                let (value, obligations) = capture_resource_field_initializer(
                     &expression,
                     ty,
                     self.facts().assumptions(),
@@ -510,6 +510,14 @@ impl<'a> Proof<'a> {
                         .unwrap_or(message);
                     self.step_error(format!("fold field `{name}`: {message}"))
                 })?;
+                for obligation in obligations {
+                    crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                        self.step_error(format!(
+                            "fold field `{name}` has an unproved evaluation obligation"
+                        ))
+                        .with_unresolved_requirement(&obligation),
+                    )?;
+                }
                 proposed.push(value);
             }
             let identity = pre_state

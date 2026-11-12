@@ -769,8 +769,8 @@ pub(in crate::surface::proof) fn capture_fixed_state_algebraic_value(
     )
 }
 
-/// Fold initializers create values, not new hypotheses: discharge every
-/// evaluation obligation here, including reads in constructor arguments.
+/// Capture an initializer once and return its evaluation obligations. The
+/// caller retains the value while the driver obtains proofs of the obligations.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn capture_resource_field_initializer(
     expression: &ContractExpression,
@@ -781,7 +781,13 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
     state: &CState,
     snapshots: &RecordedSnapshots,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<crate::kernel::AlgebraicValue, String> {
+) -> Result<
+    (
+        crate::kernel::AlgebraicValue,
+        Vec<crate::kernel::ProofObligation>,
+    ),
+    String,
+> {
     let states = FixedStateLowering::for_expression_values(
         expression,
         contract_environment,
@@ -810,16 +816,10 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                     Some(&states.entry_state),
                     assumptions,
                 )?;
-            if obligations
-                .iter()
-                .any(|o| !crate::kernel::search::ProofSearch::proves(assumptions, o.proposition()))
-            {
-                return Err("fold initializer has unproved evaluation obligations".into());
-            }
             if value.c_type() != *expected {
                 return Err("fold initializer has the wrong type".into());
             }
-            Ok(crate::kernel::AlgebraicValue::C(value))
+            Ok((crate::kernel::AlgebraicValue::C(value), obligations))
         }
         crate::kernel::ResourceFieldType::Integer => {
             let spec = crate::surface::lowering::elaborate_fixed_state_integer_expression(
@@ -839,7 +839,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 Some(&states.entry_state),
                 assumptions,
             )
-            .map(crate::kernel::AlgebraicValue::Integer)
+            .map(|value| (crate::kernel::AlgebraicValue::Integer(value), Vec::new()))
             .map_err(|refusal| {
                 crate::surface::proof_diagnostics::render::describe_spec_capture_refusal(&refusal)
             })
@@ -864,7 +864,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 Some(&states.entry_state),
                 assumptions,
             )
-            .map(crate::kernel::AlgebraicValue::Algebraic)
+            .map(|value| (crate::kernel::AlgebraicValue::Algebraic(value), Vec::new()))
         }
     }
 }

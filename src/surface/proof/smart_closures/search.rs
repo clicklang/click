@@ -10,6 +10,35 @@ enum SurfaceSpellingPurpose {
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Strategy dispatch for the smart arithmetic step. Keep the same selected
+    /// premise order, explicit certificates, and refusal precedence as solve.
+    pub(in crate::surface::proof) fn apply_arithmetic_using(
+        search_input: &Proof<'a>,
+        premises: &[ClickProposition],
+    ) -> Result<Proof<'a>, ClickError> {
+        if let Some(proof) = Self::try_unsigned_order_step_using(search_input, premises) {
+            return Ok(proof);
+        }
+        let ordinary = search_input
+            .driver()
+            .apply_step_without_outcome_wrapping_after_wide(ProofStep::ArithmeticUsing(
+                premises.to_vec(),
+            ));
+        if ordinary.is_ok() {
+            return ordinary;
+        }
+        if let Some(refuted) = Self::disequality_by_refutation(search_input, premises) {
+            return refuted;
+        }
+        match Self::try_wide_arithmetic_using(search_input, premises) {
+            Ok(proof) => Ok(proof),
+            Err(Some(reason)) => Err(search_input.step_error(format!(
+                "arithmetic read the current goal as a 64-bit comparison: {reason}"
+            ))),
+            Err(None) => ordinary,
+        }
+    }
+
     /// The fact `lower <u upper` as a proof that has it in that spelling,
     /// with the fact's surface and its two operands. The fact may be held
     /// as `upper >u lower`; it is then first restated the other way round by

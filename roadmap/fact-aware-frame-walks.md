@@ -49,8 +49,10 @@ Retain the checked caller-side resource identities, not the callee's equivalent
 argument expressions. Keep recursive resources opaque and retain the concrete
 memory-effect projection alongside the abstract bound.
 
-Bounds for consumed inputs, non-unit quantities, construction, runtime effects,
-and multi-transition regions are outside this initial form. Extend only when
+Consuming calls receive the same bound over their borrowed and consumed inputs;
+a produced output does not cancel it. Bounds for non-unit quantities,
+construction, runtime effects, and multi-transition regions are outside this
+form. Extend only when
 a concrete proof needs them, retaining checked producer effects. Do not turn
 arbitrary overlapping sequential effects into a separating conjunction.
 

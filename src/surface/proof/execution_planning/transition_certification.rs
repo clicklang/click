@@ -861,7 +861,7 @@ fn certified_transitions_from_execution(
                         // A retained checked derivation over the context, or
                         // the exact structural rules the explicit law used (a
                         // listed premise covering a loadability, a matching
-                        // separation, an atomic derivation over the context).
+                        // separation).
                         // The bare prover verdict is not one of them: a
                         // required verification condition the kernel emitted
                         // -- a call precondition, most of them -- is
@@ -929,26 +929,7 @@ fn certified_transitions_from_execution(
                                 && !(matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
                                     && obligation.call_requirement_site().is_some()
                                     && rejected_contract_call))
-                            // Under `Fast` a step never searches the
-                            // context: the probe records the obligation and
-                            // the implicit `solve` proves it.
-                            || (!matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
-                                && matches!(
-                                proposition,
-                                Proposition::CResourceContains { .. }
-                                    | Proposition::CResourceSeparate { .. }
-                                    | Proposition::CMemoryLoadable { .. }
-                            ) && crate::kernel::search::ProofSearch::derive_atomic_proposition(prerequisite_assumptions, proposition)
-                                .is_some()
-                                && {
-                                    // Reached only after every exact check
-                                    // above missed: a search over the context.
-                                    crate::instrumentation::record_hidden_prerequisite(
-                                        crate::instrumentation::HiddenPrerequisiteRoute::TacticSearch,
-                                        "step resource atomic derivation",
-                                    );
-                                    true
-                                })
+
                         {
                             None
                         } else {
