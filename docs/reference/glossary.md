@@ -583,6 +583,12 @@ Translation from validated Surface Click into kernel propositions, terms,
 
 ## M
 
+### Magic variable
+
+A name a proof reads without the source declaring it, such as `result`,
+`iterations`, or a Rust loop's `iter`. Each denotes a real value of the
+program or its proof. See [magic variables](magic-variables.md).
+
 ### Materialization
 
 Making an implicit value or fact explicit for one consumer. Memory

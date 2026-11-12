@@ -51,6 +51,7 @@
     - [Grammar and operators](reference/language/grammar.md)
     - [Limitations and compatibility](reference/language/limitations.md)
   - [Experimental Rust imports](reference/rust.md)
+  - [Magic variables](reference/magic-variables.md)
   - [Glossary](reference/glossary.md)
   - [Examples](reference/examples.md)
   - [Larger examples](concepts/larger-examples.md)

@@ -3003,6 +3003,10 @@ id = "glossary.certification"
 path = "reference/glossary.md#certification"
 
 [[item]]
+id = "glossary.magic-variable"
+path = "reference/glossary.md#magic-variable"
+
+[[item]]
 id = "glossary.materialization"
 path = "reference/glossary.md#materialization"
 
