@@ -735,6 +735,27 @@ pub(crate) fn capture_spec_integer_value_with_guards(
     entry_state: Option<&CState>,
     assumptions: &PureFactContext,
 ) -> Result<(IntegerTerm, Vec<Proposition>), SpecCaptureRefusal> {
+    capture_spec_integer_argument(state, expression, entry_state, assumptions, false)
+}
+
+/// Captures a conditional argument once. Its guards must be proved before the
+/// caller publishes any theorem conclusion using the returned value.
+pub(crate) fn prepare_spec_integer_argument(
+    state: &CState,
+    expression: &SpecIntegerExpression,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+) -> Result<(IntegerTerm, Vec<Proposition>), SpecCaptureRefusal> {
+    capture_spec_integer_argument(state, expression, entry_state, assumptions, true)
+}
+
+fn capture_spec_integer_argument(
+    state: &CState,
+    expression: &SpecIntegerExpression,
+    entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+    retain_obligations: bool,
+) -> Result<(IntegerTerm, Vec<Proposition>), SpecCaptureRefusal> {
     let paths = evaluate_spec_integer_expression_paths_in(
         SpecScope::unbound(state, entry_state),
         expression,
@@ -765,25 +786,29 @@ pub(crate) fn capture_spec_integer_value_with_guards(
     // Kernel-certified consequences (such as the observation of a guarded
     // native result) are definitions, not extra assumptions the caller must
     // restate. Their path guards and proof obligations still need discharge.
-    let undischarged = path
-        .facts
-        .iter()
-        .filter(|fact| !fact.is_certified())
-        .map(|fact| fact.proposition())
-        .chain(path.obligations.iter().map(|o| o.proposition()))
-        .find(|proposition| !required_obligation_is_exactly_discharged(assumptions, proposition));
-    if let Some(proposition) = undischarged {
-        let subterm = locate_spec_integer_capture_condition(
-            state,
-            expression,
-            entry_state,
-            assumptions,
-            proposition,
-        );
-        return Err(SpecCaptureRefusal::Undischarged {
-            subterm,
-            proposition: proposition.clone(),
-        });
+    if !retain_obligations {
+        let undischarged = path
+            .facts
+            .iter()
+            .filter(|fact| !fact.is_certified())
+            .map(|fact| fact.proposition())
+            .chain(path.obligations.iter().map(|o| o.proposition()))
+            .find(|proposition| {
+                !required_obligation_is_exactly_discharged(assumptions, proposition)
+            });
+        if let Some(proposition) = undischarged {
+            let subterm = locate_spec_integer_capture_condition(
+                state,
+                expression,
+                entry_state,
+                assumptions,
+                proposition,
+            );
+            return Err(SpecCaptureRefusal::Undischarged {
+                subterm,
+                proposition: proposition.clone(),
+            });
+        }
     }
     if crate::instrumentation::deadline_exceeded_with_work(
         path.facts.len().saturating_add(path.obligations.len()),
@@ -2104,7 +2129,7 @@ fn retain_required_integer_obligation(
     assumptions: &PureFactContext,
     proposition: Proposition,
 ) {
-    if assumptions.proves_exact(&proposition) {
+    if !assumptions.retains_required_obligations() && assumptions.proves_exact(&proposition) {
         return;
     }
     // Keep the original evaluation obligations and their diagnostic context.

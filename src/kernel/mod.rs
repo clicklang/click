@@ -519,3 +519,5 @@ pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIte
 
 // Search has no authority to construct proof successors.
 pub(crate) mod search;
+
+pub(crate) use spec::prepare_spec_integer_argument;

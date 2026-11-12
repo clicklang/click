@@ -664,7 +664,13 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
             BTreeSet::new(),
             BTreeMap::new(),
         )?;
-    crate::kernel::capture_spec_integer_value_with_guards(
+    let preparing = crate::surface::proof::theorem_application::preparing_application();
+    let capture = if preparing {
+        crate::kernel::prepare_spec_integer_argument
+    } else {
+        crate::kernel::capture_spec_integer_value_with_guards
+    };
+    let captured = capture(
         fixed_state.state,
         &spec,
         Some(fixed_state.pre_state),
@@ -680,7 +686,19 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
             &refusal,
             &mut labels,
         )
-    })
+    })?;
+    if preparing {
+        for guard in &captured.1 {
+            crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                ClickError::new("Integer theorem argument has an evaluation obligation")
+                    .with_unresolved_requirement(&ProofObligation::verification_condition(
+                        guard.clone(),
+                    )),
+            )
+            .map_err(|error| error.message().to_owned())?;
+        }
+    }
+    Ok(captured)
 }
 
 /// Captures an algebraic expression as the symbolic spec term it denotes at

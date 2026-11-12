@@ -383,3 +383,9 @@ at exact footprint entry/exit snapshots. Whole-region preservation must be
 explicit composition, not a hidden transition walk. Inconclusive checking
 cannot establish equality or preservation, and explicit proof application must
 not reconstruct identities or search for intermediate states.
+
+Theorem application migration: pure named applications now retain their
+instantiated result and return argument-domain and formal-premise obligations.
+Remaining contexts are fixed-state proofs, live execution and returned outcomes;
+the final migration needs strict no-discovery replay coverage. Special built-in
+population/range applications remain separately classified.
