@@ -1,8 +1,8 @@
 # The implicit closer proves a machine order through its `Integer` reading
 
 A `uint64` or `int64` order goal is proved as the order of its operands'
-`Integer` observations, and carried back by
-`integer::uint64_to_integer_less_than_implies_less_than` or its `<=` form.
+`Integer` observations, and carried back to the machine order, which
+lowers to the same fact.
 
 ```click
 theorem machine_goal(i: uint64, n: uint64) {

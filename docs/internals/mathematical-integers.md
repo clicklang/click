@@ -1164,7 +1164,6 @@ cannot exclude unsigned wrapping.
 | `integer::uint64_subtract_to_integer` | `B <= A` | `to_integer(a - b) == A - B` |
 | `integer::uint64_divide_to_integer` | `b != 0u64 and B != 0` | `to_integer(a / b) == truncating_quotient(A, B)` |
 | `integer::uint64_remainder_to_integer` | `b != 0u64 and B != 0` | `to_integer(a % b) == truncating_remainder(A, B)` |
-| `integer::uint64_less_equal_to_integer` | `a <= b` | `A <= B` |
 | `integer::uint64_to_integer_less_equal_implies_less_equal` | `A <= B` | `a <= b` |
 
 Here `A = to_integer(a)`, `B = to_integer(b)` and
@@ -1173,9 +1172,11 @@ are kernel standard theorems with checked parameter types, declaration shape,
 exact premise and conclusion. The add, multiply and subtract laws are proved:
 their pinned proofs derive the Integer range of the exact result from the
 premise and the operand ranges (`integer_product_bounds` for the product's
-lower bound) and apply the `integer_operation_identity` certificate rule. The two order laws are proved by `assumption()`: a
+lower bound) and apply the `integer_operation_identity` certificate rule. The order law is proved by `assumption()`: a
 machine comparison and the Integer comparison of its operands' observations
-lower to one fact, so each conclusion is its premise.
+lower to one fact, so its conclusion is its premise. The forward
+direction needs no lemma: `assumption()` or `solve` reads `a <= b` as
+`A <= B` directly.
 These laws use the same observation model and theorem application path as the
 existing uint32 and signed bridges, without changing source-language arithmetic. Division states both the native
 and observed nonzero facts so the machine operation and mathematical
@@ -1196,10 +1197,10 @@ explicit order-bridge applications retain deterministic scaling. See the checked
 Signed `int32` and `int64` observations preserve and reflect non-strict order.
 The standard-library `integer::int32_to_integer_less_equal_implies_less_equal` and
 `integer::int64_to_integer_less_equal_implies_less_equal` lemmas restore native order from an exact
-Integer comparison. `integer::int64_less_equal_to_integer` supplies the forward direction,
-matching the existing int32 bridge. `integer::int64_to_integer_equal_implies_equal` extends the
-existing int32 injectivity bridge to the full signed 64-bit carrier.
-`integer::uint32_to_integer_equal_implies_equal` is the same injectivity bridge for the unsigned
+Integer comparison. The forward direction, and injectivity at `int64`, need no
+lemma: the machine comparison and the Integer comparison of the observations
+lower to one fact, so `assumption()` or `solve` reads one as the other.
+`integer::uint32_to_integer_equal_implies_equal` is an injectivity bridge for the unsigned
 32-bit carrier: equal pattern bits do not depend on signedness, and every
 pattern has one unsigned Integer value.
 

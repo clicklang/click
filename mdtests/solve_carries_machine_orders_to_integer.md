@@ -1,8 +1,8 @@
 # The implicit closer carries machine order facts to `Integer`
 
 On a stated `Integer` fact, the implicit closer reads the machine order facts connected
-to it through their bridge theorems (`integer::uint64_less_than_to_integer`,
-`integer::int32_less_equal_to_integer`, ...), then refutes the fact's negation. The
+to it through their bridge theorems (`integer::int32_less_equal_to_integer`,
+...), then refutes the fact's negation. The
 expansion keeps only the bridges the certificate cites.
 
 ```click

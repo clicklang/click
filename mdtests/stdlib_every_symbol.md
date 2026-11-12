@@ -190,24 +190,9 @@ theorem use_uint64_remainder_to_integer(left: uint64, right: uint64) {
     ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right)) by apply(integer::uint64_remainder_to_integer(left, right));
 }
 
-theorem use_uint64_less_equal_to_integer(left: uint64, right: uint64) {
-    requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by apply(integer::uint64_less_equal_to_integer(left, right));
-}
-
 theorem use_uint64_less_equal_of_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right by apply(integer::uint64_to_integer_less_equal_implies_less_equal(left, right));
-}
-
-theorem use_uint64_less_than_to_integer(left: uint64, right: uint64) {
-    requires left < right;
-    ensures to_integer(left) < to_integer(right) by apply(integer::uint64_less_than_to_integer(left, right));
-}
-
-theorem use_uint64_less_than_of_to_integer(left: uint64, right: uint64) {
-    requires to_integer(left) < to_integer(right);
-    ensures left < right by apply(integer::uint64_to_integer_less_than_implies_less_than(left, right));
 }
 
 theorem use_uint32_pack_u16_to_integer(low: uint32, high: uint32) {
@@ -255,16 +240,6 @@ theorem use_uint64_unpack_u16_high(low: uint64, high: uint64) {
 theorem use_uint64_not_greater_equal_of_less_than(left: uint64, right: uint64) {
     requires left < right;
     ensures not (left >= right) by apply(integer::uint64_less_than_implies_not_greater_equal(left, right));
-}
-
-theorem use_int64_less_than_to_integer(left: int64, right: int64) {
-    requires left < right;
-    ensures to_integer(left) < to_integer(right) by apply(integer::int64_less_than_to_integer(left, right));
-}
-
-theorem use_int64_greater_equal_to_integer(left: int64, right: int64) {
-    requires left >= right;
-    ensures to_integer(left) >= to_integer(right) by apply(integer::int64_greater_equal_to_integer(left, right));
 }
 
 theorem use_floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
@@ -354,17 +329,9 @@ theorem reflect32(left: int32, right: int32) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right by apply(integer::int32_to_integer_less_equal_implies_less_equal(left, right));
 }
-theorem preserve64(left: int64, right: int64) {
-    requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by apply(integer::int64_less_equal_to_integer(left, right));
-}
 theorem reflect64(left: int64, right: int64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right by apply(integer::int64_to_integer_less_equal_implies_less_equal(left, right));
-}
-theorem equal64(left: int64, right: int64) {
-    requires to_integer(left) == to_integer(right);
-    ensures left == right by apply(integer::int64_to_integer_equal_implies_equal(left, right));
 }
 
 theorem integer_order_bridge(left: int32, right: int32) {

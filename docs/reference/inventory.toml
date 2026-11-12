@@ -3168,20 +3168,8 @@ id = "library.theorem.integer::uint64_remainder_to_integer"
 path = "reference/library/index.md#integeruint64_remainder_to_integer"
 
 [[item]]
-id = "library.theorem.integer::uint64_less_equal_to_integer"
-path = "reference/library/index.md#integeruint64_less_equal_to_integer"
-
-[[item]]
 id = "library.theorem.integer::uint64_to_integer_less_equal_implies_less_equal"
 path = "reference/library/index.md#integeruint64_to_integer_less_equal_implies_less_equal"
-
-[[item]]
-id = "library.theorem.integer::uint64_less_than_to_integer"
-path = "reference/library/index.md#integeruint64_less_than_to_integer"
-
-[[item]]
-id = "library.theorem.integer::uint64_to_integer_less_than_implies_less_than"
-path = "reference/library/index.md#integeruint64_to_integer_less_than_implies_less_than"
 
 [[item]]
 id = "library.theorem.integer::uint32_less_equal_to_integer"
@@ -3300,16 +3288,8 @@ id = "library.theorem.integer::int32_to_integer_less_equal_implies_less_equal"
 path = "reference/library/index.md#integerint32_to_integer_less_equal_implies_less_equal"
 
 [[item]]
-id = "library.theorem.integer::int64_less_equal_to_integer"
-path = "reference/library/index.md#integerint64_less_equal_to_integer"
-
-[[item]]
 id = "library.theorem.integer::int64_to_integer_less_equal_implies_less_equal"
 path = "reference/library/index.md#integerint64_to_integer_less_equal_implies_less_equal"
-
-[[item]]
-id = "library.theorem.integer::int64_to_integer_equal_implies_equal"
-path = "reference/library/index.md#integerint64_to_integer_equal_implies_equal"
 
 [[item]]
 id = "library.theorem.integer::int64_subtract_to_integer"
@@ -3390,14 +3370,6 @@ path = "reference/library/index.md#integermultiply_order_nonpositive"
 [[item]]
 id = "library.theorem.integer::scaled_product_bounds"
 path = "reference/library/index.md#integerscaled_product_bounds"
-
-[[item]]
-id = "library.theorem.integer::int64_less_than_to_integer"
-path = "reference/library/index.md#integerint64_less_than_to_integer"
-
-[[item]]
-id = "library.theorem.integer::int64_greater_equal_to_integer"
-path = "reference/library/index.md#integerint64_greater_equal_to_integer"
 
 [[item]]
 id = "library.theorem.integer::int32_remainder_to_integer"
