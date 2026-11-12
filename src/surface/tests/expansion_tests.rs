@@ -11309,6 +11309,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
             [
                 ProofTactic::Step,
                 ProofTactic::Branch(branch),
+                ProofTactic::Have(have),
                 ProofTactic::ApplyTheoremUsing { application, premises },
                 ProofTactic::Step,
                 ..
@@ -11323,6 +11324,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
                 && application.name == "ordered_is_less_equal"
                 && premises.len() == 1
+                && have.proposition == premises[0]
         ),
         "{tactics:#?}"
     );
