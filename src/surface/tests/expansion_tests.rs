@@ -20601,10 +20601,118 @@ fn store_index_separation_expands_and_replays() {
     );
 }
 
+// The same for a `size_t` index: the retained `have` is the `uint64` word
+// fact `((n - 1u64) as uint64) != 0u64`. The program is the one function of
+// `a_store_at_the_last_size_t_heap_element_keeps_the_first.md` it replays.
+#[test]
+#[ignore = "nightly: 0.5s; the int32 store expansion and the size_t fixtures run in the gate"]
+fn wide_store_index_separation_expands_and_replays() {
+    let c = "#include <stddef.h>\n#include <stdlib.h>\nint read_first(size_t n) {\n    int *q = malloc(n * sizeof(int));\n    if (q == 0) {\n        return 0;\n    }\n    q[0] = 7;\n    q[n - 1] = 1;\n    int r = q[0];\n    free(q);\n    return r;\n}\n";
+    let source = r#"verifying "wide.c";
+int32 read_first(size_t n) {
+    requires 2u64 <= n and n <= 1000u64;
+    ensures result == 0 or result == 7;
+}
+"#;
+    let sources = [("wide.c", c)];
+    let expanded = expand_function_proof_source(source, &sources, "read_first")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("have ((n - 1u64) as uint64) != 0u64 by"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("read_first.ensures_0", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+// `solve` proves `&q[j] != &q[0]` by stating the index disequality and
+// applying `separation::distinct_elements`; expansion writes both steps, and
+// the expanded proof replays with no search. The nightly variants cover
+// 64-bit and arithmetic indices.
+#[test]
+fn element_address_disequality_expands_and_replays() {
+    let source = r#"verifying "addresses.c";
+int32 distinct(int32* q, int32 j) {
+    requires j != 0;
+    ensures result == 0;
+} by {
+    have &q[j] != &q[0] by solve();
+}
+"#;
+    element_address_disequality_replays(
+        source,
+        &[("addresses.c", "int distinct(int *q, int j) { return 0; }\n")],
+        "distinct",
+    );
+}
+
+#[test]
+#[ignore = "nightly: element address disequality variants expand and cold replay"]
+fn element_address_disequality_variants_expand_and_replay() {
+    for (fixture, functions) in [
+        (
+            "solve_proves_element_addresses_distinct_from_their_indices",
+            &["last"][..],
+        ),
+        (
+            "solve_proves_element_addresses_distinct_at_each_index_type",
+            &["words", "longs", "last64"][..],
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = c_sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        for function in functions {
+            element_address_disequality_replays(&source, &sources, function);
+        }
+    }
+}
+
+fn element_address_disequality_replays(source: &str, sources: &[(&str, &str)], function: &str) {
+    let expanded = expand_function_proof_source(source, sources, function)
+        .unwrap_or_else(|error| panic!("{function}: {}", error.report()));
+    let (_, body) = expanded
+        .split_once(&format!("int32 {function}("))
+        .unwrap_or_else(|| panic!("{function} is expanded: {expanded}"));
+    // The function's own proof, up to the next declaration.
+    let body = ["\nint32 ", "\ntheorem "]
+        .into_iter()
+        .filter_map(|next| body.find(next))
+        .min()
+        .map_or(body, |end| &body[..end]);
+    assert!(
+        body.contains("apply(click::separation::distinct_elements(q, ") && !body.contains("solve"),
+        "{function}: {body}"
+    );
+    without_implicit_solve_for_claim(&format!("{function}.contract"), || {
+        verify_c0_sources(&expanded, sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{function}: {error}\n{expanded}"));
+}
+
 #[test]
 #[ignore = "nightly: store index separation variants expand and cold replay"]
 fn store_index_separation_variants_expand_and_replay() {
     for (fixture, function, claim) in [
+        (
+            "a_size_t_store_index_fact_variants_keep_the_first",
+            "read_j",
+            "read_j.ensures_0",
+        ),
+        (
+            "a_size_t_store_index_fact_variants_keep_the_first",
+            "signed_long",
+            "signed_long.ensures_0",
+        ),
+        (
+            "a_size_t_store_index_fact_variants_keep_the_first",
+            "stated_integer",
+            "stated_integer.contract",
+        ),
         (
             "a_store_at_another_symbolic_element_keeps_a_cached_one",
             "at_parameter",

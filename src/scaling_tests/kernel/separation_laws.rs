@@ -21,7 +21,7 @@ fn subrange_law_does_not_enumerate_the_interval() {
 }
 
 #[test]
-fn elements_law_does_not_walk_the_index_distance() {
+fn elements_laws_do_not_walk_the_index_distance() {
     for format in [
         MachineIntegerType::Int32,
         MachineIntegerType::Int64,
@@ -34,21 +34,30 @@ fn elements_law_does_not_walk_the_index_distance() {
                     MachineIntegerType::Int32 => MachineTerm::constant(n as u32),
                     _ => MachineTerm::int64_constant(i64::from(n)),
                 };
+                let base =
+                    CPointerValue::new(Pointer::symbolic(Variable(8_390_001)), CType::Int64Pointer);
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     crate::kernel::prove_separation_elements(
-                        CPointerValue::new(
-                            Pointer::symbolic(Variable(8_390_001)),
-                            CType::Int64Pointer,
-                        ),
+                        base.clone(),
                         width,
                         format,
                         term(0),
                         term(distance),
                     )
                 });
-                work
+                // The address law builds the same two addresses.
+                let (_, address_work) = crate::instrumentation::measure_deterministic_work(|| {
+                    crate::kernel::prove_separation_distinct_elements(
+                        base.clone(),
+                        width,
+                        format,
+                        term(0),
+                        term(distance),
+                    )
+                });
+                (work, address_work)
             });
-            assert!(costs[0] > 0);
+            assert!(costs[0].0 > 0 && costs[0].1 > 0);
             assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
         }
     }

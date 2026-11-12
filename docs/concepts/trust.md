@@ -27,7 +27,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | Smart planning and proof search | No | Part of `src/surface` | `src/surface/planning`, `src/surface/proof/smart_*` |
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
-| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 154 theorems, 43 of them kernel standard, in 4,100 lines | `library/` |
+| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 155 theorems, 44 of them kernel standard, in 4,100 lines | `library/` |
 | `extern` contracts | Yes: assumptions | 5 in the library, one per `snprintf` format a program uses, one per Rust core method an import calls, plus any you declare | `library/c/`, `src/languages/c/formatted_output.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
@@ -132,7 +132,7 @@ checks each one, in one of two ways; the gate runs it
   the `uint64` order transitivities, each with a pinned proof of explicit
   steps (`assumption()`, `normalize()`, `arithmetic_certificate`, and
   `apply` of earlier library theorems).
-- **43 are kernel standard theorems.** They have no proof. The check is
+- **44 are kernel standard theorems.** They have no proof. The check is
   only that the declaration's parameters, premises and conclusion match the
   proposition a Rust kernel builder constructs (`prove_*`, mostly in
   `src/kernel/api.rs`); the theorem is then recorded as an axiom
@@ -143,9 +143,12 @@ checks each one, in one of two ways; the gate runs it
   (`int32_remainder_to_integer`; the `uint32` and `uint64` divide and
   remainder laws; the 8 round trips; 16-bit packing; and the
   `uint32_from_le_bytes` byte layout), 5 Integer truncation laws, 6 `Nat`
-  conversion laws and 11 separation laws. `separation::elements` is
-  generic over its index type, which has no rigid C form, so it is checked
-  at each index type its builder admits: `int32`, `int64` and `uint64`.
+  conversion laws and 12 separation laws. `separation::elements` and
+  `separation::distinct_elements` are generic over their index type, which
+  has no rigid C form, so each is checked at each index type its builder
+  admits: `int32`, `int64` and `uint64`. `distinct_elements` concludes
+  `&p[i] != &p[j]` from `i != j` over the exact scaled offsets that memory
+  resolution already reads as equal exactly when the indices are.
 
 Ordinary verification then applies every library theorem as a dependency
 without re-checking it, except that a C proof that cites an `int32` library

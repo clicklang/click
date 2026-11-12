@@ -12,6 +12,12 @@ theorem elements<T, I>(p: T*, i: I, j: I) {
     ensures separate(memory(p[i]), memory(p[j]));
 }
 
+// Unequal indices give unequal element addresses.
+theorem distinct_elements<T, I>(p: T*, i: I, j: I) {
+    requires i != j;
+    ensures &p[i] != &p[j];
+}
+
 // Bounds are in elements of T, not bytes. Descriptors grant no ownership.
 theorem subrange<T>(p: T*, lo: int32, hi: int32, inner_lo: int32, inner_hi: int32) {
     requires lo <= inner_lo;
