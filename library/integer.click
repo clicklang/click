@@ -756,24 +756,9 @@ theorem uint64_remainder_to_integer(left: uint64, right: uint64) {
     ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
 }
 
-theorem uint64_less_equal_to_integer(left: uint64, right: uint64) {
-    requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by assumption();
-}
-
 theorem uint64_to_integer_less_equal_implies_less_equal(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right by assumption();
-}
-
-theorem uint64_less_than_to_integer(left: uint64, right: uint64) {
-    requires left < right;
-    ensures to_integer(left) < to_integer(right) by assumption();
-}
-
-theorem uint64_to_integer_less_than_implies_less_than(left: uint64, right: uint64) {
-    requires to_integer(left) < to_integer(right);
-    ensures left < right by assumption();
 }
 
 theorem uint32_pack_uint16_to_integer(low: uint32, high: uint32) {
@@ -895,29 +880,9 @@ theorem int32_to_integer_less_equal_implies_less_equal(left: int32, right: int32
     ensures left <= right by assumption();
 }
 
-theorem int64_less_equal_to_integer(left: int64, right: int64) {
-    requires left <= right;
-    ensures to_integer(left) <= to_integer(right) by assumption();
-}
-
-theorem int64_less_than_to_integer(left: int64, right: int64) {
-    requires left < right;
-    ensures to_integer(left) < to_integer(right) by assumption();
-}
-
-theorem int64_greater_equal_to_integer(left: int64, right: int64) {
-    requires left >= right;
-    ensures to_integer(left) >= to_integer(right) by assumption();
-}
-
 theorem int64_to_integer_less_equal_implies_less_equal(left: int64, right: int64) {
     requires to_integer(left) <= to_integer(right);
     ensures left <= right by assumption();
-}
-
-theorem int64_to_integer_equal_implies_equal(left: int64, right: int64) {
-    requires to_integer(left) == to_integer(right);
-    ensures left == right by assumption();
 }
 
 theorem int32_subtract_to_integer(left: int32, right: int32) {

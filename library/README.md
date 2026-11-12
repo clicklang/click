@@ -19,7 +19,7 @@ imports with `import click::...;`, and the modules those import:
 | `c/string.click` | when the C declares or calls one of its functions | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
 | `integer.click` | `import click::integer;` | `integer::` order, increment and definedness lemmas over native integer widths, `to_integer` bridges for native arithmetic, unsigned wrapping operations, and `Integer` division laws |
 | `format.click` | `import click::format;`; the C front end's `snprintf` contracts name it by path | `format::decimal_length`, `format::decimal_digit` and the other decimal rendering functions `printf` writes, with evaluation theorems |
-| `rust/i8.click` ... `rust/usize.click` | `import click::rust::u32;`; the Rust importer's core-method contracts name them by path | One module per Rust integer type: `u32::min`, `u32::checked_add` and the other core methods the importer specifies |
+| `rust/i8.click` ... `rust/usize.click` | `import click::rust::u32;`; the Rust importer's core-method contracts name them by path | One module per Rust integer type: `u32::min`, `u32::checked_add` and the other core methods the importer specifies, and the Rust names of the lemmas a Rust proof applies (`u32::multiply_to_integer`) |
 | `rust/vec.click` | `import click::rust::vec;` | The primitive type `Vec<T>`, its bodyless operations and their trusted axioms |
 | `rust/slice.click` | `import click::rust::slice;` | `Slice<T>`, a Rust slice as its data pointer and length |
 
@@ -56,7 +56,7 @@ library module's own proofs are checked against the whole library.
 
 Each module is parsed with the declarations of the modules before it, and
 its diagnostics name its own file and line. Types, pure functions, and
-theorems use ordinary Click declarations. Of the 152 library theorems, 108
+theorems use ordinary Click declarations. Of the 148 library theorems, 104
 have checked proofs; 44 kernel standard theorems (21 machine-integer laws
 including `integer::uint32_from_le_bytes`, 5 Integer truncation laws, 6 `Nat`
 laws and 12 separation laws including `separation::restrict`) are backed by

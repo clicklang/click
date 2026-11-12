@@ -928,24 +928,9 @@ mod tests {
                 "to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right))",
             ),
             (
-                "click::integer::uint64_less_equal_to_integer",
-                "left <= right",
-                "to_integer(left) <= to_integer(right)",
-            ),
-            (
                 "click::integer::uint64_to_integer_less_equal_implies_less_equal",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
-            ),
-            (
-                "click::integer::uint64_less_than_to_integer",
-                "left < right",
-                "to_integer(left) < to_integer(right)",
-            ),
-            (
-                "click::integer::uint64_to_integer_less_than_implies_less_than",
-                "to_integer(left) < to_integer(right)",
-                "left < right",
             ),
         ] {
             let source = format!(
@@ -1139,34 +1124,10 @@ mod tests {
                 "left <= right",
             ),
             (
-                "click::integer::int64_less_equal_to_integer",
-                "int64",
-                "left <= right",
-                "to_integer(left) <= to_integer(right)",
-            ),
-            (
-                "click::integer::int64_less_than_to_integer",
-                "int64",
-                "left < right",
-                "to_integer(left) < to_integer(right)",
-            ),
-            (
-                "click::integer::int64_greater_equal_to_integer",
-                "int64",
-                "left >= right",
-                "to_integer(left) >= to_integer(right)",
-            ),
-            (
                 "click::integer::int64_to_integer_less_equal_implies_less_equal",
                 "int64",
                 "to_integer(left) <= to_integer(right)",
                 "left <= right",
-            ),
-            (
-                "click::integer::int64_to_integer_equal_implies_equal",
-                "int64",
-                "to_integer(left) == to_integer(right)",
-                "left == right",
             ),
         ] {
             let source = format!(
