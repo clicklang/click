@@ -1,10 +1,10 @@
 # Unchanged adler2 crate adapter trial
 
 > **Status.** The three Rust units import `chunks_exact` through the library
-> contracts (`"iterators": "library"`,
-> [`design/rust-iterators.md`](../../../rust-iterators.md)), and every
-> `compute` proof is ported to them. Sections below that describe iterator
-> cursors and stored remaining counts describe the old hidden-state model.
+> contracts ([`design/rust-iterators.md`](../../../rust-iterators.md)), and
+> every `compute` proof is ported to them. Sections below that describe
+> iterator cursors and stored remaining counts describe the removed
+> hidden-state model.
 
 Click imports the complete selection rooted at `adler2::adler32_slice` and
 proves the four-lane helper bodies and the unchanged general computation.

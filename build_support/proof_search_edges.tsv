@@ -633,3 +633,4 @@ src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	driver	1
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_theorem_application_obligations	try_solve_closure	1
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_theorem_application_obligations	driver	2
+src/surface/proof/pure_theorems.rs	mixed	::verify_concrete_theorem_definition	enter_declaration_validation	1

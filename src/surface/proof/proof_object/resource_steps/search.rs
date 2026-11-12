@@ -13,6 +13,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         missing: &CResourceFact,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_open_for_missing_resource");
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Ok(None);
         };

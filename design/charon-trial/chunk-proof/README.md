@@ -4,8 +4,7 @@
 `examples/rust-chunks-exact` source, and `frozen.click` archives its original
 sidecar, respelled once in today's syntax with its contract and proof
 unchanged (`../README.md`, Complete canonical proof-port adoption). `chunks.click` preserves its full contract
-and is the example's current proof: the unit sets `"iterators": "library"`,
-so the iterator is a value of the library's `ChunksExact` and the proof
+and is the example's current proof: the iterator is a value of the library's `ChunksExact` and the proof
 cites its contract (`examples/rust-chunks-exact/README.md`).
 The native Charon artifact and import lock are committed for offline checks.
 

@@ -130,7 +130,7 @@ pub use spec::required_constructions::is_required_construction;
 pub(crate) use spec::{
     SpecCaptureRefusal, algebraic_argument_evaluation_guards, capture_spec_algebraic_value,
     capture_spec_integer_value, capture_spec_integer_value_with_guards,
-    refine_object_pointer_argument, with_preserved_integer_comparisons,
+    refine_object_pointer_argument_using_facts, with_preserved_integer_comparisons,
 };
 mod termination;
 // Checked internal fork/join; binding to imported pthread declarations is a

@@ -195,6 +195,8 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
     theorem_environment: &TheoremEnvironment,
     function_environment: Option<&CExecutionEnvironment>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
+    #[cfg(test)]
+    let _declaration = crate::kernel::search::FastOperationScope::enter_declaration_validation();
     debug_assert!(theorem.type_parameters().is_empty());
     let context = pure_theorem_context(theorem, spec_definitions)?;
     theorem

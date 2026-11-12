@@ -726,6 +726,8 @@ impl<'a> Proof<'a> {
         application: &TheoremApplication,
         surface_premises: &[ClickProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        #[cfg(test)]
+        let _operation = crate::kernel::search::FastOperationScope::enter("apply_theorem_using");
         let resolved_application = self.resolve_theorem_application(application)?;
         let surface_premises = surface_premises
             .iter()
@@ -767,6 +769,9 @@ impl<'a> Proof<'a> {
         &self,
         application: &TheoremApplication,
     ) -> Result<PreparedTheoremApplication, ClickError> {
+        #[cfg(test)]
+        let _operation =
+            crate::kernel::search::FastOperationScope::enter("prepare_theorem_application");
         if matches!(self.context.as_ref(), ProofContext::Execution(_))
             && self.is_at_function_exit()
             && self.focused_outcome_data().is_none()
@@ -791,6 +796,9 @@ impl<'a> Proof<'a> {
         application: &TheoremApplication,
         premises: Vec<ClickProposition>,
     ) -> Result<Self, ClickError> {
+        #[cfg(test)]
+        let _operation =
+            crate::kernel::search::FastOperationScope::enter("finish_prepared_theorem_application");
         let mut facts = self.facts().clone();
         let mut added = Vec::new();
         for conclusion in &prepared.conclusions {

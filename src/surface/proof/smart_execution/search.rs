@@ -11,6 +11,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         region: &CodeRegionRef,
     ) -> Result<Option<(Proof<'a>, Vec<Proposition>)>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_execute_until_descendant");
         if let CodeRegionRef::BackEdge(loop_index) = region {
             return crate::kernel::search::ProofSearch::try_execute_to_back_edge_descendant(
                 search_input,
@@ -67,6 +69,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         loop_index: Option<usize>,
     ) -> Result<Option<(Proof<'a>, Vec<Proposition>)>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_execute_to_back_edge_descendant");
         let frontier = &search_input
             .execution()
             .ok_or_else(|| {
@@ -149,6 +153,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         region: &CodeRegionRef,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_execute_until");
         Ok(
             crate::kernel::search::ProofSearch::try_execute_until_descendant(search_input, region)?
                 .map(|(proof, _)| proof),
@@ -162,6 +168,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_execute_to_exit_descendant(
         search_input: &Proof<'a>,
     ) -> Result<Option<(Proof<'a>, Vec<Proposition>)>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_execute_to_exit_descendant");
         if search_input.is_at_function_exit() {
             return Ok(None);
         }
@@ -198,6 +206,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_execute_to_exit(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_execute_to_exit");
         Ok(
             crate::kernel::search::ProofSearch::try_execute_to_exit_descendant(search_input)?
                 .map(|(proof, _)| proof),
@@ -216,6 +226,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         target: &ClickProposition,
         candidates: impl IntoIterator<Item = ClickProposition>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_fixed_state_fact_transport");
         let result_aware = matches!(search_input.context.as_ref(), ProofContext::FixedState(_))
             || search_input.focused_outcome_data().is_some()
             || search_input
@@ -244,6 +256,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         source: &ClickProposition,
         target: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_planned_execution_proposition_fact_transport");
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Ok(None);
         };
@@ -302,6 +316,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         source: &ClickProposition,
         target: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_execution_fact_transport");
         Ok(
             crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(
                 search_input,
@@ -324,6 +340,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         source: &ClickProposition,
         target: &ClickProposition,
     ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_execution_fact_transport_or_refusal");
         let ProofContext::Execution(_) = search_input.context.as_ref() else {
             return Err(search_input
                 .step_error("execution fact-transport search requires an execution proof"));
@@ -380,6 +398,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         target: &ClickProposition,
         candidates: impl IntoIterator<Item = ClickProposition>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_fact_transport_from_candidates");
         Ok(
             crate::kernel::search::ProofSearch::fact_transport_candidate_search(
                 search_input,
@@ -400,6 +420,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         target: &ClickProposition,
         candidates: impl IntoIterator<Item = ClickProposition>,
     ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("fact_transport_candidate_search");
         let apply = |premises: Vec<ClickProposition>| {
             search_input.driver().apply_step(ProofStep::TransportUsing {
                 source: source.clone(),
@@ -469,6 +491,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         application: &TheoremApplication,
     ) -> Result<ProofStep, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("select_fixed_state_theorem_application_step");
         let ProofContext::FixedState(context) = search_input.context.as_ref() else {
             return Err(search_input.step_error(
                 "fixed-state theorem-application search requires a fixed-state proof",
@@ -493,6 +517,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         application: &TheoremApplication,
     ) -> Result<ProofStep, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("select_execution_theorem_application_step");
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Err(search_input.step_error(
                 "execution theorem-application search requires an execution-frontier proof",
@@ -531,6 +557,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         application: &TheoremApplication,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_theorem_application");
         let selected = crate::kernel::search::ProofSearch::select_theorem_application_step(
             search_input,
             application,
@@ -551,6 +579,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         application: &TheoremApplication,
     ) -> Result<Option<ProofStep>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("select_theorem_application_step");
         // The kernel's population law has no declared requirements to
         // instantiate: its one premise is the written population count.
         if let Some(step) =
@@ -612,6 +642,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         spec_definitions: SpecDefinitions<'_>,
         theorem_environment: &TheoremEnvironment,
     ) -> Result<ProofStep, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("select_theorem_application_step_in_fixed_state");
         // Resolve names for semantic checking, but retain the written arguments
         // in the certificate. A match arm's pointer value may have no spelling
         // once its source binding has been replaced with a kernel value.
@@ -916,6 +948,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         application: &TheoremApplication,
     ) -> Result<ProofStep, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("select_pure_theorem_application_step");
         let ProofContext::Pure(context) = search_input.context.as_ref() else {
             return Err(search_input
                 .step_error("pure theorem-application search requires a proposition goal"));
@@ -1125,6 +1159,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         context: &TheoremApplicationContext<'_>,
         formal_premises: &[ClickProposition],
     ) -> Result<Vec<ClickProposition>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("argument_guard_premises");
         let mut premises = Vec::new();
         let arguments = theorem
             .parameters()

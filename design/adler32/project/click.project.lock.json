@@ -27,14 +27,14 @@
               "path": ".click/adler2/src/lib.rs.ullbc",
               "sha256": "ba226119c1aca0f07ee1c720f8b57d325a361854577c9f8fdc8ff9d9c232f23a"
             },
-            "identity": "83b88cfd0c7853ec6a6889dba5a2b9114d503d75c5befa9f276896464fab483e",
+            "identity": "80043081d00da0c96d23ee3725676a824b994380177618a8a4f46233524f948b",
             "inputs": {
               "src/algo.rs": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded",
               "src/lib.rs": "4acd41668fe30daffa37084e7e223f268957b816afc1864ffb3f5d6d7adf0890"
             }
           }
         },
-        "unit": "8215611befae0fd89116ecc2c47e635ac0b1ce3405bc1c7d2162cb6dd2a9b840"
+        "unit": "41e567c77fcf0f6ce2ab76c9b8dcec486cfc76988f4735f6b6f8dbda5ac01d8d"
       }
     },
     "adler_incremental": {
@@ -63,7 +63,7 @@
               "path": ".click/adler_incremental/project/adler2/incremental.rs.ullbc",
               "sha256": "f8cedbd3f3e174bf5fc4bacadd222e3d89ceb30cf110d6b257358a66f026a078"
             },
-            "identity": "df384d8b9013f77e0e7e6c2ac812b6a86c183b5a649c4a0af7ffdb238518937f",
+            "identity": "ffbb5e4a0ce8fef74159549199cb7041855eeba02b78a93513849a7cb613c654",
             "inputs": {
               "project/adler2/incremental.rs": "a024a7a3063b1903bec0e77c0453f7cc31692cbf23b160f44c01ae19453b8650",
               "vendor/adler2-2.0.1/src/algo.rs": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded",
@@ -71,7 +71,7 @@
             }
           }
         },
-        "unit": "96d86c03de4b51c944a80e1000f7631ef6c126148d58dafdaa04c8944d324fca"
+        "unit": "ca4a88ce733802cb4f74de292990b13e0b5de2284976c98c8071bdaa8f129e0a"
       }
     },
     "adler_resumed": {
@@ -100,7 +100,7 @@
               "path": ".click/adler_resumed/project/adler2/resumed.rs.ullbc",
               "sha256": "1856567f8363b942ed21f4ccf5bffae14cca998ba150b62b6031a1f3692fc810"
             },
-            "identity": "78e892b13fd39e4834fc9be94c2cfc32ac52aa1a27e5e9701b57f607f8909a7e",
+            "identity": "5d05ad22bb5ac3609090a1db6ee5709d0dd4088672fbf737885ad219b6518878",
             "inputs": {
               "project/adler2/resumed.rs": "7a6dc9715eb70d29a658d1b06b441a436e1c6a5a2ff00a2e718817d2c5583030",
               "vendor/adler2-2.0.1/src/algo.rs": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded",
@@ -108,7 +108,7 @@
             }
           }
         },
-        "unit": "352e96e59b8f98b7d84114c003f811cfbaebe9322378b1cc65a08fb4d1b80bce"
+        "unit": "9a87ea0338a205104667f0ec257f1d2b48a7ea1deafab43f212fc8be82c29636"
       }
     },
     "zlib": {

@@ -16,6 +16,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         premises: &[ClickProposition],
     ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("apply_arithmetic_using");
         if let Some(proof) = Self::try_unsigned_order_step_using(search_input, premises) {
             return Ok(proof);
         }
@@ -54,6 +56,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         ContractExpression,
         ContractExpression,
     )> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_unsigned_strict_fact");
         let less = Proposition::ConditionIs(
             ConditionTerm::unsigned_less_than(lower.clone(), upper.clone()),
             true,
@@ -90,6 +94,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_direct_logical_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_logical_closure");
         let mut scope = attempt::search_scope("direct logical closure");
         let mut budget = attempt::AttemptBudget::unbounded();
         let mut proof = search_input.clone();
@@ -221,6 +227,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_discharged_consequent_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_discharged_consequent_closure");
         let (Some(goal), Some(surface)) = (search_input.goal(), search_input.surface_goal()) else {
             return Ok(None);
         };
@@ -297,6 +305,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         goal: &Proposition,
         surface: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_discharged_consequent_conjunct_closure");
         let Some((fact, whole)) = search_input.facts().discharged_implication_containing(goal)
         else {
             return Ok(None);
@@ -366,6 +376,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_quantified_conjunct_projection_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_quantified_conjunct_projection_closure");
         let Some(goal @ Proposition::ForAll { body, .. }) = search_input.goal() else {
             return Ok(None);
         };
@@ -442,6 +454,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_direct_structural_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_structural_closure");
         let mut scope = attempt::search_scope("direct structural closure");
         let result = crate::kernel::search::ProofSearch::try_direct_structural_closure_inner(
             search_input,
@@ -464,6 +478,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_direct_structural_closure_under_binders(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_structural_closure_under_binders");
         if !conjunction_under_binders(search_input.goal()) {
             return Ok(None);
         }
@@ -484,6 +500,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         quantified: &mut dyn FnMut(&Proof<'a>) -> Result<Option<Proof<'a>>, ClickError>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_structural_closure_with_quantified");
         let mut scope = attempt::search_scope("direct structural closure");
         let result = crate::kernel::search::ProofSearch::try_direct_structural_closure_inner(
             search_input,
@@ -499,6 +517,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         quantified: &mut dyn FnMut(&Proof<'a>) -> Result<Option<Proof<'a>>, ClickError>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_structural_closure_inner");
         crate::kernel::search::ProofSearch::try_direct_structural_closure_inner_impl(
             search_input,
             quantified,
@@ -510,6 +530,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         quantified: &mut dyn FnMut(&Proof<'a>) -> Result<Option<Proof<'a>>, ClickError>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_structural_closure_inner_impl");
         check_verification_deadline()?;
         let mut budget = attempt::AttemptBudget::unbounded();
         if let Some(closed) = attempt::try_steps(
@@ -605,6 +627,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_solve_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_solve_closure");
         // solve reaches the same failing frame question through several of
         // its strategies and candidates; one closure attempt answers each
         // exact failed question once (`with_closure_failure_memo`).
@@ -633,6 +657,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_arithmetic_fact_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_arithmetic_fact_closure");
         if let Some(closed) =
             crate::kernel::search::ProofSearch::try_direct_logical_closure(search_input)?
         {
@@ -655,6 +681,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_arithmetic_with_selected_premises(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_arithmetic_with_selected_premises");
         if (SolveFallbackScope::active(SolveFallback::ConnectedFacts)
             && !SolveFallbackScope::active(SolveFallback::MatchArithmetic))
             || SolveFallbackScope::active(SolveFallback::ArithmeticSubgoal)
@@ -698,6 +726,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_late_arithmetic_with_selected_premises(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_late_arithmetic_with_selected_premises");
         if (SolveFallbackScope::active(SolveFallback::ConnectedFacts)
             && !SolveFallbackScope::active(SolveFallback::MatchArithmetic))
             || SolveFallbackScope::active(SolveFallback::ArithmeticSubgoal)
@@ -719,6 +749,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn scalar_offset_goal_is_refuted(
         search_input: &Proof<'a>,
     ) -> bool {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("scalar_offset_goal_is_refuted");
         let Some(Proposition::ConditionIs(condition, wanted)) = search_input.goal() else {
             return false;
         };
@@ -870,6 +902,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn scalar_equality_goal_is_refuted(
         search_input: &Proof<'a>,
     ) -> bool {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("scalar_equality_goal_is_refuted");
         if crate::kernel::search::ProofSearch::scalar_offset_goal_is_refuted(search_input) {
             return true;
         }
@@ -905,6 +939,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_selected_arithmetic(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_arithmetic");
         crate::kernel::search::ProofSearch::selected_arithmetic(search_input, true, &[])
     }
 
@@ -915,6 +951,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_native_goal_by_integer_reading(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_native_goal_by_integer_reading");
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
         else {
             return Ok(None);
@@ -971,6 +1009,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_direct_operation_identity(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_operation_identity");
         let (
             Some(goal @ Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), true)),
             Some(surface),
@@ -1006,6 +1046,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         identities: bool,
         spelled: &[(Proposition, ClickProposition)],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("selected_arithmetic");
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
         else {
             return Ok(None);
@@ -1177,6 +1219,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         candidates: &[Proposition],
         written_facts: &[Proposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_operation_identity_closure");
         let mut identities = operation_identities(machine_observations(goal, candidates));
         // A refutation may cite an identity that nothing written spells, or
         // one whose spelling proves a different identity, such as the signed
@@ -1301,6 +1345,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         listed: Option<&[ClickProposition]>,
     ) -> Result<Result<(Proof<'a>, Vec<(Proposition, ClickProposition)>), Proposition>, ClickError>
     {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("prove_operation_identities");
         use crate::kernel::IntegerTerm;
         let mut proof = search_input.clone();
         let mut established: Vec<(Proposition, ClickProposition)> = Vec::new();
@@ -1435,6 +1481,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_goal: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("with_goal_operation_identities");
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
@@ -1464,6 +1512,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_flat_solve_conjunction");
         let Some(surfaces) = search_input.wide_conjunction_surfaces() else {
             return Ok(None);
         };
@@ -1486,6 +1536,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_zero_witness_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_zero_witness_closure");
         let Some(ClickProposition::Exists {
             click_type: ClickType::C(syntax::C0Type::Int32),
             name,
@@ -1515,6 +1567,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_entry_existential_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_entry_existential_closure");
         if !matches!(
             search_input.surface_goal(),
             Some(ClickProposition::Exists { .. })
@@ -1577,6 +1631,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         selection: &CallerRequirementSelection,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_entry_existential_closure");
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Ok(None);
         };
@@ -1745,6 +1801,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         conjunct: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_carry_entry_conjunct");
         let entry = |proposition: &ClickProposition| ClickProposition::At {
             selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
                 region: CodeRegionRef::Function,
@@ -1794,6 +1852,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_solve_closure_strategies(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_solve_closure_strategies");
         let mut scope = attempt::search_scope("solve closure");
         // A stated whole goal already has the shortest explicit proof. Do not
         // decompose it or search for an alternative derivation.
@@ -1912,6 +1972,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_disequality_by_refuted_equality(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_disequality_by_refuted_equality");
         /// The equality a kernel disequality denies.
         fn denied(proposition: &Proposition) -> Option<Proposition> {
             match proposition {
@@ -2148,6 +2210,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_stored_value_goal(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_stored_value_goal");
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
@@ -2191,6 +2255,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_connected_fact_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_connected_fact_closure");
         let Some(_scope) = SolveFallbackScope::enter(SolveFallback::ConnectedFacts) else {
             return Ok(None);
         };
@@ -2246,6 +2312,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_restated_constant_upper_bound(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_restated_constant_upper_bound");
         let Some(Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
@@ -2324,6 +2392,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         exclude_exact_goal: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_solve_closure_after_direct");
         let mut scope = attempt::search_scope("solve closure after direct candidates");
         let result =
             crate::kernel::search::ProofSearch::try_solve_closure_after_direct_with_surfaces(
@@ -2341,6 +2411,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_solve_closure_with_surfaces");
         let mut scope = attempt::search_scope("solve closure with surfaces");
         // A stated whole goal already has the shortest explicit proof. Do not
         // decompose it or search for an alternative derivation.
@@ -2383,6 +2455,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         exclude_exact_goal: bool,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_solve_closure_after_direct_with_surfaces");
         crate::kernel::search::ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold(search_input,
             exclude_exact_goal,
             introduced_surfaces,
@@ -2396,6 +2470,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         introduced_surfaces: &[ClickProposition],
         allow_function_unfold: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery(
+            "try_solve_closure_after_direct_with_surfaces_and_function_unfold",
+        );
         // Plain solve and recursive logical closure share the same memory
         // strategies. A structural child must not lose read-over-write or
         // explicit frame transport merely because it was reached by `both`.
@@ -3128,6 +3206,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_pure_signed_arithmetic(
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_pure_signed_arithmetic");
         let ProofContext::Pure(context) = search_input.context.as_ref() else {
             return None;
         };
@@ -3148,6 +3228,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_execution_signed_arithmetic(
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_execution_signed_arithmetic");
         let goal = search_input.goal()?;
         if std::iter::once(goal.clone())
             .chain(condition_polarity_forms(goal))
@@ -3185,6 +3267,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_equality_from_opposite_bounds(
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_equality_from_opposite_bounds");
         // Each candidate is the two opposite orders, each with whether it
         // holds of every value: `0 <= x` in an unsigned order, which no
         // fact states and the step's own range reasoning supplies.
@@ -3317,6 +3401,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         goal: &Proposition,
         with_equalities: bool,
     ) -> (Vec<Proposition>, bool) {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("indexed_arithmetic_premises");
         let mut available = BTreeSet::new();
         let mut has_equalities = false;
         let mut visited = BTreeSet::new();
@@ -3448,6 +3534,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surfaces: &SurfacePropositionMap,
         anchor: Option<&ProgramPointRef>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_indexed_signed_arithmetic");
         let goal = search_input.goal()?;
         let surface_goal = search_input.surface_goal()?;
         let is_pure = matches!(search_input.context.as_ref(), ProofContext::Pure(_));
@@ -3565,6 +3653,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         anchor: Option<&ProgramPointRef>,
         goal: &Proposition,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_indexed_unsigned_order_chain");
         let available = crate::kernel::search::ProofSearch::indexed_arithmetic_premises(
             search_input,
             goal,
@@ -3606,6 +3696,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_goal_conditional_normalization(
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_goal_conditional_normalization");
         // The trusted ambient graph may close an equality without any
         // explicit condition premise. Emit the existing simple checker with
         // an empty input list; no fact search or extra theorem premise is
@@ -3734,6 +3826,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery(
+            "try_introduced_equality_then_function_unfold_closure",
+        );
         for surface in introduced_surfaces {
             for oriented in
                 std::iter::once(surface.clone()).chain(reverse_surface_equality(surface))
@@ -3773,6 +3869,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_function_unfold_solve_closure");
         // The structural closer introduces these binders and searches their
         // bodies with the guard or fresh variable available. Unfolding the
         // whole binder would repeat that same search for every candidate.
@@ -3857,6 +3955,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_constructor_evaluation_closure");
         // A fact recorded at a program point keeps its anchor, `at(p, s) ==
         // at(p, Shape::Circle(r))`; the anchored constructor is still one.
         let is_constructor_equation = |surface: &ClickProposition| {
@@ -3968,6 +4068,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_upper_bound_split_closure");
         // Each arm of a split runs the whole closure, which reaches this
         // split again on the next bound. Along a chain `x0 <= x1 <= ...`
         // that recursion followed every bound, so a goal no split decides
@@ -4349,6 +4451,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_outcome_anchored_order_transitivity");
         let data = search_input.focused_outcome_data()?;
         let anchor = data.premise_anchor.as_ref()?;
         let predecessor = match anchor.region {
@@ -4415,6 +4519,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_outcome_anchored_increment_order");
         let data = search_input.focused_outcome_data()?;
         let anchor = data.premise_anchor.as_ref()?;
         let predecessor = match anchor.region {
@@ -4519,6 +4625,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_goal: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_snapshot_transport_closure");
         if super::selected_arithmetic::machine_equality_bridge_active() {
             return Ok(None);
         }
@@ -4544,6 +4652,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_goal: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_snapshot_transport_closure_candidates");
         if let Some(proof) = crate::kernel::search::ProofSearch::try_cell_frame_transport_closure(
             search_input,
             surface_goal,
@@ -4675,6 +4785,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         source: &ClickProposition,
         surface_goal: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_projected_snapshot_transport");
         let Ok(lowered) = search_input
             .lower_surface_proposition_direct(source, "smart projected transport source")
         else {
@@ -4722,6 +4834,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_goal: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_cell_frame_transport_closure");
         let Some(Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -4807,6 +4921,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_constructor_guard_refutation(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_constructor_guard_refutation");
         let Some(Proposition::Implies(guard, _)) = search_input.goal() else {
             return Ok(None);
         };
@@ -4860,6 +4976,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_antecedent: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_implication_solve_closure");
         let mut base = search_input.clone();
         let mut antecedent = surface_antecedent.clone();
         let mut available_surfaces = introduced_surfaces.to_vec();
@@ -5008,6 +5126,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_goal: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_structural_solve_closure_with_surfaces");
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
@@ -5117,6 +5237,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         body: &Proposition,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_constructor_witness_exists_closure");
         use crate::kernel::{AlgebraicTermNode, AlgebraicValue};
         let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = body else {
             return Ok(None);
@@ -5263,6 +5385,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         name: &str,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_structural_exists_solve_closure");
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Ok(None);
         };
@@ -5309,6 +5433,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_goal: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_structural_forall_solve_closure");
         if let Some(enumerated) = crate::kernel::search::ProofSearch::try_finite_forall_enumeration(
             search_input,
             surface_goal,
@@ -5331,6 +5457,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_structural_and_solve_closure");
         let (split_proof, split, ids) = search_input.split_focused_both()?;
         let marker = split_proof.checkpoint();
         let Some(left) = crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
@@ -5356,6 +5484,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         name: &str,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_structural_predicate_solve_closure");
         match attempt::candidate_outcome(
             search_input
                 .driver()
@@ -5376,6 +5506,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_right: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_structural_or_solve_closure");
         for surface in [surface_left, surface_right] {
             let selected = (|| {
                 let Some(scope) =
@@ -5410,6 +5542,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_goal: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_finite_forall_enumeration");
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
@@ -5511,6 +5645,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_antecedent: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_introduced_antecedent_contradiction");
         let Some(introduced) = search_input.checked_facts().first() else {
             return Ok(None);
         };
@@ -5580,6 +5716,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         PropositionDerivation,
         Vec<(Proposition, ClickProposition)>,
     )> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("selected_solve_derivation");
         crate::kernel::search::ProofSearch::selected_solve_derivation_with_surfaces(
             search_input,
             exclude_exact_goal,
@@ -5596,6 +5734,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         PropositionDerivation,
         Vec<(Proposition, ClickProposition)>,
     )> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("selected_solve_derivation_with_surfaces");
         let (goal, derivation) =
             crate::kernel::search::ProofSearch::selected_solve_derivation_plan(
                 search_input,
@@ -5615,6 +5755,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         exclude_exact_goal: bool,
     ) -> Option<(Proposition, PropositionDerivation)> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("selected_solve_derivation_plan");
         // An execution goal is either a focused outcome or a frontier one.
         if matches!(search_input.context.as_ref(), ProofContext::Execution(_))
             && search_input.focused_outcome_data().is_none()
@@ -5655,6 +5797,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         premises: &[Proposition],
         introduced_surfaces: &[ClickProposition],
     ) -> Option<Vec<(Proposition, ClickProposition)>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("resolve_solve_premises");
         // Broad atomic derivations may retain a whole connected fact
         // component even when no checkable source spelling exists. Do not
         // render an unbounded component speculatively. The recorded-path
@@ -5694,6 +5838,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         premises: &[Proposition],
         introduced_surfaces: &[ClickProposition],
     ) -> Option<Vec<(Proposition, ClickProposition)>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("resolve_solve_premises_unmeasured");
         let frontier_anchor: Option<ProgramPointRef>;
         let (surface_facts, _, premise_anchor) = match search_input.context.as_ref() {
             ProofContext::Pure(context) => {
@@ -5882,6 +6028,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_facts: &SurfacePropositionMap,
         premise_anchor: Option<&ProgramPointRef>,
     ) -> Vec<ClickProposition> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("increment_headroom_premises");
         let mut premises = Vec::new();
         for (endpoint, other, strict, forward) in search_input
             .facts()
@@ -5941,6 +6089,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         premise_anchor: Option<&ProgramPointRef>,
         kernel: &Proposition,
     ) -> Option<ClickProposition> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("available_surface_fact");
         let surface = crate::kernel::search::ProofSearch::available_surface_fact_raw(
             search_input,
             surface_facts,
@@ -5960,6 +6110,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface: &ClickProposition,
         kernel: &Proposition,
     ) -> Option<ClickProposition> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("named_returned_pointer_surface_fact");
         let view = search_input.premise_fixed_state_view()?;
         let Some(result @ CValue::Pointer(_)) = view.fixed_state.result else {
             return None;
@@ -5988,6 +6140,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         premise_anchor: Option<&ProgramPointRef>,
         kernel: &Proposition,
     ) -> Option<ClickProposition> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("available_surface_fact_raw");
         Self::surface_fact_raw_for_purpose(
             search_input,
             surface_facts,
@@ -6002,6 +6156,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_facts: &SurfacePropositionMap,
         kernel: &Proposition,
     ) -> Option<ClickProposition> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("proposed_surface_goal");
         Self::surface_fact_raw_for_purpose(
             search_input,
             surface_facts,
@@ -6018,6 +6174,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         kernel: &Proposition,
         purpose: SurfaceSpellingPurpose,
     ) -> Option<ClickProposition> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("surface_fact_raw_for_purpose");
         // Option-based presentation misses must not restart work after a
         // candidate exhausted the verifier's sticky budget/deadline.
         if crate::instrumentation::deadline_exceeded() {
@@ -6518,6 +6676,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_goal_equality_rewrite_closure(
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_goal_equality_rewrite_closure");
         crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure_excluding(
             search_input,
             false,
@@ -6533,6 +6693,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         exclude_goal_fact: bool,
         allow_function_unfold: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_goal_equality_rewrite_closure_excluding");
         match crate::kernel::search::ProofSearch::try_indexed_direct_equality_rewrite(
             search_input,
             exclude_goal_fact,
@@ -6558,6 +6720,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         allow_function_unfold: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_connected_goal_equality_chain_closure");
         let Some(_scope) = SolveFallbackScope::enter(SolveFallback::ConnectedFacts) else {
             return Ok(None);
         };
@@ -6574,6 +6738,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_direct_model_equality_rewrite_closure(
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_model_equality_rewrite_closure");
         let goal = match search_input.goal()? {
             Proposition::Not(body) => body.as_ref(),
             goal => goal,
@@ -6596,6 +6762,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         equality: &Proposition,
     ) -> Option<ClickProposition> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("available_rewrite_equality");
         let frontier_anchor;
         let anchor = match search_input.context.as_ref() {
             ProofContext::Pure(_) => None,
@@ -6636,6 +6804,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         equality: &Proposition,
     ) -> Option<(ClickProposition, Proof<'a>)> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_goal_operand_constant_equality");
         let ClickProposition::Comparison {
             left: source_left,
             right: source_right,
@@ -6722,6 +6892,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         exclude_goal_fact: bool,
     ) -> std::ops::ControlFlow<Option<Proof<'a>>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_indexed_direct_equality_rewrite");
         use std::ops::ControlFlow::{Break, Continue};
         if matches!(
             search_input.goal(),
@@ -6937,6 +7109,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_typed_atomic_solve_from_selected_premises");
         let goal = search_input.goal()?.clone();
         if premise_pairs
             .iter()
@@ -6981,6 +7155,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         goal: &Proposition,
         derivation: &PropositionDerivation,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_constant_bound_weakening");
         let surface_goal = search_input.surface_goal()?.clone();
         let (goal_value, goal_bound, lower_bound) = match goal {
             Proposition::ConditionIs(
@@ -7147,6 +7323,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_unsigned_order_step(
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_unsigned_order_step");
         crate::kernel::search::ProofSearch::try_unsigned_order_step_from(
             search_input,
             &|kernel| search_input.unsigned_surface_fact(kernel),
@@ -7161,6 +7339,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surface_premises: &[ClickProposition],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_unsigned_order_step_using");
         // Only an unsigned order goal has a lemma, so only then are the
         // listed premises lowered.
         unsigned_order_parts(search_input.goal()?)?;
@@ -7193,6 +7373,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_fact: &dyn Fn(&Proposition) -> Option<ClickProposition>,
         reversals: bool,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_unsigned_order_step_from");
         let (order, left, right) = unsigned_order_parts(search_input.goal()?)?;
         let zero = MachineTerm::constant(0);
         // The goal from one comparison read the other way round, by
@@ -7357,6 +7539,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         goal: &Proposition,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_predecessor_upper_bound");
         if !matches!(search_input.context.as_ref(), ProofContext::FixedState(_)) {
             return None;
         }
@@ -7491,6 +7675,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_disjunctive_syllogism_closure(
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_disjunctive_syllogism_closure");
         let goal = search_input.goal()?.clone();
         if !matches!(goal, Proposition::ConditionIs(_, _)) {
             return None;
@@ -7561,6 +7747,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_disjunction_cases");
         for (kernel, surface) in premise_pairs {
             let Proposition::Or(left, right) = kernel else {
                 continue;
@@ -7659,6 +7847,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         goal: &Proposition,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_forall_instantiation");
         let tactics = plan_explicit_forall_instantiation(goal, premise_pairs).or_else(|| {
             let surface_goal = search_input.surface_goal()?;
             let extra_arguments = search_input
@@ -7704,6 +7894,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_indexed_forall_instantiation(
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_indexed_forall_instantiation");
         crate::kernel::search::ProofSearch::try_indexed_forall_instantiation_with_surfaces(
             search_input,
             &[],
@@ -7714,6 +7906,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         introduced_surfaces: &[ClickProposition],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_indexed_forall_instantiation_with_surfaces");
         let goal = search_input.goal()?;
         let execution_view = matches!(search_input.context.as_ref(), ProofContext::Execution(_))
             .then(|| search_input.premise_fixed_state_view())
@@ -8164,6 +8358,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_goal: &ClickProposition,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_forall_goal");
         let tactics = plan_explicit_forall_goal_from_premises(goal, surface_goal, premise_pairs)?;
         if tactics
             .iter()
@@ -8189,6 +8385,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_goal: &ClickProposition,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_unchanged_load_forall_goal");
         search_input.focused_outcome_data()?;
         let mut cursor = surface_goal;
         let mut proof = search_input.clone();
@@ -8306,6 +8504,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_typed_atomic_solve_closure(
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_typed_atomic_solve_closure");
         let (goal, derivation, premise_pairs) =
             crate::kernel::search::ProofSearch::selected_solve_derivation(search_input, false)?;
         // Resource unfolding records the body conjunction as one checked
@@ -8348,6 +8548,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         derivation: &PropositionDerivation,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Result<Option<Proof<'a>>, ()> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("extract_special_conjunct_premises");
         let exact_sources = premise_pairs
             .iter()
             .map(|(kernel, surface)| (kernel, surface))
@@ -8436,6 +8638,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surfaces: &[ClickProposition],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_restricted_solve_closure");
         if let Some(closed) =
             crate::kernel::search::ProofSearch::try_restricted_solve_closure_before_arithmetic(
                 search_input,
@@ -8471,6 +8675,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_listed_operation_identities");
         let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
         else {
             return Ok(None);
@@ -8514,6 +8720,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         surfaces: &[ClickProposition],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_restricted_solve_closure_before_arithmetic");
         if matches!(
             search_input.goal(),
             Some(Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. })
@@ -8820,6 +9028,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         goal: &Proposition,
         premises: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_pointer_inequality_rewrite");
         if !matches!(
             goal,
             Proposition::ConditionIs(ConditionTerm::PointerEqual(_, _), false)
@@ -8880,6 +9090,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         derivation: &PropositionDerivation,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Proof<'a>> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("check_typed_atomic_solve_candidate");
         let surface_goal = search_input.surface_goal();
         let tactics = recorded_signed_order_pairs(derivation, premise_pairs)
             .and_then(|ordered| plan_recorded_signed_order_path(goal, &ordered))
@@ -9220,6 +9432,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         hypothesis: &str,
         arguments: &[ContractExpression],
     ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("apply_smart_induction");
         let ProofContext::Pure(context) = search_input.context.as_ref() else {
             return Err(
                 search_input.step_error("induction application requires a pure theorem proof")
@@ -9297,6 +9511,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         step: ProofStep,
         retried_requirements: &mut std::collections::BTreeSet<PropositionIdentityKey>,
     ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_statement_step_with_retries");
         // Smart execution exposes supported missing source-backed
         // prerequisites before contextual compatibility reasoning can
         // discharge them invisibly. The retained proof retries the same
@@ -9332,6 +9548,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         step: ProofStep,
         stepped: Proof<'a>,
     ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("retry_statement_keeping_store_cells");
         let (Some(before), Some(after)) = (search_input.execution(), stepped.execution()) else {
             return Ok(stepped);
         };
@@ -9410,6 +9628,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         retried_requirements: &mut std::collections::BTreeSet<PropositionIdentityKey>,
         error: ClickError,
     ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("retry_statement_after_solve_open");
         let mut proof = search_input.clone();
         let mut refusal = error.clone();
         for _ in 0..MAX_AUTO_OPENINGS_PER_STATEMENT {
@@ -9443,6 +9663,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         retried_requirements: &mut std::collections::BTreeSet<PropositionIdentityKey>,
         initial: Result<Proof<'a>, ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("retry_statement_after_refusal");
         match initial {
             Ok(proof) => Ok(proof),
             Err(error) if error.missing_resource().is_some() => {
@@ -9521,6 +9743,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_statement_step(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_statement_step");
         crate::kernel::search::ProofSearch::try_statement_step_with_apply(search_input, |proof| {
             proof.driver().apply_step(ProofStep::Step)
         })
@@ -9531,6 +9755,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         step: ProofStep,
         retried_requirements: &mut std::collections::BTreeSet<PropositionIdentityKey>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_smart_statement_step");
         crate::kernel::search::ProofSearch::try_statement_step_with_apply(search_input, |proof| {
             crate::kernel::search::ProofSearch::try_statement_step_with_retries(
                 proof,
@@ -9544,6 +9770,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         mut apply: impl FnMut(&Proof<'a>) -> Result<Proof<'a>, ClickError>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_statement_step_with_apply");
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Ok(None);
         };

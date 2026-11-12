@@ -7,8 +7,8 @@ termination, and the fixed remainder's length, for arbitrary input bytes of
 any length a slice can have. Every input byte equals its value at function
 entry.
 
-The unit sets `"iterators": "library"` (`docs/reference/rust.md`, Library
-iterators), so the iterator is one value of the library's
+The iterator (`docs/reference/rust.md`, Exact chunk iterators and remainder)
+is one value of the library's
 `ChunksExact<uint8>` and the proof cites the contract in
 `click::rust::chunks_exact`. No cursor, remaining-byte count or generated
 local is named.
