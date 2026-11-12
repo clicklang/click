@@ -66,7 +66,7 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 The frozen inventory has **633 reference records**: 7 legacy bridges, 22 callers
 of those bridges, 6 operation references, 0 operation-to-driver references,
-19 mixed references, 123 driver references, 448 search references, 6 presentation
+20 mixed references, 122 driver references, 448 search references, 6 presentation
 references and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
 classifies every mixed and operation-to-driver record and groups all 6
@@ -349,7 +349,7 @@ authorize a new primitive or a verifier behavior change.
 
 | Candidate | First concrete step | What completing it would establish |
 | --- | --- | --- |
-| Boundary enforcement / interface cleanup | Design an operation-scoped discovery guard, with named existing exceptions. The inventoried search/support adapters have been extracted. | Clear ownership of discovery; eventual guards must distinguish allowed driver solve from search inside primitives, even when invoked by solve. No claim to detect arbitrary loops. |
+| Boundary enforcement / interface cleanup | Extend the theorem-operation discovery guard to the next audited primitive, identifying existing exceptions before enforcing it. The inventoried search/support adapters have been extracted. | Clear ownership of discovery; guards must distinguish allowed driver solve from search inside primitives, even when invoked by solve. No claim to detect arbitrary loops. |
 | Arithmetic obligation generation | Reduce one operator's inline safety decision; reproduce the spelling and position-drift controls above before designing a retained result plus obligation. | That operator generates and publishes bounded work while the driver alone solves its safety goal; no promise to migrate all arithmetic in one patch. |
 | L1 active-loan write | Fix one write and owner, grow aliases with one active loan, then symbolic loans with fixed aliases. Write the complete-operation red scaling test first. | Evidence of a concrete remaining scan, or a closed coverage gap if flat. Choose an index or explicit-proof repair only after the result. |
 

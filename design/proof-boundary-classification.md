@@ -2,7 +2,7 @@
 
 Source reconciliation at `c53645952` (2026-11-11), the completed head of
 PR #2520. Queue/merge status is separate from this source baseline. This
-classifies all 19 `mixed` records in `build_support/proof_search_edges.tsv`
+classifies all 20 `mixed` records in `build_support/proof_search_edges.tsv`
 and groups the 6 operation references. The operation-to-driver list is empty.
 A record is one caller/target pair, not one runtime call or one slow walk.
 A classified call is not a complexity proof for its callee. This documentation
@@ -84,7 +84,7 @@ Bare `transport(...)`, by contrast, is classified Smart and may discover evidenc
 Expanding the latter into the former is not by itself a search-free guarantee.
 `transport_certificate` is a different operation and must be audited separately.
 
-## The 19 mixed reference records
+## The 20 mixed reference records
 
 Paths below are relative to `src/surface/`.
 
@@ -105,9 +105,10 @@ Paths below are relative to `src/surface/`.
 | `plan_explicit_predecessor_upper_bound` | 1 | Search support. Used by solve directly and by the recorded signed-order planner; may plan equality rewrites. |
 | `plan_explicit_fact_transport` | 1 | Smart transport planner. Reached from smart execution and the bare-transport adapters on `Proof`; builds contexts from available facts/effects and tests derivability. Ordinary expansion covers the scalar routes listed in T1–T5; surviving legacy output still uses `TransportUsing`, whose remaining search is not excused by this classification. |
 | `segment_contains_pointer` | 1 | Declaration-validation search. `checking/segments.rs` calls `ProofSearch::proves` for bounds; the production caller is resource-definition read-coverage validation in `validation/definition_validation.rs`. This is not ordinary implicit solve on a user proof obligation. Determine the declaration-input cost bound and how expensive reasoning can be replaced by explicit evidence. |
+| `verify_concrete_theorem_definition` | 1 | Named guard exception for an independent cold generic declaration proof. It suspends the enclosing theorem-operation guard; nested primitives establish their own guards. Moving declaration validation out of fast application remains required. |
 
 Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
-(including bare transport), and 1 declaration-validation search record.
+(including bare transport), and 2 declaration-validation records.
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 

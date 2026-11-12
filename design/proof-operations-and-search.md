@@ -184,7 +184,7 @@ The source boundary rejects driver and registered search references inside
 `begin_have`. The primitive regression leaves implicit solving enabled and
 requires raw opening to report a prerequisite; driver opening succeeds and
 retains the prerequisite proof. Scoped-conversion expansion replays with
-implicit solving disabled. Other operation-to-driver records remain pending.
+implicit solving disabled. The operation-to-driver inventory is now empty.
 
 ## Contract-claim prerequisite boundary
 
@@ -222,8 +222,8 @@ checker or rebuilt proof state.
 
 ## Detailed caller classification
 
-The [caller audit](proof-boundary-classification.md) classifies the current 19 mixed and
-1 operation-to-driver records by why they invoke search or interpretation.
+The [caller audit](proof-boundary-classification.md) classifies the current 20 mixed and
+0 operation-to-driver records by why they invoke search or interpretation.
 It distinguishes expected dispatch from hidden obligation callbacks, declaration
 validation and the remaining primitive search dependencies.
 The proposed enforcement changes are for design review; no behavior changes or
