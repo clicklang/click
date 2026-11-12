@@ -21863,3 +21863,16 @@ fn live_apply_obligations_expand_at_the_original_frontier() {
     let false_premise = source.replace("increased(old(x), x)", "increased(x, old(x))");
     assert!(verify_c0_sources(&false_premise, &sources).is_err());
 }
+
+#[test]
+fn saved_array_application_obligation_expands_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/saved_array_theorem_obligation.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_function_proof_source(&source, &sources, "keep").unwrap();
+    without_implicit_solve_for_claim("keep.contract", || verify_c0_sources(&expanded, &sources))
+        .unwrap();
+}
