@@ -2647,14 +2647,16 @@ impl PureFactContext {
             return None;
         }
         let original = operands.map(|operand| operand.retain(view.format));
-        let reduced = operands.map(|operand| {
-            if let Some((guard, arms)) = operand.conditional()
+        let reduced = operands.map(|mut operand| {
+            // Consume the selected chain once. Re-entering comparison dispatch
+            // at every arm would re-key every remaining suffix quadratically.
+            while let Some((guard, arms)) = operand.conditional()
                 && let Some(value) = self.decide(&guard)
             {
-                arms[if value { 0 } else { 1 }].retain(view.format)
-            } else {
-                operand.retain(view.format)
+                crate::instrumentation::record_deterministic_work(1);
+                operand = arms[if value { 0 } else { 1 }];
             }
+            operand.retain(view.format)
         });
         if reduced == original {
             return None;
