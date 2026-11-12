@@ -914,6 +914,14 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeEr
         CRuntimeError::HeapAllocationSizeAboveInt32 => {
             CRuntimeError::HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE.to_string()
         }
+        CRuntimeError::WideRangeRespellingMayWrap(no_wrap) => format!(
+            "a range of {}-byte elements needs its endpoint times {} to not wrap (at most UINT64_MAX)",
+            no_wrap
+                .range
+                .memory_range()
+                .map_or(0, crate::kernel::CMemoryRange::element_width),
+            no_wrap.factor
+        ),
         CRuntimeError::LoadTypeMismatch { .. } => error.kernel_summary(),
         CRuntimeError::IndeterminatePointeeType => {
             "a pointer operation has no known pointee type".to_string()
