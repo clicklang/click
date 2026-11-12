@@ -9176,7 +9176,7 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     // The library's `ChunksExact<uint8>`, which a sidecar names
     // `ChunksExact<u8>`.
     if let Some((primitive, arguments)) = generics::primitive_instance_of(&algebraic_type.name)
-        && primitive == "ChunksExact"
+        && (primitive == "ChunksExact" || primitive == "SliceIter")
         && let [element] = arguments.as_slice()
     {
         let mut name = primitive;

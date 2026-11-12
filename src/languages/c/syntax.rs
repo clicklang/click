@@ -243,6 +243,10 @@ pub enum RustIteratorKind {
     Slice,
     /// `Enumerate<Iter<T>>`: the slice iterator's state and `_count`.
     Enumerate,
+    /// `core::slice::Iter` in the library-iterator model: one local holding
+    /// a value of the library's `SliceIter` at this type, which a proof
+    /// names `iter` and reads with that type's methods.
+    SliceLibrary(crate::kernel::TypeParameterName),
     /// `ChunksExact<u8>`: one local holding a value of the library's
     /// `ChunksExact<uint8>`, which a proof names `iter` and reads with that
     /// type's methods.

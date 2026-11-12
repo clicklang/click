@@ -6393,6 +6393,84 @@ axiom remainder_after<T>(it: ChunksExact<T>, k: Integer) {
 
 **Axiom:** trusted, not proved.
 
+## `click::rust::slice_iter`
+
+Source: `library/rust/slice_iter.click`, `import click::rust::slice_iter;`.
+
+### Rust slice iterators
+
+`click::rust::slice_iter` declares `SliceIter<T>`, the iterator Rust's
+`s.iter()` returns, as a primitive type like `Vec<T>`. An iterator value
+stands for the elements it will still yield, which are a slice:
+`slice_iter::as_slice(it)`, with `slice_iter::len(it)` elements. A value
+reads with its methods, `iter.as_slice().as_ptr()` and `iter.len()`
+([methods](../language/index.md#methods)). The two axioms are generic and
+trusted. What one `next()` leaves is stated by the contract of the call that
+makes it, at the element type it is made at, because an offset from a `T*`
+needs `T`'s size. A Rust unit with `"iterators": "library"` imports its slice
+iterators as values of this type ([Rust](../rust.md#slice-iterators-as-library-values));
+see `design/rust-iterators.md`.
+
+### `SliceIter`
+
+```click
+type SliceIter<T>;
+```
+
+Rust's `core::slice::Iter<T>`, the iterator `s.iter()` returns, as a primitive type of the Click library. An iterator value stands for the elements it will still yield, which are a slice: `as_slice(it)`, Rust's `it.as_slice()`.
+
+### `slice_iter::iter`
+
+```click
+function iter<T>(s: Slice<T>) -> SliceIter<T>;
+```
+
+The iterator `s.iter()`.
+
+### `slice_iter::as_slice`
+
+```click
+function as_slice<T>(it: SliceIter<T>) -> Slice<T>;
+```
+
+The elements `it` will still yield, Rust's `it.as_slice()`. The next `next()` returns a reference to its first element.
+
+### `slice_iter::len`
+
+```click
+function len<T>(it: SliceIter<T>) -> uint64;
+```
+
+The number of elements `it` will still yield, Rust's `it.len()`.
+
+### `slice_iter::after_next`
+
+```click
+function after_next<T>(it: SliceIter<T>) -> SliceIter<T>;
+```
+
+`it` after one `next()` that returned an element, for an `it` with `0 < len(it)`.
+
+### `slice_iter::as_slice_iter`
+
+```click
+axiom as_slice_iter<T>(s: Slice<T>) {
+    ensures slice_iter::as_slice(slice_iter::iter(s)) == s;
+}
+```
+
+**Axiom:** trusted, not proved. A new iterator will yield the whole slice.
+
+### `slice_iter::len_as_slice`
+
+```click
+axiom len_as_slice<T>(it: SliceIter<T>) {
+    ensures slice_iter::len(it) == slice::len(slice_iter::as_slice(it));
+}
+```
+
+**Axiom:** trusted, not proved. The count is the length of what is left.
+
 ## `click::separation`
 
 Source: `library/separation.click`, `import click::separation;`.

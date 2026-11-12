@@ -19,6 +19,14 @@ pub struct RustExport {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enums: Vec<Enum>,
     pub functions: Vec<Function>,
+    /// Whether a slice iterator is a value of its Click library type, read
+    /// through that library's contract (`design/rust-iterators.md`), as a
+    /// `chunks_exact` iterator always is. Otherwise it is the importer's
+    /// own hidden base, length and remaining count. A unit opts in with
+    /// `"iterators": "library"` while proofs migrate; the hidden-state model
+    /// and this switch go when they have.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub library_iterators: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

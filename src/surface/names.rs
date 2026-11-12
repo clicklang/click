@@ -313,6 +313,7 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/rust/vec.click",
     "library/rust/slice.click",
     "library/rust/chunks_exact.click",
+    "library/rust/slice_iter.click",
 ];
 
 /// Whether the library declaration `name` in module `identity` is known to

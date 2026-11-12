@@ -1,6 +1,10 @@
 # Rust iterators: one generic model, per-type library contracts
 
-Status: steps 1 and 2 done, step 3 next. `library/rust/chunks_exact.click`
+Status: steps 1 and 2 done, step 3 under way. A Rust unit with
+`"iterators": "library"` imports its slice iterators as values of the
+library's `SliceIter` (`library/rust/slice_iter.click`,
+`design/charon-trial/slice-iter`); the switch is temporary and goes when
+every slice-iterator fixture and adler2 have moved. `library/rust/chunks_exact.click`
 declares `ChunksExact<T>` with `len`, `nth`, `remainder` and `after_next` and
 the axioms relating them, and a proof reads a value with those methods. Every
 Rust unit imports its `chunks_exact` iterators as values of that type, and
@@ -173,6 +177,14 @@ The per-kind accessor table, `RustIteratorKind` and the old spellings
    iterators' hidden-state lowering and the `"iterators": "library"` unit
    option that let fixtures move one at a time are removed.
 3. Slice iterators, `enumerate` and ranges onto their library contracts.
+   Slice iterators: the model and one fixture
+   (`design/charon-trial/slice-iter`) are in, behind the temporary unit
+   option `"iterators": "library"`; the other fixtures and the adler2 tail
+   loops follow, then the option and `shared_arrays.rs` go. A slice
+   iterator's model is its remaining slice, `as_slice(it)`: there is no
+   `nth` or `after`, and what `next()` leaves is stated by the importer's
+   contract for the call at its element type, since a generic axiom cannot
+   offset a `T*`.
    This includes inclusive ranges, currently blocked by
    `bugs/solve-exhausts-its-budget-spelling-premises-of-an-inclusive-range-loop.md`,
    which should be re-checked under the new model.

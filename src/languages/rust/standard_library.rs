@@ -158,6 +158,9 @@ pub(super) fn chunks_exact_function(operation: &str) -> String {
 /// library type, read through that library's contract.
 pub(super) fn declare_iterator_operations(export: &mut RustExport) {
     use super::schema::{Function, Place, Span};
+    if export.library_iterators {
+        declare_slice_iter_operations(export);
+    }
     let has_chunks = export.functions.iter().any(|function| {
         function.mir.as_ref().is_some_and(|mir| {
             mir.locals
@@ -209,6 +212,115 @@ pub(super) fn declare_iterator_operations(export: &mut RustExport) {
             span: Span { line: 1, column: 1 },
         });
     }
+}
+
+/// The prefix of the `core_method` of each slice iterator operation the
+/// library-iterator model calls, `SliceIter::new`.
+pub(super) const SLICE_ITER: &str = "SliceIter::";
+
+/// The name of the external function for the slice iterator operation
+/// `operation` over elements spelled `element`: `SliceIter::next::<u8>`.
+pub(super) fn slice_iter_function(operation: &str, element: &str) -> String {
+    let mut name = super::names::qualified_name(["SliceIter", operation]);
+    super::names::push_type_argument(&mut name, element);
+    name
+}
+
+/// Declares the external functions a slice iterator's operations call, once
+/// for each element type the export iterates over.
+fn declare_slice_iter_operations(export: &mut RustExport) {
+    use super::schema::{Function, Place, Span};
+    let mut elements: Vec<Type> = Vec::new();
+    for function in &export.functions {
+        for local in function.mir.iter().flat_map(|mir| &mir.locals) {
+            if let Type::SharedArrayIterator { element } = &local.value_type
+                && !elements.contains(element)
+            {
+                elements.push(element.as_ref().clone());
+            }
+        }
+    }
+    for element in elements {
+        let Some(spelling) = element.scalar_name() else {
+            continue;
+        };
+        let pointer = || Type::Reference {
+            mutable: false,
+            pointee: Box::new(element.clone()),
+        };
+        let iterator = || Type::SharedArrayIterator {
+            element: Box::new(element.clone()),
+        };
+        let operations: [(&str, Vec<(&str, Type)>, Type); 4] = [
+            (
+                "new",
+                vec![("p", pointer()), ("n", Type::Usize)],
+                iterator(),
+            ),
+            ("len", vec![("it", iterator())], Type::Usize),
+            ("as_ptr", vec![("it", iterator())], pointer()),
+            ("after_next", vec![("it", iterator())], iterator()),
+        ];
+        for (operation, parameters, return_type) in operations {
+            export.functions.push(Function {
+                name: slice_iter_function(operation, spelling),
+                return_type,
+                parameters: parameters
+                    .into_iter()
+                    .map(|(name, value_type)| Place {
+                        name: name.into(),
+                        value_type,
+                        span: Span { line: 1, column: 1 },
+                    })
+                    .collect(),
+                body: vec![],
+                mir: None,
+                external: true,
+                captures: 0,
+                implements: None,
+                instance_of: None,
+                core_method: Some(format!("{SLICE_ITER}{operation}")),
+                span: Span { line: 1, column: 1 },
+            });
+        }
+    }
+}
+
+/// The contract of the slice iterator operation `operation`: the call
+/// stated with the library's `click::rust::slice_iter`, for the element
+/// type the function is declared at. What `next()` leaves is stated here,
+/// where the element's size is known: the remaining slice starts one
+/// element later and is one shorter.
+fn slice_iter_contract(function: &super::schema::Function, operation: &str) -> Option<String> {
+    const LIBRARY: &str = "click::rust::slice_iter";
+    const SLICE: &str = "click::rust::slice";
+    let name = &function.name;
+    let element = function
+        .parameters
+        .iter()
+        .map(|parameter| &parameter.value_type)
+        .chain(std::iter::once(&function.return_type))
+        .find_map(|ty| match ty {
+            Type::SharedArrayIterator { element } => element.scalar_name(),
+            _ => None,
+        })?;
+    let iterator = format!("SliceIter<{element}>");
+    let body = match operation {
+        "new" => format!(
+            "extern fn {name}(p: &{element}, n: usize) -> {iterator} {{\n    ensures result == {LIBRARY}::iter(Slice<{element}>::Slice(p, n));\n    ensures {SLICE}::as_ptr({LIBRARY}::as_slice(result)) == p;\n    ensures {SLICE}::len({LIBRARY}::as_slice(result)) == n;\n    ensures {LIBRARY}::len(result) == n;\n}}"
+        ),
+        "len" => format!(
+            "extern fn {name}(it: {iterator}) -> usize {{\n    ensures result == {LIBRARY}::len(it);\n}}"
+        ),
+        "as_ptr" => format!(
+            "extern fn {name}(it: {iterator}) -> &{element} {{\n    ensures result == {SLICE}::as_ptr({LIBRARY}::as_slice(it));\n}}"
+        ),
+        "after_next" => format!(
+            "extern fn {name}(it: {iterator}) -> {iterator} {{\n    requires 0u64 < {LIBRARY}::len(it);\n    ensures result == {LIBRARY}::after_next(it);\n    ensures {SLICE}::as_ptr({LIBRARY}::as_slice(result)) == {SLICE}::as_ptr({LIBRARY}::as_slice(it)) + 1u64;\n    ensures {SLICE}::len({LIBRARY}::as_slice(result)) == {SLICE}::len({LIBRARY}::as_slice(it)) - 1u64;\n    ensures {LIBRARY}::len(result) == {LIBRARY}::len(it) - 1u64;\n}}"
+        ),
+        _ => return None,
+    };
+    Some(format!("\n{body}\n"))
 }
 
 /// The contract of the `ChunksExact` operation `operation`: the call stated
@@ -264,6 +376,12 @@ pub(super) fn contracts(export: &RustExport) -> String {
         }
         if let Some(operation) = specification.strip_prefix(CHUNKS_EXACT) {
             source.push_str(&chunks_exact_contract(function, operation));
+            continue;
+        }
+        if let Some(operation) = specification.strip_prefix(SLICE_ITER) {
+            if let Some(contract) = slice_iter_contract(function, operation) {
+                source.push_str(&contract);
+            }
             continue;
         }
         if specification == OPTION_UNWRAP {
@@ -381,6 +499,7 @@ mod tests {
             span: span.clone(),
         };
         let export = RustExport {
+            library_iterators: false,
             schema: super::super::schema::SCHEMA,
             compiler_commit: String::new(),
             target: String::new(),

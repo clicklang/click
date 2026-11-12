@@ -53,6 +53,15 @@ pub(super) fn lower(
         .enumerate()
     {
         let parameter = index < owned_parameter_count;
+        if let Type::SharedArrayIterator { element } = &local.value_type
+            && super::library_iterators()
+        {
+            declarations = c_seq(
+                declarations,
+                cx.library_slice_iterator_storage(&local.name, element)?,
+            );
+            continue;
+        }
         if let Type::SharedArrayIterator { element } | Type::SharedArrayOption { element } =
             &local.value_type
         {
@@ -1074,7 +1083,19 @@ fn loop_iterator(
         .flat_map(|block| &block.statements)
         .find_map(|statement| {
             let (local, kind) = match statement {
-                S::SharedArrayNext { iterator, .. } => (iterator, K::Slice),
+                S::SharedArrayNext { iterator, .. } => (
+                    iterator,
+                    mir.locals
+                        .iter()
+                        .find(|local| local.name == *iterator)
+                        .and_then(|local| match &local.value_type {
+                            Type::SharedArrayIterator { element } if super::library_iterators() => {
+                                super::slice_iter_type(element).ok()
+                            }
+                            _ => None,
+                        })
+                        .map_or(K::Slice, K::SliceLibrary),
+                ),
                 S::EnumerateNext { iterator, .. } => (iterator, K::Enumerate),
                 S::ChunkNext { iterator, .. } => (iterator, K::Chunks),
                 S::RangeNext { iterator, .. } => {
@@ -1170,6 +1191,7 @@ fn region(
             // function returns, so the read is a statement of the header.
             let library_test = match &condition {
                 E::ChunkHasNext { iterator } => Some(cx.chunk_read_left(iterator)),
+                E::SharedArrayHasNext { iterator } => cx.library_slice_read_left(iterator),
                 _ => None,
             };
             let condition = if loop_.body_on_true {
@@ -1305,6 +1327,11 @@ fn region(
                     };
                 if let E::ChunkHasNext { iterator } = condition {
                     result = c_seq(result, cx.chunk_read_left(iterator));
+                }
+                if let E::SharedArrayHasNext { iterator } = condition
+                    && let Some(read) = cx.library_slice_read_left(iterator)
+                {
+                    result = c_seq(result, read);
                 }
                 result = c_seq(result, branch);
                 block = join;
@@ -1566,6 +1593,7 @@ mod tests {
         let mut baseline = None;
         for size in [8, 32, 128] {
             let mut export = RustExport {
+                library_iterators: false,
                 schema: 2,
                 compiler_commit: String::new(),
                 target: String::new(),
@@ -1645,6 +1673,7 @@ mod tests {
             let mut cx = Context {
                 references: BTreeMap::new(),
                 shared_array_iterators: BTreeMap::new(),
+                library_slice_iterators: BTreeMap::new(),
                 ranges: BTreeMap::new(),
                 enumerated: BTreeSet::new(),
                 shared_array_options: BTreeMap::new(),

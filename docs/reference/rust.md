@@ -1336,6 +1336,55 @@ proves the last index a loop yields and bounds the elements it reads from
 `.iter_mut()`, by-value array iteration and custom iterators remain outside
 this subset.
 
+### Slice iterators as library values
+
+A Rust unit with `"iterators": "library"` imports each slice iterator as one
+value of the library's `SliceIter` at its element type
+([`click::rust::slice_iter`](library/index.md#clickrustslice_iter)), not as
+the base, length and remaining-count locals above:
+
+```json
+"sum": {
+  "language": "rust",
+  "iterators": "library",
+  "sources": {"sum.rs": {}}
+}
+```
+
+`library` is the only value, and only a Rust unit takes the field. It is
+temporary: it exists while fixtures move to the library model
+(`design/rust-iterators.md`), after which that model is the only one and the
+field is removed. An enumerated iterator keeps the state above; one built
+from a library iterator starts from what that iterator has left.
+
+`s.iter()` is a call whose contract gives `slice_iter::iter(Slice<T>::Slice(p,
+n))` and, directly, `iter.as_slice().as_ptr() == p`,
+`iter.as_slice().len() == n` and `iter.len() == n`. A test for another
+element reads `iter.len()`. `next()` on an iterator that has one yields
+`iter.as_slice().as_ptr()` and leaves `iter.after_next()`, whose contract
+states, at the element type, that the remaining slice starts one element
+later and is one shorter, and that `len()` is one less.
+
+In a loop's clauses and phases `iter` is the iterator value the loop
+advances and `loop(i).iter` names it outside them, so `decreases iter.len()`
+ranks the loop. Where the iterator stands is an invariant the proof states:
+
+```text
+loop {
+    decreases iter.len();
+    invariant iter.len() <= bytes.len();
+    invariant iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len());
+    ...
+}
+```
+
+Carrying it across a `next()` regroups a pointer offset, `(bytes + k) + 1`
+as `bytes + (k + 1)`, which the proof cites as a theorem of its own
+([proof](https://github.com/clicklang/click/blob/master/design/charon-trial/slice-iter/sum.click)).
+The loop is imported as a `while (1)` whose header reads `iter.len()` and
+leaves by `break` when it is zero, so a `preserve` script splits on
+`0u64 < iter.len()` with a proof `if`, as for a `chunks_exact` loop.
+
 ## Range loops
 
 `for i in a..b` over an integer `a..b` of any admitted width holds the range
