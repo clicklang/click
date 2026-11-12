@@ -1319,3 +1319,56 @@ fn have_opening_does_not_copy_ambient_compositions() {
         "have copied ambient compositions: {curves:?}"
     );
 }
+
+#[test]
+#[ignore = "nightly: explicit pointer separation beside aliases"]
+fn explicit_pointer_separation_ignores_ambient_aliases() {
+    let (source, sources) = super::expansion_tests::mdtest_sources(
+        "mdtests/explicit_partition_separation_proves_pointer_distinctness.md",
+    );
+    let mut curves = Vec::new();
+    for size in [4, 16, 64] {
+        let parameters = (0..size)
+            .map(|i| format!(", int32* a{i}"))
+            .collect::<String>();
+        let requirements = (0..size)
+            .map(|i| format!("requires a{i} == p;\n"))
+            .collect::<String>();
+        let proof = source
+            .replace("int32* q)", &format!("int32* q{parameters})"))
+            .replace("owns *q;", &format!("owns *q;\n{requirements}"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| {
+                (
+                    name.clone(),
+                    text.replace(
+                        "int *q)",
+                        &format!("int *q{})", parameters.replace("int32", "int")),
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        let borrowed = sources
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        let (result, samples) =
+            crate::instrumentation::collect_tactic_work(|| verify_c0_sources(&proof, &borrowed));
+        result.unwrap_or_else(|e| panic!("{size}: {}", e.report()));
+        let work = samples
+            .iter()
+            .filter(|s| s.tactic.tactic_name == "have")
+            .map(|s| s.work)
+            .collect::<Vec<_>>();
+        assert_eq!(work.len(), 2);
+        curves.push((size, work));
+    }
+    eprintln!("explicit pointer separation source work: {curves:?}");
+    assert!(
+        curves
+            .windows(2)
+            .all(|p| p[0].1.iter().zip(&p[1].1).all(|(a, b)| *b <= *a + 4)),
+        "explicit separation grows with aliases: {curves:?}"
+    );
+}

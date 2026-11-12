@@ -1073,6 +1073,8 @@ impl<'a> Proof<'a> {
         observed_spelling: bool,
     ) -> Result<ProofScope<'a>, ClickError> {
         #[cfg(test)]
+        let _fast_operation = crate::kernel::search::FastOperationScope::enter("begin_have");
+        #[cfg(test)]
         CHECKED_HAVE_OPERATIONS.with(|count| count.set(count.get() + 1));
         if self.state().open_branches().is_discharged() {
             return Err(self.step_error("`have` follows a completed proof"));
