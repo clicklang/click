@@ -246,6 +246,13 @@ These reuse two existing bridge entries; they are not two new independent
 walks. A first guard failure can mask a later dependency. No guard escape was
 added, and the existing source dependency records remain frozen.
 
+Call entry-borrow restoration has a separate discovery guard. It restores
+retained entry identities to their residual frame without validating that
+partition again. Only call application with entry-state borrowed outputs creates
+the private transfer carrier. New produced ownership, post-state outputs,
+body-return descriptions and contract comparisons retain validation. This scoped
+guard does not cover their raw resource construction or complete `prepare_step`.
+
 Selected ownership overlap has its own discovery guard. It compares the
 supplied ranges and recorded base/endpoint equalities; it does not enumerate
 alias spellings. Ownership candidate selection remains a separate bridge.

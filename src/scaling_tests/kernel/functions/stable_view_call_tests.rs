@@ -239,3 +239,79 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
         );
     }
 }
+
+/// Restoring entry borrows pays for its returned facts, not aliases or
+/// unrelated owners. Each query forks the same prepared residual frame.
+#[test]
+fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
+    let symbolic = |id| Pointer {
+        block: PointerBlock::Symbolic(Variable(id)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let own = |base| CResourceFact::own_memory(CMemoryRange::new(base, 0u32.into(), 4u32.into()));
+    for axis in ["aliases", "frame"] {
+        let mut samples = Vec::new();
+        for count in [4_u64, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let selected = symbolic(881_000);
+            let facts = (0..if axis == "aliases" { count } else { 0 }).fold(
+                PureFactContext::new(),
+                |facts, index| {
+                    facts.assume_condition(
+                        ConditionTerm::pointer_equal(selected.clone(), symbolic(882_000 + index)),
+                        true,
+                    )
+                },
+            );
+            let returned = own(selected);
+            let mut source = ResourceContext::new_with_equalities(&facts)
+                .unchecked_with_fact(own(symbolic(883_000)))
+                .unchecked_with_fact(returned.clone());
+            if axis == "frame" {
+                for index in 0..count {
+                    source = source.unchecked_with_fact(own(symbolic(884_000 + index)));
+                }
+            }
+            assert!(source.validity_error(&facts).is_none());
+            let source_count = source.facts().len();
+            let frame = source
+                .clone()
+                .without_fact_incrementally(&returned, &facts)
+                .unwrap();
+            frame.synchronize_memory_equalities(&facts);
+            let outputs =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(returned.clone());
+            let mut runs = Vec::new();
+            for _ in 0..3 {
+                let ((joined, work), maps) = crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        ResourceContext::restore_call_borrows(
+                            ReturnedCallBorrows {
+                                frame: frame.clone(),
+                                outputs: outputs.clone(),
+                            },
+                            &facts,
+                        )
+                    })
+                });
+                let (joined, occurrences) = joined.unwrap();
+                assert_eq!(occurrences.len(), 1);
+                assert_eq!(joined.facts().len(), source_count);
+                assert_eq!(source.facts().len(), source_count);
+                assert_eq!(frame.facts().len(), source_count - 1);
+                assert_eq!(occurrences[0].0, returned);
+                runs.push((work, maps));
+            }
+            samples.push((count, runs));
+        }
+        eprintln!("call borrow restoration {axis}: {samples:?}");
+        for (_, runs) in &samples {
+            for (run, baseline) in runs.iter().zip(&samples[0].1) {
+                assert!(
+                    run.0 <= baseline.0 + 64 && run.1 <= baseline.1 * 3 + 512,
+                    "{axis}: {samples:?}"
+                );
+            }
+        }
+    }
+}

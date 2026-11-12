@@ -150,6 +150,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
         "refinement",
         function,
         &[],
+        ReturnResourceComposition::ValidateDescriptions,
         assumptions,
         budget,
     )? {

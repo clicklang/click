@@ -5926,6 +5926,35 @@ impl ResourceContext {
             .map(|(context, _)| context)
     }
 
+    pub(in crate::kernel) fn restore_call_borrows(
+        transfer: crate::kernel::functions::ReturnedCallBorrows,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, Vec<(CResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
+    {
+        #[cfg(test)]
+        let _fast =
+            crate::kernel::search::FastOperationScope::enter("call entry borrow restoration");
+        let (mut frame, outputs) = transfer.into_parts();
+        // Entry borrows restore their retained ownership to the same residual
+        // frame. Entry already established this memory partition; rediscovering
+        // it through aliases would recheck the produced transfer. New produced
+        // ownership and raw descriptions use the validating constructor below.
+        if frame.storage.facts.is_empty() {
+            frame.synchronize_memory_equalities(assumptions);
+        }
+        let mut inserted = Vec::new();
+        for fact in outputs.facts() {
+            let entry = frame.storage.next_entry_id;
+            frame.insert_fact(fact.clone());
+            if let Some(error) = frame.exclusive_validity_error(fact) {
+                return Err(error);
+            }
+            inserted.push((fact.clone(), frame.occurrence(entry)));
+        }
+        frame.advance_prepared_memory_equalities(assumptions);
+        Ok((frame, inserted))
+    }
+
     pub(crate) fn try_compose_into_valid_context_with_occurrences(
         mut self,
         facts: impl IntoIterator<Item = CResourceFact>,

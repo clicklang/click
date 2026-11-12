@@ -186,6 +186,28 @@ pub(crate) fn measure_resource_clause_attempts<T>(operation: impl FnOnce() -> T)
 fn record_resource_clause_attempt() {
     RESOURCE_CLAUSE_ATTEMPTS.with(|attempts| attempts.set(attempts.get() + 1));
 }
+/// Resource descriptions can be checked before their transfer is proved.
+/// Only entry borrows retain the ownership partition established at call entry.
+#[derive(Clone, Copy)]
+enum ReturnResourceComposition {
+    RestoreEntryBorrows,
+    ValidateDescriptions,
+}
+
+/// Entry-state borrows restored to the residual frame from which they were lent.
+/// New produced ownership does not use this transfer. Construction is private
+/// to call application; this is proof state, not a term.
+pub(in crate::kernel) struct ReturnedCallBorrows {
+    frame: ResourceContext,
+    outputs: ResourceContext,
+}
+
+impl ReturnedCallBorrows {
+    pub(in crate::kernel) fn into_parts(self) -> (ResourceContext, ResourceContext) {
+        (self.frame, self.outputs)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CFunctionResourceTransfer {
     helper_call: Option<Arc<super::mutexes::helper_contracts::HelperCall>>,
@@ -3765,6 +3787,14 @@ fn execute_verified_function_applications_with_suspension(
             name,
             interface,
             &prepared_outputs,
+            if interface.resource_ensures().iter().all(|resource| {
+                resource.role() == CResourceTransferRole::Borrow
+                    && resource.snapshot() == CResourceSnapshot::Entry
+            }) {
+                ReturnResourceComposition::RestoreEntryBorrows
+            } else {
+                ReturnResourceComposition::ValidateDescriptions
+            },
             &effective_assumptions,
             budget,
         )? {
@@ -12921,6 +12951,7 @@ fn evaluate_function_return_resources(
         function.name(),
         function.contract_interface(),
         &[],
+        ReturnResourceComposition::ValidateDescriptions,
         assumptions,
         budget,
     )
@@ -12938,6 +12969,7 @@ fn evaluate_contract_return_resources(
     interface_name: &str,
     interface: &CFunctionContractInterface,
     prepared_outputs: &[Option<CResourceFact>],
+    composition: ReturnResourceComposition,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ContractReturnResources, CRuntimeError>> {
@@ -13013,10 +13045,22 @@ fn evaluate_contract_return_resources(
             "ensured resource composition",
             || {
                 let frame = caller_resources_after_requirements.clone();
-                let facts = ensured_resources.facts().iter().cloned();
-                // Entry established the caller frame. Check every new output
-                // against it without revalidating old-old pairs.
-                frame.try_compose_into_valid_context_with_occurrences(facts, assumptions)
+                match composition {
+                    ReturnResourceComposition::RestoreEntryBorrows => {
+                        ResourceContext::restore_call_borrows(
+                            ReturnedCallBorrows {
+                                frame,
+                                outputs: ensured_resources.clone(),
+                            },
+                            assumptions,
+                        )
+                    }
+                    ReturnResourceComposition::ValidateDescriptions => frame
+                        .try_compose_into_valid_context_with_occurrences(
+                            ensured_resources.facts().iter().cloned(),
+                            assumptions,
+                        ),
+                }
             },
         ) {
             Ok(resources) => resources,
