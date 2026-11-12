@@ -917,7 +917,10 @@ impl<'a> Proof<'a> {
         // the surrounding proof context.
         let lowering_assumptions =
             if crate::surface::proof::theorem_application::preparing_application() {
-                self.facts().assumptions().clone().retaining_argument_obligations()
+                self.facts()
+                    .assumptions()
+                    .clone()
+                    .retaining_argument_obligations()
             } else {
                 assumptions_from_propositions(&explicit_premises)
             };
