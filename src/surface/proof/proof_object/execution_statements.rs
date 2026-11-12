@@ -981,8 +981,11 @@ impl<'a> Proof<'a> {
             })?;
             for obligation in obligations {
                 crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
-                    self.step_error("initializer has an unproved evaluation obligation")
-                        .with_unresolved_requirement(&obligation),
+                    self.step_error(format!(
+                        "tactic `{callee}` argument `{}` has an unproved evaluation obligation",
+                        parameter.name()
+                    ))
+                    .with_unresolved_requirement(&obligation),
                 )?;
             }
             let crate::kernel::AlgebraicValue::C(value) = value else {
