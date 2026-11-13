@@ -35,7 +35,11 @@ fn resource_index_variable(ty: &AlgebraicType, id: u64) -> AlgebraicTerm {
     }
 }
 
-fn check_resource_publication_work(fold: bool, prepare_requirements: bool) {
+fn check_resource_publication_work(
+    fold: bool,
+    prepare_requirements: bool,
+    retain_requirements: bool,
+) {
     let samples = [4_u64, 16, 64].map(|size| {
         let _session = VerificationSession::enter();
         let ty = resource_index_type("IntegerModel", vec![AlgebraicValueType::Integer]);
@@ -123,13 +127,26 @@ fn check_resource_publication_work(fold: bool, prepare_requirements: bool) {
         if prepare_requirements {
             assumptions.build_stated_proposition_index();
         }
+        if retain_requirements {
+            assumptions = assumptions.retaining_required_obligations();
+        }
         let mut interface = CFunctionContractInterface::new(CType::Void, vec![]);
         interface.composite_resource_definitions = vec![definition.clone()];
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
             if fold {
-                rewrite_resource_instance(&opened, &instance, &definition, &assumptions, false)
-                    .unwrap()
-                    .1
+                let rewrite = rewrite_resource_instance_selecting_children(
+                    &opened,
+                    &instance,
+                    &definition,
+                    std::slice::from_ref(&definition),
+                    &assumptions,
+                    false,
+                    None,
+                )
+                .unwrap();
+                assert_eq!(rewrite.body_clauses.len(), 1);
+                assert_eq!(rewrite.body_clauses[0].obligation().proposition(), &body);
+                rewrite.semantic_facts
             } else {
                 checked_returned_instance_body_facts(
                     state.resources(),
@@ -165,12 +182,20 @@ fn check_resource_publication_work(fold: bool, prepare_requirements: bool) {
 
 #[test]
 fn resource_publication_ignores_unrelated_stated_facts() {
-    check_resource_publication_work(false, false);
-    check_resource_publication_work(true, true);
+    check_resource_publication_work(false, false, false);
+    check_resource_publication_work(true, true, false);
 }
 
 #[test]
 #[ignore = "red diagnostic: fold prerequisite checking forces the cold stated-fact index"]
-fn cold_fold_requirements_ignore_unrelated_stated_facts() {
-    check_resource_publication_work(true, false);
+fn legacy_checked_fold_requirements_ignore_unrelated_stated_facts() {
+    check_resource_publication_work(true, false, false);
+}
+
+/// The driver prepares written folds with obligation retention enabled, then
+/// proves the returned clauses at the input state. No warm-up of fact indexes
+/// belongs in this measurement of the actual preparation mode.
+#[test]
+fn prepared_fold_emits_body_obligation_without_indexing_ambient_facts() {
+    check_resource_publication_work(true, false, true);
 }
