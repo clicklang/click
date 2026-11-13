@@ -36,7 +36,7 @@ use crate::kernel::{
     c_unverified_function_contract_claims_diagnostic,
     c_verified_function_contract_claims_with_checked_propositions, c_verified_function_rule,
     c_verified_function_termination_rules, c_while_with_invariant_and_effect_checks, int32,
-    prove_c_condition_fact_direct_transport, prove_c_condition_fact_transport,
+    prove_c_condition_fact_transport,
     prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems,
     prove_c_function_contract_refinement, prove_int32_le_antisymmetric,
     prove_owned_resource_quantity_nonnegative, prove_symbolic_c_condition_evaluation,

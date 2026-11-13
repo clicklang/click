@@ -2001,30 +2001,6 @@ pub(crate) fn fact_conflicts_with_assumptions(
     }
 }
 
-/// Appends the parts of `proposition` a direct fact transport reasons with:
-/// its conditions, effect summaries, frees, separations, and compositions,
-/// through conjunctions and in order.
-pub(crate) fn direct_fact_transport_premises(
-    proposition: &Proposition,
-    facts: &mut Vec<Proposition>,
-) {
-    match proposition {
-        Proposition::ConditionIs(_, _)
-        | Proposition::CMemoryEffectSummary { .. }
-        | Proposition::CHeapAllocationFreed { .. }
-        | Proposition::CResourceSeparate { .. }
-        // Owned ranges in one composition are pairwise separate; the
-        // effect-disjointness legs of direct transport need that
-        // separation when no explicit separate(...) fact writes it.
-        | Proposition::CResourceComposition(_) => facts.push(proposition.clone()),
-        Proposition::And(left, right) => {
-            direct_fact_transport_premises(left, facts);
-            direct_fact_transport_premises(right, facts);
-        }
-        _ => {}
-    }
-}
-
 #[cfg(test)]
 mod tests {
 

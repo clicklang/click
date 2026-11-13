@@ -564,18 +564,6 @@ impl PureFactList {
         self.remove_sequences(&removed);
     }
 
-    /// Removes every copy of `fact`, found through the index: what
-    /// `retain(|available| available != fact)` keeps.
-    pub(crate) fn remove_all(&mut self, fact: &Proposition) {
-        let removed = self
-            .exact_index()
-            .by_fact
-            .get(fact)
-            .map(|sequences| sequences.iter().copied().collect::<Vec<_>>())
-            .unwrap_or_default();
-        self.remove_sequences(&removed);
-    }
-
     fn remove_sequences(&mut self, removed: &[u64]) {
         let Some(first_removed) = removed.iter().copied().min() else {
             return;
@@ -590,39 +578,6 @@ impl PureFactList {
         }
         self.end_mutation(exact);
         self.invalidate_from(first_removed);
-    }
-
-    /// Replaces a transported fact's source with its target at the source's
-    /// position: downstream premise selection is order-sensitive, so
-    /// rewriting must not reorder the working set. Kept out of line, like
-    /// the by-value proposition handling of the shared transition
-    /// dispatcher it serves; the expansion small-stack regression pins that
-    /// boundary.
-    #[inline(never)]
-    pub(crate) fn replace_fact_in_place(&mut self, source: &Proposition, target: &Proposition) {
-        let position = self
-            .exact_index()
-            .by_fact
-            .get(source)
-            .and_then(|sequences| sequences.get_min().copied());
-        if let Some(sequence) = position {
-            if self.contains(target) {
-                self.remove_sequences(&[sequence]);
-            } else {
-                let mut exact = self.begin_mutation();
-                let target = Arc::new(target.clone());
-                if let Some(previous) = self.facts.insert(sequence, target.clone())
-                    && let Some(index) = exact.as_mut()
-                {
-                    index.remove(sequence, &previous);
-                    index.insert(sequence, &target);
-                }
-                self.end_mutation(exact);
-                self.invalidate_from(sequence);
-            }
-        } else if !self.contains(target) {
-            self.push(target.clone());
-        }
     }
 
     fn invalidate_from(&mut self, sequence: u64) {
@@ -803,16 +758,6 @@ mod tests {
         };
         check(&list, &flat);
         let copy = list.clone();
-        list.replace_fact_in_place(&shapes[3], &shapes[20]);
-        let position = flat.iter().position(|fact| fact == &shapes[3]).unwrap();
-        flat[position] = shapes[20].clone();
-        check(&list, &flat);
-        list.replace_fact_in_place(&shapes[4], &shapes[20]);
-        flat.retain(|fact| fact != &shapes[4]);
-        check(&list, &flat);
-        list.remove_all(&shapes[5]);
-        flat.retain(|fact| fact != &shapes[5]);
-        check(&list, &flat);
         list.extend(shapes[30..34].iter().cloned());
         flat.extend(shapes[30..34].iter().cloned());
         check(&list, &flat);

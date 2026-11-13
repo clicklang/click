@@ -356,14 +356,13 @@ Their mechanisms are described here; their cost is not accepted.
   compared with the arms' through one membership index over binding values,
   linear in the binding count, which grows with proof length
   (`interface_binding_inheritance_is_near_linear_in_the_binding_count`).
-- **Uncharged transport contexts.** Two context builds are charged nothing
-  (`assume_proposition_uncharged`, counted by `count_uncharged_context_entries`).
-  A step's direct-transport context covers its statement-local facts, which
-  hold every observable resource fact of the state, so it is linear in
-  unrelated resources at each call step. An explicit `transport` assumes the
-  path's memory-effect facts and every available fact afresh, so each
-  transport is linear in the path. Carrying those contexts with the proof
-  state would remove both.
+- **Uncharged transport contexts.** Explicit transport planning still builds
+  contexts through `assume_proposition_uncharged`, counted separately by
+  `count_uncharged_context_entries`. It admits the path's memory-effect facts
+  and available premises afresh, so that preparation grows with the path.
+  Carrying an indexed context with the proof state would avoid rebuilding it.
+  This is separate from statement-result publication, which retains producer
+  facts and does not construct a bonus-fact transport context.
 - **Early-return statement checking.** Under callgrind, checking the
   128-return expansion executes 3.12 billion instructions and the 64-return
   one 1.43 billion (2.2x; 5.85 and 2.07 billion, 2.8x, before the sharing

@@ -3065,23 +3065,6 @@ impl ResourceContext {
             })
     }
 
-    /// The owned field-bearing instances of this context, from the instance
-    /// index. Charges one work unit per visited fact.
-    pub(in crate::kernel) fn owned_instances<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
-        self.storage
-            .index
-            .instances
-            .iter()
-            .flat_map(|(_, entries)| entries.iter())
-            .map(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.fact(*entry)
-            })
-            .filter(|fact| fact.is_own())
-    }
-
     /// Whether this context holds any owned instance with a C pointer
     /// argument: the constant-time gate before any cell asks the index.
     pub(in crate::kernel) fn has_owned_instances_with_pointer_arguments(&self) -> bool {

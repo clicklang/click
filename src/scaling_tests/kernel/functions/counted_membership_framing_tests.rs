@@ -207,3 +207,45 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
         "unrelated caller composites are opened for a transferred flat cell: {samples:?}"
     );
 }
+
+#[test]
+fn call_frame_preparation_ignores_unrelated_retained_instances() {
+    let samples = [4_u64, 16, 64].map(|size| {
+        let _session = VerificationSession::enter();
+        let schema =
+            ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let residual = (0..size).fold(ResourceContext::new(), |resources, index| {
+            resources.unchecked_with_fact(CResourceFact::own(CResource::Instance(
+                ResourceInstance::new(
+                    Variable(8_600_000 + index),
+                    "boxed".into(),
+                    vec![CValue::pointer(Pointer::symbolic(Variable(8_610_000 + index))).into()]
+                        .into(),
+                    schema.clone(),
+                    vec![int32(0).into()].into(),
+                )
+                .unwrap(),
+            )))
+        });
+        let assumptions = PureFactContext::new();
+        let state = CState::new().with_resource_context(residual.clone());
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let _fast = crate::kernel::search::FastOperationScope::enter(
+                "call frame retaining opaque instances",
+            );
+            call_kept_ownership(
+                &residual,
+                &[boxed_definition().with_instance_schema(Some(schema.clone()))],
+                &state,
+                &assumptions,
+            )
+        });
+        work
+    });
+    eprintln!("call frame preparation: {samples:?}");
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
