@@ -5964,6 +5964,17 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             format!("{name}({})", describe_c_expression(pointer))
         }
         CExpression::Index(base, index) => {
+            // A read through the checked address of a C++ reference's
+            // object is the original lvalue. The read itself requires live
+            // storage; diagnostic address prose is not source syntax.
+            if let CExpression::CheckedObjectAddress(object) = base.as_ref()
+                && matches!(
+                    index.as_ref(),
+                    CExpression::Value(CValue::Int32(int32_constant!(0)))
+                )
+            {
+                return describe_c_expression(object);
+            }
             let (base, index) = (describe_c_expression(base), describe_c_expression(index));
             match object_at_address(&base) {
                 Some(object) if index == "0" => object.to_string(),
@@ -7021,10 +7032,14 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             read
         }
         ContractExpression::Index(base, index) => {
-            let (base, index) = (
-                describe_contract_expression(base),
-                describe_contract_expression(index),
-            );
+            let index = describe_contract_expression(index);
+            if index == "0"
+                && let ContractExpression::CFragment(CExpression::CheckedObjectAddress(object)) =
+                    base.as_ref()
+            {
+                return describe_c_expression(object);
+            }
+            let base = describe_contract_expression(base);
             match object_at_address(&base) {
                 Some(object) if index == "0" => object.to_string(),
                 // An element of a slice value reads through its data
