@@ -3075,6 +3075,42 @@ id = "cli.upgrade.-h"
 path = "reference/cli/versions.md#synopsis"
 
 [[item]]
+id = "cli.add.command"
+path = "reference/cli/versions.md#languages"
+
+[[item]]
+id = "cli.add.--help"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.add.-h"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.remove.command"
+path = "reference/cli/versions.md#languages"
+
+[[item]]
+id = "cli.remove.--help"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.remove.-h"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.languages.command"
+path = "reference/cli/versions.md#languages"
+
+[[item]]
+id = "cli.languages.--help"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
+id = "cli.languages.-h"
+path = "reference/cli/versions.md#synopsis"
+
+[[item]]
 id = "cli.version.add.command"
 path = "reference/cli/versions.md#click-version-add"
 
@@ -3085,14 +3121,6 @@ path = "reference/cli/versions.md#synopsis"
 [[item]]
 id = "cli.version.add.-h"
 path = "reference/cli/versions.md#synopsis"
-
-[[item]]
-id = "cli.version.add.--rust"
-path = "reference/cli/versions.md#click-version-add"
-
-[[item]]
-id = "cli.version.add.--cpp"
-path = "reference/cli/versions.md#click-version-add"
 
 [[item]]
 id = "cli.version.use.command"

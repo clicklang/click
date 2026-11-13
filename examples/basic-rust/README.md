@@ -13,7 +13,7 @@ click verify examples/basic-rust/borrow.click
 To refresh with the installed frontend on Linux x86-64 GNU:
 
 ```sh
-click version add VERSION --rust
+click add rust
 click import lock examples/basic-rust/borrow.click
 click verify examples/basic-rust/borrow.click
 ```

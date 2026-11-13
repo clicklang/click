@@ -9,6 +9,9 @@ fn version_manager_help_succeeds_without_installation_or_project_changes() {
     fs::write(&pin, "invalid/version\n").unwrap();
     for command in [
         &["upgrade"][..],
+        &["add"],
+        &["remove"],
+        &["languages"],
         &["version"],
         &["version", "add"],
         &["version", "use"],
@@ -31,7 +34,7 @@ fn version_manager_help_succeeds_without_installation_or_project_changes() {
             assert!(output.stderr.is_empty(), "{command} {flag}: {output:?}");
             assert_eq!(
                 String::from_utf8(output.stdout).unwrap(),
-                "version-manager commands:\n  click upgrade\n  click version add <VERSION|latest> [--rust] [--cpp]\n  click version use [VERSION|--unset]\n  click version default [VERSION]\n  click version list\n  click version remove <VERSION>\n",
+                "version-manager commands:\n  click upgrade\n  click add <cpp|rust>\n  click remove <cpp|rust>\n  click languages\n  click version add <VERSION|latest>\n  click version use [VERSION|--unset]\n  click version default [VERSION]\n  click version list\n  click version remove <VERSION>\n",
                 "{command} {flag}"
             );
             assert!(!home.exists(), "{command} {flag} created CLICK_HOME");
@@ -97,7 +100,7 @@ fn rust_frontend_install_checks_the_archive_and_installs_beside_its_click_versio
             .output()
             .unwrap()
     };
-    let result = run(&["version", "add", version, "--rust"]);
+    let result = run(&["add", "rust"]);
     assert!(result.status.success(), "{result:?}");
     assert!(installed.join("frontends/rust/runtime/bin/rustc").is_file());
     assert!(
@@ -106,11 +109,11 @@ fn rust_frontend_install_checks_the_archive_and_installs_beside_its_click_versio
     );
     // Repeated installs use the existing bundle without downloading it again.
     fs::remove_file(assets.join(name)).unwrap();
-    assert!(run(&["version", "add", version, "--rust"]).status.success());
+    assert!(run(&["add", "rust"]).status.success());
     fs::remove_dir_all(installed.join("frontends")).unwrap();
     fs::write(assets.join(name), archive).unwrap();
     fs::write(assets.join(format!("{name}.sha256")), "0".repeat(64)).unwrap();
-    let failed = run(&["version", "add", version, "--rust"]);
+    let failed = run(&["add", "rust"]);
     assert!(!failed.status.success());
     assert!(
         String::from_utf8_lossy(&failed.stderr).contains("SHA-256 mismatch"),
@@ -129,7 +132,7 @@ fn cpp_frontend_install_checks_the_bundle_against_the_pinned_profile() {
     let version = env!("CARGO_PKG_VERSION");
     let profile: serde_json::Value =
         serde_json::from_str(include_str!("../src/languages/cpp/frontend-profile.json")).unwrap();
-    let archive = |clang_version: &serde_json::Value| {
+    let archive_for = |click_version: &str, clang_version: &serde_json::Value| {
         let staged = t.path().join("staged");
         let _ = fs::remove_dir_all(&staged);
         fs::create_dir_all(staged.join("clang-resource/include")).unwrap();
@@ -138,7 +141,7 @@ fn cpp_frontend_install_checks_the_bundle_against_the_pinned_profile() {
         fs::write(
             staged.join("frontend.json"),
             serde_json::json!({
-                "schema": 1, "click_version": version, "host": "x86_64-unknown-linux-gnu",
+                "schema": 1, "click_version": click_version, "host": "x86_64-unknown-linux-gnu",
                 "exporter_version": profile["exporter_version"], "clang_version": clang_version,
                 "artifact_schema": profile["artifact_schema"],
                 "exporter": "click-cpp-exporter", "resource_dir": "clang-resource"
@@ -150,6 +153,7 @@ fn cpp_frontend_install_checks_the_bundle_against_the_pinned_profile() {
         tar.append_dir_all("cpp", &staged).unwrap();
         tar.into_inner().unwrap().finish().unwrap()
     };
+    let archive = |clang_version: &serde_json::Value| archive_for(version, clang_version);
     let assets = t.path().join("assets");
     fs::create_dir(&assets).unwrap();
     let name = "click-cpp-frontend-x86_64-unknown-linux-gnu.tar.gz";
@@ -180,7 +184,7 @@ fn cpp_frontend_install_checks_the_bundle_against_the_pinned_profile() {
     };
     // A bundle built against another Clang is refused and not installed.
     publish(&archive(&serde_json::json!("0.0.0")));
-    let failed = run(&["version", "add", version, "--cpp"]);
+    let failed = run(&["add", "cpp"]);
     assert!(!failed.status.success());
     assert!(
         String::from_utf8_lossy(&failed.stderr)
@@ -189,7 +193,7 @@ fn cpp_frontend_install_checks_the_bundle_against_the_pinned_profile() {
     );
     assert!(!installed.join("frontends/cpp").exists());
     publish(&archive(&profile["clang_version"]));
-    let result = run(&["version", "add", version, "--cpp"]);
+    let result = run(&["add", "cpp"]);
     assert!(result.status.success(), "{result:?}");
     // The layout the C++ runtime resolves.
     assert!(installed.join("frontends/cpp/click-cpp-exporter").is_file());
@@ -205,11 +209,49 @@ fn cpp_frontend_install_checks_the_bundle_against_the_pinned_profile() {
             profile["clang_version"].as_str().unwrap()
         ))
     );
+    assert!(!run(&["add", "cpp", "cpp"]).status.success());
+    let languages = String::from_utf8(run(&["languages"]).stdout).unwrap();
+    assert!(languages.contains("  c     built in"), "{languages}");
+    assert!(languages.contains("  c++   installed"), "{languages}");
     assert!(
-        !run(&["version", "add", version, "--cpp", "--cpp"])
-            .status
-            .success()
+        languages.contains("  rust  not installed; run `click add rust`"),
+        "{languages}"
     );
+
+    // A newly added version receives the languages the current one has.
+    let other = "9.9.9";
+    let release = t.path().join("release");
+    fs::create_dir_all(&release).unwrap();
+    fs::write(release.join("click"), b"fixture click").unwrap();
+    let mut tar = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::fast()));
+    tar.append_dir_all("clicklang", &release).unwrap();
+    let click_archive = tar.into_inner().unwrap().finish().unwrap();
+    let click_name = "clicklang-x86_64-unknown-linux-gnu.tar.gz";
+    fs::write(assets.join(click_name), &click_archive).unwrap();
+    fs::write(
+        assets.join(format!("{click_name}.sha256")),
+        format!("{:x}  {click_name}\n", Sha256::digest(&click_archive)),
+    )
+    .unwrap();
+    publish(&archive_for(other, &profile["clang_version"]));
+    let added = run(&["version", "add", other]);
+    assert!(added.status.success(), "{added:?}");
+    let carried = home.join("versions").join(other).join("frontends/cpp");
+    assert!(carried.join("click-cpp-exporter").is_file());
+    assert!(
+        !home
+            .join("versions")
+            .join(other)
+            .join("frontends/rust")
+            .exists()
+    );
+    // `click remove` removes the current version's front end only.
+    let removed = run(&["remove", "c++"]);
+    assert!(removed.status.success(), "{removed:?}");
+    assert!(!installed.join("frontends/cpp").exists());
+    assert!(carried.join("click-cpp-exporter").is_file());
+    let refused = run(&["add", "c"]);
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("C is built into Click"));
 }
 
 /// `click version remove` deletes an installed version, but not the one the

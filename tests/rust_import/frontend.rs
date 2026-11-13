@@ -29,13 +29,7 @@ fn missing_installed_rust_frontend_names_the_version_and_install_location() {
             error.contains("Rust frontend is not installed") && error.contains("frontends/rust"),
             "{error}"
         );
-        assert!(
-            error.contains(&format!(
-                "click version add {} --rust",
-                env!("CARGO_PKG_VERSION")
-            )),
-            "{error}"
-        );
+        assert!(error.contains("click add rust"), "{error}");
     } else {
         assert!(error.contains("unavailable"), "{error}");
     }
@@ -171,7 +165,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
         "{error}"
     );
     assert!(
-        error.contains("Remove the Rust frontend") && error.contains("--rust"),
+        error.contains("Remove the Rust frontend") && error.contains("click add rust"),
         "{error}"
     );
     assert_eq!(
@@ -203,13 +197,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
             error.contains("got ") && error.contains("Remove the Rust frontend"),
             "{error}"
         );
-        assert!(
-            error.contains(&format!(
-                "click version add {} --rust",
-                env!("CARGO_PKG_VERSION")
-            )),
-            "{error}"
-        );
+        assert!(error.contains("click add rust"), "{error}");
         assert_eq!(
             fs::read(source.join("click.project.lock.json")).unwrap(),
             lock
@@ -224,7 +212,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
     let error = String::from_utf8_lossy(&missing.stderr);
     assert!(!missing.status.success());
     assert!(
-        error.contains("Remove the Rust frontend") && error.contains("--rust"),
+        error.contains("Remove the Rust frontend") && error.contains("click add rust"),
         "{error}"
     );
 

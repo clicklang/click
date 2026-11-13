@@ -199,7 +199,7 @@ axiomatic boundary of the [C++ standard library](#c-standard-library).
 
 `click import lock` runs the pinned exporter: the one `CLICK_CPP_EXPORTER`
 names, else the one installed for this Click version by
-[`click version add VERSION --cpp`](versions.md#click-version-add)
+[`click add cpp`](versions.md#click-version-add)
 ([`CLICK_CPP_EXPORTER`](environment.md#click_cpp_exporter)). It supplies its pinned Clang's resource directory (the builtin headers such
 as `<stddef.h>`; an installed exporter's `clang-resource/` beside it) to a command that names none, so `args` never states a
 machine-specific `-resource-dir`. It exports every listed function of a

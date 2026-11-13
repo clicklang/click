@@ -28,7 +28,7 @@ To refresh the lock after changing a source, install the pinned C++ front end
 for your Click version (Linux x86-64) and lock the project:
 
 ```sh
-click version add VERSION --cpp
+click add cpp
 click import lock
 ```
 

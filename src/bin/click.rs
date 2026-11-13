@@ -33,6 +33,8 @@ commands:\n  \
   import   prepare and lock compiler-selected sources\n  \
   docs     print the documentation for a tactic or topic\n  \
   upgrade  install the latest Click and make it the default\n  \
+  add      add a language front end (cpp, rust); `languages` lists them\n  \
+  remove   remove a language front end\n  \
   version  add, use, list, or remove installed Click versions";
 
 fn main() {
@@ -84,7 +86,9 @@ fn entry(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
         "audit" => audit::entry_with(arguments),
         "import" => import::entry_with(arguments),
         "docs" => docs::entry_with(arguments),
-        "version" | "upgrade" => version_manager::entry_with(&command, arguments.collect()),
+        "version" | "upgrade" | "add" | "remove" | "languages" => {
+            version_manager::entry_with(&command, arguments.collect())
+        }
         _ => Err(format!("unknown command `{command}`\n{USAGE}")),
     }
 }

@@ -40,16 +40,17 @@ The packaged Rust extraction frontend also requires a Linux x86-64 GNU host.
 Use the [coverage matrix](reference/coverage.md) to check individual features
 and distinguish a verification target from the host running Click.
 
-## How do I install Click, and when do I need `--rust`?
+## How do I install Click, and when do I need a language front end?
 
 From a checkout, use `cargo install --path . --bin click`. The
 [README](https://github.com/clicklang/click#install-click) records release
 availability and installer commands. A normal installation supplies the Click
-executable; `click version add VERSION --rust` adds the pinned Rust frontend and
-compiler runtime for release `VERSION`. Plain C verification needs no compiler.
+executable, which verifies C on its own. `click add rust` adds the pinned Rust
+frontend and compiler runtime to the Click version that runs, and
+`click languages` lists what is installed.
 Rust extraction needs its frontend, while verification of an existing valid
 Rust lock does not. C++ extraction uses the pinned exporter that
-`click version add VERSION --cpp` adds on Linux x86-64; other hosts build it with
+`click add cpp` adds on Linux x86-64; other hosts build it with
 `scripts/build-cpp-exporter.sh` and set `CLICK_CPP_EXPORTER`. See
 [installation and version selection](reference/cli/versions.md),
 [Rust setup](reference/rust.md#installed-rust-frontend), and

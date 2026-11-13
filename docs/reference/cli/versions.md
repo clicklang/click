@@ -1,7 +1,9 @@
 # Version manager commands
 
 `click upgrade` and the `click version` subcommands install released Click
-versions and select which one the `click` launcher runs. Click looks for
+versions and select which one the `click` launcher runs. `click add`,
+`click remove` and `click languages` manage the language front ends of the
+version that runs. Click looks for
 a project's `.click-version` file first, then the global default, and
 otherwise runs the launcher's own version.
 
@@ -9,7 +11,10 @@ otherwise runs the launcher's own version.
 
 ```text
 usage: click upgrade
-       click version add <VERSION|latest> [--rust] [--cpp]
+       click add <cpp|rust>
+       click remove <cpp|rust>
+       click languages
+       click version add <VERSION|latest>
        click version use [VERSION|--unset]
        click version default [VERSION]
        click version list
@@ -82,22 +87,39 @@ completely. An already installed version prints
 directory without its executable is reported as an incomplete installation;
 remove it before retrying.
 
-`click version add VERSION --rust` also installs that release's pinned Rust frontend.
-The first bundle host is `x86_64-unknown-linux-gnu`; other hosts get an explicit
-unavailable-platform diagnostic. The command downloads
-`click-rust-frontend-TARGET.tar.gz` and its `.sha256`, verifies the checksum,
-checks the manifest's version and layout, and stages the bundle before making
-it visible under `versions/VERSION/frontends/rust`. An existing valid bundle
-is retained. `click version list` lists installed Rust frontends with their Charon versions.
+`click version add` and `click upgrade` also install, for the new version,
+each language front end the current version has (see
+[languages](#languages)). One the release does not ship for this host is
+reported as a warning; the version is still installed.
 
-`click version add VERSION --cpp` installs that release's pinned C++ exporter the
-same way, from `click-cpp-frontend-TARGET.tar.gz`, into
-`versions/VERSION/frontends/cpp`, where `click import lock` finds it. Its
-manifest must name the exporter version, Clang version and artifact schema
-that this Click pins; the bundle is available for `x86_64-unknown-linux-gnu`
-only. `click version list` lists an installed C++ frontend with its exporter and
-Clang versions. The flags combine, and each may be given once.
-The normal install without `--rust` or `--cpp` remains the Click executable alone.
+## Languages
+
+C is built into Click. C++ and Rust need a front end to prepare a lock
+(`click import lock`); verifying a committed lock needs none. The front ends
+are add-ons of the version the launcher runs here, the one
+[version dispatch](#version-dispatch) selects: the nearest project pin, then the
+global default, then the launcher's own version.
+
+- `click add cpp` (or `c++`) installs that release's pinned C++ exporter from
+  `click-cpp-frontend-TARGET.tar.gz` into `versions/VERSION/frontends/cpp`,
+  where `click import lock` finds it. Its manifest must name the exporter
+  version, Clang version and artifact schema this Click pins.
+- `click add rust` installs that release's pinned Rust front end and compiler
+  runtime from `click-rust-frontend-TARGET.tar.gz` into
+  `versions/VERSION/frontends/rust`; its manifest must name the version and
+  layout.
+
+Each downloads the archive and its `.sha256`, verifies the checksum, checks the
+manifest, and stages the bundle before making it visible. An existing valid
+bundle is kept. Bundles exist for `x86_64-unknown-linux-gnu` only; other hosts
+get an unavailable-platform diagnostic. The version must be installed first.
+`click add c` reports that C is built in.
+
+`click remove cpp` or `click remove rust` deletes that front end from the
+version that runs. `click languages` lists C as built in and each front end as
+installed (with its version), not installed with the `click add` command to
+run, or not available for this host. `click version list` also notes the front
+ends each version has.
 
 ## `click version use`
 

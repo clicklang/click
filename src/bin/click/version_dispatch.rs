@@ -106,7 +106,7 @@ pub fn normalize_version(value: &str) -> Result<String, String> {
     Ok(version.to_string())
 }
 
-fn selected_version(binary: &str) -> Result<Option<String>, String> {
+pub fn selected_version(binary: &str) -> Result<Option<String>, String> {
     let home = click_home()?;
     let version = if let Some(value) = project_pin()? {
         Some(normalize_version(&value)?)
@@ -151,7 +151,10 @@ fn is_development_binary() -> bool {
 }
 
 fn is_manager_command(command: &str) -> bool {
-    matches!(command, "version" | "upgrade")
+    matches!(
+        command,
+        "version" | "upgrade" | "add" | "remove" | "languages"
+    )
 }
 
 #[cfg(test)]
