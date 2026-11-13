@@ -104,12 +104,11 @@ mod tests {
         assert!(error.contains("unknown command `unknown`"));
     }
 
-    /// The command-line front end verifies under the shipped stable-view
-    /// semantics: a `views` of a file-scope cell is a borrow for the call, so
-    /// a store into it is refused as a conflict with that loan rather than as
-    /// a store outside the owned footprint.
+    /// A view of a global cell borrows it for the call. A store into that
+    /// cell must report the unproved separation from the loaned range and
+    /// locate the original C store.
     #[test]
-    fn verify_refuses_a_store_into_a_viewed_global_with_the_loan_message() {
+    fn verify_refuses_a_store_into_a_viewed_global_with_the_separation_goal() {
         let directory =
             std::env::temp_dir().join(format!("click-viewed-global-store-{}", std::process::id()));
         if directory.exists() {
@@ -129,7 +128,13 @@ mod tests {
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
-            error.contains("stable-view memory access conflicts with an active loan"),
+            error.contains("`step()` requires an explicit prerequisite proof"),
+            "{error}"
+        );
+        assert!(error.contains("\ngoal: separate("), "{error}");
+        assert!(error.contains("words[1..2]"), "{error}");
+        assert!(
+            error.contains("C statement at viewed_global.c:2:21\n  `words[1] = 7;`"),
             "{error}"
         );
         assert!(!error.contains("outside the owned footprint"), "{error}");
@@ -383,9 +388,8 @@ mod tests {
             "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    step_until(function.exit); solve();\n}\n",
         );
         assert!(
-            store.contains(
-                "could not show `i >= 0 && i < 4` from the facts `i <= 4`, `i >= 0`\n  C statement at f.c:10:9\n  `items[i].x = 7;`"
-            ),
+            store
+                .contains("could not show `i < 4`\n  C statement at f.c:10:9\n  `items[i].x = 7;`"),
             "{store}"
         );
         assert!(!store.contains("the field store"), "{store}");
@@ -395,7 +399,7 @@ mod tests {
         ));
         assert!(
             overflow.contains(
-                "`step()` produced undefined behavior\n  signed overflow\n  operation\n  `a + b`\n  C statement at f.c:18:5\n  `total = a + b;`\n"
+                "`step()` requires proof excluding signed overflow\n  C statement at f.c:18:5\n  `total = a + b;`\n"
             ),
             "{overflow}"
         );
@@ -404,7 +408,7 @@ mod tests {
             "int32 callee(int32 n) {{\n    requires n >= 0;\n    ensures result == n;\n}}\nint32 caller(int32 n) {{\n    ensures result == n + 1;\n{three_steps}"
         ));
         assert!(
-            call.contains("`step()` is missing prerequisite (precondition clause 1 of `callee`)"),
+            call.contains("`step()` requires an explicit prerequisite proof (precondition clause 1 of `callee`)"),
             "{call}"
         );
         assert!(
@@ -485,7 +489,7 @@ mod tests {
         };
         let overflow = run(frame, &[]);
         assert!(
-            overflow.contains("`step()` produced undefined behavior\n  signed overflow"),
+            overflow.contains("`step()` requires proof excluding signed overflow"),
             "{overflow}"
         );
         assert!(
@@ -601,7 +605,7 @@ mod tests {
         let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
         assert!(
             error.contains(
-                "\n  signed overflow\n  operation\n  `a + b`\n  C statement at located.md:8:5\n  `total = a + b;`\n"
+                "`step()` requires proof excluding signed overflow\n  C statement at located.md:8:5\n  `total = a + b;`\n"
             ),
             "{error}"
         );

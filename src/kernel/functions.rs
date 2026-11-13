@@ -13644,7 +13644,7 @@ pub(crate) struct ResourceInstanceRewriteResult {
     /// The body guard case checked by this rewrite. Unknown guards refuse the rewrite.
     pub(crate) body_active: bool,
     pub(crate) state: CState,
-    /// Justified consequences to admit; unfolding may return facts the caller
+    /// Justified consequences to admit; either rewrite may return facts the caller
     /// already holds. Ordinary fact insertion handles those duplicates.
     pub(crate) semantic_facts: Vec<Proposition>,
     pub(crate) body_clauses: Vec<ResourceBodyClauseRecord>,
@@ -15004,9 +15004,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         body_clauses
             .iter()
             .map(|clause| clause.proposition.clone())
-            .filter(|fact| {
-                !entry_assumptions.states_required_goal(fact) && seen.insert(fact.clone())
-            })
+            // As with unfold, caller membership belongs to fact admission.
+            .filter(|fact| seen.insert(fact.clone()))
             .collect()
     };
     next.record_instance_population_exchange(state, instance, !unfold, assumptions)
