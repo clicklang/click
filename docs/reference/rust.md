@@ -932,9 +932,14 @@ verifies calls at several widths.
 result. The contract is the generic `extern fn` block in
 `library/rust/core.click`, written out at each called element type as a
 sidecar's generic function is, with the instance's own parameter names by
-position; the `Vec` methods (`Vec::new`, `Vec::with_capacity`,
-`Vec::push`, `Vec::len`, `Vec::index`) are stated there the same way
-([Vec values](#vec-values)). The instance at `u32` is:
+position. The other non-integer core methods are stated there the same way:
+the `Vec` methods ([Vec values](#vec-values)), `Option` and `Result`
+`unwrap`, `expect` and `unwrap_or` ([Panics](#panics),
+[Result values](#result-values)), and the slice-iterator and `chunks_exact`
+operations with the slice reads they return
+([Rust core models](library/index.md#rust-core-models)). Only the integer
+methods' contracts are still written by the importer. The instance at `u32`
+is:
 
 ```text
 extern fn slice::swap<u32>(s: &mut [u32], a: usize, b: usize) {

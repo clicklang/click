@@ -1202,7 +1202,8 @@ fn every_standard_library_symbol_has_a_verified_use() {
 /// family, not by `mdtests/stdlib_every_symbol.md`: the **Verified use** of
 /// its reference entry links a Rust test file, and the files it links call
 /// the modeled function, `.subspan(` or `push(`, or subscript for
-/// `operator[]` and `Vec::index`.
+/// `operator[]` and `Vec::index`; an operation the Rust importer emits for a
+/// `chunks_exact` iterator is called by the Rust call it lowers.
 #[test]
 fn every_sidecar_library_contract_has_a_cited_use() {
     let reference = fs::read_to_string(root().join("docs/reference/library/index.md"))
@@ -1255,9 +1256,18 @@ fn every_sidecar_library_contract_has_a_cited_use() {
             item.id
         );
         let method = path.rsplit("::").next().expect("contract name");
-        let call = match method.split('<').next().expect("contract name") {
-            "operator[]" | "index" => "[".to_string(),
-            name => format!("{name}("),
+        let call = match (path, method.split('<').next().expect("contract name")) {
+            (_, "operator[]" | "index") => "[".to_string(),
+            // The importer's own `ChunksExact` operations are called by the
+            // Rust call it lowers to them: the iterator's construction and
+            // its loop, or `remainder()`.
+            ("ChunksExact::new" | "ChunksExact::item_ptr" | "ChunksExact::item_len", _) => {
+                "chunks_exact(".to_string()
+            }
+            ("ChunksExact::remainder_ptr" | "ChunksExact::remainder_len", _) => {
+                "remainder(".to_string()
+            }
+            (_, name) => format!("{name}("),
         };
         assert!(
             files.iter().any(|file| file.contains(&call)),

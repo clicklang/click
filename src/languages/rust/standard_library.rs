@@ -1,11 +1,11 @@
 //! The contracts Click supplies for the Rust core methods an import calls.
-//! They are assumptions, as an `extern fn` contract is. The `Vec` methods
-//! and `<[T]>::swap` are generic `extern fn` blocks in
-//! `library/rust/core.click`, written out at each instance as a sidecar's
-//! generic functions are; this file keeps only their name table. The others
-//! are still written here: each integer method states its result with the
-//! library's specification function of the same path, `ensures result ==
-//! click::rust::u32::min(a, b);`.
+//! They are assumptions, as an `extern fn` contract is. The `Vec`, slice,
+//! slice-iterator, `ChunksExact`, `Option::unwrap` and `Result::unwrap`
+//! methods are generic `extern fn` blocks in `library/rust/core.click`,
+//! written out at each instance as a sidecar's generic functions are; this
+//! file keeps only their name table. Each integer method's contract is still
+//! written here: it states its result with the library's specification
+//! function of the same path, `ensures result == click::rust::u32::min(a, b);`.
 use super::schema::{RustExport, Type};
 use std::collections::BTreeSet;
 
@@ -16,36 +16,55 @@ pub(super) const SLICE_SWAP: &str = "slice::swap";
 /// The prefix of the `core_method` of each `Vec` method, `Vec::push`.
 pub(super) const VEC: &str = "Vec::";
 
-/// The Click library file that states the `Vec` methods and `<[T]>::swap`
-/// as generic `extern fn` blocks over their element type.
+/// The Click library file that states the core methods it models as
+/// generic `extern fn` blocks over their type parameters.
 const CORE_LIBRARY: &str = include_str!("../../../library/rust/core.click");
 
-/// The core methods the Click library states as generic functions: each
-/// method's `core_method`, the path of the library's generic function, and
-/// its file. A core method declared with one of these is an instance of
-/// that function, written out at the element type its name carries,
-/// `Vec::push<u32>` of `Vec::push<T>`.
-const LIBRARY_FUNCTIONS: &[(&str, &[&str], &str)] = &[
-    ("Vec::new", &["Vec", "new"], CORE_LIBRARY),
-    (
-        "Vec::with_capacity",
-        &["Vec", "with_capacity"],
-        CORE_LIBRARY,
-    ),
-    ("Vec::push", &["Vec", "push"], CORE_LIBRARY),
-    ("Vec::len", &["Vec", "len"], CORE_LIBRARY),
-    ("Vec::index", &["Vec", "index"], CORE_LIBRARY),
-    (SLICE_SWAP, &["slice", "swap"], CORE_LIBRARY),
+/// The core methods the Click library states as generic functions: the path
+/// of each library generic function and its file. A core method whose
+/// importer name is one of these paths with type arguments is an instance of
+/// that function, written out at the types its name carries, `Vec::push<u32>`
+/// of `Vec::push<T>`.
+const LIBRARY_FUNCTIONS: &[(&[&str], &str)] = &[
+    (&["Vec", "new"], CORE_LIBRARY),
+    (&["Vec", "with_capacity"], CORE_LIBRARY),
+    (&["Vec", "push"], CORE_LIBRARY),
+    (&["Vec", "len"], CORE_LIBRARY),
+    (&["Vec", "index"], CORE_LIBRARY),
+    (&["slice", "swap"], CORE_LIBRARY),
+    (&["Option", "unwrap"], CORE_LIBRARY),
+    (&["Option", "expect"], CORE_LIBRARY),
+    (&["Option", "unwrap_or"], CORE_LIBRARY),
+    (&["Result", "unwrap"], CORE_LIBRARY),
+    (&["Result", "expect"], CORE_LIBRARY),
+    (&["Result", "unwrap_or"], CORE_LIBRARY),
+    (&["slice", "as_ptr"], CORE_LIBRARY),
+    (&["slice", "len"], CORE_LIBRARY),
+    (&["SliceIter", "iter"], CORE_LIBRARY),
+    (&["SliceIter", "next"], CORE_LIBRARY),
+    (&["ChunksExact", "new"], CORE_LIBRARY),
+    (&["ChunksExact", "next"], CORE_LIBRARY),
+    (&["ChunksExact", "remainder"], CORE_LIBRARY),
+    (&["ChunksExact", "remainder_ptr"], CORE_LIBRARY),
+    (&["ChunksExact", "remainder_len"], CORE_LIBRARY),
+    (&["ChunksExact", "len"], CORE_LIBRARY),
+    (&["ChunksExact", "item_ptr"], CORE_LIBRARY),
+    (&["ChunksExact", "item_len"], CORE_LIBRARY),
+    (&["ChunksExact", "after_next"], CORE_LIBRARY),
 ];
 
-/// The library generic function `function` is an instance of, by importer
-/// name, with the library file stating it.
+/// The library generic function the core method `function` is an instance
+/// of, by importer name, with the library file stating it.
 fn library_function(function: &super::schema::Function) -> Option<(String, &'static str)> {
-    let specification = function.core_method.as_deref()?;
+    function.core_method.as_ref()?;
+    let (generic, arguments) = super::names::split_type_arguments(&function.name);
+    if arguments.is_empty() {
+        return None;
+    }
     LIBRARY_FUNCTIONS
         .iter()
-        .find(|(method, _, _)| *method == specification)
-        .map(|(_, path, library)| (super::names::path_name(path), *library))
+        .find(|(path, _)| super::names::path_name(path) == generic)
+        .map(|(_, library)| (generic, *library))
 }
 
 /// The library generic function a core method is an instance of, by
@@ -60,7 +79,7 @@ pub(super) fn library_generic(function: &super::schema::Function) -> Option<Stri
 pub(crate) fn is_library_generic(generic: &str) -> bool {
     LIBRARY_FUNCTIONS
         .iter()
-        .any(|(_, path, _)| super::names::path_name(path) == generic)
+        .any(|(path, _)| super::names::path_name(path) == generic)
 }
 
 /// The `core_method` of `Result::unwrap` and `Result::expect`, which Rust
@@ -70,60 +89,10 @@ pub(super) const RESULT_UNWRAP: &str = "result::unwrap";
 /// The `core_method` of `Result::unwrap_or`.
 pub(super) const RESULT_UNWRAP_OR: &str = "click::result::unwrap_or";
 
-/// The sidecar spelling of the `Result` instance `ty`, `Result<u32, u8>`.
-fn result_spelling(ty: &Type) -> String {
-    let Type::Enum { name } = ty else {
-        unreachable!("a result is an enum")
-    };
-    let (_, arguments) = super::names::split_type_arguments(name);
-    format!("Result<{}>", arguments.join(", "))
-}
-
-/// `Result::unwrap(r)`'s contract: Rust panics unless `r` is `Ok`, whose
-/// payload is the result.
-fn result_unwrap_contract(function: &super::schema::Function) -> String {
-    let result = result_spelling(&function.parameters[0].value_type);
-    let payload = function
-        .return_type
-        .scalar_name()
-        .expect("a scalar payload");
-    format!(
-        "\nextern fn {}(r: {result}) -> {payload} {{\n    requires exists (value: {payload}) {{ r == {result}::Ok(value) }};\n    ensures r == {result}::Ok(result);\n}}\n",
-        function.name,
-    )
-}
-
-/// `Result::unwrap_or(r, d)`'s contract, the library's `result::unwrap_or`.
-fn result_unwrap_or_contract(function: &super::schema::Function) -> String {
-    let result = result_spelling(&function.parameters[0].value_type);
-    let payload = function
-        .return_type
-        .scalar_name()
-        .expect("a scalar payload");
-    format!(
-        "\nextern fn {}(r: {result}, d: {payload}) -> {payload} {{\n    ensures result == {RESULT_UNWRAP_OR}(r, d);\n}}\n",
-        function.name,
-    )
-}
-
 /// The `core_method` of `Option::unwrap` and `Option::expect`, which Rust
 /// panics on at `None`.
 pub(super) const OPTION_UNWRAP: &str = "option::unwrap";
 
-/// `Option::unwrap(o)`'s contract: Rust panics unless `o` is `Some`, whose
-/// payload is the result.
-fn option_unwrap_contract(function: &super::schema::Function) -> String {
-    let payload = function
-        .return_type
-        .scalar_name()
-        .expect("a scalar payload");
-    format!(
-        "\nextern fn {}(o: Option<{payload}>) -> {payload} {{\n    requires o != Option<{payload}>::None;\n    ensures o == Option<{payload}>::Some(result);\n}}\n",
-        function.name
-    )
-}
-
-/// The `extern fn` contract of each core method `export` declares.
 /// The prefix of the `core_method` of each `ChunksExact` operation the
 /// library-iterator model calls, `ChunksExact::new`.
 pub(super) const CHUNKS_EXACT: &str = "ChunksExact::";
@@ -347,22 +316,6 @@ pub(super) fn byte_slice_function(operation: &str) -> String {
     name
 }
 
-/// The contract of the `[u8]` method `operation` over a slice value.
-fn byte_slice_contract(function: &super::schema::Function, operation: &str) -> Option<String> {
-    const SLICE: &str = "click::rust::slice";
-    let name = &function.name;
-    let body = match operation {
-        "as_ptr" => format!(
-            "extern fn {name}(s: Slice<u8>) -> &u8 {{\n    ensures result == {SLICE}::as_ptr(s);\n}}"
-        ),
-        "len" => format!(
-            "extern fn {name}(s: Slice<u8>) -> usize {{\n    ensures result == {SLICE}::len(s);\n}}"
-        ),
-        _ => return None,
-    };
-    Some(format!("\n{body}\n"))
-}
-
 /// The prefix of the `core_method` of each slice iterator operation the
 /// library-iterator model calls, `SliceIter::new`.
 pub(super) const SLICE_ITER: &str = "SliceIter::";
@@ -476,105 +429,6 @@ fn declare_slice_iter_operations(export: &mut RustExport) {
     }
 }
 
-/// The contract of the slice iterator operation `operation` at the element
-/// type the function is declared at. `iter` builds the library value of the
-/// slice; `next` is the next law over `old(*it)` and `*it`. Where the
-/// remaining slice starts after one `next()` needs the element's size, so it
-/// is stated here, at the type, and not as a generic axiom.
-fn slice_iter_contract(function: &super::schema::Function, operation: &str) -> Option<String> {
-    const LIBRARY: &str = "click::rust::slice_iter";
-    let name = &function.name;
-    let element = function
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.value_type)
-        .chain(std::iter::once(&function.return_type))
-        .find_map(|ty| match ty {
-            Type::SharedArrayIterator { element } => element.scalar_name(),
-            Type::Reference { pointee, .. } => match pointee.as_ref() {
-                Type::SharedArrayIterator { element } => element.scalar_name(),
-                _ => None,
-            },
-            _ => None,
-        })?;
-    let iterator = format!("SliceIter<{element}>");
-    let option = format!("Option<&{element}>");
-    const SLICE: &str = "click::rust::slice";
-    let len = |it: &str| format!("{LIBRARY}::len({it})");
-    let data = |it: &str| format!("{SLICE}::as_ptr({LIBRARY}::as_slice({it}))");
-    let count = |it: &str| format!("{SLICE}::len({LIBRARY}::as_slice({it}))");
-    let has = format!("0u64 < {}", len("old(*it)"));
-    let empty = format!("{} == 0u64", len("old(*it)"));
-    let body = match operation {
-        "iter" => format!(
-            "extern fn {name}(p: &{element}, n: usize) -> {iterator} {{\n    ensures result == {LIBRARY}::iter(Slice<{element}>::Slice(p, n));\n    ensures {} == p;\n    ensures {} == n;\n    ensures {} == n;\n}}",
-            data("result"),
-            count("result"),
-            len("result"),
-        ),
-        "next" => format!(
-            "extern fn {name}(it: &mut {iterator}) -> {option} {{\n    owns *it;\n    ensures {empty} implies result == {option}::None;\n    ensures {empty} implies *it == old(*it);\n    ensures {has} implies result == {option}::Some({old_data});\n    ensures {has} implies *it == {LIBRARY}::after_next(old(*it));\n    ensures {has} implies {new_data} == {old_data} + 1u64;\n    ensures {has} implies {new_count} == {old_count} - 1u64;\n    ensures {has} implies {new_len} == {old_len} - 1u64;\n}}",
-            old_data = data("old(*it)"),
-            new_data = data("*it"),
-            old_count = count("old(*it)"),
-            new_count = count("*it"),
-            old_len = len("old(*it)"),
-            new_len = len("*it"),
-        ),
-        _ => return None,
-    };
-    Some(format!("\n{body}\n"))
-}
-
-/// The contract of the `ChunksExact` operation `operation`: the call stated
-/// with the library's `click::rust::chunks_exact`. A slice is still a
-/// pointer and a length in the importer's model, so a chunk and the
-/// remainder are each read as their data and their length.
-fn chunks_exact_contract(function: &super::schema::Function, operation: &str) -> String {
-    const LIBRARY: &str = "click::rust::chunks_exact";
-    const SLICE: &str = "click::rust::slice";
-    let name = &function.name;
-    let iterator = "ChunksExact<u8>";
-    let body = match operation {
-        // Rust panics on a zero chunk size.
-        "new" => format!(
-            "extern fn {name}(s: &[u8], n: usize) -> {iterator} {{\n    requires n != 0u64;\n    ensures result == {LIBRARY}::chunks_exact(Slice<u8>::Slice(s, s.len()), n);\n}}"
-        ),
-        "remainder_ptr" => format!(
-            "extern fn {name}(it: {iterator}) -> &u8 {{\n    ensures result == {SLICE}::as_ptr({LIBRARY}::remainder(it));\n}}"
-        ),
-        "remainder_len" => format!(
-            "extern fn {name}(it: {iterator}) -> usize {{\n    ensures result == {SLICE}::len({LIBRARY}::remainder(it));\n}}"
-        ),
-        "len" => format!(
-            "extern fn {name}(it: {iterator}) -> usize {{\n    ensures result == {LIBRARY}::len(it);\n}}"
-        ),
-        "item_ptr" => format!(
-            "extern fn {name}(it: {iterator}) -> &u8 {{\n    requires 0u64 < {LIBRARY}::len(it);\n    ensures result == {SLICE}::as_ptr({LIBRARY}::nth(it, 0u64));\n}}"
-        ),
-        "item_len" => format!(
-            "extern fn {name}(it: {iterator}) -> usize {{\n    requires 0u64 < {LIBRARY}::len(it);\n    ensures result == {SLICE}::len({LIBRARY}::nth(it, 0u64));\n}}"
-        ),
-        "after_next" => format!(
-            "extern fn {name}(it: {iterator}) -> {iterator} {{\n    requires 0u64 < {LIBRARY}::len(it);\n    ensures result == {LIBRARY}::after_next(it);\n}}"
-        ),
-        // Rust's `Iterator::next` over the library value: the first chunk
-        // still to come, and the iterator after it.
-        "next" => {
-            let option = "Option<&[u8]>";
-            let len = format!("{LIBRARY}::len(old(*it))");
-            format!(
-                "extern fn {name}(it: &mut {iterator}) -> {option} {{\n    owns *it;\n    ensures {len} == 0u64 implies result == {option}::None;\n    ensures {len} == 0u64 implies *it == old(*it);\n    ensures 0u64 < {len} implies result == {option}::Some({LIBRARY}::nth(old(*it), 0u64));\n    ensures 0u64 < {len} implies *it == {LIBRARY}::after_next(old(*it));\n}}"
-            )
-        }
-        "remainder" => format!(
-            "extern fn {name}(it: &{iterator}) -> Slice<u8> {{\n    views *it;\n    ensures result == {LIBRARY}::remainder(old(*it));\n}}"
-        ),
-        _ => unreachable!("declared by `declare_iterator_operations`"),
-    };
-    format!("\n{body}\n")
-}
-
 /// The `extern fn` contracts of the core methods `export` calls, with the
 /// name of each function they declare: the Click library files stating the
 /// library's generic functions an import's core methods are instances of,
@@ -595,38 +449,19 @@ pub(super) fn contracts(export: &RustExport) -> (String, BTreeSet<String>) {
             }
             continue;
         }
-        if let Some(contract) = core_method_contract(function, specification) {
-            source.push_str(&contract);
-            models.insert(function.name.clone());
-        }
+        source.push_str(&core_method_contract(function, specification));
+        models.insert(function.name.clone());
     }
     source.push_str(&libraries.concat());
     (source, models)
 }
 
-/// The contract of the core method `function`, whose specification path
-/// is `specification`, if Click states one.
-fn core_method_contract(function: &super::schema::Function, specification: &str) -> Option<String> {
-    if let Some(operation) = specification.strip_prefix(SLICE_VALUE) {
-        return byte_slice_contract(function, operation);
-    }
-    if let Some(operation) = specification.strip_prefix(CHUNKS_EXACT) {
-        return Some(chunks_exact_contract(function, operation));
-    }
-    if let Some(operation) = specification.strip_prefix(SLICE_ITER) {
-        return slice_iter_contract(function, operation);
-    }
-    if specification == OPTION_UNWRAP {
-        return Some(option_unwrap_contract(function));
-    }
-    if specification == RESULT_UNWRAP {
-        return Some(result_unwrap_contract(function));
-    }
-    if specification == RESULT_UNWRAP_OR {
-        return Some(result_unwrap_or_contract(function));
-    }
+/// The contract of the integer core method `function`, whose
+/// specification path is `specification`: its result is the library's
+/// specification function of the same path.
+fn core_method_contract(function: &super::schema::Function, specification: &str) -> String {
     // An `Option` is of the type of the method's scalar parameter:
-    // `checked_add`'s operands, `unwrap_or`'s default.
+    // `checked_add`'s operands.
     let payload = function
         .parameters
         .iter()
@@ -650,11 +485,11 @@ fn core_method_contract(function: &super::schema::Function, specification: &str)
         .map(|parameter| parameter.name.as_str())
         .collect::<Vec<_>>()
         .join(", ");
-    Some(format!(
+    format!(
         "\nextern fn {}({parameters}) -> {} {{\n    ensures result == {specification}({arguments});\n}}\n",
         function.name,
         spell(&function.return_type),
-    ))
+    )
 }
 
 #[cfg(test)]

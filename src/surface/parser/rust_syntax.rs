@@ -820,8 +820,9 @@ impl Parser {
             }
         }
         self.position = index + 2;
+        // A written instance is at any scalar, `Option::unwrap<i64>`.
         for argument in &arguments {
-            if !rust_generic_traits::INSTANCE_SCALARS.contains(&argument.as_str()) {
+            if rust_scalar_type(argument).is_none() {
                 self.rust_abstract_type_parameters.insert(argument.clone());
             }
         }

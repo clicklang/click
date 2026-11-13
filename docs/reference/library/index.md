@@ -26,9 +26,8 @@ how far it is trusted:
   ([heap allocation](../language/c.md#heap-allocation)) and writes the
   `snprintf` contracts ([formatted output](../language/c.md#formatted-output)),
   and the C++ and Rust importers append the generic contracts of
-  `library/cpp/` and `library/rust/core.click` (`Vec` methods and
-  `<[T]>::swap`), written out at each called instance, and write the other
-  Rust core-method contracts per use. The Rust core-method contracts state
+  `library/cpp/` and `library/rust/core.click`, written out at each called
+  instance, and write the Rust integer-method contracts per use. The Rust core-method contracts state
   their results with the `click::rust::` modules below.
 - **The specification library** is checked Click: types, pure functions,
   predicates and theorems. A theorem is either proved or a kernel standard
@@ -6653,7 +6652,7 @@ axiom len_as_slice<T>(it: SliceIter<T>) {
 Source: `library/rust/core.click`. This file is not a module: the Rust
 importer appends it to a sidecar when an import calls one of its methods,
 and writes each generic `extern fn` block out at each element type a call
-names, `Vec::push<u32>`. A block no call names is dropped. The other Rust
+names, `Vec::push<u32>`. A block no call names is dropped. The integer
 core-method contracts are written by `src/languages/rust/standard_library.rs`
 ([core library methods](../rust.md#core-library-methods)).
 
@@ -6715,6 +6714,149 @@ every other element unchanged.
 **Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
 
 **Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `exchange`, `swap_bytes` and `reverse_three` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs), and refuses a `swap` index not shown in bounds.
+
+### `Option<T>` and `Result<T, E>` unwrapping
+
+```click
+extern fn Option::unwrap<T>(o: Option<T>) -> T {
+    requires o != Option<T>::None;
+    ensures o == Option<T>::Some(result);
+}
+extern fn Option::expect<T>(o: Option<T>) -> T {
+    requires o != Option<T>::None;
+    ensures o == Option<T>::Some(result);
+}
+extern fn Option::unwrap_or<T>(o: Option<T>, d: T) -> T {
+    ensures result == click::option::unwrap_or(o, d);
+}
+extern fn Result::unwrap<T, E>(r: Result<T, E>) -> T {
+    requires exists (value: T) { r == Result<T, E>::Ok(value) };
+    ensures r == Result<T, E>::Ok(result);
+}
+extern fn Result::expect<T, E>(r: Result<T, E>) -> T {
+    requires exists (value: T) { r == Result<T, E>::Ok(value) };
+    ensures r == Result<T, E>::Ok(result);
+}
+extern fn Result::unwrap_or<T, E>(r: Result<T, E>, d: T) -> T {
+    ensures result == click::result::unwrap_or(r, d);
+}
+```
+
+**Meaning:** `unwrap` and `expect` require `Some` or `Ok`, as Rust panics
+otherwise, and return its payload; `expect`'s message serves the panic alone
+and is not passed. `unwrap_or` is the library's `option::unwrap_or` or
+`result::unwrap_or`. The importer declares them at a scalar payload.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import/panics.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/panics.rs) verifies `unwrapped` and `expected` in [`design/charon-trial/panics/panics.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/panics/panics.rs) and refuses an unwrap not shown `Some`; [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `Result` `unwrap`, `expect` and `unwrap_or` in [`design/charon-trial/result-values/results.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/result-values/results.rs) in `charon_result_values_read_as_click_results`; [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `Option::unwrap_or` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs).
+
+### Slice value methods
+
+```click
+extern fn slice::as_ptr<T>(s: Slice<T>) -> &T {
+    ensures result == click::rust::slice::as_ptr(s);
+}
+extern fn slice::len<T>(s: Slice<T>) -> usize {
+    ensures result == click::rust::slice::len(s);
+}
+```
+
+**Meaning:** A slice the library-iterator model returns, a `chunks_exact`
+chunk or remainder, is one value of the library's
+[`Slice<T>`](#clickrustslice), and the body reads its data and length
+through Rust's `<[T]>::as_ptr` and `<[T]>::len`. The importer declares them
+at `u8`.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies the `chunks_exact` loops of [`design/charon-trial/chunks/chunks.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/chunks/chunks.rs) in `charon_chunks_check_boundaries_authority_and_false_claims` (nightly), whose sidecar [`design/charon-trial/chunks/chunks.click`](https://github.com/clicklang/click/blob/master/design/charon-trial/chunks/chunks.click) reads each chunk through `as_ptr` and `len`.
+
+### `SliceIter<T>` methods
+
+```click
+extern fn SliceIter::iter<T>(p: &T, n: usize) -> SliceIter<T> {
+    ensures result == click::rust::slice_iter::iter(Slice<T>::Slice(p, n));
+    ensures click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(result)) == p;
+    ensures click::rust::slice::len(click::rust::slice_iter::as_slice(result)) == n;
+    ensures click::rust::slice_iter::len(result) == n;
+}
+extern fn SliceIter::next<T>(it: &mut SliceIter<T>) -> Option<&T> {
+    owns *it;
+    ensures click::rust::slice_iter::len(old(*it)) == 0u64 implies result == Option<&T>::None;
+    ensures click::rust::slice_iter::len(old(*it)) == 0u64 implies *it == old(*it);
+    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies result == Option<&T>::Some(click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(old(*it))));
+    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies *it == click::rust::slice_iter::after_next(old(*it));
+    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(*it)) == click::rust::slice::as_ptr(click::rust::slice_iter::as_slice(old(*it))) + 1u64;
+    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice::len(click::rust::slice_iter::as_slice(*it)) == click::rust::slice::len(click::rust::slice_iter::as_slice(old(*it))) - 1u64;
+    ensures 0u64 < click::rust::slice_iter::len(old(*it)) implies click::rust::slice_iter::len(*it) == click::rust::slice_iter::len(old(*it)) - 1u64;
+}
+```
+
+**Meaning:** `<[T]>::iter` builds the library's
+[`SliceIter<T>`](#clickrustslice_iter) of the slice, and `Iterator::next`
+returns `None` with the iterator unchanged when nothing is left, and
+otherwise a reference to the first remaining element, leaving the
+iterator one element later and one shorter. The offset needs the element's
+size, so it is stated here, at each element type, rather than as an axiom.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies the loop over `bytes.iter()` in [`design/charon-trial/slice-iter/sum.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/slice-iter/sum.rs) in `charon_slice_iter_sums_bytes_by_its_library_contract` (nightly), and `rust_empty_slice_iterator_needs_no_read_authority`.
+
+### `ChunksExact<T>` methods
+
+```click
+extern fn ChunksExact::new<T>(s: &[T], n: usize) -> ChunksExact<T> {
+    requires n != 0u64;
+    ensures result == click::rust::chunks_exact::chunks_exact(Slice<T>::Slice(s, s.len()), n);
+}
+extern fn ChunksExact::next<T>(it: &mut ChunksExact<T>) -> Option<&[T]> {
+    owns *it;
+    ensures click::rust::chunks_exact::len(old(*it)) == 0u64 implies result == Option<&[T]>::None;
+    ensures click::rust::chunks_exact::len(old(*it)) == 0u64 implies *it == old(*it);
+    ensures 0u64 < click::rust::chunks_exact::len(old(*it)) implies result == Option<&[T]>::Some(click::rust::chunks_exact::nth(old(*it), 0u64));
+    ensures 0u64 < click::rust::chunks_exact::len(old(*it)) implies *it == click::rust::chunks_exact::after_next(old(*it));
+}
+extern fn ChunksExact::remainder<T>(it: &ChunksExact<T>) -> Slice<T> {
+    views *it;
+    ensures result == click::rust::chunks_exact::remainder(old(*it));
+}
+extern fn ChunksExact::remainder_ptr<T>(it: ChunksExact<T>) -> &T {
+    ensures result == click::rust::slice::as_ptr(click::rust::chunks_exact::remainder(it));
+}
+extern fn ChunksExact::remainder_len<T>(it: ChunksExact<T>) -> usize {
+    ensures result == click::rust::slice::len(click::rust::chunks_exact::remainder(it));
+}
+extern fn ChunksExact::len<T>(it: ChunksExact<T>) -> usize {
+    ensures result == click::rust::chunks_exact::len(it);
+}
+extern fn ChunksExact::item_ptr<T>(it: ChunksExact<T>) -> &T {
+    requires 0u64 < click::rust::chunks_exact::len(it);
+    ensures result == click::rust::slice::as_ptr(click::rust::chunks_exact::nth(it, 0u64));
+}
+extern fn ChunksExact::item_len<T>(it: ChunksExact<T>) -> usize {
+    requires 0u64 < click::rust::chunks_exact::len(it);
+    ensures result == click::rust::slice::len(click::rust::chunks_exact::nth(it, 0u64));
+}
+extern fn ChunksExact::after_next<T>(it: ChunksExact<T>) -> ChunksExact<T> {
+    requires 0u64 < click::rust::chunks_exact::len(it);
+    ensures result == click::rust::chunks_exact::after_next(it);
+}
+```
+
+**Meaning:** `<[T]>::chunks_exact(n)` requires `n != 0`, as Rust panics
+otherwise, and builds the library's
+[`ChunksExact<T>`](#clickrustchunks_exact) of the slice. With the
+library-iterator model, `next` and `remainder` are Rust's own methods over
+that value. Without it, a loop and `remainder()` lower to the pointer and
+length operations `remainder_ptr` through `after_next`, each stated with the
+same library functions. The importer declares them at `u8`, the element
+type of the library's chunk axioms.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `chunks_exact` loops and `remainder()` with the library-iterator model in `chunks_exact_is_proved_by_its_library_contract` and `charon_chunks_check_boundaries_authority_and_false_claims` (nightly, [`design/charon-trial/chunks/chunks.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/chunks/chunks.rs)), and without it in `rust_chunks_exact_remainder_metadata_and_bytes` and `rust_chunks_exact_loops_cover_input_and_preserve_bytes` (nightly), which refuse a zero chunk size not ruled out.
 
 ## `click::separation`
 
