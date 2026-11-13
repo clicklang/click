@@ -286,7 +286,10 @@ pub(super) fn checked_returned_instance_body_facts(
             .then_some(clause.proposition)
         }));
     }
-    facts.retain(|fact| !assumptions.states_required_goal(fact) && seen.insert(fact.clone()));
+    // The returned owner justifies these consequences even when the caller
+    // already holds them. Deduplicate this batch only; admission handles
+    // existing facts without forcing the caller's deferred identity index.
+    facts.retain(|fact| seen.insert(fact.clone()));
     facts
 }
 
@@ -951,4 +954,9 @@ pub(in crate::kernel) fn instance_body_evaluation(
         );
     }
     Ok(evaluation)
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/functions/instance_case_selection.rs");
 }
