@@ -3237,37 +3237,6 @@ impl PureFactContext {
         crate::kernel::api::loadable_covered_by_fact(&candidate, conclusion)
     }
 
-    pub(super) fn checks_exists_loadable_range(
-        &self,
-        proposition: &Proposition,
-        source: &Proposition,
-        witness: &MachineTerm,
-    ) -> bool {
-        let Proposition::Exists {
-            var,
-            sort: Sort::CInt32,
-            body,
-            ..
-        } = proposition
-        else {
-            return false;
-        };
-        if witness != &MachineTerm::constant(0)
-            || !self.proves_exact(source)
-            || !matches!(source, Proposition::CMemoryLoadable { .. })
-        {
-            return false;
-        }
-        let instantiated = substitute_bitvector_variable_in_proposition(body, *var, witness);
-        if !matches!(instantiated, Proposition::CMemoryLoadable { .. }) {
-            return false;
-        }
-        let mut candidate = self.clone();
-        candidate.clear_proposition_facts();
-        candidate.insert_proposition_fact(source.clone());
-        crate::kernel::api::loadable_covered_by_fact(&candidate, &instantiated)
-    }
-
     /// Whether a stated fact proves the condition: a condition fact up to
     /// [`Self::condition_matches`], a proposition fact through
     /// [`Self::proposition_proves_condition`] (a conjunct, an implication

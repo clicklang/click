@@ -7819,7 +7819,7 @@ fn required_obligation_connectives_use_graph_equalities_and_scoped_facts() {
 }
 
 #[test]
-fn model_fact_clearing_and_restriction_keep_only_selected_graph_support() {
+fn model_fact_restriction_keeps_only_selected_graph_support() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = maybe_int32_type();
     let model = |id| AlgebraicTerm {
@@ -7832,13 +7832,11 @@ fn model_fact_clearing_and_restriction_keep_only_selected_graph_support() {
     let both = PureFactContext::new()
         .assume_proposition(equality.clone())
         .assume_condition(condition.clone(), true);
-    let condition_only = both.with_only_proposition_facts(&[]);
-    assert!(condition_only.contains_known(&equality));
     let proposition_only = both.restricted_to_facts(&[], std::slice::from_ref(&equality));
     assert_eq!(proposition_only.decide(&condition), Some(true));
     assert!(!both.restricted_to_facts(&[], &[]).contains_known(&equality));
-    // The selected condition can be new to the base context. Clearing its
-    // empty proposition fragment must not skip final model reconstruction.
+    // The selected condition can be new to the base context; restriction
+    // still files its model edge.
     let selected = PureFactContext::new().restricted_to_facts(&[(condition, true)], &[]);
     assert!(selected.contains_known(&equality));
 }
@@ -8166,12 +8164,10 @@ fn pointer_predicate_matching_preserves_types_arguments_snapshots_and_scope() {
     ] {
         assert!(!joined.contains_known(&wrong));
     }
-    let mut cleared = joined.clone();
-    cleared.clear_proposition_facts();
-    assert!(!cleared.contains_known(&goal));
+    assert!(!joined.restricted_to_facts(&[], &[]).contains_known(&goal));
     assert!(
         joined.contains_known(&goal),
-        "clearing a clone must not clear its parent"
+        "restricting a clone must not restrict its parent"
     );
 }
 

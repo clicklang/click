@@ -131,7 +131,7 @@ fn object_type_support_is_scoped_to_its_source() {
 }
 
 #[test]
-fn model_type_support_survives_only_the_kept_fact_partition() {
+fn model_type_support_needs_its_model_source() {
     let _session = VerificationSession::enter();
     let (p, q) = (pointer(6), pointer(7));
     for condition in [false, true] {
@@ -142,8 +142,6 @@ fn model_type_support_survives_only_the_kept_fact_partition() {
         assert!(can_type(&context, &q));
         let unmodeled = PureFactContext::new().assume_proposition(equal(&p, &q));
         assert!(!can_type(&unmodeled, &q));
-        context = context.with_only_proposition_facts(&[]);
-        assert_eq!(can_type(&context, &q), condition);
         if let Proposition::ConditionIs(condition, _) = model {
             context = context.assume_proposition(Proposition::ConditionIs(condition, false));
             assert!(context.is_inconsistent());

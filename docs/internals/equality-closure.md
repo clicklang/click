@@ -1800,7 +1800,7 @@ wide operators. Full-width constant discovery first asks the shared class engine
 contextual folding and implicit-provenance collection retain exact source
 premises. None of these operations grants memory access or snapshot transport.
 
-Restriction rebuilds closure from the service's retained inputs. Branch clones
+Restriction resets the closure and refiles only the selected facts. Branch clones
 share persistent input roots and fork subsequent changes. Pointer-predicate source handles are retained with
 the service so reconstruction cannot import facts from a sibling context.
 Atomic condition matching checks only the selected spellings for full-width

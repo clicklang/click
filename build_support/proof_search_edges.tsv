@@ -51,7 +51,6 @@ src/kernel/search/proposition_search.rs	search	ProofSearch::derive_structural_ru
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_structural_rule	derive_double_negation_rule	1
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_structural_rule	derive_exists_from_fact	1
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_structural_rule	derive_exists_from_witness	1
-src/kernel/search/proposition_search.rs	search	ProofSearch::derive_structural_rule	derive_exists_loadable_range	1
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_structural_rule	derive_forall_rule	1
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_structural_rule	derive_implies_rule	1
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_structural_rule	derive_or_rule	1

@@ -702,13 +702,13 @@ fn resource_match_constructor_index_tracks_evidence_and_scales_locally() {
         Term::Algebraic(model.clone()),
     );
     for fact in [equality.clone(), reversed] {
-        let mut assumptions = PureFactContext::new().assume_proposition(fact);
+        let assumptions = PureFactContext::new().assume_proposition(fact);
         assert_eq!(
             assumptions.known_algebraic_constructor(&model),
             Some(constructor.clone())
         );
-        assumptions.clear_proposition_facts();
-        assert!(assumptions.known_algebraic_constructor(&model).is_none());
+        let restricted = assumptions.restricted_to_facts(&[], &[]);
+        assert!(restricted.known_algebraic_constructor(&model).is_none());
     }
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {

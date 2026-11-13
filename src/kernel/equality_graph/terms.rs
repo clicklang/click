@@ -566,7 +566,7 @@ pub(super) fn byte_product_operands(
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
     // Derived residue operations use shallow graph IDs. Repeated cancellation
-    // of shared prefixes reuses this cache; restriction rebuilds the graph.
+    // of shared prefixes reuses this cache; a restriction starts a new graph.
     modular_word_operations: PersistentMap<(MachineBinaryOp, u64, u64), u64>,
     // Exact shared operands retain their handles. Class IDs are stable even
     // after union; callers use root(), and persistent clones isolate branches.
@@ -778,8 +778,8 @@ pub(super) struct TermClasses {
     /// The bits of the constant an 8- or 16-bit class holds. A class has
     /// one width, so its bits name its value at either signedness.
     pub(super) narrow_constants: PersistentMap<u64, u32>,
-    // Monotonic within one checked context; forks copy it and weakening
-    // rebuilds the graph from retained support. Queries read one flag.
+    // Monotonic within one checked context; forks copy it and a restriction
+    // starts a new graph. Queries read one flag.
     scalar_constant_conflict: bool,
     applications: PersistentMap<u64, Application>,
     uses: PersistentMap<u64, PersistentSet<u64>>,

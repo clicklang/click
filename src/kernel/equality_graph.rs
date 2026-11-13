@@ -3379,13 +3379,11 @@ mod tests {
             .iter()
             .map(|source| source.proposition().clone())
             .collect::<Vec<_>>();
-        let mut graph = EqualityGraph::default();
+        let graph = EqualityGraph::default();
         for source in &sources {
             graph.adjust_pointer_fact(source, true);
             graph.adjust_pointer_fact(source, true); // Exact re-admission is idempotent.
         }
-        assert_eq!(graph.subobject_coverage_facts(&origin), expected);
-        graph.rebuild_from_inputs();
         assert_eq!(graph.subobject_coverage_facts(&origin), expected);
         let fork = graph.clone();
         fork.adjust_pointer_fact(&sources[1], false);

@@ -13675,12 +13675,6 @@ pub(crate) enum PropositionDerivationRule {
     ForAllLoadableRange {
         source: Box<Proposition>,
     },
-    /// Prove an existential one-byte loadability fact by selecting the
-    /// constant zero index from one exact wider range.
-    ExistsLoadableRange {
-        source: Box<Proposition>,
-        witness: MachineTerm,
-    },
     FiniteForAll {
         instances: Vec<PropositionDerivation>,
     },

@@ -44,11 +44,6 @@ fn integer_count_facts_follow_early_and_late_model_aliases() {
             context = context.assume_proposition(same.clone());
         }
         assert!(context.contains_known(&goal));
-        assert!(
-            !context
-                .with_only_proposition_facts(&[])
-                .contains_known(&goal)
-        );
     }
 }
 

@@ -4,7 +4,7 @@ use crate::kernel::assumptions::load_snapshot_and_pointer;
 use crate::kernel::assumptions::{parameter_alias_bucket, parameter_partition_variable};
 use crate::kernel::reasoning::memories_match_for_pointer_load;
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{ConditionTerm, Proposition, PureFunctionArgument};
+use crate::kernel::{ConditionTerm, Proposition};
 use std::collections::BTreeSet;
 
 impl EqualityGraph {
@@ -113,71 +113,6 @@ impl EqualityGraph {
             .get(field)
             .into_iter()
             .flat_map(|sources| sources.iter().map(|(source, ())| source))
-    }
-}
-
-impl EqualityGraph {
-    /// A fresh graph refiled from the exact equality indexes. Production
-    /// contexts only grow and fork; the sole remaining caller is
-    /// `PureFactContext::clear_proposition_facts`, which serves the
-    /// `ExistsLoadableRange` derivation rule.
-    pub(in crate::kernel) fn rebuild_from_inputs(&mut self) {
-        let mut classes = EqualityGraph::default();
-        for (left, aliases) in self.admitted.pointer_block_aliases.iter() {
-            for (right, _) in aliases.iter() {
-                if left < right {
-                    classes.add_equality(left, right);
-                }
-            }
-        }
-        for (left, aliases) in self.admitted.pointer_offset_aliases.iter() {
-            for right in aliases.iter() {
-                if left < right {
-                    classes.add_offset_equality(left, right);
-                }
-            }
-        }
-        for ((left, right), _) in self.admitted.uint64_graph_equalities.iter() {
-            classes.add_uint64_equality(left.value(), right.value());
-        }
-        for ((left, right), _) in self.admitted.algebraic_graph_equalities.iter() {
-            let PureFunctionArgument::Algebraic(left) = &left.arguments()[0] else {
-                unreachable!()
-            };
-            let PureFunctionArgument::Algebraic(right) = &right.arguments()[0] else {
-                unreachable!()
-            };
-            classes.add_algebraic_equality(left, right);
-        }
-        for (left, right) in self.admitted.pointer_value_equalities.iter() {
-            classes.add_pointer_value_equality(left, right);
-        }
-        for ((left, right), _) in self.admitted.int32_graph_equalities.iter() {
-            classes.add_int32_equality_views(left.operand_view(), right.operand_view());
-        }
-        for (_, definitions) in self.admitted.typed_pointer_read_definitions.iter() {
-            for ((_, address), (value, memory)) in definitions.iter() {
-                classes.add_equality(value, &Pointer::loaded_value(memory, address));
-            }
-        }
-        for ((pointer, alignment), _) in self.admitted.pointer_alignment_facts.iter() {
-            classes.register_alignment(pointer, *alignment);
-        }
-        for (condition, value) in self.admitted.congruence_conditions.iter() {
-            classes.add_condition(condition, *value);
-        }
-        let sources = {
-            let state = self.state.lock().expect("equality graph");
-            (
-                state.pointer_fact_inputs.clone(),
-                state.condition_pointer_fact_inputs.clone(),
-            )
-        };
-        for (_, source) in sources.0.iter().chain(sources.1.iter()) {
-            classes.adjust_pointer_fact_source(source, true);
-        }
-        classes.admitted = self.admitted.clone();
-        *self = classes;
     }
 }
 

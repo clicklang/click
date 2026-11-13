@@ -4253,20 +4253,19 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
             .unchecked_with_fact(CResourceFact::own_memory(memory_range(p.clone(), 0, 2)))
             .unchecked_with_fact(CResourceFact::own_memory(memory_range(q.clone(), 0, 2))),
     );
-    let context = PureFactContext::new()
-        .assume_proposition(owners.clone())
-        .assume_condition(
-            ConditionTerm::uint64_equal(
-                MachineTerm::pointer_address(q.clone()),
-                MachineTerm::Binary {
-                    format: MachineIntegerType::UInt64,
-                    op: MachineBinaryOp::Add,
-                    left: Box::new(MachineTerm::pointer_address(p.clone())),
-                    right: Box::new(MachineTerm::Variable(Variable(970_143))),
-                },
-            ),
-            true,
-        );
+    let address = PureFactContext::new().assume_condition(
+        ConditionTerm::uint64_equal(
+            MachineTerm::pointer_address(q.clone()),
+            MachineTerm::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(MachineTerm::pointer_address(p.clone())),
+                right: Box::new(MachineTerm::Variable(Variable(970_143))),
+            },
+        ),
+        true,
+    );
+    let context = address.clone().assume_proposition(owners.clone());
     assert!(!context.address_connected_objects(&q).is_empty());
     let before = intern_c_memory(
         CMemory::new().store(p.clone(), CValue::UInt64(MachineTerm::uint64_constant(17))),
@@ -4283,11 +4282,7 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
     ));
     assert!(
         crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
-            &q,
-            8,
-            &p,
-            8,
-            &context.with_only_proposition_facts(&[])
+            &q, 8, &p, 8, &address
         )
         .is_none()
     );

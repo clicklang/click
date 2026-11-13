@@ -3686,27 +3686,6 @@ impl PureFactContext {
         self.equality_graph.add_equality(left, right);
     }
 
-    /// Refiles the algebraic graph equalities of the facts that remain after
-    /// [`Self::clear_proposition_facts`], rebuilding the graph from its exact
-    /// equality indexes since a union-find cannot forget an equality.
-    fn rebuild_algebraic_graph_equalities(&mut self) {
-        self.equality_graph.admitted.algebraic_graph_equalities = Default::default();
-        self.equality_graph.rebuild_from_inputs();
-        let conditions = self.condition_facts.clone();
-        for (condition, value) in conditions.scan_for_upkeep() {
-            if matches!(condition, ConditionTerm::AlgebraicEqual(..)) {
-                self.adjust_algebraic_graph_equality(&Proposition::ConditionIs(
-                    condition.clone(),
-                    *value,
-                ));
-            }
-        }
-        let propositions = self.prop_facts.clone();
-        for proposition in propositions.scan_for_upkeep() {
-            self.adjust_algebraic_graph_equality(proposition);
-        }
-    }
-
     pub(in crate::kernel) fn designations_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         left == right
             || self
@@ -5456,11 +5435,9 @@ impl PureFactContext {
         }
     }
 
+    /// Drops every proposition fact and its indexes, for a restriction about
+    /// to replace the condition indexes and refile the selected facts.
     pub(super) fn clear_proposition_facts(&mut self) {
-        self.clear_proposition_facts_with_graph_rebuild(true);
-    }
-
-    fn clear_proposition_facts_with_graph_rebuild(&mut self, rebuild_graph: bool) {
         self.prop_facts = Default::default();
         self.comparison_views = Default::default();
         self.equality_graph.clear_proposition_pointer_facts();
@@ -5501,18 +5478,6 @@ impl PureFactContext {
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
         self.separated_anchor_pointers = crate::persistent::PersistentMap::default();
         self.recompute_content_fingerprint();
-        // No model support can change in a model-free context. Rebuilding
-        // the complete scalar graph here would touch unrelated facts before
-        // a restriction replaces its condition indexes.
-        if rebuild_graph
-            && !self
-                .equality_graph
-                .admitted
-                .algebraic_graph_equalities
-                .is_empty()
-        {
-            self.rebuild_algebraic_graph_equalities();
-        }
     }
 
     fn adjust_pointer_class_fact(&mut self, proposition: &Proposition) {
@@ -8291,7 +8256,7 @@ impl PureFactContext {
             .collect();
         // Condition support is replaced next. Reconstructing the inherited
         // graph here would reconstruct unselected ambient edges, then discard it.
-        restricted.clear_proposition_facts_with_graph_rebuild(false);
+        restricted.clear_proposition_facts();
         restricted.rebuild_signed_order_bounds();
         restricted.rebuild_null_pointer_offsets();
         restricted.rebuild_memory_load_condition_facts();
@@ -8342,18 +8307,6 @@ impl PureFactContext {
             || matches!(proposition,
                 Proposition::ConditionIs(condition @ ConditionTerm::Compare { .. }, truth)
                 if self.observation_comparisons.source(condition, *truth).is_some())
-    }
-
-    /// Like [`Self::restricted_to_facts`], but keeping every condition fact
-    /// and replacing only the proposition facts.
-    pub fn with_only_proposition_facts(&self, propositions: &[Proposition]) -> Self {
-        let mut restricted = self.clone();
-        restricted.clear_proposition_facts();
-        for proposition in propositions {
-            restricted.insert_proposition_fact(proposition.clone());
-        }
-        restricted.recompute_content_fingerprint();
-        restricted
     }
 
     pub(super) fn includes(&self, required: &Self) -> bool {
@@ -8573,10 +8526,6 @@ impl PropositionDerivation {
             PropositionDerivationRule::ForAllLoadableRange { source } => {
                 available.proves_exact(source)
                     && available.checks_forall_loadable_range(&self.conclusion, source)
-            }
-            PropositionDerivationRule::ExistsLoadableRange { source, witness } => {
-                available.proves_exact(source)
-                    && available.checks_exists_loadable_range(&self.conclusion, source, witness)
             }
             PropositionDerivationRule::FiniteForAll { instances } => {
                 let mut expected = available.finite_forall_instantiations(&self.conclusion);

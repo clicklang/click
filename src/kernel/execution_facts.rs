@@ -1086,11 +1086,7 @@ mod tests {
             .assume_proposition(first.clone())
             .assume_proposition(second);
         let changed = context.clone().assume_proposition(guard(1, false));
-        for context in [
-            &context,
-            &changed,
-            &context.with_only_proposition_facts(&[]),
-        ] {
+        for context in [&context, &changed] {
             let mut facts = ExecutionFacts::new();
             facts.append_context(&context.execution_fact_projection);
             assert_eq!(
