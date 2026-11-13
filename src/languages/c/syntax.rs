@@ -4879,6 +4879,13 @@ impl C0StructLayout {
             .collect()
     }
 
+    /// Scalar leaves with their declared types, including embedded fields.
+    pub(crate) fn typed_leaf_fields(&self) -> impl Iterator<Item = (&str, u32, C0Type)> {
+        self.aggregate_fields
+            .iter()
+            .map(|field| (field.name.as_str(), field.offset_bytes, field.c_type))
+    }
+
     /// Each scalar leaf of the struct with its byte offset, embedded struct
     /// fields flattened to qualified paths such as `inner.count`.
     pub(crate) fn leaf_field_offsets(&self) -> impl Iterator<Item = (&str, u32)> {

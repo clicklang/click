@@ -17,5 +17,5 @@ int32 change(struct packet input) {
 ```
 
 ```expect
-fail: left side evaluated to old(*input), right side evaluated to 5
+fail: left side evaluated to old(input.value), right side evaluated to 5
 ```

@@ -4216,6 +4216,45 @@ pub(in crate::surface) fn diagnostic_model_load_cell(
     None
 }
 
+/// A scalar read from a by-value parameter's input object. Its carrier is
+/// byte-typed, so its field layout, rather than its pointee type, determines
+/// which source place the read names.
+pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
+    pointer: &Pointer,
+    kind: crate::kernel::LoadKind,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<String> {
+    for (parameter, argument) in parameter_binding
+        .parameters
+        .iter()
+        .zip(parameter_binding.arguments)
+    {
+        if !parameter.is_struct_value() {
+            continue;
+        }
+        let CExpression::Value(CValue::Pointer(base)) = argument else {
+            continue;
+        };
+        let Some(offset) = diagnostic_pointer_element_index_from_base(pointer, base.pointer(), 1)
+            .and_then(|offset| offset.as_const())
+        else {
+            continue;
+        };
+        let Some(layout) = parameter.struct_layout() else {
+            continue;
+        };
+        let mut fields = layout.typed_leaf_fields().filter(|(_, at, ty)| {
+            *at == offset
+                && crate::kernel::LoadKind::of_type(ty.to_kernel_type())
+                    .is_some_and(|read| read.reads_word_of(kind))
+        });
+        if let (Some((field, _, _)), None) = (fields.next(), fields.next()) {
+            return Some(format!("{}.{field}", parameter.name()));
+        }
+    }
+    None
+}
+
 pub(in crate::surface) fn diagnostic_source_load_cell(
     pointer: &Pointer,
     kind: crate::kernel::LoadKind,
