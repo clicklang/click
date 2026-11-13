@@ -81,7 +81,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 1 | Let bindings and local value handoffs | Merged in [PR #2617](https://github.com/clicklang/click/pull/2617); specification bindings retain shared values through selected lookups, with shadowing and snapshot scope preserved. |
 | 2 | Symbolic conditional joins | Merged [PR #2638](https://github.com/clicklang/click/pull/2638). Typed guards and shared arms survive checking, transport, snapshot matching and Surface spelling. The full gate passed 7,294 unit/API tests, 5,240 fixtures and all examples; its 15m54s run exceeded the ten-minute target. The final conditional-equality follow-up passed 1,884 selected checks, including all scaling, Rust import and expansion tests. Its full-corpus fact-stability audit passed all 5,240 fixtures with zero differences. |
 | 3 | Pure-function arguments and results | In progress. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. Common machine call result roots and remaining result consumers are still open. |
-| 4 | Mixed-width arithmetic and casts | Restarting as subchunks 4a–4j below, one PR per subchunk. The previous combined implementation is unmerged reference work, not a validated delivery. |
+| 4 | Mixed-width arithmetic and casts | Implemented as subchunks 4a–4j below, one PR per subchunk. Numeric producers retain shared operands and results within the existing supported profile. General call and nonnumeric compatibility boundaries belong to the remaining packages; the previous combined branch stays unmerged reference material. |
 | 5 | C/Rust execution result carriers | Open |
 | 6 | Folds, binders and algebraic matches | Open |
 | 7 | Complete pointers and read addresses | Open |
@@ -210,8 +210,26 @@ are preserved. Tag-clearing equalities remain separate side facts; pointer
 provenance records retain their explicit compatibility boundary. Alignment
 recognition, its bounded certificate reader and the planner accept the retained
 mask equality; existing equality keys normalize signed/unsigned 64-bit literals
-by their bits. Subchunk 4j
-remains open.
+by their bits. Standard-theorem declaration matching uses the existing exact
+proposition identity across native and retained comparisons.
+[PR #2684](https://github.com/clicklang/click/pull/2684) merged and both pushed
+commits were verified on upstream. All 7,409 non-corpus library tests (including
+1,522 scaling tests) and all 5,275 regular fixtures passed, with zero
+fact-stability differences.
+
+Subchunk 4j retains conversions involving 128-bit integer formats and the
+existing bounded wide arithmetic profile: signed 128-bit multiplication and
+same-format signed/unsigned 128-bit division and remainder. Results retain their
+mathematical source; overflow and C-defined divisor requirements remain
+obligations, never assumed facts. Typed 128-bit reads retain their kind and
+snapshot through casts and integer observations. Unsupported wide addition,
+subtraction, unsigned multiplication, mixed division, shifts and bitwise
+operations remain unsupported. General calls and nonnumeric compatibility
+boundaries remain explicit; completing chunk 4 does not complete the overall
+KernelTerm/SurfaceTerm migration. Native parity, refusal and snapshot controls,
+nested evaluation and two deterministic growth tests pass. All 1,571 selected
+regressions (including all 1,524 scaling tests) and all 5,275 regular fixtures
+pass, with zero fact-stability differences.
 
 For each PR:
 

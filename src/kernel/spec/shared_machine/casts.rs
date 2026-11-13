@@ -6,6 +6,7 @@ pub(in crate::kernel::spec) fn cast(value: &SpecValue, target: CType) -> Option<
     cast_signedness(value, target)
         .or_else(|| cast_widening(value, target))
         .or_else(|| cast_narrowing(value, target))
+        .or_else(|| cast_wide(value, target))
 }
 
 /// Narrowing retains the existing modular truncation and low-word rules.
@@ -118,4 +119,33 @@ fn cast_root(
         root.checking_legacy_machine_conversion(source, destination)
     };
     result.with_machine_observation_type(destination)
+}
+
+/// The bounded 128-bit profile uses the same modular generic cast as the
+/// language conversion table, admitting only its existing typed operands.
+fn cast_wide(value: &SpecValue, target: CType) -> Option<KernelTerm> {
+    let SpecValue::Shared(root) = value else {
+        return None;
+    };
+    let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let destination = MachineIntegerType::from_c_type(target)?;
+    if source == destination
+        || (source.format().bits() != 128 && destination.format().bits() != 128)
+        || !root.is_shared_machine_operand()
+        || !MachineOperandView::Shared(root).accepts_cast_operand(source)
+    {
+        return None;
+    }
+    if matches!(root.node(), KernelTermNode::Legacy(_)) {
+        let converted = crate::kernel::machine_integer::conversion::convert_term(
+            source,
+            destination,
+            root.machine_conversion_leaf()?.clone(),
+        );
+        return Some(KernelTerm::retained_machine_operand(
+            destination,
+            MachineOperandView::Legacy(&converted),
+        ));
+    }
+    Some(root.checking_machine_cast_preserving_sign_pairs(source, destination))
 }
