@@ -2085,7 +2085,8 @@ void plain(int32 n) { requires n >= 0; ensures 0 == 0; } by {
             ])
             .expect_err("the false theorem premise remains rejected");
             assert!(
-                report.contains("required exact fact for theorem `positive`"),
+                report.contains("theorem `positive` has an unproved obligation")
+                    && report.contains("`0 > 0`"),
                 "{report}"
             );
             let (_, trace) = report
