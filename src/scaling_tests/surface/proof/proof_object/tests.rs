@@ -210,10 +210,12 @@ fn same_block_offset_rewrite_work(
         CValue::UInt64(MachineTerm::Variable(Variable(8_179_098))),
     );
     if from_cursor {
-        let CValue::Pointer(cursor_value) = state.locals().get("cursor").unwrap() else {
+        let local_native_output_213 = state.locals().get_native("cursor");
+        let CValue::Pointer(cursor_value) = local_native_output_213.as_deref().unwrap() else {
             unreachable!()
         };
-        let CValue::Pointer(base_value) = state.locals().get("base").unwrap() else {
+        let local_native_output_216 = state.locals().get_native("base");
+        let CValue::Pointer(base_value) = local_native_output_216.as_deref().unwrap() else {
             unreachable!()
         };
         let mut shifted_value = base_value.clone();

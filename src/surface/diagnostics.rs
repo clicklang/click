@@ -1386,7 +1386,7 @@ pub(super) fn local_naming_tables(state: &CState) -> (Vec<syntax::C0Parameter>, 
             (
                 call_result_spelling(name)
                     .unwrap_or_else(|| crate::kernel::c_local_source_name(name).to_string()),
-                value.clone(),
+                value.clone().into_native(),
             )
         })
         .collect();

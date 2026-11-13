@@ -1344,8 +1344,8 @@ fn c_function_contract_entry_facts(
     ] {
         for (index, parameter) in parameters.iter().enumerate() {
             if let Some(bytes) = parameter.fixed_reference_extent {
-                let Some(CValue::Pointer(pointer)) = entry_state.locals.get(parameter.name())
-                else {
+                let pointer_value = entry_state.locals.get_native(parameter.name());
+                let Some(CValue::Pointer(pointer)) = pointer_value.as_deref() else {
                     return Err("array reference entry argument is not a pointer value".into());
                 };
                 if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
@@ -1361,14 +1361,13 @@ fn c_function_contract_entry_facts(
             let Some(length_index) = parameter.slice_length_parameter else {
                 continue;
             };
-            let Some(CValue::Pointer(pointer)) = entry_state.locals.get(parameter.name()) else {
+            let pointer_value = entry_state.locals.get_native(parameter.name());
+            let Some(CValue::Pointer(pointer)) = pointer_value.as_deref() else {
                 return Err("slice entry argument is not a pointer value".into());
             };
             let length_parameter = &parameters[index + length_index];
-            let Some(CValue::UInt64(length)) = entry_state
-                .locals
-                .get(length_parameter.name())
-                .map(CValue::numeric_value)
+            let length_value = entry_state.locals.get_native(length_parameter.name());
+            let Some(CValue::UInt64(length)) = length_value.as_deref().map(CValue::numeric_value)
             else {
                 return Err("slice entry length is not a native unsigned value".into());
             };

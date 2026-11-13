@@ -93,7 +93,13 @@ fn source_scalar_lease_selected_end_is_indexed_across_live_nested_handles() {
         state = state
             .with_loan_ledger(Some(ledger))
             .with_loan_participant(Some(holder));
-        let CValue::Pointer(mut parent) = state.locals.get("parent").unwrap().clone() else {
+        let CValue::Pointer(mut parent) = state
+            .locals
+            .get_native("parent")
+            .as_deref()
+            .unwrap()
+            .clone()
+        else {
             panic!("expected parent pointer");
         };
         let family = ScalarReferencePlanFamily::new("locked-source", "nested");

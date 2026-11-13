@@ -348,7 +348,10 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
     let CStatementOutcome::Normal(after_first) = &paths[0].outcome else {
         panic!("modeled C join should consume the first child");
     };
-    assert_eq!(after_first.locals.get("status"), Some(&int32(0)));
+    assert_eq!(
+        after_first.locals.get_native("status").as_deref(),
+        Some(&int32(0))
+    );
     let (checked, _) =
         prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
             state.clone(),
@@ -658,7 +661,10 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
             panic!("status branch did not resolve: {:?}", branch.outcome);
         };
         assert!(state.pending_thread_create.is_none());
-        assert_eq!(state.locals.get("unrelated"), Some(&int32(7)));
+        assert_eq!(
+            state.locals.get_native("unrelated").as_deref(),
+            Some(&int32(7))
+        );
         assert_eq!(
             state.memory().load(state.locals.slot("unrelated").unwrap()),
             CExpressionOutcome::Value(int32(7)),
@@ -681,7 +687,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     let success = success.expect("zero status should create a child");
     let failure = failure.expect("nonzero status should retain the parent");
     assert!(failure.locals.is_uninitialized_object("thread"));
-    assert!(success.locals.get("thread").is_some());
+    assert!(success.locals.get_native("thread").as_deref().is_some());
     let premature_read = execute_c_statement_paths(
         &failure,
         &c_assign("rc", c_variable("thread")),

@@ -852,7 +852,7 @@ impl<'a> Proof<'a> {
                     })?;
                 Some((
                     name.clone(),
-                    ContractExpression::CFragment(CExpression::Value(value)),
+                    ContractExpression::CFragment(CExpression::Value(value.into_native())),
                 ))
             }
             None => None,

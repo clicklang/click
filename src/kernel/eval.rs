@@ -145,12 +145,14 @@ pub(super) use statements::execute_c_realloc_assign_paths;
 pub(super) use statements::execute_c_statement;
 pub(super) use statements::memory_write_permission_outcome;
 pub(crate) use statements::resolve_pending_heap_allocations;
-pub(super) use statements::sync_stack_local;
 pub(super) use statements::{
     StatementJudgment, execute_c_statement_paths, execute_statement_paths,
     execute_statement_paths_with_prefix, paths_after_scope_exit, scope_declared_names,
 };
+pub(super) use statements::{sync_retained_stack_local, sync_stack_local};
 
 pub(crate) use memory_loads::{pointer_read_over_immediate_store, pointer_read_over_write_c_value};
 
 pub(crate) use memory_loads::loaded_pointer_stored_block;
+
+pub(in crate::kernel) type ExecutionValuePath = CExpressionPath<ExecutionValue>;

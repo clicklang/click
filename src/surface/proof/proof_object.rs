@@ -1614,7 +1614,9 @@ fn register_snapshot_names(
         labels.source_state(state, point.clone());
     }
     for (point, state) in citable {
-        for (name, value) in state.locals().object_values() {
+        for (name, stored) in state.locals().object_values() {
+            let value = stored.native();
+            let value = value.as_ref();
             // A call's result temporary is spelled by its call,
             // `<region>.result`, at any point that holds it.
             if let Some(spelling) = crate::surface::diagnostics::call_result_spelling(name) {
@@ -1743,7 +1745,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
                 labels.register_current_state(&execution.core.state);
                 for (name, value) in execution.core.state.locals().object_values() {
                     if !name.starts_with("__rust_")
-                        && let Some(variable) = diagnostic_value_variable(value)
+                        && let Some(variable) = diagnostic_value_variable(&value.native())
                     {
                         labels.source_name(
                             variable,

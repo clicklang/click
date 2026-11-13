@@ -428,8 +428,14 @@ fn interface_join_does_not_visit_locals_its_arms_share() {
         );
         // The shared locals keep their values; the one the arms disagree on
         // is abstracted.
-        assert_eq!(from_then.state.locals().get("kept0"), Some(&int32(0)));
-        assert_ne!(from_then.state.locals().get("picked"), Some(&int32(1)));
+        assert_eq!(
+            from_then.state.locals().get_native("kept0").as_deref(),
+            Some(&int32(0))
+        );
+        assert_ne!(
+            from_then.state.locals().get_native("picked").as_deref(),
+            Some(&int32(1))
+        );
         work
     };
     let small = work_for(4);
@@ -486,8 +492,8 @@ fn binding_a_local_copies_a_search_path_not_the_frame() {
         let before = crate::persistent::persistent_node_allocations();
         let bound = state.with_local("next", CValue::Int32(MachineTerm::constant(1)));
         copied.push(crate::persistent::persistent_node_allocations() - before);
-        assert!(shared.locals.get("next").is_none());
-        assert!(bound.locals.get("next").is_some());
+        assert!(shared.locals.get_native("next").as_deref().is_none());
+        assert!(bound.locals.get_native("next").as_deref().is_some());
     }
     assert!(copied[0] > 0, "binding a local allocates persistent nodes");
     assert!(

@@ -2244,8 +2244,11 @@ fn c_loop_state_components_match_at_back_edge_inner(
             let next = next_state.locals().get(name);
             let back_edge = next.map(c_value_object_class);
             if back_edge == Some(Some(head.clone()))
-                || matches!(next, Some(CValue::Pointer(pointer))
-                    if assumptions.pointers_known_equal(pointer.pointer(), &Pointer::null()))
+                || next
+                    .and_then(|value| value.pointer())
+                    .is_some_and(|pointer| {
+                        assumptions.pointers_known_equal(pointer.pointer(), &Pointer::null())
+                    })
             {
                 return None;
             }
@@ -3520,10 +3523,10 @@ fn loop_exit_local_arguments(
                     Some(value.clone())
                 }
             };
-            let fresh = project(successor.locals().get(name)?)?;
+            let fresh = project(&successor.locals().get(name)?.native())?;
             for ((exit, instance), context) in exits.iter().zip(instances).zip(contexts) {
                 crate::instrumentation::record_deterministic_work(1);
-                let held = project(exit.locals().get(name)?)?;
+                let held = project(&exit.locals().get(name)?.native())?;
                 let argument = instance.arguments().get(position)?;
                 if !crate::kernel::resource_arguments_proven_equal(
                     argument,
@@ -3872,7 +3875,7 @@ fn abstract_loop_exit_locals(
                 let mut evidence = None::<ObjectTypeEvidence>;
                 let mut complete = true;
                 for value in &held {
-                    if let CValue::Pointer(pointer) = value
+                    if let Some(pointer) = value.pointer()
                         && !pointer.is_null()
                     {
                         match pointer.object_type_evidence() {
@@ -3892,7 +3895,7 @@ fn abstract_loop_exit_locals(
             _ => fresh,
         };
         for (restatement, held) in restatements.iter_mut().zip(held) {
-            restatement.pin(&fresh, &held);
+            restatement.pin(&fresh, &held.native());
         }
         sync_stack_local(successor, &name, &fresh);
         successor.locals.set_typed(name.clone(), fresh, c_type);
@@ -4203,8 +4206,16 @@ fn loop_exit_residual_difference(
     }
     for (name, c_type) in locals {
         let value = seated.locals().get(name)?.clone();
-        sync_stack_local(&mut witness, name, &value);
-        witness.locals.set_typed(name.clone(), value, *c_type);
+        sync_retained_stack_local(&mut witness, name, &value);
+        witness.locals.set_retained_typed_with_all_qualifiers(
+            name.clone(),
+            value,
+            *c_type,
+            false,
+            false,
+            false,
+            false,
+        );
     }
     if !cells.is_empty() {
         let mut memory = witness.memory().clone();
@@ -9182,7 +9193,11 @@ pub(super) fn address_escaped_scalar_locals(state: &CState, body: &CStatement) -
     };
     for name in state.locals.bindings.keys() {
         if let Some(value) = state.locals.get(name) {
-            record_pointer(value, &mut escaped);
+            if let Some(pointer) = value.pointer()
+                && let Some(name) = state.locals.name_for_slot(pointer.pointer())
+            {
+                escaped.insert(name.to_string());
+            }
         }
     }
     for value in state.memory.cells.concrete().values() {
@@ -9538,34 +9553,28 @@ mod wide_range_reader_tests;
 #[cfg(test)]
 mod resource_argument_diagnostic_tests;
 
-fn c_value_subobject_extent(value: &CValue) -> Option<&SubobjectExtent> {
-    match value {
-        CValue::Pointer(pointer) => pointer.extent(),
-        _ => None,
-    }
+fn c_value_subobject_extent(value: &LocalExecutionValue) -> Option<&SubobjectExtent> {
+    value.pointer()?.extent()
 }
 
-fn c_value_object_class(value: &CValue) -> Option<crate::kernel::effective_type::CAccessClass> {
-    match value {
-        CValue::Pointer(pointer) => pointer.object_class(),
-        _ => None,
-    }
+fn c_value_object_class(
+    value: &LocalExecutionValue,
+) -> Option<crate::kernel::effective_type::CAccessClass> {
+    value.pointer()?.object_class()
 }
 
-/// `fresh` with the class of the object the pointer value it abstracts
-/// designates.
-fn with_retained_object_class(fresh: CValue, previous: Option<&CValue>) -> CValue {
-    // A fresh loop-head value retains C access typing, not a premise about
-    // the original object of the previous value.
+fn with_retained_object_class(fresh: CValue, previous: Option<&LocalExecutionValue>) -> CValue {
     fresh.with_pointer_declared_object_class(previous.and_then(c_value_object_class))
 }
 
-/// `fresh` with the subobject extent of the pointer value it abstracts.
-fn with_retained_extent(fresh: CValue, previous: Option<&CValue>) -> CValue {
-    match (fresh, previous) {
-        (CValue::Pointer(pointer), Some(CValue::Pointer(previous)))
-            if previous.extent().is_some() =>
-        {
+/// Legacy fresh-pointer construction is the output boundary for this loop abstraction.
+fn with_retained_extent(fresh: CValue, previous: Option<&LocalExecutionValue>) -> CValue {
+    let Some(previous) = previous.filter(|value| value.pointer().is_some()) else {
+        return fresh;
+    };
+    let previous = previous.native();
+    match (fresh, previous.as_ref()) {
+        (CValue::Pointer(pointer), CValue::Pointer(previous)) if previous.extent().is_some() => {
             CValue::Pointer(
                 pointer
                     .with_extent(previous.extent().cloned())

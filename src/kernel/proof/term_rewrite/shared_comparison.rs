@@ -29,7 +29,10 @@ impl TermRewrite<'_> {
     /// operators, and exact Integer congruence also preserves raw casts.
     /// Only comparison results cross queries.
     /// Native opaque replacements remain exact leaves beneath shared parents.
-    pub(super) fn shared_machine_operand(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
+    pub(in crate::kernel) fn shared_machine_operand(
+        &mut self,
+        root: &KernelTerm,
+    ) -> Option<KernelTerm> {
         // Only the ordinary comparison scope may share work between queries.
         // A nested binder's renamed/opaque reads use this traversal's own memo.
         let cacheable = self.conditions.is_none()

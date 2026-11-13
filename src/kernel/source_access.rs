@@ -50,10 +50,10 @@ impl CStatementAssignSource {
         if assigned != source.child.as_ref() {
             return None;
         }
-        let CValue::Pointer(parent) = before.locals.get(&source.parent)? else {
+        let CValue::Pointer(parent) = before.locals.get(&source.parent)?.native_payload()? else {
             return None;
         };
-        let CValue::Pointer(child) = after.locals.get(&source.child)? else {
+        let CValue::Pointer(child) = after.locals.get(&source.child)?.native_payload()? else {
             return None;
         };
         if parent.pointer() != child.pointer() || parent.c_type() != child.c_type() {

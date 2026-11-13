@@ -4186,7 +4186,16 @@ fn zero_folded_composite_quantity_supplies_no_body_read_authority() {
     let parent = CResourceFact::own_quantity(
         CResource::Composite {
             name: "dependent_pair".into(),
-            arguments: vec![state.locals().get("node").unwrap().clone().into()].into(),
+            arguments: vec![
+                state
+                    .locals()
+                    .get_native("node")
+                    .as_deref()
+                    .unwrap()
+                    .clone()
+                    .into(),
+            ]
+            .into(),
         },
         MachineTerm::constant(0),
     );

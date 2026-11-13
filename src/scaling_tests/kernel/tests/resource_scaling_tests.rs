@@ -169,9 +169,9 @@ fn private_local_copy_ignores_unrelated_resources() {
                 let CStatementOutcome::Normal(next) = &paths[0].outcome else {
                     panic!("assignment did not have a normal outcome");
                 };
-                assert_eq!(next.locals().get("target"), Some(&value));
+                assert_eq!(next.locals().get_native("target").as_deref(), Some(&value));
                 assert_eq!(next.resources(), &resources, "ownership must be retained");
-                assert_eq!(next.locals().get("beside_0"), None);
+                assert_eq!(next.locals().get_native("beside_0").as_deref(), None);
                 samples.push((size, work));
             }
             assert_constant_plus_log_growth(

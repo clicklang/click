@@ -3970,7 +3970,8 @@ fn enum_switch_proof_match(
     let CExpression::Variable(name) = value.as_ref() else {
         return None;
     };
-    let CValue::Parameter(term) = state.locals().get(name)? else {
+    let native = state.locals().get_native(name)?;
+    let CValue::Parameter(term) = native.as_ref() else {
         return None;
     };
     if term.algebraic_type.rigid

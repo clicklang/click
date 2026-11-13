@@ -70,9 +70,12 @@ fn automatic_lifetime_event_ignores_unrelated_locals_and_checks_exact_states() {
             core.record_automatic_lifetime_end(&state, &["selected".to_string()])
                 .unwrap()
         });
-        assert!(after.locals().get("selected").is_none());
+        assert!(after.locals().get_native("selected").as_deref().is_none());
         assert!(!after.memory().has_block(&"local:selected".into()));
-        assert_eq!(after.locals().get("other_0"), Some(&int32(9)));
+        assert_eq!(
+            after.locals().get_native("other_0").as_deref(),
+            Some(&int32(9))
+        );
         let events = core.execution_evidence[0].to_vec();
         let CheckedExecutionEvent::AutomaticLifetimeEnd(end) = &events[0] else {
             panic!("missing lifetime evidence")

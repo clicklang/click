@@ -143,7 +143,18 @@ impl<'a> SpecScope<'a> {
                     state
                         .to_mut()
                         .locals
-                        .set(name, SpecValue::Shared(value.clone()).into_native());
+                        .set_retained_typed_with_all_qualifiers(
+                            name,
+                            SpecValue::Shared(value.clone()),
+                            match value.ty() {
+                                KernelType::C(ty) => *ty,
+                                _ => unreachable!(),
+                            },
+                            false,
+                            false,
+                            false,
+                            false,
+                        );
                 }
             }
         }

@@ -218,7 +218,8 @@ fn successful_heap_allocation_state() -> CState {
     else {
         panic!("allocation statement should produce one pending outcome");
     };
-    let Some(CValue::Pointer(pointer)) = pending.locals().get("p") else {
+    let local_native_output_221 = pending.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_221.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
@@ -261,7 +262,8 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     let paths = heap_allocation_paths();
     assert_eq!(paths.len(), 1);
     let success = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = success.locals().get("p") else {
+    let local_native_output_264 = success.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_264.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     assert_eq!(
@@ -303,7 +305,8 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     let CStatementOutcome::Normal(pending) = &paths[0].outcome else {
         unreachable!();
     };
-    let Some(CValue::Pointer(pointer)) = pending.locals().get("p") else {
+    let local_native_output_306 = pending.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_306.as_deref() else {
         unreachable!();
     };
     let null = resolve_pending_heap_allocations(
@@ -324,7 +327,8 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
 #[test]
 fn call_havoc_preserves_initialization_of_a_heap_scalar() {
     let allocated = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = allocated.locals().get("p") else {
+    let local_native_output_327 = allocated.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_327.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     let initialized = allocated.clone().with_memory(
@@ -377,7 +381,8 @@ fn call_havoc_preserves_initialization_of_a_heap_scalar() {
 #[test]
 fn naming_an_uninitialized_heap_cell_does_not_initialize_it() {
     let allocated = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = allocated.locals().get("p") else {
+    let local_native_output_380 = allocated.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_380.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     let address = pointer.pointer().clone();
@@ -407,7 +412,8 @@ fn naming_an_uninitialized_heap_cell_does_not_initialize_it() {
 #[test]
 fn naming_an_initialized_heap_cell_preserves_its_initialization() {
     let allocated = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = allocated.locals().get("p") else {
+    let local_native_output_410 = allocated.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_410.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     let address = pointer.pointer().clone();
@@ -451,7 +457,8 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
     let CStatementOutcome::Normal(pending) = &paths[0].outcome else {
         panic!("allocation should produce a pending outcome");
     };
-    let Some(CValue::Pointer(pending_pointer)) = pending.locals().get("p") else {
+    let local_native_output_454 = pending.locals().get_native("p");
+    let Some(CValue::Pointer(pending_pointer)) = local_native_output_454.as_deref() else {
         panic!("allocation should assign a pending pointer");
     };
     let success = resolve_pending_heap_allocations(
@@ -461,7 +468,8 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
             false,
         )),
     );
-    let Some(CValue::Pointer(pointer)) = success.locals().get("p") else {
+    let local_native_output_464 = success.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_464.as_deref() else {
         panic!("successful allocation should assign a heap pointer");
     };
     assert!(
@@ -535,7 +543,8 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
     let CStatementOutcome::Normal(calloc_pending) = &calloc_paths[0].outcome else {
         panic!("calloc should produce a pending outcome");
     };
-    let Some(CValue::Pointer(calloc_pointer)) = calloc_pending.locals().get("p") else {
+    let local_native_output_538 = calloc_pending.locals().get_native("p");
+    let Some(CValue::Pointer(calloc_pointer)) = local_native_output_538.as_deref() else {
         panic!("calloc should assign a pointer");
     };
     let allocated = resolve_pending_heap_allocations(
@@ -545,7 +554,8 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
             false,
         )),
     );
-    let Some(CValue::Pointer(old_pointer)) = allocated.locals().get("p") else {
+    let local_native_output_548 = allocated.locals().get_native("p");
+    let Some(CValue::Pointer(old_pointer)) = local_native_output_548.as_deref() else {
         panic!("calloc success should assign a heap pointer");
     };
 
@@ -566,7 +576,8 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
     else {
         panic!("realloc should produce one pending path: {realloc_paths:?}");
     };
-    let Some(CValue::Pointer(pending_pointer)) = pending.locals().get("q") else {
+    let local_native_output_569 = pending.locals().get_native("q");
+    let Some(CValue::Pointer(pending_pointer)) = local_native_output_569.as_deref() else {
         panic!("realloc should assign a pending pointer");
     };
     assert_eq!(
@@ -592,7 +603,8 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
             false,
         )),
     );
-    let Some(CValue::Pointer(resized)) = success.locals().get("q") else {
+    let local_native_output_595 = success.locals().get_native("q");
+    let Some(CValue::Pointer(resized)) = local_native_output_595.as_deref() else {
         panic!("successful realloc should assign a heap pointer");
     };
     assert!(
@@ -670,7 +682,8 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     else {
         panic!("allocation statement should produce one pending outcome");
     };
-    let Some(CValue::Pointer(pending_pointer)) = pending.locals().get("p") else {
+    let local_native_output_673 = pending.locals().get_native("p");
+    let Some(CValue::Pointer(pending_pointer)) = local_native_output_673.as_deref() else {
         panic!("allocation should assign a symbolic pending pointer");
     };
     let pending_pointer = pending_pointer.clone();
@@ -746,7 +759,8 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
 #[test]
 fn successful_heap_allocation_is_fresh_from_every_existing_block() {
     let first = successful_heap_allocation_state();
-    let Some(CValue::Pointer(first_pointer)) = first.locals().get("p") else {
+    let local_native_output_749 = first.locals().get_native("p");
+    let Some(CValue::Pointer(first_pointer)) = local_native_output_749.as_deref() else {
         panic!("first allocation should assign a pointer");
     };
     let first_pointer = first_pointer.clone();
@@ -789,7 +803,8 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
     else {
         panic!("second allocation should have one pending outcome");
     };
-    let Some(CValue::Pointer(pending_pointer)) = pending.locals().get("q") else {
+    let local_native_output_792 = pending.locals().get_native("q");
+    let Some(CValue::Pointer(pending_pointer)) = local_native_output_792.as_deref() else {
         panic!("second allocation should assign a pending pointer");
     };
     let second = resolve_pending_heap_allocations(
@@ -799,7 +814,8 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
             false,
         )),
     );
-    let Some(CValue::Pointer(second_pointer)) = second.locals().get("q") else {
+    let local_native_output_802 = second.locals().get_native("q");
+    let Some(CValue::Pointer(second_pointer)) = local_native_output_802.as_deref() else {
         panic!("second allocation should resolve to a pointer");
     };
     assert!(pointers_proven_distinct_for_memory_resolution(
@@ -846,7 +862,8 @@ mod a_free_reaches_every_element_of_its_block {
 
     fn freed_sixteen_byte_allocation() -> (CMemory, Pointer) {
         let state = successful_heap_allocation_state();
-        let Some(CValue::Pointer(pointer)) = state.locals().get("p") else {
+        let local_native_output_849 = state.locals().get_native("p");
+        let Some(CValue::Pointer(pointer)) = local_native_output_849.as_deref() else {
             panic!("allocation should assign a pointer");
         };
         let base = pointer.pointer().clone();
@@ -912,7 +929,8 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
     else {
         panic!("valid free should have one normal path: {freed:?}");
     };
-    let Some(CValue::Pointer(pointer)) = freed.locals().get("p") else {
+    let local_native_output_915 = freed.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_915.as_deref() else {
         panic!("freed local should still contain its stale pointer value");
     };
     assert!(
@@ -995,7 +1013,7 @@ fn consuming_a_whole_range_drops_snapshot_equivalent_prefix_residues() {
 fn scoped_call_borrows_end_before_free() {
     let state = successful_heap_allocation_state();
     // The call views `p[0]`, so the caller has written it.
-    let Some(CValue::Pointer(pointer)) = state.locals().get("p").cloned() else {
+    let Some(CValue::Pointer(pointer)) = state.locals().get_native("p").as_deref().cloned() else {
         panic!("allocation should assign a pointer");
     };
     let memory = state
@@ -1051,7 +1069,8 @@ fn scoped_call_borrows_end_before_free() {
 #[test]
 fn standalone_view_cannot_authorize_free() {
     let state = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = state.locals().get("p") else {
+    let local_native_output_1054 = state.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_1054.as_deref() else {
         panic!("successful allocation should expose its pointer")
     };
     let pointer = pointer.pointer().clone();
@@ -1087,7 +1106,8 @@ fn standalone_view_cannot_authorize_free() {
 #[test]
 fn persistent_composite_view_blocks_free_and_realloc_locally() {
     let state = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = state.locals().get("p") else {
+    let local_native_output_1090 = state.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_1090.as_deref() else {
         panic!("successful allocation should expose its pointer")
     };
     let persistent = CResourceFact::view_composite(
@@ -1338,7 +1358,8 @@ fn heap_storage_becomes_readable_only_after_a_store() {
 #[test]
 fn active_stable_loan_rejects_overlapping_heap_free_and_realloc() {
     let state = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = state.locals().get("p") else {
+    let local_native_output_1341 = state.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_1341.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     // The second int32 cell is a strict subrange of the 16-byte allocation.
@@ -1410,10 +1431,12 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
     else {
         panic!("realloc should produce one pending path: {realloc_paths:?}");
     };
-    let Some(CValue::Pointer(pending_pointer)) = pending.locals().get("q") else {
+    let local_native_output_1413 = pending.locals().get_native("q");
+    let Some(CValue::Pointer(pending_pointer)) = local_native_output_1413.as_deref() else {
         panic!("realloc should assign its pending result");
     };
-    let Some(CValue::Pointer(old_pointer)) = pending.locals().get("p") else {
+    let local_native_output_1416 = pending.locals().get_native("p");
+    let Some(CValue::Pointer(old_pointer)) = local_native_output_1416.as_deref() else {
         panic!("the old pointer should remain available until realloc resolves");
     };
     assert!(
@@ -1435,7 +1458,8 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
         false,
     ));
     let success = resolve_pending_heap_allocations(pending, &success_assumptions);
-    let Some(CValue::Pointer(resized)) = success.locals().get("q") else {
+    let local_native_output_1438 = success.locals().get_native("q");
+    let Some(CValue::Pointer(resized)) = local_native_output_1438.as_deref() else {
         panic!("successful realloc should assign a pointer");
     };
     assert_eq!(
@@ -1468,7 +1492,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
     ));
     let failure = resolve_pending_heap_allocations(pending, &failure_assumptions);
     assert_eq!(
-        failure.locals().get("q"),
+        failure.locals().get_native("q").as_deref(),
         Some(&CValue::pointer(Pointer::null()))
     );
     assert!(
@@ -1982,7 +2006,8 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
     let CStatementOutcome::Normal(pending) = &paths[0].outcome else {
         panic!("allocation should produce a pending outcome");
     };
-    let Some(CValue::Pointer(pending_pointer)) = pending.locals().get("p") else {
+    let local_native_output_1985 = pending.locals().get_native("p");
+    let Some(CValue::Pointer(pending_pointer)) = local_native_output_1985.as_deref() else {
         panic!("allocation should assign a pending pointer");
     };
     let success = resolve_pending_heap_allocations(
@@ -1992,7 +2017,8 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
             false,
         )),
     );
-    let Some(CValue::Pointer(pointer)) = success.locals().get("p") else {
+    let local_native_output_1995 = success.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_1995.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     let base = pointer.pointer().clone();
@@ -2084,7 +2110,8 @@ fn store_union_forgets_aliased_raw_cell() {
 #[test]
 fn logical_heap_value_does_not_initialize_a_c_read() {
     let state = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = state.locals().get("p") else {
+    let local_native_output_2087 = state.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_2087.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     let logical = crate::kernel::eval::evaluate_logical_memory_load_paths(
@@ -2130,7 +2157,8 @@ fn logical_heap_value_does_not_initialize_a_c_read() {
 #[test]
 fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
     let state = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = state.locals().get("p") else {
+    let local_native_output_2133 = state.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_2133.as_deref() else {
         panic!("allocated pointer");
     };
     let address = pointer.pointer().clone();
@@ -2172,7 +2200,8 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
 #[test]
 fn read_validity_transports_checked_aliases_without_crossing_writes_or_retirement() {
     let state = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = state.locals().get("p") else {
+    let local_native_output_2175 = state.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_2175.as_deref() else {
         panic!("allocated pointer");
     };
     let address = pointer.pointer().clone();
@@ -2295,7 +2324,8 @@ fn naming_an_uninitialized_local_cell_does_not_initialize_it() {
 #[test]
 fn an_unplaced_heap_store_keeps_the_elements_it_may_alias_initialized() {
     let allocated = successful_heap_allocation_state();
-    let Some(CValue::Pointer(pointer)) = allocated.locals().get("p") else {
+    let local_native_output_2298 = allocated.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_2298.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     let base = pointer.pointer().clone();
@@ -2386,7 +2416,8 @@ fn fresh_heap_struct_binding_checks_extent_alignment_and_resolution() {
             else {
                 panic!("one pending allocation expected");
             };
-            let Some(CValue::Pointer(pointer)) = pending.locals().get("p") else {
+            let local_native_output_2389 = pending.locals().get_native("p");
+            let Some(CValue::Pointer(pointer)) = local_native_output_2389.as_deref() else {
                 panic!("pointer expected")
             };
             assert_eq!(pointer.object_class(), typed.then(|| class.clone()));
@@ -2397,7 +2428,8 @@ fn fresh_heap_struct_binding_checks_extent_alignment_and_resolution() {
                     &PureFactContext::new().assume_condition(null.clone(), !succeeds),
                 );
                 assert!(resolved.memory.heap.pending_object_classes.is_empty());
-                let Some(CValue::Pointer(value)) = resolved.locals().get("p") else {
+                let local_native_output_2400 = resolved.locals().get_native("p");
+                let Some(CValue::Pointer(value)) = local_native_output_2400.as_deref() else {
                     panic!("resolved pointer expected")
                 };
                 if succeeds {
@@ -2446,7 +2478,8 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
     else {
         panic!("one allocation path expected");
     };
-    let Some(CValue::Pointer(pointer)) = pending.locals().get("p") else {
+    let local_native_output_2449 = pending.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_2449.as_deref() else {
         panic!("pointer expected")
     };
     let null = ConditionTerm::pointer_equal(pointer.pointer().clone(), Pointer::null());
@@ -2457,7 +2490,8 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
     );
     assert_eq!(context.decide(&null), Some(false));
     let resolved = resolve_pending_heap_allocations(pending, &context);
-    let Some(CValue::Pointer(value)) = resolved.locals().get("p") else {
+    let local_native_output_2460 = resolved.locals().get_native("p");
+    let Some(CValue::Pointer(value)) = local_native_output_2460.as_deref() else {
         panic!("resolved pointer expected")
     };
     assert_ne!(value.pointer(), &Pointer::null());
@@ -2510,7 +2544,8 @@ fn size_t_heap_allocation_with_zeroed(
                 ..
             },
         ] => {
-            let Some(CValue::Pointer(pointer)) = pending.locals().get("p") else {
+            let local_native_output_2513 = pending.locals().get_native("p");
+            let Some(CValue::Pointer(pointer)) = local_native_output_2513.as_deref() else {
                 panic!("allocation should assign a pointer");
             };
             let not_null = assumptions.assume_proposition(Proposition::ConditionIs(
@@ -2535,7 +2570,8 @@ fn a_bounded_size_t_element_count_makes_a_64_bit_block() {
         ConditionTerm::uint64_less_equal(n.clone(), MachineTerm::uint64_constant(100)),
     ]);
     let success = success.expect("a bounded count allocates");
-    let Some(CValue::Pointer(pointer)) = success.locals().get("p") else {
+    let local_native_output_2538 = success.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_2538.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     let extent = HeapExtent::new(
@@ -2592,7 +2628,8 @@ fn a_wrapping_size_t_product_is_the_wrapped_block() {
         MachineTerm::uint64_constant((1 << 62) + 1),
     )]);
     let success = success.expect("the wrapped product allocates");
-    let Some(CValue::Pointer(pointer)) = success.locals().get("p") else {
+    let local_native_output_2595 = success.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_2595.as_deref() else {
         panic!("allocation should assign a pointer");
     };
     assert_eq!(
@@ -2615,7 +2652,8 @@ fn a_bounded_size_t_calloc_count_makes_a_zeroed_64_bit_block() {
         true,
     );
     let success = success.expect("a bounded calloc count allocates");
-    let Some(CValue::Pointer(pointer)) = success.locals().get("p") else {
+    let local_native_output_2618 = success.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_2618.as_deref() else {
         panic!("calloc should assign a pointer");
     };
     let extent = HeapExtent::new(
@@ -2690,7 +2728,8 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
         .expect("a bounded count allocates")
         .with_local("q", CValue::pointer(Pointer::null()))
         .with_local("m", CValue::UInt64(m.clone()));
-    let Some(CValue::Pointer(old_pointer)) = allocated.locals().get("p") else {
+    let local_native_output_2693 = allocated.locals().get_native("p");
+    let Some(CValue::Pointer(old_pointer)) = local_native_output_2693.as_deref() else {
         panic!("malloc should assign a pointer");
     };
     let old_pointer = old_pointer.pointer().clone();
@@ -2723,7 +2762,8 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
     else {
         panic!("realloc should produce one pending path: {paths:?}");
     };
-    let Some(CValue::Pointer(pending_pointer)) = pending.locals().get("q") else {
+    let local_native_output_2726 = pending.locals().get_native("q");
+    let Some(CValue::Pointer(pending_pointer)) = local_native_output_2726.as_deref() else {
         panic!("realloc should assign a pending pointer");
     };
     let success = resolve_pending_heap_allocations(
@@ -2733,7 +2773,8 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
             false,
         )),
     );
-    let Some(CValue::Pointer(resized)) = success.locals().get("q") else {
+    let local_native_output_2736 = success.locals().get_native("q");
+    let Some(CValue::Pointer(resized)) = local_native_output_2736.as_deref() else {
         panic!("successful realloc should assign a heap pointer");
     };
     let extent = HeapExtent::new(

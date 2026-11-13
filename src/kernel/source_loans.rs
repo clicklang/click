@@ -108,6 +108,7 @@ impl ScalarReferenceSourcePlan {
         let CValue::Pointer(parent) = before
             .locals
             .get(&self.parent)
+            .and_then(|value| value.native_payload())
             .ok_or(loans::LoanRefusal::InvalidEvidence)?
         else {
             return Err(loans::LoanRefusal::InvalidEvidence);
@@ -115,6 +116,7 @@ impl ScalarReferenceSourcePlan {
         let CValue::Pointer(child) = after
             .locals
             .get(&self.child)
+            .and_then(|value| value.native_payload())
             .ok_or(loans::LoanRefusal::InvalidEvidence)?
         else {
             return Err(loans::LoanRefusal::InvalidEvidence);

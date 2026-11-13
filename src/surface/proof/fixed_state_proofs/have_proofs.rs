@@ -1251,7 +1251,7 @@ impl FixedStateLowering {
             if let Some(value) = entry_state
                 .locals()
                 .get(&name)
-                .cloned()
+                .map(|value| value.clone().into_native())
                 .or_else(|| entry_state.held_local_value(&name))
             {
                 entry_values.insert(name.clone(), value);
@@ -1259,7 +1259,7 @@ impl FixedStateLowering {
             if let Some(value) = lowering_state
                 .locals()
                 .get(&name)
-                .cloned()
+                .map(|value| value.clone().into_native())
                 .or_else(|| lowering_state.held_local_value(&name))
             {
                 current_values.insert(name, value);
@@ -1315,12 +1315,12 @@ impl FixedStateLowering {
         let entry_values = entry_state
             .locals()
             .object_values()
-            .map(|(name, value)| (name.to_string(), value.clone()))
+            .map(|(name, value)| (name.to_string(), value.clone().into_native()))
             .collect();
         let current_values = lowering_state
             .locals()
             .object_values()
-            .map(|(name, value)| (name.to_string(), value.clone()))
+            .map(|(name, value)| (name.to_string(), value.clone().into_native()))
             .collect();
         Self {
             entry_state,

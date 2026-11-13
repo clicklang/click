@@ -121,7 +121,7 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
 #[test]
 fn composite_read_projection_requires_positive_ownership() {
     let (state, _, definitions) = fixture(0, 1);
-    let pointer = match state.locals.get("pool").unwrap() {
+    let pointer = match state.locals.get_native("pool").as_deref().unwrap() {
         CValue::Pointer(value) => value.pointer().clone(),
         _ => unreachable!(),
     };

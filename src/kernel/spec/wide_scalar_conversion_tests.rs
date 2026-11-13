@@ -56,7 +56,10 @@ fn wide_multiply_integer_capture_requires_both_native_product_bounds() {
             .unwrap();
             assert_eq!(native_paths.len(), 1);
             assert_eq!(specified_paths.len(), 1);
-            assert_eq!(native_paths[0].value, specified_paths[0].value);
+            assert_eq!(
+                native_paths[0].value.native(),
+                specified_paths[0].value.native()
+            );
             assert!(native_paths[0].obligations.is_empty());
             assert!(specified_paths[0].obligations.is_empty());
         }

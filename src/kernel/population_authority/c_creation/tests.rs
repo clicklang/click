@@ -24,7 +24,8 @@ fn pending_malloc(state: &CState) -> CState {
 }
 
 fn resolved_malloc(pending: &CState, success: bool) -> CState {
-    let Some(CValue::Pointer(pointer)) = pending.locals().get("p") else {
+    let local_native_output_27 = pending.locals().get_native("p");
+    let Some(CValue::Pointer(pointer)) = local_native_output_27.as_deref() else {
         panic!("pending allocation has a result pointer");
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
@@ -40,19 +41,22 @@ fn only_successful_real_malloc_records_creation() {
         .with_local("p", CValue::pointer(Pointer::null()))
         .with_population_creation_tracking();
     let pending = pending_malloc(&entry);
-    let Some(CValue::Pointer(pending_pointer)) = pending.locals().get("p") else {
+    let local_native_output_43 = pending.locals().get_native("p");
+    let Some(CValue::Pointer(pending_pointer)) = local_native_output_43.as_deref() else {
         unreachable!();
     };
     assert!(!pending.population_storage_created_here(pending_pointer));
 
     let failed = resolved_malloc(&pending, false);
-    let Some(CValue::Pointer(failed_pointer)) = failed.locals().get("p") else {
+    let local_native_output_49 = failed.locals().get_native("p");
+    let Some(CValue::Pointer(failed_pointer)) = local_native_output_49.as_deref() else {
         unreachable!();
     };
     assert!(!failed.population_storage_created_here(failed_pointer));
 
     let succeeded = resolved_malloc(&pending, true);
-    let Some(CValue::Pointer(created)) = succeeded.locals().get("p") else {
+    let local_native_output_55 = succeeded.locals().get_native("p");
+    let Some(CValue::Pointer(created)) = local_native_output_55.as_deref() else {
         unreachable!();
     };
     assert!(succeeded.population_storage_created_here(created));
@@ -89,7 +93,8 @@ fn only_successful_real_malloc_records_creation() {
         &[CValue::pointer(created.pointer().clone())],
     )
     .expect("bind actual helper environment");
-    let Some(CValue::Pointer(copied)) = callee.locals().get("q") else {
+    let local_native_output_92 = callee.locals().get_native("q");
+    let Some(CValue::Pointer(copied)) = local_native_output_92.as_deref() else {
         unreachable!();
     };
     assert!(!callee.population_storage_created_here(copied));
@@ -160,7 +165,8 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
         .with_local("p", CValue::pointer(Pointer::null()))
         .with_population_creation_tracking();
     let pending = pending_malloc(&caller);
-    let Some(CValue::Pointer(pending_pointer)) = pending.locals().get("p") else {
+    let local_native_output_163 = pending.locals().get_native("p");
+    let Some(CValue::Pointer(pending_pointer)) = local_native_output_163.as_deref() else {
         unreachable!();
     };
     let helper = c_function(
@@ -194,7 +200,8 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
         let CStatementOutcome::Return { value, state } = path.outcome else {
             panic!("helper must return from both branches");
         };
-        let Some(CValue::Pointer(pointer)) = state.locals().get("q") else {
+        let local_native_output_197 = state.locals().get_native("q");
+        let Some(CValue::Pointer(pointer)) = local_native_output_197.as_deref() else {
             panic!("helper retains its resolved parameter");
         };
         assert!(!state.memory().has_pending_heap_allocation());

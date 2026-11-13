@@ -1454,7 +1454,7 @@ pub(in crate::kernel) fn collect_c_state_bitvector_variables(
     for binding in state.locals.bindings.values() {
         match binding {
             CLocalBinding::Object { value, .. } => {
-                collect_c_value_bitvector_variables(value, variables)
+                collect_expression_value_bitvector_variables(value, variables)
             }
             CLocalBinding::UninitializedObject { .. } => {}
             CLocalBinding::GlobalObject { .. } => {}
@@ -6381,6 +6381,19 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
     for ((pointer, _), value) in memory.union_cells.iter() {
         collect_pointer_bitvector_variables(pointer, variables);
         collect_c_value_bitvector_variables(value, variables);
+    }
+}
+
+fn collect_expression_value_bitvector_variables(
+    value: &ExecutionValue,
+    variables: &mut BTreeSet<Variable>,
+) {
+    if let Some((_, view @ MachineOperandView::Shared(_))) = value.machine() {
+        visit_machine_operand_carrier_leaves(view, |leaf| {
+            collect_operand_bitvector_variables(leaf, variables)
+        });
+    } else {
+        collect_c_value_bitvector_variables(&value.native(), variables);
     }
 }
 

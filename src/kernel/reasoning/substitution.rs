@@ -26,6 +26,7 @@ trait VariableSubstitution {
     fn term(&self, term: &Term) -> Term;
     fn condition(&self, condition: &ConditionTerm) -> ConditionTerm;
     fn c_value(&self, value: &CValue) -> CValue;
+    fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue;
     fn c_expression(&self, expression: &CExpression) -> CExpression;
     fn memory(&self, memory: &CMemory) -> CMemory;
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm;
@@ -74,6 +75,18 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     }
     fn c_value(&self, value: &CValue) -> CValue {
         substitute_bitvector_variable_in_c_value(value, self.from, self.to)
+    }
+    fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue {
+        if let Some(root) = value.shared() {
+            let source = MachineTerm::Variable(self.from);
+            if let Some(rewritten) =
+                crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, self.to)
+                    .shared_machine_operand(root)
+            {
+                return rewritten.into();
+            }
+        }
+        self.c_value(&value.native()).into()
     }
     fn c_expression(&self, expression: &CExpression) -> CExpression {
         substitute_bitvector_variable_in_c_expression(expression, self.from, self.to)
@@ -139,6 +152,19 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     }
     fn c_value(&self, value: &CValue) -> CValue {
         substitute_pointer_variable_in_c_value(value, self.from, self.to)
+    }
+    fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue {
+        if let Some(root) = value.shared() {
+            if let Some(rewritten) =
+                crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(
+                    self.from, self.to,
+                )
+                .shared_machine_operand(root)
+            {
+                return rewritten.into();
+            }
+        }
+        self.c_value(&value.native()).into()
     }
     fn c_expression(&self, expression: &CExpression) -> CExpression {
         substitute_pointer_variable_in_c_expression(expression, self.from, self.to)
@@ -764,7 +790,7 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &CState, s: &S) -> CSta
                     pointee_constant,
                 } => CLocalBinding::Object {
                     storage_declared: *storage_declared,
-                    value: s.c_value(value),
+                    value: s.expression_value(value).into(),
                     c_type: *c_type,
                     slot: s.local_slot(slot),
                     volatile: *volatile,
@@ -2486,6 +2512,19 @@ fn collect_sequence_bound_variables(sequence: &SequenceTerm, variables: &mut BTr
     }
 }
 
+fn collect_expression_value_bound_variables(
+    value: &ExecutionValue,
+    variables: &mut BTreeSet<Variable>,
+) {
+    if let Some((_, view @ MachineOperandView::Shared(_))) = value.machine() {
+        visit_machine_operand_native_leaves(view, |leaf| {
+            collect_bitvector_bound_variables(leaf, variables)
+        });
+    } else {
+        collect_c_value_bound_variables(&value.native(), variables);
+    }
+}
+
 fn collect_c_value_bound_variables(value: &CValue, variables: &mut BTreeSet<Variable>) {
     match value {
         CValue::PointerInteger(record) => {
@@ -2711,7 +2750,7 @@ pub(in crate::kernel) fn collect_c_state_bound_variables(
     }
     for binding in state.locals.bindings.values() {
         if let CLocalBinding::Object { value, .. } = binding {
-            collect_c_value_bound_variables(value, variables);
+            collect_expression_value_bound_variables(value, variables);
         }
     }
     collect_memory_bound_variables(&state.memory, variables);
