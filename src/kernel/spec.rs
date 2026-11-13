@@ -6965,7 +6965,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let left_step_width = spec_expression_pointer_step_width(state, left);
             let right_step_width = spec_expression_pointer_step_width(state, right);
             evaluate_spec_scalar_binary_paths_in(
-                shared_machine::operator(expression),
+                expression,
                 SpecScope { state, ..scope },
                 left,
                 right,
@@ -6999,7 +6999,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let left_step_width = spec_expression_pointer_step_width(state, left);
             let right_step_width = spec_expression_pointer_step_width(state, right);
             evaluate_spec_scalar_binary_paths_in(
-                shared_machine::operator(expression),
+                expression,
                 SpecScope { state, ..scope },
                 left,
                 right,
@@ -7030,7 +7030,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             )?
         }
         SpecExpression::Multiply(left, right) => evaluate_spec_scalar_binary_paths_in(
-            shared_machine::operator(expression),
+            expression,
             SpecScope { state, ..scope },
             left,
             right,
@@ -7051,7 +7051,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         SpecExpression::Divide(left, right) => {
             let division = SpecDivision::of(budget);
             evaluate_spec_scalar_binary_paths_in(
-                shared_machine::operator(expression),
+                expression,
                 SpecScope { state, ..scope },
                 left,
                 right,
@@ -7074,7 +7074,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         SpecExpression::Remainder(left, right) => {
             let division = SpecDivision::of(budget);
             evaluate_spec_scalar_binary_paths_in(
-                shared_machine::operator(expression),
+                expression,
                 SpecScope { state, ..scope },
                 left,
                 right,
@@ -7096,7 +7096,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
         }
         SpecExpression::RustShiftLeft(left, right)
         | SpecExpression::RustShiftRight(left, right) => evaluate_spec_scalar_binary_paths_in(
-            shared_machine::operator(expression),
+            expression,
             SpecScope { state, ..scope },
             left,
             right,
@@ -7131,7 +7131,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::ShiftLeft(left, right) => evaluate_spec_scalar_binary_paths_in(
-            shared_machine::operator(expression),
+            expression,
             SpecScope { state, ..scope },
             left,
             right,
@@ -7150,7 +7150,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::ShiftRight(left, right) => evaluate_spec_scalar_binary_paths_in(
-            shared_machine::operator(expression),
+            expression,
             SpecScope { state, ..scope },
             left,
             right,
@@ -7169,7 +7169,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::BitwiseAnd(left, right) => evaluate_spec_scalar_binary_paths_in(
-            shared_machine::operator(expression),
+            expression,
             SpecScope { state, ..scope },
             left,
             right,
@@ -7187,7 +7187,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::BitwiseOr(left, right) => evaluate_spec_scalar_binary_paths_in(
-            shared_machine::operator(expression),
+            expression,
             SpecScope { state, ..scope },
             left,
             right,
@@ -7205,7 +7205,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             },
         )?,
         SpecExpression::BitwiseXor(left, right) => evaluate_spec_scalar_binary_paths_in(
-            shared_machine::operator(expression),
+            expression,
             SpecScope { state, ..scope },
             left,
             right,
@@ -7315,7 +7315,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let left_step_width = spec_expression_pointer_step_width(state, left);
             let right_step_width = spec_expression_pointer_step_width(state, right);
             evaluate_spec_scalar_binary_paths_in(
-                shared_machine::operator(expression),
+                expression,
                 scope,
                 left,
                 right,
@@ -8391,7 +8391,7 @@ fn apply_held_resource_domain_policy(
 }
 
 fn evaluate_spec_scalar_binary_paths_in(
-    operator: Option<MachineBinaryOp>,
+    expression: &SpecExpression,
     scope: SpecScope<'_>,
     left: &SpecExpression,
     right: &SpecExpression,
@@ -8425,9 +8425,12 @@ fn evaluate_spec_scalar_binary_paths_in(
                 // Decision D2: a `Bool` is not a number.
                 return Err(ExecutionLimit::BoolArithmetic);
             }
-            if let Some(mut result) =
-                shared_machine::apply_values(operator, &left_path.value, &right_path.value, budget)
-            {
+            if let Some(mut result) = shared_machine::apply_expression_values(
+                expression,
+                &left_path.value,
+                &right_path.value,
+                budget,
+            ) {
                 apply_held_resource_domain_policy(&mut result.obligations, assumptions);
                 let mut obligations = obligations;
                 obligations.extend(result.obligations);

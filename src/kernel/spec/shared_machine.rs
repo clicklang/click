@@ -4,6 +4,7 @@
 //! Ordinary arithmetic retains the existing integer promotions through 64 bits.
 use super::*;
 mod casts;
+mod narrow;
 pub(super) use casts::cast;
 #[cfg(test)]
 pub(super) use casts::{cast_narrowing, cast_signedness, cast_widening};
@@ -24,6 +25,23 @@ pub(super) fn operator(expression: &SpecExpression) -> Option<MachineBinaryOp> {
         SpecExpression::ShiftRight(..) => MachineBinaryOp::ShiftRight,
         _ => return None,
     })
+}
+
+/// Select the producer from the written operator, retaining annotations that
+/// distinguish narrow modular arithmetic from ordinary integer promotions.
+pub(super) fn apply_expression_values(
+    expression: &SpecExpression,
+    left: &SpecValue,
+    right: &SpecValue,
+    budget: &SpecEvaluation<'_>,
+) -> Option<PreparedExpression> {
+    if budget.machine_result_production_disabled {
+        return None;
+    }
+    if let SpecExpression::NarrowArithmetic(operation, format) = expression {
+        return narrow::apply(*format, operator(operation)?, left, right);
+    }
+    apply_values(operator(expression), left, right, budget)
 }
 
 /// Retain evaluated operands through the existing usual arithmetic conversions.
@@ -300,6 +318,9 @@ fn wrap(format: MachineIntegerType, value: MachineTerm) -> CValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod narrow_tests {
+        include!("shared_machine/narrow_tests.rs");
+    }
     mod mixed_width_tests {
         include!("shared_machine/mixed_width_tests.rs");
     }
