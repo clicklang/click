@@ -1232,6 +1232,23 @@ pub(in crate::kernel) fn add_internal_condition_path_fact(
     add_condition_path_fact_with_visibility(facts, assumptions, condition, value, false, false)
 }
 
+/// Adds a condition fact the facts already decide, unless the context holds
+/// it exactly. A derived fact is normally dropped, but the equality graph
+/// learns only from admitted facts: a no-overflow fact for a byte product
+/// (`byte_product_offsets`) has to be admitted for the graph to relate the
+/// byte offset to its element offset, even when bounds decide it.
+pub(in crate::kernel) fn add_decided_condition_path_fact(
+    facts: &mut ExecutionFacts,
+    assumptions: &PureFactContext,
+    condition: ConditionTerm,
+    value: bool,
+) -> Option<()> {
+    if assumptions.exact_condition_value(&condition) == Some(value) {
+        return Some(());
+    }
+    add_condition_path_fact_with_visibility(facts, assumptions, condition, value, true, true)
+}
+
 fn add_condition_path_fact_with_visibility(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,

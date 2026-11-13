@@ -3140,20 +3140,37 @@ pub(super) fn describe_missing_range_end_note(
 /// are two values at any program point, so no step of the history explains
 /// them apart, and a sentence about what changed in between would send the
 /// reader after a store that is not the cause.
+///
+/// The two addresses are compared through `assumptions`, the proof context's
+/// equality graph, when the caller has one: `(char *)q + i * 4` and `q[i]` are
+/// spelled differently and are one address where `i * 4` does not wrap.
 pub(in crate::surface) fn describe_load_kind_mismatch(
     left: &CValue,
     right: &CValue,
     parameter_binding: ParameterBinding<'_>,
+    assumptions: Option<&crate::kernel::PureFactContext>,
 ) -> Option<String> {
     let (_, left_load) = unresolved_load(left)?;
     let (_, right_load) = unresolved_load(right)?;
     let left_kind = unresolved_load_kind(left)?;
     let right_kind = unresolved_load_kind(right)?;
-    if left_load != right_load || left_kind == right_kind {
+    let same_address = left_load == right_load
+        || assumptions.is_some_and(|facts| facts.addresses_known_equal(&left_load, &right_load));
+    if !same_address || left_kind == right_kind {
         return None;
     }
-    let named = match describe_source_cell(&left_load, parameter_binding) {
-        Some(cell) => format!("`{}`", cell.text()),
+    // Two spellings of one address may name it with different precision:
+    // the byte offset `(char *)q + i * 4` names no element of `q`, while
+    // `q[i]` does. Name it by the first spelling that names a whole cell.
+    let cells = [&left_load, &right_load]
+        .map(|load| describe_source_cell(load, parameter_binding).map(|cell| cell.text()));
+    let named = match cells
+        .iter()
+        .flatten()
+        .find(|text| !text.contains('…'))
+        .or(cells[0].as_ref())
+    {
+        Some(text) => format!("`{text}`"),
         None => "one address".to_string(),
     };
     use crate::kernel::LoadKind;
@@ -3568,7 +3585,7 @@ pub(super) fn describe_two_sided_version_mismatch(
     if left_load != right_load {
         return None;
     }
-    if let Some(mismatch) = describe_load_kind_mismatch(left, right, parameter_binding) {
+    if let Some(mismatch) = describe_load_kind_mismatch(left, right, parameter_binding, None) {
         return Some(mismatch);
     }
     let explanation = resource_tracker::explain(

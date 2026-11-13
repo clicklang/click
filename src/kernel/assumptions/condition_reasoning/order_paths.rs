@@ -1005,6 +1005,14 @@ impl PureFactContext {
         self.equality_graph.are_equal(left, right)
     }
 
+    /// Whether two addresses are one, by spelling or by the equality graph
+    /// of this context: one indexed class lookup, no search. Diagnostics use
+    /// it to name two reads of one address that are spelled differently,
+    /// such as the byte offset `(char *)q + i * 4` and the element `q[i]`.
+    pub(crate) fn addresses_known_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+        left == right || self.pointers_known_equal(left, right)
+    }
+
     /// True when some exact order fact strictly bounds `term` above
     /// (`term < y` for any `y`). A strict signed bound pins
     /// `term < INT_MAX`, which is what discharges `term + 1` overflow

@@ -109,6 +109,46 @@ pub(in crate::kernel) use terms::constants::fold_arithmetic;
 #[derive(Clone)]
 pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm);
 
+/// The product `x * K`, the index `x` and the stride `K` of a false `int32`
+/// multiplication-overflow condition on `x` and a constant `K` from two to
+/// `INT_MAX`, in either operand order: the byte offset of the product and
+/// element `x` at stride `K` are then one exact offset.
+///
+/// Both offsets sign-extend before scaling, so they differ only where the
+/// `int32` product wraps. `(char *)p + i * 4` keeps that byte offset when it
+/// is formed (`docs/internals/spellability.md#lowering-is-fact-stable`); this
+/// is the relation that names it as element `i`. The terms are imported as
+/// shared terms, so naming them attaches no spelling to an operand another
+/// check holds in shared form. A constant-size match on the condition;
+/// `None` for any other condition.
+pub(in crate::kernel) fn byte_product_offsets(
+    condition: &ConditionTerm,
+) -> Option<(
+    crate::kernel::SharedMachineIntegerTerm,
+    crate::kernel::SharedMachineIntegerTerm,
+    i64,
+)> {
+    let ConditionTerm::Overflows {
+        format: MachineIntegerType::Int32,
+        op: crate::kernel::OverflowOperation::Multiply,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    if left.as_const().is_some() == right.as_const().is_some() {
+        return None;
+    }
+    let product = MachineTerm::multiply(left.as_ref().clone(), right.as_ref().clone());
+    let imported = crate::kernel::KernelTermImport::default()
+        .machine_arithmetic(MachineIntegerType::Int32, &product)?;
+    let product =
+        crate::kernel::SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, imported)?;
+    let (index, stride) = terms::byte_product_operands(&product)?;
+    Some((product, index, stride))
+}
+
 impl MachineAtom {
     fn new(ty: crate::kernel::MachineIntegerType, value: MachineTerm) -> Self {
         Self(crate::kernel::SharedMachineIntegerTerm::intern(ty, value))
@@ -2260,6 +2300,18 @@ impl EqualityGraph {
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
+        // `x * K` does not wrap: the byte offset of the product and the
+        // offset of element `x` at stride `K` are one exact offset. The fact
+        // is filed by the product; its byte-offset node joins the element
+        // offset now if it is registered, or when it is registered.
+        if !value && let Some((product, index, stride)) = byte_product_offsets(condition) {
+            let state = self.state.get_mut().expect("equality graph");
+            state
+                .terms
+                .admit_defined_byte_product(&product, index, stride);
+            state.close(Vec::new());
+            return true;
+        }
         // A native 8- or 16-bit comparison is also admitted as the `int32`
         // comparison of its widenings, the same fact (rule K8), so a
         // rebuild from the admitted inputs restores both truths.

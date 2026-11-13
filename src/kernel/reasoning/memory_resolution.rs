@@ -1298,6 +1298,80 @@ fn mixed_index_offsets_equal(
     None
 }
 
+/// A byte displacement `x * K` read as `x` elements of `K` bytes, for
+/// comparison only.
+///
+/// `(char *)p + i * 4` keeps its written byte offset when it is formed
+/// (`docs/internals/spellability.md#lowering-is-fact-stable`), while `p + i`
+/// over four-byte elements is the element index `i` at stride four. The two
+/// name one address exactly when the `int32` product does not wrap: the
+/// element form sign-extends `i` before scaling, the byte form sign-extends
+/// the wrapped product. The C multiplication refused its overflowing path, so
+/// the no-overflow fact is on the path or follows from its bounds; this asks
+/// for it once per product, as the offset rebuilders ask for theirs.
+///
+/// The equality graph joins the two offsets once the path's `defined(x * K)`
+/// fact is admitted (`byte_product_offsets`). Memory resolution also runs
+/// inside the statement that forms the byte offset, before that statement's
+/// facts reach the graph, so a read or store through `(char *)q + 4 * i`
+/// compared against `q[i]` there asks the question itself.
+///
+/// Only an `int32` product by a constant from two to `INT_MAX`, at byte width
+/// one, is read, and only within the offset's own `Add` tree, so the work is
+/// the size of the offset. `None` when no addend is such a product, or when
+/// one is and its overflow is not decided false: the offset is then compared
+/// as written.
+pub(in crate::kernel) fn byte_products_as_elements(
+    offset: &PointerOffsetTerm,
+    assumptions: &PureFactContext,
+) -> Option<PointerOffsetTerm> {
+    use crate::kernel::machine_integer::{Operation, definedness::OverflowQueryView};
+    match offset {
+        PointerOffsetTerm::Add(left, right) => {
+            let read_left = byte_products_as_elements(left, assumptions);
+            let read_right = byte_products_as_elements(right, assumptions);
+            if read_left.is_none() && read_right.is_none() {
+                return None;
+            }
+            Some(PointerOffsetTerm::Add(
+                Box::new(read_left.unwrap_or_else(|| left.as_ref().clone())),
+                Box::new(read_right.unwrap_or_else(|| right.as_ref().clone())),
+            ))
+        }
+        PointerOffsetTerm::Int32Scaled {
+            value,
+            byte_width: 1,
+        } => {
+            let (MachineIntegerType::Int32, MachineBinaryOp::Multiply, [left, right]) =
+                value.operand_view().binary()?
+            else {
+                return None;
+            };
+            let (index, stride) = match (left.word32_constant(), right.word32_constant()) {
+                (None, Some(stride)) => (left, stride),
+                (Some(stride), None) => (right, stride),
+                _ => return None,
+            };
+            if !(2..=i32::MAX as u32).contains(&stride) {
+                return None;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let query = OverflowQueryView::from_operands(
+                MachineIntegerType::Int32,
+                Operation::Multiply,
+                [left, right],
+            )?;
+            (assumptions.decide_overflow_query(&query) == Some(false)).then(|| {
+                PointerOffsetTerm::Int32Scaled {
+                    value: index.retain(MachineIntegerType::Int32),
+                    byte_width: i64::from(stride),
+                }
+            })
+        }
+        _ => None,
+    }
+}
+
 /// The number of addends a pointer offset sums.
 fn addend_count(offset: &PointerOffsetTerm) -> usize {
     match offset {
@@ -1317,6 +1391,17 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
     }
     if resolution_interrupted() {
         return None;
+    }
+    // A written byte product and an element index name one address when the
+    // product does not wrap; compare them in element coordinates.
+    let left_elements = byte_products_as_elements(left, assumptions);
+    let right_elements = byte_products_as_elements(right, assumptions);
+    if left_elements.is_some() || right_elements.is_some() {
+        return pointer_offsets_equal_for_memory_resolution(
+            left_elements.as_ref().unwrap_or(left),
+            right_elements.as_ref().unwrap_or(right),
+            assumptions,
+        );
     }
     if let Some(equal) = mixed_index_offsets_equal(left, right, assumptions) {
         return Some(equal);
@@ -1636,6 +1721,66 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
     match (left.as_const(), right.as_const()) {
         (Some(left), Some(right)) => Some(left == right),
         _ => None,
+    }
+}
+
+/// `(char *)q + i * 4` and `q + i` over four-byte elements are one address
+/// where the product does not wrap: bounds that decide it make the two
+/// offsets equal, in either operand order of the product and beside a shared
+/// base, and an index the facts keep off `i` makes them differ. With no
+/// bound, `i * 4` may wrap, and the two are not called equal.
+#[cfg(test)]
+#[test]
+fn a_byte_product_offset_is_its_element_offset_only_where_it_does_not_wrap() {
+    let index = MachineTerm::Variable(Variable(861));
+    let other = MachineTerm::Variable(Variable(862));
+    let base = PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(863)), 4);
+    let bytes = |product: MachineTerm| {
+        PointerOffsetTerm::add(base.clone(), PointerOffsetTerm::scale_int32(product, 1))
+    };
+    let elements = |index: &MachineTerm| {
+        PointerOffsetTerm::add(
+            base.clone(),
+            PointerOffsetTerm::scale_int32(index.clone(), 4),
+        )
+    };
+    let bounded = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_than(index.clone(), MachineTerm::constant(4)),
+            true,
+        );
+    for product in [
+        MachineTerm::multiply(index.clone(), MachineTerm::constant(4)),
+        MachineTerm::multiply(MachineTerm::constant(4), index.clone()),
+    ] {
+        assert_eq!(
+            pointer_offsets_equal_for_memory_resolution(
+                &bytes(product.clone()),
+                &elements(&index),
+                &bounded
+            ),
+            Some(true)
+        );
+        assert_ne!(
+            pointer_offsets_equal_for_memory_resolution(
+                &bytes(product.clone()),
+                &elements(&index),
+                &PureFactContext::new()
+            ),
+            Some(true),
+            "an unbounded product may wrap"
+        );
+        let apart = bounded
+            .clone()
+            .assume_condition(ConditionTerm::equal(index.clone(), other.clone()), false);
+        assert_eq!(
+            pointer_offsets_equal_for_memory_resolution(&bytes(product), &elements(&other), &apart),
+            Some(false)
+        );
     }
 }
 

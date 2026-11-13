@@ -21,8 +21,9 @@ pub(super) use path_facts::forall_int32;
 pub(super) use path_facts::{ExactElementDelta, exact_element_delta_from_offset};
 pub use path_facts::{LoweringIntroduction, LoweringIntroductions};
 pub(super) use path_facts::{
-    PreparedExecutionPath, add_condition_path_fact, add_internal_condition_path_fact,
-    add_path_fact, add_pointer_offset_equality_execution_pure_facts, add_proof_obligation,
+    PreparedExecutionPath, add_condition_path_fact, add_decided_condition_path_fact,
+    add_internal_condition_path_fact, add_path_fact,
+    add_pointer_offset_equality_execution_pure_facts, add_proof_obligation,
     add_proof_obligation_with_context, add_required_proof_obligation_with_context,
     add_required_proof_obligation_without_search, append_required_proof_obligations,
     append_required_proof_obligations_under_path_context,
