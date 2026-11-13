@@ -229,6 +229,19 @@ then retain compound machine results. Scalar leaves and other result families
 keep their cheap native carriers. Native-only consumers use an explicit output
 adapter; local storage and return handoffs are the following slices.
 
+[PR #2718](https://github.com/clicklang/click/pull/2718) merged 5c; its pushed
+commit was verified upstream.
+Its 1,743 selected checks and all 5,279 regular fixtures passed, with zero
+fact-stability differences; final tag/no-carry regressions also passed.
+
+5d forwards Rust shift and supported narrow-arithmetic results through the
+execution carrier, using the existing shared producers. Original-width shift
+count requirements remain mandatory; only requirements established by the
+incoming facts are discharged. Inherited debts are not hypotheses. Unsupported
+operator and value families retain their explicit native compatibility routes.
+Its 12 focused tests, all 1,633 scaling and Rust import checks, and all 5,279
+regular fixtures passed; the fact-stability audit recorded zero differences.
+
 ## Chunk 4: one producer boundary per PR
 
 Chunk 4 migrates existing numeric producers to retain `KernelTerm` operands and

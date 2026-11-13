@@ -9,6 +9,8 @@ use crate::kernel::MachineBinaryOp as Op;
 #[derive(Clone, Copy)]
 enum Binary {
     Machine(Op),
+    RustShift(Op),
+    Narrow(MachineIntegerType, Op),
     Comparison(CComparisonOperator),
 }
 
@@ -34,44 +36,78 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
             budget,
         );
     }
-    let (operation, left, right) = match expression {
-        CExpression::Add(left, right) => (Binary::Machine(Op::Add), left, right),
-        CExpression::Subtract(left, right) => (Binary::Machine(Op::Subtract), left, right),
-        CExpression::Multiply(left, right) => (Binary::Machine(Op::Multiply), left, right),
-        CExpression::Divide(left, right) => (Binary::Machine(Op::Divide), left, right),
-        CExpression::BitwiseAnd(left, right) => (Binary::Machine(Op::BitwiseAnd), left, right),
-        CExpression::BitwiseOr(left, right) => (Binary::Machine(Op::BitwiseOr), left, right),
-        CExpression::BitwiseXor(left, right) => (Binary::Machine(Op::BitwiseXor), left, right),
-        CExpression::LessThan(left, right) => (
-            Binary::Comparison(CComparisonOperator::LessThan),
-            left,
-            right,
-        ),
-        CExpression::LessEqual(left, right) => (
-            Binary::Comparison(CComparisonOperator::LessEqual),
-            left,
-            right,
-        ),
-        CExpression::GreaterThan(left, right) => (
-            Binary::Comparison(CComparisonOperator::GreaterThan),
-            left,
-            right,
-        ),
-        CExpression::GreaterEqual(left, right) => (
-            Binary::Comparison(CComparisonOperator::GreaterEqual),
-            left,
-            right,
-        ),
-        _ => {
-            return Ok(super::expression::evaluate_native_expression_paths(
-                state,
-                expression,
-                assumptions,
-                budget,
-            )?
-            .into_iter()
-            .map(Into::into)
-            .collect());
+    let narrow = if let CExpression::Cast {
+        expression,
+        target_type,
+        integer_mode: CIntegerCastMode::NarrowArithmetic,
+        ..
+    } = expression
+    {
+        MachineIntegerType::from_c_type(*target_type)
+            .filter(|format| super::operators::is_narrow_format(*format))
+            .and_then(|format| {
+                let (op, left, right) = match expression.as_ref() {
+                    CExpression::Add(a, b) => (Op::Add, a, b),
+                    CExpression::Subtract(a, b) => (Op::Subtract, a, b),
+                    CExpression::Multiply(a, b) => (Op::Multiply, a, b),
+                    CExpression::BitwiseAnd(a, b) => (Op::BitwiseAnd, a, b),
+                    CExpression::BitwiseOr(a, b) => (Op::BitwiseOr, a, b),
+                    CExpression::BitwiseXor(a, b) => (Op::BitwiseXor, a, b),
+                    _ => return None,
+                };
+                Some((Binary::Narrow(format, op), left, right))
+            })
+    } else {
+        None
+    };
+    let (operation, left, right) = if let Some(narrow) = narrow {
+        narrow
+    } else {
+        match expression {
+            CExpression::RustShiftLeft(left, right) => {
+                (Binary::RustShift(Op::ShiftLeft), left, right)
+            }
+            CExpression::RustShiftRight(left, right) => {
+                (Binary::RustShift(Op::ShiftRight), left, right)
+            }
+            CExpression::Add(left, right) => (Binary::Machine(Op::Add), left, right),
+            CExpression::Subtract(left, right) => (Binary::Machine(Op::Subtract), left, right),
+            CExpression::Multiply(left, right) => (Binary::Machine(Op::Multiply), left, right),
+            CExpression::Divide(left, right) => (Binary::Machine(Op::Divide), left, right),
+            CExpression::BitwiseAnd(left, right) => (Binary::Machine(Op::BitwiseAnd), left, right),
+            CExpression::BitwiseOr(left, right) => (Binary::Machine(Op::BitwiseOr), left, right),
+            CExpression::BitwiseXor(left, right) => (Binary::Machine(Op::BitwiseXor), left, right),
+            CExpression::LessThan(left, right) => (
+                Binary::Comparison(CComparisonOperator::LessThan),
+                left,
+                right,
+            ),
+            CExpression::LessEqual(left, right) => (
+                Binary::Comparison(CComparisonOperator::LessEqual),
+                left,
+                right,
+            ),
+            CExpression::GreaterThan(left, right) => (
+                Binary::Comparison(CComparisonOperator::GreaterThan),
+                left,
+                right,
+            ),
+            CExpression::GreaterEqual(left, right) => (
+                Binary::Comparison(CComparisonOperator::GreaterEqual),
+                left,
+                right,
+            ),
+            _ => {
+                return Ok(super::expression::evaluate_native_expression_paths(
+                    state,
+                    expression,
+                    assumptions,
+                    budget,
+                )?
+                .into_iter()
+                .map(Into::into)
+                .collect());
+            }
         }
     };
     budget.consume_expression_step()?;
@@ -118,6 +154,60 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                 });
                 continue;
             };
+            if let Binary::RustShift(op) = operation {
+                if let Some((root, required)) =
+                    crate::kernel::spec::execution_rust_shift(op, &left_value, &right_value)
+                {
+                    let context = assumptions_with_path_context(assumptions, &facts, &[]);
+                    let mut obligations = obligations;
+                    obligations.extend(required.into_iter().filter(|obligation| {
+                        !crate::kernel::reasoning::path_facts::required_obligation_is_exactly_discharged(
+                            &context, obligation.proposition(),
+                        )
+                    }));
+                    paths.push(ExecutionValuePath {
+                        outcome: CExpressionOutcome::Value(root.into()),
+                        facts,
+                        obligations,
+                    });
+                } else {
+                    let apply = if op == Op::ShiftLeft {
+                        apply_rust_shift_left
+                    } else {
+                        apply_rust_shift_right
+                    };
+                    paths.extend(
+                        apply(
+                            left_value.clone().into_native(),
+                            right_value.into_native(),
+                            facts,
+                            obligations,
+                            assumptions,
+                        )
+                        .into_iter()
+                        .map(ExecutionValuePath::from),
+                    );
+                }
+                continue;
+            }
+            if let Binary::Narrow(format, op) = operation {
+                let outcome = crate::kernel::spec::execution_narrow_binary(
+                    format,
+                    op,
+                    &left_value,
+                    &right_value,
+                )
+                .map(|value| CExpressionOutcome::Value(value.into()))
+                .unwrap_or(CExpressionOutcome::RuntimeError(
+                    CRuntimeError::TypeMismatch,
+                ));
+                paths.push(ExecutionValuePath {
+                    outcome,
+                    facts,
+                    obligations,
+                });
+                continue;
+            }
             if let Binary::Comparison(operator) = operation {
                 let native_paths = if let Some(condition) =
                     retained_comparison(operator, &left_value, &right_value)
@@ -630,6 +720,131 @@ mod tests {
                 assert_eq!(actual, expected);
             }
         }
+    }
+
+    fn narrow_expression(expression: CExpression, target_type: CType) -> CExpression {
+        CExpression::Cast {
+            expression: Box::new(expression),
+            target_type,
+            integer_mode: CIntegerCastMode::NarrowArithmetic,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        }
+    }
+
+    #[test]
+    fn rust_execution_handoffs_preserve_original_widths_and_refusals() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let left =
+                CExpression::Value(format.value_from_term(MachineTerm::Variable(Variable(998300))));
+            for count in [-1i32, 0, 1, 7, 8, 16, 32, 64] {
+                let right = CExpression::Value(CValue::Int32(MachineTerm::constant(count as u32)));
+                for expression in [
+                    CExpression::RustShiftLeft(Box::new(left.clone()), Box::new(right.clone())),
+                    CExpression::RustShiftRight(Box::new(left.clone()), Box::new(right.clone())),
+                ] {
+                    let actual = evaluate(&expression);
+                    let expected = super::super::expression::evaluate_native_expression_paths(
+                        &CState::new(),
+                        &expression,
+                        &PureFactContext::new(),
+                        &mut ExecutionBudget::new(),
+                    )
+                    .unwrap();
+                    assert_eq!(actual.len(), expected.len());
+                    for (actual, expected) in actual.into_iter().zip(expected) {
+                        assert_eq!(
+                            actual.outcome.map_value(ExecutionValue::into_native),
+                            expected.outcome
+                        );
+                        assert_eq!(actual.facts, expected.facts);
+                        assert_eq!(actual.obligations.len(), expected.obligations.len());
+                        assert!(actual.obligations.iter().all(|debt| !debt.is_assumable()));
+                    }
+                }
+            }
+        }
+        for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
+        ] {
+            for right in [
+                format.value_from_term(MachineTerm::Variable(Variable(998301))),
+                CValue::Int32(MachineTerm::constant(3)),
+                CValue::Int32(MachineTerm::constant(70000)),
+                CValue::UInt64(MachineTerm::uint64_constant(3)),
+            ] {
+                let expression = narrow_expression(
+                    CExpression::Add(
+                        Box::new(CExpression::Value(
+                            format.value_from_term(MachineTerm::Variable(Variable(998300))),
+                        )),
+                        Box::new(CExpression::Value(right)),
+                    ),
+                    format.c_type(),
+                );
+                let actual = evaluate(&expression);
+                let expected = super::super::expression::evaluate_native_expression_paths(
+                    &CState::new(),
+                    &expression,
+                    &PureFactContext::new(),
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap();
+                assert_eq!(
+                    actual
+                        .into_iter()
+                        .map(|p| p.map_value(ExecutionValue::into_native))
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn retained_rust_shift_discharges_only_established_count_domains() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let count = MachineTerm::Variable(Variable(998302));
+        let bound =
+            ConditionTerm::unsigned_less_than(count.clone(), MachineTerm::uint32_constant(8));
+        let expression = CExpression::RustShiftLeft(
+            Box::new(CExpression::Value(CValue::Int8(MachineTerm::Variable(
+                Variable(998303),
+            )))),
+            Box::new(CExpression::Value(CValue::UInt32(count))),
+        );
+        let empty = PureFactContext::new();
+        let valid = empty.clone().assume_condition(bound.clone(), true);
+        let invalid = empty.clone().assume_condition(bound, false);
+        let mut roots = Vec::new();
+        for (context, pending) in [(&empty, 1), (&valid, 0), (&invalid, 1)] {
+            let paths = evaluate_expression_value_paths(
+                &CState::new(),
+                &expression,
+                context,
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            assert_eq!(paths.len(), 1);
+            assert_eq!(paths[0].obligations.len(), pending);
+            roots.push(paths[0].outcome.clone());
+        }
+        assert!(roots.windows(2).all(|pair| pair[0] == pair[1]));
     }
 
     mod scaling_tests {
