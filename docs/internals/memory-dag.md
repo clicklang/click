@@ -93,7 +93,7 @@ kinds:
 | --- | --- |
 | `BranchJoin` | An abstraction of all incoming memories. A selected read crosses only when typed preservation paths connect every input to a common snapshot; cache presence is irrelevant. |
 | `Store` | One pointer was assigned a value. No fact context is recorded on the edge. |
-| `LoopHavoc` | A loop may have changed memory; verified whole-loop effects carry a checked write set. |
+| `LoopHavoc` | A loop may have changed memory; verified whole-loop effects carry a checked write set. That set also holds every automatic object, record or array, the body may write through a pointer: one the body names, a bare object name being its address, or one whose address a local or cell holds at entry. A set derived from the function's resources alone covers only memory the function was given (`a_loop_call_writing_a_local_struct_forgets_its_earlier_value.md`). |
 | `CallHavoc` | A call may have changed the callee's owned ranges, and none of the memory its caller kept owning. |
 | `BlockDeclared` | A new non-havoc block entered the memory model. |
 | `ObjectInitializationRecorded` | Initialized-byte metadata was extended after writes already recorded in the DAG. Stored values are unchanged. |
