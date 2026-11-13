@@ -13196,6 +13196,8 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
 "#
         );
         check_arithmetic_sidecar(&project, &import, &proof);
+        // `1 <= b` already excludes zero, so removing only `b != 0`
+        // is not a negative control.
         for hostile in [
             proof.replace(
                 "ensures to_integer(result) ==",
@@ -13203,7 +13205,6 @@ fn wide_division_operand_bounds_certify_native_narrowing() {
             ),
             proof.replace("    requires to_integer(a) <= 9223372036854775807;", ""),
             proof.replace("    requires 1 <= to_integer(b);", ""),
-            proof.replace("    requires to_integer(b) != 0;", ""),
             proof.replace(
                 "integer_division_bounds bounds [0, 1, 2, 3]",
                 "integer_division_bounds bounds [0, 1, 3, 2]",

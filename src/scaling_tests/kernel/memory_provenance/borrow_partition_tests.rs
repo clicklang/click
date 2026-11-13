@@ -23,6 +23,12 @@ fn borrow_partition_query_does_not_scan_unrelated_resources_or_history() {
                     .assume_proposition(Proposition::CResourceComposition(source.clone()));
             }
         });
+        // Populate the same query's lazy caches before each measured batch;
+        // cold initialization must not be compared with later warm queries.
+        assert!(
+            typed_store_separated_ranges_evidence(write.base(), 4, read.base(), 4, &context)
+                .is_some()
+        );
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..16 {
                 assert!(

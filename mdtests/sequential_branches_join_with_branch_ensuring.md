@@ -1,8 +1,7 @@
 # Sequential branches join with `branch ensuring`
 
 The implicit tail follows each arm of a C `if` to function exit, so
-sequential branches multiply its paths
-(`execute_stops_at_its_split_limit_on_sequential_branches.md`). A
+sequential branches multiply its paths. A
 `branch ensuring` at each branch joins its two arms right after the `if`,
 keeping the facts the interface states, so the proof has one path between
 branches and its work is linear in their number. Each arm proves the

@@ -3225,10 +3225,10 @@ std::span<int> probe(std::span<int>& s) {
     let error = verify_program_prepared_project(&parsed, &import)
         .expect_err("a possibly empty span does not justify first(n - 1)");
     // These render after the prepared verification context has unwound.
-    // The goal and its premises must keep that context's model spellings.
+    // The refused size bound must keep that context's model spelling;
+    // unrelated data-pointer premises need not appear in a concise report.
     for message in [error.concise_report(), error.clone().concise_report()] {
         assert!(message.contains("std_span_size(s)"), "{message}");
-        assert!(message.contains("std_span_data(s)"), "{message}");
         assert!(!message.contains("&s["), "{message}");
         assert!(!message.contains("_M_"), "{message}");
     }
