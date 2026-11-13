@@ -248,22 +248,24 @@ or generate a new separation obligation. Exact exclusive-resource checks remain;
 definition, arm, parent ownership and child-identity checks remain in the rewrite.
 The replacement has a test-build discovery guard.
 
-`instance_unfold_frame_replacement_ignores_ambient_pointer_aliases` measures this
-selected replacement at 4/16/64 aliases with one body cell and one retained owner.
-Replacement work is 124 / 124 / 124 at those sizes.
-It includes both adjacent ownership and contradictory memory premises, checking
-that the parent persists and the successor exchanges only the selected parent.
-Contradictory memory premises are not grounds for reinstating overlap discovery.
-Raw admission still records its old overlap refusal; duplicate exclusive
-resources still fail by exact indexed checks.
+Unfold publishes its justified consequences without querying the caller's
+stated-fact index. Exact duplicates within the output batch are removed locally;
+normal fact admission handles facts the caller already holds. This avoids
+forcing deferred keys for unrelated facts merely to suppress an output.
 
-The ignored `unfolding_one_cell_must_not_search_ambient_pointer_aliases` diagnostic
-keeps the complete kernel unfold and raw-admission curves visible. Remaining
-successful-unfold work is 456 / 552 / 936 at those sizes, so growth remains
-outside the selected exchange; body evaluation and
-fact publication need separate attribution. This is not a whole-unfold fast
-bound. Raw ownership admission and output-description validation remain separate
-callers to diagnose and migrate.
+`instance_unfold_ignores_ambient_pointer_aliases` measures complete kernel unfold,
+the selected replacement, and publication/reinsertion of its facts at 4/16/64
+aliases with one body cell and one retained owner. The caller's stated index is
+left cold. Both adjacent ownership and contradictory memory premises retain
+persistent parents. Complete kernel unfold costs 370 / 370 / 370 work units;
+publication and reinsertion together are also flat (248 units for the adjacent
+case, 190 for the contradictory case). These are bounds for this fixed body,
+not all unfolding routes or Surface materialization.
+
+The ignored `raw_ownership_admission_must_not_search_ambient_pointer_aliases`
+diagnostic retains the separate raw-admission growth and overlap-refusal control.
+Raw ownership admission and output-description validation remain callers to
+diagnose and migrate.
 
 Hold one inserted owner and one relevant neighbor fixed. Independently grow
 same-block owners, owned blocks, coordinate origins and exact/offset aliases;
