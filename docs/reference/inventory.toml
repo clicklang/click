@@ -2555,6 +2555,226 @@ id = "library.rust.Vec::with_capacity"
 path = "reference/library/index.md#vect-methods"
 
 [[item]]
+id = "library.rust.i16::abs_diff"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.i16::checked_add"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.i16::checked_sub"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.i16::max"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.i16::min"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.i16::saturating_add"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.i16::saturating_sub"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.i16::unsigned_abs"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.i16::wrapping_add"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i16::wrapping_mul"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i16::wrapping_sub"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i32::abs_diff"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.i32::checked_add"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.i32::checked_sub"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.i32::max"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.i32::min"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.i32::saturating_add"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.i32::saturating_sub"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.i32::unsigned_abs"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.i32::wrapping_add"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i32::wrapping_mul"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i32::wrapping_sub"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i64::abs_diff"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.i64::checked_add"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.i64::checked_sub"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.i64::max"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.i64::min"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.i64::saturating_add"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.i64::saturating_sub"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.i64::unsigned_abs"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.i64::wrapping_add"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i64::wrapping_mul"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i64::wrapping_sub"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i8::abs_diff"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.i8::checked_add"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.i8::checked_sub"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.i8::max"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.i8::min"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.i8::saturating_add"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.i8::saturating_sub"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.i8::unsigned_abs"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.i8::wrapping_add"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i8::wrapping_mul"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.i8::wrapping_sub"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.isize::abs_diff"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.isize::checked_add"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.isize::checked_sub"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.isize::max"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.isize::min"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.isize::saturating_add"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.isize::saturating_sub"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.isize::unsigned_abs"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.isize::wrapping_add"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.isize::wrapping_mul"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.isize::wrapping_sub"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
 id = "library.rust.slice::as_ptr"
 path = "reference/library/index.md#slice-value-methods"
 
@@ -2565,6 +2785,206 @@ path = "reference/library/index.md#slice-value-methods"
 [[item]]
 id = "library.rust.slice::swap"
 path = "reference/library/index.md#sliceswapt"
+
+[[item]]
+id = "library.rust.u16::abs_diff"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.u16::checked_add"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.u16::checked_sub"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.u16::max"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.u16::min"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.u16::saturating_add"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.u16::saturating_sub"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.u16::wrapping_add"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u16::wrapping_mul"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u16::wrapping_sub"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u32::abs_diff"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.u32::checked_add"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.u32::checked_sub"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.u32::max"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.u32::min"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.u32::saturating_add"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.u32::saturating_sub"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.u32::wrapping_add"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u32::wrapping_mul"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u32::wrapping_sub"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u64::abs_diff"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.u64::checked_add"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.u64::checked_sub"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.u64::max"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.u64::min"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.u64::saturating_add"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.u64::saturating_sub"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.u64::wrapping_add"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u64::wrapping_mul"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u64::wrapping_sub"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u8::abs_diff"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.u8::checked_add"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.u8::checked_sub"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.u8::max"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.u8::min"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.u8::saturating_add"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.u8::saturating_sub"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.u8::wrapping_add"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u8::wrapping_mul"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.u8::wrapping_sub"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.usize::abs_diff"
+path = "reference/library/index.md#integer-abs_diff-and-unsigned_abs"
+
+[[item]]
+id = "library.rust.usize::checked_add"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.usize::checked_sub"
+path = "reference/library/index.md#integer-checked-arithmetic"
+
+[[item]]
+id = "library.rust.usize::max"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.usize::min"
+path = "reference/library/index.md#integer-min-and-max"
+
+[[item]]
+id = "library.rust.usize::saturating_add"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.usize::saturating_sub"
+path = "reference/library/index.md#integer-saturating-arithmetic"
+
+[[item]]
+id = "library.rust.usize::wrapping_add"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.usize::wrapping_mul"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
+
+[[item]]
+id = "library.rust.usize::wrapping_sub"
+path = "reference/library/index.md#integer-wrapping-arithmetic"
 
 [[item]]
 id = "glossary.alias"

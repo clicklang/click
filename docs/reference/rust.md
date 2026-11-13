@@ -900,10 +900,16 @@ imported
 ### Core library methods
 
 A call of a Rust core integer method, `a.min(b)`, `x.checked_add(y)` or
-`n.unsigned_abs()`, calls an external function whose contract Click supplies:
-`u32::min` has `ensures result == click::rust::u32::min(a, b);`. The library
-defines that function, and the others of each integer type, in
-`library/rust/` ([Rust core methods](library/index.md#rust-core-methods)), so
+`n.unsigned_abs()`, calls an external function whose contract is a one-line
+`extern fn` of `library/rust/integers.click`
+([Rust integer methods](library/index.md#rust-integer-methods)):
+`extern fn u32::min(a: u32, b: u32) -> u32 { ensures result ==
+click::rust::u32::min(a, b); }`. The importer appends the line of each method
+an import calls, and only those. The extern's path names the program's
+function; its `ensures` names the specification function of the same path,
+which the library defines, with the others of each integer type, in
+`library/rust/<type>.click`
+([Rust core methods](library/index.md#rust-core-methods)), so
 a sidecar writes the same function after importing its module: after
 `import click::rust::u32;`, `fn smaller(a: u32, b: u32) -> u32` calling
 `a.min(b)` verifies `ensures result == u32::min(a, b);`.
@@ -937,9 +943,9 @@ the `Vec` methods ([Vec values](#vec-values)), `Option` and `Result`
 `unwrap`, `expect` and `unwrap_or` ([Panics](#panics),
 [Result values](#result-values)), and the slice-iterator and `chunks_exact`
 operations with the slice reads they return
-([Rust core models](library/index.md#rust-core-models)). Only the integer
-methods' contracts are still written by the importer. The instance at `u32`
-is:
+([Rust core models](library/index.md#rust-core-models)). The importer
+writes no contract text; it keeps only a name table from each core method to
+its library file. The instance at `u32` is:
 
 ```text
 extern fn slice::swap<u32>(s: &mut [u32], a: usize, b: usize) {

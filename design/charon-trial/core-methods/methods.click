@@ -44,6 +44,16 @@ fn clamp_add(a: u32, b: u32) -> u32 {
     }
 }
 
+fn spend(a: u32, b: u32) -> u32 {
+    requires b <= a;
+    ensures result == a - b;
+} by {
+    have u32::checked_sub(a, b) == Option<u32>::Some(a - b) by {
+        unfold(u32::checked_sub(a, b));
+        solve();
+    }
+}
+
 fn shortfall(have: u32, need: u32) -> u32 {
     ensures result == u32::saturating_sub(need, have);
 }

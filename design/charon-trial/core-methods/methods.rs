@@ -13,6 +13,13 @@ pub fn clamp_add(a: u32, b: u32) -> u32 {
     }
 }
 
+pub fn spend(a: u32, b: u32) -> u32 {
+    match a.checked_sub(b) {
+        Some(rest) => rest,
+        None => 0,
+    }
+}
+
 pub fn shortfall(have: u32, need: u32) -> u32 {
     need.saturating_sub(have)
 }
