@@ -228,3 +228,43 @@ fn retained_return_and_caller_receipt_do_not_export_growing_prefixes() {
         "{work:?}"
     );
 }
+
+#[test]
+fn complete_c_and_rust_machine_handoffs_retain_roots_without_prefix_exports() {
+    for rust in [false, true] {
+        let mut work = Vec::new();
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (environment, statement) = complete_machine_handoff_program(rust, size, false);
+            let exports = KernelTermExport::machine_export_count();
+            let (paths, measured) = crate::instrumentation::measure_deterministic_work(|| {
+                super::super::super::statements::execute_c_statement_paths(
+                    &CState::new(),
+                    &statement,
+                    &PureFactContext::new(),
+                    CExecutionContext::execute_bodies(&environment),
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap()
+            });
+            let [path] = paths.as_slice() else {
+                panic!("one complete machine path");
+            };
+            let CStatementOutcome::Return { value, state } = &path.outcome else {
+                panic!("machine return: {:?}", path.outcome);
+            };
+            assert!(path.obligations.is_empty(), "{:?}", path.obligations);
+            assert!(value.shared().is_some());
+            assert_eq!(
+                value.shared(),
+                state.locals.get("received").unwrap().shared()
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            work.push(measured);
+        }
+        assert!(
+            work[0] > 0 && work[1] <= 5 * work[0] && work[2] <= 5 * work[1],
+            "rust={rust}: {work:?}"
+        );
+    }
+}

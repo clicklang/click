@@ -1449,7 +1449,7 @@ fn prepare_function_claim_path(
         crate::kernel::functions::function_exit_memory(
             caller_state,
             raw_exit_state,
-            &value.native(),
+            value,
             function,
         )
     };
@@ -2391,7 +2391,7 @@ impl<'a> CFunctionEnsureGoalContext<'a> {
         let exit_memory = crate::kernel::functions::function_exit_memory(
             caller_state,
             return_state,
-            &value.native(),
+            value,
             function,
         );
         let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
@@ -2789,8 +2789,29 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
         CFunctionOutcome::Throw { value, .. } => (true, value),
         _ => return None,
     };
-    let native = value.native();
-    let term = match native.numeric_value() {
+    // Only a literal root can export as a native constant. Inspect that root
+    // before the compatibility boundary; compound results are not index keys.
+    if let Some(root) = value.shared() {
+        return match root.node() {
+            KernelTermNode::MachineLiteral(literal) => Some((
+                exceptional,
+                MachineIntegerType::from_c_type(value.c_type())?
+                    .value_from_term(literal.legacy_term()),
+            )),
+            KernelTermNode::Legacy(payload) => {
+                let PureFunctionArgument::Value(native) = payload.value() else {
+                    return None;
+                };
+                native_literal_completion_key(exceptional, native)
+            }
+            _ => None,
+        };
+    }
+    native_literal_completion_key(exceptional, value.native_payload()?)
+}
+
+fn native_literal_completion_key(exceptional: bool, value: &CValue) -> Option<(bool, CValue)> {
+    let term = match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Void => return Some((exceptional, CValue::Void)),
         CValue::Bool(term)
@@ -2809,7 +2830,7 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
         CValue::Pointer(_) | CValue::Parameter(_) => return None,
     };
     match term {
-        MachineTerm::Constant { .. } => Some((exceptional, value.clone().into_native())),
+        MachineTerm::Constant { .. } => Some((exceptional, value.clone())),
         _ => None,
     }
 }
@@ -3934,5 +3955,12 @@ mod claim_requirement_scaling_tests {
     use crate::kernel::proof::ProofFacts;
     include!(
         "../../../scaling_tests/kernel/api/contract_certification/contract_claims/requirements_tests.rs"
+    );
+}
+
+#[cfg(test)]
+mod retained_literal_completion_scaling_tests {
+    include!(
+        "../../../scaling_tests/kernel/api/contract_certification/contract_claims/retained_literals.rs"
     );
 }

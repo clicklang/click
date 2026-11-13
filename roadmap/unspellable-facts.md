@@ -82,7 +82,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 2 | Symbolic conditional joins | Merged [PR #2638](https://github.com/clicklang/click/pull/2638). Typed guards and shared arms survive checking, transport, snapshot matching and Surface spelling. The full gate passed 7,294 unit/API tests, 5,240 fixtures and all examples; its 15m54s run exceeded the ten-minute target. The final conditional-equality follow-up passed 1,884 selected checks, including all scaling, Rust import and expansion tests. Its full-corpus fact-stability audit passed all 5,240 fixtures with zero differences. |
 | 3 | Pure-function arguments and results | In progress. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. The integer machine call-result sequence 3a–3f below completes common result production and its consumers; pointer, algebraic, Boolean and floating-point result families remain separate work. |
 | 4 | Mixed-width arithmetic and casts | Implemented as subchunks 4a–4j below, one PR per subchunk. Numeric producers retain shared operands and results within the existing supported profile. General call and nonnumeric compatibility boundaries belong to the remaining packages; the previous combined branch stays unmerged reference material. |
-| 5 | C/Rust execution result carriers | In progress in subchunks 5a–5g below. Carrier preparation merged in [PR #2714](https://github.com/clicklang/click/pull/2714); execution handoffs remain. |
+| 5 | C/Rust execution result carriers | Supported machine handoffs implemented in 5a–5g below: expression paths, local bindings, returns and caller receipt retain common roots. Native memory-cell, specification and presentation boundaries remain explicit. |
 | 6 | Folds, binders and algebraic matches | Open |
 | 7 | Complete pointers and read addresses | Open |
 | 8 | Remaining Boolean and opaque expression payloads | Open |
@@ -270,6 +270,29 @@ result consumers. The full pre-integration regular suite passed all 7,492
 checks. After integrating upstream's Rust-library and diagnostic changes, all
 1,911 affected/scaling checks and all 5,281 regular fixtures passed; the
 fact-stability audit recorded zero differences.
+
+[PR #2725](https://github.com/clicklang/click/pull/2725) merged 5f; its pushed
+commit is included in upstream `master`.
+
+5g removes redundant native exports when storing machine contract results,
+inspecting return-pointer memory and selecting literal completion keys. The
+existing literal index still admits the same bounded literal payloads; compound
+roots are rejected without exporting their expression prefixes. Complete C
+unsigned and Rust narrow-arithmetic paths through logical local updates,
+function return, caller assignment and readback retain their roots without
+prefix exports and scale across 16, 64 and 256 operations.
+
+Declared scalar locals still synchronize with native memory cells. Separate
+end-to-end regressions keep those declared-local programs and verify that their
+returned/local carrier roots survive that compatibility boundary. This sequence
+does not migrate memory-cell payloads, unsupported operator/value families,
+specification C-fragment consumers or all presentation/certificate storage.
+Those explicit boundaries remain part of the wider migration; 5a–5g do not
+complete the overall KernelTerm/SurfaceTerm roadmap.
+
+5g passed all 1,929 affected function/contract/return/scaling checks, 87 checks
+after integrating the upstream equality-rewrite fix, and all 5,281 regular
+fixtures. Its full fact-stability audit recorded zero differences.
 
 ## Chunk 4: one producer boundary per PR
 
