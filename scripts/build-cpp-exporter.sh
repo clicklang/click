@@ -188,11 +188,24 @@ if [[ -n "$release" ]]; then
                 *) darwin_system_libs+=("$library") ;;
             esac
         done
+        # The release's Clang compiles against its own libc++ headers, so the
+        # exporter links that release's libc++ and libc++abi statically, as
+        # the Linux build links libstdc++; the system's older libc++ lacks
+        # what those headers reference.
+        for runtime in libc++.a libc++abi.a; do
+            if [[ ! -f "$llvm_libdir/$runtime" ]]; then
+                echo "error: the pinned LLVM release has no $llvm_libdir/$runtime" >&2
+                exit 1
+            fi
+        done
         link_flags=(
             -fuse-ld=lld
+            -nostdlib++
             -Wl,-dead_strip
             "${clang_cpp[@]}"
             "${llvm_libs[@]}"
+            "$llvm_libdir/libc++.a"
+            "$llvm_libdir/libc++abi.a"
             "${darwin_system_libs[@]}"
         )
     else
