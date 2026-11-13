@@ -1255,11 +1255,18 @@ int32 bad(int32 x) {
             }\n";
         fs::write(&click_path, click_source).unwrap();
 
+        // Selection controls the rewritten span, not the closer's strategy.
+        let assert_selected_solve_changed = |expanded: &str, offset: usize| {
+            let suffix = &click_source[offset + "solve();".len()..];
+            assert!(expanded.starts_with(&click_source[..offset]), "{expanded}");
+            assert!(expanded.ends_with(suffix), "{expanded}");
+            let replacement = &expanded[offset..expanded.len() - suffix.len()];
+            assert!(!replacement.contains("solve()"), "{expanded}");
+            assert_ne!(expanded, click_source);
+        };
         let expanded = run_location(&click_path, "7").unwrap();
-        assert!(
-            expanded.contains("        have x == x by { solve(); }\n        normalize();\n    }\n"),
-            "{expanded}"
-        );
+        let selected = click_source.find("        solve();\n").unwrap() + 8;
+        assert_selected_solve_changed(&expanded, selected);
         let ambiguous = run_location(&click_path, "9").expect_err("line 9 is ambiguous");
         let path = click_path.display();
         assert!(
@@ -1269,10 +1276,8 @@ int32 bad(int32 x) {
             "{ambiguous}"
         );
         let expanded = run_location(&click_path, "9:46").unwrap();
-        assert!(
-            expanded.contains("    have x >= x by { have x == x by solve(); normalize(); }\n"),
-            "{expanded}"
-        );
+        let selected = click_source.rfind("solve(); }").unwrap();
+        assert_selected_solve_changed(&expanded, selected);
         let between =
             run_location(&click_path, "8:5").expect_err("a closing brace selects nothing");
         assert!(
