@@ -51,7 +51,7 @@ reproduced. To move a file off `unsound`, the reproduction must stop
 verifying. Narrowing the documented claim does not count. Re-check the label
 whenever the file's reproduction or scope changes.
 
-## P1: before launch (6)
+## P1: before launch (5)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -93,18 +93,17 @@ slices and adler2 Adler-32 checksum are sufficient demonstrations. The
 is complete for the agreed Linux x86-64 GNU launch scope. The remaining C++
 front-end work concerns the installed pipeline, not more examples. By user
 direction (2026-11-10), the public claim is support for C, C++, and Rust
-with no ranking among them, and four gaps that contradict it are P1: the
-C++ front end is not installed with a release, a C++ project is limited to
-one translation unit, the Rust front end installs on one host only, and a
-Rust crate with third-party dependencies cannot be imported. The first two
-are in [cpp-support.md](cpp-support.md), the last two in
-[rust-support.md](rust-support.md); the Rust item supersedes the Linux-only
-launch scope. Broader language, synchronization, and graph coverage remain
+with no ranking among them, and four gaps that contradicted it were made
+P1. The C++ two, a released C++ front end and projects of several
+translation units, are delivered (2026-11-13; see
+[cpp-support.md](cpp-support.md#p1-front-end-delivered)). The Rust two, the
+Rust front end on every release host and crates with third-party
+dependencies, are in [rust-support.md](rust-support.md), which supersedes the
+Linux-only launch scope. Broader language, synchronization, and graph coverage remain
 P2.
 
 Program import and execution:
 
-- [A well-designed C++ front end](cpp-support.md)
 - [Rust support on every release host and for crates with dependencies](rust-support.md)
 
 The generic stack is complete: a recursive `Stack<T>` with `push`, `pop` and
@@ -149,7 +148,7 @@ Proof tooling:
 - [One fact-aware frame query instead of scattered history walks](fact-aware-frame-walks.md)
 - [KernelTerm / SurfaceTerm: finish the representation split](unspellable-facts.md)
 
-## P2: after launch (16)
+## P2: after launch (17)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -169,6 +168,7 @@ C language coverage:
 Additional languages:
 
 - [Stabilize and deliver the shared object model](object-model.md)
+- [C++ coverage toward Bitcoin Core](cpp-support.md)
 - [Model C++ exceptions with class types and exceptional resources](cpp-exceptions.md)
 - [Support unsafe Rust](unsafe-rust.md)
 

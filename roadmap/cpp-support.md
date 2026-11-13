@@ -1,275 +1,47 @@
-# P1: A well-designed C++ front end
+# P2: C++ coverage toward Bitcoin Core
 
-Priority: P1.
+Priority: P2.
 
-Soundness: soundness-adjacent. No false acceptance is known, and unsupported
-C++ constructs are refused. The Clang exporter is a documented trusted front
-end, but Click does not establish which exporter it trusted. `click import
-lock` runs whatever executable the config's `exporter` path names. Before
-exporting it checks the exporter's `--identity` report against the pinned
-front end (`src/languages/cpp/frontend-profile.json`), but that report is the
-exporter's own claim. The lock records the SHA-256 of a locally
-built binary, but nothing compares that hash with a released exporter. A
-reviewer would ask how a user knows that the trusted front end is the one
-Click was released with. This issue answers that question.
+Soundness: incomplete. No false acceptance is known; constructs outside the
+documented profile are refused.
 
-## Ruling and scope
+## P1 front end: delivered
 
-Maintainer ruling, 2026-10-14, on design-review N5 ("C++ and Rust look like
-research demos"): C++ support is P1. The delivered Bitcoin Core slices are
-enough as the C++ launch demonstration: `MoneyRange`, the `FeeFrac`
-arithmetic, `EvaluateFeeDown/Up`, `CFeeRate::GetFee` and `GetFeePerK`,
-`GetSizeOfCompactSize`, and the `std::span` helpers through `SpanPopBack`.
-The same holds for [the basic C++ example](../examples/basic-cpp/README.md).
-P1 does not require more examples or broader C++ coverage, with the one
-exception below.
+The P1 part of this item, a released C++ front end, is complete (user ruling,
+2026-11-13). A user installs Click with `CLICK_LANGUAGES=cpp`, or adds the
+front end with `click add cpp`, describes the project in its
+[project configuration](../docs/reference/cli/import.md#project-units), and
+runs `click import lock` and `click verify`:
 
-Maintainer direction, 2026-11-10: Click's public claim is that it supports
-C, C++, and Rust, with no ranking among them. Two gaps make a C++ user
-disagree within minutes of trying it, so both are launch work. The first,
-that a released Click cannot verify C++ at all, is this file's existing P1
-goal. The second is new to P1: a C++ project is more than one translation
-unit, and Click accepts one
-([design requirement 6](#design-requirements)). The Rust half of the same
-direction is [rust-support.md](rust-support.md).
+- Releases ship a static, checksummed exporter for `x86_64-unknown-linux-gnu`
+  and `aarch64-apple-darwin` (`.github/workflows/cpp-frontend.yml`,
+  `tests/cpp_release_install.rs`); other hosts get a diagnostic that says so
+  ([`click add`](../docs/reference/cli/versions.md#languages)).
+- The exporter is found by one resolution order and checked by its
+  `--identity` before it exports
+  ([C++ exporter identity](../docs/reference/cli/import.md#c-exporter-identity)).
+  A lock records the pinned profile, so equal inputs lock byte-identically on
+  every machine and host.
+- `the_installed_cpp_front_end_reproduces_the_committed_imports` locks
+  `examples/basic-cpp`, `examples/multifile-cpp` and the hermetic `MoneyRange`
+  closure from the installed layout alone.
+- A sidecar links several translation units of one unit, binding each
+  declaration to its definition and checking the one-definition rule
+  ([calls into another translation unit](../docs/reference/cli/import.md#calls-into-another-translation-unit)).
 
-The P1 work is the front-end pipeline. Getting from a C++ project to a
-verified sidecar should be well designed, not ad hoc. The
-[completed Linux Rust front end](../design/rust-charon-assessment.md#completed-linux-frontend-delivery)
-uses the [shared front-end design](#shared-front-end-design) below.
+Deferred from P1 by the same ruling:
 
-## Goal
+- Exporter bundles for the other release hosts: Linux arm64, macOS x86-64
+  and Windows.
+- Checking that a project including the host's C++ standard headers
+  (`#include <cstdint>`) locks with the installed exporter, and naming a
+  missing header package when it does not.
+- A clean-room install of the first tagged release, end to end.
 
-A user with a C++ project installs Click with `install.sh` or `install.ps1`,
-describes the project in its [project configuration](../docs/reference/cli/import.md#project-units),
-writes a sidecar, and runs `click import lock` and `click verify`. No Click repository checkout, no
-LLVM development install, and no custom build are needed. The same lock then
-verifies offline on a fresh clone of the user's project on another machine.
+## Coverage toward Bitcoin Core
 
-## Today's pipeline
-
-Audit of the current path, from a user's point of view:
-
-1. **Releases ship Linux x86-64 and macOS arm64 exporters; other hosts build it.**
-   `scripts/build-cpp-exporter.sh --release` links the pinned Clang, LLVM
-   and C++ runtime statically and copies Clang's builtin headers beside the
-   exporter as `clang-resource/`, which it finds relative to itself; only
-   the system's own libraries stay dynamic, which the build checks.
-   `.github/workflows/cpp-frontend.yml` builds that bundle on Linux x86-64
-   and on GitHub's macOS arm64 runner for each release tag as
-   `click-cpp-frontend-<host>.tar.gz`, tests it with
-   `tests/cpp_release_install.rs`, and attaches it; `click add cpp`
-   installs it (and `CLICK_LANGUAGES=cpp` with `install.sh`). macOS x86-64,
-   Linux arm64 and Windows have no bundle: there the development build (LLVM 19.1.7 development tools,
-   `libclang-cpp` linked with an rpath into the host's LLVM `libdir`, not
-   movable) is the only exporter.
-2. **One resolution order, nothing installed yet.** Click finds the
-   exporter through `CLICK_CPP_EXPORTER`, else
-   `$CLICK_HOME/versions/<version>/frontends/cpp/click-cpp-exporter`, else
-   reports where it expected one (`src/languages/cpp/runtime.rs`), for
-   project locking and C++ mdtests alike. Configs name no exporter and no
-   build-machine path is compiled in. `click add cpp`
-   installs there on Linux x86-64.
-3. **The version handshake and release identities are in place.** The
-   exporter reports its version, artifact schema and Clang version for
-   `--identity`, Click checks that before exporting, and all three are
-   defined once in `src/languages/cpp/frontend-profile.json`. A lock's
-   front-end identity is the digest of that profile, and the artifact
-   records the pinned Clang version rather than the build's full version
-   string, so equal inputs lock byte-identically on every machine; the
-   mdtest and example import checks compare bytes.
-4. **The demonstrations run from an installed Click.** The `basic-cpp`,
-   `cpp-stack` and `MoneyRange` READMEs give `click` commands run in the
-   project directory, and refresh with the installed front end.
-   `the_installed_cpp_front_end_reproduces_the_committed_imports` (nightly,
-   `tests/cpp_import.rs`) locks `basic-cpp` and the hermetic `MoneyRange`
-   closure outside the repository with only the installed layout (no
-   override, empty `PATH`), requires the committed locks and artifacts byte
-   for byte, and verifies their sidecars. The Bitcoin fee proofs remain
-   `.click.in` templates that only `tests/bitcoin_core_money_range.rs`
-   instantiates, and the full-checkout `MoneyRange` workflow still assumes
-   Homebrew Clang 19.1.7, CMake, and the extracted packages.
-5. **Setup errors name causes.** A missing exporter reports the expected
-   installed path and `click add cpp`; an exporter with another
-   identity is refused before it runs an export
-   (`an_installed_cpp_front_end_is_required_and_checked`). Diagnostics for
-   unsupported constructs keep their source location and construct.
-
-The [project configuration](../docs/reference/cli/import.md#project-units) has since solved three further
-problems: build information no longer comes from templated compilation
-databases (`prepare.py`, `.json.in` files), one unit replaces an import config
-per function, and C++ locks are portable across machines and checkout paths.
-
-What already works and should be kept:
-
-- refresh is separate from offline verification;
-- the inputs are hashed, and re-checked across two export runs;
-- the exporter runs in a bounded process with an empty environment;
-- unsupported constructs are refused, never approximated;
-- the artifact checker is independent of the exporter.
-
-## Design requirements
-
-1. **Ship the exporter.** Each Click release includes a prebuilt,
-   self-contained exporter for every host platform that supports C++. It
-   bundles or statically links its Clang libraries and Clang's resource
-   headers, so no LLVM install is needed. It is installed into the versioned
-   install layout under `CLICK_HOME`, either by `install.sh` and
-   `install.ps1` or by Click on first C++ use, and its checksum is verified.
-   A platform without an exporter gets a diagnostic that says so. Building
-   from source stays a contributor path, not a user step.
-2. **One way to locate it.** Use the resolution order in
-   [Shared front-end design](#shared-front-end-design). User configs contain
-   no exporter path. No path compiled into the binary from the build
-   machine, such as `CARGO_MANIFEST_DIR`, is used as a fallback.
-3. **A versioned interface.** The exporter reports its identity: its own
-   version, its Clang version, and the artifact schema it emits. Click checks
-   that identity before running the exporter and refuses a mismatch, naming
-   the expected version. The artifact schema is defined in one place that
-   both sides use. Locks record the front end's release identity, so equal
-   inputs give equal identities on every machine. Changing the schema stays
-   an explicit refresh, as today.
-4. **Clear errors.** One diagnostic, naming the cause and the fix, for each
-   of these:
-   - no exporter installed for this Click version or platform;
-   - a front end with the wrong version.
-
-   Unsupported constructs keep their source location and the name of the
-   construct.
-5. **Reproducible demonstration.** `examples/basic-cpp` and the hermetic
-   `MoneyRange` fixture verify from an installed Click, with commands
-   documented in their READMEs that do not use `cargo run`. Turning the
-   `.click.in` fee templates into plain sidecars is not required.
-
-6. **More than one translation unit.** Today the front end accepts one
-   C++20 translation unit, with every lowered declaration and source span
-   coming from that file or one configured project header it includes
-   ([`click import`](../docs/reference/cli/import.md#preliminary-c-semantic-artifact)).
-   A call from the selected function into a definition in another `.cpp`
-   file is outside that boundary. A project unit must be able to name
-   several translation units and their project headers, and a verified
-   function must be able to call a function defined in another of them:
-   against its verified body, or against its contract with the proof of
-   that contract checked in its own unit. The lock records every unit's
-   inputs. The one-definition assumptions this relies on are checked or
-   stated: two units that define the same entity differently are refused.
-   This is about project structure, not language coverage; the constructs
-   admitted inside each unit stay as documented.
-
-   Status: delivered. A call into a function another translation unit
-   defines exports the callee's interface; a sidecar that verifies several
-   sources of one unit links them, binding each declaration to its
-   definition and checking the one-definition rule
-   ([calls into another translation unit](../docs/reference/cli/import.md#calls-into-another-translation-unit),
-   [`examples/multifile-cpp`](../examples/multifile-cpp/README.md)). A
-   callee no linked source defines needs a sidecar `extern` contract.
-
-The build description, lean per-project configuration, portable locks, and
-diagnostics for unsupported flags and stale locks are delivered by the
-[project configuration](../docs/reference/cli/import.md#project-units).
-
-Documentation: [Language coverage](../docs/reference/coverage.md),
-[`click import`](../docs/reference/cli/import.md) and the
-[basic C++ example](../examples/basic-cpp/README.md) describe the installed
-workflow. The "needs a repository checkout" wording leaves coverage.md when
-this lands.
-
-## Shared front-end design
-
-This section is the shared design for the C++ and
-[Rust](../design/rust-charon-assessment.md#completed-linux-frontend-delivery) front ends.
-Rust delivery is complete for Linux; its installed workflow uses this design.
-[Project units](../docs/reference/cli/import.md#project-units) describes project configuration and the lock
-format for all three languages.
-
-- **Install layout and versioning.** Each Click version pins exactly one
-  version of each front end. Front ends install beside that version of
-  `click` in the `CLICK_HOME` layout that `click upgrade` and `click version`
-  manage, so that switching versions switches front ends.
-  The user can list which front ends are installed, with their versions.
-- **Location.** A front end is resolved in a single documented order:
-  1. an explicit per-front-end override, for development only, named the
-     same way for both front ends;
-  2. the installed front end matching the running `click`;
-  3. otherwise, an error that says how to install it.
-
-  `CLICK_CPP_EXPORTER` and `CLICK_CHARON` either become that override or are
-  retired from user documentation. Config files carry no front-end paths.
-- **Identity handshake.** Before running a front end, Click asks it for its
-  identity and compares that with the compiled-in pin. Rust's
-  `src/languages/rust/charon-profile.json` is the model: it pins the
-  extractor revision and version, the compiler commit, the toolchain, the
-  flags, and the named semantic versions. C++ gets an equivalent profile.
-- **Lock files.** Every language shares the lock envelope
-  (`src/languages/envelope.rs`) and input handling
-  (`src/languages/inputs.rs`). Each front end
-  contributes its release identity and semantic profile to that envelope.
-- **Errors.** Both languages share the same diagnostic categories and wording
-  for a missing front end and a version mismatch.
-- **Regression shape.** Each front end has an installed-layout test that
-  runs without the repository's `target/` directory, as described under each
-  issue's intended regression.
-
-## Intended regression
-
-An installed-layout test, in the gate or nightly, assembles the release
-layout into a temporary `CLICK_HOME`: `click`, plus the C++ front end as the
-installer would place it. It then:
-
-1. copies `examples/basic-cpp` to a temporary directory outside the
-   repository;
-2. runs, with no LLVM on `PATH` and no repository `target/` directory, the
-   installed `click import lock` and `click verify` for all three sidecars;
-3. checks the refusals: a front end with the wrong version identity is
-   refused with the named diagnostic, and a missing front end reports how to
-   install it.
-
-The hermetic `MoneyRange` fixture runs the same way.
-
-For requirement 6, a C++ counterpart of
-[`examples/multifile-registry/`](../examples/multifile-registry/): two
-`.cpp` files and a shared header, where a verified function in one calls a
-function defined in the other. It locks and verifies offline in the same
-installed layout. Two refusals are checked: a caller whose callee has
-neither a verified body nor a contract, and two units whose definitions of
-one entity differ.
-Delivered as [`examples/multifile-cpp`](../examples/multifile-cpp/README.md),
-which `the_installed_cpp_front_end_reproduces_the_committed_imports` also
-locks and verifies from the installed layout, and
-`linked_cpp_sources_refuse_an_unproved_callee_and_differing_definitions`.
-
-## Violated invariant
-
-A user who installs a Click release can verify a C++ project with that
-release alone. The trusted front end is identified by the release, and a
-lock records facts about the project and the pinned front end, not about the
-machine that wrote it.
-
-## Acceptance criteria
-
-- Releases ship a checksummed, self-contained exporter for each supported
-  host, and the installers (or Click on first use) install it into the
-  versioned layout.
-- Front ends are located only by the shared resolution order. No checked-in
-  user config names an exporter path, and no compiled-in fallback path
-  remains.
-- The exporter reports its identity, Click checks it before export, and the
-  artifact schema has a single definition. Locks record release identities
-  and are byte-identical across machines for equal inputs.
-- The installed-layout regression and its negative cases pass. The C++
-  documentation describes the installed workflow.
-- A project unit with several translation units locks and verifies; the
-  multi-file regression and its two refusals pass. The "definitions from
-  one logical source" wording leaves
-  [coverage.md](../docs/reference/coverage.md) when this lands.
-
-When these criteria land, the P1 part of this file is done. Whether the
-After launch section then becomes a separate P2 issue is the user's call.
-
-## After launch (not P1)
-
-Everything below is the C++ coverage roadmap toward Bitcoin Core. It is P2
-and does not block launch. The detailed delivery history of each slice is in
+This is the C++ coverage roadmap toward Bitcoin Core. It does not block
+launch. The detailed delivery history of each slice is in
 this file's Git history before the 2026-10-14 ruling. The exact supported
 profile is documented in [`click import`](../docs/reference/cli/import.md).
 

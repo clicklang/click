@@ -48,7 +48,7 @@ the rest of the subset is in the [Rust reference](../docs/reference/rust.md).
    rules on dropping it, and the installer and the
    [coverage matrix](../docs/reference/coverage.md) name the hosts that
    remain. Locks stay byte-identical across hosts for equal inputs, as the
-   [shared front-end design](cpp-support.md#shared-front-end-design)
+   [shared front-end design](#shared-front-end-design)
    requires.
 2. **Crates with dependencies.** A project unit can describe a crate that
    depends on third-party crates, and `click import lock` imports it. The
@@ -101,3 +101,40 @@ crate with dependencies.
   not packaged yet" and "no third-party crates" wording leaves
   [coverage.md](../docs/reference/coverage.md) and the
   [Rust reference](../docs/reference/rust.md) when this lands.
+
+## Shared front-end design
+
+This section is the shared design for the C++ and Rust front ends, moved
+here when the C++ front end was delivered
+([cpp-support.md](cpp-support.md#p1-front-end-delivered)); the Rust front
+end follows it.
+[Project units](../docs/reference/cli/import.md#project-units) describes project configuration and the lock
+format for all three languages.
+
+- **Install layout and versioning.** Each Click version pins exactly one
+  version of each front end. Front ends install beside that version of
+  `click` in the `CLICK_HOME` layout that `click upgrade` and `click version`
+  manage, so that switching versions switches front ends.
+  The user can list which front ends are installed, with their versions.
+- **Location.** A front end is resolved in a single documented order:
+  1. an explicit per-front-end override, for development only, named the
+     same way for both front ends;
+  2. the installed front end matching the running `click`;
+  3. otherwise, an error that says how to install it.
+
+  `CLICK_CPP_EXPORTER` and `CLICK_CHARON` either become that override or are
+  retired from user documentation. Config files carry no front-end paths.
+- **Identity handshake.** Before running a front end, Click asks it for its
+  identity and compares that with the compiled-in pin. Rust's
+  `src/languages/rust/charon-profile.json` is the model: it pins the
+  extractor revision and version, the compiler commit, the toolchain, the
+  flags, and the named semantic versions. C++ gets an equivalent profile.
+- **Lock files.** Every language shares the lock envelope
+  (`src/languages/envelope.rs`) and input handling
+  (`src/languages/inputs.rs`). Each front end
+  contributes its release identity and semantic profile to that envelope.
+- **Errors.** Both languages share the same diagnostic categories and wording
+  for a missing front end and a version mismatch.
+- **Regression shape.** Each front end has an installed-layout test that
+  runs without the repository's `target/` directory, as described under each
+  issue's intended regression.
