@@ -101,6 +101,11 @@ hosting = "github"
 # Whether to install an updater program
 install-updater = false
 
+# dist 0.33.0 picks the retired macos-14 image for Apple silicon; GitHub
+# cancels jobs that ask for it.
+[workspace.metadata.dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"
+
 [workspace.metadata.dist.binaries]
 aarch64-apple-darwin = ["click"]
 aarch64-unknown-linux-gnu = ["click"]
