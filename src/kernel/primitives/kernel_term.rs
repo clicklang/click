@@ -255,6 +255,9 @@ impl NodeKey {
         // to its leaves, including explicit conversion roots. Opaque payloads
         // keep their old storage; inspect immediate children only.
         let shared_machine_operand = match &node {
+            KernelTermNode::Call { .. } => {
+                matches!(&ty, KernelType::C(c) if MachineIntegerType::from_c_type(*c).is_some())
+            }
             KernelTermNode::MachineLiteral(_) | KernelTermNode::MemoryLoad { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
             KernelTermNode::Legacy(value) => matches!(
@@ -275,6 +278,7 @@ impl NodeKey {
             _ => false,
         };
         let machine_conversions = match &node {
+            KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => true,
             KernelTermNode::Legacy(value) => matches!(
@@ -301,6 +305,7 @@ impl NodeKey {
         // Conditional rewriting leaves ordinary arithmetic untouched. Retain
         // this syntax summary so each query skips unchanged shared prefixes.
         let conditional_machine_rewrites = match &node {
+            KernelTermNode::Call { .. } => shared_machine_operand,
             KernelTermNode::MachineIf { .. } => true,
             KernelTermNode::IntegerToMachine { .. } | KernelTermNode::MachineCast { .. } => true,
             KernelTermNode::MachineBinary {

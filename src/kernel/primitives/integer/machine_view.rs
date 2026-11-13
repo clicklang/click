@@ -51,7 +51,8 @@ pub(crate) fn shared_machine_syntax_variables(
                 KernelTermNode::MachineLiteral(_)
                 | KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::Legacy(_)
-                | KernelTermNode::MemoryLoad { .. } => Default::default(),
+                | KernelTermNode::MemoryLoad { .. }
+                | KernelTermNode::Call { .. } => Default::default(),
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => {
                     if !finish {
@@ -117,6 +118,7 @@ pub(crate) fn shared_machine_conversion_leaves(
                 node,
                 KernelTermNode::IntegerToMachine { .. }
                     | KernelTermNode::Legacy(_)
+                    | KernelTermNode::Call { .. }
                     | KernelTermNode::MachineIf { .. }
             )
         },
@@ -861,6 +863,18 @@ impl<'a> MachineOperandView<'a> {
     }
 
     pub(crate) fn observe(self, ty: MachineIntegerType) -> Option<IntegerTerm> {
+        if let Self::Shared(term) = self
+            && matches!(term.node(), KernelTermNode::Call { .. })
+        {
+            // The bounded native 128-bit profile does not admit call roots.
+            if ty.format().bits() == 128 {
+                return None;
+            }
+            return Some(IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(
+                ty,
+                term.with_machine_observation_type(ty),
+            )?));
+        }
         if let Self::Shared(term) = self
             && let Some(value) = term.machine_conversion_leaf()
         {

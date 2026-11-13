@@ -51,6 +51,34 @@ impl KernelTerm {
         {
             return Some(operand);
         }
+        if let KernelTermNode::Call { name, arguments } = self.node()
+            && matches!(self.ty(), KernelType::C(ty) if MachineIntegerType::from_c_type(*ty).is_some())
+        {
+            // A bounded compatibility reading of this root. Machine arguments
+            // keep their shared handles; no surrounding prefix is exported.
+            return Some(self.0.machine_leaf.get_or_init(|| {
+                crate::instrumentation::record_deterministic_work(name.len() + arguments.len() + 1);
+                let mut export = KernelTermExport::default();
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| {
+                        if let KernelType::C(ty) = argument.ty()
+                            && let Some(format) = MachineIntegerType::from_c_type(*ty)
+                            && let Some(value) =
+                                SharedMachineIntegerTerm::from_shared(format, argument.clone())
+                        {
+                            PureFunctionArgument::SharedMachine(value)
+                        } else {
+                            export.argument(argument).expect("typed call argument")
+                        }
+                    })
+                    .collect();
+                MachineTerm::ClickFunctionApplication {
+                    name: name.clone(),
+                    arguments,
+                }
+            }));
+        }
         if let KernelTermNode::BoolCast {
             destination,
             operand,
