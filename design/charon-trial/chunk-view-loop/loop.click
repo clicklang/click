@@ -34,7 +34,6 @@ fn walk(bytes: &[u8]) -> u32 {
             have to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
         }
         preserve by {
-            step(); step(); step(); step();
             if 0u64 < iter.len() {
                 have chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).len() == bytes.len() / 4u64 by {
                     apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
@@ -75,7 +74,8 @@ fn walk(bytes: &[u8]) -> u32 {
                 have 0u64 < at(taken, iter.len());
                 have iter.len() < at(taken, iter.len());
             } else {
-                step();
+                have iter.len() == 0u64;
+                step(); step(); step();
             }
         }
     }

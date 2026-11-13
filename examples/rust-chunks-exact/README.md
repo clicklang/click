@@ -10,8 +10,12 @@ entry.
 The iterator (`docs/reference/rust.md`, Exact chunk iterators and remainder)
 is one value of the library's
 `ChunksExact<uint8>` and the proof cites the contract in
-`click::rust::chunks_exact`. No cursor, remaining-byte count or generated
-local is named.
+`click::rust::chunks_exact`. The unit sets `"iterators": "library"`, so the
+iterator is imported through Rust's own interface: each pass calls
+`ChunksExact::next(&mut iter)`, which returns `Option<&[u8]>`, and
+`chunks.remainder()` is a call to `ChunksExact::remainder`. No cursor,
+remaining-byte count or generated local is named. The `preserve` script
+splits on `0u64 < iter.len()` before the `next()` call.
 
 - What `chunks_exact` builds: `len_chunks_exact`, `nth_chunks_exact` and
   `remainder_chunks_exact`, applied to `Slice<u8>::Slice(bytes, bytes.len())`.

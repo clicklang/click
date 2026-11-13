@@ -37,7 +37,6 @@ fn cover(bytes: &[u8]) -> usize {
             have to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
         }
         preserve by {
-            step(); step(); step(); step();
             if 0u64 < iter.len() {
                 have chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).len() == bytes.len() / 4u64 by {
                     apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
@@ -69,7 +68,7 @@ fn cover(bytes: &[u8]) -> usize {
                 have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64) < to_integer(bytes.len());
                 have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64 + 3u64) < to_integer(bytes.len());
                 mark taken;
-                step_until(read(0));
+                step_until(read(1));
                 have chunk == bytes + (bytes.len() / 4u64 - at(taken, iter.len())) * 4u64;
                 have chunk_len == 4u64;
                 step_until(loop(0).back_edge());
@@ -78,7 +77,8 @@ fn cover(bytes: &[u8]) -> usize {
                 have 0u64 < at(taken, iter.len());
                 have iter.len() < at(taken, iter.len());
             } else {
-                step();
+                have iter.len() == 0u64;
+                step(); step(); step();
             }
         }
     }
