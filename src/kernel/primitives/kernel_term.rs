@@ -125,6 +125,11 @@ enum LegacyIdentity {
     Machine(u64),
     MachineObservation(SharedMachineIntegerTerm),
     ApplicationArgument(SharedPureApplication, usize),
+    ExactApplicationArgument {
+        application: SharedPureApplication,
+        payload: usize,
+        index: usize,
+    },
     Fresh(u64),
 }
 impl PartialEq for KernelLegacyTerm {
