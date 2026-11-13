@@ -81,13 +81,65 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 1 | Let bindings and local value handoffs | Merged in [PR #2617](https://github.com/clicklang/click/pull/2617); specification bindings retain shared values through selected lookups, with shadowing and snapshot scope preserved. |
 | 2 | Symbolic conditional joins | Merged [PR #2638](https://github.com/clicklang/click/pull/2638). Typed guards and shared arms survive checking, transport, snapshot matching and Surface spelling. The full gate passed 7,294 unit/API tests, 5,240 fixtures and all examples; its 15m54s run exceeded the ten-minute target. The final conditional-equality follow-up passed 1,884 selected checks, including all scaling, Rust import and expansion tests. Its full-corpus fact-stability audit passed all 5,240 fixtures with zero differences. |
 | 3 | Pure-function arguments and results | In progress. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. Common machine call result roots and remaining result consumers are still open. |
-| 4 | Mixed-width arithmetic and casts | Open |
+| 4 | Mixed-width arithmetic and casts | Restarting as subchunks 4a–4j below, one PR per subchunk. The previous combined implementation is unmerged reference work, not a validated delivery. |
 | 5 | C/Rust execution result carriers | Open |
 | 6 | Folds, binders and algebraic matches | Open |
 | 7 | Complete pointers and read addresses | Open |
 | 8 | Remaining Boolean and opaque expression payloads | Open |
 | 9 | Unified raising/lowering and certificate boundaries | Open |
 | 10 | Duplicate storage removal and final closure | Open |
+
+## Chunk 4: one producer boundary per PR
+
+Chunk 4 migrates existing numeric producers to retain `KernelTerm` operands and
+results. It preserves language semantics, definedness obligations, exact fact
+identity, accepted proofs and refusals. It does not add arithmetic capabilities
+or redesign proof search.
+
+The previous combined branch is reference material only. Extract and review each
+subchunk independently on a fresh branch from current upstream after the previous
+PR merges. Do not merge the combined branch or carry its accumulated fixes into
+every subchunk. Later chunks remain parked. Each row receives its own PR; split a
+row further if it cannot remain a small, independently validated change.
+
+| Subchunk | Producer boundary | Scope |
+| --- | --- | --- |
+| 4a | Same-type integer casts | Retain identity through casts that do not change integer type; preserve named reads and snapshots. |
+| 4b | Signedness conversions | Existing same-width signed/unsigned conversions for 8/16/32/64-bit values. |
+| 4c | Widening casts | Existing sign extension and zero extension through 64 bits. |
+| 4d | Narrowing casts | Existing truncation and low-word conversions through 64 bits. |
+| 4e | Mixed-width arithmetic | Existing integer promotions and usual arithmetic conversions through 64 bits; retain converted operands and results. |
+| 4f | Explicit narrow arithmetic | Existing annotated 8/16-bit operations with narrow results, distinct from ordinary promoted arithmetic. |
+| 4g | C shifts | Retain operands with independently typed shift counts; preserve C definedness obligations. |
+| 4h | Rust shifts | Preserve existing Rust-specific shift behavior and obligations. |
+| 4i | Bitwise operations | Existing numeric AND, OR, XOR and NOT, including narrow NOT and required tag side facts. |
+| 4j | Supported 128-bit paths | Existing 128-bit conversions and supported arithmetic/bitwise paths; unsupported operations remain unsupported. |
+
+The 4a audit confirms that the existing unary and cast-chain paths already
+retain same-type shared integer results. Its PR adds exact-root coverage across
+all ten integer formats, registered-read snapshot controls, a changed-type
+negative control, and no-export scaling over 16/32/64 casts. Native inputs retain
+their existing compatibility boundary. Focused tests and all 1,507 scaling tests
+passed; the unchanged `preserve_apply_names_its_missing_viewable.md` passed its
+fact-stability audit with zero differences. Merge remains subject to the PR gate.
+Subchunks 4b–4j remain open.
+
+For each PR:
+
+- State the one producer path being migrated and compare its native and retained
+  results, including types, casts and ordinary proof obligations.
+- Keep existing C and proof fixtures unchanged. In particular,
+  `preserve_apply_names_its_missing_viewable.md` must continue to pass.
+- Cover positive, refusal and scope/snapshot cases relevant to that path, plus
+  no-export and deterministic scaling checks where representation work requires
+  them. Run all scaling tests for performance-sensitive changes and the ordinary
+  required gate through the repository workflow.
+- Fix a blocking representation mismatch at its smallest existing consumer
+  boundary. Do not compensate with new search strategies, broader fact indexes,
+  increased budgets or altered proofs. If the producer cannot yet preserve the
+  existing behavior, retain its compatibility path and reduce the PR scope.
+- Record actual validation and merge status. Completion of one row does not
+  imply completion of the rest of chunk 4.
 
 ## Ordered closure checklist
 
