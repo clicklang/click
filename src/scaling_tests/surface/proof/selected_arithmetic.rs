@@ -266,3 +266,88 @@ fn retained_machine_rewrite_admission_reads_only_comparison_roots() {
         }
     }
 }
+
+#[test]
+fn rewrite_history_keys_share_call_carriers_and_keep_snapshot_authority() {
+    use super::search::RewriteGoalKey;
+    use crate::kernel::{
+        CPointerValue, KernelTermImport, PureFunctionArgument, SharedMachineIntegerTerm,
+        SharedPureApplication,
+    };
+    let mut samples = Vec::new();
+    for depth in [4, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(995941));
+        let before = CMemory::new();
+        let after = before
+            .clone()
+            .store(pointer.clone(), CValue::Int32(7u32.into()));
+        let goal = |memory, format| {
+            let application = SharedPureApplication::intern(
+                "read_length".into(),
+                vec![PureFunctionArgument::ArrayRef {
+                    memory,
+                    pointer: CValue::Pointer(CPointerValue::new(
+                        pointer.clone(),
+                        CType::Int32Pointer,
+                    )),
+                    element_type: CType::Int32,
+                }],
+            );
+            let mut root = KernelTermImport::default().machine_call(format, &application);
+            for _ in 0..depth {
+                let application = SharedPureApplication::intern(
+                    "nested_length".into(),
+                    vec![PureFunctionArgument::SharedMachine(
+                        SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
+                    )],
+                );
+                root = KernelTermImport::default().machine_call(format, &application);
+            }
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(root.machine_conversion_leaf().unwrap().clone()),
+                    right: Box::new(
+                        crate::kernel::machine_integer::range::constant_word(format, &0.into())
+                            .unwrap(),
+                    ),
+                },
+                true,
+            )
+        };
+        let a = goal(before.clone(), MachineIntegerType::UInt64);
+        let b = goal(before.clone(), MachineIntegerType::UInt64);
+        assert_ne!(a, b, "fresh exact producer handles");
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        let ((ka, kb), work) = crate::instrumentation::measure_deterministic_work(|| {
+            (RewriteGoalKey::new(&a), RewriteGoalKey::new(&b))
+        });
+        assert!(matches!(ka, RewriteGoalKey::Identity(_)));
+        assert_eq!(ka, kb, "one rewrite goal despite fresh carriers");
+        assert_ne!(
+            ka,
+            RewriteGoalKey::new(&goal(after, MachineIntegerType::UInt64))
+        );
+        assert_ne!(
+            ka,
+            RewriteGoalKey::new(&goal(before, MachineIntegerType::Int64))
+        );
+        let mut negated = b;
+        let Proposition::ConditionIs(_, wanted) = &mut negated else {
+            unreachable!()
+        };
+        *wanted = false;
+        assert_ne!(ka, RewriteGoalKey::new(&negated));
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples[0] > 0 && samples[1] <= 5 * samples[0] && samples[2] <= 5 * samples[1],
+        "{samples:?}"
+    );
+}

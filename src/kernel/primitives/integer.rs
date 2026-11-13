@@ -116,8 +116,7 @@ struct PureApplicationIdentity {
 
 struct SharedPureApplicationNode {
     identity: Arc<PureApplicationIdentity>,
-    name: String,
-    arguments: Vec<PureFunctionArgument>,
+    call: MachineTerm,
 }
 
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -230,8 +229,7 @@ impl PureApplicationInterner {
         // and repeated readings do not accumulate a bucket of payload versions.
         SharedPureApplication(Arc::new(SharedPureApplicationNode {
             identity,
-            name,
-            arguments,
+            call: MachineTerm::ClickFunctionApplication { name, arguments },
         }))
     }
 }
@@ -262,10 +260,19 @@ impl SharedPureApplication {
         Arc::as_ptr(&self.0) as usize
     }
     pub(crate) fn name(&self) -> &str {
-        &self.0.name
+        let MachineTerm::ClickFunctionApplication { name, .. } = &self.0.call else {
+            unreachable!("application payload")
+        };
+        name
     }
     pub(crate) fn arguments(&self) -> &[PureFunctionArgument] {
-        &self.0.arguments
+        let MachineTerm::ClickFunctionApplication { arguments, .. } = &self.0.call else {
+            unreachable!("application payload")
+        };
+        arguments
+    }
+    pub(crate) fn native_call(&self) -> &MachineTerm {
+        &self.0.call
     }
 }
 

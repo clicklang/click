@@ -167,9 +167,18 @@ common calls through the existing call-argument path, retaining complete-pointer
 equality requirements. Direct call comparisons preserve their native machine
 fact form instead of selecting Integer rewrite/search dispatch merely because
 the producer is shared. Snapshot keys reinterpret conditional operands at their
-existing canonical observation type for every integer format. This closes the
-integer call-result sequence, not the wider
-KernelTerm/SurfaceTerm migration or the other result families.
+existing canonical observation type for every integer format. Native comparison
+and algebraic reflexivity readers use the existing typed application identity.
+The existing rewrite history uses snapshot-aware proposition identity so fresh
+argument carriers do not restart visited branches; search strategies and limits
+are unchanged. Calls whose numeric arguments are already retained borrow their
+producer's application payload for compatibility reads. Boxed numeric inputs
+still import to shared children, including when an equivalent shared producer
+later reuses their root. Scaling checks cover borrowed readings, nested handoffs,
+and rewrite identities that distinguish snapshots, formats and polarity.
+[PR #2701](https://github.com/clicklang/click/pull/2701) closes the integer
+call-result sequence, not the wider KernelTerm/SurfaceTerm migration or the
+other result families.
 
 ## Chunk 4: one producer boundary per PR
 

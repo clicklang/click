@@ -54,8 +54,9 @@ fn common_call_borrowing_scales_with_arity_and_reuses_the_reading() {
                 .map(|n| PureFunctionArgument::Integer(IntegerTerm::constant_i64(n).into()))
                 .collect(),
         );
-        let root =
-            KernelTermImport::default().machine_call(MachineIntegerType::Int32, &application);
+        let (root, construction) = crate::instrumentation::measure_deterministic_work(|| {
+            KernelTermImport::default().machine_call(MachineIntegerType::Int32, &application)
+        });
         let exports = KernelTermExport::machine_export_count();
         let (first, cold) = crate::instrumentation::measure_deterministic_work(|| {
             root.machine_conversion_leaf().unwrap()
@@ -64,9 +65,11 @@ fn common_call_borrowing_scales_with_arity_and_reuses_the_reading() {
             root.machine_conversion_leaf().unwrap()
         });
         assert!(std::ptr::eq(first, second));
+        assert!(std::ptr::eq(first, application.native_call()));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(cold, 0, "the input payload is already produced");
         assert_eq!(warm, 0);
-        work.push(cold);
+        work.push(construction);
     }
     assert!(
         work[0] > 0 && work[1] <= 5 * work[0] && work[2] <= 5 * work[1],

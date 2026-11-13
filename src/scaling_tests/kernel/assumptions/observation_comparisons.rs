@@ -92,12 +92,28 @@ fn native_order_sources_do_not_add_native_query_work() {
     }
 }
 
+// These tests exercise explicit Integer observations against native sources.
+// Direct machine call comparisons now preserve their native fact form.
+fn observed_call_condition(
+    format: MachineIntegerType,
+    relation: CompareRelation,
+    root: &crate::kernel::KernelTerm,
+    bound: &MachineTerm,
+) -> ConditionTerm {
+    let left = IntegerTerm::Machine(
+        crate::kernel::SharedMachineIntegerTerm::observe_shared(format, root.clone()).unwrap(),
+    );
+    let right = IntegerTerm::from_machine(format, bound.clone()).unwrap();
+    match relation {
+        CompareRelation::Equal => ConditionTerm::integer_equal(left, right),
+        CompareRelation::LessThan => ConditionTerm::integer_less_than(left, right),
+        _ => unreachable!(),
+    }
+}
+
 #[test]
 fn common_call_sources_preserve_identity_polarity_and_branch_authority() {
-    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
-    use crate::kernel::{
-        KernelTermExport, KernelTermImport, MachineOperandView as V, SharedPureApplication,
-    };
+    use crate::kernel::{KernelTermExport, KernelTermImport, SharedPureApplication};
     for format in [
         MachineIntegerType::Int32,
         MachineIntegerType::UInt32,
@@ -116,11 +132,7 @@ fn common_call_sources_preserve_identity_polarity_and_branch_authority() {
         for relation in [CompareRelation::Equal, CompareRelation::LessThan] {
             let written =
                 ConditionTerm::machine_compare(format, relation, native.clone(), bound.clone());
-            let shared = condition_for_operand_views(
-                format,
-                relation,
-                [V::Shared(&root), V::Legacy(&bound)],
-            );
+            let shared = observed_call_condition(format, relation, &root, &bound);
             for (source, query) in [(&written, &shared), (&shared, &written)] {
                 for truth in [false, true] {
                     let parent = PureFactContext::new();
@@ -141,10 +153,7 @@ fn common_call_sources_preserve_identity_polarity_and_branch_authority() {
 
 #[test]
 fn common_call_fact_queries_do_not_scan_growing_source_buckets() {
-    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
-    use crate::kernel::{
-        KernelTermExport, KernelTermImport, MachineOperandView as V, SharedPureApplication,
-    };
+    use crate::kernel::{KernelTermExport, KernelTermImport, SharedPureApplication};
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -170,11 +179,7 @@ fn common_call_fact_queries_do_not_scan_growing_source_buckets() {
             );
         }
         let bound = MachineTerm::constant(1);
-        let query = condition_for_operand_views(
-            format,
-            CompareRelation::LessThan,
-            [V::Shared(&root), V::Legacy(&bound)],
-        );
+        let query = observed_call_condition(format, CompareRelation::LessThan, &root, &bound);
         assert!(context.selected_comparison_source(&query, true).is_some());
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

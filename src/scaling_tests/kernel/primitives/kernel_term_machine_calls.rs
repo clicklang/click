@@ -22,6 +22,13 @@ fn machine_call_roots_retain_growing_shared_arguments_without_exports() {
                 );
                 let root = KernelTermImport::default().machine_call(format, &application);
                 assert_eq!(root.children()[0], operand, "prefix {index}");
+                assert!(
+                    std::ptr::eq(
+                        root.machine_conversion_leaf().unwrap(),
+                        application.native_call(),
+                    ),
+                    "the already-produced payload is borrowed"
+                );
             }
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);

@@ -1461,6 +1461,48 @@ fn polarity_equivalent_by(
     if left_condition == right_condition && left_value == right_value {
         return true;
     }
+    // A call's native reading may retain exact producer handles in numeric
+    // arguments. Re-lowering the same call produces fresh exact handles but
+    // the existing typed application identity still names the same value.
+    // Keep comparison format, direction, polarity and all other syntax exact.
+    if left_value == right_value
+        && let (
+            ConditionTerm::Compare {
+                format: af,
+                relation: ar,
+                left: al,
+                right: ab,
+            },
+            ConditionTerm::Compare {
+                format: bf,
+                relation: br,
+                left: bl,
+                right: bb,
+            },
+        ) = (&left_condition, &right_condition)
+        && (af, ar) == (bf, br)
+        && [(al, bl), (ab, bb)].into_iter().all(|(a, b)| {
+            a == b
+                || match (a.as_ref(), b.as_ref()) {
+                    (
+                        MachineTerm::ClickFunctionApplication {
+                            name: an,
+                            arguments: aa,
+                        },
+                        MachineTerm::ClickFunctionApplication {
+                            name: bn,
+                            arguments: ba,
+                        },
+                    ) if an == bn => {
+                        crate::kernel::SharedPureApplication::intern(an.clone(), aa.clone())
+                            == crate::kernel::SharedPureApplication::intern(bn.clone(), ba.clone())
+                    }
+                    _ => false,
+                }
+        })
+    {
+        return true;
+    }
     // A retained order observation and its native comparison are the same typed
     // claim. Read their syntax identities; never export a shared operand or
     // consult proof facts to recover the native spelling.
