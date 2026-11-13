@@ -1,7 +1,11 @@
-//! The contracts Click supplies for the Rust core methods an import calls:
-//! each states the method's result with the library's specification function
-//! of the same path, `ensures result == click::rust::u32::min(a, b);`. They
-//! are assumptions, as an `extern fn` contract is.
+//! The contracts Click supplies for the Rust core methods an import calls.
+//! They are assumptions, as an `extern fn` contract is. The `Vec` methods
+//! and `<[T]>::swap` are generic `extern fn` blocks in
+//! `library/rust/core.click`, written out at each instance as a sidecar's
+//! generic functions are; this file keeps only their name table. The others
+//! are still written here: each integer method states its result with the
+//! library's specification function of the same path, `ensures result ==
+//! click::rust::u32::min(a, b);`.
 use super::schema::{RustExport, Type};
 use std::collections::BTreeSet;
 
@@ -9,76 +13,54 @@ use std::collections::BTreeSet;
 /// the slice rather than a result.
 pub(super) const SLICE_SWAP: &str = "slice::swap";
 
-/// `<[T]>::swap(s, a, b)`'s contract: it owns the slice, Rust panics unless
-/// both indices are in bounds, and the two elements are exchanged while
-/// every other element is unchanged.
-fn slice_swap_contract(function: &super::schema::Function) -> String {
-    let element = match &function.parameters[0].value_type {
-        Type::ScalarSlice { element, .. } => element.scalar_name().expect("an integer element"),
-        Type::ByteSlice { .. } => "u8",
-        _ => unreachable!("checked by the importer"),
-    };
-    format!(
-        "\nextern fn {}(s: &mut [{element}], a: usize, b: usize) {{\n    owns *s;\n    requires a < s.len();\n    requires b < s.len();\n    ensures s[a] == old(s[b]);\n    ensures s[b] == old(s[a]);\n    ensures forall (k: usize) {{ k < s.len() and k != a and k != b implies s[k] == old(s[k]) }};\n}}\n",
-        function.name
-    )
-}
-
 /// The prefix of the `core_method` of each `Vec` method, `Vec::push`.
 pub(super) const VEC: &str = "Vec::";
 
-/// The largest length a `Vec` reaches before `push` panics: a vector of
-/// `u8` holds at most `isize::MAX` elements, and a longer element fewer.
-/// The model bounds every vector by the length `vec::len` can state,
-/// `u64::MAX`, and `push` requires room below it; the program's own bound
-/// is the smaller, so a proof that meets this requirement is sound for it
-/// only up to Rust's allocation limit, which aborts rather than returns.
-const VEC_LENGTH_LIMIT: &str = "18446744073709551615u64";
+/// The Click library file that states the `Vec` methods and `<[T]>::swap`
+/// as generic `extern fn` blocks over their element type.
+const CORE_LIBRARY: &str = include_str!("../../../library/rust/core.click");
 
-/// The contract of the `Vec` method `function`, `Vec::push<u32>`: the
-/// call's effect on the library's `Vec<T>` values.
-fn vec_contract(function: &super::schema::Function, method: &str) -> String {
-    let element_of = |ty: &Type| match ty {
-        Type::Vec { element } => element.scalar_name(),
-        Type::Reference { pointee, .. } => match pointee.as_ref() {
-            Type::Vec { element } => element.scalar_name(),
-            _ => None,
-        },
-        _ => None,
-    };
-    let element = element_of(&function.return_type)
-        .or_else(|| {
-            function
-                .parameters
-                .first()
-                .and_then(|parameter| element_of(&parameter.value_type))
-        })
-        .expect("a `Vec` method names its element type");
-    let name = &function.name;
-    let vector = format!("Vec<{element}>");
-    let body = match method {
-        "new" => format!(
-            "extern fn {name}() -> {vector} {{\n    ensures click::rust::vec::len(result) == 0u64;\n}}"
-        ),
-        // The capacity is outside the model: the vector is empty.
-        "with_capacity" => format!(
-            "extern fn {name}(capacity: usize) -> {vector} {{\n    ensures click::rust::vec::len(result) == 0u64;\n}}"
-        ),
-        // The new value, and what the library's axioms say of it, so a
-        // caller reads the length and elements without citing them.
-        "push" => format!(
-            "extern fn {name}(v: &mut {vector}, x: {element}) {{\n    owns *v;\n    requires click::rust::vec::len(*v) < {VEC_LENGTH_LIMIT};\n    ensures *v == click::rust::vec::push(old(*v), x);\n    ensures click::rust::vec::len(*v) == click::rust::vec::len(old(*v)) + 1;\n    ensures click::rust::vec::get(*v, click::rust::vec::len(old(*v))) == x;\n    ensures forall (k: usize) {{ k < click::rust::vec::len(old(*v)) implies click::rust::vec::get(*v, k) == click::rust::vec::get(old(*v), k) }};\n}}"
-        ),
-        "len" => format!(
-            "extern fn {name}(v: &{vector}) -> usize {{\n    views *v;\n    ensures result == click::rust::vec::len(old(*v));\n}}"
-        ),
-        // Rust panics unless the index is in bounds.
-        "index" => format!(
-            "extern fn {name}(v: &{vector}, i: usize) -> {element} {{\n    views *v;\n    requires i < click::rust::vec::len(*v);\n    ensures result == click::rust::vec::get(old(*v), i);\n}}"
-        ),
-        _ => unreachable!("checked by the importer"),
-    };
-    format!("\n{body}\n")
+/// The core methods the Click library states as generic functions: each
+/// method's `core_method`, the path of the library's generic function, and
+/// its file. A core method declared with one of these is an instance of
+/// that function, written out at the element type its name carries,
+/// `Vec::push<u32>` of `Vec::push<T>`.
+const LIBRARY_FUNCTIONS: &[(&str, &[&str], &str)] = &[
+    ("Vec::new", &["Vec", "new"], CORE_LIBRARY),
+    (
+        "Vec::with_capacity",
+        &["Vec", "with_capacity"],
+        CORE_LIBRARY,
+    ),
+    ("Vec::push", &["Vec", "push"], CORE_LIBRARY),
+    ("Vec::len", &["Vec", "len"], CORE_LIBRARY),
+    ("Vec::index", &["Vec", "index"], CORE_LIBRARY),
+    (SLICE_SWAP, &["slice", "swap"], CORE_LIBRARY),
+];
+
+/// The library generic function `function` is an instance of, by importer
+/// name, with the library file stating it.
+fn library_function(function: &super::schema::Function) -> Option<(String, &'static str)> {
+    let specification = function.core_method.as_deref()?;
+    LIBRARY_FUNCTIONS
+        .iter()
+        .find(|(method, _, _)| *method == specification)
+        .map(|(_, path, library)| (super::names::path_name(path), *library))
+}
+
+/// The library generic function a core method is an instance of, by
+/// importer name ([`library_function`]).
+pub(super) fn library_generic(function: &super::schema::Function) -> Option<String> {
+    library_function(function).map(|(generic, _)| generic)
+}
+
+/// Whether `generic`, a function's importer name, is a Click library
+/// generic function: no import has it, only the instances its calls name,
+/// so its block is dropped once they are written out.
+pub(crate) fn is_library_generic(generic: &str) -> bool {
+    LIBRARY_FUNCTIONS
+        .iter()
+        .any(|(_, path, _)| super::names::path_name(path) == generic)
 }
 
 /// The `core_method` of `Result::unwrap` and `Result::expect`, which Rust
@@ -594,31 +576,37 @@ fn chunks_exact_contract(function: &super::schema::Function, operation: &str) ->
 }
 
 /// The `extern fn` contracts of the core methods `export` calls, with the
-/// name of each function they declare.
+/// name of each function they declare: the Click library files stating the
+/// library's generic functions an import's core methods are instances of,
+/// and the contract text of each other core method.
 pub(super) fn contracts(export: &RustExport) -> (String, BTreeSet<String>) {
     let mut source = String::new();
     let mut models = BTreeSet::new();
+    let mut libraries = Vec::new();
     for function in &export.functions {
         let Some(specification) = &function.core_method else {
             continue;
         };
+        // A library function's instance is written out from its file.
+        if let Some((_, library)) = library_function(function) {
+            models.insert(function.name.clone());
+            if !libraries.contains(&library) {
+                libraries.push(library);
+            }
+            continue;
+        }
         if let Some(contract) = core_method_contract(function, specification) {
             source.push_str(&contract);
             models.insert(function.name.clone());
         }
     }
+    source.push_str(&libraries.concat());
     (source, models)
 }
 
 /// The contract of the core method `function`, whose specification path
 /// is `specification`, if Click states one.
 fn core_method_contract(function: &super::schema::Function, specification: &str) -> Option<String> {
-    if let Some(method) = specification.strip_prefix(VEC) {
-        return Some(vec_contract(function, method));
-    }
-    if specification == SLICE_SWAP {
-        return Some(slice_swap_contract(function));
-    }
     if let Some(operation) = specification.strip_prefix(SLICE_VALUE) {
         return byte_slice_contract(function, operation);
     }
