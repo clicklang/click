@@ -1684,6 +1684,13 @@ fn charon_slice_iter_sums_bytes_by_its_library_contract() {
             "have iter.len() < at(iteration, iter.len());",
             "have at(iteration, iter.len()) < iter.len();",
         ),
+        // `next(&mut iter)` writes the iterator, so the loop head does not
+        // read the value it had where the loop was entered: the exit's
+        // `iter.len() == 0` says nothing about the input's length.
+        (
+            "    have loop(0).iter.len() == 0u64;\n",
+            "    have loop(0).iter.len() == 0u64;\n    have bytes.len() == 0u64;\n",
+        ),
     ] {
         let invalid = SLICE_ITER_PROOF.replace(before, after);
         assert_ne!(invalid, SLICE_ITER_PROOF, "{before}");

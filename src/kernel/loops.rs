@@ -6186,6 +6186,11 @@ pub(super) fn prepare_loop_top_state(
         budget,
     )?;
     let include_mutable_summaries = statement_may_write_memory(entry_state, body);
+    // The locals whose address a body that writes memory may write through,
+    // found once for the write set below and the head's havoc.
+    let escaped = include_mutable_summaries
+        .then(|| address_escaped_scalar_locals(entry_state, body))
+        .unwrap_or_default();
     let (effect_ranges, all_ranges_evaluable) = evaluate_whole_loop_effect_ranges(
         entry_state,
         &effect_checks,
@@ -6198,8 +6203,17 @@ pub(super) fn prepare_loop_top_state(
     // semantics for the entire loop; the failed effect check still produces
     // its own false proof obligation. Preserve Some(empty) for a checked
     // immutable/no-write summary, distinct from no footprint at all.
-    let loop_havoc_ranges = (all_ranges_evaluable && !effect_ranges.is_empty())
-        .then(|| effect_ranges.iter().flatten().cloned().collect::<Vec<_>>());
+    let loop_havoc_ranges = (all_ranges_evaluable && !effect_ranges.is_empty()).then(|| {
+        let mut ranges = effect_ranges.iter().flatten().cloned().collect::<Vec<_>>();
+        // A write set derived from the function's resources covers the
+        // memory the function was given, never its own automatic objects. A
+        // body that writes memory may write those through a pointer: a call
+        // given `&local`, or a store through an address taken earlier.
+        if include_mutable_summaries {
+            ranges.extend(loop_written_automatic_objects(entry_state, body, &escaped));
+        }
+        ranges
+    });
     // The stable-loan barrier is checked below, after the loop's declared
     // ownership. A loop that declares a resource the function does not hold
     // also derives its havoc footprint from that bad declaration, so running
@@ -6236,6 +6250,7 @@ pub(super) fn prepare_loop_top_state(
     let mut top_state = havoc_loop_modified_locals(
         entry_state,
         body,
+        &escaped,
         variables,
         budget,
         loop_havoc_ranges.as_deref(),
@@ -6786,6 +6801,11 @@ fn with_arm_views_preserving_support(state: &CState, views: Vec<CResourceFact>) 
         }
     }
     state.clone().with_resource_context(resources)
+}
+
+#[cfg(test)]
+mod written_automatic_objects_tests {
+    include!("../scaling_tests/kernel/loops/written_automatic_objects_tests.rs");
 }
 
 #[cfg(test)]
@@ -8820,6 +8840,7 @@ pub(super) fn undecided_loop_guard_context(outcome: &CStatementOutcome) -> Strin
 pub(super) fn havoc_loop_modified_locals(
     state: &CState,
     body: &CStatement,
+    escaped: &BTreeSet<String>,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
     mutable_ranges: Option<&[CMemoryRange]>,
@@ -8833,7 +8854,7 @@ pub(super) fn havoc_loop_modified_locals(
         // A local whose address escapes can be written by the loop body
         // through a pointer without ever being assigned by name, so treat it
         // as loop-modified too (otherwise its stale value survives the havoc).
-        names.extend(address_escaped_scalar_locals(&state, body));
+        names.extend(escaped.iter().cloned());
     }
     for name in names {
         let Some(binding) = state.locals.binding(&name) else {
@@ -9181,6 +9202,135 @@ pub(super) fn address_escaped_scalar_locals(state: &CState, body: &CStatement) -
         record_pointer(value, &mut escaped);
     }
     escaped
+}
+
+/// The automatic objects, records and arrays, a loop body may write through
+/// a pointer, each as its whole byte range: those the body names, since a
+/// bare object name is its address, and the `escaped` ones, whose address a
+/// local or a memory cell holds where the loop is entered. Constant objects
+/// are never written.
+fn loop_written_automatic_objects(
+    state: &CState,
+    body: &CStatement,
+    escaped: &BTreeSet<String>,
+) -> Vec<CMemoryRange> {
+    let mut names = escaped.clone();
+    for_each_statement_expression(body, &mut |expression| {
+        collect_variable_names(expression, &mut names);
+    });
+    names
+        .iter()
+        .filter_map(|name| {
+            crate::instrumentation::record_deterministic_work(1);
+            let (slot, bytes) = match state.locals.binding(name)? {
+                CLocalBinding::AggregateObject {
+                    layout,
+                    slot,
+                    constant: false,
+                } => (slot, layout.size_bytes()),
+                CLocalBinding::ArrayObject {
+                    element_type,
+                    length,
+                    slot,
+                    constant: false,
+                } => (slot, length.saturating_mul(element_type.byte_width())),
+                _ => return None,
+            };
+            Some(CMemoryRange::new_with_element_width(
+                slot.clone(),
+                MachineTerm::constant(0),
+                MachineTerm::constant(bytes),
+                1,
+            ))
+        })
+        .collect()
+}
+
+/// Calls `visit` on each expression `statement` and its nested statements
+/// evaluate.
+fn for_each_statement_expression<'a>(
+    statement: &'a CStatement,
+    visit: &mut impl FnMut(&'a CExpression),
+) {
+    match statement {
+        CStatement::EndAutomaticLifetimes { .. }
+        | CStatement::Skip
+        | CStatement::EndScalarReference(_)
+        | CStatement::ScalarReferenceScope(_)
+        | CStatement::Break
+        | CStatement::Continue
+        | CStatement::Goto { .. }
+        | CStatement::Declare {
+            initializer: None, ..
+        }
+        | CStatement::DeclareAggregate { .. }
+        | CStatement::HeapAllocate { .. } => {}
+        CStatement::Declare {
+            initializer: Some(expression),
+            ..
+        }
+        | CStatement::Assign { expression, .. }
+        | CStatement::HeapFree {
+            pointer: expression,
+        }
+        | CStatement::Assert {
+            condition: expression,
+            ..
+        }
+        | CStatement::Return(expression)
+        | CStatement::Throw(expression) => visit(expression),
+        CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
+            arguments.iter().for_each(&mut *visit)
+        }
+        CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
+            visit(pointer);
+            visit(value);
+        }
+        CStatement::CopyAggregate { target, source, .. }
+        | CStatement::InitializeScalarArray { target, source, .. } => {
+            visit(target);
+            visit(source);
+        }
+        CStatement::Update {
+            target, operand, ..
+        } => {
+            visit(target);
+            visit(operand);
+        }
+        CStatement::Seq(statements) => {
+            for statement in statements.iter() {
+                for_each_statement_expression(statement, visit);
+            }
+        }
+        CStatement::TryCatchInt32 {
+            try_body, handler, ..
+        } => {
+            for_each_statement_expression(try_body, visit);
+            for_each_statement_expression(handler, visit);
+        }
+        CStatement::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            visit(condition);
+            for_each_statement_expression(then_branch, visit);
+            for_each_statement_expression(else_branch, visit);
+        }
+        CStatement::ForStep { step, .. } => for_each_statement_expression(step, visit),
+        CStatement::While {
+            condition, body, ..
+        } => {
+            visit(condition);
+            for_each_statement_expression(body, visit);
+        }
+        CStatement::Switch { expression, cases } => {
+            visit(expression);
+            for case in cases {
+                for_each_statement_expression(&case.body, visit);
+            }
+        }
+    }
 }
 
 pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
