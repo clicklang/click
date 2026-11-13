@@ -690,50 +690,91 @@ fn project_and_examples_directories_profile_every_sidecar() {
     );
 }
 
-/// `--work-limit` is `click verify`'s whole-run budget, which each sidecar
-/// spends on its own, so a project `click verify` accepts can be profiled.
-/// Once the process has parsed the prelude, `jsonc-refcount`'s increment
-/// sidecar costs about 25,000 units (its two Integer postconditions each
-/// prove an operation identity) and the other two about 2,500 each, so
-/// 26,000 fits each sidecar but not the project, and 1,000 fits none.
+/// Each sidecar gets its own whole-run budget. Derive the limit from tiny
+/// fixtures rather than pinning the cost of a changing example proof.
 #[test]
 fn each_sidecar_spends_its_own_work_budget() {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let targets = profile_targets(&manifest.join("examples/jsonc-refcount"))
-        .expect("the project should select its sidecars");
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let mut sidecars = Vec::new();
+    for index in 0..4 {
+        let name = format!("identity{index}");
+        fs::write(
+            root.join(format!("{name}.c")),
+            format!("int {name}(int x) {{ return x; }}"),
+        )
+        .unwrap();
+        let path = root.join(format!("{name}.click"));
+        fs::write(&path, format!(
+            "verifying \"{name}.c\";\nint32 {name}(int32 x) {{ ensures result == x; }} by {{ step(); assumption(); }}\n"
+        )).unwrap();
+        sidecars.push(path);
+    }
+    let prepared = sidecars
+        .iter()
+        .map(|path| {
+            let (_, project, inputs) = load_sidecar_inputs(path, Some(root)).unwrap();
+            let CInput::Bundle(sources) = inputs else {
+                panic!("plain C fixtures use source bundles")
+            };
+            (project, sources)
+        })
+        .collect::<Vec<_>>();
+    let largest = prepared
+        .iter()
+        .map(|(project, sources)| {
+            // Compare warm runs, as profiling these same sources will do below.
+            verify_c0_project(project, &source_refs(sources)).unwrap();
+            let (result, work) = instrumentation::measure_deterministic_work(|| {
+                verify_c0_project(project, &source_refs(sources))
+            });
+            result.unwrap();
+            work
+        })
+        .max()
+        .unwrap();
+    assert!(largest > 0);
+    let limit = largest * 2;
+    // This control proves the limit distinguishes per-file from shared scope.
+    let mut shared_exhausted = false;
+    let shared = within_work_limit(limit, &mut shared_exhausted, || {
+        for (project, sources) in &prepared {
+            verify_c0_project(project, &source_refs(sources)).map_err(|error| error.report())?;
+        }
+        Ok(())
+    });
+    assert!(
+        shared.is_err() && shared_exhausted,
+        "one shared budget must be insufficient"
+    );
+    let target = ProfileTarget::Sidecars {
+        project: root.to_path_buf(),
+        project_root: root.to_path_buf(),
+        sidecars,
+    };
     let profile = |work| {
         profile_target(
-            &targets[0],
+            &target,
             Thresholds::default(),
             RunLimits {
                 work,
                 time: DEFAULT_TIME_LIMIT,
             },
         )
-        .expect("the project should profile")
+        .unwrap()
     };
-    // The first run in a process also pays for the prelude parse.
-    assert_eq!(profile(DEFAULT_WORK_LIMIT).verification_failure, None);
-
-    let below_one_sidecar = profile(1_000);
-    let failure = below_one_sidecar
-        .verification_failure
-        .expect("a budget below one sidecar's cost should stop it");
+    let stopped = profile(1);
+    assert!(stopped.timed_out);
     assert!(
-        failure.contains("whole-run work budget"),
-        "the failure should name the exhausted budget: {failure}"
+        stopped
+            .verification_failure
+            .as_deref()
+            .is_some_and(|message| message.contains("whole-run work budget")),
+        "{stopped:?}"
     );
-    assert!(
-        below_one_sidecar.timed_out,
-        "an exhausted budget leaves the run incomplete"
-    );
-
-    // Above the costliest sidecar's whole-run work, about 26000 units since
-    // reads of stored cells are decided through the read-over-write
-    // authority rather than folded at lowering.
-    let within_each_sidecar = profile(27_000);
-    assert_eq!(within_each_sidecar.verification_failure, None);
-    assert!(!within_each_sidecar.timed_out);
+    let complete = profile(limit);
+    assert_eq!(complete.verification_failure, None);
+    assert!(!complete.timed_out);
 }
 
 /// Quarantine is a property of the gate, not of the file, so the profiler
