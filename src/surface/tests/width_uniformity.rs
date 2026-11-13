@@ -10,22 +10,20 @@
 //! [`machine_integer::FORMATS`] and proved by the omitted proof (`solve`),
 //! with no `import click::integer`, so no library lemma is in scope.
 //!
-//! Each family/format pair is proved, excluded or a gap:
-//!
-//! - **Excluded**: the statement does not apply there ([`Exclusion`]), for
-//!   example a signed-only law, which is false at an unsigned format, or a
-//!   128-bit operation, which has no node to lower to.
-//! - **Gap**: the statement holds and lowers, but the omitted proof does not
-//!   close it there ([`Gap`]). The nightly test checks that each gap is still
-//!   refused with its recorded diagnostic, so a fix that closes one fails
-//!   until the gap is removed from its family.
+//! Each family/format pair is proved or excluded. An excluded statement does
+//! not apply there ([`Exclusion`]), for example a signed-only law, which is
+//! false at an unsigned format, or a 128-bit operation, which has no node to
+//! lower to.
 //!
 //! The gate proves every remaining pair, one test per format; a format added
-//! to `FORMATS` fails `every_format_is_tested_and_every_pair_is_accounted_for`
+//! to `FORMATS` fails `every_format_is_tested_and_family_names_are_unique`
 //! until it has a test here. The byte-packing laws (`uint32_pack_uint16_*`,
 //! `uint32_from_le_bytes`) state a field layout of particular widths, and
 //! division and remainder by a symbolic divisor have no kernel rule (they stay
-//! kernel standard theorems), so neither is a family here. See
+//! kernel standard theorems), so neither is a family here. Nor is the wrapping
+//! difference order `(0 - v) + (b - 1) < (0 - v) + b` under `v < b`: the
+//! library states it as the axiom
+//! `integer::uint32_difference_decreases_after_increment`. See
 //! `docs/internals/testing.md`, "Width-uniformity fixture".
 
 use crate::kernel::MachineIntegerType as Ty;
@@ -109,36 +107,12 @@ impl Applies {
     }
 }
 
-/// A family/format pair the omitted proof does not close, with the
-/// diagnostic the refusal carries. Each is reported in
-/// `roadmap/standard-library.md` ("Width-uniformity gaps").
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Gap {
-    /// A wrapping-difference order needs modular reasoning `solve` does not
-    /// plan (the library's `uint32` proof is about 120 lines).
-    WrappingOrder,
-}
-
-impl Gap {
-    /// A substring of the refusal's diagnostic.
-    fn refusal(self) -> &'static str {
-        "`solve` failed for"
-    }
-}
-
 /// One width-lemma family: its statement at a format, as the text after the
 /// theorem's name.
 struct Family {
     name: &'static str,
     applies: Applies,
     statement: fn(&Format) -> String,
-    gaps: &'static [(Ty, Gap)],
-}
-
-macro_rules! gaps_at {
-    ($gap:expr; $($ty:expr),* $(,)?) => {
-        &[$(($ty, $gap)),*]
-    };
 }
 
 fn integer(value: &BigInt) -> String {
@@ -211,7 +185,6 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    ensures to_integer(a) <= to_integer(b);\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "less_than_to_integer",
@@ -222,7 +195,6 @@ const FAMILIES: &[Family] = &[
                 "    requires a < b;\n    ensures to_integer(a) < to_integer(b);\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "greater_equal_to_integer",
@@ -233,7 +205,6 @@ const FAMILIES: &[Family] = &[
                 "    requires a >= b;\n    ensures to_integer(a) >= to_integer(b);\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "to_integer_less_equal_implies_less_equal",
@@ -244,7 +215,6 @@ const FAMILIES: &[Family] = &[
                 "    requires to_integer(a) <= to_integer(b);\n    ensures a <= b;\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "to_integer_less_than_implies_less_than",
@@ -255,7 +225,6 @@ const FAMILIES: &[Family] = &[
                 "    requires to_integer(a) < to_integer(b);\n    ensures a < b;\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "to_integer_equal_implies_equal",
@@ -266,7 +235,6 @@ const FAMILIES: &[Family] = &[
                 "    requires to_integer(a) == to_integer(b);\n    ensures a == b;\n",
             )
         },
-        gaps: &[],
     },
     // Order: transitivity and its relatives.
     Family {
@@ -278,7 +246,6 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    requires b <= c;\n    ensures a <= c;\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "less_than_transitive",
@@ -289,7 +256,6 @@ const FAMILIES: &[Family] = &[
                 "    requires a < b;\n    requires b < c;\n    ensures a < c;\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "less_equal_less_than_transitive",
@@ -300,7 +266,6 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    requires b < c;\n    ensures a < c;\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "less_than_less_equal_transitive",
@@ -311,7 +276,6 @@ const FAMILIES: &[Family] = &[
                 "    requires a < b;\n    requires b <= c;\n    ensures a < c;\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "greater_equal_transitive",
@@ -322,25 +286,21 @@ const FAMILIES: &[Family] = &[
                 "    requires a >= b;\n    requires b >= c;\n    ensures a >= c;\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "less_than_implies_less_equal",
         applies: Applies::Everywhere,
         statement: |f| two(f, "    requires a < b;\n    ensures a <= b;\n"),
-        gaps: &[],
     },
     Family {
         name: "less_than_implies_not_greater_equal",
         applies: Applies::Everywhere,
         statement: |f| two(f, "    requires a < b;\n    ensures not (a >= b);\n"),
-        gaps: &[],
     },
     Family {
         name: "greater_equal_implies_reversed_less_equal",
         applies: Applies::Everywhere,
         statement: |f| two(f, "    requires a >= b;\n    ensures b <= a;\n"),
-        gaps: &[],
     },
     Family {
         name: "less_equal_and_not_less_than_implies_equal",
@@ -351,7 +311,6 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    requires not (a < b);\n    ensures a == b;\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "less_equal_and_not_equal_implies_less_than",
@@ -362,7 +321,6 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    requires a != b;\n    ensures a < b;\n",
             )
         },
-        gaps: &[],
     },
     Family {
         name: "positive_is_nonnegative",
@@ -373,7 +331,6 @@ const FAMILIES: &[Family] = &[
                 f.name
             )
         },
-        gaps: &[],
     },
     // Range of an observation.
     Family {
@@ -387,7 +344,6 @@ const FAMILIES: &[Family] = &[
                 integer(&f.max)
             )
         },
-        gaps: &[],
     },
     Family {
         name: "round_trip",
@@ -400,7 +356,6 @@ const FAMILIES: &[Family] = &[
                 f.name
             )
         },
-        gaps: &[],
     },
     // In-range observation identities, with Integer-range premises (never
     // `defined`, which C files only at `int32` and `int64`). `let r: T`
@@ -410,19 +365,16 @@ const FAMILIES: &[Family] = &[
         name: "add_to_integer",
         applies: Applies::WithOperations,
         statement: |f| identity(f, "+", SUM, f.signed(), true),
-        gaps: &[],
     },
     Family {
         name: "subtract_to_integer",
         applies: Applies::WithOperations,
         statement: |f| identity(f, "-", DIFFERENCE, true, f.signed()),
-        gaps: &[],
     },
     Family {
         name: "multiply_to_integer",
         applies: Applies::WithOperations,
         statement: |f| identity(f, "*", PRODUCT, f.signed(), true),
-        gaps: &[],
     },
     // Increment and predecessor forms.
     Family {
@@ -434,7 +386,6 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, u: {t}) {{\n    requires v < u;\n    let n: {t} = v + 1;\n    ensures to_integer(n) <= to_integer(u);\n}}"
             )
         },
-        gaps: &[],
     },
     Family {
         name: "increment_strictly_increases",
@@ -445,7 +396,6 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, u: {t}) {{\n    requires v < u;\n    let n: {t} = v + 1;\n    ensures to_integer(v) < to_integer(n);\n}}"
             )
         },
-        gaps: &[],
     },
     Family {
         name: "increment_lower_bound",
@@ -456,7 +406,6 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, l: {t}, u: {t}) {{\n    requires l <= v;\n    requires v < u;\n    let n: {t} = v + 1;\n    ensures to_integer(l) <= to_integer(n);\n}}"
             )
         },
-        gaps: &[],
     },
     Family {
         name: "positive_predecessor_is_nonnegative",
@@ -467,7 +416,6 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}) {{\n    requires 0 < v;\n    let p: {t} = v - 1;\n    ensures 0 <= to_integer(p);\n}}"
             )
         },
-        gaps: &[],
     },
     Family {
         name: "positive_predecessor_strictly_decreases",
@@ -478,7 +426,6 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}) {{\n    requires 0 < v;\n    let p: {t} = v - 1;\n    ensures to_integer(p) < to_integer(v);\n}}"
             )
         },
-        gaps: &[],
     },
     Family {
         name: "nonnegative_predecessor_upper_bound",
@@ -489,7 +436,6 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, b: {t}) {{\n    requires 0 <= v;\n    requires v <= b;\n    let p: {t} = v - 1;\n    ensures to_integer(p) <= to_integer(b);\n}}"
             )
         },
-        gaps: &[],
     },
     Family {
         name: "less_than_implies_positive_difference",
@@ -500,37 +446,22 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, u: {t}) {{\n    requires v < u;\n    let d: {t} = u - v;\n    ensures 0 < to_integer(d);\n}}"
             )
         },
-        gaps: &[],
-    },
-    Family {
-        name: "difference_decreases_after_increment",
-        applies: Applies::UnsignedWithOperations,
-        statement: |f| {
-            let t = f.name;
-            format!(
-                "(v: {t}, b: {t}) {{\n    requires v < b;\n    let before: {t} = (0 - v) + b;\n    let after: {t} = (0 - v) + (b - 1);\n    ensures to_integer(after) < to_integer(before);\n}}"
-            )
-        },
-        gaps: gaps_at!(Gap::WrappingOrder; Ty::UInt8, Ty::UInt16, Ty::UInt32, Ty::UInt64),
     },
     // Definedness forms, where C files definedness.
     Family {
         name: "add_defined_by_integer_bounds",
         applies: Applies::WhereDefinednessIsFiled,
         statement: |f| defined_by_bounds(f, "+", SUM),
-        gaps: &[],
     },
     Family {
         name: "subtract_defined_by_integer_bounds",
         applies: Applies::WhereDefinednessIsFiled,
         statement: |f| defined_by_bounds(f, "-", DIFFERENCE),
-        gaps: &[],
     },
     Family {
         name: "multiply_defined_by_integer_bounds",
         applies: Applies::WhereDefinednessIsFiled,
         statement: |f| defined_by_bounds(f, "*", PRODUCT),
-        gaps: &[],
     },
     Family {
         name: "increment_below_max_is_defined",
@@ -542,7 +473,6 @@ const FAMILIES: &[Family] = &[
                 integer(&f.max)
             )
         },
-        gaps: &[],
     },
     Family {
         name: "nonnegative_add_within_max_is_defined",
@@ -554,7 +484,6 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, amount: {t}) {{\n    requires 0 <= amount;\n    requires to_integer(v) <= {max} - to_integer(amount);\n    ensures defined(v + amount);\n}}"
             )
         },
-        gaps: &[],
     },
     Family {
         name: "nonnegative_subtract_within_value_is_defined",
@@ -565,43 +494,23 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, amount: {t}) {{\n    requires 0 <= amount;\n    requires amount <= v;\n    ensures defined(v - amount);\n}}"
             )
         },
-        gaps: &[],
     },
     Family {
         name: "defined_add_to_integer",
         applies: Applies::WhereDefinednessIsFiled,
         statement: |f| defined_identity(f, "+", SUM),
-        gaps: &[],
     },
     Family {
         name: "defined_subtract_to_integer",
         applies: Applies::WhereDefinednessIsFiled,
         statement: |f| defined_identity(f, "-", DIFFERENCE),
-        gaps: &[],
     },
     Family {
         name: "defined_multiply_to_integer",
         applies: Applies::WhereDefinednessIsFiled,
         statement: |f| defined_identity(f, "*", PRODUCT),
-        gaps: &[],
     },
 ];
-
-enum Verdict {
-    Proved,
-    Excluded(Exclusion),
-    Gap(Gap),
-}
-
-fn verdict(family: &Family, format: &Format) -> Verdict {
-    if let Some(exclusion) = family.applies.exclusion(format) {
-        return Verdict::Excluded(exclusion);
-    }
-    match family.gaps.iter().find(|(ty, _)| *ty == format.ty) {
-        Some((_, gap)) => Verdict::Gap(*gap),
-        None => Verdict::Proved,
-    }
-}
 
 fn theorem(family: &Family, format: &Format) -> String {
     format!(
@@ -618,8 +527,7 @@ fn theorem(family: &Family, format: &Format) -> String {
 /// setup (about 0.35s); the nightly per-format tests prove every family.
 const GATE_FAMILIES: &[&str] = &["less_equal_to_integer", "to_integer_bounds"];
 
-/// The theorems of `families` at `formats` that are neither excluded nor
-/// listed as gaps.
+/// The theorems of `families` at `formats` that are not excluded.
 fn proved_theorems<'a>(
     families: impl Iterator<Item = &'a Family> + Clone,
     formats: &[Ty],
@@ -628,7 +536,7 @@ fn proved_theorems<'a>(
     for ty in formats {
         let format = Format::new(*ty);
         for family in families.clone() {
-            if matches!(verdict(family, &format), Verdict::Proved) {
+            if family.applies.exclusion(&format).is_none() {
                 theorems.push(theorem(family, &format));
             }
         }
@@ -690,7 +598,7 @@ format_tests! {
 }
 
 #[test]
-fn every_format_is_tested_and_every_pair_is_accounted_for() {
+fn every_format_is_tested_and_family_names_are_unique() {
     let mut tested = TESTED_FORMATS.to_vec();
     let mut formats = machine_integer::FORMATS.to_vec();
     tested.sort();
@@ -706,60 +614,8 @@ fn every_format_is_tested_and_every_pair_is_accounted_for() {
             "family `{}` repeats",
             family.name
         );
-        for (index, (ty, _)) in family.gaps.iter().enumerate() {
-            assert!(
-                formats.contains(ty),
-                "`{}` lists a gap at {ty:?}, which is not a format",
-                family.name
-            );
-            assert!(
-                !family.gaps[..index].iter().any(|(other, _)| other == ty),
-                "`{}` lists {ty:?} twice",
-                family.name
-            );
-            if let Verdict::Excluded(exclusion) = verdict(family, &Format::new(*ty)) {
-                panic!(
-                    "`{}` lists a gap at {ty:?}, where it is excluded ({exclusion:?})",
-                    family.name
-                );
-            }
-        }
     }
     for name in GATE_FAMILIES {
         assert!(names.contains(name), "gate family `{name}` is not a family");
     }
-}
-
-/// Each listed gap is still refused, with its recorded diagnostic. A gap a
-/// change closes fails here until it is removed from its family's list.
-#[test]
-#[ignore = "nightly: verifies each listed gap alone, about 2s"]
-fn width_family_gaps_are_still_refused() {
-    let mut failures = Vec::new();
-    let mut refused = 0;
-    for family in FAMILIES {
-        for ty in machine_integer::FORMATS {
-            let format = Format::new(ty);
-            let Verdict::Gap(gap) = verdict(family, &format) else {
-                continue;
-            };
-            let source = theorem(family, &format);
-            match crate::surface::verify_click_theorems(&source) {
-                Ok(_) => failures.push(format!(
-                    "{}_{} now verifies: remove its {gap:?} gap",
-                    family.name, format.name
-                )),
-                Err(error) if !error.message().contains(gap.refusal()) => failures.push(format!(
-                    "{}_{} ({gap:?}) is refused without `{}`: {}",
-                    family.name,
-                    format.name,
-                    gap.refusal(),
-                    error.message()
-                )),
-                Err(_) => refused += 1,
-            }
-        }
-    }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
-    eprintln!("{refused} width-family gaps are still refused");
 }
