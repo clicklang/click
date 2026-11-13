@@ -135,3 +135,46 @@ fn exact_partition_assumption_does_not_treat_supported_views_as_independent() {
         .unchecked_with_supported_facts(&owner, [CResourceFact::View(projected.clone())]);
     assert!(!resources.proves_exact_partition_separation(owner.resource(), &projected));
 }
+
+#[test]
+fn separation_carrier_key_ignores_unrelated_facts() {
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let mut facts = ProofFacts::default();
+        for index in 0..size {
+            facts = facts.with_fact(separation(cell(index + 10), cell(index + 1000)));
+        }
+        let held = separation(cell(0), cell(1));
+        let goal = separation(alternate_carrier(cell(0)), cell(1));
+        let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            let _guard =
+                crate::kernel::search::FastOperationScope::enter("spatial separation lookup");
+            let facts = facts.with_fact(held);
+            assert!(facts.contains(&goal));
+        });
+        samples.push(cost);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 32),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn partition_spatial_lookup_ignores_unrelated_owners() {
+    let mut samples = Vec::new();
+    for size in [4u64, 16, 64, 256] {
+        let resources = ResourceContext::new()
+            .unchecked_with_facts((0..size).map(|i| CResourceFact::own(cell(i))));
+        let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(
+                resources.proves_exact_partition_separation(&alternate_carrier(cell(0)), &cell(1))
+            );
+        });
+        samples.push(cost);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 32),
+        "{samples:?}"
+    );
+}

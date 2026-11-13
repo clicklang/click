@@ -10537,6 +10537,9 @@ pub(super) struct ResourceContextIndex {
     /// so a kept set's identity can name them in constant work.
     pub(super) owned_composite_facts: SnapshotMap<CResourceFact, usize>,
     pub(super) exact: PersistentMap<CResourceFact, ResourceEntryIds>,
+    /// Exact physical ranges with their access modes, only for observing
+    /// partition separation. Entries still carry their original authority.
+    pub(super) spatial_memory: PersistentMap<CResourceFact, ResourceEntryIds>,
     pub(super) by_resource: PersistentMap<CResource, ResourceEntryIds>,
     /// Constant owned units of quantity-bearing families. A quantity query
     /// reads one exact key rather than enumerating separately retained units.

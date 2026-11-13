@@ -2283,6 +2283,23 @@ impl CMemorySegment {
 }
 
 impl CMemoryRange {
+    /// Physical identity for separation only. This does not carry permission
+    /// to access the bytes and must not be used for ownership or containment.
+    pub(crate) fn spatial_key(&self) -> Self {
+        let (start, end) = self.bound_terms();
+        let constructor = if self.wide_bounds().is_some() {
+            Self::new_wide
+        } else {
+            Self::new_with_element_width
+        };
+        constructor(
+            self.base().clone(),
+            start.clone(),
+            end.clone(),
+            self.element_width(),
+        )
+    }
+
     pub fn new(base: Pointer, start: MachineTerm, end: MachineTerm) -> Self {
         Self::new_with_element_width(base, start, end, 4)
     }
