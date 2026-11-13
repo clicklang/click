@@ -174,7 +174,22 @@ with their existing modular result formats. Operand admission accepts the same
 format and fitting unsuffixed int32 literals; other operand types retain the
 compatibility path. Literal folding follows the native narrow constructor, and
 no new domain obligation is introduced. Exact parity, nested evaluator and
-16/64/256-step retained-child scaling tests cover the boundary. Subchunks 4g–4j
+16/64/256-step retained-child scaling tests cover the boundary.
+[PR #2681](https://github.com/clicklang/click/pull/2681) merged and its pushed
+commit was verified on upstream. All 1,515 scaling tests and all 5,274 regular
+fixtures passed, with zero fact-stability differences.
+
+Subchunk 4g retains C-style shift values and independently promoted counts.
+Count bounds keep the full wide operand before the operation selects its low
+word. Result children use the native importer's operator reading while the
+count guards retain the independently promoted type. Signed left shifts keep their nonnegative-value and result-fit obligations.
+Shared int64 comparisons reuse the native constructor's root-width bound folding,
+so those obligations match the native producer. The affine boundary reads a
+false retained disequality as its equality, and certificate source collection
+retains the written operands under negation. Tests cover all 64 value/count
+format pairs, boundary counts including 2^32, native/shared and opaque operands,
+native shared-root identity, explicit bound certificates and expansion/replay,
+and deterministic growing value/count chains with zero exports. Subchunks 4h–4j
 remain open.
 
 For each PR:

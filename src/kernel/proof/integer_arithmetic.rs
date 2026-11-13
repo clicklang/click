@@ -999,21 +999,9 @@ fn integer_affine_claim_with_context(
             });
         }
         ConditionTerm::IntegerNotEqual(left, right) => {
-            let mut terms = BTreeMap::new();
-            let mut constant = BigInt::zero();
-            collect_integer_affine_terms(left, &BigInt::one(), &mut terms, &mut constant, context)?;
-            collect_integer_affine_terms(
-                right,
-                &BigInt::from(-1),
-                &mut terms,
-                &mut constant,
-                context,
-            )?;
-            return (terms.is_empty() && constant.is_zero()).then_some(IntegerAffineClaim {
-                relation: IntegerAffineRelation::Equal,
-                terms,
-                constant,
-            });
+            // A false disequality is the same affine equality as a true
+            // IntegerEqual, including under a negated branch premise.
+            (left, right, IntegerAffineRelation::Equal, false)
         }
         _ => return None,
     };
@@ -1871,6 +1859,25 @@ mod tests {
             certificate.check(&goal, &[premise_proposition]),
             Err(IntegerArithmeticCheckError::InvalidCoefficient(1))
         );
+    }
+
+    #[test]
+    fn negated_integer_disequality_keeps_its_affine_equality() {
+        let left = crate::kernel::SharedIntegerTerm::from(variable(995480));
+        let right = crate::kernel::SharedIntegerTerm::from(variable(995481));
+        let equality = Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+            true,
+        );
+        let unequal = ConditionTerm::IntegerNotEqual(left, right);
+        let expected = integer_affine_claim(&equality).unwrap();
+        for premise in [
+            Proposition::ConditionIs(unequal.clone(), false),
+            Proposition::Not(Box::new(Proposition::ConditionIs(unequal.clone(), true))),
+        ] {
+            assert_eq!(integer_affine_claim(&premise), Some(expected.clone()));
+        }
+        assert!(integer_affine_claim(&Proposition::ConditionIs(unequal, true)).is_none());
     }
 
     #[test]
