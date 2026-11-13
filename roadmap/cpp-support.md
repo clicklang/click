@@ -50,17 +50,17 @@ verifies offline on a fresh clone of the user's project on another machine.
 
 Audit of the current path, from a user's point of view:
 
-1. **Releases ship a Linux x86-64 exporter; other hosts build it.**
+1. **Releases ship Linux x86-64 and macOS arm64 exporters; other hosts build it.**
    `scripts/build-cpp-exporter.sh --release` links the pinned Clang, LLVM
    and C++ runtime statically and copies Clang's builtin headers beside the
    exporter as `clang-resource/`, which it finds relative to itself; only
-   the system C library stays dynamic.
-   `.github/workflows/cpp-frontend.yml` packages that bundle for each
-   release tag as `click-cpp-frontend-x86_64-unknown-linux-gnu.tar.gz`,
-   tests it with `tests/cpp_release_install.rs`, and attaches it, and
-   `click add cpp` installs it. `install.sh` and
-   `install.ps1` still install only `click`, and macOS and Windows have no
-   bundle: there the development build (LLVM 19.1.7 development tools,
+   the system's own libraries stay dynamic, which the build checks.
+   `.github/workflows/cpp-frontend.yml` builds that bundle on Linux x86-64
+   and on GitHub's macOS arm64 runner for each release tag as
+   `click-cpp-frontend-<host>.tar.gz`, tests it with
+   `tests/cpp_release_install.rs`, and attaches it; `click add cpp`
+   installs it (and `CLICK_LANGUAGES=cpp` with `install.sh`). macOS x86-64,
+   Linux arm64 and Windows have no bundle: there the development build (LLVM 19.1.7 development tools,
    `libclang-cpp` linked with an rpath into the host's LLVM `libdir`, not
    movable) is the only exporter.
 2. **One resolution order, nothing installed yet.** Click finds the

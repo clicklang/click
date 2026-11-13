@@ -136,7 +136,8 @@ to change the global fallback. Without either, Click runs the launcher version.
 removes one.
 
 C is built in. `click add cpp` and `click add rust` add the C++ and Rust front
-ends, which prepare compiler imports (Linux x86-64 for now), to the version that
+ends, which prepare compiler imports (C++ on Linux x86-64 and macOS arm64,
+Rust on Linux x86-64), to the version that
 runs; `click languages` lists them. A new version from `click upgrade` or
 `click version add` gets the same languages. To add them while installing, set
 `CLICK_LANGUAGES`:

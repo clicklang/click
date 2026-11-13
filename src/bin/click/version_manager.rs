@@ -190,7 +190,7 @@ fn languages_command(arguments: &[String]) -> Result<(), String> {
     for (name, frontend) in [("c++", &CPP_FRONTEND), ("rust", &RUST_FRONTEND)] {
         let status = match (frontend.check)(&frontend_path(&home, &version, frontend), &version) {
             Ok(detail) => format!("installed ({detail})"),
-            Err(_) if host == "x86_64-unknown-linux-gnu" => {
+            Err(_) if frontend.hosts.contains(&host.as_str()) => {
                 format!("not installed; run `click add {}`", frontend.command_name)
             }
             Err(_) => format!("not available for {host}"),
@@ -251,6 +251,8 @@ fn add_command(arguments: &[String]) -> Result<(), String> {
 /// tree that installs to `versions/<v>/frontends/{directory}`.
 struct Frontend {
     language: &'static str,
+    /// The hosts each release ships this front end for.
+    hosts: &'static [&'static str],
     /// The name `click add` takes.
     command_name: &'static str,
     directory: &'static str,
@@ -260,6 +262,7 @@ struct Frontend {
 
 const RUST_FRONTEND: Frontend = Frontend {
     language: "Rust",
+    hosts: &["x86_64-unknown-linux-gnu"],
     command_name: "rust",
     directory: "rust",
     check: check_rust_bundle,
@@ -267,6 +270,7 @@ const RUST_FRONTEND: Frontend = Frontend {
 
 const CPP_FRONTEND: Frontend = Frontend {
     language: "C++",
+    hosts: &["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"],
     command_name: "cpp",
     directory: "cpp",
     check: check_cpp_bundle,
@@ -279,10 +283,11 @@ fn install_frontend(frontend: &Frontend, version: &str) -> Result<(), String> {
         language,
         directory,
         check,
+        hosts,
         ..
     } = *frontend;
     let target = host_target()?;
-    if target != "x86_64-unknown-linux-gnu" {
+    if !hosts.contains(&target.as_str()) {
         return Err(format!(
             "a pinned {language} frontend bundle is not yet available for {target}; Click itself remains installed"
         ));
@@ -376,7 +381,7 @@ fn check_cpp_bundle(bundle: &Path, version: &str) -> Result<String, String> {
             .map_err(|e| format!("C++ frontend profile: {e}"))?;
     if manifest["schema"] != 1
         || manifest["click_version"] != version
-        || manifest["host"] != "x86_64-unknown-linux-gnu"
+        || host_target().is_ok_and(|host| manifest["host"] != host.as_str())
         || manifest["exporter"] != "click-cpp-exporter"
         || manifest["resource_dir"] != "clang-resource"
         || ["exporter_version", "clang_version", "artifact_schema"]

@@ -25,7 +25,7 @@ click verify with_restore_caller.click
 ```
 
 To refresh the lock after changing a source, install the pinned C++ front end
-for your Click version (Linux x86-64) and lock the project:
+for your Click version (Linux x86-64 or macOS arm64) and lock the project:
 
 ```sh
 click add cpp

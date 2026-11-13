@@ -21,6 +21,11 @@ def main():
     parser.add_argument("destination", type=pathlib.Path)
     parser.add_argument("--exporter-bundle", required=True, type=pathlib.Path)
     parser.add_argument("--llvm-license", required=True, type=pathlib.Path)
+    parser.add_argument(
+        "--host",
+        required=True,
+        choices=["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"],
+    )
     args = parser.parse_args()
     root = pathlib.Path(__file__).resolve().parent.parent
     profile = json.loads((root / "src/languages/cpp/frontend-profile.json").read_text())
@@ -49,7 +54,7 @@ def main():
         manifest = dict(
             schema=1,
             click_version=version,
-            host="x86_64-unknown-linux-gnu",
+            host=args.host,
             exporter_version=profile["exporter_version"],
             clang_version=profile["clang_version"],
             artifact_schema=profile["artifact_schema"],
