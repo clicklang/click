@@ -285,6 +285,16 @@ pub(in crate::surface::proof) enum RewriteClosers<'p> {
 
 /// Whether `kernel` is an equality the `rewrite` step can use.
 fn is_rewrite_equality(kernel: &Proposition) -> bool {
+    // Retained machine comparisons use exact Integer observations. They are
+    // the same machine equalities this strategy already accepts, not a new
+    // class of mathematical Integer rewrite candidates.
+    if let Proposition::ConditionIs(condition @ ConditionTerm::IntegerEqual(..), true) = kernel
+        && let Some(view) =
+            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+        && view.format.format().bits() <= 64
+    {
+        return true;
+    }
     matches!(
         kernel,
         Proposition::ConditionIs(
@@ -588,6 +598,85 @@ mod scaling_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retained_machine_rewrite_candidates_keep_the_native_scope() {
+        use crate::kernel::{IntegerTerm, KernelTerm, KernelType, SharedMachineIntegerTerm};
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+            MachineIntegerType::Int128,
+            MachineIntegerType::UInt128,
+        ] {
+            let side = |id| {
+                IntegerTerm::Machine(
+                    SharedMachineIntegerTerm::from_shared(
+                        format,
+                        KernelTerm::variable(KernelType::C(format.c_type()), Variable(id)),
+                    )
+                    .unwrap(),
+                )
+                .into()
+            };
+            let equality = ConditionTerm::IntegerEqual(side(995450), side(995451));
+            assert_eq!(
+                is_rewrite_equality(&Proposition::ConditionIs(equality.clone(), true)),
+                format.format().bits() <= 64
+            );
+            assert!(!is_rewrite_equality(&Proposition::ConditionIs(
+                equality, false
+            )));
+            assert!(!is_rewrite_equality(&Proposition::ConditionIs(
+                ConditionTerm::IntegerNotEqual(side(995450), side(995451)),
+                true
+            )));
+        }
+        assert!(!is_rewrite_equality(&Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                IntegerTerm::Variable(Variable(995452)).into(),
+                IntegerTerm::Variable(Variable(995453)).into()
+            ),
+            true
+        )));
+    }
+
+    #[test]
+    fn listed_narrowed_length_equalities_expand_to_explicit_rewrites() {
+        let source = r#"
+import click::format;
+theorem narrowed_length_result(n: uint64, result: int32) {
+    requires format::padded_length(n, 3u64) == 3u64;
+    requires result == (1u64 + format::padded_length(n, 3u64)) as int32;
+    ensures result == 4 by {
+        solve() using {
+            result == (1u64 + format::padded_length(n, 3u64)) as int32;
+            format::padded_length(n, 3u64) == 3u64;
+        };
+    }
+}
+"#;
+        crate::surface::verify_click_theorems(source).unwrap();
+        let line = source
+            .lines()
+            .position(|line| line.contains("solve()"))
+            .unwrap();
+        let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
+        let expanded =
+            crate::surface::expand_c0_tactic_source_at(source, &[], line + 1, column + 1).unwrap();
+        assert!(expanded.contains("rewrite("), "{expanded}");
+        without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
+        let missing = source
+            .replace("    requires format::padded_length(n, 3u64) == 3u64;\n", "")
+            .replace("            format::padded_length(n, 3u64) == 3u64;\n", "");
+        assert!(crate::surface::verify_click_theorems(&missing).is_err());
+    }
 
     fn check_listed_operation_identity(ty: &str, bound: &str, operation: &str) {
         let op = if operation.contains('+') { "+" } else { "-" };

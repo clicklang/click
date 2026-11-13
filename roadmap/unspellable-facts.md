@@ -150,7 +150,11 @@ Subchunk 4d retains shared results through the 24 narrowing conversions among
 signed/unsigned 8/16/32/64-bit types, using the existing generic truncation and
 64-to-32-bit low-word constructor rules. Exact-native parity covers boundary
 constants, opaque leaves, arithmetic and prior cast roots; 16/64/256-step scaling
-checks growing shared prefixes without exports. Subchunks 4e–4j remain open.
+checks growing shared prefixes without exports. The existing listed-equality
+rewrite strategy also recognizes retained machine observations, preserving the
+`snprintf` length proof without changing its source or proof. Expansion/replay,
+missing-premise and constant-work admission controls cover that representation
+boundary. Subchunks 4e–4j remain open.
 
 For each PR:
 

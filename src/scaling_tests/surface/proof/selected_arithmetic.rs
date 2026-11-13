@@ -222,3 +222,47 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
     );
     eprintln!("disequality refutation work: {samples:?}");
 }
+
+#[test]
+fn retained_machine_rewrite_admission_reads_only_comparison_roots() {
+    use crate::kernel::{
+        IntegerTerm, KernelTerm, KernelTermExport, KernelTermImport, MachineBinaryOp,
+        SharedMachineIntegerTerm,
+    };
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt64,
+        MachineIntegerType::Int128,
+    ] {
+        let mut previous = None;
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut root = KernelTermImport::default()
+                .machine(format, &MachineTerm::Variable(Variable(995454)));
+            let leaf = root.clone();
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [root, leaf.clone()],
+                );
+            }
+            let side = |root| {
+                IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, root).unwrap())
+                    .into()
+            };
+            let proposition =
+                Proposition::ConditionIs(ConditionTerm::IntegerEqual(side(root), side(leaf)), true);
+            let exports = KernelTermExport::machine_export_count();
+            let (accepted, work) = crate::instrumentation::measure_deterministic_work(|| {
+                is_rewrite_equality(&proposition)
+            });
+            assert_eq!(accepted, format.format().bits() <= 64);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            if let Some(before) = previous {
+                assert_eq!(work, before);
+            }
+            previous = Some(work);
+        }
+    }
+}
