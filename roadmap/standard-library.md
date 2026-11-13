@@ -33,7 +33,9 @@ Open:
   allocator, `snprintf` and Rust core contracts are stated
   ([Layers](#layers)). Their reporting is done (2026-11-13): one
   `assumptions:` report and the trust-listing gate test. The C++ catalog
-  is done: it is Click text in `library/cpp/` and a name table.
+  is done: it is Click text in `library/cpp/` and a name table. The Rust
+  `Vec` methods and `<[T]>::swap` are too (`library/rust/core.click`); the
+  other Rust core contracts are steps 2 and 3 of the Rust core entry.
 - The fact-dependent integer lowerings
   ([below](#fact-dependent-integer-lowerings)).
 - The follow-ups from the Integer-default flip
@@ -390,10 +392,24 @@ Each step is a separate PR that leaves every example verifying:
     and `Option`/`Result` builders in `src/languages/rust/standard_library.rs`
     become generic `extern fn` blocks in `library/rust/`, instantiated
     through `rust_generic_functions.rs` as a sidecar's generic functions
-    are; a short spike first finds which C++ gaps (instances from imported
-    calls, dropping uninstantiated library generics) recur there. Integer
-    methods (`u32::min`) need no contract text: each is the library
-    function of the same path, so the Rust side keeps only that table.
+    are, in three steps:
+    1. Done: a core method the name table maps is an instance of the
+       library generic function (`instance_of` from the table at
+       lowering), a library generic nothing instantiates is dropped with
+       its `extern`, an instance takes its declaration's parameter names by
+       position (for user generic functions too), and the importer appends
+       the selected library files. The `Vec` methods and `<[T]>::swap` are
+       `library/rust/core.click`; their contracts, instances, `Rust core`
+       report tag and refusals are unchanged.
+    2. Open: `Option`/`Result` `unwrap`, the byte `Slice` methods,
+       `SliceIter` and `ChunksExact`, which need multi-token type arguments
+       (`Option<&[u8]>`, `&T`) in the instance writer, which today pushes
+       each argument as one identifier.
+    3. Open, proposed: integer methods (`u32::min`) need no contract text,
+       since each is the library function of the same path; the proposal is
+       to bind them structurally from a method-to-function table. The
+       alternative is about 110 plain library `extern`s. The maintainer has
+       not decided between them.
   - **Allocator (open).** `malloc`, `calloc`, `realloc` and `free` become
     `extern` contracts over the `allocation` primitive in
     `library/c/stdlib.click`, if the kernel's allocation model is

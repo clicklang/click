@@ -871,6 +871,28 @@ fn markdown_links(source: &str) -> Vec<String> {
 /// `primitive.` inventory IDs rather than in the library reference.
 const PRIMITIVE_MODULES: &[&str] = &["library/primitives.click", "library/c/builtins.click"];
 
+/// The Click library files an importer appends to a sidecar, which are not
+/// modules: their `extern` templates are written out at the import's calls
+/// and reported as the `C++ std` and `Rust core` model families.
+const SIDECAR_LIBRARY_FILES: &[&str] = &["library/cpp/", "library/rust/core.click"];
+
+/// The Click library modules under `library/`.
+fn library_modules() -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    files_with_extension(&root().join("library"), "click", &mut files);
+    files.retain(|path| {
+        let identity = path
+            .strip_prefix(root())
+            .expect("library file under the root")
+            .to_string_lossy()
+            .replace('\\', "/");
+        !SIDECAR_LIBRARY_FILES
+            .iter()
+            .any(|file| identity.starts_with(file))
+    });
+    files
+}
+
 fn is_primitive_module(path: &Path) -> bool {
     let identity = path
         .strip_prefix(root())
@@ -883,8 +905,7 @@ fn is_primitive_module(path: &Path) -> bool {
 /// The Click library modules under `library/`, primitive modules or the
 /// others, concatenated in path order.
 fn library_source(primitives: bool) -> String {
-    let mut files = Vec::new();
-    files_with_extension(&root().join("library"), "click", &mut files);
+    let mut files = library_modules();
     files.retain(|path| is_primitive_module(path) == primitives);
     files.sort();
     assert!(!files.is_empty(), "no Click library modules");
@@ -912,8 +933,7 @@ fn standard_library_inventory_is_bidirectional() {
         .step_by(2)
         .map(str::to_string)
         .collect::<BTreeSet<_>>();
-    let mut files = Vec::new();
-    files_with_extension(&root().join("library"), "click", &mut files);
+    let files = library_modules();
     let mut declarations = BTreeSet::new();
     let mut primitives = BTreeSet::new();
     for path in files {
