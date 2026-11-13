@@ -2861,9 +2861,10 @@ compound statement. An `else if` is parsed as an `else` arm containing another
 `if`.
 
 A `while`, `for` or `do ... while` condition that calls a function is
-checked again on every pass, `continue` included. The call's result goes to a
-`__click_call_result<N>` temporary and the loop becomes `while (1)` with an
-`if` on it, so a proof steps the call and then that `if`; see
+checked again on every pass, `continue` included. Today the call's result
+goes to a `__click_call_result<N>` temporary and the loop becomes `while (1)`
+with an `if` on it, so a proof steps the call and then that `if`. This is a
+known defect, not intended behavior; see
 [where stepping departs from its model](../../internals/kernel.md#where-the-implementation-departs-from-this).
 
 Symbolic pointer-writing loops should use invariants and explicit loop effects.
