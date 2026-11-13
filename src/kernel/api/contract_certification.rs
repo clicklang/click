@@ -3347,7 +3347,6 @@ mod shared_contract_operand_tests {
         );
         let empty = PureFactContext::new();
         let related = empty.clone().assume_condition(equation.clone(), true);
-        let withdrawn = related.without_exact_fact(&Proposition::ConditionIs(equation, true));
         let exports = KernelTermExport::machine_export_count();
         assert!(pointer_offsets_equal_with_resolved_atoms(
             &left, &left, &empty
@@ -3357,9 +3356,6 @@ mod shared_contract_operand_tests {
         ));
         assert!(pointer_offsets_equal_with_resolved_atoms(
             &left, &right, &related
-        ));
-        assert!(!pointer_offsets_equal_with_resolved_atoms(
-            &left, &right, &withdrawn
         ));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
@@ -3376,20 +3372,12 @@ mod shared_contract_operand_tests {
         let lower = ConditionTerm::signed_greater_equal(x.clone(), MachineTerm::constant(0));
         let upper =
             ConditionTerm::signed_less_equal(x.clone(), MachineTerm::constant(i32::MAX as u32 / 4));
-        let bounded = empty
-            .clone()
-            .assume_condition(lower.clone(), true)
-            .assume_condition(upper.clone(), true);
+        let lower_only = empty.clone().assume_condition(lower.clone(), true);
+        let bounded = lower_only.clone().assume_condition(upper, true);
         let exports = KernelTermExport::machine_export_count();
         assert!(pointer_offset_bytes(&empty, &offset).is_none());
         let bytes = pointer_offset_bytes(&bounded, &offset).expect("selected bounds");
-        assert!(
-            pointer_offset_bytes(
-                &bounded.without_exact_fact(&Proposition::ConditionIs(upper, true)),
-                &offset
-            )
-            .is_none()
-        );
+        assert!(pointer_offset_bytes(&lower_only, &offset).is_none());
         assert!(
             pointer_offset_bytes(
                 &bounded,

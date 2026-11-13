@@ -3636,9 +3636,6 @@ mod tests {
                 PointerOffsetTerm::add(z.clone(), PointerOffsetTerm::Constant(8))
             ),
         ));
-        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(pointer_fact, true));
-        assert!(!withdrawn.equality_graph.are_offsets_equal(&x, &z));
-        assert!(withdrawn.equality_graph.are_offsets_equal(&y, &z));
         let restricted = branch.restricted_to_facts(&[(offset_fact, true)], &[]);
         assert!(!restricted.equality_graph.are_offsets_equal(&x, &z));
 
@@ -3666,8 +3663,6 @@ mod tests {
         let right = at_offset(c.clone(), y.clone());
         assert!(!trunk.equality_graph.are_equal(&left, &right));
         assert!(branch.equality_graph.are_equal(&left, &right));
-        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(bc, true));
-        assert!(!withdrawn.equality_graph.are_equal(&left, &right));
         let restricted = branch.restricted_to_facts(&[(offset_fact, true)], &[]);
         assert!(!restricted.equality_graph.are_equal(&left, &right));
 
@@ -3702,8 +3697,6 @@ mod tests {
                 .equality_graph
                 .are_equal(&left, &at_offset(b.clone(), x.clone()))
         );
-        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(pointer_fact, true));
-        assert!(!withdrawn.equality_graph.are_equal(&left, &right));
         let restricted = branch.restricted_to_facts(&[(offset_fact, true)], &[]);
         assert!(!restricted.equality_graph.are_equal(&left, &right));
 
@@ -4276,7 +4269,7 @@ mod tests {
     }
 
     #[test]
-    fn restricted_context_and_fact_withdrawal_drop_derived_load_equalities() {
+    fn restricted_context_drops_derived_load_equalities() {
         let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(801), 16));
         let p = at(symbolic(802), 0);
         let q = at(symbolic(803), 0);
@@ -4296,8 +4289,6 @@ mod tests {
         assert!(context.pointers_known_equal(&x, &y));
         let restricted = context.restricted_to_facts(&selected, &[]);
         assert!(!restricted.pointers_known_equal(&x, &y));
-        let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(address, true));
-        assert!(!withdrawn.pointers_known_equal(&x, &y));
         assert!(context.pointers_known_equal(&x, &y));
     }
 

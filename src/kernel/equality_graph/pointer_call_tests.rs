@@ -137,7 +137,7 @@ fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
 }
 
 #[test]
-fn pointer_call_evidence_stays_scoped_and_is_withdrawable() {
+fn pointer_call_evidence_stays_scoped() {
     let _session = VerificationSession::enter();
     let (a, b) = (
         call("get", vec![argument(50)]),
@@ -152,8 +152,11 @@ fn pointer_call_evidence_stays_scoped_and_is_withdrawable() {
     let child = base.clone().assume_proposition(premise.clone());
     assert!(child.contains_known(&goal));
     assert!(!base.contains_known(&goal));
-    assert!(!child.without_exact_fact(&premise).contains_known(&goal));
-    assert!(!child.without_exact_fact(&held).contains_known(&goal));
+    assert!(
+        !PureFactContext::new()
+            .assume_proposition(premise)
+            .contains_known(&goal)
+    );
 }
 
 #[cfg(test)]

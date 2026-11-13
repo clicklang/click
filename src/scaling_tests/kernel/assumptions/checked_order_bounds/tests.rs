@@ -25,7 +25,7 @@ fn signed_wide_shared_prefix_bounds_do_not_materialize_operands() {
                     IntegerTerm::Machine(observation.clone()),
                     IntegerTerm::constant(7.into()),
                 );
-                index.adjust(&condition, true, true);
+                index.adjust(&condition, true);
                 assert_eq!(
                     index.signed_wide_interval_view(observation.operand_view()),
                     Some((i64::MIN, 7))
@@ -65,7 +65,7 @@ fn shared_word_prefix_bounds_do_not_materialize_operands() {
                         IntegerTerm::Machine(observation.clone()),
                         IntegerTerm::constant(7.into()),
                     );
-                    index.adjust(&condition, true, true);
+                    index.adjust(&condition, true);
                     assert_eq!(
                         index.interval_view(
                             observation.operand_view(),
@@ -124,7 +124,7 @@ fn native_order_premises_select_retained_promoted_call_bounds() {
                 right: Box::new(endpoint.clone()),
             };
             let mut index = CheckedOrderBounds::default();
-            index.adjust(&fact, truth, true);
+            index.adjust(&fact, truth);
             let root = KernelTerm::retained_native_machine_operand(format, &endpoint);
             let exports = KernelTermExport::machine_export_count();
             let native = if format == MachineIntegerType::Int64 {
@@ -156,16 +156,6 @@ fn native_order_premises_select_retained_promoted_call_bounds() {
                     None
                 );
             }
-            index.adjust(&fact, truth, false);
-            let removed = if format == MachineIntegerType::Int64 {
-                index.signed_wide_interval_view(MachineOperandView::Shared(&root))
-            } else {
-                index.interval_view(
-                    MachineOperandView::Shared(&root),
-                    format == MachineIntegerType::UInt32,
-                )
-            };
-            assert_eq!(removed, None);
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
     }

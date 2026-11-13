@@ -485,10 +485,5 @@ fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
     let child = parent.clone().assume_proposition(source.clone());
     assert!(child.knows_operation_range_bound(&bound));
     assert!(!parent.knows_operation_range_bound(&bound));
-    assert!(
-        !child
-            .without_exact_fact(&source)
-            .knows_operation_range_bound(&bound)
-    );
     assert!(!operand.has_boxed_operand());
 }

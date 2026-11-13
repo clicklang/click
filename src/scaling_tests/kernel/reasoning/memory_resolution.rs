@@ -143,10 +143,6 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         assert!(!pointers_proven_distinct_for_memory_resolution(
             &local, &interior, &absent
         ));
-        let withdrawn = facts.without_exact_fact(&Proposition::ConditionIs(equality.clone(), true));
-        assert!(!pointers_proven_distinct_for_memory_resolution(
-            &local, &interior, &withdrawn
-        ));
         // Different starting addresses in the same object are insufficient
         // evidence for either an exact interior alias or a multi-byte frame.
         assert!(!pointers_proven_distinct_for_memory_resolution(

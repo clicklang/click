@@ -1076,7 +1076,7 @@ mod tests {
     }
 
     #[test]
-    fn context_projection_tracks_replacements_and_withdrawals() {
+    fn context_projection_tracks_replacements() {
         let first = guard(1, true);
         let second = Proposition::Predicate {
             name: "projection_test".into(),
@@ -1084,11 +1084,8 @@ mod tests {
         };
         let context = PureFactContext::new()
             .assume_proposition(first.clone())
-            .assume_proposition(second.clone());
-        let changed = context
-            .clone()
-            .assume_proposition(guard(1, false))
-            .without_exact_fact(&second);
+            .assume_proposition(second);
+        let changed = context.clone().assume_proposition(guard(1, false));
         for context in [
             &context,
             &changed,

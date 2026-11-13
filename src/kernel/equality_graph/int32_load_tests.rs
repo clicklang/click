@@ -106,7 +106,7 @@ fn int32_load_congruence_keeps_snapshots_blocks_and_widths_distinct() {
 }
 
 #[test]
-fn int32_load_congruence_is_branch_local_and_withdrawable() {
+fn int32_load_congruence_is_branch_local() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let left = load(&memory, &address(1), 4);
@@ -119,8 +119,6 @@ fn int32_load_congruence_is_branch_local_and_withdrawable() {
     assert!(context.equality_graph.are_int32_equal(&left, &right));
     assert!(!parent.equality_graph.are_int32_equal(&left, &right));
     assert!(!sibling.equality_graph.are_int32_equal(&left, &right));
-    let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(equality, true));
-    assert!(!withdrawn.equality_graph.are_int32_equal(&left, &right));
     assert!(
         !context
             .restricted_to_facts(&[], &[])
@@ -225,9 +223,6 @@ fn explicit_cross_snapshot_load_equality_composes_without_merging_snapshots() {
         &load(&before, &address(3), 4),
         &load(&after, &address(3), 4)
     ));
-    let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(bridge.clone(), true));
-    assert!(!withdrawn.equality_graph.are_int32_equal(&old_j, &new_j));
-    assert!(withdrawn.equality_graph.are_int32_equal(&old_i, &old_j));
     let restricted = context.restricted_to_facts(&[(bridge.clone(), true)], &[]);
     assert!(restricted.equality_graph.are_int32_equal(&old_i, &new_i));
     assert!(!restricted.equality_graph.are_int32_equal(&old_j, &new_j));
@@ -345,7 +340,7 @@ fn int32_load_congruence_connects_base_reads_to_early_and_late_zero_offsets() {
 }
 
 #[test]
-fn a_late_zero_index_alias_transfers_an_admitted_read_order_and_withdraws() {
+fn a_late_zero_index_alias_transfers_an_admitted_read_order() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let base = address(940_085);
@@ -367,12 +362,6 @@ fn a_late_zero_index_alias_transfers_an_admitted_read_order_and_withdraws() {
     assert_eq!(
         crate::kernel::reasoning::decide_with_facts(&equal, &ExecutionFacts::new(), &target),
         Some(true),
-    );
-    let withdrawn = equal.without_exact_fact(&zero);
-    assert_eq!(withdrawn.decide(&target), None);
-    assert_eq!(
-        crate::kernel::reasoning::decide_with_facts(&withdrawn, &ExecutionFacts::new(), &target),
-        None,
     );
 }
 

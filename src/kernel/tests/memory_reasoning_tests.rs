@@ -49,19 +49,13 @@ mod ordered_range_access_tests {
     }
 
     #[test]
-    fn ordered_access_keeps_the_exclusive_end_and_withdrawn_links() {
+    fn ordered_access_keeps_the_exclusive_end() {
         let _session = crate::kernel::VerificationSession::enter();
         let (context, base, indices, end) = ordered_range(8);
         for index in &indices {
             assert!(covered(&context, &base, index, &end));
         }
         assert!(!covered(&context, &base, &end, &end));
-        let context = context.without_exact_fact(&Proposition::ConditionIs(
-            ConditionTerm::signed_less_than(indices[3].clone(), indices[4].clone()),
-            true,
-        ));
-        assert!(covered(&context, &base, &indices[0], &indices[3]));
-        assert!(!covered(&context, &base, &indices[8], &end));
     }
 
     mod scaling_tests {
@@ -1349,8 +1343,6 @@ fn memory_range_endpoint_match_uses_graph_loads_in_one_snapshot() {
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
     assert!(!c_resources_directly_match(&left, &later, &branch));
     assert!(!c_resources_directly_match(&left, &right, &parent));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(!c_resources_directly_match(&left, &right, &withdrawn));
 }
 
 #[test]
@@ -7487,12 +7479,6 @@ mod loadable_extent_graph_tests {
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
         assert!(!parent.proves_memory_loadable_for_memory_resolution(&memory, &base, &goal_bytes));
         assert!(!parent.proves_loadable_region_from_range(&base, &range_bytes, &base, &goal_bytes));
-        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-        assert!(!withdrawn.proves_memory_loadable_for_memory_resolution(
-            &memory,
-            &base,
-            &goal_bytes
-        ));
         let other = Pointer::symbolic(Variable(9_320_003));
         assert!(!branch.proves_memory_loadable_for_memory_resolution(&memory, &other, &goal_bytes));
     }
@@ -7809,13 +7795,11 @@ fn stated_separation_decides_pointer_forms_with_scoped_nonempty_evidence() {
         assert!(branch.contains_known(&Proposition::Not(Box::new(equal.clone()))));
         assert!(!branch.contains_known(&equal));
         assert!(!bare.contains_known(&unequal));
-        assert!(!branch.without_exact_fact(&fact).contains_known(&unequal));
         assert_eq!(
             branch.decide(&ConditionTerm::pointer_equal(right.clone(), left.clone())),
             Some(false)
         );
         assert_eq!(bare.decide(&comparison), None);
-        assert_eq!(branch.without_exact_fact(&fact).decide(&comparison), None);
         let rebuilt = {
             let mut branch = branch.clone();
             branch.rebuild_separated_anchor_offsets();
@@ -7849,15 +7833,13 @@ fn kept_call_frame_uses_transitive_model_pointer_classes() {
     let first = pointer(950_001);
     let middle = pointer(950_002);
     let owner = pointer(950_003);
-    let assumptions = PureFactContext::new()
-        .assume_condition(
-            ConditionTerm::pointer_equal(first.clone(), middle.clone()),
-            true,
-        )
-        .assume_condition(
-            ConditionTerm::pointer_equal(middle.clone(), owner.clone()),
-            true,
-        );
+    let first_link = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(first.clone(), middle.clone()),
+        true,
+    );
+    let assumptions = first_link
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(middle, owner.clone()), true);
     assert!(assumptions.pointers_known_equal(&first, &owner));
     let ranges = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(
         CResourceFact::own_memory(CMemoryRange::new(owner.clone(), 2u32.into(), 4u32.into())),
@@ -7874,11 +7856,7 @@ fn kept_call_frame_uses_transitive_model_pointer_classes() {
     for offset in [4, 12] {
         assert!(!kept.holds_access(&first.offset_by_bytes(offset), 8, &assumptions));
     }
-    let withdrawn = assumptions.without_exact_fact(&Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(middle, owner.clone()),
-        true,
-    ));
-    assert!(!kept.holds_access(&access, 8, &withdrawn));
+    assert!(!kept.holds_access(&access, 8, &first_link));
     let views = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(
         CResourceFact::view_memory(CMemoryRange::new(owner, 2u32.into(), 4u32.into())),
     );

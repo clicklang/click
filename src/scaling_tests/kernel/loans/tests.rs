@@ -973,7 +973,7 @@ fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
 
 #[test]
 fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
-    use crate::kernel::{ConditionTerm, Pointer, PointerOffsetTerm, Proposition};
+    use crate::kernel::{ConditionTerm, Pointer, PointerOffsetTerm};
     let p = Pointer {
         block: "overlap".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -1025,8 +1025,12 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
             if offset == 3 {
                 samples.push(work);
             }
-            let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(equality, true));
-            assert!(withdrawn.exact_pointer_offset_aliases(&q).next().is_none());
+            assert!(
+                assumptions
+                    .exact_pointer_offset_aliases(&q)
+                    .next()
+                    .is_none()
+            );
         }
     }
     assert!(

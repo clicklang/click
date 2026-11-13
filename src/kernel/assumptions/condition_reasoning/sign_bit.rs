@@ -656,8 +656,6 @@ mod tests {
             );
             let facts = PureFactContext::new().assume_proposition(source.clone());
             assert!(shared_equivalents(&facts, &query).is_some());
-            // Admission derives signed bounds from the unsigned source, so
-            // withdrawing just that source does not remove its consequences.
             // Use an independently weaker context for the missing-bound control.
             let weak = PureFactContext::new().assume_condition(
                 ConditionTerm::unsigned_less_equal(sum(Ty::Int32), MachineTerm::constant(max + 1)),

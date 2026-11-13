@@ -329,16 +329,6 @@ fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
             }),
         ));
     }
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(matches!(
-        int32_continuity(&base, &input_size, &base, &output_size, &withdrawn),
-        AllocationContinuity::Undecided(ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: _,
-            right: _
-        }),
-    ));
     assert_ne!(
         int32_continuity(
             &base,

@@ -37,18 +37,6 @@ fn opposite_assumption_closes_only_its_branch_and_survives_reconstruction() {
                 assert!(!parent.is_inconsistent());
                 assert!(!parent.proves_without_prop_facts(&goal));
                 assert!(!proof.check(&parent));
-                let without_false = child.without_exact_fact(&Proposition::ConditionIs(
-                    ConditionTerm::Constant(false),
-                    true,
-                ));
-                assert!(
-                    !without_false.is_inconsistent(),
-                    "remaining facts for {condition:?}, first={first}: {:?}; scalar conflict={}, constructors={:?}",
-                    without_false.pure_facts(),
-                    without_false.equality_graph.has_scalar_constant_conflict(),
-                    without_false.algebraic_constructor_conflicts
-                );
-                assert!(!proof.check(&without_false));
             }
             let rebuilt = child
                 .pure_facts()

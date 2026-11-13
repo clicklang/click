@@ -98,8 +98,7 @@ equality bridge theorems below therefore restate a fact rather than derive one.
 Checking additionally evaluates literal arithmetic in the comparison view:
 `to_integer(x) != -2147483647 - 1` can establish the native `INT_MIN`
 exclusion while retaining its written subtraction. Compound proposition views
-are indexed at admission with their source and support count, so queries do
-not scan facts and withdrawing a source removes its support. Literal zero/unit
+are indexed at admission with their source, so queries do not scan facts. Literal zero/unit
 arithmetic identities join equality-graph classes without replacing either
 term; generic substitution preserves operation and comparison nodes too.
 

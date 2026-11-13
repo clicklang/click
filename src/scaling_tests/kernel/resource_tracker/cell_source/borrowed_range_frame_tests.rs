@@ -53,7 +53,6 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
                 hold: None,
             },
         );
-        let bound = partition.clone();
         let authority = Proposition::CResourceComposition(partition);
         let context = PureFactContext::new()
             .assume_proposition(authority.clone())
@@ -117,13 +116,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
                 &context,
             )
         );
-        // Keep the candidate index while withdrawing its retained authority.
-        let mut withdrawn = context.clone();
-        withdrawn.resource_compositions = withdrawn.resource_compositions.without_value(&bound);
-        assert!(!proof.checks(&backing, &field, 8, &withdrawn));
-        assert!(
-            typed_range_disjoint_from_pointer_evidence(&backing, &field, 8, &withdrawn).is_none()
-        );
+        assert!(!proof.checks(&backing, &field, 8, &bare));
         assert!(
             typed_range_disjoint_from_pointer_evidence(&backing, &field, 12, &context).is_none()
         );

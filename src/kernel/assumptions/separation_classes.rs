@@ -104,7 +104,7 @@ impl Index {
                 }
             }
         } else {
-            // Withdrawal reconstructs the checked graph from its remaining
+            // Restriction reconstructs the checked graph from its selected
             // exact support. Class IDs from that lineage cannot be reused.
             self.pairs = Default::default();
             self.incident = Default::default();
@@ -142,7 +142,6 @@ impl SeparatedAddressIndex {
         fact: &Proposition,
         left: Pointer,
         right: Pointer,
-        insert: bool,
         graph: &EqualityGraph,
     ) {
         let mut cache = self.0.lock().expect("separation index");
@@ -157,20 +156,8 @@ impl SeparatedAddressIndex {
             graph.address_class_root(left_class),
             graph.address_class_root(right_class),
         );
-        if insert {
-            index.sources = index.sources.with_inserted(fact.clone(), (left, right));
-            index.attach(key, fact.clone());
-        } else {
-            index.sources = index.sources.without_key(fact);
-            if let Some(facts) = index.pairs.get(&key) {
-                let remaining = facts.without_value(fact);
-                if remaining.is_empty() {
-                    index.detach_pair(key);
-                } else {
-                    index.pairs = index.pairs.with_inserted(key, remaining);
-                }
-            }
-        }
+        index.sources = index.sources.with_inserted(fact.clone(), (left, right));
+        index.attach(key, fact.clone());
     }
 
     pub(in crate::kernel) fn candidates(

@@ -1806,8 +1806,8 @@ mod condition_premise_tests {
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([left.clone(), right.clone()])
         );
-        for premise in [left.clone(), right] {
-            assert!(!proof.check(&context.without_exact_fact(&premise)));
+        for remaining in [left.clone(), right] {
+            assert!(!proof.check(&PureFactContext::new().assume_proposition(remaining)));
         }
         assert!(
             crate::kernel::search::ProofSearch::derive_atomic_proposition(
@@ -2450,7 +2450,7 @@ fn reduce_solve_atomic_premises(
         } else if end - start > 1 {
             let middle = start + (end - start) / 2;
             // Conditions precede propositions in the retained selection.
-            // Try withdrawing the later chunk first, so irrelevant frame
+            // Try dropping the later chunk first, so irrelevant frame
             // propositions do not accompany every trial on an exact scalar
             // equality's condition sources.
             pending.push((start, middle));
@@ -2505,7 +2505,7 @@ mod shared_atomic_premise_tests {
                 )
                 .expect("the stated premise is available");
                 assert!(proof.check(&context));
-                assert!(!proof.check(&context.without_exact_fact(&source)));
+                assert!(!proof.check(&PureFactContext::new()));
                 context
             });
             assert!(context.proves_exact(&source));

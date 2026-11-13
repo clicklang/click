@@ -23,7 +23,6 @@ fn native_order_sources_do_not_add_native_query_work() {
             index.adjust(
                 &ConditionTerm::signed_less_than(operand_at(id), bound.clone()),
                 true,
-                true,
             );
         }
         let operand = operand_at(0);
@@ -35,8 +34,7 @@ fn native_order_sources_do_not_add_native_query_work() {
             // must not add comparison-reading work to those queries.
             assert!(index.source(&native, true).is_none());
             assert!(index.source(&native, false).is_none());
-            index.adjust(&equality, true, true);
-            index.adjust(&equality, true, false);
+            index.adjust(&equality, true);
         });
         assert_eq!(work, 0, "{size} native order sources");
         let root = KernelTermImport::default()

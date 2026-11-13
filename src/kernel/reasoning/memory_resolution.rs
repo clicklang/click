@@ -1911,19 +1911,14 @@ fn memory_resolution_uses_graph_offset_congruence_in_branch_scope() {
     ));
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
 
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(scalar_fact, true));
-    assert_ne!(
-        pointer_offsets_equal_for_memory_resolution(&offset(1), &named, &withdrawn),
-        Some(true)
-    );
     let restricted = branch.restricted_to_facts(&[], &[]);
     assert_ne!(
         pointer_offsets_equal_for_memory_resolution(&offset(1), &named, &restricted),
         Some(true)
     );
-    let retained = branch.without_exact_fact(&Proposition::ConditionIs(named_fact, true));
+    let scalar_only = PureFactContext::new().assume_condition(scalar_fact, true);
     assert_ne!(
-        pointer_offsets_equal_for_memory_resolution(&offset(1), &named, &retained),
+        pointer_offsets_equal_for_memory_resolution(&offset(1), &named, &scalar_only),
         Some(true)
     );
 }
@@ -1948,12 +1943,6 @@ fn memory_resolution_uses_pointer_classes_across_blocks() {
         &pointer(0, 12),
         &pointer(2, 20),
         &branch,
-    ));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(second, true));
-    assert!(!pointers_proven_equal_for_memory_resolution(
-        &pointer(0, 12),
-        &pointer(2, 20),
-        &withdrawn,
     ));
 }
 
@@ -5475,11 +5464,6 @@ fn mixed_index_offsets_require_exact_observations_and_matching_strides() {
     );
     assert_eq!(
         pointer_offsets_equal_for_memory_resolution(&native(1), &signed(4), &checked),
-        None
-    );
-    let withdrawn = checked.without_exact_fact(&Proposition::ConditionIs(fact.clone(), true));
-    assert_eq!(
-        pointer_offsets_equal_for_memory_resolution(&native(1), &signed(1), &withdrawn),
         None
     );
     let denied = empty.clone().assume_condition(fact, false);

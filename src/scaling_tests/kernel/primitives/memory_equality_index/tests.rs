@@ -49,8 +49,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
             left: Box::new(CResource::Memory(field_range.clone())),
             right: Box::new(CResource::Memory(range(source.clone()))),
         };
-        let context = PureFactContext::new()
-            .assume_proposition(separation.clone())
+        let bounded = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::signed_less_equal(2u32.into(), count.clone()),
                 true,
@@ -59,6 +58,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
                 ConditionTerm::signed_less_equal(count.clone(), 1000u32.into()),
                 true,
             );
+        let context = bounded.clone().assume_proposition(separation);
         let held = CResourceFact::own_memory(range(source.clone()));
         let mut resources = ResourceContext::new()
             .unchecked_with_fact(CResourceFact::view_memory(field_range))
@@ -78,7 +78,6 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
             .store(source.offset_by_bytes(4), CValue::Int32(7u32.into()))
             .store(local, CValue::Int32(8u32.into()));
         let current = read(&context, &after, &field);
-        let weakened = context.without_exact_fact(&separation);
         let required = CResourceFact::own_memory(range(current.clone()));
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
             resources
@@ -102,7 +101,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         );
         assert!(
             resources
-                .directly_supporting_fact(&required, &weakened)
+                .directly_supporting_fact(&required, &bounded)
                 .is_none()
         );
         let withdrawn = resources

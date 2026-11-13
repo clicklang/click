@@ -282,7 +282,6 @@ mod tests {
         assert_eq!(value, Some(14));
         assert!(premises.contains(&source));
         assert!(premises.contains(&literal));
-        assert_eq!(read(&child.without_exact_fact(&literal)), None);
         assert_eq!(read(&parent), None);
         assert!(!query.has_boxed_operand());
         assert!(!operand.has_boxed_operand());

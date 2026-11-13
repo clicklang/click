@@ -2057,13 +2057,17 @@ mod separated_range_frame_tests {
                 &before, &after, &context
             )
         );
-        for fact in &facts[..4] {
-            let withdrawn = context.without_exact_fact(fact);
+        for missing in &facts[..4] {
+            let without = facts
+                .iter()
+                .filter(|fact| *fact != missing)
+                .cloned()
+                .fold(PureFactContext::new(), PureFactContext::assume_proposition);
             assert!(
                 !crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
-                    &before, &after, &withdrawn
+                    &before, &after, &without
                 ),
-                "withdrew {fact:?}"
+                "without {missing:?}"
             );
         }
         let partial = crate::kernel::intern_c_memory(

@@ -90,7 +90,7 @@ fn fact_lookup_transports_comparisons_and_negative_facts_without_arithmetic_sear
 }
 
 #[test]
-fn fact_lookup_preserves_branch_withdrawal_restriction_and_contradiction() {
+fn fact_lookup_preserves_branch_restriction_and_contradiction() {
     let source = Proposition::ConditionIs(ConditionTerm::signed_less_than(var(20), var(21)), true);
     let target = Proposition::ConditionIs(ConditionTerm::signed_less_than(var(22), var(21)), true);
     let alias = eq(var(20), var(22));
@@ -98,8 +98,11 @@ fn fact_lookup_preserves_branch_withdrawal_restriction_and_contradiction() {
     let child = parent.clone().assume_proposition(alias.clone());
     assert!(child.contains_known(&target));
     assert!(!parent.contains_known(&target));
-    assert!(!child.without_exact_fact(&alias).contains_known(&target));
-    assert!(!child.without_exact_fact(&source).contains_known(&target));
+    assert!(
+        !PureFactContext::new()
+            .assume_proposition(alias)
+            .contains_known(&target)
+    );
     assert!(
         !child
             .restricted_to_facts(
@@ -183,8 +186,11 @@ fn fact_lookup_uses_pointer_read_congruence_after_a_late_address_alias() {
     let alias = Proposition::ConditionIs(ConditionTerm::pointer_equal(a, b), true);
     let context = context.assume_proposition(alias.clone());
     assert!(context.contains_known(&target));
-    assert!(!context.without_exact_fact(&alias).contains_known(&target));
-    assert!(!context.without_exact_fact(&source).contains_known(&target));
+    assert!(
+        !PureFactContext::new()
+            .assume_proposition(alias)
+            .contains_known(&target)
+    );
 }
 
 #[test]
@@ -233,7 +239,7 @@ fn signed_addition_definedness_follows_early_and_late_operand_equalities() {
 }
 
 #[test]
-fn signed_addition_definedness_stays_scoped_and_withdrawable() {
+fn signed_addition_definedness_stays_scoped() {
     let source = Proposition::ConditionIs(
         ConditionTerm::signed_add_overflows(var(60100), var(60101)),
         false,
@@ -244,8 +250,8 @@ fn signed_addition_definedness_stays_scoped_and_withdrawable() {
     let child = parent.clone().assume_proposition(alias.clone());
     assert_eq!(child.decide(&target), Some(false));
     assert_eq!(parent.decide(&target), None);
-    assert_eq!(child.without_exact_fact(&alias).decide(&target), None);
-    assert_eq!(child.without_exact_fact(&source).decide(&target), None);
+    let alias_only = PureFactContext::new().assume_proposition(alias);
+    assert_eq!(alias_only.decide(&target), None);
 }
 
 fn coordinate_pointer(block: PointerBlock, id: u64) -> Pointer {
@@ -291,8 +297,6 @@ fn pointer_disequality_projects_only_through_a_witnessed_common_base() {
                 false
             )));
             assert!(!parent.contains_known(&goal));
-            assert!(!child.without_exact_fact(&alias).contains_known(&goal));
-            assert!(!child.without_exact_fact(&distinct).contains_known(&goal));
         }
     }
     let distinct = PureFactContext::new().assume_condition(
@@ -358,7 +362,6 @@ fn pointer_disequality_projection_follows_offset_class_merges() {
     let child = parent.clone().assume_proposition(alias.clone());
     assert!(child.contains_known(&goal));
     assert!(!parent.contains_known(&goal));
-    assert!(!child.without_exact_fact(&alias).contains_known(&goal));
 }
 
 #[cfg(test)]
@@ -412,20 +415,6 @@ fn pointer_comparison_preserves_base_evidence_through_aliases_and_scopes() {
                 false
             )));
             assert!(!parent.contains_known(&goal));
-            assert!(!child.without_exact_fact(&source).contains_known(&goal));
-            assert!(!child.without_exact_fact(&source).contains_known(&source));
-            assert!(
-                !child
-                    .without_exact_fact(&source)
-                    .contains_known(&Proposition::ConditionIs(
-                        ConditionTerm::pointer_offset_equal(
-                            left.offset.clone(),
-                            right.offset.clone()
-                        ),
-                        false,
-                    ))
-            );
-            assert!(!child.without_exact_fact(&alias).contains_known(&goal));
             assert!(
                 !PureFactContext::new()
                     .assume_proposition(alias)

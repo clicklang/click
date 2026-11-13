@@ -1574,11 +1574,11 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
                 .equality_graph
                 .are_equal(source.pointer(), current.pointer())
         );
-        let weakened = context.without_exact_fact(&separation);
+        let unseparated = PureFactContext::new();
         assert!(
             resources
                 .clone()
-                .without_fact_incrementally(&required, &weakened)
+                .without_fact_incrementally(&required, &unseparated)
                 .is_none()
         );
         let withdrawn = resources
@@ -1686,10 +1686,10 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
         );
         work_samples.push(work);
         assert!(!context.equality_graph.are_equal(&source, &current));
-        let weakened = context.without_exact_fact(&separation);
+        let unseparated = PureFactContext::new();
         assert!(
             resources
-                .memory_write_range(&target, 4, &weakened)
+                .memory_write_range(&target, 4, &unseparated)
                 .is_none()
         );
         let withdrawn = resources

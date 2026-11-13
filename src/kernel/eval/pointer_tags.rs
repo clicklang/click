@@ -900,11 +900,8 @@ mod exact_word_address_tests {
                 used.premises
                     .contains(&Proposition::ConditionIs(bound.clone(), true))
             );
-            let withdrawn = context
-                .clone()
-                .without_exact_fact(&Proposition::ConditionIs(bound.clone(), true));
             assert_eq!(
-                tag_bound_citing(value, &withdrawn, &mut UsedFacts::new()),
+                tag_bound_citing(value, &PureFactContext::new(), &mut UsedFacts::new()),
                 None
             );
         }
@@ -1229,11 +1226,7 @@ mod exact_word_address_tests {
                 .unwrap();
         assert_eq!(decoded.pointer(), &pointer);
         assert_eq!(decoded.object_class(), Some(class));
-        for context in [
-            parent,
-            branch.without_exact_fact(&premise),
-            branch.restricted_to_facts(&[], &[]),
-        ] {
+        for context in [parent, branch.restricted_to_facts(&[], &[])] {
             assert!(
                 cast_tagged_address_to_pointer(
                     &word,
@@ -1381,13 +1374,6 @@ mod exact_word_address_tests {
                                             .iter()
                                             .all(|p| context.contains_assumed_exact(p))
                                 );
-                                let withdrawn = context.without_exact_fact(
-                                    &Proposition::ConditionIs(upper.clone(), true),
-                                );
-                                assert_eq!(
-                                    tag_bound_citing(view, &withdrawn, &mut UsedFacts::new()),
-                                    None
-                                );
                             }
                             assert_eq!(
                                 tag_bound_citing(view, &parent, &mut UsedFacts::new()),
@@ -1505,16 +1491,14 @@ mod retained_tag_tests {
             assert_eq!(used.premises, vec![source.clone()]);
             tags.push(form.tag);
         }
-        for context in [parent, branch.without_exact_fact(&source)] {
-            assert!(
-                tagged_address_form_view(
-                    MachineOperandView::Shared(&shared),
-                    &context,
-                    &mut UsedFacts::new()
-                )
-                .is_none()
-            );
-        }
+        assert!(
+            tagged_address_form_view(
+                MachineOperandView::Shared(&shared),
+                &parent,
+                &mut UsedFacts::new()
+            )
+            .is_none()
+        );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert_eq!(tags[0], tags[1]);
         assert_eq!(tags[0].value(), &MachineTerm::uint64_add(opaque, y));

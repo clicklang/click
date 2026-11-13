@@ -1065,7 +1065,7 @@ without a stated `Full(a) == Full(b)`; see
 [`constructor_injectivity_through_an_equal_value.md`](https://github.com/clicklang/click/blob/master/mdtests/constructor_injectivity_through_an_equal_value.md). Semantic fact lookup and inconsistency checking use this
 indexed evidence, so `assumption()` can close a goal in that impossible context
 without another search. The evidence belongs to the current branch and is
-rebuilt when supporting facts are withdrawn; it does not equate reads across
+rebuilt when a context is restricted to selected facts; it does not equate reads across
 changed memory snapshots. Exact fact membership remains separate. See
 [`model_getter_constant_conflict.md`](https://github.com/clicklang/click/blob/master/mdtests/model_getter_constant_conflict.md).
 

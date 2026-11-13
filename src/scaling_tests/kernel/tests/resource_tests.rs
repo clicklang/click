@@ -702,17 +702,11 @@ fn resource_match_constructor_index_tracks_evidence_and_scales_locally() {
         Term::Algebraic(model.clone()),
     );
     for fact in [equality.clone(), reversed] {
-        let mut assumptions = PureFactContext::new().assume_proposition(fact.clone());
+        let mut assumptions = PureFactContext::new().assume_proposition(fact);
         assert_eq!(
             assumptions.known_algebraic_constructor(&model),
             Some(constructor.clone())
         );
-        assumptions.remove_proposition_fact(&fact);
-        assert!(assumptions.known_algebraic_constructor(&model).is_none());
-        assumptions.insert_proposition_fact(fact.clone());
-        assumptions.retain_proposition_facts(|entry| entry != &fact);
-        assert!(assumptions.known_algebraic_constructor(&model).is_none());
-        assumptions.insert_proposition_fact(fact);
         assumptions.clear_proposition_facts();
         assert!(assumptions.known_algebraic_constructor(&model).is_none());
     }

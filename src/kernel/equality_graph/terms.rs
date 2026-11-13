@@ -3454,7 +3454,7 @@ fn function_contract_group(name: &str, values: &[crate::kernel::Term]) -> String
 mod tests {
     use super::super::EqualityGraph;
     use super::*;
-    use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, PureFactContext};
+    use crate::kernel::{ConditionTerm, MachineTerm, Pointer, PureFactContext};
 
     fn var(id: u64) -> PointerOffsetTerm {
         PointerOffsetTerm::Variable(Variable(id))
@@ -3764,7 +3764,7 @@ mod tests {
     }
 
     #[test]
-    fn offset_context_withdrawal_and_restriction_preserve_only_retained_equalities() {
+    fn offset_context_restriction_preserves_only_retained_equalities() {
         let (a, b, c) = (var(20), var(21), var(22));
         let ab = equality(&a, &b);
         let bc = equality(&b, &c);
@@ -3783,18 +3783,6 @@ mod tests {
                 .equality_graph
                 .are_offsets_equal(&translated_a, &translated_c)
         );
-        let weakened = context.without_exact_fact(&Proposition::ConditionIs(bc.clone(), true));
-        assert!(!weakened.equality_graph.are_offsets_equal(&a, &c));
-        assert!(
-            !weakened
-                .equality_graph
-                .are_offsets_equal(&translated_a, &translated_c)
-        );
-        assert!(weakened.equality_graph.are_offsets_equal(&a, &b));
-        assert!(weakened.equality_graph.are_equal(&p, &q));
-        let no_pointer = context.without_exact_fact(&Proposition::ConditionIs(pq, true));
-        assert!(!no_pointer.equality_graph.are_equal(&p, &q));
-        assert!(no_pointer.equality_graph.are_offsets_equal(&a, &c));
         let restricted = context.restricted_to_facts(&[(ab, true)], &[]);
         assert!(!restricted.equality_graph.are_offsets_equal(&a, &c));
         assert!(restricted.equality_graph.are_offsets_equal(&a, &b));
@@ -3802,22 +3790,6 @@ mod tests {
         assert!(reversed.is_inconsistent());
         assert!(reversed.equality_graph.are_offsets_equal(&a, &c));
         assert!(context.equality_graph.are_offsets_equal(&a, &c));
-    }
-
-    #[test]
-    fn offset_withdrawal_keeps_a_separately_stated_reverse_equality() {
-        let (a, b, c) = (var(30), var(31), var(32));
-        let ab = equality(&a, &b);
-        let ba = equality(&b, &a);
-        let context = PureFactContext::new()
-            .assume_condition(ab.clone(), true)
-            .assume_condition(ba.clone(), true)
-            .assume_condition(equality(&b, &c), true);
-        let once = context.without_exact_fact(&Proposition::ConditionIs(ab, true));
-        assert!(once.equality_graph.are_offsets_equal(&a, &c));
-        let twice = once.without_exact_fact(&Proposition::ConditionIs(ba, true));
-        assert!(!twice.equality_graph.are_offsets_equal(&a, &c));
-        assert!(twice.equality_graph.are_offsets_equal(&b, &c));
     }
 
     #[test]

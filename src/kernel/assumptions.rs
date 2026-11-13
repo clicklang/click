@@ -62,15 +62,6 @@ pub(in crate::kernel) use condition_reasoning::held_order_at;
 pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
 pub(in crate::kernel) use condition_reasoning::order_view_at_format;
 
-#[cfg(test)]
-#[derive(Clone, Debug)]
-pub(super) struct PointerValueUndo {
-    source: std::sync::Arc<ConditionTerm>,
-    conditions: crate::kernel::fact_collections::FactMap<ConditionTerm, bool>,
-    propositions: crate::kernel::fact_collections::FactSet<Proposition>,
-    graph: std::sync::Arc<EqualityGraph>,
-}
-
 mod separation_classes;
 pub(in crate::kernel) use separation_classes::SeparatedAddressIndex;
 
@@ -999,19 +990,9 @@ fn adjust_stated_index(
     index: &StatedIndexMap,
     key: crate::kernel::proof::PropositionIdentityKey,
     proposition: &Proposition,
-    insert: bool,
 ) -> StatedIndexMap {
     let bucket = index.get(&key).cloned().unwrap_or_default();
-    let bucket = if insert {
-        bucket.with_value(proposition.clone())
-    } else {
-        bucket.without_value(proposition)
-    };
-    if bucket.is_empty() {
-        index.without_key(&key)
-    } else {
-        index.with_inserted(key, bucket)
-    }
+    index.with_inserted(key, bucket.with_value(proposition.clone()))
 }
 
 /// A context's index of stated propositions by alpha/load identity key.
@@ -1067,7 +1048,7 @@ pub(crate) struct DeferredStatedIndexNode {
     /// The index this node's adjustment applies to, released once this node
     /// is built. The root has none and is built empty.
     parent: std::sync::Mutex<Option<std::sync::Arc<DeferredStatedIndexNode>>>,
-    adjustment: Option<(Proposition, bool)>,
+    adjustment: Option<Proposition>,
     built: std::sync::OnceLock<StatedIndexMap>,
 }
 
@@ -1081,8 +1062,7 @@ impl DeferredStatedIndexNode {
 
     /// Builds this node's index, and every unbuilt ancestor's, iteratively.
     /// `None` when a key walk stops at an exhausted budget: nothing partial is
-    /// recorded, since an entry a later removal could not retract would make
-    /// a removed fact look stated.
+    /// recorded.
     fn force(self: &std::sync::Arc<Self>) -> Option<&StatedIndexMap> {
         if let Some(index) = self.built.get() {
             return Some(index);
@@ -1099,10 +1079,10 @@ impl DeferredStatedIndexNode {
             }
         };
         for node in unbuilt.iter().rev() {
-            if let Some((proposition, insert)) = &node.adjustment {
+            if let Some(proposition) = &node.adjustment {
                 match crate::kernel::proof::proposition_identity_key(proposition) {
                     Some(key) => {
-                        index = adjust_stated_index(&index, key, proposition, *insert);
+                        index = adjust_stated_index(&index, key, proposition);
                     }
                     None if crate::instrumentation::deadline_exceeded_with_work(0) => {
                         return None;
@@ -3499,24 +3479,19 @@ impl PureFactContext {
     /// [`Self::adjust_signed_order_bound_spelled`] for the fact, and for a native 8- or
     /// 16-bit comparison also for the `int32` comparison of its widenings,
     /// the same fact (rule K8), which the index reads.
-    fn adjust_signed_order_bound(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
-        self.adjust_signed_order_bound_spelled(condition, value, insert);
+    fn adjust_signed_order_bound(&mut self, condition: &ConditionTerm, value: bool) {
+        self.adjust_signed_order_bound_spelled(condition, value);
         if let Some(widened) =
             crate::kernel::machine_integer::comparison::narrow_fact_widening(condition)
         {
-            self.adjust_signed_order_bound_spelled(&widened, value, insert);
+            self.adjust_signed_order_bound_spelled(&widened, value);
         }
     }
 
-    fn adjust_signed_order_bound_spelled(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
-        self.checked_order_bounds.adjust(condition, value, insert);
-        self.order_facts_by_lower.adjust(condition, value, insert);
-        self.signed_variable_chains.adjust(condition, value, insert);
+    fn adjust_signed_order_bound_spelled(&mut self, condition: &ConditionTerm, value: bool) {
+        self.checked_order_bounds.adjust(condition, value);
+        self.order_facts_by_lower.adjust(condition, value);
+        self.signed_variable_chains.adjust(condition, value);
         let Some(view) = retained_order_bounds::order_view(condition, value) else {
             return;
         };
@@ -3527,11 +3502,7 @@ impl PureFactContext {
             MachineIntegerType::UInt64 => &mut self.uint64_order_bounds,
             _ => return,
         };
-        index.adjust(
-            &view,
-            &Proposition::ConditionIs(condition.clone(), value),
-            insert,
-        );
+        index.adjust(&view, &Proposition::ConditionIs(condition.clone(), value));
         let kind = match view.format {
             MachineIntegerType::UInt64 => 0,
             MachineIntegerType::Int64 => 1,
@@ -3543,7 +3514,7 @@ impl PureFactContext {
             .map(|operand| operand.operand_view());
         let strict = view.relation == super::machine_integer::Relation::Less;
         for (direction, from, to) in [(0, left, right), (1, right, left)] {
-            self.wide_order_edges[kind][direction].adjust(view.format, from, to, strict, insert);
+            self.wide_order_edges[kind][direction].adjust(view.format, from, to, strict);
         }
     }
 
@@ -3565,11 +3536,11 @@ impl PureFactContext {
         }
     }
 
-    /// Files or withdraws one null-ness fact under its pointer's offset.
+    /// Files one null-ness fact under its pointer's offset.
     ///
     /// Touches exactly the one offset key the fact names, so a context that
     /// gains a null test pays for that test alone.
-    fn adjust_null_pointer_offset(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+    fn adjust_null_pointer_offset(&mut self, condition: &ConditionTerm, value: bool) {
         let Some(pointer) = Self::condition_as_null_pointer_fact(condition) else {
             return;
         };
@@ -3580,11 +3551,7 @@ impl PureFactContext {
             .get(&offset)
             .cloned()
             .unwrap_or_default();
-        let blocks = if insert {
-            blocks.with_inserted(key, condition.clone())
-        } else {
-            blocks.without_key(&key)
-        };
+        let blocks = blocks.with_inserted(key, condition.clone());
         self.null_pointer_offsets = if blocks.is_empty() {
             self.null_pointer_offsets.without_key(&offset)
         } else {
@@ -3592,16 +3559,13 @@ impl PureFactContext {
         };
     }
 
-    /// Files or withdraws one exact pointer equality under both
+    /// Files one exact pointer equality under both
     /// of its sides. Only a *true* equality says two spellings are one
-    /// address; a false one is not an alias and never enters the index, which
-    /// also makes withdrawal a no-op for the fact values that were never
-    /// filed.
+    /// address; a false one is not an alias and never enters the index.
     fn adjust_pointer_address_source(
         &mut self,
         key: ConditionTerm,
         source: &ConditionTerm,
-        insert: bool,
     ) -> Option<ConditionTerm> {
         let sources = self
             .equality_graph
@@ -3610,11 +3574,7 @@ impl PureFactContext {
             .get(&key)
             .cloned()
             .unwrap_or_default();
-        let sources = if insert {
-            sources.with_value(source.clone())
-        } else {
-            sources.without_value(source)
-        };
+        let sources = sources.with_value(source.clone());
         let selected = sources.iter().next().cloned();
         self.equality_graph.admitted.pointer_address_sources = if sources.is_empty() {
             self.equality_graph
@@ -3630,7 +3590,7 @@ impl PureFactContext {
         selected
     }
 
-    fn adjust_pointer_block_alias(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+    fn adjust_pointer_block_alias(&mut self, condition: &ConditionTerm, value: bool) {
         if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
             if value && alignment.is_power_of_two() {
                 let key = (pointer.clone(), alignment);
@@ -3641,11 +3601,7 @@ impl PureFactContext {
                     .get(&key)
                     .cloned()
                     .unwrap_or_default();
-                let sources = if insert {
-                    sources.with_value(condition.clone())
-                } else {
-                    sources.without_value(condition)
-                };
+                let sources = sources.with_value(condition.clone());
                 if sources.is_empty() {
                     self.equality_graph
                         .admitted
@@ -3657,11 +3613,7 @@ impl PureFactContext {
                         .pointer_alignment_facts
                         .insert(key, sources);
                 }
-                if insert {
-                    self.equality_graph.register_alignment(pointer, alignment);
-                } else {
-                    self.rebuild_equality_graph();
-                }
+                self.equality_graph.register_alignment(pointer, alignment);
             }
             return;
         }
@@ -3678,7 +3630,7 @@ impl PureFactContext {
         } else {
             ConditionTerm::pointer_equal(right.clone(), left.clone())
         };
-        let source = self.adjust_pointer_address_source(key, condition, insert);
+        let source = self.adjust_pointer_address_source(key, condition);
         for (key, alias) in [(left, right), (right, left)] {
             let aliases = self
                 .equality_graph
@@ -3731,40 +3683,27 @@ impl PureFactContext {
                     .with_inserted(bucket, endpoints)
             };
         }
-        if insert {
-            self.equality_graph.add_equality(left, right);
-        } else if source.is_none() {
-            self.rebuild_equality_graph();
-        }
+        self.equality_graph.add_equality(left, right);
     }
 
-    /// Rebuilds all graph fragments from their exact equality indexes. A union-find
-    /// cannot forget one equality, so a withdrawal refiles the equalities
-    /// that remain: work in the equalities held, not in unrelated facts.
-    fn rebuild_equality_graph(&mut self) {
-        #[cfg(test)]
-        if let Some(graph) = &self.restoring_pointer_graph {
-            self.equality_graph = graph.as_ref().clone();
-            return;
-        }
-        self.equality_graph.rebuild_from_inputs();
-    }
-
+    /// Refiles the algebraic graph equalities of the facts that remain after
+    /// [`Self::clear_proposition_facts`], rebuilding the graph from its exact
+    /// equality indexes since a union-find cannot forget an equality.
     fn rebuild_algebraic_graph_equalities(&mut self) {
         self.equality_graph.admitted.algebraic_graph_equalities = Default::default();
-        self.rebuild_equality_graph();
+        self.equality_graph.rebuild_from_inputs();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
             if matches!(condition, ConditionTerm::AlgebraicEqual(..)) {
-                self.adjust_algebraic_graph_equality(
-                    &Proposition::ConditionIs(condition.clone(), *value),
-                    true,
-                );
+                self.adjust_algebraic_graph_equality(&Proposition::ConditionIs(
+                    condition.clone(),
+                    *value,
+                ));
             }
         }
         let propositions = self.prop_facts.clone();
         for proposition in propositions.scan_for_upkeep() {
-            self.adjust_algebraic_graph_equality(proposition, true);
+            self.adjust_algebraic_graph_equality(proposition);
         }
     }
 
@@ -4029,7 +3968,7 @@ impl PureFactContext {
         None
     }
 
-    fn adjust_pointer_value_equality(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_pointer_value_equality(&mut self, proposition: &Proposition) {
         let (left, right) = match proposition {
             Proposition::Equal(
                 Term::CValue(CValue::Pointer(left)),
@@ -4041,66 +3980,36 @@ impl PureFactContext {
             _ => return,
         };
         let key = (left.clone(), right.clone());
-        if insert {
-            self.equality_graph.admitted.pointer_value_equalities = self
-                .equality_graph
+        self.equality_graph.admitted.pointer_value_equalities = self
+            .equality_graph
+            .admitted
+            .pointer_value_equalities
+            .with_value(key);
+        self.equality_graph.admitted.designation_graph.insert(
+            left.designation(),
+            right.designation(),
+            |a, _| a.clone(),
+        );
+        if left.extent().is_none()
+            && right.extent().is_none()
+            && !left.extent_is_known()
+            && !right.extent_is_known()
+            && let Some((a, b)) = left.opaque_extent().zip(right.opaque_extent())
+        {
+            self.equality_graph
                 .admitted
-                .pointer_value_equalities
-                .with_value(key);
-            self.equality_graph.admitted.designation_graph.insert(
-                left.designation(),
-                right.designation(),
-                |a, _| a.clone(),
-            );
-            if left.extent().is_none()
-                && right.extent().is_none()
-                && !left.extent_is_known()
-                && !right.extent_is_known()
-                && let Some((a, b)) = left.opaque_extent().zip(right.opaque_extent())
-            {
-                self.equality_graph
-                    .admitted
-                    .extent_graph
-                    .insert(a, b, |a, _| a.clone());
-            }
-            self.equality_graph.admitted.pointer_value_classes.insert(
-                left,
-                right,
-                super::pointer_designations::prefer_pointer,
-            );
-            self.equality_graph.add_pointer_value_equality(left, right);
-        } else {
-            self.equality_graph.admitted.pointer_value_equalities = self
-                .equality_graph
-                .admitted
-                .pointer_value_equalities
-                .without_value(&key);
-            self.equality_graph.admitted.designation_graph.remove(
-                left.designation(),
-                right.designation(),
-                |a, _| a.clone(),
-            );
-            if left.extent().is_none()
-                && right.extent().is_none()
-                && !left.extent_is_known()
-                && !right.extent_is_known()
-                && let Some((a, b)) = left.opaque_extent().zip(right.opaque_extent())
-            {
-                self.equality_graph
-                    .admitted
-                    .extent_graph
-                    .remove(a, b, |a, _| a.clone());
-            }
-            self.equality_graph.admitted.pointer_value_classes.remove(
-                left,
-                right,
-                super::pointer_designations::prefer_pointer,
-            );
-            self.rebuild_equality_graph();
+                .extent_graph
+                .insert(a, b, |a, _| a.clone());
         }
+        self.equality_graph.admitted.pointer_value_classes.insert(
+            left,
+            right,
+            super::pointer_designations::prefer_pointer,
+        );
+        self.equality_graph.add_pointer_value_equality(left, right);
     }
 
-    fn adjust_algebraic_graph_equality(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_algebraic_graph_equality(&mut self, proposition: &Proposition) {
         let (left, right) = match proposition {
             Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => (a, b),
             Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true) => {
@@ -4128,39 +4037,14 @@ impl PureFactContext {
         } else {
             (right_atom, left_atom)
         };
-        let count = self
-            .equality_graph
+        self.equality_graph
             .admitted
             .algebraic_graph_equalities
-            .get(&edge)
-            .copied()
-            .unwrap_or(0);
-        if insert {
-            self.equality_graph
-                .admitted
-                .algebraic_graph_equalities
-                .insert(edge, count + 1);
-            self.equality_graph.add_algebraic_equality(left, right);
-        } else if count > 1 {
-            self.equality_graph
-                .admitted
-                .algebraic_graph_equalities
-                .insert(edge, count - 1);
-        } else {
-            self.equality_graph
-                .admitted
-                .algebraic_graph_equalities
-                .remove(&edge);
-            self.rebuild_equality_graph();
-        }
+            .insert(edge, ());
+        self.equality_graph.add_algebraic_equality(left, right);
     }
 
-    fn adjust_uint64_graph_equality(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
+    fn adjust_uint64_graph_equality(&mut self, condition: &ConditionTerm, value: bool) {
         let (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
@@ -4173,7 +4057,7 @@ impl PureFactContext {
         else {
             return;
         };
-        let edge = if insert {
+        let edge = {
             let edge = (
                 super::equality_graph::MachineAtom::uint64(crate::kernel::canonical_term(left)),
                 super::equality_graph::MachineAtom::uint64(crate::kernel::canonical_term(right)),
@@ -4183,47 +4067,12 @@ impl PureFactContext {
                 .uint64_input_edges
                 .insert(condition.clone(), edge.clone());
             edge
-        } else {
-            let Some(edge) = self
-                .equality_graph
-                .admitted
-                .uint64_input_edges
-                .get(condition)
-                .cloned()
-            else {
-                return;
-            };
-            self.equality_graph
-                .admitted
-                .uint64_input_edges
-                .remove(condition);
-            edge
         };
-        let count = self
-            .equality_graph
+        self.equality_graph
             .admitted
             .uint64_graph_equalities
-            .get(&edge)
-            .copied()
-            .unwrap_or(0);
-        if insert {
-            self.equality_graph
-                .admitted
-                .uint64_graph_equalities
-                .insert(edge, count + 1);
-            self.equality_graph.add_uint64_equality(left, right);
-        } else if count > 1 {
-            self.equality_graph
-                .admitted
-                .uint64_graph_equalities
-                .insert(edge, count - 1);
-        } else {
-            self.equality_graph
-                .admitted
-                .uint64_graph_equalities
-                .remove(&edge);
-            self.rebuild_equality_graph();
-        }
+            .insert(edge, ());
+        self.equality_graph.add_uint64_equality(left, right);
     }
 
     pub(in crate::kernel) fn uint64_values_known_equal(
@@ -4237,26 +4086,16 @@ impl PureFactContext {
     /// [`Self::adjust_int32_graph_equality_spelled`] for the fact, and for a native 8- or
     /// 16-bit comparison also for the `int32` comparison of its widenings,
     /// the same fact (rule K8), which the index reads.
-    fn adjust_int32_graph_equality(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
-        self.adjust_int32_graph_equality_spelled(condition, value, insert);
+    fn adjust_int32_graph_equality(&mut self, condition: &ConditionTerm, value: bool) {
+        self.adjust_int32_graph_equality_spelled(condition, value);
         if let Some(widened) =
             crate::kernel::machine_integer::comparison::narrow_fact_widening(condition)
         {
-            self.adjust_int32_graph_equality_spelled(&widened, value, insert);
+            self.adjust_int32_graph_equality_spelled(&widened, value);
         }
     }
 
-    fn adjust_int32_graph_equality_spelled(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
+    fn adjust_int32_graph_equality_spelled(&mut self, condition: &ConditionTerm, value: bool) {
         if !value {
             return;
         }
@@ -4286,10 +4125,9 @@ impl PureFactContext {
             }
             _ => return,
         };
-        // Count exact premises under the canonical edge rather than interning
+        // File exact premises under the canonical edge rather than interning
         // raw MemoryLoad payloads. Raw interning can compare whole snapshots
-        // across verification arenas. Counts preserve independent spellings
-        // that canonicalize to the same edge when one premise is withdrawn.
+        // across verification arenas.
         let atom = |view: MachineOperandView<'_>| match view {
             MachineOperandView::Legacy(term) => {
                 super::equality_graph::MachineAtom::int32(crate::kernel::canonical_term(term))
@@ -4298,54 +4136,12 @@ impl PureFactContext {
                 super::equality_graph::MachineAtom::from_operand(MachineIntegerType::Int32, view)
             }
         };
-        let edge = if insert {
-            let edge = (atom(left), atom(right));
-            self.equality_graph
-                .admitted
-                .int32_input_edges
-                .insert(condition.clone(), edge.clone());
-            edge
-        } else {
-            let Some(edge) = self
-                .equality_graph
-                .admitted
-                .int32_input_edges
-                .get(condition)
-                .cloned()
-            else {
-                return;
-            };
-            self.equality_graph
-                .admitted
-                .int32_input_edges
-                .remove(condition);
-            edge
-        };
-        let count = self
-            .equality_graph
+        let edge = (atom(left), atom(right));
+        self.equality_graph
             .admitted
             .int32_graph_equalities
-            .get(&edge)
-            .copied()
-            .unwrap_or(0);
-        if insert {
-            self.equality_graph
-                .admitted
-                .int32_graph_equalities
-                .insert(edge, count + 1);
-            self.equality_graph.add_int32_equality_views(left, right);
-        } else if count > 1 {
-            self.equality_graph
-                .admitted
-                .int32_graph_equalities
-                .insert(edge, count - 1);
-        } else {
-            self.equality_graph
-                .admitted
-                .int32_graph_equalities
-                .remove(&edge);
-            self.rebuild_equality_graph();
-        }
+            .insert(edge, ());
+        self.equality_graph.add_int32_equality_views(left, right);
     }
 
     /// Diagnostic-only access to already admitted read equalities.
@@ -4564,63 +4360,7 @@ impl PureFactContext {
         Self::fingerprint(4, &(variable, key, value))
     }
 
-    #[cfg(test)]
-    fn withdraw_typed_pointer_read_definition(&mut self, condition: &ConditionTerm, value: bool) {
-        if !value {
-            return;
-        }
-        let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } = condition
-        else {
-            return;
-        };
-        let definition = match (left.as_ref(), right.as_ref()) {
-            (MachineTerm::Variable(variable), MachineTerm::MemoryLoad(memory, address, _))
-            | (MachineTerm::MemoryLoad(memory, address, _), MachineTerm::Variable(variable)) => {
-                (*variable, memory, address.as_ref())
-            }
-            _ => return,
-        };
-        let (variable, memory, address) = definition;
-        let key = (memory.arena_id(), address.clone());
-        let definitions = self
-            .equality_graph
-            .admitted
-            .typed_pointer_read_definitions
-            .get(&variable)
-            .cloned()
-            .unwrap_or_default();
-        if !definitions.contains_key(&key) {
-            return;
-        }
-        let pointer_value = &definitions.get(&key).expect("checked above").0;
-        self.content_fingerprint ^=
-            Self::typed_pointer_read_fingerprint(variable, &key, pointer_value);
-        let definitions = definitions.without_key(&key);
-        self.equality_graph.admitted.typed_pointer_read_definitions = if definitions.is_empty() {
-            self.equality_graph
-                .admitted
-                .typed_pointer_read_definitions
-                .without_key(&variable)
-        } else {
-            self.equality_graph
-                .admitted
-                .typed_pointer_read_definitions
-                .with_inserted(variable, definitions)
-        };
-        self.rebuild_equality_graph();
-    }
-
-    fn adjust_pointer_offset_alias(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
+    fn adjust_pointer_offset_alias(&mut self, condition: &ConditionTerm, value: bool) {
         let (left, right) = match condition {
             ConditionTerm::PointerOffsetEqual(left, right) => (left.as_ref(), right.as_ref()),
             ConditionTerm::PointerValueEqual(left, right) if left.block == right.block => {
@@ -4636,7 +4376,7 @@ impl PureFactContext {
         } else {
             ConditionTerm::PointerOffsetEqual(Box::new(right.clone()), Box::new(left.clone()))
         };
-        let source = self.adjust_pointer_address_source(key, condition, insert);
+        let source = self.adjust_pointer_address_source(key, condition);
         let retained = source.is_some();
         for (key, alias) in [(left, right), (right, left)] {
             let aliases = self
@@ -4688,11 +4428,7 @@ impl PureFactContext {
                     .with_inserted(key.clone(), aliases)
             };
         }
-        if insert {
-            self.equality_graph.add_offset_equality(left, right);
-        } else if !retained {
-            self.rebuild_equality_graph();
-        }
+        self.equality_graph.add_offset_equality(left, right);
     }
 
     /// The offsets with a same-block exact alias whose root atom is `root`
@@ -4853,7 +4589,7 @@ impl PureFactContext {
             .map(|(condition, value)| (condition.clone(), *value))
             .collect::<Vec<_>>();
         for (condition, value) in facts {
-            self.adjust_null_pointer_offset(&condition, value, true);
+            self.adjust_null_pointer_offset(&condition, value);
         }
     }
 
@@ -4884,7 +4620,6 @@ impl PureFactContext {
         proposition: &Proposition,
         left: &CMemoryRange,
         right: &CMemoryRange,
-        insert: bool,
     ) {
         let (Some(left_anchor), Some(right_anchor)) =
             (memory_range_anchor(left), memory_range_anchor(right))
@@ -4907,11 +4642,7 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            let facts = if insert {
-                facts.with_value(proposition.clone())
-            } else {
-                facts.without_value(proposition)
-            };
+            let facts = facts.with_value(proposition.clone());
             self.separated_anchor_pointers = if facts.is_empty() {
                 self.separated_anchor_pointers.without_key(&key)
             } else {
@@ -4925,11 +4656,7 @@ impl PureFactContext {
             .get(&key)
             .cloned()
             .unwrap_or_default();
-        let facts = if insert {
-            facts.with_value(proposition.clone())
-        } else {
-            facts.without_value(proposition)
-        };
+        let facts = facts.with_value(proposition.clone());
         self.separated_anchor_offsets = if facts.is_empty() {
             self.separated_anchor_offsets.without_key(&key)
         } else {
@@ -4952,7 +4679,7 @@ impl PureFactContext {
             })
             .collect::<Vec<_>>();
         for (proposition, left, right) in stated {
-            self.adjust_separated_anchor_offsets(&proposition, &left, &right, true);
+            self.adjust_separated_anchor_offsets(&proposition, &left, &right);
         }
     }
 
@@ -4970,7 +4697,7 @@ impl PureFactContext {
             .map(|(condition, value)| (condition.clone(), *value))
             .collect::<Vec<_>>();
         for (condition, value) in facts {
-            self.adjust_signed_order_bound(&condition, value, true);
+            self.adjust_signed_order_bound(&condition, value);
         }
     }
 
@@ -4983,12 +4710,11 @@ impl PureFactContext {
             .cloned()
             .collect::<Vec<_>>();
         for condition in conditions {
-            self.adjust_memory_load_condition_index(&condition, true);
+            self.adjust_memory_load_condition_index(&condition);
         }
         self.equality_graph.admitted.scalar_evidence_inputs = Default::default();
-        self.equality_graph.admitted.scalar_dependency_inputs = Default::default();
         self.equality_graph.admitted.scalar_dependencies = Default::default();
-        self.equality_graph.admitted.scalar_deferred_inputs = 0;
+        self.equality_graph.admitted.scalar_deferred_inputs = false;
         self.equality_graph.admitted.scalar_evidence_keys = Default::default();
         self.equality_graph.admitted.bitvector64_equality_facts =
             crate::persistent::PersistentMap::default();
@@ -5001,9 +4727,9 @@ impl PureFactContext {
             crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
-            self.adjust_scalar_evidence_input(condition, *value, true);
-            self.adjust_bitvector64_equality(condition, *value, true);
-            self.adjust_exact_constant_equality(condition, *value, true);
+            self.adjust_scalar_evidence_input(condition, *value);
+            self.adjust_bitvector64_equality(condition, *value);
+            self.adjust_exact_constant_equality(condition, *value);
         }
     }
 
@@ -5015,9 +4741,8 @@ impl PureFactContext {
     /// query from an equality it no longer holds.
     fn rebuild_condition_match_indexes(&mut self) {
         self.equality_graph.admitted.scalar_evidence_inputs = Default::default();
-        self.equality_graph.admitted.scalar_dependency_inputs = Default::default();
         self.equality_graph.admitted.scalar_dependencies = Default::default();
-        self.equality_graph.admitted.scalar_deferred_inputs = 0;
+        self.equality_graph.admitted.scalar_deferred_inputs = false;
         self.equality_graph.admitted.scalar_evidence_keys = Default::default();
         let prior_typed_reads = self
             .equality_graph
@@ -5052,7 +4777,6 @@ impl PureFactContext {
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.int32_graph_equalities =
             crate::persistent::PersistentMap::default();
-        self.equality_graph.admitted.int32_input_edges = Default::default();
         self.equality_graph.admitted.uint64_graph_equalities =
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.uint64_input_edges = Default::default();
@@ -5069,27 +4793,24 @@ impl PureFactContext {
         self.equality_graph.admitted.pointer_value_equalities = Default::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
-            self.adjust_pointer_class_fact(
-                &Proposition::ConditionIs(condition.clone(), *value),
-                true,
-            );
+            self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), *value));
             if matches!(condition, ConditionTerm::PointerValueEqual(..)) {
-                self.adjust_pointer_value_equality(
-                    &Proposition::ConditionIs(condition.clone(), *value),
-                    true,
-                );
+                self.adjust_pointer_value_equality(&Proposition::ConditionIs(
+                    condition.clone(),
+                    *value,
+                ));
             }
-            self.adjust_scalar_evidence_input(condition, *value, true);
-            self.adjust_condition_variable_index(condition, *value, true, false);
-            self.adjust_condition_side_indexes(condition, *value, true);
-            self.adjust_pointer_block_alias(condition, *value, true);
-            self.adjust_pointer_offset_alias(condition, *value, true);
-            self.adjust_int32_graph_equality(condition, *value, true);
-            self.adjust_uint64_graph_equality(condition, *value, true);
-            self.adjust_algebraic_graph_equality(
-                &Proposition::ConditionIs(condition.clone(), *value),
-                true,
-            );
+            self.adjust_scalar_evidence_input(condition, *value);
+            self.adjust_condition_variable_index(condition, *value, false);
+            self.adjust_condition_side_indexes(condition, *value);
+            self.adjust_pointer_block_alias(condition, *value);
+            self.adjust_pointer_offset_alias(condition, *value);
+            self.adjust_int32_graph_equality(condition, *value);
+            self.adjust_uint64_graph_equality(condition, *value);
+            self.adjust_algebraic_graph_equality(&Proposition::ConditionIs(
+                condition.clone(),
+                *value,
+            ));
             if self.equality_graph.add_condition(condition, *value) {
                 self.equality_graph
                     .admitted
@@ -5144,43 +4865,29 @@ impl PureFactContext {
         // do not reconstruct those fragments a second time.
         let propositions = self.prop_facts.clone();
         for proposition in propositions.scan_for_upkeep() {
-            self.adjust_algebraic_graph_equality(proposition, true);
-            self.adjust_pointer_class_fact(proposition, true);
-            self.adjust_pointer_value_equality(proposition, true);
+            self.adjust_algebraic_graph_equality(proposition);
+            self.adjust_pointer_class_fact(proposition);
+            self.adjust_pointer_value_equality(proposition);
         }
     }
 
-    /// Files or withdraws one condition fact under its match key and, when
+    /// Files one condition fact under its match key and, when
     /// a side is not an atom, among the open facts of its family.
-    fn adjust_condition_match_indexes(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
+    fn adjust_condition_match_indexes(&mut self, condition: &ConditionTerm, value: bool) {
         if matches!(condition, ConditionTerm::PointerValueEqual(..)) {
-            self.adjust_pointer_value_equality(
-                &Proposition::ConditionIs(condition.clone(), value),
-                insert,
-            );
+            self.adjust_pointer_value_equality(&Proposition::ConditionIs(condition.clone(), value));
         }
         let proposition = Proposition::ConditionIs(condition.clone(), value);
-        if !insert {
-            self.adjust_atomic_connection_fact(&proposition, false);
-        }
-        self.adjust_condition_variable_index(condition, value, insert, true);
-        self.adjust_condition_side_indexes(condition, value, insert);
-        if insert {
-            self.adjust_comparison_view(&proposition, true);
-            self.adjust_atomic_connection_fact(&proposition, true);
-        }
+        self.adjust_condition_variable_index(condition, value, true);
+        self.adjust_condition_side_indexes(condition, value);
+        self.adjust_comparison_view(&proposition);
+        self.adjust_atomic_connection_fact(&proposition);
     }
 
     fn adjust_condition_variable_index(
         &mut self,
         condition: &ConditionTerm,
         value: bool,
-        insert: bool,
         entry_charged: bool,
     ) {
         let _index_timing =
@@ -5192,10 +4899,7 @@ impl PureFactContext {
         if !entry_charged {
             crate::instrumentation::record_deterministic_work(1);
         }
-        if self
-            .shared_condition_variables
-            .adjust(condition, value, insert)
-        {
+        if self.shared_condition_variables.adjust(condition, value) {
             return;
         }
         let mut variables = BTreeSet::new();
@@ -5213,7 +4917,7 @@ impl PureFactContext {
             }
             self.snapshot_condition_variable_changes = self
                 .snapshot_condition_variable_changes
-                .with_inserted(condition.clone(), insert.then_some(value));
+                .with_inserted(condition.clone(), value);
             self.snapshot_condition_variables = std::sync::Arc::new(std::sync::OnceLock::new());
         } else {
             crate::instrumentation::record_deterministic_work(variables.len().saturating_sub(1));
@@ -5224,11 +4928,7 @@ impl PureFactContext {
                     .get(&variable)
                     .cloned()
                     .unwrap_or_default();
-                let facts = if insert {
-                    facts.with_inserted(indexed.clone(), value)
-                } else {
-                    facts.without_key(&indexed)
-                };
+                let facts = facts.with_inserted(indexed.clone(), value);
                 self.condition_facts_by_variable = if facts.is_empty() {
                     self.condition_facts_by_variable.without_key(&variable)
                 } else {
@@ -5239,23 +4939,14 @@ impl PureFactContext {
         }
     }
 
-    fn adjust_condition_side_indexes(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
-        if insert {
-            self.difference_graph.assume(condition, value);
-        } else {
-            self.difference_graph.withdraw(condition);
-        }
-        self.checked_scalar_facts.adjust(condition, value, insert);
+    fn adjust_condition_side_indexes(&mut self, condition: &ConditionTerm, value: bool) {
+        self.difference_graph.assume(condition, value);
+
+        self.checked_scalar_facts.adjust(condition, value);
+        self.observation_comparisons.adjust(condition, value);
         self.observation_comparisons
-            .adjust(condition, value, insert);
-        self.observation_comparisons
-            .adjust_native_equality(condition, value, insert);
-        self.contradictions.adjust(condition, value, insert);
+            .adjust_native_equality(condition, value);
+        self.contradictions.adjust(condition, value);
         if let (ConditionTerm::PointerOffsetEqual(left, right), true) = (condition, value) {
             for shape in [offset_snapshot_shape(left), offset_snapshot_shape(right)] {
                 let filed = self
@@ -5263,11 +4954,7 @@ impl PureFactContext {
                     .get(&shape)
                     .cloned()
                     .unwrap_or_default();
-                let filed = if insert {
-                    filed.with_value(condition.clone())
-                } else {
-                    filed.without_value(condition)
-                };
+                let filed = filed.with_value(condition.clone());
                 self.pointer_offset_equalities_by_shape = if filed.is_empty() {
                     self.pointer_offset_equalities_by_shape.without_key(&shape)
                 } else {
@@ -5283,11 +4970,7 @@ impl PureFactContext {
                     .get(operand.as_ref())
                     .cloned()
                     .unwrap_or_default();
-                let partners = if insert {
-                    partners.with_inserted(partner.as_ref().clone(), value)
-                } else {
-                    partners.without_key(partner.as_ref())
-                };
+                let partners = partners.with_inserted(partner.as_ref().clone(), value);
                 self.bool_equation_partners = if partners.is_empty() {
                     self.bool_equation_partners.without_key(operand.as_ref())
                 } else {
@@ -5299,12 +4982,9 @@ impl PureFactContext {
         if retained_order_bounds::order_view(condition, value)
             .is_some_and(|view| view.format == MachineIntegerType::Int32)
         {
-            self.order_condition_facts = if insert {
-                self.order_condition_facts
-                    .with_inserted(condition.clone(), value)
-            } else {
-                self.order_condition_facts.without_key(condition)
-            };
+            self.order_condition_facts = self
+                .order_condition_facts
+                .with_inserted(condition.clone(), value);
         }
         if let Some(key) = condition_match_key(condition) {
             let family = key.family();
@@ -5313,11 +4993,7 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            let facts = if insert {
-                facts.with_inserted(condition.clone(), value)
-            } else {
-                facts.without_key(condition)
-            };
+            let facts = facts.with_inserted(condition.clone(), value);
             self.condition_facts_by_sides = if facts.is_empty() {
                 self.condition_facts_by_sides.without_key(&key)
             } else {
@@ -5329,11 +5005,7 @@ impl PureFactContext {
                     .get(&family)
                     .cloned()
                     .unwrap_or_default();
-                let facts = if insert {
-                    facts.with_inserted(condition.clone(), value)
-                } else {
-                    facts.without_key(condition)
-                };
+                let facts = facts.with_inserted(condition.clone(), value);
                 self.open_condition_facts = if facts.is_empty() {
                     self.open_condition_facts.without_key(&family)
                 } else {
@@ -5343,7 +5015,7 @@ impl PureFactContext {
         }
     }
 
-    /// Files or withdraws one true equality under each side it pins to a
+    /// Files one true equality under each side it pins to a
     /// constant. The two sides are filed exactly as `exact_signed_constant`
     /// used to read them from a scan: the left side names the right side's
     /// constant, and the right side, unless it is the left side itself,
@@ -5351,26 +5023,16 @@ impl PureFactContext {
     /// [`Self::adjust_exact_constant_equality_spelled`] for the fact, and for a native 8- or
     /// 16-bit comparison also for the `int32` comparison of its widenings,
     /// the same fact (rule K8), which the index reads.
-    fn adjust_exact_constant_equality(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
-        self.adjust_exact_constant_equality_spelled(condition, value, insert);
+    fn adjust_exact_constant_equality(&mut self, condition: &ConditionTerm, value: bool) {
+        self.adjust_exact_constant_equality_spelled(condition, value);
         if let Some(widened) =
             crate::kernel::machine_integer::comparison::narrow_fact_widening(condition)
         {
-            self.adjust_exact_constant_equality_spelled(&widened, value, insert);
+            self.adjust_exact_constant_equality_spelled(&widened, value);
         }
     }
 
-    fn adjust_exact_constant_equality_spelled(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
+    fn adjust_exact_constant_equality_spelled(&mut self, condition: &ConditionTerm, value: bool) {
         use crate::kernel::machine_integer::{
             Relation,
             comparison::{comparison_view, structural_native_comparison_view},
@@ -5422,11 +5084,7 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            let facts = if insert {
-                facts.with_inserted(condition.clone(), constant)
-            } else {
-                facts.without_key(condition)
-            };
+            let facts = facts.with_inserted(condition.clone(), constant);
             self.equality_graph.admitted.exact_constant_equalities = if facts.is_empty() {
                 self.equality_graph
                     .admitted
@@ -5441,12 +5099,7 @@ impl PureFactContext {
         }
     }
 
-    fn adjust_bitvector64_equality(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
+    fn adjust_bitvector64_equality(&mut self, condition: &ConditionTerm, value: bool) {
         let admitted_endpoints = self
             .equality_graph
             .admitted
@@ -5456,7 +5109,6 @@ impl PureFactContext {
         self.equality_graph.admitted.wide_constant_sources.adjust(
             condition,
             value,
-            insert,
             admitted_endpoints.as_ref(),
         );
         let ConditionTerm::Compare {
@@ -5481,11 +5133,7 @@ impl PureFactContext {
                     .get(&key)
                     .cloned()
                     .unwrap_or_default();
-                let sources = if insert {
-                    sources.with_value(condition.clone())
-                } else {
-                    sources.without_value(condition)
-                };
+                let sources = sources.with_value(condition.clone());
                 if sources.is_empty() {
                     self.equality_graph.admitted.wide_load_sources.remove(&key);
                 } else {
@@ -5499,16 +5147,15 @@ impl PureFactContext {
         // A word whose recorded equal names a pointer address is filed by
         // class, so the integer-to-pointer cast finds the fact from an equal
         // word (`pointer_tags::form_of`). Other equalities file nothing.
-        if insert {
-            for (endpoint, other) in [
-                (left.as_ref(), right.as_ref()),
-                (right.as_ref(), left.as_ref()),
-            ] {
-                if mentions_pointer_address(other) {
-                    self.equality_graph.record_wide_equation_endpoint(endpoint);
-                }
+        for (endpoint, other) in [
+            (left.as_ref(), right.as_ref()),
+            (right.as_ref(), left.as_ref()),
+        ] {
+            if mentions_pointer_address(other) {
+                self.equality_graph.record_wide_equation_endpoint(endpoint);
             }
         }
+
         for (endpoint, other) in [
             (left.as_ref(), right.as_ref()),
             (right.as_ref(), left.as_ref()),
@@ -5524,21 +5171,7 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            let neighbors = if insert {
-                neighbors.with_inserted(other.clone(), condition.clone())
-            } else {
-                let reversed = ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    left: right.clone(),
-                    right: left.clone(),
-                };
-                if reversed != *condition && self.condition_facts.get(&reversed) == Some(&true) {
-                    neighbors.with_inserted(other.clone(), reversed)
-                } else {
-                    neighbors.without_key(other)
-                }
-            };
+            let neighbors = neighbors.with_inserted(other.clone(), condition.clone());
             if let Some(pointer) = endpoint.address_pointer() {
                 let bucket = memory_reasoning::parameter_alias_bucket(pointer);
                 let endpoints = self
@@ -5664,28 +5297,18 @@ impl PureFactContext {
     /// [`Self::adjust_scalar_evidence_input_spelled`] for the fact, and for a native 8- or
     /// 16-bit comparison also for the `int32` comparison of its widenings,
     /// the same fact (rule K8), which the index reads.
-    fn adjust_scalar_evidence_input(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
-        self.adjust_scalar_evidence_input_spelled(condition, value, insert);
+    fn adjust_scalar_evidence_input(&mut self, condition: &ConditionTerm, value: bool) {
+        self.adjust_scalar_evidence_input_spelled(condition, value);
         if let Some(widened) =
             crate::kernel::machine_integer::comparison::narrow_fact_widening(condition)
         {
-            self.adjust_scalar_evidence_input_spelled(&widened, value, insert);
+            self.adjust_scalar_evidence_input_spelled(&widened, value);
         }
     }
 
-    fn adjust_scalar_evidence_input_spelled(
-        &mut self,
-        condition: &ConditionTerm,
-        value: bool,
-        insert: bool,
-    ) {
+    fn adjust_scalar_evidence_input_spelled(&mut self, condition: &ConditionTerm, value: bool) {
         self.equality_graph
-            .adjust_scalar_evidence_input(condition, value, insert);
+            .adjust_scalar_evidence_input(condition, value);
     }
 
     /// The members of `term`'s recorded-equality class other than `term`:
@@ -5708,9 +5331,9 @@ impl PureFactContext {
         self.equality_graph.scalar_evidence_class_view(term)
     }
 
-    /// Files or withdraws `condition` under each memory load it mentions.
+    /// Files `condition` under each memory load it mentions.
     /// The cost is one walk of the condition and one update per load key.
-    fn adjust_memory_load_condition_index(&mut self, condition: &ConditionTerm, insert: bool) {
+    fn adjust_memory_load_condition_index(&mut self, condition: &ConditionTerm) {
         let mut keys = BTreeSet::new();
         collect_condition_memory_load_keys(condition, &mut keys);
         for key in keys {
@@ -5719,11 +5342,7 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            let bucket = if insert {
-                bucket.with_value(condition.clone())
-            } else {
-                bucket.without_value(condition)
-            };
+            let bucket = bucket.with_value(condition.clone());
             self.memory_load_condition_facts = if bucket.is_empty() {
                 self.memory_load_condition_facts.without_key(&key)
             } else {
@@ -5752,7 +5371,7 @@ impl PureFactContext {
             })
     }
 
-    fn adjust_stated_proposition_index(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_stated_proposition_index(&mut self, proposition: &Proposition) {
         let index = match &self.stated_proposition_index {
             StatedPropositionIndex::Built(index) => index,
             // A fact the key builder declines by shape never enters the
@@ -5766,10 +5385,7 @@ impl PureFactContext {
                 self.stated_proposition_index = StatedPropositionIndex::Deferred(
                     std::sync::Arc::new(DeferredStatedIndexNode {
                         parent: std::sync::Mutex::new(Some(node.clone())),
-                        adjustment: Some((
-                            crate::kernel::clone_proposition_iteratively(proposition),
-                            insert,
-                        )),
+                        adjustment: Some(crate::kernel::clone_proposition_iteratively(proposition)),
                         built: std::sync::OnceLock::new(),
                     }),
                 );
@@ -5787,7 +5403,7 @@ impl PureFactContext {
             }
             return;
         };
-        let index = adjust_stated_index(index, key, proposition, insert);
+        let index = adjust_stated_index(index, key, proposition);
         self.stated_proposition_index = StatedPropositionIndex::Built(index);
     }
 
@@ -5797,7 +5413,7 @@ impl PureFactContext {
             let Some(key) = crate::kernel::proof::proposition_identity_key(proposition) else {
                 return;
             };
-            index = adjust_stated_index(&index, key, proposition, true);
+            index = adjust_stated_index(&index, key, proposition);
         };
         for (condition, value) in self.condition_facts.scan_for_upkeep() {
             add(&Proposition::ConditionIs(condition.clone(), *value));
@@ -5846,7 +5462,6 @@ impl PureFactContext {
 
     fn clear_proposition_facts_with_graph_rebuild(&mut self, rebuild_graph: bool) {
         self.prop_facts = Default::default();
-        self.comparison_sources = Default::default();
         self.comparison_views = Default::default();
         self.equality_graph.clear_proposition_pointer_facts();
         self.execution_fact_projection = self
@@ -5900,56 +5515,7 @@ impl PureFactContext {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn retain_proposition_facts(&mut self, keep: impl FnMut(&Proposition) -> bool) {
-        let mut keep = keep;
-        self.prop_facts = self
-            .prop_facts
-            .iter()
-            .filter(|proposition| keep(proposition))
-            .cloned()
-            .collect();
-        let removed: Vec<_> = self
-            .comparison_sources
-            .iter()
-            .filter(|(source, _)| !self.prop_facts.contains(source))
-            .map(|(source, _)| source.clone())
-            .collect();
-        for source in removed {
-            self.adjust_comparison_view(&source, false);
-        }
-        self.execution_fact_projection = self
-            .execution_fact_projection
-            .iter()
-            .filter(|(key, _)| match key {
-                ContextFactKey::Condition(_) => true,
-                ContextFactKey::Proposition(proposition) => self.prop_facts.contains(proposition),
-            })
-            .map(|(key, fact)| (key.clone(), fact.clone()))
-            .collect();
-        self.rebuild_stated_proposition_index();
-        self.disjunction_facts = self
-            .prop_facts
-            .iter()
-            .filter(|fact| matches!(fact, Proposition::Or(_, _)))
-            .fold(
-                crate::kernel::fact_collections::ScanSet::default(),
-                |index, fact| index.with_value(crate::kernel::clone_proposition_iteratively(fact)),
-            );
-        self.rebuild_atomic_connection_facts();
-        self.rebuild_algebraic_constructor_field_equalities();
-        self.rebuild_memory_loadable_facts();
-        self.rebuild_memory_separation_facts();
-        self.recompute_content_fingerprint();
-        self.equality_graph.clear_proposition_pointer_facts();
-        let propositions = self.prop_facts.clone();
-        for proposition in propositions.iter() {
-            self.adjust_pointer_class_fact(proposition, true);
-        }
-        self.rebuild_algebraic_graph_equalities();
-    }
-
-    fn adjust_pointer_class_fact(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_pointer_class_fact(&mut self, proposition: &Proposition) {
         if !matches!(
             proposition,
             Proposition::Equal(..)
@@ -5967,7 +5533,7 @@ impl PureFactContext {
             _ => ContextFactKey::Proposition(proposition.clone()),
         };
         if let Some(source) = self.execution_fact_projection.get(&key) {
-            self.equality_graph.adjust_pointer_fact(source, insert);
+            self.equality_graph.adjust_pointer_fact(source, true);
         }
     }
 
@@ -5986,7 +5552,7 @@ impl PureFactContext {
             .map(|(left, right)| (left.clone(), right.clone()))
     }
 
-    fn adjust_memory_loadable_fact(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_memory_loadable_fact(&mut self, proposition: &Proposition) {
         if let Proposition::CMemoryReadDefined {
             pointer,
             value_type,
@@ -6002,11 +5568,7 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            let facts = if insert {
-                facts.with_value(proposition.clone())
-            } else {
-                facts.without_value(proposition)
-            };
+            let facts = facts.with_value(proposition.clone());
             self.memory_read_defined_facts = if facts.is_empty() {
                 self.memory_read_defined_facts.without_key(&key)
             } else {
@@ -6023,11 +5585,7 @@ impl PureFactContext {
             .get(&object)
             .cloned()
             .unwrap_or_default();
-        let object_facts = if insert {
-            object_facts.with_value(proposition.clone())
-        } else {
-            object_facts.without_value(proposition)
-        };
+        let object_facts = object_facts.with_value(proposition.clone());
         self.memory_loadable_object_facts = if object_facts.is_empty() {
             self.memory_loadable_object_facts.without_key(&object)
         } else {
@@ -6042,11 +5600,7 @@ impl PureFactContext {
             .get(&base.block)
             .cloned()
             .unwrap_or_default();
-        let block_facts = if insert {
-            block_facts.with_value(proposition.clone())
-        } else {
-            block_facts.without_value(proposition)
-        };
+        let block_facts = block_facts.with_value(proposition.clone());
         self.memory_loadable_facts = if block_facts.is_empty() {
             self.memory_loadable_facts.without_key(&base.block)
         } else {
@@ -6061,11 +5615,7 @@ impl PureFactContext {
             .cloned()
             .unwrap_or_default();
         let shape_facts = block_shapes.get(&fingerprint).cloned().unwrap_or_default();
-        let shape_facts = if insert {
-            shape_facts.with_value(proposition.clone())
-        } else {
-            shape_facts.without_value(proposition)
-        };
+        let shape_facts = shape_facts.with_value(proposition.clone());
         let block_shapes = if shape_facts.is_empty() {
             block_shapes.without_key(&fingerprint)
         } else {
@@ -6079,23 +5629,7 @@ impl PureFactContext {
         };
     }
 
-    #[cfg(test)]
-    fn rebuild_memory_loadable_facts(&mut self) {
-        self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
-        self.memory_loadable_facts = crate::persistent::PersistentMap::default();
-        self.memory_loadable_object_facts = crate::persistent::PersistentMap::default();
-        self.memory_loadable_shape_facts = crate::persistent::PersistentMap::default();
-        let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
-        for proposition in facts {
-            self.adjust_memory_loadable_fact(&proposition, true);
-        }
-    }
-
-    fn adjust_algebraic_constructor_field_equalities(
-        &mut self,
-        proposition: &Proposition,
-        insert: bool,
-    ) {
+    fn adjust_algebraic_constructor_field_equalities(&mut self, proposition: &Proposition) {
         let Some(fields) = algebraic_constructor_field_equalities(proposition) else {
             return;
         };
@@ -6108,11 +5642,8 @@ impl PureFactContext {
                 .get(&field)
                 .cloned()
                 .unwrap_or_default();
-            if insert {
-                sources = sources.with_inserted(source, ());
-            } else {
-                sources = sources.without_key(&source);
-            }
+            sources = sources.with_inserted(source, ());
+
             self.equality_graph
                 .admitted
                 .algebraic_constructor_field_equalities = if sources.is_empty() {
@@ -6129,20 +5660,16 @@ impl PureFactContext {
         }
     }
 
-    fn adjust_algebraic_constructor_conflict(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_algebraic_constructor_conflict(&mut self, proposition: &Proposition) {
         if !is_algebraic_constructor_conflict(proposition) {
             return;
         }
-        self.algebraic_constructor_conflicts = if insert {
-            self.algebraic_constructor_conflicts
-                .with_inserted(proposition.clone(), ())
-        } else {
-            self.algebraic_constructor_conflicts
-                .without_key(proposition)
-        };
+        self.algebraic_constructor_conflicts = self
+            .algebraic_constructor_conflicts
+            .with_inserted(proposition.clone(), ());
     }
 
-    fn adjust_algebraic_variable_constructor(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_algebraic_variable_constructor(&mut self, proposition: &Proposition) {
         let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = proposition else {
             return;
         };
@@ -6166,11 +5693,7 @@ impl PureFactContext {
             .get(&variable)
             .cloned()
             .unwrap_or_default();
-        let entries = if insert {
-            entries.with_inserted(proposition.clone(), constructor.clone())
-        } else {
-            entries.without_key(proposition)
-        };
+        let entries = entries.with_inserted(proposition.clone(), constructor.clone());
         self.algebraic_variable_constructors = if entries.is_empty() {
             self.algebraic_variable_constructors.without_key(&variable)
         } else {
@@ -6257,11 +5780,7 @@ impl PureFactContext {
         }
     }
 
-    fn adjust_algebraic_variable_variant_evidence(
-        &mut self,
-        proposition: &Proposition,
-        insert: bool,
-    ) {
+    fn adjust_algebraic_variable_variant_evidence(&mut self, proposition: &Proposition) {
         let Some((variable, evidence)) = Self::proposition_variant_evidence(proposition) else {
             return;
         };
@@ -6270,11 +5789,7 @@ impl PureFactContext {
             .get(&variable)
             .cloned()
             .unwrap_or_default();
-        let entries = if insert {
-            entries.with_inserted(proposition.clone(), evidence)
-        } else {
-            entries.without_key(proposition)
-        };
+        let entries = entries.with_inserted(proposition.clone(), evidence);
         self.algebraic_variable_variant_evidence = if entries.is_empty() {
             self.algebraic_variable_variant_evidence
                 .without_key(&variable)
@@ -6361,23 +5876,6 @@ impl PureFactContext {
                 );
                 Some(constructor)
             }
-        }
-    }
-
-    #[cfg(test)]
-    fn rebuild_algebraic_constructor_field_equalities(&mut self) {
-        self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
-        self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
-        self.equality_graph
-            .admitted
-            .algebraic_constructor_field_equalities = crate::persistent::PersistentMap::default();
-        self.algebraic_constructor_conflicts = crate::persistent::PersistentMap::default();
-        let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
-        for proposition in facts {
-            self.adjust_algebraic_constructor_field_equalities(&proposition, true);
-            self.adjust_algebraic_constructor_conflict(&proposition, true);
-            self.adjust_algebraic_variable_constructor(&proposition, true);
-            self.adjust_algebraic_variable_variant_evidence(&proposition, true);
         }
     }
 
@@ -6698,8 +6196,8 @@ impl PureFactContext {
         }
     }
 
-    /// Files or withdraws a memory effect fact under both of its memories.
-    fn adjust_memory_effect_fact(&mut self, proposition: &Proposition, insert: bool) {
+    /// Files a memory effect fact under both of its memories.
+    fn adjust_memory_effect_fact(&mut self, proposition: &Proposition) {
         let (Proposition::CMemoryEffectSummary { before, after, .. }
         | Proposition::CMemoryMutatesOnly { before, after, .. }
         | Proposition::CHeapAllocationFreed { before, after, .. }) = proposition
@@ -6712,11 +6210,7 @@ impl PureFactContext {
                 .get(memory)
                 .cloned()
                 .unwrap_or_default();
-            let summaries = if insert {
-                summaries.with_value(proposition.clone())
-            } else {
-                summaries.without_value(proposition)
-            };
+            let summaries = summaries.with_value(proposition.clone());
             self.memory_effect_facts = if summaries.is_empty() {
                 self.memory_effect_facts.without_key(memory)
             } else {
@@ -6760,23 +6254,19 @@ impl PureFactContext {
         })
     }
 
-    /// Files or withdraws a `CResourceContains` fact under its parent's key.
-    fn adjust_resource_contains_fact(&mut self, proposition: &Proposition, insert: bool) {
+    /// Files a `CResourceContains` fact under its parent's key.
+    fn adjust_resource_contains_fact(&mut self, proposition: &Proposition) {
         let Proposition::CResourceContains { parent, child } = proposition else {
             return;
         };
         match &**child {
             CResource::Memory(range) => {
-                self.memory_containers = with_adjusted_member(
-                    &self.memory_containers,
-                    &range.base().block,
-                    proposition,
-                    insert,
-                );
+                self.memory_containers =
+                    with_adjusted_member(&self.memory_containers, &range.base().block, proposition);
             }
             child => {
                 self.resource_containers =
-                    with_adjusted_member(&self.resource_containers, child, proposition, insert);
+                    with_adjusted_member(&self.resource_containers, child, proposition);
             }
         }
         let key = ResourceContainsKey::of(parent);
@@ -6785,11 +6275,7 @@ impl PureFactContext {
             .get(&key)
             .cloned()
             .unwrap_or_default();
-        let facts = if insert {
-            facts.with_value(proposition.clone())
-        } else {
-            facts.without_value(proposition)
-        };
+        let facts = facts.with_value(proposition.clone());
         self.resource_contains_facts = if facts.is_empty() {
             self.resource_contains_facts.without_key(&key)
         } else {
@@ -6885,11 +6371,11 @@ impl PureFactContext {
             .collect()
     }
 
-    fn adjust_memory_separation_fact(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_memory_separation_fact(&mut self, proposition: &Proposition) {
         let Some(pair) = Self::proposition_memory_separation(proposition) else {
             return;
         };
-        self.adjust_separated_anchor_offsets(proposition, &pair.0, &pair.1, insert);
+        self.adjust_separated_anchor_offsets(proposition, &pair.0, &pair.1);
         if let (Some(left), Some(right)) =
             (memory_range_anchor(&pair.0), memory_range_anchor(&pair.1))
         {
@@ -6903,7 +6389,6 @@ impl PureFactContext {
                     block: pair.1.base().block.clone(),
                     offset: right,
                 },
-                insert,
                 &self.equality_graph,
             );
         }
@@ -6915,14 +6400,8 @@ impl PureFactContext {
             .get(&key)
             .cloned()
             .unwrap_or_default();
-        if insert {
-            std::sync::Arc::make_mut(&mut pairs).push((proposition.clone(), pair.0, pair.1));
-        } else if let Some(position) = pairs
-            .iter()
-            .position(|candidate| candidate.0 == *proposition)
-        {
-            std::sync::Arc::make_mut(&mut pairs).remove(position);
-        }
+        std::sync::Arc::make_mut(&mut pairs).push((proposition.clone(), pair.0, pair.1));
+
         self.memory_separation_facts = if pairs.is_empty() {
             self.memory_separation_facts.without_key(&key)
         } else {
@@ -6930,41 +6409,9 @@ impl PureFactContext {
         };
     }
 
-    #[cfg(test)]
-    fn rebuild_memory_separation_facts(&mut self) {
-        self.resource_contains_facts = crate::persistent::PersistentMap::default();
-        self.memory_effect_facts = crate::persistent::PersistentMap::default();
-        self.memory_separation_facts = crate::persistent::PersistentMap::default();
-        self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
-        self.nonmemory_separations_by_side = crate::persistent::PersistentMap::default();
-        self.resource_containers = crate::persistent::PersistentMap::default();
-        self.memory_containers = crate::persistent::PersistentMap::default();
-        self.separation_facts = self
-            .prop_facts
-            .iter()
-            .filter(|fact| matches!(fact, Proposition::CResourceSeparate { .. }))
-            .fold(
-                crate::kernel::fact_collections::ScanSet::default(),
-                |index, fact| index.with_value(fact.clone()),
-            );
-        self.separation_facts_by_block = crate::persistent::PersistentMap::default();
-        self.wide_separation_facts_by_block = crate::persistent::PersistentMap::default();
-        self.separated_address_classes = Default::default();
-        let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
-        for proposition in facts {
-            self.adjust_separation_block_fact(&proposition, true);
-            self.adjust_memory_separation_fact(&proposition, true);
-            self.adjust_nonmemory_separation_fact(&proposition, true);
-            self.adjust_resource_contains_fact(&proposition, true);
-            self.adjust_memory_effect_fact(&proposition, true);
-        }
-        // The anchor index mirrors the stated separations just rebuilt.
-        self.rebuild_separated_anchor_offsets();
-    }
-
-    /// Files or withdraws a memory separation under each endpoint block,
+    /// Files a memory separation under each endpoint block,
     /// in the narrow or wide index according to its bounds.
-    fn adjust_separation_block_fact(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_separation_block_fact(&mut self, proposition: &Proposition) {
         let Some((left, right)) = proposition.memory_separation() else {
             return;
         };
@@ -6979,11 +6426,7 @@ impl PureFactContext {
         }
         for key in blocks {
             let bucket = index.get(&key).cloned().unwrap_or_default();
-            let bucket = if insert {
-                bucket.with_value(proposition.clone())
-            } else {
-                bucket.without_value(proposition)
-            };
+            let bucket = bucket.with_value(proposition.clone());
             *index = if bucket.is_empty() {
                 index.without_key(&key)
             } else {
@@ -6995,7 +6438,7 @@ impl PureFactContext {
     /// Maintains the residual separation-fact list: `CResourceSeparate`
     /// facts with at least one non-memory side, which the block-pair index
     /// cannot serve but whose containment may entail memory separation.
-    fn adjust_nonmemory_separation_fact(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_nonmemory_separation_fact(&mut self, proposition: &Proposition) {
         let Proposition::CResourceSeparate { left, right } = proposition else {
             return;
         };
@@ -7004,24 +6447,13 @@ impl PureFactContext {
         }
         for side in [left, right] {
             if !matches!(**side, CResource::Memory(_)) {
-                self.nonmemory_separations_by_side = with_adjusted_member(
-                    &self.nonmemory_separations_by_side,
-                    side,
-                    proposition,
-                    insert,
-                );
+                self.nonmemory_separations_by_side =
+                    with_adjusted_member(&self.nonmemory_separations_by_side, side, proposition);
             }
         }
         let residuals = std::sync::Arc::make_mut(&mut self.nonmemory_separation_facts);
-        if insert {
-            if !residuals.contains(proposition) {
-                residuals.push(proposition.clone());
-            }
-        } else if let Some(position) = residuals
-            .iter()
-            .position(|candidate| candidate == proposition)
-        {
-            residuals.remove(position);
+        if !residuals.contains(proposition) {
+            residuals.push(proposition.clone());
         }
     }
 
@@ -7149,7 +6581,7 @@ impl PureFactContext {
         self
     }
 
-    fn adjust_comparison_view(&mut self, source: &Proposition, insert: bool) {
+    fn adjust_comparison_view(&mut self, source: &Proposition) {
         if let Proposition::ConditionIs(condition, truth) = source
             && crate::kernel::machine_integer::comparison::comparison_view(condition, *truth)
                 .is_some()
@@ -7157,32 +6589,17 @@ impl PureFactContext {
             // Atomic aliases are maintained by the shared source index.
             return;
         }
-        if insert {
-            // Only the newly admitted proposition is visited, never the context.
-            let Some(view) = observation_comparisons::PropositionKey::for_source(source) else {
-                return;
-            };
-            let sources = self
-                .comparison_views
-                .get(&view)
-                .cloned()
-                .unwrap_or_default();
-            self.comparison_views
-                .insert(view.clone(), sources.with_value(source.clone()));
-            self.comparison_sources.insert(source.clone(), view);
-        } else if let Some(view) = self.comparison_sources.get(source).cloned() {
-            self.comparison_sources.remove(source);
-            let sources = self
-                .comparison_views
-                .get(&view)
-                .expect("comparison source")
-                .without_value(source);
-            if sources.is_empty() {
-                self.comparison_views.remove(&view);
-            } else {
-                self.comparison_views.insert(view, sources);
-            }
-        }
+        // Only the newly admitted proposition is visited, never the context.
+        let Some(view) = observation_comparisons::PropositionKey::for_source(source) else {
+            return;
+        };
+        let sources = self
+            .comparison_views
+            .get(&view)
+            .cloned()
+            .unwrap_or_default();
+        self.comparison_views
+            .insert(view, sources.with_value(source.clone()));
     }
 
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
@@ -7209,9 +6626,9 @@ impl PureFactContext {
                 ContextFactKey::Proposition(proposition.clone()),
                 std::sync::Arc::new(ExecutionPureFact::new(proposition.clone())),
             );
-            self.adjust_comparison_view(&proposition, true);
-            self.adjust_atomic_connection_fact(&proposition, true);
-            self.adjust_stated_proposition_index(&proposition, true);
+            self.adjust_comparison_view(&proposition);
+            self.adjust_atomic_connection_fact(&proposition);
+            self.adjust_stated_proposition_index(&proposition);
             if matches!(proposition, Proposition::Or(_, _)) {
                 self.disjunction_facts = self
                     .disjunction_facts
@@ -7222,51 +6639,20 @@ impl PureFactContext {
                     .separation_facts
                     .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
             }
-            self.adjust_algebraic_constructor_field_equalities(&proposition, true);
-            self.adjust_algebraic_constructor_conflict(&proposition, true);
-            self.adjust_algebraic_variable_constructor(&proposition, true);
-            self.adjust_algebraic_graph_equality(&proposition, true);
-            self.adjust_pointer_value_equality(&proposition, true);
-            self.adjust_algebraic_variable_variant_evidence(&proposition, true);
-            self.adjust_memory_loadable_fact(&proposition, true);
-            self.adjust_separation_block_fact(&proposition, true);
-            self.adjust_memory_separation_fact(&proposition, true);
-            self.adjust_nonmemory_separation_fact(&proposition, true);
-            self.adjust_resource_contains_fact(&proposition, true);
-            self.adjust_memory_effect_fact(&proposition, true);
-            self.adjust_pointer_class_fact(&proposition, true);
+            self.adjust_algebraic_constructor_field_equalities(&proposition);
+            self.adjust_algebraic_constructor_conflict(&proposition);
+            self.adjust_algebraic_variable_constructor(&proposition);
+            self.adjust_algebraic_graph_equality(&proposition);
+            self.adjust_pointer_value_equality(&proposition);
+            self.adjust_algebraic_variable_variant_evidence(&proposition);
+            self.adjust_memory_loadable_fact(&proposition);
+            self.adjust_separation_block_fact(&proposition);
+            self.adjust_memory_separation_fact(&proposition);
+            self.adjust_nonmemory_separation_fact(&proposition);
+            self.adjust_resource_contains_fact(&proposition);
+            self.adjust_memory_effect_fact(&proposition);
+            self.adjust_pointer_class_fact(&proposition);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn remove_proposition_fact(&mut self, proposition: &Proposition) {
-        if self.prop_facts.remove(proposition).is_some() {
-            self.adjust_comparison_view(proposition, false);
-            self.adjust_pointer_class_fact(proposition, false);
-            self.execution_fact_projection
-                .remove(&ContextFactKey::Proposition(proposition.clone()));
-            self.adjust_atomic_connection_fact(proposition, false);
-            self.adjust_stated_proposition_index(proposition, false);
-            if matches!(proposition, Proposition::Or(_, _)) {
-                self.disjunction_facts = self.disjunction_facts.without_value(proposition);
-            }
-            if matches!(proposition, Proposition::CResourceSeparate { .. }) {
-                self.separation_facts = self.separation_facts.without_value(proposition);
-            }
-            self.adjust_algebraic_constructor_field_equalities(proposition, false);
-            self.adjust_algebraic_constructor_conflict(proposition, false);
-            self.adjust_algebraic_variable_constructor(proposition, false);
-            self.adjust_algebraic_graph_equality(proposition, false);
-            self.adjust_pointer_value_equality(proposition, false);
-            self.adjust_algebraic_variable_variant_evidence(proposition, false);
-            self.adjust_memory_loadable_fact(proposition, false);
-            self.adjust_separation_block_fact(proposition, false);
-            self.adjust_memory_separation_fact(proposition, false);
-            self.adjust_nonmemory_separation_fact(proposition, false);
-            self.adjust_resource_contains_fact(proposition, false);
-            self.adjust_memory_effect_fact(proposition, false);
-            self.content_fingerprint ^= Self::fingerprint(2, proposition);
         }
     }
 
@@ -7767,7 +7153,7 @@ impl PureFactContext {
             return true;
         }
         // Compound comparison identities select a held source, not a newly
-        // manufactured alias. Exact membership stays separate for withdrawal.
+        // manufactured alias. Exact membership stays separate.
         if !self.comparison_views.is_empty()
             && matches!(
                 proposition,
@@ -7819,7 +7205,7 @@ impl PureFactContext {
     /// Semantic availability through the shared scoped equality graph and
     /// indexed stated separation and exact native Integer observations.
     /// Exact membership remains separate for
-    /// provenance, admission, and withdrawal.
+    /// provenance and admission.
     /// This performs no unfolding, implication search, or snapshot transport.
     pub(crate) fn contains_known(&self, proposition: &Proposition) -> bool {
         // An indexed conflict among checked scalar equalities makes this
@@ -8030,14 +7416,6 @@ impl PureFactContext {
         if self.restates_condition(&condition, value) {
             return self;
         }
-        #[cfg(test)]
-        let pointer_predecessor =
-            (value && matches!(condition, ConditionTerm::PointerValueEqual(..))).then(|| {
-                (
-                    std::sync::Arc::new(condition.clone()),
-                    std::sync::Arc::new(self.equality_graph.clone()),
-                )
-            });
         crate::kernel::eval::check_canonical_at_creation(&condition, value);
         if cfg!(debug_assertions) {
             let widths = &mut self.variable_widths;
@@ -8119,8 +7497,8 @@ impl PureFactContext {
             self = self.assume_condition_uncharged(resolved, resolved_value);
         }
         // The graph derives a same-block comparison's offset view. Do not
-        // publish it as an independent premise: it must disappear when the
-        // original pointer comparison is withdrawn.
+        // publish it as an independent premise: it holds only in contexts that
+        // hold the original pointer comparison.
         // An unsigned upper bound below the sign bit, the `uint32` order
         // `x <u c` with `c <= 2^31`, holds exactly when the signed pair
         // `0 <= x` and `x < c` does, so the pair is filed beside it, with the
@@ -8195,22 +7573,16 @@ impl PureFactContext {
                 value,
             ))),
         );
-        self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), value), true);
-        self.adjust_memory_load_condition_index(&condition, true);
-        self.adjust_stated_proposition_index(
-            &Proposition::ConditionIs(condition.clone(), value),
-            true,
-        );
-        self.adjust_signed_order_bound(&condition, value, true);
-        self.adjust_null_pointer_offset(&condition, value, true);
-        self.adjust_pointer_block_alias(&condition, value, true);
-        self.adjust_pointer_offset_alias(&condition, value, true);
-        self.adjust_int32_graph_equality(&condition, value, true);
-        self.adjust_uint64_graph_equality(&condition, value, true);
-        self.adjust_algebraic_graph_equality(
-            &Proposition::ConditionIs(condition.clone(), value),
-            true,
-        );
+        self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), value));
+        self.adjust_memory_load_condition_index(&condition);
+        self.adjust_stated_proposition_index(&Proposition::ConditionIs(condition.clone(), value));
+        self.adjust_signed_order_bound(&condition, value);
+        self.adjust_null_pointer_offset(&condition, value);
+        self.adjust_pointer_block_alias(&condition, value);
+        self.adjust_pointer_offset_alias(&condition, value);
+        self.adjust_int32_graph_equality(&condition, value);
+        self.adjust_uint64_graph_equality(&condition, value);
+        self.adjust_algebraic_graph_equality(&Proposition::ConditionIs(condition.clone(), value));
         if value
             && matches!(
                 condition,
@@ -8220,11 +7592,11 @@ impl PureFactContext {
             self.composition_object_resources
                 .advance_memory_equalities(&self);
         }
-        self.adjust_scalar_evidence_input(&condition, value, true);
-        self.adjust_bitvector64_equality(&condition, value, true);
-        self.adjust_exact_constant_equality(&condition, value, true);
+        self.adjust_scalar_evidence_input(&condition, value);
+        self.adjust_bitvector64_equality(&condition, value);
+        self.adjust_exact_constant_equality(&condition, value);
 
-        self.adjust_condition_match_indexes(&condition, value, true);
+        self.adjust_condition_match_indexes(&condition, value);
         if self.equality_graph.add_condition(&condition, value) {
             self.equality_graph
                 .admitted
@@ -8237,15 +7609,6 @@ impl PureFactContext {
             self.admit_bool_binder_truths(&condition);
         }
         self.content_fingerprint ^= Self::fingerprint(1, &(condition, value));
-        #[cfg(test)]
-        if let Some((source, graph)) = pointer_predecessor {
-            self.pointer_value_undo = Some(std::sync::Arc::new(PointerValueUndo {
-                source,
-                graph,
-                conditions: self.condition_facts.clone(),
-                propositions: self.prop_facts.clone(),
-            }));
-        }
         self
     }
 
@@ -8480,7 +7843,7 @@ impl PureFactContext {
         facts
     }
 
-    fn adjust_atomic_connection_fact(&mut self, proposition: &Proposition, insert: bool) {
+    fn adjust_atomic_connection_fact(&mut self, proposition: &Proposition) {
         // These scalar dependencies already live in the shared syntax index;
         // this fragment has no snapshot, block, or algebraic dependencies.
         if let Proposition::ConditionIs(condition, _) = proposition
@@ -8535,11 +7898,7 @@ impl PureFactContext {
         crate::instrumentation::record_deterministic_work(extra_work);
         let shared = SharedIndexFact::new(proposition.clone());
         if all_keys.is_empty() {
-            self.atomic_ground_facts = if insert {
-                self.atomic_ground_facts.with_value(shared.clone())
-            } else {
-                self.atomic_ground_facts.without_value(&shared)
-            };
+            self.atomic_ground_facts = self.atomic_ground_facts.with_value(shared.clone());
         }
         for key in keys {
             let mut bucket = self
@@ -8552,17 +7911,9 @@ impl PureFactContext {
             } else {
                 &mut bucket.propositions
             };
-            *facts = if insert {
-                facts.with_value(shared.clone())
-            } else {
-                facts.without_value(&shared)
-            };
+            *facts = facts.with_value(shared.clone());
             if matches!(proposition, Proposition::Or(..)) {
-                bucket.disjunctions = if insert {
-                    bucket.disjunctions.with_value(shared.clone())
-                } else {
-                    bucket.disjunctions.without_value(&shared)
-                };
+                bucket.disjunctions = bucket.disjunctions.with_value(shared.clone());
             }
             self.atomic_connection_facts =
                 if bucket.conditions.is_empty() && bucket.propositions.is_empty() {
@@ -8572,11 +7923,7 @@ impl PureFactContext {
                 };
         }
         if matches!(proposition, Proposition::ForAll { .. }) {
-            self.atomic_quantified_facts = if insert {
-                self.atomic_quantified_facts.with_value(shared.clone())
-            } else {
-                self.atomic_quantified_facts.without_value(&shared)
-            };
+            self.atomic_quantified_facts = self.atomic_quantified_facts.with_value(shared.clone());
             for key in UniversalConclusionKey::of(proposition) {
                 crate::instrumentation::record_deterministic_work(1);
                 let bucket = self
@@ -8584,11 +7931,7 @@ impl PureFactContext {
                     .get(&key)
                     .cloned()
                     .unwrap_or_default();
-                let bucket = if insert {
-                    bucket.with_value(shared.clone())
-                } else {
-                    bucket.without_value(&shared)
-                };
+                let bucket = bucket.with_value(shared.clone());
                 self.universals_by_conclusion = if bucket.is_empty() {
                     self.universals_by_conclusion.without_key(&key)
                 } else {
@@ -8623,14 +7966,14 @@ impl PureFactContext {
         self.universals_by_conclusion = crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
         for (condition, value) in conditions.scan_for_upkeep() {
-            self.adjust_atomic_connection_fact(
-                &Proposition::ConditionIs(condition.clone(), *value),
-                true,
-            );
+            self.adjust_atomic_connection_fact(&Proposition::ConditionIs(
+                condition.clone(),
+                *value,
+            ));
         }
         let propositions = self.prop_facts.clone();
         for proposition in propositions.scan_for_upkeep() {
-            self.adjust_atomic_connection_fact(proposition, true);
+            self.adjust_atomic_connection_fact(proposition);
         }
     }
 
@@ -8792,16 +8135,8 @@ impl PureFactContext {
                 for variable in variables {
                     crate::instrumentation::record_deterministic_work(1);
                     let facts = index.get(&variable).cloned().unwrap_or_default();
-                    let facts = if let Some(value) = value {
-                        facts.with_inserted(indexed.clone(), *value)
-                    } else {
-                        facts.without_key(&indexed)
-                    };
-                    index = if facts.is_empty() {
-                        index.without_key(&variable)
-                    } else {
-                        index.with_inserted(variable, facts)
-                    };
+                    index =
+                        index.with_inserted(variable, facts.with_inserted(indexed.clone(), *value));
                 }
             }
             if reasoning_interrupted() {
@@ -9007,87 +8342,6 @@ impl PureFactContext {
             || matches!(proposition,
                 Proposition::ConditionIs(condition @ ConditionTerm::Compare { .. }, truth)
                 if self.observation_comparisons.source(condition, *truth).is_some())
-    }
-
-    /// Test-only negative control: remove one premise and repair its indexes.
-    /// This may rebuild derived indexes or defer rebuilding until a later query.
-    /// Production branches retain the parent context and extend a cheap clone.
-    #[cfg(test)]
-    pub(crate) fn without_exact_fact(&self, proposition: &Proposition) -> Self {
-        let mut weakened = self.clone();
-        match proposition {
-            Proposition::ConditionIs(condition, value) => {
-                if weakened.condition_facts.get(condition) == Some(value) {
-                    weakened.forget_condition_fact(condition, *value);
-                }
-                weakened.remove_proposition_fact(proposition);
-            }
-            Proposition::Not(body) => match body.as_ref() {
-                Proposition::ConditionIs(condition, value)
-                    if weakened.condition_facts.get(condition) == Some(&!*value) =>
-                {
-                    weakened.forget_condition_fact(condition, !*value);
-                }
-                _ => weakened.remove_proposition_fact(proposition),
-            },
-            _ => weakened.remove_proposition_fact(proposition),
-        }
-        weakened
-    }
-
-    #[cfg(test)]
-    fn forget_condition_fact(&mut self, condition: &ConditionTerm, assumed: bool) {
-        crate::instrumentation::record_deterministic_work(1);
-        let predecessor = self.pointer_value_undo.take().filter(|undo| {
-            assumed
-                && undo.source.as_ref() == condition
-                && undo.conditions.shares_root_with(&self.condition_facts)
-                && undo.propositions.ptr_eq(&self.prop_facts)
-        });
-        self.restoring_pointer_graph = predecessor.map(|undo| undo.graph.clone());
-        self.condition_facts = self.condition_facts.without_key(condition);
-        if self
-            .equality_graph
-            .admitted
-            .congruence_conditions
-            .contains_key(condition)
-        {
-            self.equality_graph
-                .admitted
-                .congruence_conditions
-                .remove(condition);
-            self.rebuild_equality_graph();
-        }
-        self.adjust_pointer_class_fact(
-            &Proposition::ConditionIs(condition.clone(), assumed),
-            false,
-        );
-        self.execution_fact_projection
-            .remove(&ContextFactKey::Condition(condition.clone()));
-        self.adjust_condition_match_indexes(condition, assumed, false);
-        self.adjust_stated_proposition_index(
-            &Proposition::ConditionIs(condition.clone(), assumed),
-            false,
-        );
-        self.adjust_signed_order_bound(condition, assumed, false);
-        self.adjust_null_pointer_offset(condition, assumed, false);
-        self.adjust_pointer_block_alias(condition, assumed, false);
-        self.adjust_pointer_offset_alias(condition, assumed, false);
-        self.adjust_int32_graph_equality(condition, assumed, false);
-        self.adjust_uint64_graph_equality(condition, assumed, false);
-        self.adjust_algebraic_graph_equality(
-            &Proposition::ConditionIs(condition.clone(), assumed),
-            false,
-        );
-        self.withdraw_typed_pointer_read_definition(condition, assumed);
-        self.adjust_scalar_evidence_input(condition, assumed, false);
-        self.adjust_bitvector64_equality(condition, assumed, false);
-        self.adjust_exact_constant_equality(condition, assumed, false);
-        self.adjust_memory_load_condition_index(condition, false);
-        if let Some(graph) = self.restoring_pointer_graph.take() {
-            self.equality_graph = graph.as_ref().clone();
-        }
-        self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), assumed));
     }
 
     /// Like [`Self::restricted_to_facts`], but keeping every condition fact
@@ -9774,12 +9028,6 @@ mod contained_range_endpoint_graph_tests {
             &endpoint(9_330_002),
             &parent,
         ));
-        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-        assert!(!exact_less_equal_for_memory_resolution(
-            &endpoint(9_330_001),
-            &endpoint(9_330_002),
-            &withdrawn,
-        ));
     }
 
     #[test]
@@ -9800,10 +9048,6 @@ mod contained_range_endpoint_graph_tests {
         ));
         assert!(!memory_range_contained_for_memory_resolution(
             &child, &parent, &bare,
-        ));
-        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-        assert!(!memory_range_contained_for_memory_resolution(
-            &child, &parent, &withdrawn,
         ));
         let other_base = child.with_bounds(
             Pointer::symbolic(Variable(9_330_004)),
@@ -9851,17 +9095,6 @@ mod contained_range_endpoint_graph_tests {
             &lower,
             &endpoint(9_330_002),
             &bare,
-        ));
-        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-        assert!(!exact_less_equal_for_memory_resolution(
-            &endpoint(9_330_002),
-            &upper,
-            &withdrawn,
-        ));
-        assert!(!exact_less_equal_for_memory_resolution(
-            &lower,
-            &endpoint(9_330_002),
-            &withdrawn,
         ));
     }
 
@@ -11535,11 +10768,6 @@ mod stated_requirement_tests {
                 .restricted_to_facts(&[], &[])
                 .states_required_goal(&renamed)
         );
-        assert!(
-            !context
-                .without_exact_fact(&requirement(100, "fact"))
-                .states_required_goal(&renamed)
-        );
 
         let sibling = PureFactContext::new();
         assert!(!sibling.states_required_goal(&renamed));
@@ -11560,41 +10788,6 @@ mod stated_requirement_tests {
         let guarded = Proposition::Implies(Box::new(disjunction), Box::new(conjunction));
         assert!(context.states_required_goal(&guarded));
         assert!(!PureFactContext::new().states_required_goal(&guarded));
-    }
-
-    #[test]
-    fn exhausted_identity_maintenance_fails_closed_after_fact_removal() {
-        let fact = requirement(60_000, "fact");
-        let renamed = requirement(60_001, "goal");
-        let context = PureFactContext::new().assume_proposition(fact.clone());
-        assert!(context.states_required_goal(&renamed));
-        let tactic = crate::instrumentation::TacticEvent {
-            source_tactic_path: None,
-            claim: "stated_requirement_index_budget".into(),
-            tactic_index: 0,
-            tactic_name: "stated_requirement_index_budget".into(),
-            class: "simple".into(),
-            statement_index: 0,
-            source_index: 0,
-        };
-        let limits = crate::instrumentation::TacticWorkLimits {
-            simple: 1,
-            smart: 1,
-            control: 1,
-        };
-        let (weakened, _) = crate::instrumentation::with_tactic_work_limits(limits, || {
-            crate::instrumentation::collect(|| {
-                crate::instrumentation::emit(
-                    crate::instrumentation::VerificationEvent::TacticStarted(tactic.clone()),
-                );
-                let weakened = context.without_exact_fact(&fact);
-                crate::instrumentation::emit(
-                    crate::instrumentation::VerificationEvent::TacticFailed(tactic.clone()),
-                );
-                weakened
-            })
-        });
-        assert!(!weakened.states_required_goal(&renamed));
     }
 
     #[cfg(test)]
@@ -11985,7 +11178,7 @@ mod integer_observation_tests {
     }
 
     #[test]
-    fn compound_numeric_comparison_views_retain_each_source_and_withdrawal() {
+    fn compound_numeric_comparison_views_match_their_sources() {
         let _session = crate::kernel::VerificationSession::enter();
         let make = |n: i64| {
             Proposition::Or(
@@ -12030,10 +11223,6 @@ mod integer_observation_tests {
         assert!(context.contains_proposition_fact(&view));
         assert!(context.prop_facts.contains(&first));
         assert!(!context.prop_facts.contains(&view));
-        context.remove_proposition_fact(&first);
-        assert!(context.contains_proposition_fact(&view));
-        context.remove_proposition_fact(&second);
-        assert!(!context.contains_proposition_fact(&view));
     }
 
     #[test]
@@ -12115,7 +11304,6 @@ mod integer_observation_tests {
                     ))));
                     assert!(!parent.contains_known(&goal));
                     assert!(!child.contains_known(&Proposition::ConditionIs(native, !value)));
-                    assert!(!child.without_exact_fact(&source).contains_known(&goal));
                 }
             }
         }
@@ -12135,12 +11323,12 @@ mod integer_observation_tests {
                 crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(&native)
                     .unwrap();
             let source = Proposition::ConditionIs(source, true);
-            let facts = PureFactContext::new().assume_proposition(source.clone());
+            let facts = PureFactContext::new().assume_proposition(source);
             let goal = Proposition::ConditionIs(promoted.clone(), truth);
             assert!(facts.contains_known(&goal), "{ty:?}");
             assert_eq!(facts.decide(&promoted), Some(truth));
             assert!(!facts.contains_assumed_exact(&goal));
-            assert!(!facts.without_exact_fact(&source).contains_known(&goal));
+            assert!(!PureFactContext::new().contains_known(&goal));
         }
     }
 
@@ -12155,11 +11343,10 @@ mod integer_observation_tests {
             let source = ConditionTerm::IntegerEqual(observe(ty, 1850), observe(ty, 1851));
             let (native, truth) = native_comparison_of_integer_observation(&source, true).unwrap();
             let source = Proposition::ConditionIs(source, true);
-            let facts = PureFactContext::new()
-                .assume_condition(native, !truth)
-                .assume_proposition(source.clone());
+            let native_only = PureFactContext::new().assume_condition(native, !truth);
+            let facts = native_only.clone().assume_proposition(source);
             assert!(facts.is_inconsistent(), "{ty:?}");
-            assert!(!facts.without_exact_fact(&source).is_inconsistent());
+            assert!(!native_only.is_inconsistent());
         }
         let bound = ConditionTerm::IntegerLessEqual(
             observe(MachineIntegerType::UInt64, 1852),
@@ -12190,14 +11377,13 @@ mod integer_observation_tests {
             ),
             true,
         );
-        let facts = PureFactContext::new()
-            .assume_proposition(source.clone())
-            .assume_condition(
-                ConditionTerm::signed_less_than(word(1863), rearranged),
-                true,
-            );
+        let order = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_less_than(word(1863), rearranged),
+            true,
+        );
+        let facts = order.clone().assume_proposition(source);
         assert!(facts.is_inconsistent());
-        assert!(!facts.without_exact_fact(&source).is_inconsistent());
+        assert!(!order.is_inconsistent());
     }
 
     #[test]
@@ -12226,9 +11412,7 @@ mod integer_observation_tests {
             assert_eq!(facts.decide(&condition), Some(truth));
         }
         assert_eq!(
-            facts
-                .without_exact_fact(&source)
-                .signed_interval_past_exclusions(&word(1879)),
+            PureFactContext::new().signed_interval_past_exclusions(&word(1879)),
             Some((i64::from(i32::MIN), i64::from(i32::MAX)))
         );
     }
@@ -12243,10 +11427,10 @@ mod integer_observation_tests {
         };
         let source =
             Proposition::ConditionIs(ConditionTerm::IntegerEqual(sum(1870), sum(1871)), true);
-        let facts = PureFactContext::new().assume_proposition(source.clone());
+        let facts = PureFactContext::new().assume_proposition(source);
         let goal = Proposition::ConditionIs(ConditionTerm::equal(word(1870), word(1871)), true);
         assert!(facts.contains_known(&goal));
-        assert!(!facts.without_exact_fact(&source).contains_known(&goal));
+        assert!(!PureFactContext::new().contains_known(&goal));
     }
 
     #[test]
@@ -12260,15 +11444,14 @@ mod integer_observation_tests {
         );
         let order = ConditionTerm::signed_less_than(left, right);
         let mut index = contradictions::ContextContradictions::default();
-        index.adjust(&order, true, true);
-        index.adjust(&equality, true, true);
+        index.adjust(&order, true);
+        index.adjust(&equality, true);
         assert!(index.index(Vec::new).is_contradictory());
         let source = Proposition::ConditionIs(equality, true);
-        let facts = PureFactContext::new()
-            .assume_condition(order, true)
-            .assume_proposition(source.clone());
+        let ordered = PureFactContext::new().assume_condition(order, true);
+        let facts = ordered.clone().assume_proposition(source);
         assert!(facts.is_inconsistent());
-        assert!(!facts.without_exact_fact(&source).is_inconsistent());
+        assert!(!ordered.is_inconsistent());
     }
 
     #[test]
@@ -12286,11 +11469,11 @@ mod integer_observation_tests {
             ),
             true,
         );
-        let facts = PureFactContext::new().assume_proposition(source.clone());
+        let facts = PureFactContext::new().assume_proposition(source);
         let goal = Proposition::ConditionIs(ConditionTerm::equal(word(1880), word(1881)), false);
         assert!(facts.contains_known(&goal));
         assert!(!facts.contains_assumed_exact(&goal));
-        assert!(!facts.without_exact_fact(&source).contains_known(&goal));
+        assert!(!PureFactContext::new().contains_known(&goal));
         let impossible = Proposition::ConditionIs(
             ConditionTerm::IntegerNotEqual(
                 observe_sum(word(1880), word(1881)),
@@ -12298,13 +11481,12 @@ mod integer_observation_tests {
             ),
             true,
         );
-        let facts = PureFactContext::new().assume_proposition(impossible.clone());
+        let facts = PureFactContext::new().assume_proposition(impossible);
         assert!(facts.is_inconsistent());
-        assert!(!facts.without_exact_fact(&impossible).is_inconsistent());
     }
 
     #[test]
-    fn shared_bound_provenance_selects_written_source_and_respects_withdrawal() {
+    fn shared_bound_provenance_selects_written_source() {
         use crate::kernel::machine_integer::comparison::condition_for_operand_views;
         use crate::kernel::{KernelTermImport, MachineOperandView};
         let _session = crate::kernel::VerificationSession::enter();
@@ -12336,7 +11518,6 @@ mod integer_observation_tests {
         };
         assert_eq!(select(&child), Some(source.clone()));
         assert_eq!(select(&parent), None);
-        assert_eq!(select(&child.without_exact_fact(&source)), None);
         assert_eq!(select(&child), Some(source.clone()));
         for _ in 0..2 {
             let (_, used) = collect_reasoning_provenance(|| {
@@ -12359,16 +11540,14 @@ mod integer_observation_tests {
             ConditionTerm::unsigned_less_equal(word(1810), MachineTerm::constant(100)),
             true,
         );
-        let facts = PureFactContext::new()
-            .assume_proposition(first.clone())
-            .assume_proposition(second.clone());
-        let facts = facts.without_exact_fact(&first);
-        assert!(facts.contains_known(&goal));
-        assert!(!facts.without_exact_fact(&second).contains_known(&goal));
+        for source in [first, second] {
+            let facts = PureFactContext::new().assume_proposition(source);
+            assert!(facts.contains_known(&goal));
+        }
     }
 
     #[test]
-    fn signed_bound_selection_preserves_sources_polarity_and_withdrawal() {
+    fn signed_bound_selection_preserves_sources_and_polarity() {
         for (ty, width) in [
             (MachineIntegerType::Int32, SignedDefinedWidth::Int32),
             (MachineIntegerType::Int64, SignedDefinedWidth::Int64),
@@ -12386,16 +11565,10 @@ mod integer_observation_tests {
             let selected = child.signed_constant_bound_facts(width, &word(1815));
             assert_eq!(selected.len(), 1);
             assert!(selected[0] == first || selected[0] == second);
-            let child = child.without_exact_fact(&first);
+            let second_only = PureFactContext::new().assume_proposition(second.clone());
             assert_eq!(
-                child.signed_constant_bound_facts(width, &word(1815)),
-                vec![second.clone()]
-            );
-            assert!(
-                child
-                    .without_exact_fact(&second)
-                    .signed_constant_bound_facts(width, &word(1815))
-                    .is_empty()
+                second_only.signed_constant_bound_facts(width, &word(1815)),
+                vec![second]
             );
             assert_eq!(
                 parent.signed_constant_bound_facts(width, &word(1815)),
@@ -12422,13 +11595,13 @@ mod integer_observation_tests {
                 .0
             };
             let source = Proposition::ConditionIs(original, true);
-            let facts = PureFactContext::new()
-                .assume_proposition(source.clone())
+            let weakened = PureFactContext::new()
                 .assume_condition(native(1821, 1822), true)
                 .assume_condition(
                     ConditionTerm::IntegerLessThan(observe(ty, 1820), observe(ty, 1823)),
                     true,
                 );
+            let facts = weakened.clone().assume_proposition(source);
             let goal = Proposition::ConditionIs(native(1820, 1822), true);
             assert!(facts.contains_known(&goal), "{ty:?}");
             let order = native_comparison_of_integer_observation(
@@ -12441,7 +11614,6 @@ mod integer_observation_tests {
                 facts.contains_known(&Proposition::ConditionIs(order.clone(), true)),
                 "{ty:?}"
             );
-            let weakened = facts.without_exact_fact(&source);
             assert!(!weakened.contains_known(&goal));
             assert!(!weakened.contains_known(&Proposition::ConditionIs(order, true)));
         }
@@ -13383,9 +12555,10 @@ mod annotated_numeric_pointer_condition_tests {
                 &CPointerValue::new(p.clone(), CType::Int32Pointer),
                 &CPointerValue::new(q.clone(), CType::Int32Pointer)
             ));
-            let withdrawn =
-                context.without_exact_fact(&Proposition::ConditionIs(source.clone(), value));
-            assert_eq!(withdrawn.fast_leaf_decision(&target, &[]), None);
+            assert_eq!(
+                PureFactContext::new().fast_leaf_decision(&target, &[]),
+                None
+            );
         }
     }
 }
@@ -13433,7 +12606,7 @@ pub(crate) struct OrderFactsByLower {
 }
 
 impl OrderFactsByLower {
-    fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+    fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
         fn file<K: Ord + Clone>(
             index: &mut crate::persistent::PersistentMap<
                 K,
@@ -13441,14 +12614,9 @@ impl OrderFactsByLower {
             >,
             key: K,
             condition: &ConditionTerm,
-            insert: bool,
         ) {
             let filed = index.get(&key).cloned().unwrap_or_default();
-            let filed = if insert {
-                filed.with_value(condition.clone())
-            } else {
-                filed.without_value(condition)
-            };
+            let filed = filed.with_value(condition.clone());
             *index = if filed.is_empty() {
                 index.without_key(&key)
             } else {
@@ -13463,11 +12631,8 @@ impl OrderFactsByLower {
         if view.format == MachineIntegerType::Int32 {
             if let Some(constant) = lower.word32_constant().map(|bits| i64::from(bits as i32)) {
                 let mut filed = self.constant.get(&constant).cloned().unwrap_or_default();
-                if insert {
-                    filed.insert(condition.clone());
-                } else {
-                    filed.remove(condition);
-                }
+                filed.insert(condition.clone());
+
                 if filed.is_empty() {
                     self.constant.remove(&constant);
                 } else {
@@ -13475,19 +12640,17 @@ impl OrderFactsByLower {
                 }
             }
             if let Some((_, pointer, kind)) = lower.read() {
-                file(&mut self.load, (pointer.clone(), kind), condition, insert);
+                file(&mut self.load, (pointer.clone(), kind), condition);
             }
             file(
                 &mut self.canonical,
                 Key::canonical(view.format, lower),
                 condition,
-                insert,
             );
             file(
                 &mut self.written,
                 Key::for_format(view.format, lower),
                 condition,
-                insert,
             );
         } else if let Some(kind) = condition_reasoning::WIDE_ORDER_FORMATS
             .iter()
@@ -13497,7 +12660,6 @@ impl OrderFactsByLower {
                 &mut self.wide[kind],
                 Key::canonical(view.format, lower),
                 condition,
-                insert,
             );
         }
     }
@@ -13692,20 +12854,14 @@ impl UniversalConclusionKey {
     }
 }
 
-/// `map` with `member` added to or withdrawn from the set under `key`, the
-/// key dropped when its set empties.
+/// `map` with `member` added to the set under `key`.
 fn with_adjusted_member<K: Ord + Clone, V: Ord + Clone>(
     map: &crate::persistent::PersistentMap<K, crate::persistent::PersistentSet<V>>,
     key: &K,
     member: &V,
-    insert: bool,
 ) -> crate::persistent::PersistentMap<K, crate::persistent::PersistentSet<V>> {
     let bucket = map.get(key).cloned().unwrap_or_default();
-    let bucket = if insert {
-        bucket.with_value(member.clone())
-    } else {
-        bucket.without_value(member)
-    };
+    let bucket = bucket.with_value(member.clone());
     if bucket.is_empty() {
         map.without_key(key)
     } else {

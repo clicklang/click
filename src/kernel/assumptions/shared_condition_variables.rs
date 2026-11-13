@@ -181,27 +181,14 @@ impl Index {
         self.sources.insert(fact, source);
     }
 
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) -> bool {
-        if insert {
-            if self.contains(condition) {
-                return true;
-            }
-            let Some(source) = Self::source(condition, value) else {
-                return false;
-            };
-            self.add_source(Fact::new(condition.clone()), source);
-        } else {
-            if !self.contains(condition) {
-                return false;
-            }
-            // Context restriction rebuilds the indexes. This removal path also
-            // serves exact withdrawal tests; it must restore singleton answers.
-            let sources = self.sources.without_key(&Fact::new(condition.clone()));
-            *self = Self::default();
-            for (fact, source) in sources.iter() {
-                self.add_source(fact.clone(), source.clone());
-            }
+    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) -> bool {
+        if self.contains(condition) {
+            return true;
         }
+        let Some(source) = Self::source(condition, value) else {
+            return false;
+        };
+        self.add_source(Fact::new(condition.clone()), source);
         true
     }
     pub(super) fn contains(&self, condition: &ConditionTerm) -> bool {
@@ -329,16 +316,6 @@ mod tests {
             Some((&first, true))
         );
         assert!(!parent.has_condition_variable(Variable(994702)));
-        let withdrawn = parent.without_exact_fact(&Proposition::ConditionIs(first.clone(), true));
-        assert!(!withdrawn.has_condition_variable(Variable(994700)));
-        let only_first = branch
-            .without_exact_fact(&Proposition::ConditionIs(second, false))
-            .without_exact_fact(&Proposition::ConditionIs(third, true))
-            .without_exact_fact(&Proposition::ConditionIs(native, true));
-        assert_eq!(
-            only_first.singleton_condition_variable(Variable(994700)),
-            Some((&first, true))
-        );
     }
 
     #[test]

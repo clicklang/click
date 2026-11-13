@@ -280,10 +280,8 @@ mod tests {
             );
         let compound = cases[1].clone();
         let compound_fact = ConditionTerm::equal(compound, MachineTerm::constant(9));
-        let compound_context = empty.clone().assume_condition(compound_fact.clone(), true);
-        let withdrawn =
-            compound_context.without_exact_fact(&Proposition::ConditionIs(compound_fact, true));
-        for facts in [empty, exact, bounded, compound_context, withdrawn] {
+        let compound_context = empty.clone().assume_condition(compound_fact, true);
+        for facts in [empty, exact, bounded, compound_context] {
             for term in &cases {
                 let expected = facts.simplify_bitvector_under_assumptions(term);
                 let input = S::index(T::Int32, term.clone());

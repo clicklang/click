@@ -151,16 +151,14 @@ fn equivalent_equality_spellings_use_bounded_lookups() {
                 _ => (offset(980_000, 980_001), offset(980_001, 980_000)),
             };
             for value in [false, true] {
-                let context = context.clone().assume_condition(fact.clone(), value);
+                let held = context.clone().assume_condition(fact.clone(), value);
                 let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    context.has_matching_condition_fact_for_memory_resolution(&goal, value)
+                    held.has_matching_condition_fact_for_memory_resolution(&goal, value)
                 });
                 assert!(found);
                 samples.push(work);
-                let withdrawn =
-                    context.without_exact_fact(&Proposition::ConditionIs(fact.clone(), value));
-                assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
-                assert!(!context.has_matching_condition_fact_for_memory_resolution(&goal, !value));
+                assert!(!context.has_matching_condition_fact_for_memory_resolution(&goal, value));
+                assert!(!held.has_matching_condition_fact_for_memory_resolution(&goal, !value));
             }
         }
         eprintln!("equivalent equality kind={kind}: {samples:?}");
@@ -247,9 +245,6 @@ fn aliased_memory_condition_matches_ignore_unrelated_facts() {
             });
             assert!(found);
             assert!(!held.has_matching_condition_fact_for_memory_resolution(&goal, !value));
-            let withdrawn =
-                held.without_exact_fact(&Proposition::ConditionIs(source.clone(), value));
-            assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
             samples.push((missing, hit));
         }
     }
@@ -288,9 +283,6 @@ fn unsigned_memory_condition_matches_ignore_unrelated_facts() {
             });
             assert!(found);
             assert!(!held.has_matching_condition_fact_for_memory_resolution(&goal, !value));
-            let withdrawn =
-                held.without_exact_fact(&Proposition::ConditionIs(source.clone(), value));
-            assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
             samples.push((missing, hit));
         }
     }

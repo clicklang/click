@@ -6938,9 +6938,14 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                             });
                         assert!(valid, "{name}: kernel rejected retained leaf");
                         check_work = work;
-                        for source in &premises {
+                        for omitted in &premises {
+                            let without = sources
+                                .iter()
+                                .filter(|source| *source != omitted)
+                                .cloned()
+                                .fold(PureFactContext::new(), PureFactContext::assume_proposition);
                             assert!(
-                                !derivation.check(&context.without_exact_fact(source)),
+                                !derivation.check(&without),
                                 "{name}: omitted required premise accepted"
                             );
                         }
@@ -7058,8 +7063,9 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
                 .all(|p| p == &source || p == &equality)
         );
         assert!(proof.check(&context));
-        assert!(!proof.check(&context.without_exact_fact(&source)));
-        assert!(!proof.check(&context.without_exact_fact(&equality)));
+        for single in [&source, &equality] {
+            assert!(!proof.check(&PureFactContext::new().assume_proposition(single.clone())));
+        }
         samples.push((size, work));
     }
     // Cold snapshot canonicalization may read the supplied snapshot. Its
@@ -7174,9 +7180,8 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             let (valid, check_work) =
                 crate::instrumentation::measure_deterministic_work(|| derivation.check(&available));
             assert!(valid);
-            for required in [&quantified, &bound] {
-                assert!(!derivation.check(&available.without_exact_fact(required)));
-            }
+            assert!(!derivation.check(&context(unrelated, false)));
+            assert!(!derivation.check(&PureFactContext::new().assume_proposition(bound.clone())));
             // Without the bound the instantiation's guard is not known.
             assert!(
                 crate::kernel::search::ProofSearch::derive_atomic_proposition(

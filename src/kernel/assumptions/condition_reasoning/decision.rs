@@ -3327,7 +3327,7 @@ mod shared_equality_dispatch_tests {
         assert!(leaked.is_empty(), "shared equality exports: {leaked:?}");
     }
     #[test]
-    fn offset_equality_sources_withdraw_without_leaking_to_sibling_contexts() {
+    fn offset_equality_sources_do_not_leak_to_sibling_contexts() {
         for truth in [false, true] {
             for width in [0, 4, 8] {
                 let _session = crate::kernel::VerificationSession::enter();
@@ -3369,8 +3369,6 @@ mod shared_equality_dispatch_tests {
                         "width={width}, truth={truth}"
                     );
                 }
-                let withdrawn = branch.without_exact_fact(&source);
-                assert_eq!(withdrawn.decide(&goal), None);
                 assert_eq!(empty.decide(&goal), None);
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
                 if width != 0 || truth {
@@ -3569,7 +3567,6 @@ mod wide_observation_tag_regression {
             Some(true)
         );
         assert_eq!(parent.decide(&goal), None);
-        assert_eq!(branch.without_exact_fact(&source).decide(&goal), None);
         assert_eq!(
             crate::kernel::KernelTermExport::machine_export_count(),
             exports
@@ -3605,7 +3602,7 @@ mod shared_offset_evidence_tests {
         );
         facts
             .equality_graph
-            .adjust_scalar_evidence_input(&source, true, true);
+            .adjust_scalar_evidence_input(&source, true);
         assert!(
             facts
                 .equality_graph
@@ -3613,21 +3610,11 @@ mod shared_offset_evidence_tests {
                 .scalar_evidence_keys
                 .is_empty()
         );
-        assert!(
-            facts
-                .equality_graph
-                .admitted
-                .scalar_dependency_inputs
-                .is_empty()
-        );
-        facts
-            .equality_graph
-            .adjust_scalar_evidence_input(&source, true, false);
         assert!(facts.equality_graph.admitted.scalar_dependencies.is_empty());
     }
 
     #[test]
-    fn shared_offset_evidence_preserves_native_sources_and_withdrawal() {
+    fn shared_offset_evidence_preserves_native_sources() {
         let _session = crate::kernel::VerificationSession::enter();
         let x = MachineTerm::Variable(Variable(1008100));
         let y = MachineTerm::Variable(Variable(1008101));
@@ -3673,16 +3660,12 @@ mod shared_offset_evidence_tests {
                 .pointer_offset_congruence_evidence(&left, &right)
                 .expect("original source rule");
             assert!(evidence.checks(&left, &right, &facts));
-            let withdrawn = facts.without_exact_fact(&Proposition::ConditionIs(
-                sources[0].0.clone(),
-                sources[0].1,
-            ));
-            assert!(!evidence.checks(&left, &right, &withdrawn));
-            assert!(
-                withdrawn
-                    .pointer_offset_congruence_evidence(&left, &right)
-                    .is_none()
-            );
+            let rest = sources[1..]
+                .iter()
+                .fold(PureFactContext::new(), |rest, (source, truth)| {
+                    rest.assume_condition(source.clone(), *truth)
+                });
+            assert!(!evidence.checks(&left, &right, &rest));
             assert!(
                 facts
                     .pointer_offset_congruence_evidence(&left, &offset(&b, 8))

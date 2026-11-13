@@ -759,8 +759,8 @@ fn indexed_lower_bound_decision_retains_shared_operands() {
         // Exercise the migrated index and dispatcher independently of the
         // full admission bridge, which still files a boxed compatibility fact.
         let mut facts = PureFactContext::new();
-        facts.checked_order_bounds.adjust(&lower, true, true);
-        facts.checked_order_bounds.adjust(&upper, true, true);
+        facts.checked_order_bounds.adjust(&lower, true);
+        facts.checked_order_bounds.adjust(&upper, true);
         for (value, expected) in [(2, Some(true)), (5, None), (8, Some(false))] {
             let query = ConditionTerm::IntegerGreaterEqual(
                 observed.clone().into(),

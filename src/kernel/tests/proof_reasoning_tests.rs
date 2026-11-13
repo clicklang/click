@@ -41,9 +41,17 @@ fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
         .expect("all arms are refuted");
     assert!(derivation.check(&context));
     assert_eq!(derivation.context_premises().len(), 4);
-    assert!(!derivation.check(&context.without_exact_fact(&disjunction)));
-    for case in &cases {
-        let without = context.without_exact_fact(&Proposition::Not(Box::new(case.clone())));
+    let negations = cases
+        .iter()
+        .fold(PureFactContext::new(), |negations, case| {
+            negations.assume_proposition(Proposition::Not(Box::new(case.clone())))
+        });
+    assert!(!derivation.check(&negations));
+    for skipped in &cases {
+        let mut without = PureFactContext::new().assume_proposition(disjunction.clone());
+        for case in cases.iter().filter(|case| *case != skipped) {
+            without = without.assume_proposition(Proposition::Not(Box::new(case.clone())));
+        }
         assert!(!derivation.check(&without));
         assert!(
             crate::kernel::search::ProofSearch::derive_proposition(&(without), &goal).is_none()
@@ -4911,9 +4919,6 @@ fn loadability_same_base_extent_uses_graph_for_byte_count() {
             .expect("the same-base loadable range should transport");
     assert!(derivation.check(&with_premise));
     assert!(!without_premise.proves_atomic_without_search(&goal));
-    let withdrawn =
-        with_premise.without_exact_fact(&Proposition::ConditionIs(premise.clone(), true));
-    assert!(!withdrawn.proves_atomic_without_search(&goal));
     let without_loadable = PureFactContext::new().assume_condition(premise, true);
     assert!(!without_loadable.proves_atomic_without_search(&goal));
     let other_base = Proposition::CMemoryLoadable {
@@ -5970,7 +5975,7 @@ fn required_obligation_discharge_uses_goal_connectives_without_search() {
         &held_or, &positive
     ));
     assert!(!required_obligation_is_exactly_discharged(
-        &held_or.without_exact_fact(&disjunction),
+        &PureFactContext::new(),
         &disjunction
     ));
     let implication = Proposition::Implies(Box::new(other.clone()), Box::new(nonnegative.clone()));
@@ -6324,8 +6329,6 @@ fn direct_constant_index_requires_written_premises_and_preserves_forks() {
         Some(7)
     );
     assert_eq!(context.bitvector_constant_from_direct_equalities(&a), None);
-    let removed = explicit.without_exact_fact(&Proposition::ConditionIs(pin.clone(), true));
-    assert_eq!(removed.bitvector_constant_from_direct_equalities(&a), None);
     let restricted = explicit.restricted_to_facts(&[(edge, true)], &[]);
     assert_eq!(
         restricted.bitvector_constant_from_direct_equalities(&a),
@@ -6445,12 +6448,6 @@ fn constant_normalization_classes_detect_ambiguity_in_any_insertion_order() {
         None
     );
 
-    let withdrawn = ambiguous.without_exact_fact(&Proposition::ConditionIs(conflict.clone(), true));
-    assert_eq!(
-        withdrawn.known_signed_constant_after_normalization(&counter(4)),
-        Some(4),
-        "withdrawing the conflict restores the chain's constant"
-    );
     let replaced = ambiguous.clone().assume_condition(conflict, false);
     assert!(replaced.is_inconsistent());
     assert_eq!(
@@ -6787,8 +6784,13 @@ fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
             .collect::<BTreeSet<_>>(),
         BTreeSet::from([lower.clone(), upper.clone(), pinned.clone()])
     );
-    for missing in [lower, upper, pinned] {
-        let restricted = facts.without_exact_fact(&missing);
+    let premises = [lower, upper, pinned];
+    for missing in &premises {
+        let restricted = premises
+            .iter()
+            .filter(|premise| *premise != missing)
+            .cloned()
+            .fold(PureFactContext::new(), PureFactContext::assume_proposition);
         assert!(!proof.check(&restricted));
         assert!(
             crate::kernel::search::ProofSearch::derive_solve_proposition(&(restricted), &goal)
@@ -7811,13 +7813,9 @@ fn required_obligation_connectives_use_graph_equalities_and_scoped_facts() {
         )),
     );
     let before = PureFactContext::new().assume_proposition(ab);
-    let after = before.clone().assume_proposition(bc.clone());
+    let after = before.clone().assume_proposition(bc);
     assert!(required_obligation_is_exactly_discharged(&after, &goal));
     assert!(!required_obligation_is_exactly_discharged(&before, &goal));
-    assert!(!required_obligation_is_exactly_discharged(
-        &after.without_exact_fact(&bc),
-        &goal
-    ));
 }
 
 #[test]
@@ -7836,11 +7834,6 @@ fn model_fact_clearing_and_restriction_keep_only_selected_graph_support() {
         .assume_condition(condition.clone(), true);
     let condition_only = both.with_only_proposition_facts(&[]);
     assert!(condition_only.contains_known(&equality));
-    assert!(
-        !condition_only
-            .without_exact_fact(&Proposition::ConditionIs(condition.clone(), true))
-            .contains_known(&equality)
-    );
     let proposition_only = both.restricted_to_facts(&[], std::slice::from_ref(&equality));
     assert_eq!(proposition_only.decide(&condition), Some(true));
     assert!(!both.restricted_to_facts(&[], &[]).contains_known(&equality));
@@ -8132,9 +8125,12 @@ fn pointer_predicate_matching_preserves_types_arguments_snapshots_and_scope() {
     assert!(joined.contains_known(&goal));
     assert!(!joined.contains_assumed_exact(&goal));
     assert!(!base.contains_known(&goal));
-    assert!(!joined.without_exact_fact(&ab).contains_known(&goal));
-    assert!(!joined.without_exact_fact(&cd).contains_known(&goal));
-    assert!(!joined.without_exact_fact(&source).contains_known(&goal));
+    let second = base.clone().assume_proposition(cd.clone());
+    assert!(!second.contains_known(&goal));
+    let unwitnessed = PureFactContext::new()
+        .assume_proposition(ab.clone())
+        .assume_proposition(cd.clone());
+    assert!(!unwitnessed.contains_known(&goal));
     let before = PureFactContext::new()
         .assume_proposition(ab)
         .assume_proposition(cd)
@@ -8213,29 +8209,17 @@ fn predicate_and_callback_lookup_share_late_pointer_class_merges() {
             .collect::<Vec<_>>(),
         vec!["Invoke"]
     );
-    let one_removed = joined.without_exact_fact(&source);
+    let sibling_only = PureFactContext::new()
+        .assume_proposition(sibling_source)
+        .assume_proposition(alias);
     assert!(
-        !one_removed.contains_known(&goal),
+        !sibling_only.contains_known(&goal),
         "a different state is not a predicate witness"
     );
     assert_eq!(
-        one_removed.function_contract_facts_for(&b).count(),
+        sibling_only.function_contract_facts_for(&b).count(),
         1,
         "the other checked contract witness remains"
-    );
-    assert_eq!(
-        one_removed
-            .without_exact_fact(&sibling_source)
-            .function_contract_facts_for(&b)
-            .count(),
-        0
-    );
-    assert_eq!(
-        joined
-            .without_exact_fact(&alias)
-            .function_contract_facts_for(&b)
-            .count(),
-        0
     );
     assert!(!base.contains_known(&goal));
 }

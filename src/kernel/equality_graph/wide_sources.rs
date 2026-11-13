@@ -14,7 +14,6 @@ impl WideEqualitySources {
         &mut self,
         condition: &ConditionTerm,
         truth: bool,
-        insert: bool,
         admitted_endpoints: Option<&(super::MachineAtom, super::MachineAtom)>,
     ) {
         let Some(view) = comparison_view(condition, truth) else {
@@ -50,11 +49,7 @@ impl WideEqualitySources {
         for (own, other) in [(&left, &right), (&right, &left)] {
             let mut neighbors = self.endpoints.get(own).cloned().unwrap_or_default();
             let sources = neighbors.get(other).cloned().unwrap_or_default();
-            let sources = if insert {
-                sources.with_value(source.clone())
-            } else {
-                sources.without_value(&source)
-            };
+            let sources = sources.with_value(source.clone());
             if sources.is_empty() {
                 neighbors.remove(other);
             } else {

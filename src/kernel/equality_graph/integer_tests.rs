@@ -23,7 +23,7 @@ fn alias(a: &AlgebraicTerm, b: &AlgebraicTerm) -> Proposition {
 }
 
 #[test]
-fn integer_count_facts_follow_early_and_late_model_aliases_and_withdrawal() {
+fn integer_count_facts_follow_early_and_late_model_aliases() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = model_type("IntegerModel", AlgebraicValueType::C(CType::Int32));
     let a = variable(&ty, 920_101);
@@ -36,6 +36,7 @@ fn integer_count_facts_follow_early_and_late_model_aliases_and_withdrawal() {
         let mut context = PureFactContext::new();
         if early {
             context = context.assume_proposition(same.clone());
+            assert!(!context.contains_known(&goal));
         }
         context = context.assume_proposition(premise.clone());
         if !early {
@@ -43,8 +44,6 @@ fn integer_count_facts_follow_early_and_late_model_aliases_and_withdrawal() {
             context = context.assume_proposition(same.clone());
         }
         assert!(context.contains_known(&goal));
-        assert!(!context.without_exact_fact(&same).contains_known(&goal));
-        assert!(!context.without_exact_fact(&premise).contains_known(&goal));
         assert!(
             !context
                 .with_only_proposition_facts(&[])
@@ -170,7 +169,7 @@ fn literal_integer_identities_join_classes_without_rewriting_terms() {
             true,
         );
         assert!(context.contains_known(&goal));
-        assert!(!context.without_exact_fact(&premise).contains_known(&goal));
+        assert!(!PureFactContext::new().contains_known(&goal));
         assert_ne!(operation, x);
     }
     for operation in [
@@ -262,7 +261,7 @@ fn integer_residue_projection_matches_the_legacy_wrapped_consequences() {
 }
 
 #[test]
-fn integer_residue_consequence_is_withdrawn_with_its_source() {
+fn integer_residue_consequence_needs_its_source() {
     let _session = crate::kernel::VerificationSession::enter();
     let x = MachineTerm::Variable(Variable(982703));
     let y = MachineTerm::Variable(Variable(982704));
@@ -279,7 +278,6 @@ fn integer_residue_consequence_is_withdrawn_with_its_source() {
     );
     let context = PureFactContext::new().assume_proposition(source.clone());
     assert!(context.contains_known(&goal));
-    assert!(!context.without_exact_fact(&source).contains_known(&goal));
     assert!(!context.restricted_to_facts(&[], &[]).contains_known(&goal));
 }
 

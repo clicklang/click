@@ -541,9 +541,9 @@ set. `is_inconsistent` reads that exact fact before consulting derived indexes.
 The false fact has ordinary proof syntax and survives premise reconstruction;
 explicitly restricting away that fact removes its authority. The regression
 `contradictory_branch_creation_does_not_rebuild_ambient_indexes` measures repeated
-contradictory branches beside 32, 128 and 512 unrelated facts. Test-only premise
-withdrawal can still invalidate these indexes; production branches retain their
-parent context instead.
+contradictory branches beside 32, 128 and 512 unrelated facts. Contexts only
+grow and fork: a branch retains its parent context, so no fact is ever
+withdrawn from these indexes.
 Nothing else is compared:
 two endpoints that only memory resolution, the add rule, or another theory
 rule could equate are not related, and neither is an alias guard to a
@@ -770,7 +770,7 @@ before the checked operation. Compound-query and carrier/snapshot controls remai
 
 Atomic certificate planning keeps persistent syntax adjacency for condition
 and proposition facts, keyed by value variables and explicit pointer blocks;
-filing or withdrawing a fact adjusts only its keys. Each complete fact is
+filing a fact adjusts only its keys. Each complete fact is
 shared across its buckets, so a wide premise costs its syntax once
 (`wide_atomic_premise_cloning_scales_with_its_syntax`). Candidate trials check
 named sources alone first, then walk only condition buckets connected to the

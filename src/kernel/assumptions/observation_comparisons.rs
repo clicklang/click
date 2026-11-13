@@ -355,12 +355,7 @@ pub(in crate::kernel) struct ObservationComparisons {
 }
 
 impl ObservationComparisons {
-    pub(super) fn adjust_native_equality(
-        &mut self,
-        condition: &ConditionTerm,
-        truth: bool,
-        insert: bool,
-    ) {
+    pub(super) fn adjust_native_equality(&mut self, condition: &ConditionTerm, truth: bool) {
         if !matches!(
             condition,
             ConditionTerm::Compare {
@@ -378,11 +373,7 @@ impl ObservationComparisons {
             .get(&key)
             .cloned()
             .unwrap_or_default();
-        let sources = if insert {
-            sources.with_value(source)
-        } else {
-            sources.without_value(&source)
-        };
+        let sources = sources.with_value(source);
         self.selected_native_equalities = if sources.is_empty() {
             self.selected_native_equalities.without_key(&key)
         } else {
@@ -416,7 +407,7 @@ impl ObservationComparisons {
             .next()
     }
 
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, truth: bool, insert: bool) {
+    pub(super) fn adjust(&mut self, condition: &ConditionTerm, truth: bool) {
         let source = Proposition::ConditionIs(condition.clone(), truth);
         if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
             use crate::kernel::machine_integer::comparison::ComparisonOperand;
@@ -445,11 +436,7 @@ impl ObservationComparisons {
                     operands: [left, right],
                 });
                 let sources = self.scaled_words.get(&key).cloned().unwrap_or_default();
-                let sources = if insert {
-                    sources.with_value(source.clone())
-                } else {
-                    sources.without_value(&source)
-                };
+                let sources = sources.with_value(source.clone());
                 self.scaled_words = if sources.is_empty() {
                     self.scaled_words.without_key(&key)
                 } else {
@@ -458,7 +445,7 @@ impl ObservationComparisons {
             }
             return;
         }
-        let keys = if insert {
+        let keys = {
             let keys = if let ConditionTerm::Overflows {
                 format,
                 op,
@@ -500,21 +487,11 @@ impl ObservationComparisons {
                 .keys_by_source
                 .with_inserted(source.clone(), keys.clone());
             keys
-        } else {
-            let Some(keys) = self.keys_by_source.get(&source).cloned() else {
-                return;
-            };
-            self.keys_by_source = self.keys_by_source.without_key(&source);
-            keys
         };
         for key in keys {
             crate::instrumentation::record_deterministic_work(1);
             let sources = self.sources.get(&key).cloned().unwrap_or_default();
-            let sources = if insert {
-                sources.with_value(source.clone())
-            } else {
-                sources.without_value(&source)
-            };
+            let sources = sources.with_value(source.clone());
             self.sources = if sources.is_empty() {
                 self.sources.without_key(&key)
             } else {
@@ -640,22 +617,20 @@ mod compound_observation_lookup_tests {
                         .cloned()
                 };
                 let exports = KernelTermExport::machine_export_count();
-                index.adjust(&source, truth, true);
+                index.adjust(&source, truth);
                 assert_eq!(
                     query(&index, truth),
                     (width == 4).then(|| Proposition::ConditionIs(source.clone(), truth))
                 );
                 assert!(query(&parent, truth).is_none());
                 assert!(query(&index, !truth).is_none());
-                index.adjust(&source, truth, false);
-                assert!(query(&index, truth).is_none());
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
             }
         }
     }
 
     #[test]
-    fn native_order_sources_retain_polarity_scope_and_withdrawal() {
+    fn native_order_sources_retain_polarity_and_scope() {
         use crate::kernel::machine_integer::comparison::condition_for_operand_views;
         use crate::kernel::{KernelTermImport, MachineOperandView as V};
         for format in [
@@ -693,7 +668,7 @@ mod compound_observation_lookup_tests {
                 );
                 let parent = PureFactContext::new();
                 let mut child = parent.clone();
-                child.adjust_signed_order_bound(&native, truth, true);
+                child.adjust_signed_order_bound(&native, truth);
                 let exports = KernelTermExport::machine_export_count();
                 let raw = comparison_view(&native, truth).unwrap();
                 let observed =
@@ -724,15 +699,13 @@ mod compound_observation_lookup_tests {
                 );
                 assert!(child.selected_comparison_source(&query, !truth).is_none());
                 assert!(parent.selected_comparison_source(&query, truth).is_none());
-                child.adjust_signed_order_bound(&native, truth, false);
-                assert!(child.selected_comparison_source(&query, truth).is_none());
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
             }
         }
     }
 
     #[test]
-    fn compound_comparison_lookup_is_bidirectional_and_tracks_source_withdrawal() {
+    fn compound_comparison_lookup_is_bidirectional() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
         let root = KernelTerm::machine_binary_shared(
@@ -782,13 +755,6 @@ mod compound_observation_lookup_tests {
         assert!(!native_context.contains_assumed_exact(&shared_guard));
         assert!(shared_context.proves_exact(&native_guard));
         assert!(!native_context.proves_exact(&guard(native, true)));
-        let both = native_context.assume_proposition(shared_guard.clone());
-        let one = both.without_exact_fact(&native_guard);
-        assert!(one.proves_exact(&native_guard));
-        let none = one.without_exact_fact(&shared_guard);
-        assert!(!none.proves_exact(&native_guard));
-        assert!(!none.proves_exact(&shared_guard));
-        assert!(both.proves_exact(&shared_guard));
     }
 }
 

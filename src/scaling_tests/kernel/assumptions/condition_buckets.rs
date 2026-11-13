@@ -80,14 +80,6 @@ fn direct_order_extrema_preserve_truth_formats_and_branch_isolation() {
     let child = parent.clone().assume_condition(tighter.clone(), true);
     assert_eq!(child.indexed_constant_interval(&x), Some((10, 80)));
     assert_eq!(parent.indexed_constant_interval(&x), Some((10, 99)));
-    let weakened = child.without_exact_fact(&Proposition::ConditionIs(tighter, true));
-    assert_eq!(weakened.indexed_constant_interval(&x), Some((10, 99)));
-    let weakened = weakened.without_exact_fact(&Proposition::ConditionIs(upper, false));
-    assert!(!weakened.has_exact_strict_upper_bound(&x));
-    assert_eq!(
-        weakened.indexed_constant_interval(&x),
-        Some((10, i64::from(i32::MAX)))
-    );
 }
 
 #[test]
@@ -115,7 +107,6 @@ fn growing_constant_bound_buckets_keep_extrema_and_update_cost_indexed() {
                 let mut index = facts.checked_order_bounds.clone();
                 index.adjust(
                     &ConditionTerm::signed_less_than(x.clone(), 50u32.into()),
-                    true,
                     true,
                 );
                 assert_eq!(index.interval(&x, false), Some((i64::from(i32::MIN), 49)));
@@ -245,7 +236,7 @@ fn contiguous_exclusion_queries_skip_runs_and_preserve_branches() {
     for size in [8u32, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let x = MachineTerm::Variable(Variable(973_000));
-        let mut facts = PureFactContext::new()
+        let mut halves = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::signed_less_equal(0u32.into(), x.clone()),
                 true,
@@ -255,12 +246,11 @@ fn contiguous_exclusion_queries_skip_runs_and_preserve_branches() {
                 true,
             );
         // Insert the two halves in opposite orders, joining the runs at the end.
-        for value in (0..size / 2)
-            .chain((size / 2 + 1..size).rev())
-            .chain([size / 2])
-        {
-            facts = facts.assume_condition(ConditionTerm::equal(x.clone(), value.into()), false);
+        for value in (0..size / 2).chain((size / 2 + 1..size).rev()) {
+            halves = halves.assume_condition(ConditionTerm::equal(x.clone(), value.into()), false);
         }
+        let joining = ConditionTerm::equal(x.clone(), (size / 2).into());
+        let facts = halves.clone().assume_condition(joining, false);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 assert!(facts.range_facts_force_equal(&x, &size.into()));
@@ -271,19 +261,9 @@ fn contiguous_exclusion_queries_skip_runs_and_preserve_branches() {
             }
         });
         samples.push(work);
-        let removed = ConditionTerm::equal(x.clone(), (size / 2).into());
-        let child = facts
-            .clone()
-            .without_exact_fact(&Proposition::ConditionIs(removed.clone(), false));
         assert_eq!(
-            child.signed_interval_past_exclusions(&x),
+            halves.signed_interval_past_exclusions(&x),
             Some((i64::from(size / 2), i64::from(size)))
-        );
-        assert!(facts.range_facts_force_equal(&x, &size.into()));
-        assert!(
-            child
-                .assume_condition(removed, false)
-                .range_facts_force_equal(&x, &size.into())
         );
     }
     assert!(
@@ -293,31 +273,26 @@ fn contiguous_exclusion_queries_skip_runs_and_preserve_branches() {
 }
 
 #[test]
-fn excluded_runs_keep_duplicate_sources_and_widths_separate() {
+fn excluded_runs_keep_widths_separate() {
     let _session = crate::kernel::VerificationSession::enter();
     let x = MachineTerm::Variable(Variable(974_000));
     let forward = ConditionTerm::equal(x.clone(), 0u32.into());
     let reverse = ConditionTerm::equal(0u32.into(), x.clone());
     let mut index = checked_scalar_facts::CheckedScalarFacts::default();
-    index.adjust(&forward, false, true);
-    index.adjust(&reverse, false, true);
-    index.adjust(&forward, false, false);
+    index.adjust(&forward, false);
+    index.adjust(&reverse, false);
     assert_eq!(
         index.past_exclusions(crate::kernel::MachineOperandView::Legacy(&x), 0, 3),
         (1, 3)
     );
-    index.adjust(&reverse, false, false);
-    assert_eq!(
-        index.past_exclusions(crate::kernel::MachineOperandView::Legacy(&x), 0, 3),
-        (0, 3)
-    );
+    let mut index = checked_scalar_facts::CheckedScalarFacts::default();
     let wide = ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
         left: x.clone().into(),
         right: MachineTerm::int64_constant(0).into(),
     };
-    index.adjust(&wide, false, true);
+    index.adjust(&wide, false);
     assert_eq!(
         index.past_exclusions(crate::kernel::MachineOperandView::Legacy(&x), 0, 3),
         (0, 3)

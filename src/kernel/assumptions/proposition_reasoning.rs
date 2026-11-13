@@ -4622,7 +4622,7 @@ impl PureFactContext {
     }
 
     /// Whether an exact positive offset-equality lookup can find a source.
-    /// This index is maintained with insertion and withdrawal of those facts.
+    /// This index is maintained as those facts are inserted.
     pub(in crate::kernel) fn has_recorded_pointer_offset_equalities(&self) -> bool {
         !self.pointer_offset_equalities_by_shape.is_empty()
     }
@@ -5328,8 +5328,8 @@ mod constant_prefix_certificate_tests {
             &upper,
             false,
         ));
-        let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(premise, true));
-        assert!(!withdrawn.checks_exact_signed_order_path(&path, &1u32.into(), &upper, true));
+        let empty = PureFactContext::new();
+        assert!(!empty.checks_exact_signed_order_path(&path, &1u32.into(), &upper, true));
     }
 }
 
@@ -5480,8 +5480,11 @@ mod annotated_alignment_conflict_tests {
         let branch = base.clone().assume_proposition(not_aligned.clone());
         assert!(branch.is_inconsistent());
         assert!(!base.is_inconsistent());
-        assert!(!branch.without_exact_fact(&aligned).is_inconsistent());
-        assert!(!branch.without_exact_fact(&not_aligned).is_inconsistent());
+        assert!(
+            !PureFactContext::new()
+                .assume_proposition(not_aligned)
+                .is_inconsistent()
+        );
     }
 }
 
@@ -5490,7 +5493,7 @@ mod congruent_condition_conflict_tests {
     use super::*;
 
     #[test]
-    fn equal_address_alignment_conflicts_follow_merges_and_withdrawal() {
+    fn equal_address_alignment_conflicts_follow_merges() {
         let p = Pointer::symbolic(Variable(971_001));
         let q = Pointer::symbolic(Variable(971_002));
         let equality =
@@ -5507,9 +5510,12 @@ mod congruent_condition_conflict_tests {
                 context = context.assume_proposition(fact);
             }
             assert!(context.is_inconsistent());
-            for fact in [&equality, &aligned, &not_aligned] {
-                assert!(!context.without_exact_fact(fact).is_inconsistent());
-            }
+        }
+        for alignment in [aligned.clone(), not_aligned.clone()] {
+            let unconflicted = PureFactContext::new()
+                .assume_proposition(equality.clone())
+                .assume_proposition(alignment);
+            assert!(!unconflicted.is_inconsistent());
         }
         let parent = PureFactContext::new()
             .assume_proposition(aligned)
@@ -5572,16 +5578,10 @@ mod comparison_operand_order_tests {
         ] {
             assert!(child.condition_matches(&fact, &goal));
             assert!(!parent.condition_matches(&fact, &goal));
-            assert!(
-                !child
-                    .without_exact_fact(&value_alias)
-                    .condition_matches(&fact, &goal)
-            );
-            assert!(
-                !child
-                    .without_exact_fact(&bound_alias)
-                    .condition_matches(&fact, &goal)
-            );
+            for alias in [&value_alias, &bound_alias] {
+                let partial = parent.clone().assume_proposition(alias.clone());
+                assert!(!partial.condition_matches(&fact, &goal));
+            }
         }
     }
 
@@ -6141,11 +6141,6 @@ mod retained_individual_order_tests {
             assert_eq!(step.premise(), &source);
             assert!(child.checks_exact_order_step(&step));
             assert!(!parent.checks_exact_order_step(&step));
-            assert!(
-                !child
-                    .without_exact_fact(&source)
-                    .checks_exact_order_step(&step)
-            );
             assert!(
                 child
                     .exact_direct_operand_order_step(

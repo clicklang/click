@@ -857,8 +857,6 @@ mod range_list_equality_graph_tests {
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
         assert!(!matches(&branch, &later));
         assert!(!matches(&parent, &right));
-        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-        assert!(!matches(&withdrawn, &right));
         assert!(!matches(
             &branch,
             &CMemoryRange::new_with_element_width(

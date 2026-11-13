@@ -2488,14 +2488,14 @@ mod tests {
             ConditionTerm::pointer_equal(query.clone(), owner.offset_by_bytes(24)),
             true,
         );
-        let assumptions = PureFactContext::new().assume_proposition(equality.clone());
+        let assumptions = PureFactContext::new().assume_proposition(equality);
         let range = CMemoryRange::new_with_element_width(owner, 0u32.into(), 8u32.into(), 4);
         let resources = ResourceContext::new_with_equalities(&assumptions)
             .unchecked_with_fact(CResourceFact::own_memory(range));
         let kept = crate::kernel::primitives::CallKeptRanges::new(resources, vec![], None);
         assert!(kept.holds_access(&query, 8, &assumptions));
         assert!(!kept.holds_access(&query, 12, &assumptions));
-        assert!(!kept.holds_access(&query, 8, &assumptions.without_exact_fact(&equality),));
+        assert!(!kept.holds_access(&query, 8, &PureFactContext::new()));
     }
 
     #[test]

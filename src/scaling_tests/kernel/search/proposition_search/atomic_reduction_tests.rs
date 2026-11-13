@@ -130,7 +130,12 @@ fn repeated_unsigned_and_integer_reductions_reuse_selected_evidence() {
                 );
                 assert!(derivation.check(&context));
                 for missing in &retained {
-                    assert!(!derivation.check(&context.without_exact_fact(missing)));
+                    let without = required
+                        .iter()
+                        .filter(|premise| *premise != missing)
+                        .cloned()
+                        .fold(PureFactContext::new(), PureFactContext::assume_proposition);
+                    assert!(!derivation.check(&without));
                 }
             });
         }

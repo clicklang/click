@@ -95,7 +95,7 @@ mod disjunction_projection_tests {
     }
 
     #[test]
-    fn projection_uses_scoped_equalities_and_removes_withdrawn_sources() {
+    fn projection_uses_scoped_equalities() {
         let alias = Proposition::ConditionIs(
             ConditionTerm::equal(
                 MachineTerm::Variable(Variable(1)),
@@ -109,13 +109,6 @@ mod disjunction_projection_tests {
         let child = root.with_fact(source.clone());
         assert!(child.contains_disjunction_projection(&goal));
         assert!(!root.contains_disjunction_projection(&goal));
-        let weakened = child.assumptions().without_exact_fact(&source);
-        assert_eq!(
-            weakened
-                .disjunctions_connected_to(&AtomicConnectionKey::Variable(Variable(2)))
-                .count(),
-            0
-        );
         let wide = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 MachineTerm::Variable(Variable(1)),
@@ -4904,9 +4897,9 @@ mod held_separation_tests {
                 .with_selected_held_resource_separation(&goal, &state)
                 .contains(&goal)
         );
-        let withdrawn = ProofFacts::from_ordered(&[first]);
+        let unseparated = ProofFacts::from_ordered(&[first]);
         assert!(
-            !withdrawn
+            !unseparated
                 .with_selected_held_resource_separation(&goal, &state)
                 .contains(&goal)
         );

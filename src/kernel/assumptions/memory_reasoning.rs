@@ -6238,7 +6238,7 @@ mod wide_separation_index_tests {
     use super::*;
 
     #[test]
-    fn wide_separation_withdrawal_and_context_forks_preserve_authority() {
+    fn wide_separation_context_preserves_authority() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = |id: u64| Pointer::symbolic(Variable(9_993_000 + id));
         let wide = |base| {
@@ -6255,16 +6255,14 @@ mod wide_separation_index_tests {
             left: Box::new(CResource::Memory(left.clone())),
             right: Box::new(CResource::Memory(right.clone())),
         };
-        let parent = PureFactContext::new().assume_proposition(fact.clone());
-        let child = parent.without_exact_fact(&fact);
+        let parent = PureFactContext::new().assume_proposition(fact);
         let separate = |context: &PureFactContext| {
             context.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
                 &left, &right,
             )
         };
         assert!(separate(&parent));
-        assert!(!separate(&child));
-        assert!(separate(&child.assume_proposition(fact)));
+        assert!(!separate(&PureFactContext::new()));
     }
 }
 
@@ -6460,8 +6458,6 @@ mod shared_range_index_tests {
         assert!(!lower_only.pointer_directly_in_memory_range(&pointer, &range));
         assert!(!parent.pointer_directly_in_memory_range(&pointer, &range));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
-        let withdrawn = bounded.without_exact_fact(&Proposition::ConditionIs(upper, true));
-        assert!(!withdrawn.pointer_directly_in_memory_range(&pointer, &range));
     }
 
     #[test]
@@ -6478,9 +6474,8 @@ mod shared_range_index_tests {
         let range = CMemoryRange::new(base.clone(), start.clone(), end.clone());
         let lower = ConditionTerm::signed_less_equal(start.clone(), absolute.clone());
         let upper = ConditionTerm::signed_less_than(absolute, end.clone());
-        let facts = PureFactContext::new()
-            .assume_condition(lower, true)
-            .assume_condition(upper.clone(), true);
+        let lower_only = PureFactContext::new().assume_condition(lower, true);
+        let facts = lower_only.clone().assume_condition(upper, true);
         let delta = pointer
             .exact_element_delta_from_base(&base, 4, Some(&facts))
             .unwrap();
@@ -6506,8 +6501,7 @@ mod shared_range_index_tests {
             facts.access_within_memory_range(&pointer, 4, &range),
             "range access"
         );
-        let withdrawn = facts.without_exact_fact(&Proposition::ConditionIs(upper, true));
-        assert!(!withdrawn.pointer_in_range_by_exact_facts(&pointer, &range));
+        assert!(!lower_only.pointer_in_range_by_exact_facts(&pointer, &range));
         assert!(!PureFactContext::new().pointer_in_range_by_exact_facts(&pointer, &range));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }

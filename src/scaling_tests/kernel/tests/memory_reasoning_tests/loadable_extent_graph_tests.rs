@@ -144,9 +144,8 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
         .map(|(condition, value)| (condition.clone(), value))
         .collect::<Vec<_>>();
     assert_eq!(candidates, vec![(load_condition(1_000), true)]);
-    let withdrawn = fork.without_exact_fact(&Proposition::ConditionIs(load_condition(1_000), true));
     assert!(
-        withdrawn
+        parent
             .exact_memory_load_condition_candidates(&pointer(1_000))
             .next()
             .is_none()

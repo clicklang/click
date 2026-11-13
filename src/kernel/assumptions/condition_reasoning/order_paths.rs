@@ -3442,8 +3442,8 @@ mod annotated_alignment_premise_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(996_210));
         // Address annotations share identity. Keep the written stronger
-        // premise for exact citation and withdraw it independently of a
-        // weaker alignment premise.
+        // premise for exact citation, independently of a weaker alignment
+        // premise.
         let source = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -3463,17 +3463,10 @@ mod annotated_alignment_premise_tests {
             context.pointer_alignment_certificate_decision(&pointer, 4),
             Some((true, Some(Proposition::ConditionIs(source.clone(), true))))
         );
-        let both = context.assume_condition(bare.clone(), true);
-        let remaining = both.without_exact_fact(&Proposition::ConditionIs(source, true));
+        let weaker = PureFactContext::new().assume_condition(bare.clone(), true);
         assert_eq!(
-            remaining.pointer_alignment_certificate_decision(&pointer, 4),
-            Some((true, Some(Proposition::ConditionIs(bare.clone(), true))))
-        );
-        assert_eq!(
-            remaining
-                .without_exact_fact(&Proposition::ConditionIs(bare, true))
-                .pointer_alignment_certificate_decision(&pointer, 4),
-            None
+            weaker.pointer_alignment_certificate_decision(&pointer, 4),
+            Some((true, Some(Proposition::ConditionIs(bare, true))))
         );
     }
 }
@@ -4127,7 +4120,7 @@ mod shared_read_order_bridge_tests {
         let write = base.offset_by_elements(write_index.clone(), 4);
         crate::kernel::eval::declare_load_access_width(&pointer, 4);
         let separation = ConditionTerm::signed_less_than(read_index, write_index);
-        let separated = PureFactContext::new().assume_condition(separation.clone(), true);
+        let separated = PureFactContext::new().assume_condition(separation, true);
         let before = CMemory::new().with_block("order-read-bridge", 64);
         let after = before.clone().store_with_context(
             write,
@@ -4157,18 +4150,15 @@ mod shared_read_order_bridge_tests {
             CompareRelation::LessThan,
             [V::Shared(&before_shared), V::Legacy(&upper)],
         );
-        let context = separated.assume_condition(premise.clone(), true);
+        let context = separated.clone().assume_condition(premise.clone(), true);
         assert!(
             context
                 .order_facts_by_lower
                 .loads_of(&pointer, LoadKind::Int32)
                 .any(|source| source == &premise)
         );
-        let withdrawn = context
-            .clone()
-            .without_exact_fact(&Proposition::ConditionIs(premise.clone(), true));
         assert!(
-            !withdrawn
+            !separated
                 .order_facts_by_lower
                 .loads_of(&pointer, LoadKind::Int32)
                 .any(|source| source == &premise)
@@ -4189,10 +4179,8 @@ mod shared_read_order_bridge_tests {
                     assert!(path.iter().any(
                         |step| step.premise == Proposition::ConditionIs(premise.clone(), true)
                     ));
-                    assert!(!withdrawn.has_exact_order_path_views(left, right, true));
-                    let no_frame = context
-                        .clone()
-                        .without_exact_fact(&Proposition::ConditionIs(separation.clone(), true));
+                    assert!(!separated.has_exact_order_path_views(left, right, true));
+                    let no_frame = PureFactContext::new().assume_condition(premise.clone(), true);
                     assert!(!no_frame.has_exact_order_path_views(left, right, true));
                 });
             }
@@ -4225,11 +4213,8 @@ mod shared_byte_rebuild_tests {
         let upper = bound(index.operand_view(), MachineOperandView::Legacy(&limit));
         let lower = bound(MachineOperandView::Legacy(&zero), index.operand_view());
         let empty = PureFactContext::new();
-        let bounded = empty
-            .clone()
-            .assume_condition(upper.clone(), true)
-            .assume_condition(lower, true);
-        let withdrawn = bounded.without_exact_fact(&Proposition::ConditionIs(upper, true));
+        let lower_only = empty.clone().assume_condition(lower, true);
+        let bounded = lower_only.clone().assume_condition(upper, true);
         let offset = PointerOffsetTerm::Int32Scaled {
             value: index,
             byte_width: 8,
@@ -4237,7 +4222,7 @@ mod shared_byte_rebuild_tests {
         let exports = KernelTermExport::machine_export_count();
         assert!(bounded.rebuilt_offset_is_exact(&offset, 4, true));
         assert!(!empty.rebuilt_offset_is_exact(&offset, 4, true));
-        assert!(!withdrawn.rebuilt_offset_is_exact(&offset, 4, true));
+        assert!(!lower_only.rebuilt_offset_is_exact(&offset, 4, true));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

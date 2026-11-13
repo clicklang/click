@@ -42,8 +42,6 @@ fn loadability_explanation_ignores_unrelated_objects() {
             loadability_explanation(&missing, &with_range, &site, &mut site.labels())
         });
         assert!(explanation.is_some());
-        let withdrawn = with_range.without_exact_fact(&covering);
-        assert!(loadability_explanation(&missing, &withdrawn, &site, &mut site.labels()).is_none());
         samples.push(hit_work);
     }
     assert!(

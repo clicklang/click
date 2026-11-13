@@ -117,6 +117,10 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
+    /// A fresh graph refiled from the exact equality indexes. Production
+    /// contexts only grow and fork; the sole remaining caller is
+    /// `PureFactContext::clear_proposition_facts`, which serves the
+    /// `ExistsLoadableRange` derivation rule.
     pub(in crate::kernel) fn rebuild_from_inputs(&mut self) {
         let mut classes = EqualityGraph::default();
         for (left, aliases) in self.admitted.pointer_block_aliases.iter() {

@@ -1,25 +1,18 @@
 //! Value-origin equality. Address congruence must never enter this index.
 use super::CPointerValue;
-use crate::persistent::PersistentMap;
-use std::collections::BTreeSet;
+use crate::persistent::{PersistentMap, PersistentSet};
 
-/// Persistent union by size, with exact edge support for scoped withdrawal.
-/// Insertion touches two root paths. Withdrawal rebuilds only the affected
-/// component, never the ambient address graph or unrelated value origins.
+/// Persistent union by size. Insertion touches two root paths; a branch
+/// forks a persistent clone.
 #[derive(Clone, Debug)]
 pub(super) struct ValueClasses<K: Ord> {
     parents: PersistentMap<K, K>,
     sizes: PersistentMap<K, usize>,
-    edges: PersistentMap<K, PersistentMap<K, AliasEdge>>,
+    edges: PersistentMap<K, PersistentSet<K>>,
     /// Reverse admission order, independent of snapshot content hashes.
     ordered_edges: PersistentMap<K, PersistentMap<u64, K>>,
     next_edge: u64,
     representative: PersistentMap<K, K>,
-}
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct AliasEdge {
-    count: usize,
-    ordinal: u64,
 }
 
 impl<K: Ord> Default for ValueClasses<K> {
@@ -99,93 +92,23 @@ impl<K: Ord + Clone> ValueClasses<K> {
         }
         for (a, b) in [(left, right), (right, left)] {
             let neighbors = self.edges.get(a).cloned().unwrap_or_default();
-            let edge = match neighbors.get(b) {
-                Some(edge) => AliasEdge {
-                    count: edge.count + 1,
-                    ..*edge
-                },
-                None => {
-                    let ordinal = self.next_edge;
-                    self.next_edge = self
-                        .next_edge
-                        .checked_add(1)
-                        .expect("pointer alias ordinals exhausted");
-                    let ordered = self.ordered_edges.get(a).cloned().unwrap_or_default();
-                    self.ordered_edges = self
-                        .ordered_edges
-                        .with_inserted(a.clone(), ordered.with_inserted(ordinal, b.clone()));
-                    AliasEdge { count: 1, ordinal }
-                }
-            };
-            self.edges = self
-                .edges
-                .with_inserted(a.clone(), neighbors.with_inserted(b.clone(), edge));
-        }
-        self.join(left, right, prefer);
-    }
-    pub(super) fn remove(&mut self, left: &K, right: &K, prefer: impl Fn(&K, &K) -> K + Copy) {
-        if left == right {
-            return;
-        }
-        let Some(edge) = self.edges.get(left).and_then(|n| n.get(right)).copied() else {
-            return;
-        };
-        let count = edge.count;
-        for (a, b) in [(left, right), (right, left)] {
-            let neighbors = self.edges.get(a).cloned().unwrap_or_default();
-            let edge = *neighbors.get(b).expect("symmetric pointer alias");
-            let neighbors = if count == 1 {
-                let ordered = self
-                    .ordered_edges
-                    .get(a)
-                    .expect("ordered pointer aliases")
-                    .without_key(&edge.ordinal);
-                self.ordered_edges = if ordered.is_empty() {
-                    self.ordered_edges.without_key(a)
-                } else {
-                    self.ordered_edges.with_inserted(a.clone(), ordered)
-                };
-                neighbors.without_key(b)
-            } else {
-                neighbors.with_inserted(
-                    b.clone(),
-                    AliasEdge {
-                        count: count - 1,
-                        ..edge
-                    },
-                )
-            };
-            self.edges = if neighbors.is_empty() {
-                self.edges.without_key(a)
-            } else {
-                self.edges.with_inserted(a.clone(), neighbors)
-            };
-        }
-        if count > 1 {
-            return;
-        }
-        let mut component = BTreeSet::new();
-        let mut pending = vec![left.clone(), right.clone()];
-        while let Some(value) = pending.pop() {
-            if !component.insert(value.clone()) {
+            if neighbors.contains(b) {
                 continue;
             }
-            crate::instrumentation::record_deterministic_work(1);
-            if let Some(neighbors) = self.edges.get(&value) {
-                pending.extend(neighbors.iter().map(|(key, _)| key.clone()));
-            }
+            let ordinal = self.next_edge;
+            self.next_edge = self
+                .next_edge
+                .checked_add(1)
+                .expect("pointer alias ordinals exhausted");
+            let ordered = self.ordered_edges.get(a).cloned().unwrap_or_default();
+            self.ordered_edges = self
+                .ordered_edges
+                .with_inserted(a.clone(), ordered.with_inserted(ordinal, b.clone()));
+            self.edges = self
+                .edges
+                .with_inserted(a.clone(), neighbors.with_value(b.clone()));
         }
-        for value in &component {
-            self.parents = self.parents.without_key(value);
-            self.sizes = self.sizes.without_key(value);
-            self.representative = self.representative.without_key(value);
-        }
-        for value in component {
-            let neighbors = self.edges.get(&value).cloned().unwrap_or_default();
-            for (neighbor, _) in neighbors.iter() {
-                self.join(&value, neighbor, prefer);
-            }
-        }
+        self.join(left, right, prefer);
     }
 }
 
@@ -209,7 +132,7 @@ mod tests {
     use crate::kernel::*;
 
     #[test]
-    fn origin_aliases_follow_admission_not_value_order_and_withdraw_by_support() {
+    fn origin_aliases_follow_admission_not_value_order() {
         let mut graph = super::ValueClasses::default();
         let prefer = |a: &i32, _: &i32| *a;
         graph.insert(&100, &900, prefer);
@@ -222,15 +145,9 @@ mod tests {
         };
         assert_eq!(aliases(&graph), [500, 1, 900]);
         assert_eq!(aliases(&sibling), [1, 900]);
-        graph.remove(&100, &900, prefer);
-        assert_eq!(aliases(&graph), [500, 1, 900]);
-        graph.remove(&100, &900, prefer);
-        assert_eq!(aliases(&graph), [500, 1]);
-        assert!(!graph.equal(&100, &900));
+        assert!(graph.equal(&100, &900));
         assert!(graph.equal(&100, &500));
-        graph.insert(&100, &900, prefer);
-        assert_eq!(aliases(&graph), [900, 500, 1]);
-        assert_eq!(aliases(&sibling), [1, 900]);
+        assert!(!sibling.equal(&100, &500));
     }
 
     fn value(id: u64) -> CPointerValue {
@@ -329,14 +246,6 @@ mod tests {
                 )
                 .is_some()
         );
-        let withdrawn = linked.without_exact_fact(&equality(&a, &b));
-        assert!(withdrawn.pointers_known_equal(a.pointer(), b.pointer()));
-        assert!(!resources.permits_designated_memory_read(
-            a.pointer(),
-            Some(a.access_designation()),
-            4,
-            &withdrawn
-        ));
     }
     #[test]
     fn equality_of_widened_views_does_not_widen_the_original_input() {
@@ -399,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn origin_support_handles_cycles_reverse_edges_and_branch_withdrawal() {
+    fn origin_support_handles_cycles_and_reverse_edges() {
         let a = value(820_001);
         let b = value(820_002);
         let c = value(820_003);
@@ -407,15 +316,13 @@ mod tests {
         let ba = equality(&b, &a);
         let bc = equality(&b, &c);
         let context = PureFactContext::new()
-            .assume_proposition(ab.clone())
-            .assume_proposition(ba.clone())
+            .assume_proposition(ab)
+            .assume_proposition(ba)
             .assume_proposition(bc.clone());
-        let without_ab = context.clone().without_exact_fact(&ab);
-        assert!(without_ab.designations_equal(a.designation(), c.designation()));
-        let without_both = without_ab.without_exact_fact(&ba);
-        assert!(!without_both.designations_equal(a.designation(), c.designation()));
-        assert!(without_both.designations_equal(b.designation(), c.designation()));
         assert!(context.designations_equal(a.designation(), c.designation()));
+        let bc_only = PureFactContext::new().assume_proposition(bc);
+        assert!(!bc_only.designations_equal(a.designation(), c.designation()));
+        assert!(bc_only.designations_equal(b.designation(), c.designation()));
     }
     #[test]
     fn a_narrowed_read_does_not_narrow_its_enclosing_pointer() {
