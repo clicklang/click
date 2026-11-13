@@ -16,6 +16,12 @@ default under `DIR`. When it is unset or empty, Click uses `.click` under
 `HOME`, or under `USERPROFILE` when `HOME` is unset. The installers read the
 same variable.
 
+### `CLICK_LANGUAGES`
+
+`install.sh` reads `CLICK_LANGUAGES=cpp,rust`, a comma-separated list, and
+runs [`click add`](versions.md#languages) for each language after installing
+Click. Unset, it installs Click alone, which verifies C.
+
 ### `CLICK_NO_VERSION_DISPATCH`
 
 Set `CLICK_NO_VERSION_DISPATCH` to any value to make `click` run the command
@@ -24,7 +30,7 @@ sets it to `1` for the version it dispatches to.
 
 ### `CLICK_RELEASE_REPOSITORY`
 
-Set `CLICK_RELEASE_REPOSITORY=OWNER/NAME` to make `click install` download
+Set `CLICK_RELEASE_REPOSITORY=OWNER/NAME` to make `click upgrade` and `click version add` download
 releases, and resolve `latest`, from that GitHub repository instead of
 `clicklang/click`. Each part may contain ASCII letters, digits, `-`, `_`, and
 `.`; any other value fails.
@@ -44,9 +50,9 @@ C++ exporter when it prepares a C++ unit of a project; it is for development,
 with an exporter built by `scripts/build-cpp-exporter.sh`. Unset, Click uses
 the exporter installed for its own version,
 `$CLICK_HOME/versions/<version>/frontends/cpp/click-cpp-exporter`, which
-`click install VERSION --cpp` installs, and otherwise reports that the C++ front end is not installed and where it was
+`click add cpp` installs, and otherwise reports that the C++ front end is not installed and where it was
 expected. On a host releases ship no C++ front end for (any but Linux
-x86-64), it reports that instead and says to build the exporter from a
+x86-64 and macOS arm64), it reports that instead and says to build the exporter from a
 checkout. A path that is not a file is refused. The test harnesses read it
 too. Verification never reads it.
 

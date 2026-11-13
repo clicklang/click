@@ -14250,7 +14250,7 @@ fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_pro
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_62")]
+#[ignore = "nightly: explicit guarded read preservation expansion and cold replay"]
 fn guarded_definedness_transport_expands_and_reverifies() {
     let (source, sources) =
         mdtest_sources("mdtests/guarded_definedness_survives_a_disjoint_store.md");
@@ -14259,9 +14259,10 @@ fn guarded_definedness_transport_expands_and_reverifies() {
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_c0_claim_source_by_label(&source, &sources, "fill_t.contract").unwrap();
-    assert!(expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("preserve("), "{expanded}");
     assert!(expanded.contains("defined("), "{expanded}");
-    verify_c0_sources(&expanded, &sources).unwrap();
+    crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -21690,7 +21691,6 @@ test_batches! {
     expansion_batch_62: [
         outcome_solve_transports_loadability_on_the_checked_proof,
         outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof,
-        guarded_definedness_transport_expands_and_reverifies,
         source_expander_lowers_smart_solve_after_unfold_inside_have,
     ],
     expansion_batch_63: [
@@ -22133,4 +22133,20 @@ fn write_loan_obligations_expand_and_replay() {
         })
         .unwrap_or_else(|error| panic!("{path}: {error}"));
     }
+}
+
+#[test]
+fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
+    let (source, sources) = mdtest_sources("mdtests/unsigned_division_exposes_its_domain.md");
+    let implicit = source.replace("step() by { assumption(); }", "step();");
+    assert_ne!(implicit, source);
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&implicit, &sources, "divide").unwrap();
+    crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let missing = implicit.replace("    requires y != 0u32;\n", "");
+    assert_ne!(missing, implicit);
+    assert!(verify_c0_sources(&missing, &sources).is_err());
 }

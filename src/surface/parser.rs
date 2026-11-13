@@ -15866,6 +15866,28 @@ impl Parser {
         })
     }
 
+    /// `&u8` as a type argument in a Rust sidecar: the pointer type of a
+    /// shared reference to a scalar. Nothing is consumed otherwise.
+    fn take_rust_reference_type_argument(&mut self) -> Option<C0Type> {
+        if !self.verifies_rust() || self.peek() != Some(&Token::Amp) {
+            return None;
+        }
+        let Some(Token::Ident(pointee)) = self.peek_next() else {
+            return None;
+        };
+        let pointer = match rust_syntax::rust_scalar_type(pointee)? {
+            C0Type::Int8 => C0Type::Int8Pointer,
+            C0Type::UInt8 => C0Type::UInt8Pointer,
+            C0Type::Int16 => C0Type::Int16Pointer,
+            C0Type::UInt16 => C0Type::UInt16Pointer,
+            C0Type::Int32 => C0Type::Int32Pointer,
+            C0Type::UInt32 => C0Type::UInt32Pointer,
+            _ => return None,
+        };
+        self.position += 2;
+        Some(pointer)
+    }
+
     fn parse_algebraic_type_application_arguments(
         &mut self,
         name: String,
@@ -15873,6 +15895,27 @@ impl Parser {
         self.position += 1;
         let mut arguments = Vec::new();
         loop {
+            // A Rust sidecar writes the library's `Option` of a shared
+            // reference to a scalar as Rust does, `Option<&u8>`: the item a
+            // slice iterator yields. The value is that reference's pointer.
+            if let Some(reference) = self.take_rust_reference_type_argument() {
+                arguments.push(ClickType::C(reference));
+                match self.peek() {
+                    Some(Token::Comma) => {
+                        self.position += 1;
+                        continue;
+                    }
+                    Some(Token::GreaterThan) => {
+                        self.position += 1;
+                        break;
+                    }
+                    Some(Token::ShiftRight) => {
+                        self.tokens[self.position] = Token::GreaterThan;
+                        break;
+                    }
+                    _ => return Err(self.error("expected `,` or `>` after datatype argument")),
+                }
+            }
             let (mut argument, parsed_c_type) = self.parse_click_type()?;
             if let Some(parsed) = parsed_c_type {
                 if !algebraic_field_c_type_supported(parsed.c_type) {

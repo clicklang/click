@@ -31,7 +31,7 @@ click verify stack.click
 ```
 
 To refresh the lock after changing the source, with the pinned C++ front end
-installed (`click install VERSION --cpp`; in a checkout, or on another host,
+installed (`click add cpp`; in a checkout, or on another host,
 `CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"` instead):
 
 ```sh

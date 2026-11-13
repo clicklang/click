@@ -37,7 +37,7 @@ impl Context<'_> {
     /// `target = source.enumerate()`: the slice iterator's state, re-based at
     /// the element it stands at, so it has yielded no value yet.
     pub(super) fn enumerate_initialize(
-        &self,
+        &mut self,
         target: &str,
         source: &str,
     ) -> Result<CStatement, String> {
@@ -56,7 +56,11 @@ impl Context<'_> {
         ))
     }
 
-    pub(super) fn enumerate_move(&self, target: &str, source: &str) -> Result<CStatement, String> {
+    pub(super) fn enumerate_move(
+        &mut self,
+        target: &str,
+        source: &str,
+    ) -> Result<CStatement, String> {
         self.enumerated_iterator(target)?;
         self.enumerated_iterator(source)?;
         self.shared_array_move(target, source)

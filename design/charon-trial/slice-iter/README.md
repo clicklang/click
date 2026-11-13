@@ -11,7 +11,8 @@ named.
 sum of the input bytes for lengths `0..=1000`. The loop carries where the
 iterator stands as an ordinary invariant,
 `iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len())`. The
-`next()` call's contract says the remaining slice starts one element later
+`SliceIter::next(&mut iter)` call returns `Option<&u8>`; its contract says
+the remaining slice starts one element later
 and is one shorter; the proof carries the invariant across it with one
 pointer-association theorem it states itself.
 

@@ -6917,6 +6917,28 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 obligations: Vec::new(),
             }]
         }
+        // An object that holds one value of a library or enum type, a
+        // borrowed Rust `Vec` or iterator, is read as that value, as the
+        // program reads it.
+        SpecExpression::CExpression(CExpression::Variable(name))
+            if let Some(CLocalBinding::AggregateObject { slot, layout, .. }) =
+                state.locals.binding(name)
+                && let Some(value_type @ CType::Parameter(parameter)) = layout.value_type() =>
+        {
+            evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                SpecScope { state, ..scope },
+                &SpecExpression::MemoryLoad {
+                    memory: SpecMemory::Current,
+                    pointer: Box::new(SpecExpression::Value(CValue::typed_pointer(
+                        slot.clone(),
+                        CType::ParameterPointer(parameter),
+                    ))),
+                    value_type,
+                },
+                assumptions,
+                budget,
+            )?
+        }
         SpecExpression::CExpression(expression) => {
             let _specification = crate::kernel::eval::SpecificationReadScope::enter();
             let native_state = scope.native_expression_state(expression);

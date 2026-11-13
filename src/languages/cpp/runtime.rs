@@ -24,12 +24,15 @@ pub(crate) fn resolve_exporter() -> Result<PathBuf, String> {
 }
 
 /// Whether releases ship a prebuilt C++ front end for the host Click runs
-/// on, which `click install VERSION --cpp` installs. Other hosts build the
+/// on, which `click add cpp` installs. Other hosts build the
 /// exporter from a Click checkout.
-const PREBUILT_HOST: bool = cfg!(all(
-    target_os = "linux",
-    target_arch = "x86_64",
-    target_env = "gnu"
+const PREBUILT_HOST: bool = cfg!(any(
+    all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        target_env = "gnu"
+    ),
+    all(target_os = "macos", target_arch = "aarch64"),
 ));
 
 /// The host, as a diagnostic names it.
@@ -80,7 +83,7 @@ fn resolve_exporter_from(
         ));
     }
     Err(format!(
-        "the C++ front end is not installed for Click {VERSION} (expected `{}`); install it with `click install {VERSION} --cpp`, or set CLICK_CPP_EXPORTER to an exporter built with scripts/build-cpp-exporter.sh",
+        "the C++ front end is not installed for Click {VERSION} (expected `{}`); install it with `click add cpp`, or set CLICK_CPP_EXPORTER to an exporter built with scripts/build-cpp-exporter.sh",
         exporter.display()
     ))
 }
@@ -97,7 +100,7 @@ mod tests {
 
         let missing = resolve_exporter_from(None, Some(home.clone()), true).unwrap_err();
         assert!(missing.contains("not installed for Click"), "{missing}");
-        assert!(missing.contains("--cpp"), "{missing}");
+        assert!(missing.contains("click add cpp"), "{missing}");
         // A host releases ship no front end for says so, rather than
         // pointing at an install that would fail.
         let unbuilt = resolve_exporter_from(None, Some(home.clone()), false).unwrap_err();
@@ -105,7 +108,7 @@ mod tests {
             unbuilt.contains("no prebuilt C++ front end is available for this platform"),
             "{unbuilt}"
         );
-        assert!(!unbuilt.contains("--cpp"), "{unbuilt}");
+        assert!(!unbuilt.contains("click add cpp"), "{unbuilt}");
         assert!(
             missing.contains(&installed.display().to_string()),
             "{missing}"

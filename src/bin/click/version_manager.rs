@@ -1,5 +1,6 @@
 use super::version_dispatch::{
-    binary_filename, click_home, normalize_version, project_pin, project_pin_path, version_binary,
+    binary_filename, click_home, normalize_version, project_pin, project_pin_path,
+    selected_version, version_binary,
 };
 use flate2::read::GzDecoder;
 use sha2::{Digest, Sha256};
@@ -25,50 +26,223 @@ impl Drop for TemporaryDirectory {
     }
 }
 
+/// `click upgrade`, `click version` with its subcommand, and the language
+/// commands `click add`, `click remove` and `click languages`.
 pub fn entry_with(command: &str, arguments: Vec<String>) -> Result<(), String> {
-    if matches!(arguments.as_slice(), [argument] if argument == "--help" || argument == "-h") {
+    let is_help = |arguments: &[String]| matches!(arguments, [argument] if argument == "--help" || argument == "-h");
+    if is_help(&arguments) {
         println!("{}", usage());
         return Ok(());
     }
     match command {
-        "install" => install_command(&arguments),
-        "use" => use_command(&arguments),
-        "default" => default_command(&arguments),
-        "versions" => versions_command(&arguments),
+        "upgrade" => upgrade_command(&arguments),
+        "add" => add_language_command(&arguments),
+        "remove" => remove_language_command(&arguments),
+        "languages" => languages_command(&arguments),
+        "version" => {
+            let Some((subcommand, arguments)) = arguments.split_first() else {
+                return Err(usage().to_string());
+            };
+            if is_help(arguments) {
+                println!("{}", usage());
+                return Ok(());
+            }
+            match subcommand.as_str() {
+                "add" => add_command(arguments),
+                "use" => use_command(arguments),
+                "default" => default_command(arguments),
+                "list" => list_command(arguments),
+                "remove" => remove_command(arguments),
+                _ => Err(usage().to_string()),
+            }
+        }
         _ => Err(usage().to_string()),
     }
 }
 
 fn usage() -> &'static str {
     "version-manager commands:
-  click install <VERSION|latest> [--rust] [--cpp]
-  click use [VERSION|--unset]
-  click default [VERSION]
-  click versions"
+  click upgrade
+  click add <cpp|rust>
+  click remove <cpp|rust>
+  click languages
+  click version add <VERSION|latest>
+  click version use [VERSION|--unset]
+  click version default [VERSION]
+  click version list
+  click version remove <VERSION>"
 }
 
-fn install_command(arguments: &[String]) -> Result<(), String> {
-    let Some((requested, frontends)) = arguments.split_first() else {
-        return Err(usage().to_string());
-    };
-    let rust = frontends.iter().any(|flag| flag == "--rust");
-    let cpp = frontends.iter().any(|flag| flag == "--cpp");
-    if frontends.len() != usize::from(rust) + usize::from(cpp) {
+/// Installs the latest release and makes it the global default.
+fn upgrade_command(arguments: &[String]) -> Result<(), String> {
+    if !arguments.is_empty() {
         return Err(usage().to_string());
     }
-    let requested = requested.as_str();
+    let version = latest_version()?;
+    let languages = current_languages()?;
+    install_version(&version)?;
+    carry_languages(&languages, &version);
+    default_command(std::slice::from_ref(&version))
+}
+
+/// The version the launcher runs here: the nearest project pin, then the
+/// global default, then the launcher's own.
+fn current_version() -> Result<String, String> {
+    Ok(selected_version(RELEASE_BINARY)?.unwrap_or_else(|| PACKAGE_VERSION.to_string()))
+}
+
+/// The front ends installed for the current version, which a newly added
+/// version receives too.
+fn current_languages() -> Result<Vec<&'static Frontend>, String> {
+    let home = click_home()?;
+    let version = current_version()?;
+    Ok(FRONTENDS
+        .iter()
+        .filter(|frontend| {
+            (frontend.check)(&frontend_path(&home, &version, frontend), &version).is_ok()
+        })
+        .copied()
+        .collect())
+}
+
+/// Installs `languages` for `version`. A language the release does not ship
+/// for this host is reported and skipped: the version itself is installed.
+fn carry_languages(languages: &[&Frontend], version: &str) {
+    for frontend in languages {
+        if let Err(error) = install_frontend(frontend, version) {
+            eprintln!(
+                "click: warning: {} was not added to Click {version}: {error}",
+                frontend.language
+            );
+        }
+    }
+}
+
+fn frontend_path(home: &Path, version: &str, frontend: &Frontend) -> PathBuf {
+    home.join("versions")
+        .join(version)
+        .join("frontends")
+        .join(frontend.directory)
+}
+
+/// The front end a language name names; C needs none.
+fn language(name: &str) -> Result<&'static Frontend, String> {
+    match name.to_ascii_lowercase().as_str() {
+        "cpp" | "c++" => Ok(&CPP_FRONTEND),
+        "rust" => Ok(&RUST_FRONTEND),
+        "c" => Err("C is built into Click; it needs no front end".into()),
+        _ => Err(format!(
+            "unknown language `{name}`; the languages to add are `cpp` and `rust`"
+        )),
+    }
+}
+
+/// `click add LANGUAGE`: installs its front end for the current version.
+fn add_language_command(arguments: &[String]) -> Result<(), String> {
+    let [name] = arguments else {
+        return Err(usage().to_string());
+    };
+    let frontend = language(name)?;
+    let version = current_version()?;
+    if !release_is_installed(&click_home()?, &version) {
+        return Err(format!(
+            "Click {version} is not installed; run `click version add {version}` first"
+        ));
+    }
+    install_frontend(frontend, &version)
+}
+
+/// `click remove LANGUAGE`: removes its front end from the current version.
+fn remove_language_command(arguments: &[String]) -> Result<(), String> {
+    let [name] = arguments else {
+        return Err(usage().to_string());
+    };
+    let frontend = language(name)?;
+    let version = current_version()?;
+    let path = frontend_path(&click_home()?, &version, frontend);
+    if !path.exists() {
+        println!(
+            "The {} front end is not installed for Click {version}.",
+            frontend.language
+        );
+        return Ok(());
+    }
+    fs::remove_dir_all(&path)
+        .map_err(|error| format!("could not remove {}: {error}", path.display()))?;
+    println!(
+        "Removed the {} front end from Click {version}.",
+        frontend.language
+    );
+    Ok(())
+}
+
+/// `click languages`: what the current version verifies, and how to add
+/// what it does not.
+fn languages_command(arguments: &[String]) -> Result<(), String> {
+    if !arguments.is_empty() {
+        return Err(usage().to_string());
+    }
+    let home = click_home()?;
+    let version = current_version()?;
+    let host = host_target()?;
+    println!("Languages for Click {version}:");
+    println!("  c     built in");
+    for (name, frontend) in [("c++", &CPP_FRONTEND), ("rust", &RUST_FRONTEND)] {
+        let status = match (frontend.check)(&frontend_path(&home, &version, frontend), &version) {
+            Ok(detail) => format!("installed ({detail})"),
+            Err(_) if frontend.hosts.contains(&host.as_str()) => {
+                format!("not installed; run `click add {}`", frontend.command_name)
+            }
+            Err(_) => format!("not available for {host}"),
+        };
+        println!("  {name:<5} {status}");
+    }
+    Ok(())
+}
+
+/// Removes an installed version that neither the global default nor this
+/// project's pin selects.
+fn remove_command(arguments: &[String]) -> Result<(), String> {
+    let [argument] = arguments else {
+        return Err(usage().to_string());
+    };
+    let version = normalize_version(argument)?;
+    let home = click_home()?;
+    let destination = home.join("versions").join(&version);
+    if !destination.exists() {
+        return Err(format!("Click {version} is not installed"));
+    }
+    let selected = |text: Option<String>| text.is_some_and(|text| text.trim() == version);
+    if selected(fs::read_to_string(home.join("default")).ok()) {
+        return Err(format!(
+            "Click {version} is the global default; select another with `click version default VERSION` first"
+        ));
+    }
+    if selected(project_pin()?) {
+        return Err(format!(
+            "this project pins Click {version}; change the pin with `click version use` first"
+        ));
+    }
+    fs::remove_dir_all(&destination)
+        .map_err(|error| format!("could not remove {}: {error}", destination.display()))?;
+    println!("Removed Click {version}.");
+    Ok(())
+}
+
+/// `click version add VERSION`: installs a version, with the languages the
+/// current version has.
+fn add_command(arguments: &[String]) -> Result<(), String> {
+    let [requested] = arguments else {
+        return Err(usage().to_string());
+    };
     let version = if requested == "latest" {
         latest_version()?
     } else {
         normalize_version(requested)?
     };
+    let languages = current_languages()?;
     install_version(&version)?;
-    if rust {
-        install_frontend(&RUST_FRONTEND, &version)?;
-    }
-    if cpp {
-        install_frontend(&CPP_FRONTEND, &version)?;
-    }
+    carry_languages(&languages, &version);
     Ok(())
 }
 
@@ -77,6 +251,10 @@ fn install_command(arguments: &[String]) -> Result<(), String> {
 /// tree that installs to `versions/<v>/frontends/{directory}`.
 struct Frontend {
     language: &'static str,
+    /// The hosts each release ships this front end for.
+    hosts: &'static [&'static str],
+    /// The name `click add` takes.
+    command_name: &'static str,
     directory: &'static str,
     /// Checks an unpacked or installed tree; returns the version to list.
     check: fn(&Path, &str) -> Result<String, String>,
@@ -84,24 +262,32 @@ struct Frontend {
 
 const RUST_FRONTEND: Frontend = Frontend {
     language: "Rust",
+    hosts: &["x86_64-unknown-linux-gnu"],
+    command_name: "rust",
     directory: "rust",
     check: check_rust_bundle,
 };
 
 const CPP_FRONTEND: Frontend = Frontend {
     language: "C++",
+    hosts: &["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"],
+    command_name: "cpp",
     directory: "cpp",
     check: check_cpp_bundle,
 };
+
+const FRONTENDS: [&Frontend; 2] = [&CPP_FRONTEND, &RUST_FRONTEND];
 
 fn install_frontend(frontend: &Frontend, version: &str) -> Result<(), String> {
     let Frontend {
         language,
         directory,
         check,
+        hosts,
+        ..
     } = *frontend;
     let target = host_target()?;
-    if target != "x86_64-unknown-linux-gnu" {
+    if !hosts.contains(&target.as_str()) {
         return Err(format!(
             "a pinned {language} frontend bundle is not yet available for {target}; Click itself remains installed"
         ));
@@ -195,7 +381,7 @@ fn check_cpp_bundle(bundle: &Path, version: &str) -> Result<String, String> {
             .map_err(|e| format!("C++ frontend profile: {e}"))?;
     if manifest["schema"] != 1
         || manifest["click_version"] != version
-        || manifest["host"] != "x86_64-unknown-linux-gnu"
+        || host_target().is_ok_and(|host| manifest["host"] != host.as_str())
         || manifest["exporter"] != "click-cpp-exporter"
         || manifest["resource_dir"] != "clang-resource"
         || ["exporter_version", "clang_version", "artifact_schema"]
@@ -573,7 +759,7 @@ fn use_command(arguments: &[String]) -> Result<(), String> {
             let version = normalize_version(argument)?;
             if !install_is_present(&version)? {
                 return Err(format!(
-                    "Click {version} is not installed; run `click install {version}`"
+                    "Click {version} is not installed; run `click version add {version}`"
                 ));
             }
             let pin = project_pin_path()?.unwrap_or_else(|| cwd.join(".click-version"));
@@ -604,7 +790,7 @@ fn default_command(arguments: &[String]) -> Result<(), String> {
             let version = normalize_version(argument)?;
             if !install_is_present(&version)? {
                 return Err(format!(
-                    "Click {version} is not installed; run `click install {version}`"
+                    "Click {version} is not installed; run `click version add {version}`"
                 ));
             }
             replace_file(&path, format!("{version}\n").as_bytes())?;
@@ -615,7 +801,7 @@ fn default_command(arguments: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn versions_command(arguments: &[String]) -> Result<(), String> {
+fn list_command(arguments: &[String]) -> Result<(), String> {
     if !arguments.is_empty() {
         return Err(usage().to_string());
     }

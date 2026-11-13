@@ -96,8 +96,10 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
 - **Operation guards:** theorem application, scope completion, prepared-step
   publication, have opening and contract-claim opening have test-build discovery guards.
-  Statement preparation retains two reproduced operation/entry
-  pairs through two existing bridge entries; see the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
+  Statement preparation has two first-failure reproductions through existing
+  bridges. Removing the optional call-partition inference also exposes
+  `call_frame` through `call_kept_ownership`; first guard failures mask later
+  crossings. See the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
   Statement preparation remains unguarded; no exception exempts its search.
 - **Enforcement gap:** lexical dependency freezing and selected work counters
   do not prohibit every search call during expanded replay or detect arbitrary
@@ -118,8 +120,11 @@ work items; this reconciliation changes no behavior.
 Step preparation retains emitted verification conditions and call preconditions,
 and fold preparation retains its body facts, even when already known. The driver
 proves each obligation with a written block or ordinary `solve`. This does not
-finish evaluator migration: arithmetic operators still decide some safety
-conditions before emitting any obligation. Replacing those decisions needs
+finish evaluator migration. Executed uint32 division and remainder now always
+retain their ordinary nonzero-divisor obligation; generation has no ambient
+fact-context parameter and expansion writes a step proof that replays without
+implicit solve. Other arithmetic operators still decide some safety conditions
+before emitting any obligation. Replacing those decisions needs
 round-trippable goals and flat generation/publication costs. The earlier, unlanded arithmetic-migration prototype failed `struct_array_element_expands_with_its_subscript`
 (the initialized-global sum has no round-tripping overflow-goal spelling) and
 `straight_line_assignments_cost_the_same_at_every_position` (work grows from
@@ -173,10 +178,10 @@ becoming a new roadmap item. Paths below are relative to `src/`.
 
 | Area | Remaining route and source anchor | Completion criterion |
 | --- | --- | --- |
-| T1: residual scalar observations | `surface/proof/fixed_state_proofs/fact_transport.rs`: load-variable/origin bridges in `check_fixed_state_fact_transport_using_facts_inner`, plus `certified_fact_transport_reaches_through`. Computed scalar comparisons over selected reads, constants, arithmetic/bitwise operators and `to_integer` now have an ordinary preservation/rewrite expansion. Other read expressions, computed addresses, alternate cell spellings, and range-selected evidence still reach these routes. | Select each necessary equality and address guard in planning; emit explicit preservation/rewrite steps. Start with one reduced case, and identify a missing primitive before adding one. |
+| T1: residual scalar observations | `surface/proof/fixed_state_proofs/fact_transport.rs`: load-variable/origin bridges in `check_fixed_state_fact_transport_using_facts_inner`, plus `certified_fact_transport_reaches_through`. Computed scalar comparisons over selected reads, constants, arithmetic/bitwise operators and `to_integer` now have an ordinary preservation/rewrite expansion. Indexed cells now select the address of their written place, including distinct indices on the same base; their ordinary preservation chains replay without implicit solve. Other read expressions, computed addresses, alternate cell spellings, and range-selected evidence still reach these routes. | Select each necessary equality and address guard in planning; emit explicit preservation/rewrite steps. Start with one reduced case, and identify a missing primitive before adding one. |
 | T2: logical structure and quantifiers | `certified_fact_transport_reaches`: top-level conjunctions with non-scalar leaves, top-level disjunction, implications with non-comparison leaves or binders, and universal-body recursion; `check_fixed_state_fact_transport_using_facts_inner`: `frame_quantified_transport`. | Decompose into ordinary logical steps and the already supported leaf proofs. Handle logical forms beyond scalar conjunction selection/regrouping and matching propositional trees under implications with scalar comparison leaves; give non-scalar leaves, guards and binders their own replay/refusal fixtures. |
 | T3: resource, range, and definedness facts | `certified_fact_transport_reaches`: separation/containment descriptor matching and atomic derivation of `CMemoryLoadable` / `CMemoryReadDefined`. | Replace each surviving route with named resource laws or explicit observations and guards. Do not count already converted current-snapshot viewability restrictions as outstanding. |
-| T4: proof-context adapters | `surface/proof/proof_object/fixed_state_steps.rs`: `apply_transport_using`, `apply_pure_transport_using`, `apply_fixed_state_transport_using`, `apply_execution_transport_using`; post-execution handling in `surface/proof/driver/claims.rs`. | The same supported derivation expands at a focused execution goal, a pure/fixed-state proof, and a completed outcome. No adapter may retain an opaque transport simply because the proof phase differs. |
+| T4: proof-context adapters | `surface/proof/proof_object/fixed_state_steps.rs`: `apply_transport_using`, `apply_pure_transport_using`, `apply_fixed_state_transport_using`, `apply_execution_transport_using`; post-execution handling in `surface/proof/driver/claims.rs`. | A single selected footprint now expands inside a `have` after return, using its named entry/exit equality and an ordinary assumption step. Direct outcome and pure/fixed-state adapters still need their own coverage. No adapter may retain an opaque transport simply because the proof phase differs. |
 | T5: discovery and legacy dispatcher retirement | `plan_explicit_fact_transport`, transition/effect collection in `check_fixed_state_fact_transport_using_facts_inner`, and `surface/proof/proof_object/execution_statements/search.rs`'s bare transport planners. | Budgeted discovery emits ordinary steps, including selected footprint evidence. Remove search from the explicit-operation path and retire the legacy dispatcher once its supported cases have ordinary expansions or deliberate bounded refusals. |
 
 T5 includes an explicit known cost violation: the legacy fixed-state route
@@ -214,6 +219,19 @@ and contract comparisons retain their validating path. The restoration guard and
 `call_borrow_restoration_ignores_ambient_aliases_and_frame` cover this selected
 join, with unrelated aliases, unrelated owners, and repeated forks; they do not
 certify all call preparation or output-description lowering.
+
+Call preparation no longer rebuilds an optional population partition with
+`retained_population_call_partition`. The five affected `memset` proofs use
+explicit separation and single-footprint preservation for both values and
+read definedness. `preserve` requires the exact old definedness fact; it does
+not reconstruct history or infer initialization from ownership. The guarded
+proof expands and replays without implicit solve or legacy transport.
+This removes optional composition inference, not ownership validation.
+
+A source partial-borrow probe still grows with unrelated aliases after the
+removal; deleting this inference cuts a fixed amount of work in that probe,
+not its remaining growth. Keep the complete-call cost separate from the scoped
+composition-retention guard.
 
 `owned_validity_candidates` and incremental validity checking still have
 symbolic-bound and multiple-coordinate-origin paths. Single-block count and

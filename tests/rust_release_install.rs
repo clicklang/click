@@ -36,9 +36,27 @@ fn rust_release_archive_installs_and_verifies() {
     fs::copy(env!("CARGO_BIN_EXE_click"), &launcher).unwrap();
     let version = env!("CARGO_PKG_VERSION");
     assert!(!home.join("versions").exists());
+    // The installer adds the launcher's own version, then `click add rust`
+    // downloads the front end.
     success(
         Command::new(&launcher)
-            .args(["install", version, "--rust"])
+            .args(["version", "add", version])
+            .current_dir(t.path())
+            .env("CLICK_HOME", &home)
+            .env("HOME", home.join("empty-home"))
+            .env("PATH", &transport)
+            .env("CLICK_RELEASE_REPOSITORY", "clicklang/click")
+            .env("FIXTURE_ASSETS", &assets)
+            .env("FIXTURE_REQUESTS", &requests)
+            .env_remove("CLICK_CHARON")
+            .env_remove("RUSTUP_HOME")
+            .env_remove("CARGO_HOME")
+            .output()
+            .unwrap(),
+    );
+    success(
+        Command::new(&launcher)
+            .args(["add", "rust"])
             .current_dir(t.path())
             .env("CLICK_HOME", &home)
             .env("HOME", home.join("empty-home"))
@@ -66,18 +84,13 @@ fn rust_release_archive_installs_and_verifies() {
     let binary = installed.join("bin/click");
     let profile: serde_json::Value =
         serde_json::from_str(include_str!("../src/languages/rust/charon-profile.json")).unwrap();
-    let listed = cli(&binary, &relocated, t.path(), &["versions"]);
+    let listed = cli(&binary, &relocated, t.path(), &["version", "list"]);
     assert!(listed.status.success());
     assert!(String::from_utf8_lossy(&listed.stdout).contains(&format!(
         "Rust frontend: Charon {}",
         profile["extractor_version"].as_str().unwrap()
     )));
-    success(cli(
-        &binary,
-        &relocated,
-        t.path(),
-        &["install", version, "--rust"],
-    ));
+    success(cli(&binary, &relocated, t.path(), &["add", "rust"]));
 
     let basic = t.path().join("basic");
     examples::committed_project(&basic, "examples/basic-rust");

@@ -45,6 +45,20 @@ pub(super) fn lower(
         .iter()
         .filter(|p| matches!(p.value_type, Type::Record { .. }))
         .count();
+    // Each library slice iterator's `next()` writes one `Option` local, which
+    // the test reading it names.
+    if super::library_iterators() {
+        for statement in mir.blocks.iter().flat_map(|block| &block.statements) {
+            if let S::SharedArrayNext { iterator, option } = statement
+                && cx
+                    .library_next_options
+                    .insert(iterator.clone(), option.clone())
+                    .is_some_and(|previous| previous != *option)
+            {
+                return Err("a library slice iterator's next() writes two Options".into());
+            }
+        }
+    }
     for (index, local) in f
         .parameters
         .iter()
@@ -59,6 +73,18 @@ pub(super) fn lower(
             declarations = c_seq(
                 declarations,
                 cx.library_slice_iterator_storage(&local.name, element)?,
+            );
+            continue;
+        }
+        if let Type::SharedArrayOption { element } = &local.value_type
+            && super::library_iterators()
+            && !mir.blocks.iter().flat_map(|block| &block.statements).any(|statement| {
+                matches!(statement, S::EnumerateNext { option, .. } if *option == local.name)
+            })
+        {
+            declarations = c_seq(
+                declarations,
+                cx.library_slice_option_storage(&local.name, element)?,
             );
             continue;
         }
@@ -1191,7 +1217,7 @@ fn region(
             // function returns, so the read is a statement of the header.
             let library_test = match &condition {
                 E::ChunkHasNext { iterator } => Some(cx.chunk_read_left(iterator)),
-                E::SharedArrayHasNext { iterator } => cx.library_slice_read_left(iterator),
+                E::SharedArrayHasNext { iterator } => cx.library_slice_next_call(iterator),
                 _ => None,
             };
             let condition = if loop_.body_on_true {
@@ -1329,7 +1355,7 @@ fn region(
                     result = c_seq(result, cx.chunk_read_left(iterator));
                 }
                 if let E::SharedArrayHasNext { iterator } = condition
-                    && let Some(read) = cx.library_slice_read_left(iterator)
+                    && let Some(read) = cx.library_slice_next_call(iterator)
                 {
                     result = c_seq(result, read);
                 }
@@ -1674,6 +1700,8 @@ mod tests {
                 references: BTreeMap::new(),
                 shared_array_iterators: BTreeMap::new(),
                 library_slice_iterators: BTreeMap::new(),
+                library_slice_options: BTreeMap::new(),
+                library_next_options: BTreeMap::new(),
                 ranges: BTreeMap::new(),
                 enumerated: BTreeSet::new(),
                 shared_array_options: BTreeMap::new(),

@@ -9,7 +9,7 @@ Verification uses the same sidecars, tactics, and bounded engine as C and C++.
 
 Charon is the extraction backend. On `x86_64-unknown-linux-gnu`, releases provide
 an optional pinned frontend and compiler runtime through
-`click install VERSION --rust`. Rust support remains experimental and covers
+`click add rust`. Rust support remains experimental and covers
 the subset listed in [Language coverage](coverage.md). Contributor builds use
 `scripts/build-charon.sh`; ordinary verification of committed locks needs
 neither Charon nor rustc.
@@ -25,7 +25,7 @@ stable while the disjoint field is mutated.
 
 ## Installed Rust frontend
 
-`click install VERSION --rust` installs a bundle at
+`click add rust` installs a bundle at
 `CLICK_HOME/versions/VERSION/frontends/rust` (with the usual default
 `CLICK_HOME`). The bundle's bounded `frontend.json` explicitly identifies
 Charon, its paired driver, rustc, and the sysroot. Extraction checks the running
@@ -33,7 +33,7 @@ Click version, pinned Charon version/revision, compiler commit and host before
 compiling. The Charon wrapper's paired-driver layout is validated against the
 explicit driver entry. The bundle supplies its own target libraries and loader
 paths; installed extraction does not search for rustup or use ambient compiler
-flags. A missing bundle names `click install VERSION --rust`. A mismatched or
+flags. A missing bundle names `click add rust`. A mismatched or
 incomplete installed bundle names its exact frontend path to remove before
 reinstalling: ordinary installation retains an existing bundle. Version errors
 show the expected identity and the bounded identity actually reported. A
@@ -62,7 +62,7 @@ checks mismatched identity refusal, then verifies after removing the frontend.
 
 A separate release-packaging check consumes the exact archive and checksum
 produced by `scripts/package-rust-frontend-archive.sh`. It starts with only a
-Click launcher, invokes the real `click install VERSION --rust` command using
+Click launcher, invokes the real `click add rust` command using
 local release assets through its ordinary curl subprocess, relocates the
 installed home, and verifies the basic Rust example with an empty PATH and no
 user Rust toolchain. It checks repeated installation and locking, then offline
@@ -1312,7 +1312,8 @@ original pointer and length stable; mutable bindings and slices are rejected.
 
 [`examples/rust-iterators/sum.rs`](https://github.com/clicklang/click/blob/master/examples/rust-iterators/sum.rs)
 and its sidecar prove the same exact byte sum as the `while` example for arbitrary
-bytes and lengths `0..=1000`. Verification, profiling, audit, and expanded-proof
+bytes and lengths `0..=1000`. Both sum examples import their iterator as a
+library value ([below](#slice-iterators-as-library-values)). Verification, profiling, audit, and expanded-proof
 verification have regressions. The
 [reference iterator fixture](https://github.com/clicklang/click/blob/master/examples/rust-iter-references/sum.rs)
 proves the same sum using `for byte in bytes.iter()` and `*byte`. Missing views
@@ -1357,17 +1358,22 @@ temporary: it exists while fixtures move to the library model
 field is removed. An enumerated iterator keeps the state above; one built
 from a library iterator starts from what that iterator has left.
 
-`s.iter()` is a call whose contract gives `slice_iter::iter(Slice<T>::Slice(p,
+The iterator is imported through its Rust interface. `s.iter()` is a call
+to `SliceIter::iter` whose contract gives `slice_iter::iter(Slice<T>::Slice(p,
 n))` and, directly, `iter.as_slice().as_ptr() == p`,
-`iter.as_slice().len() == n` and `iter.len() == n`. A test for another
-element reads `iter.len()`. `next()` on an iterator that has one yields
-`iter.as_slice().as_ptr()` and leaves `iter.after_next()`, whose contract
-states, at the element type, that the remaining slice starts one element
-later and is one shorter, and that `len()` is one less.
+`iter.as_slice().len() == n` and `iter.len() == n`. Each pass of a `for`
+loop is a call to `SliceIter::next(&mut iter)`, which returns
+`Option<&T>`, followed by the `match` on it, as the compiler emits them. The
+contract of `next` says: with `iter.len() == 0` it returns `None` and leaves
+the iterator; otherwise it returns `Some` of the old
+`iter.as_slice().as_ptr()` and leaves the iterator one element on, with
+`iter.as_slice().as_ptr()` one element later and `iter.len()` one less.
 
-In a loop's clauses and phases `iter` is the iterator value the loop
-advances and `loop(i).iter` names it outside them, so `decreases iter.len()`
-ranks the loop. Where the iterator stands is an invariant the proof states:
+The iterator is a local whose address `next` borrows, so it lives in memory;
+a proof still names it as a value. In a loop's clauses and phases `iter` is
+the iterator value the loop advances and `loop(i).iter` names it outside
+them, so `decreases iter.len()` ranks the loop. Where the iterator stands is
+an invariant the proof states:
 
 ```text
 loop {
@@ -1381,9 +1387,11 @@ loop {
 Carrying it across a `next()` regroups a pointer offset, `(bytes + k) + 1`
 as `bytes + (k + 1)`, which the proof cites as a theorem of its own
 ([proof](https://github.com/clicklang/click/blob/master/design/charon-trial/slice-iter/sum.click)).
-The loop is imported as a `while (1)` whose header reads `iter.len()` and
-leaves by `break` when it is zero, so a `preserve` script splits on
-`0u64 < iter.len()` with a proof `if`, as for a `chunks_exact` loop.
+The loop is imported as a `while (1)` whose header calls `next` and leaves
+by `break` on `None`, so a `preserve` script splits on `0u64 < iter.len()`
+with a proof `if`. In the empty arm, `have iter.len() == 0u64;` lets the
+`next` contract decide `None` before the steps that reach the `break`
+([`examples/rust-iterators/sum.click`](https://github.com/clicklang/click/blob/master/examples/rust-iterators/sum.click)).
 
 ## Range loops
 

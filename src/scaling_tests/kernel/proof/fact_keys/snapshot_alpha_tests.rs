@@ -163,3 +163,66 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
         assert!(lw * small <= sw * large * 2, "{samples:?}");
     }
 }
+
+/// A fold whose endpoint reads a library value held in memory, a borrowed
+/// Rust iterator's `len`, is alpha-equal to the same fold built again, as
+/// `peel` requires; the read is keyed by its snapshot's identity, so the
+/// work does not grow with the snapshot's unrelated cells.
+#[test]
+fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
+    use crate::kernel::{AlgebraicSchemas, AlgebraicType, SharedPureApplication};
+    let algebraic_type = AlgebraicType {
+        rigid: true,
+        name: "SliceIter<uint8>".into(),
+        arguments: vec![],
+        variants: std::sync::Arc::new([]),
+        schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::new())),
+    };
+    let fold = |memory: &SharedCMemory| {
+        let read = AlgebraicTerm {
+            algebraic_type: algebraic_type.clone(),
+            node: AlgebraicTermNode::MemoryLoad {
+                memory: memory.clone(),
+                pointer: Box::new(Pointer {
+                    block: PointerBlock::Heap(992_000),
+                    offset: PointerOffsetTerm::Constant(0),
+                }),
+            },
+        };
+        let len = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
+            "click::rust::slice_iter::len::<uint8>".into(),
+            vec![PureFunctionArgument::Algebraic(read)],
+        ));
+        SharedIntegerTerm::from(IntegerTerm::range_fold(
+            int32_index(),
+            IntegerTerm::constant_i64(0),
+            Variable(324_000),
+            Variable(324_001),
+            IntegerTerm::Add(
+                SharedIntegerTerm::from(IntegerTerm::Variable(Variable(324_000))),
+                SharedIntegerTerm::from(len),
+            ),
+        ))
+    };
+    let mut work = Vec::new();
+    for unrelated in [0u64, 8, 64, 512] {
+        let mut memory = CMemory::new();
+        for index in 0..unrelated {
+            memory = memory.store(
+                Pointer {
+                    block: PointerBlock::Heap(993_000 + index),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::Int32(0u32.into()),
+            );
+        }
+        let memory = crate::kernel::intern_c_memory(memory);
+        let (left, right) = (fold(&memory), fold(&memory));
+        let (equal, measured) = crate::instrumentation::measure_deterministic_work(|| {
+            integer_terms_alpha_equivalent(&left, &right)
+        });
+        assert_eq!(equal, Some(true));
+        work.push(measured);
+    }
+    assert!(work.iter().all(|w| *w == work[0]), "{work:?}");
+}

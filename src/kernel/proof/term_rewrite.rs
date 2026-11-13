@@ -1728,6 +1728,10 @@ pub(crate) struct TermRewrite<'a> {
     comparison_reads: Option<
         &'a HashMap<((u32, u32), Pointer, LoadKind), (MachineTerm, ReadAddressDependencies)>,
     >,
+    /// Reads of a library or enum value at a fixed address, each with the
+    /// value its snapshot stores there: the read-over-write authority for
+    /// values a scalar cell cannot hold.
+    comparison_algebraic_reads: Option<&'a HashMap<((u32, u32), Pointer), AlgebraicTerm>>,
     // Recursive read-address walks must share this memo: each address can
     // reference the same earlier read more than once. Include lexical scope
     // and temporary rewrite modes so entries never cross interpretations.
@@ -1906,6 +1910,16 @@ impl<'a> TermRewrite<'a> {
         proposition: &Proposition,
         replacements: impl IntoIterator<Item = (MachineTerm, MachineTerm)>,
     ) -> Option<Proposition> {
+        Self::comparison_read_batch_with_algebraic(proposition, replacements, &HashMap::new())
+    }
+
+    /// [`Self::comparison_read_batch`], also replacing each read of a
+    /// library or enum value in `algebraic_reads` by the value stored there.
+    pub(crate) fn comparison_read_batch_with_algebraic(
+        proposition: &Proposition,
+        replacements: impl IntoIterator<Item = (MachineTerm, MachineTerm)>,
+        algebraic_reads: &HashMap<((u32, u32), Pointer), AlgebraicTerm>,
+    ) -> Option<Proposition> {
         let mut named = BTreeMap::new();
         let mut reads = HashMap::new();
         for (source, value) in replacements {
@@ -1936,13 +1950,14 @@ impl<'a> TermRewrite<'a> {
                 named.insert(variable, TypedCReplacement::Bitvector(value));
             }
         }
-        if named.is_empty() && reads.is_empty() {
+        if named.is_empty() && reads.is_empty() && algebraic_reads.is_empty() {
             return Some(proposition.clone());
         }
         let integers = BTreeMap::new();
         let algebraic = BTreeMap::new();
         let mut rewrite = TermRewrite::for_typed_variables(&named, &integers, &algebraic);
         rewrite.comparison_reads = Some(&reads);
+        rewrite.comparison_algebraic_reads = Some(algebraic_reads);
         rewrite.ensure_replacement_carriers();
         let mut carriers = rewrite.new_carrier_variables();
         collect_integer_substitution_variables_with_carriers(proposition, &mut carriers);
@@ -1984,6 +1999,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
+            comparison_algebraic_reads: None,
             shared_machine_cache: None,
             conditions: None,
             cited_conditions: None,
@@ -2085,6 +2101,7 @@ impl<'a> TermRewrite<'a> {
         let mut rewrite = Self {
             comparison_arithmetic: false,
             comparison_reads: None,
+            comparison_algebraic_reads: None,
             shared_machine_cache: None,
             conditions: None,
             cited_conditions: None,
@@ -2258,6 +2275,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
+            comparison_algebraic_reads: None,
             shared_machine_cache: None,
             algebraic: None,
             bitvector: None,
@@ -2399,6 +2417,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
+            comparison_algebraic_reads: None,
             shared_machine_cache: None,
             algebraic: None,
             bitvector: None,
@@ -2494,6 +2513,7 @@ impl<'a> TermRewrite<'a> {
         let mut walker = Self {
             comparison_arithmetic: false,
             comparison_reads: None,
+            comparison_algebraic_reads: None,
             shared_machine_cache: None,
             algebraic: None,
             bitvector: None,
@@ -2683,6 +2703,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
+            comparison_algebraic_reads: None,
             shared_machine_cache: None,
             algebraic: None,
             bitvector: None,
@@ -3504,6 +3525,13 @@ impl<'a> TermRewrite<'a> {
         {
             self.changed = true;
             return self.rewrite_algebraic_replacement(to);
+        }
+        if let AlgebraicTermNode::MemoryLoad { memory, pointer } = &term.node
+            && let Some(reads) = self.comparison_algebraic_reads
+            && let Some(replacement) = reads.get(&(memory.arena_id(), pointer.as_ref().clone()))
+        {
+            self.changed = true;
+            return replacement.clone();
         }
         let node = match &term.node {
             AlgebraicTermNode::Variable(v) => AlgebraicTermNode::Variable(*v),

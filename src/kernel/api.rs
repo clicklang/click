@@ -2061,6 +2061,8 @@ pub(crate) fn c_expression_has_pointer_type(state: &CState, expression: &CExpres
 pub(crate) fn c_expression_has_bool_type(state: &CState, expression: &CExpression) -> bool {
     match expression {
         CExpression::Value(value) => value.c_type() == CType::Bool,
+        // A variant test is a claim on the enum value, never a number.
+        CExpression::EnumIs { .. } => true,
         expression => super::eval::c_expression_lvalue_type(state, expression) == Some(CType::Bool),
     }
 }

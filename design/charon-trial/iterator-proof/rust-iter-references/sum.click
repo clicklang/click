@@ -30,6 +30,8 @@ fn sum(bytes: &[u8]) -> i32 {
         peel(prefix(bytes, 0u64)) using { 0u64 <= 0u64; };
         solve();
     }
+    have 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(bytes.len() - loop(0).iter.len());
+    have to_integer(total) == prefix(bytes, bytes.len() - loop(0).iter.len());
     loop {
         decreases iter.len();
         views bytes[0..bytes.len()];
@@ -88,7 +90,8 @@ fn sum(bytes: &[u8]) -> i32 {
                 }
                 have iter.len() < at(iteration, iter.len());
             } else {
-                step(); step(); step(); 
+                have iter.len() == 0u64;
+                step(); step(); step();
             }
         }
     }

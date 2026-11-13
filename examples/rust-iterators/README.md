@@ -6,14 +6,15 @@ exact mathematical sum of the bytes at function entry. The sidecar chooses a
 prefix invariant and bounds each intermediate sum by 255 times that prefix's
 length.
 
-Charon retains the standard slice iterator protocol. The checked proof
-observation is `iter.len()`, read through Rust's own slice-iterator
-methods: a successful
-`next()` saves the address `bytes.len() - iter.len()` into the slice, and
-reduces the remaining slice length before the source body, so the proof
-states no cursor. The copied pattern reads the saved address.
-An exhausted iterator performs no read. Remaining length is
-signed under the shared memory model's checked length limit.
+The unit sets `"iterators": "library"` (`docs/reference/rust.md`, Slice
+iterators as library values), so the iterator is imported through its Rust
+interface: `bytes` is iterated by a call to `SliceIter::iter`, and each pass
+calls `SliceIter::next(&mut iter)` and matches the `Option<&u8>` it returns.
+The proof observes the iterator through Rust's own methods, `iter.len()` and
+`iter.as_slice().as_ptr()`, and carries where it stands as an invariant,
+`iter.as_slice().as_ptr() == bytes + (bytes.len() - iter.len())`. The
+`preserve` script splits on `0u64 < iter.len()`; the copied pattern reads the
+yielded address, and an exhausted iterator performs no read.
 
 The sidecar uses Integer specification arithmetic,
 so it imports no library bridge: the contract and invariants compare exact
@@ -34,7 +35,7 @@ length as its decreasing measure.
 Immutable shared byte-slice bindings support copied byte patterns and shared
 reference variables, directly or through `.iter()`. The
 [reference iterator example](../rust-iter-references/README.md) proves a sum
-using yielded references. Shared scalar array iteration uses the same state; stored `.chunks_exact()`
+using yielded references. Shared scalar array iteration still uses the importer's older iterator state; stored `.chunks_exact()`
 iterators still hold a cursor and remaining length; see the [exact-chunk example](../rust-chunks-exact/README.md).
 This fixture covers immutable shared bytes. The pinned checksum libraries remain unverified.
 

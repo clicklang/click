@@ -1410,7 +1410,9 @@ impl<'a> Proof<'a> {
     ) -> Result<KernelProofHandle, ClickError> {
         let result = self
             .surface_goal()
-            .ok_or_else(|| self.step_error("preserve requires a spelled read-equality goal"))?
+            .ok_or_else(|| {
+                self.step_error("preserve requires a spelled read-equality or definedness goal")
+            })?
             .clone();
         self.apply_transport_certificate(&TransportCertificate {
             nodes: vec![
