@@ -3118,10 +3118,24 @@ pub(super) fn raise_kernel_term(
                 },
             }
         }
-        Node::Call { name, arguments } => SurfaceTerm::Call {
-            name: generic_instance_source_name(name).into(),
-            arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
-        },
+        Node::Call { name, arguments } => {
+            let call = SurfaceTerm::Call {
+                name: generic_instance_source_name(name).into(),
+                arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
+            };
+            // The root may read a call's word at the other signedness. Its
+            // declaration alone cannot recover that selected interpretation.
+            // Native 128-bit calls refuse even identity casts, so their
+            // unchanged declaration remains the supported spelling.
+            if let KernelType::C(ty) = term.ty()
+                && MachineIntegerType::from_c_type(*ty)
+                    .is_some_and(|format| format.format().bits() <= 64)
+            {
+                synthesize_observation_operand(call, *ty)?
+            } else {
+                call
+            }
+        }
         Node::BoolLiteral(value) => bool_literal(*value),
         Node::BoolIf { arguments } | Node::MachineIf { arguments } => SurfaceTerm::If {
             condition: Box::new(bool_truth(recurse(&arguments[0])?)),

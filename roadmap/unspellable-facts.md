@@ -138,8 +138,17 @@ pointer-index transport. Unchanged leaves keep exact payload identity; changed
 calls rebuild common arguments. Native/shared selected-source matching uses the
 existing typed application identity. Pure-call arguments retain their original
 snapshots under transport, following the native rule. No new search or index is
-introduced. The actual call evaluator remains native until 3f; Surface integration
-is the next slice.
+introduced. [PR #2694](https://github.com/clicklang/click/pull/2694) merged and its
+pushed commit was verified on upstream. All 1,699 selected regressions and all
+5,275 regular fixtures passed, with zero fact-stability differences.
+
+3e imports native integer calls through the common call constructor and retains
+nested numeric argument structure at the Surface boundary. Raising an ordinary
+machine call spells its selected integer type explicitly, including a signed
+reading of an unsigned call. Native 128-bit call identity-cast refusals remain
+unchanged. Source roundtrips cover all ten integer result types, nested calls,
+casts and arithmetic; certificate checks preserve definedness and selected
+premises. The actual evaluator producer switch is the remaining 3f slice.
 
 ## Chunk 4: one producer boundary per PR
 
