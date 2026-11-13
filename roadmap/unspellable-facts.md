@@ -215,6 +215,20 @@ fragment route preserves its existing error outcomes. The two resource-schema
 consumers make their native compatibility read explicitly at their existing
 argument-coercion boundary; coercion and prerequisite rules are unchanged.
 
+[PR #2716](https://github.com/clicklang/click/pull/2716) merged 5b; both pushed
+commits were verified upstream. All 1,681 selected checks, 84 integrated Rust and
+handoff checks, and all 5,279 regular fixtures passed; the fact-stability audit
+recorded zero differences.
+
+5c introduces retained C expression paths. Unsigned arithmetic, supported bitwise
+operations and order comparisons consume shared operands directly. Bitwise AND
+retains the existing bounded-tag side facts and no-carry requirements; conditional
+paths forward the selected result with its facts and obligations. Native
+primitive fallbacks keep their existing guards and complete value payloads,
+then retain compound machine results. Scalar leaves and other result families
+keep their cheap native carriers. Native-only consumers use an explicit output
+adapter; local storage and return handoffs are the following slices.
+
 ## Chunk 4: one producer boundary per PR
 
 Chunk 4 migrates existing numeric producers to retain `KernelTerm` operands and

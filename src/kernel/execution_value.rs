@@ -19,6 +19,24 @@ impl From<KernelTerm> for ExecutionValue {
     }
 }
 impl ExecutionValue {
+    /// Import a native machine producer's result once at its execution boundary.
+    /// Other result families keep their exact native payloads.
+    pub(in crate::kernel) fn retain_native(value: CValue) -> Self {
+        if let crate::kernel::integer_c_value!(term) = &value {
+            // Scalar leaves have no expression prefix to retain. Keep their
+            // existing cheap reading, including condition truth values.
+            if matches!(
+                term,
+                MachineTerm::Constant { .. } | MachineTerm::Variable(_)
+            ) {
+                return Self::Native(value);
+            }
+            let format = MachineIntegerType::from_c_type(value.c_type()).unwrap();
+            return Self::Shared(KernelTermImport::default().machine(format, term));
+        }
+        Self::Native(value)
+    }
+
     pub(in crate::kernel) fn into_native(self) -> CValue {
         match self {
             Self::Native(value) => value,
@@ -76,6 +94,22 @@ impl ExecutionValue {
             }
             Self::Shared(term) => Some((format, MachineOperandView::Shared(term))),
         }
+    }
+}
+
+impl<V> CExpressionPath<V> {
+    pub(in crate::kernel) fn map_value<W>(self, map: impl FnOnce(V) -> W) -> CExpressionPath<W> {
+        CExpressionPath {
+            outcome: self.outcome.map_value(map),
+            facts: self.facts,
+            obligations: self.obligations,
+        }
+    }
+}
+
+impl From<CExpressionPath> for CExpressionPath<ExecutionValue> {
+    fn from(path: CExpressionPath) -> Self {
+        path.map_value(ExecutionValue::retain_native)
     }
 }
 

@@ -1468,7 +1468,22 @@ pub(in crate::kernel) fn coerce_c_null_pointer_constant(
     }
 }
 
+/// Explicit compatibility boundary for consumers that still require native values.
 pub(in crate::kernel) fn evaluate_c_expression_paths(
+    state: &CState,
+    expression: &CExpression,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CExpressionPath>> {
+    Ok(
+        evaluate_expression_value_paths(state, expression, assumptions, budget)?
+            .into_iter()
+            .map(|path| path.map_value(crate::kernel::execution_value::ExecutionValue::into_native))
+            .collect(),
+    )
+}
+
+pub(super) fn evaluate_native_expression_paths(
     state: &CState,
     expression: &CExpression,
     assumptions: &PureFactContext,
