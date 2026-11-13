@@ -33,7 +33,9 @@ pub(in crate::kernel) mod predicate_dependencies;
 mod quantifier_polarity;
 pub(in crate::kernel) mod required_constructions;
 mod shared_machine;
-pub(in crate::kernel) use shared_machine::bitwise_tag_equation;
+pub(in crate::kernel) use shared_machine::{
+    bitwise_tag_equation, execution_narrow_binary, execution_rust_shift,
+};
 pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (CResource, ExecutionFacts, Vec<ProofObligation>);

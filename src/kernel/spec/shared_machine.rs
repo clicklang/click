@@ -27,6 +27,24 @@ pub(super) struct PreparedExpression {
     pub(super) obligations: Vec<ProofObligation>,
 }
 
+/// Execution uses the same Rust producer and count debts as specification lowering.
+pub(in crate::kernel) fn execution_rust_shift(
+    op: MachineBinaryOp,
+    left: &SpecValue,
+    right: &SpecValue,
+) -> Option<(KernelTerm, Vec<ProofObligation>)> {
+    shifts::rust(op, left, right).map(|result| (result.value, result.obligations))
+}
+
+pub(in crate::kernel) fn execution_narrow_binary(
+    format: MachineIntegerType,
+    op: MachineBinaryOp,
+    left: &SpecValue,
+    right: &SpecValue,
+) -> Option<KernelTerm> {
+    narrow::apply(format, op, left, right).map(|result| result.value)
+}
+
 pub(super) fn operator(expression: &SpecExpression) -> Option<MachineBinaryOp> {
     Some(match expression {
         SpecExpression::Add(..) => MachineBinaryOp::Add,
