@@ -1,7 +1,7 @@
 //! Shared arithmetic producers, with definedness kept outside the term.
 //! Complete same-format arithmetic trees retain their operands in obligations.
 //! Deferred paths use the same constructor after evaluating both operands.
-//! Mixed-format and other unmigrated operations keep explicit native boundaries.
+//! Ordinary arithmetic retains the existing integer promotions through 64 bits.
 use super::*;
 mod casts;
 pub(super) use casts::cast;
@@ -26,8 +26,8 @@ pub(super) fn operator(expression: &SpecExpression) -> Option<MachineBinaryOp> {
     })
 }
 
-/// Retain evaluated scalar operands when the native operator has the same
-/// format on both sides. Other promotion rules stay at the native boundary.
+/// Retain evaluated operands through the existing usual arithmetic conversions.
+/// Mixed-format shifts keep their separate compatibility boundary.
 pub(super) fn apply_values(
     operator: Option<MachineBinaryOp>,
     left: &SpecValue,
@@ -40,20 +40,40 @@ pub(super) fn apply_values(
     let operator = operator?;
     let (a, left) = left.machine()?;
     let (b, right) = right.machine()?;
-    if a != b
-        || !matches!(
-            a,
-            MachineIntegerType::Int32
-                | MachineIntegerType::UInt32
-                | MachineIntegerType::Int64
-                | MachineIntegerType::UInt64
-        )
-    {
-        return None;
-    }
-    let left = retained_operand(a, left);
-    let right = retained_operand(b, right);
-    Some(apply(a, operator, left, right, budget))
+    let format = if matches!(
+        operator,
+        MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
+    ) {
+        if a != b
+            || !matches!(
+                a,
+                MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64
+                    | MachineIntegerType::UInt64
+            )
+        {
+            return None;
+        }
+        a
+    } else {
+        crate::kernel::machine_integer::conversion::usual_arithmetic_format(a, b)?
+    };
+    let promote = |source, value| {
+        let root = retained_operand(source, value);
+        if source == format {
+            Some(root)
+        } else {
+            cast(&SpecValue::Shared(root), format.c_type())
+        }
+    };
+    Some(apply(
+        format,
+        operator,
+        promote(a, left)?,
+        promote(b, right)?,
+        budget,
+    ))
 }
 
 fn retained_operand(format: MachineIntegerType, value: MachineOperandView<'_>) -> KernelTerm {
@@ -280,6 +300,9 @@ fn wrap(format: MachineIntegerType, value: MachineTerm) -> CValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod mixed_width_tests {
+        include!("shared_machine/mixed_width_tests.rs");
+    }
 
     fn boxed_domain(value: &Proposition) -> Proposition {
         match value {
