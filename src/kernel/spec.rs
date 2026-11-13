@@ -9878,6 +9878,8 @@ mod binding_tests;
 #[cfg(test)]
 mod identity_cast_tests;
 #[cfg(test)]
+mod narrowing_cast_tests;
+#[cfg(test)]
 mod signedness_cast_tests;
 #[cfg(test)]
 mod widening_cast_tests;

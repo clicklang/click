@@ -3,7 +3,28 @@ use super::*;
 use crate::kernel::MachineCastSpelling as E;
 
 pub(in crate::kernel::spec) fn cast(value: &SpecValue, target: CType) -> Option<KernelTerm> {
-    cast_signedness(value, target).or_else(|| cast_widening(value, target))
+    cast_signedness(value, target)
+        .or_else(|| cast_widening(value, target))
+        .or_else(|| cast_narrowing(value, target))
+}
+
+/// Narrowing retains the existing modular truncation and low-word rules.
+pub(in crate::kernel::spec) fn cast_narrowing(
+    value: &SpecValue,
+    target: CType,
+) -> Option<KernelTerm> {
+    let SpecValue::Shared(root) = value else {
+        return None;
+    };
+    let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let destination = MachineIntegerType::from_c_type(target)?;
+    if source.format().bits() <= destination.format().bits()
+        || source.format().bits() > 64
+        || !root.is_shared_machine_operand()
+    {
+        return None;
+    }
+    Some(cast_root(root, source, destination))
 }
 
 /// Widening changes only the selected value's format. Native inputs and

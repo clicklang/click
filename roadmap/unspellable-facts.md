@@ -141,7 +141,16 @@ among signed/unsigned 8/16/32/64-bit types. It reuses the same selected-root
 constructor as 4b, including the native conversion table's generic casts and
 32-to-64-bit extension nodes. Exact-term parity covers constants, opaque leaves,
 arithmetic, and prior conversion roots; growing-prefix scaling checks retained
-children and zero exports at 16/64/256 steps. Subchunks 4d–4j remain open.
+children and zero exports at 16/64/256 steps.
+[PR #2678](https://github.com/clicklang/click/pull/2678) merged and its commit was
+verified on upstream. All 1,511 scaling tests and the regular fixture corpus
+passed, with zero fact-stability differences.
+
+Subchunk 4d retains shared results through the 24 narrowing conversions among
+signed/unsigned 8/16/32/64-bit types, using the existing generic truncation and
+64-to-32-bit low-word constructor rules. Exact-native parity covers boundary
+constants, opaque leaves, arithmetic and prior cast roots; 16/64/256-step scaling
+checks growing shared prefixes without exports. Subchunks 4e–4j remain open.
 
 For each PR:
 

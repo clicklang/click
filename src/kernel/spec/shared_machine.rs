@@ -6,7 +6,7 @@ use super::*;
 mod casts;
 pub(super) use casts::cast;
 #[cfg(test)]
-pub(super) use casts::{cast_signedness, cast_widening};
+pub(super) use casts::{cast_narrowing, cast_signedness, cast_widening};
 
 pub(super) struct PreparedExpression {
     pub(super) value: KernelTerm,
