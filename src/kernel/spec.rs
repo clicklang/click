@@ -7652,6 +7652,20 @@ fn evaluate_spec_pure_function_application_paths_in(
             });
             continue;
         }
+        if !budget.machine_result_production_disabled
+            && let Some(format) = MachineIntegerType::from_c_type(result_type)
+        {
+            let application =
+                SharedPureApplication::intern(name.to_owned(), call_arguments(arguments));
+            results.push(SpecExpressionPath {
+                value: KernelTermImport::default()
+                    .machine_call(format, &application)
+                    .into(),
+                facts,
+                obligations,
+            });
+            continue;
+        }
         let value = if result_type.is_pointer() {
             let (all_null, object_class) =
                 pure_pointer_result_class_from(pointer_result, |index| {

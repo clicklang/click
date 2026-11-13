@@ -9,7 +9,17 @@ const PAIRS: [(MachineIntegerType, MachineIntegerType); 4] = [
 ];
 
 pub(super) fn check_native_parity(root: KernelTerm, destination: MachineIntegerType) {
-    let native = SpecValue::Shared(root.clone()).into_native();
+    // Compare explicit tree exports, independently of native handoffs that
+    // retain shared numeric call arguments.
+    let export = |root: &KernelTerm| {
+        let PureFunctionArgument::Value(value) =
+            KernelTermExport::default().argument(root).unwrap()
+        else {
+            panic!("machine result")
+        };
+        value
+    };
+    let native = export(&root);
     let expected =
         crate::kernel::machine_integer::conversion::convert_value(native, destination).unwrap();
     for count in [1, 3] {
@@ -19,7 +29,10 @@ pub(super) fn check_native_parity(root: KernelTerm, destination: MachineIntegerT
         assert!(path.facts.is_empty());
         assert!(path.obligations.is_empty());
         assert_eq!(KernelTermExport::machine_export_count(), exports);
-        assert_eq!(path.value.into_native(), expected);
+        let SpecValue::Shared(root) = path.value else {
+            unreachable!()
+        };
+        assert_eq!(export(&root), expected);
     }
 }
 

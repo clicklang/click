@@ -537,8 +537,8 @@ impl KernelTermImport {
         Some(KernelTerm::intern(KernelType::C(result.c_type()), node))
     }
 
-    /// Prepare a common machine call root without enabling the evaluator's
-    /// producer switch. Numeric children retain their structure; opaque argument
+    /// Construct a common machine call root. Numeric children retain their
+    /// structure; opaque argument
     /// descriptors retain this producer's exact payload, not a semantic alias.
     pub(crate) fn machine_call(
         &mut self,

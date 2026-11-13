@@ -144,8 +144,10 @@ fn common_call_arithmetic_preserves_native_values_and_domains() {
         for b in FORMATS {
             let l = call(a, "left_call");
             let r = call(b, "right_call");
-            let native_l = SpecValue::Shared(l.clone()).into_native();
-            let native_r = SpecValue::Shared(r.clone()).into_native();
+            // The parity oracle needs fully materialized native inputs;
+            // production handoffs intentionally retain argument handles.
+            let native_l = a.value_from_term(KernelTermExport::machine(&l).unwrap());
+            let native_r = b.value_from_term(KernelTermExport::machine(&r).unwrap());
             for op in [
                 MachineBinaryOp::Add,
                 MachineBinaryOp::Subtract,
@@ -298,6 +300,192 @@ fn wide_call_identity_casts_keep_the_native_type_refusal() {
                         assert_eq!(KernelTermExport::machine_export_count(), exports);
                     }
                 }
+            }
+        }
+    }
+}
+
+fn call_expression(format: MachineIntegerType, arguments: Vec<SpecExpression>) -> SpecExpression {
+    SpecExpression::PureFunctionApplication {
+        name: "produced_call".into(),
+        arguments: arguments
+            .into_iter()
+            .map(SpecPureFunctionArgument::Value)
+            .collect(),
+        result_type: format.c_type(),
+        pointer_result: None,
+        result_object_class: None,
+        projection: None,
+    }
+}
+
+fn produced_paths(expression: &SpecExpression, legacy: bool) -> Vec<SpecExpressionPath> {
+    let mut execution = ExecutionBudget::new();
+    let mut budget = SpecEvaluation::logical(&mut execution);
+    budget.machine_preparation_disabled = legacy;
+    budget.machine_result_production_disabled = legacy;
+    evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        SpecScope::unbound(&CState::new(), None),
+        expression,
+        &PureFactContext::new(),
+        &mut budget,
+    )
+    .unwrap()
+}
+
+#[test]
+fn actual_call_producers_keep_all_integer_types_and_nested_arguments() {
+    let _session = VerificationSession::enter();
+    let input = SpecExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(995830))));
+    for format in FORMATS
+        .into_iter()
+        .chain([MachineIntegerType::Int128, MachineIntegerType::UInt128])
+    {
+        for argument in [
+            input.clone(),
+            call_expression(MachineIntegerType::Int32, vec![input.clone()]),
+        ] {
+            let expression = call_expression(format, vec![argument]);
+            let exports = KernelTermExport::machine_export_count();
+            let paths = produced_paths(&expression, false);
+            assert_eq!(paths.len(), 1);
+            let SpecValue::Shared(root) = &paths[0].value else {
+                panic!("common call result")
+            };
+            assert_eq!(root.ty(), &KernelType::C(format.c_type()));
+            assert!(matches!(root.node(), KernelTermNode::Call { .. }));
+            assert!(paths[0].facts.is_empty());
+            assert!(paths[0].obligations.is_empty());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let expected = produced_paths(&expression, true);
+            let native = expected[0].value.clone().into_native();
+            assert_eq!(
+                KernelTermExport::machine(root).unwrap(),
+                native_term(&c_value_bitvector_term(&native).unwrap())
+            );
+        }
+    }
+}
+
+#[test]
+fn actual_call_results_keep_deferred_bindings_and_wide_cast_refusals() {
+    let _session = VerificationSession::enter();
+    for format in FORMATS
+        .into_iter()
+        .chain([MachineIntegerType::Int128, MachineIntegerType::UInt128])
+    {
+        let call = call_expression(format, vec![]);
+        let bound = SpecExpression::Let {
+            name: "result".into(),
+            value: Box::new(call.clone()),
+            body: Box::new(SpecExpression::CExpression(CExpression::Variable(
+                "result".into(),
+            ))),
+        };
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(produced_paths(&bound, false), produced_paths(&call, false));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        if format.format().bits() == 128 {
+            for target in [CType::Int128, CType::UInt128, CType::Int32] {
+                let cast = SpecExpression::Cast(Box::new(call.clone()), target);
+                for legacy in [false, true] {
+                    let mut execution = ExecutionBudget::new();
+                    let mut budget = SpecEvaluation::logical(&mut execution);
+                    budget.machine_result_production_disabled = legacy;
+                    let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                        SpecScope::unbound(&CState::new(), None),
+                        &cast,
+                        &PureFactContext::new(),
+                        &mut budget,
+                    )
+                    .unwrap();
+                    assert!(paths.is_empty());
+                    assert_eq!(
+                        budget.dropped_runtime_error,
+                        Some(CRuntimeError::TypeMismatch)
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn actual_call_native_handoff_retains_nested_call_arguments() {
+    let _session = VerificationSession::enter();
+    let expression = call_expression(
+        MachineIntegerType::Int32,
+        vec![call_expression(MachineIntegerType::Int32, vec![])],
+    );
+    let mut paths = produced_paths(&expression, false);
+    let SpecValue::Shared(root) = &paths[0].value else {
+        panic!()
+    };
+    let child = root.children()[0].clone();
+    let exports = KernelTermExport::machine_export_count();
+    let native = paths.pop().unwrap().value.into_native();
+    let CValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = native else {
+        panic!()
+    };
+    let [PureFunctionArgument::SharedMachine(value)] = arguments.as_slice() else {
+        panic!("handoff materialized the argument")
+    };
+    assert_eq!(value.shared_operand(), Some(&child));
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+}
+
+#[test]
+fn actual_call_arithmetic_keeps_native_values_and_definedness() {
+    let _session = VerificationSession::enter();
+    let call = call_expression(MachineIntegerType::Int32, vec![]);
+    let one = SpecExpression::Value(CValue::Int32(MachineTerm::constant(1)));
+    for expression in [
+        SpecExpression::Add(Box::new(call.clone()), Box::new(one.clone())),
+        SpecExpression::Divide(Box::new(one.clone()), Box::new(call.clone())),
+        SpecExpression::Cast(Box::new(call.clone()), CType::UInt64),
+        call_expression(
+            MachineIntegerType::Int32,
+            vec![SpecExpression::Add(Box::new(call), Box::new(one))],
+        ),
+    ] {
+        for defined in [false, true] {
+            let evaluate = |legacy| {
+                let mut execution = ExecutionBudget::new();
+                let mut budget = SpecEvaluation::logical(&mut execution);
+                budget.machine_preparation_disabled = legacy;
+                budget.machine_result_production_disabled = legacy;
+                budget.c_definedness = defined;
+                evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                    SpecScope::unbound(&CState::new(), None),
+                    &expression,
+                    &PureFactContext::new(),
+                    &mut budget,
+                )
+                .unwrap()
+            };
+            let exports = KernelTermExport::machine_export_count();
+            let actual = evaluate(false);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let expected = evaluate(true);
+            assert_eq!(actual.len(), expected.len());
+            assert_eq!(actual.len(), 1);
+            let SpecValue::Shared(root) = &actual[0].value else {
+                panic!("retained result")
+            };
+            let native = expected[0].value.clone().into_native();
+            assert_eq!(
+                KernelTermExport::machine(root).unwrap(),
+                c_value_bitvector_term(&native).unwrap()
+            );
+            assert_eq!(actual[0].facts, expected[0].facts);
+            assert_eq!(actual[0].obligations.len(), expected[0].obligations.len());
+            for (actual, expected) in actual[0].obligations.iter().zip(&expected[0].obligations) {
+                assert_eq!(
+                    native_domain(&actual.proposition),
+                    native_domain(&expected.proposition)
+                );
+                assert_eq!(actual.evaluation_domain, expected.evaluation_domain);
+                assert_eq!(actual.assumable, expected.assumable);
             }
         }
     }
