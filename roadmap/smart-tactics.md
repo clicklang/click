@@ -96,10 +96,9 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
 - **Operation guards:** theorem application, scope completion, prepared-step
   publication, have opening and contract-claim opening have test-build discovery guards.
-  Statement preparation has two first-failure reproductions through existing
-  bridges. Removing the optional call-partition inference also exposes
-  `call_frame` through `call_kept_ownership`; first guard failures mask later
-  crossings. See the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
+  Statement preparation retains loan-access, raw ownership-validation and
+  composite-framing dependencies. First guard failures mask later crossings;
+  re-probe complete preparation as each route is removed. See the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
   Statement preparation remains unguarded; no exception exempts its search.
 - **Enforcement gap:** lexical dependency freezing and selected work counters
   do not prohibit every search call during expanded replay or detect arbitrary
@@ -302,9 +301,14 @@ overlap and ended-scope safety controls.
 
 When a verified call has memory effects,
 [`functions.rs`](../src/kernel/functions.rs) calls `call_kept_ownership` on the
-caller frame. It enumerates owned instances and composite families; bodies
-without the argument-direct property are opened. Skipping members of one direct
-family does not establish independence from the number of families.
+caller frame. Field-bearing instances stay opaque: call preparation does not
+open their bodies or gather their memory/facts. With no owned composites, the
+frame is retained directly without constructing `ProofSearch`. The selected
+instance-count regression guards that route against discovery.
+
+Owned composite families still use the legacy framing search; bodies without
+the argument-direct property are opened. Skipping members of one direct family
+does not establish independence from the number of families.
 
 Hold the callee contract/effect fixed and grow kept instances, non-direct
 composites, then distinct direct families. Measure call preparation, execution

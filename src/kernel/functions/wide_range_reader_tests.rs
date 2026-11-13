@@ -59,10 +59,6 @@ fn wide_resource_body_loadability_preserves_native_extent() {
         .with_resource_context(ResourceContext::new().unchecked_with_fact(held.clone()));
     let facts = PureFactContext::new();
     let definitions = [definition.clone()];
-    let (ranges, _) =
-        unmatched_instance_body_ownership(&held, &definitions, &state, &facts).unwrap();
-    assert_eq!(ranges.len(), 1);
-    assert!(ranges[0].wide_bounds().is_some());
     let opened = rewrite_resource_instance_selecting_children_unspelled(
         &state,
         &instance,

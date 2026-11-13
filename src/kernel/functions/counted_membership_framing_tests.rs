@@ -278,9 +278,17 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
                 &assumptions,
             )
         };
-        let recorded = CallKeptRanges::recorded_on(&after).expect("private caller custody");
-        assert!(recorded.holds_access(&private, 4, &assumptions));
-        assert!(!recorded.holds_access(&shared, 4, &assumptions));
+        let recorded = CallKeptRanges::recorded_on(&after);
+        if wrapper_kind == 2 {
+            assert!(
+                recorded.is_none(),
+                "a field-bearing instance stays opaque until explicitly opened"
+            );
+        } else {
+            let recorded = recorded.expect("flat or composite caller custody");
+            assert!(recorded.holds_access(&private, 4, &assumptions));
+            assert!(!recorded.holds_access(&shared, 4, &assumptions));
+        }
         assert!(
             !same_load(&shared),
             "membership cannot certify shared-body load equality across a call (wrapper {wrapper_kind})"

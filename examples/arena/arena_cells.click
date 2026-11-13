@@ -5025,8 +5025,51 @@ int32 arena_pipeline(
     have s0.live == 1 by {
         assumption();
     }
+    // Expose only the selected region to record its descriptor separation.
+    // Keep the region folded across the call; preserve the selected read explicitly.
+    let { live: retained_live, capacity: retained_capacity } = unfold(s0);
+    let { start: retained_first_start, end: retained_first_end } = unfold(r1);
+    let s0 = fold(arena_state(arena), { live: retained_live, capacity: retained_capacity }) {
+        requires arena->capacity <= 536870911 by assumption();
+        requires arena->capacity == (retained_capacity as int32) by assumption();
+        requires arena->live_regions == (retained_live as int32) by assumption();
+        requires 0 <= (retained_live as int32) by assumption();
+        requires separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by assumption();
+        requires separate(memory(*arena), memory(arena->data[0..arena->capacity])) by assumption();
+        requires separate(memory(*arena), memory(arena->occupied[0..arena->capacity])) by assumption();
+    };
+    have separate(s0, memory(*first)) by { assumption(); }
+    have separate(memory(*second), memory(*first)) by { assumption(); }
+    have separate(s0 * memory(*second), memory(*first)) by {
+        apply(separation::separate_star(s0, memory(*second), memory(*first))) using {
+            separate(s0, memory(*first));
+            separate(memory(*second), memory(*first));
+        };
+    }
+    let r1 = fold(arena_region(first), { start: retained_first_start, end: retained_first_end }) {
+        requires first->start == (retained_first_start as int32) by assumption();
+        requires first->end == (retained_first_end as int32) by assumption();
+        requires 0 <= (retained_first_start as int32) by assumption();
+        requires (retained_first_start as int32) < (retained_first_end as int32) by assumption();
+    };
     mark a2;
     let { outcome: o2 } = step(arena_alloc, { st: s0 });
+    have contains(at(a2, s0) * memory(*second), statement(9).footprint) by { assumption(); }
+    have contains(memory(*first), memory(first->arena)) by { normalize(); }
+    have separate(statement(9).footprint, memory(first->arena)) by {
+        apply(separation::restrict(at(a2, s0) * memory(*second), memory(*first), statement(9).footprint, memory(first->arena))) using {
+            separate(at(a2, s0) * memory(*second), memory(*first));
+            contains(at(a2, s0) * memory(*second), statement(9).footprint);
+            contains(memory(*first), memory(first->arena));
+        };
+    }
+    have first->arena == at(a2, first->arena) by {
+        transport_certificate {
+            premise 0: separate(statement(9).footprint, memory(first->arena)) => separate(statement(9).footprint, memory(first->arena));
+            preserve 0 => first->arena == at(a2, first->arena);
+            conclusion 1;
+        }
+    }
     have allocated == 1 implies second->arena == arena by {
         assumption();
     }
@@ -5343,6 +5386,18 @@ int32 arena_pipeline(
     have first->arena == arena by {
         assumption();
     }
+    let { live: w1_live, capacity: w1_capacity } = unfold(s0);
+    let { start: w1_start, end: w1_end } = unfold(r2);
+    let s0 = fold(arena_state(arena), { live: w1_live, capacity: w1_capacity });
+    have separate(r1, memory(*second)) by { assumption(); }
+    have separate(s0, memory(*second)) by { assumption(); }
+    have separate(r1 * s0, memory(*second)) by {
+        apply(separation::separate_star(r1, s0, memory(*second))) using {
+            separate(r1, memory(*second));
+            separate(s0, memory(*second));
+        };
+    }
+    let r2 = fold(arena_region(second), { start: w1_start, end: w1_end });
     mark w1;
     step(arena_write, { r: r1, st: s0 }) {
         requires 0 <= 0 by normalize();
@@ -5360,6 +5415,22 @@ int32 arena_pipeline(
                     conclusion 2;
                 }
             }
+        }
+    }
+    have contains(at(w1, r1) * at(w1, s0), statement(11).footprint) by { assumption(); }
+    have contains(memory(*second), memory(second->arena)) by { normalize(); }
+    have separate(statement(11).footprint, memory(second->arena)) by {
+        apply(separation::restrict(at(w1, r1) * at(w1, s0), memory(*second), statement(11).footprint, memory(second->arena))) using {
+            separate(at(w1, r1) * at(w1, s0), memory(*second));
+            contains(at(w1, r1) * at(w1, s0), statement(11).footprint);
+            contains(memory(*second), memory(second->arena));
+        };
+    }
+    have second->arena == at(w1, second->arena) by {
+        transport_certificate {
+            premise 0: separate(statement(11).footprint, memory(second->arena)) => separate(statement(11).footprint, memory(second->arena));
+            preserve 0 => second->arena == at(w1, second->arena);
+            conclusion 1;
         }
     }
     have r1.start == at(w1, r1.start) by {
@@ -5501,6 +5572,47 @@ int32 arena_pipeline(
     have first->arena->data == second->arena->data by {
         assumption();
     }
+    let { live: w2_live, capacity: w2_capacity } = unfold(s0);
+    let { start: w2_start, end: w2_end } = unfold(r1);
+    mark w2_open;
+    let s0 = fold(arena_state(arena), { live: w2_live, capacity: w2_capacity });
+    have separate(r2, memory(*first)) by { assumption(); }
+    have separate(s0, memory(*first)) by { assumption(); }
+    have separate(r2 * s0, memory(*first)) by {
+        apply(separation::separate_star(r2, s0, memory(*first))) using {
+            separate(r2, memory(*first));
+            separate(s0, memory(*first));
+        };
+    }
+    have separate(r2, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)])) by { assumption(); }
+    have separate(s0, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)])) by { assumption(); }
+    have separate(r2 * s0, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)])) by {
+        apply(separation::separate_star(r2, s0, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]))) using {
+            separate(r2, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)])); separate(s0, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]));
+        };
+    }
+    have (w2_start as int32) <= ((first->start + 0) as int32) by { solve(); }
+    have ((first->start + 0) as int32) < (w2_end as int32) by { solve(); }
+    have contains(memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]), memory(at(w2_open, arena->data)[first->start + 0])) by {
+        apply(separation::contains_element(at(w2_open, arena->data), (w2_start as int32), (w2_end as int32), first->start + 0)) using {
+            defined(first->start + 0);
+            (w2_start as int32) <= ((first->start + 0) as int32);
+            ((first->start + 0) as int32) < (w2_end as int32);
+        };
+    }
+    have contains(r2 * s0, r2 * s0) by { apply(separation::contains_refl(r2 * s0)); }
+    have separate(r2 * s0, memory(at(w2_open, arena->data)[first->start + 0])) by {
+        apply(separation::restrict(r2 * s0, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]), r2 * s0, memory(at(w2_open, arena->data)[first->start + 0]))) using {
+            separate(r2 * s0, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]));
+            contains(r2 * s0, r2 * s0);
+            contains(memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]), memory(at(w2_open, arena->data)[first->start + 0]));
+        };
+    }
+    let r1 = fold(arena_region(first), { start: w2_start, end: w2_end });
+    have first->arena->data == at(w2_open, arena->data) by {
+        rewrite(first->arena == arena);
+        assumption();
+    }
     mark w2;
     step(arena_write, { r: r2, st: s0 }) {
         requires 0 <= 0 by normalize();
@@ -5518,6 +5630,22 @@ int32 arena_pipeline(
                     conclusion 2;
                 }
             }
+        }
+    }
+    have contains(at(w2, r2) * at(w2, s0), statement(12).footprint) by { assumption(); }
+    have contains(memory(*first), memory(first->arena)) by { normalize(); }
+    have separate(statement(12).footprint, memory(first->arena)) by {
+        apply(separation::restrict(at(w2, r2) * at(w2, s0), memory(*first), statement(12).footprint, memory(first->arena))) using {
+            separate(at(w2, r2) * at(w2, s0), memory(*first));
+            contains(at(w2, r2) * at(w2, s0), statement(12).footprint);
+            contains(memory(*first), memory(first->arena));
+        };
+    }
+    have first->arena == at(w2, first->arena) by {
+        transport_certificate {
+            premise 0: separate(statement(12).footprint, memory(first->arena)) => separate(statement(12).footprint, memory(first->arena));
+            preserve 0 => first->arena == at(w2, first->arena);
+            conclusion 1;
         }
     }
     have r1.start == at(w2, r1.start) by {
@@ -5711,16 +5839,24 @@ int32 arena_pipeline(
         rewrite(first->start == r1.start);
         normalize() using { r1.start < r1.end; };
     }
-    have first->arena->data[(first->start + 0)] == at(w2, first->arena->data[(first->start + 0)]) by {
-        transport(at(w2, first->arena->data[(first->start + 0)]) == at(w2, first->arena->data[(first->start + 0)]), first->arena->data[(first->start + 0)] == at(w2, first->arena->data[(first->start + 0)])) using {
-            first->arena->data == at(w2, first->arena->data);
-            first->start == at(w2, first->start);
-            r1.start == first->start;
-            first->start < r1.end;
-            (r1.start as int32) <= ((first->start + 0) as int32);
-            ((first->start + 0) as int32) < (r1.end as int32);
-            &first->arena->data[first->start + 0] == at(w2, &first->arena->data[first->start + 0]);
+    have contains(memory(at(w2_open, arena->data)[at(w2, first->start) + 0]), memory(at(w2_open, arena->data)[at(w2, first->start) + 0])) by { apply(separation::contains_refl(memory(at(w2_open, arena->data)[at(w2, first->start) + 0]))); }
+    have separate(statement(12).footprint, memory(at(w2_open, arena->data)[at(w2, first->start) + 0])) by {
+        apply(separation::restrict(at(w2, r2) * at(w2, s0), memory(at(w2_open, arena->data)[at(w2, first->start) + 0]), statement(12).footprint, memory(at(w2_open, arena->data)[at(w2, first->start) + 0]))) using {
+            at(w2, separate(r2 * s0, memory(at(w2_open, arena->data)[first->start + 0])));
+            contains(at(w2, r2) * at(w2, s0), statement(12).footprint);
+            contains(memory(at(w2_open, arena->data)[at(w2, first->start) + 0]), memory(at(w2_open, arena->data)[at(w2, first->start) + 0]));
         };
+    }
+    have at(w2_open, arena->data)[at(w2, first->start) + 0] == at(w2, at(w2_open, arena->data)[first->start + 0]) by { assumption(); }
+    have at(w2, first->arena->data) == at(w2_open, arena->data) by { assumption(); }
+    have first->arena->data == at(w2_open, arena->data) by {
+        rewrite(first->arena->data == at(w2, first->arena->data));
+        assumption();
+    }
+    have first->arena->data[(first->start + 0)] == at(w2, first->arena->data[(first->start + 0)]) by {
+        rewrite(first->arena->data == at(w2_open, arena->data));
+        rewrite(first->start == at(w2, first->start));
+        assumption();
     }
     have first->arena->data[(first->start + 0)] == 11 by {
         normalize() using {
@@ -5945,8 +6081,36 @@ int32 arena_pipeline(
     have r2.end <= s0.capacity by {
         assumption();
     }
+    let { live: m4_live, capacity: m4_capacity } = unfold(s0);
+    let { start: m4_start, end: m4_end } = unfold(r1);
+    let s0 = fold(arena_state(arena), { live: m4_live, capacity: m4_capacity });
+    have separate(r2, memory(*first)) by { assumption(); }
+    have separate(s0, memory(*first)) by { assumption(); }
+    have separate(r2 * s0, memory(*first)) by {
+        apply(separation::separate_star(r2, s0, memory(*first))) using {
+            separate(r2, memory(*first));
+            separate(s0, memory(*first));
+        };
+    }
+    let r1 = fold(arena_region(first), { start: m4_start, end: m4_end });
     mark m4;
     step(arena_read, { r: r2, st: s0 });
+    have contains(at(m4, r2) * at(m4, s0), statement(14).footprint) by { assumption(); }
+    have contains(memory(*first), memory(first->arena)) by { normalize(); }
+    have separate(statement(14).footprint, memory(first->arena)) by {
+        apply(separation::restrict(at(m4, r2) * at(m4, s0), memory(*first), statement(14).footprint, memory(first->arena))) using {
+            separate(at(m4, r2) * at(m4, s0), memory(*first));
+            contains(at(m4, r2) * at(m4, s0), statement(14).footprint);
+            contains(memory(*first), memory(first->arena));
+        };
+    }
+    have first->arena == at(m4, first->arena) by {
+        transport_certificate {
+            premise 0: separate(statement(14).footprint, memory(first->arena)) => separate(statement(14).footprint, memory(first->arena));
+            preserve 0 => first->arena == at(m4, first->arena);
+            conclusion 1;
+        }
+    }
     have r1.start == at(m4, r1.start) by {
         normalize();
     }
@@ -6123,8 +6287,37 @@ int32 arena_pipeline(
         }
         assumption();
     }
+    have first->arena == arena by { assumption(); }
+    let { live: f2_live, capacity: f2_capacity } = unfold(s0);
+    let { start: f2_start, end: f2_end } = unfold(r1);
+    let s0 = fold(arena_state(arena), { live: f2_live, capacity: f2_capacity });
+    have separate(r2, memory(*first)) by { assumption(); }
+    have separate(s0, memory(*first)) by { assumption(); }
+    have separate(r2 * s0, memory(*first)) by {
+        apply(separation::separate_star(r2, s0, memory(*first))) using {
+            separate(r2, memory(*first));
+            separate(s0, memory(*first));
+        };
+    }
+    let r1 = fold(arena_region(first), { start: f2_start, end: f2_end });
     mark f2;
     let { after: g2 } = step(arena_free, { r: r2, st: s0 });
+    have contains(at(f2, r2) * at(f2, s0), statement(16).footprint) by { assumption(); }
+    have contains(memory(*first), memory(first->arena)) by { normalize(); }
+    have separate(statement(16).footprint, memory(first->arena)) by {
+        apply(separation::restrict(at(f2, r2) * at(f2, s0), memory(*first), statement(16).footprint, memory(first->arena))) using {
+            separate(at(f2, r2) * at(f2, s0), memory(*first));
+            contains(at(f2, r2) * at(f2, s0), statement(16).footprint);
+            contains(memory(*first), memory(first->arena));
+        };
+    }
+    have first->arena == at(f2, first->arena) by {
+        transport_certificate {
+            premise 0: separate(statement(16).footprint, memory(first->arena)) => separate(statement(16).footprint, memory(first->arena));
+            preserve 0 => first->arena == at(f2, first->arena);
+            conclusion 1;
+        }
+    }
     have r1.start == at(f2, r1.start) by {
         normalize();
     }

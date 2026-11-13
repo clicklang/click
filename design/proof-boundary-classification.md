@@ -235,7 +235,7 @@ mutation tests prevent deleting or postponing their guards. The guards detect
 registered search, not uninstrumented loops or copying.
 
 The same guard cannot yet be retained on `prepare_step`.
-The gate mdtest corpus reproduces two remaining operation/entry pairs:
+Earlier whole-operation probes reproduced these operation/entry pairs:
 
 | Operation | Discovery entry | Reproduction (`mdtests/`) |
 | --- | --- | --- |
@@ -246,9 +246,12 @@ These reuse two existing bridge entries; they are not two new independent
 walks. A first guard failure can mask a later dependency. No guard escape was
 added, and the existing source dependency records remain frozen.
 
-With optional call-partition inference removed, the same 64-bit window fixture
-gets past `ownership_validity_candidates` and reaches `call_frame` through
-`call_kept_ownership`. The local signedness fixture still reaches `loan_access`
+Removing optional call-partition inference exposed `call_frame` through
+`call_kept_ownership` in the same 64-bit window fixture. With instance-body
+opening removed, frames without owned composites now construct their kept set
+directly; that route no longer enters `ProofSearch::call_frame`. Composite
+families still do. Re-probe complete preparation before treating the old
+window's first-failure entry as current. The local signedness fixture still reaches `loan_access`
 through `memory_write_permission_outcome_for_local`. These probe results do not
 justify a whole-preparation guard or a new exception. The temporary probe is
 not retained in the source.
