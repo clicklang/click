@@ -49,7 +49,7 @@ fn frozen_gate_fixtures_match_live_charon_extraction() {
         .filter(|path| path.is_dir())
         .collect();
     fixtures.sort();
-    assert_eq!(fixtures.len(), 17);
+    assert_eq!(fixtures.len(), 18);
     for fixture in fixtures {
         let name = fixture.file_name().unwrap().to_str().unwrap();
         let source = fs::read_to_string(fixture.join("borrow.rs")).unwrap();
