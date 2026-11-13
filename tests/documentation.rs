@@ -874,11 +874,15 @@ const PRIMITIVE_MODULES: &[&str] = &["library/primitives.click", "library/c/buil
 /// The Click library files an importer appends to a sidecar, with the
 /// inventory kind of their contracts. They are not modules, so no import or
 /// module path names them: each `extern` template is named by the C++ or Rust
-/// path it models, `library.cpp.std::span<T>::size` or `library.rust.Vec::push`,
-/// and its verified use is in the tests its reference entry cites. They are
-/// otherwise under the same gates as the modules.
-const SIDECAR_LIBRARY_FILES: &[(&str, &str)] =
-    &[("library/cpp/", "cpp"), ("library/rust/core.click", "rust")];
+/// path it models, `library.cpp.std::span<T>::size`, `library.rust.Vec::push`
+/// or `library.rust.u32::min`, and its verified use is in the tests its
+/// reference entry cites. They are otherwise under the same gates as the
+/// modules.
+const SIDECAR_LIBRARY_FILES: &[(&str, &str)] = &[
+    ("library/cpp/", "cpp"),
+    ("library/rust/core.click", "rust"),
+    ("library/rust/integers.click", "rust"),
+];
 
 fn library_identity(path: &Path) -> String {
     path.strip_prefix(root())

@@ -19,13 +19,14 @@ imports with `import click::...;`, and the modules those import:
 | `c/string.click` | when the C declares or calls one of its functions | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
 | `integer.click` | `import click::integer;` | `integer::` order, increment and definedness lemmas over native integer widths, `to_integer` bridges for native arithmetic, unsigned wrapping operations, and `Integer` division laws |
 | `format.click` | `import click::format;`; the C front end's `snprintf` contracts name it by path | `format::decimal_length`, `format::decimal_digit` and the other decimal rendering functions `printf` writes, with evaluation theorems |
-| `rust/i8.click` ... `rust/usize.click` | `import click::rust::u32;`; the Rust importer's core-method contracts name them by path | One module per Rust integer type: `u32::min`, `u32::checked_add` and the other core methods the importer specifies, and the Rust names of the lemmas a Rust proof applies (`u32::multiply_to_integer`) |
+| `rust/i8.click` ... `rust/usize.click` | `import click::rust::u32;`; the integer-method contracts of `rust/integers.click` name them by path | One module per Rust integer type: `u32::min`, `u32::checked_add` and the other core methods the importer specifies, and the Rust names of the lemmas a Rust proof applies (`u32::multiply_to_integer`) |
 | `cpp/span.click` | appended to a C++ sidecar when an import calls one of its methods | `std::span<T>` and static-extent `std::span<T, N>` contracts, as template methods written out at each called element type and extent |
 | `cpp/array.click` | appended to a C++ sidecar when an import calls one of its methods | `std::array<T, N>` contracts, with each element accessor's `const` and mutable overload as two template methods |
 | `cpp/as_writable_bytes.click` | appended to a C++ sidecar when an import calls it | The `std::as_writable_bytes<T, N>` contract, a function template written out at each called instance |
 | `rust/vec.click` | `import click::rust::vec;` | The primitive type `Vec<T>`, its bodyless operations and their trusted axioms |
 | `rust/slice.click` | `import click::rust::slice;` | `Slice<T>`, a Rust slice as its data pointer and length |
 | `rust/core.click` | appended to a Rust sidecar when an import calls one of its methods | The `Vec`, `slice::swap`, `Option`/`Result` unwrapping, slice-value, `SliceIter` and `ChunksExact` contracts, as generic `extern fn` blocks written out at each called type; a block no call names is dropped |
+| `rust/integers.click` | the line of each integer method an import calls is appended to its Rust sidecar | One-line `extern fn` contracts of the integer core methods, `u32::min`, each stating its result with the function of the same path in `rust/<type>.click` |
 
 Each declaration is in one layer, which sets its trust:
 
@@ -39,8 +40,8 @@ Each declaration is in one layer, which sets its trust:
   [trust](../docs/concepts/trust.md#the-click-library). `c/string.click`
   and the `cpp/` files are written here; the allocator family and
   `snprintf` contracts are built into the C front end. The Rust core-method
-  contracts are written in `rust/core.click`, except the integer methods',
-  which are generated per use.
+  contracts are written in `rust/core.click` and, for the integer methods,
+  `rust/integers.click`; the importer keeps only a name table.
 - **The specification library** is every other module: checked types, pure
   functions, predicates and theorems, plus the trusted `rust/vec.click` axioms.
 

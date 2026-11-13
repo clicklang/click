@@ -388,7 +388,7 @@ Each step is a separate PR that leaves every example verifying:
        as a method instance does. The remaining Rust contract templates
        (`CATALOG`, `catalog_contract`) are deleted; the importer keeps only
        the name table.
-  - **Rust core (open: step 3), after the C++ steps.** The `Vec`, slice,
+  - **Rust core (done, 2026-11-13), after the C++ steps.** The `Vec`, slice,
     iterator and `Option`/`Result` builders in
     `src/languages/rust/standard_library.rs` become generic `extern fn`
     blocks in `library/rust/`, instantiated through
@@ -415,16 +415,23 @@ Each step is a separate PR that leaves every example verifying:
        program's function, never resolved to the library module function
        of the same path. The `ChunksExact` operations are declared at `u8`
        only, the element type of the library's chunk axioms.
-    3. Open: integer methods (`u32::min`). Maintainer leaning, not yet
-       confirmed: a plain one-line library `extern` next to each
-       specification function in `library/rust/<int>.click`, `extern fn
-       u32::min(a: u32, b: u32) -> u32 { ensures result ==
-       click::rust::u32::min(a, b); }`, rather than a structural binding
-       from a method-to-function table. To check: the `extern`'s path is
-       the module function's (`u32::min` in module `click::rust::u32`).
-       A function head's path no longer resolves as a library path, but
-       a module file that declares both `function min` and `extern fn
-       u32::min` must keep the two names apart in its own scope.
+    3. Done: integer methods (`u32::min`), as the maintainer chose: a
+       plain one-line `extern fn` per method and type in
+       `library/rust/integers.click`, `extern fn u32::min(a: u32, b: u32)
+       -> u32 { ensures result == click::rust::u32::min(a, b); }`, not a
+       structural binding generated in Rust. The library modules
+       `library/rust/<int>.click` are loaded with every sidecar, so the
+       contracts sit in a sibling non-module file the importer appends.
+       The `extern`'s path is the program's function (step 2), and its
+       `ensures` resolves `click::rust::u32::min` to the module function.
+       Only the lines of the methods an import calls are appended: a
+       contract at a type no call names, `Option<i8>`, would not resolve.
+       `core_method_contract` is deleted; the importer keeps only the name
+       table.
+
+    With step 3, every library model is Click text attached through a name
+    table, except the allocator below and the `snprintf` contract of each
+    format, which depends on the program.
   - **Allocator (open).** `malloc`, `calloc`, `realloc` and `free` become
     `extern` contracts over the `allocation` primitive in
     `library/c/stdlib.click`, if the kernel's allocation model is

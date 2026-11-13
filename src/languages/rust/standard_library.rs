@@ -2,10 +2,11 @@
 //! They are assumptions, as an `extern fn` contract is. The `Vec`, slice,
 //! slice-iterator, `ChunksExact`, `Option::unwrap` and `Result::unwrap`
 //! methods are generic `extern fn` blocks in `library/rust/core.click`,
-//! written out at each instance as a sidecar's generic functions are; this
-//! file keeps only their name table. Each integer method's contract is still
-//! written here: it states its result with the library's specification
-//! function of the same path, `ensures result == click::rust::u32::min(a, b);`.
+//! written out at each instance as a sidecar's generic functions are. The
+//! integer methods are one-line `extern fn` contracts in
+//! `library/rust/integers.click`, `u32::min`, each stating its result with
+//! the library's specification function of the same path. This file keeps
+//! only the name tables.
 use super::schema::{RustExport, Type};
 use std::collections::BTreeSet;
 
@@ -52,6 +53,46 @@ const LIBRARY_FUNCTIONS: &[(&[&str], &str)] = &[
     (&["ChunksExact", "item_len"], CORE_LIBRARY),
     (&["ChunksExact", "after_next"], CORE_LIBRARY),
 ];
+
+/// The Click library file that states the integer core methods, one
+/// single-line `extern fn` per method and type, `u32::min`.
+const INTEGER_LIBRARY: &str = include_str!("../../../library/rust/integers.click");
+
+/// The integer types whose core methods [`INTEGER_LIBRARY`] states.
+const INTEGER_TYPES: &[&str] = &[
+    "i8", "i16", "i32", "i64", "isize", "u8", "u16", "u32", "u64", "usize",
+];
+
+/// The integer core methods [`INTEGER_LIBRARY`] states at each type of
+/// [`INTEGER_TYPES`], `unsigned_abs` at the signed types only.
+const INTEGER_METHODS: &[&str] = &[
+    "min",
+    "max",
+    "wrapping_add",
+    "wrapping_sub",
+    "wrapping_mul",
+    "saturating_add",
+    "saturating_sub",
+    "checked_add",
+    "checked_sub",
+    "abs_diff",
+    "unsigned_abs",
+];
+
+/// The library contract of the integer core method whose importer name is
+/// `name`, `u32::min`: its `extern fn` line in [`INTEGER_LIBRARY`]. Only
+/// the methods an import calls are appended, since a contract at a type
+/// the import never names, `Option<i8>`, would not resolve.
+fn integer_contract(name: &str) -> Option<&'static str> {
+    let (ty, method) = INTEGER_TYPES.iter().find_map(|ty| {
+        INTEGER_METHODS
+            .iter()
+            .find(|method| super::names::qualified_name([*ty, **method]) == name)
+            .map(|method| (*ty, *method))
+    })?;
+    let head = format!("extern fn {ty}::{method}(");
+    INTEGER_LIBRARY.lines().find(|line| line.starts_with(&head))
+}
 
 /// The library generic function the core method `function` is an instance
 /// of, by importer name, with the library file stating it.
@@ -432,7 +473,7 @@ fn declare_slice_iter_operations(export: &mut RustExport) {
 /// The `extern fn` contracts of the core methods `export` calls, with the
 /// name of each function they declare: the Click library files stating the
 /// library's generic functions an import's core methods are instances of,
-/// and the contract text of each other core method.
+/// and the library line of each integer method an import calls.
 pub(super) fn contracts(export: &RustExport) -> (String, BTreeSet<String>) {
     let mut source = String::new();
     let mut models = BTreeSet::new();
@@ -449,47 +490,16 @@ pub(super) fn contracts(export: &RustExport) -> (String, BTreeSet<String>) {
             }
             continue;
         }
-        source.push_str(&core_method_contract(function, specification));
+        // An integer method's contract is its line of the library's.
+        let contract = integer_contract(&function.name)
+            .unwrap_or_else(|| panic!("core method `{specification}` has no library contract"));
+        source.push('\n');
+        source.push_str(contract);
+        source.push('\n');
         models.insert(function.name.clone());
     }
     source.push_str(&libraries.concat());
     (source, models)
-}
-
-/// The contract of the integer core method `function`, whose
-/// specification path is `specification`: its result is the library's
-/// specification function of the same path.
-fn core_method_contract(function: &super::schema::Function, specification: &str) -> String {
-    // An `Option` is of the type of the method's scalar parameter:
-    // `checked_add`'s operands.
-    let payload = function
-        .parameters
-        .iter()
-        .find_map(|parameter| parameter.value_type.scalar_name())
-        .expect("a core method takes a scalar");
-    let spell = |ty: &Type| -> String {
-        match ty.scalar_name() {
-            Some(name) => name.into(),
-            None => format!("Option<{payload}>"),
-        }
-    };
-    let parameters = function
-        .parameters
-        .iter()
-        .map(|parameter| format!("{}: {}", parameter.name, spell(&parameter.value_type)))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let arguments = function
-        .parameters
-        .iter()
-        .map(|parameter| parameter.name.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        "\nextern fn {}({parameters}) -> {} {{\n    ensures result == {specification}({arguments});\n}}\n",
-        function.name,
-        spell(&function.return_type),
-    )
 }
 
 #[cfg(test)]
@@ -552,8 +562,35 @@ mod tests {
         }
     }
 
+    /// Each integer method the name table maps has exactly one one-line
+    /// contract in the library file, and the file states no other.
     #[test]
-    fn a_core_method_contract_states_its_result_with_the_library_function() {
+    fn every_integer_method_has_one_library_line() {
+        let mut expected = BTreeSet::new();
+        for (ty, signed, _) in MODULES {
+            for method in INTEGER_METHODS {
+                if *method == "unsigned_abs" && !signed {
+                    continue;
+                }
+                let name = super::super::names::qualified_name([*ty, *method]);
+                let line = integer_contract(&name).unwrap_or_else(|| panic!("{ty}::{method}"));
+                assert!(line.ends_with(" }"), "{line}");
+                assert!(
+                    line.contains(&format!("ensures result == click::rust::{ty}::{method}(")),
+                    "{line}"
+                );
+                expected.insert(line);
+            }
+        }
+        let declared = INTEGER_LIBRARY
+            .lines()
+            .filter(|line| line.starts_with("extern "))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(declared, expected);
+    }
+
+    #[test]
+    fn a_core_method_contract_is_its_library_line() {
         let span = Span { line: 1, column: 1 };
         let place = |name: &str| Place {
             name: name.into(),
@@ -588,10 +625,15 @@ mod tests {
                 span,
             }],
         };
+        let (source, models) = contracts(&export);
         assert_eq!(
-            contracts(&export).0,
-            "\nextern fn __rust_q_I3_u32_I11_checked_add(a: u32, b: u32) -> Option<u32> {\n    \
-             ensures result == click::rust::u32::checked_add(a, b);\n}\n"
+            source,
+            "\nextern fn u32::checked_add(a: u32, b: u32) -> Option<u32> { \
+             ensures result == click::rust::u32::checked_add(a, b); }\n"
+        );
+        assert_eq!(
+            models,
+            BTreeSet::from(["__rust_q_I3_u32_I11_checked_add".to_string()])
         );
     }
 }

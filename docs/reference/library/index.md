@@ -27,8 +27,9 @@ how far it is trusted:
   `snprintf` contracts ([formatted output](../language/c.md#formatted-output)),
   and the C++ and Rust importers append the generic contracts of
   `library/cpp/` and `library/rust/core.click`, written out at each called
-  instance, and write the Rust integer-method contracts per use. The Rust core-method contracts state
-  their results with the `click::rust::` modules below.
+  instance, and the Rust integer-method contracts of
+  `library/rust/integers.click` an import calls. The Rust core-method
+  contracts state their results with the `click::rust::` modules below.
 - **The specification library** is checked Click: types, pure functions,
   predicates and theorems. A theorem is either proved or a kernel standard
   theorem whose declaration is checked against its kernel builder. The
@@ -5095,7 +5096,7 @@ it was on entry.
 
 ## `click::rust::i8` through `click::rust::usize`
 
-Source: `library/rust/i8.click` through `library/rust/usize.click`, one module per Rust integer type, imported as `import click::rust::u32;`. The Rust importer's core-method contracts name them by path.
+Source: `library/rust/i8.click` through `library/rust/usize.click`, one module per Rust integer type, imported as `import click::rust::u32;`. The Rust integer-method contracts of `library/rust/integers.click` name them by path.
 
 ### Rust core methods
 
@@ -5104,7 +5105,8 @@ type, the core methods the Rust importer specifies: `min`, `max`,
 `wrapping_add`, `wrapping_sub`, `wrapping_mul`, `saturating_add`,
 `saturating_sub`, `checked_add`, `checked_sub`, `abs_diff`, and, for a signed
 type, `unsigned_abs`. A call of one of these methods in imported Rust calls an
-external function whose contract Click supplies, `ensures result ==
+external function whose contract is the library's
+([Rust integer methods](#rust-integer-methods)), `ensures result ==
 click::rust::u32::min(a, b);`, so a sidecar states and proves claims about it
 with the same function after `import click::rust::u32;`. Each is opaque until
 `unfold` gives its definition. A signed type's wrapping arithmetic, `abs_diff`
@@ -6653,8 +6655,7 @@ Source: `library/rust/core.click`. This file is not a module: the Rust
 importer appends it to a sidecar when an import calls one of its methods,
 and writes each generic `extern fn` block out at each element type a call
 names, `Vec::push<u32>`. A block no call names is dropped. The integer
-core-method contracts are written by `src/languages/rust/standard_library.rs`
-([core library methods](../rust.md#core-library-methods)).
+core-method contracts are in [Rust integer methods](#rust-integer-methods).
 
 ### `Vec<T>` methods
 
@@ -6857,6 +6858,184 @@ type of the library's chunk axioms.
 **Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
 
 **Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies `chunks_exact` loops and `remainder()` with the library-iterator model in `chunks_exact_is_proved_by_its_library_contract` and `charon_chunks_check_boundaries_authority_and_false_claims` (nightly, [`design/charon-trial/chunks/chunks.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/chunks/chunks.rs)), and without it in `rust_chunks_exact_remainder_metadata_and_bytes` and `rust_chunks_exact_loops_cover_input_and_preserve_bytes` (nightly), which refuse a zero chunk size not ruled out.
+
+## Rust integer methods
+
+Source: `library/rust/integers.click`, one `extern fn` per Rust integer core
+method and type, each on one line. This file is not a module: the Rust
+importer appends to a sidecar the line of each method an import calls, and
+only those, so a contract at a type no call names, `Option<i8>`, is never
+read. Each states its result with the specification function of the same
+path in [`click::rust::i8` through `click::rust::usize`](#clickrusti8-through-clickrustusize);
+the `extern`'s own path, `u32::min`, names the program's function, never the
+library function ([core library methods](../rust.md#core-library-methods)).
+
+### Integer `min` and `max`
+
+```click
+extern fn i8::min(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::min(a, b); }
+extern fn i8::max(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::max(a, b); }
+extern fn i16::min(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::min(a, b); }
+extern fn i16::max(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::max(a, b); }
+extern fn i32::min(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::min(a, b); }
+extern fn i32::max(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::max(a, b); }
+extern fn i64::min(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::min(a, b); }
+extern fn i64::max(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::max(a, b); }
+extern fn isize::min(a: isize, b: isize) -> isize { ensures result == click::rust::isize::min(a, b); }
+extern fn isize::max(a: isize, b: isize) -> isize { ensures result == click::rust::isize::max(a, b); }
+extern fn u8::min(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::min(a, b); }
+extern fn u8::max(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::max(a, b); }
+extern fn u16::min(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::min(a, b); }
+extern fn u16::max(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::max(a, b); }
+extern fn u32::min(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::min(a, b); }
+extern fn u32::max(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::max(a, b); }
+extern fn u64::min(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::min(a, b); }
+extern fn u64::max(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::max(a, b); }
+extern fn usize::min(a: usize, b: usize) -> usize { ensures result == click::rust::usize::min(a, b); }
+extern fn usize::max(a: usize, b: usize) -> usize { ensures result == click::rust::usize::max(a, b); }
+```
+
+**Meaning:** `a.min(b)` and `a.max(b)`, of `Ord` at an integer type, are the library's
+`min` and `max` of that type.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `smaller`, `larger` and `fewer` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs), and refuses a wrong claim about `smaller(1, 2)`.
+
+### Integer wrapping arithmetic
+
+```click
+extern fn i8::wrapping_add(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::wrapping_add(a, b); }
+extern fn i8::wrapping_sub(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::wrapping_sub(a, b); }
+extern fn i8::wrapping_mul(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::wrapping_mul(a, b); }
+extern fn i16::wrapping_add(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::wrapping_add(a, b); }
+extern fn i16::wrapping_sub(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::wrapping_sub(a, b); }
+extern fn i16::wrapping_mul(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::wrapping_mul(a, b); }
+extern fn i32::wrapping_add(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::wrapping_add(a, b); }
+extern fn i32::wrapping_sub(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::wrapping_sub(a, b); }
+extern fn i32::wrapping_mul(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::wrapping_mul(a, b); }
+extern fn i64::wrapping_add(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::wrapping_add(a, b); }
+extern fn i64::wrapping_sub(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::wrapping_sub(a, b); }
+extern fn i64::wrapping_mul(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::wrapping_mul(a, b); }
+extern fn isize::wrapping_add(a: isize, b: isize) -> isize { ensures result == click::rust::isize::wrapping_add(a, b); }
+extern fn isize::wrapping_sub(a: isize, b: isize) -> isize { ensures result == click::rust::isize::wrapping_sub(a, b); }
+extern fn isize::wrapping_mul(a: isize, b: isize) -> isize { ensures result == click::rust::isize::wrapping_mul(a, b); }
+extern fn u8::wrapping_add(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::wrapping_add(a, b); }
+extern fn u8::wrapping_sub(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::wrapping_sub(a, b); }
+extern fn u8::wrapping_mul(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::wrapping_mul(a, b); }
+extern fn u16::wrapping_add(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::wrapping_add(a, b); }
+extern fn u16::wrapping_sub(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::wrapping_sub(a, b); }
+extern fn u16::wrapping_mul(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::wrapping_mul(a, b); }
+extern fn u32::wrapping_add(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::wrapping_add(a, b); }
+extern fn u32::wrapping_sub(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::wrapping_sub(a, b); }
+extern fn u32::wrapping_mul(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::wrapping_mul(a, b); }
+extern fn u64::wrapping_add(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::wrapping_add(a, b); }
+extern fn u64::wrapping_sub(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::wrapping_sub(a, b); }
+extern fn u64::wrapping_mul(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::wrapping_mul(a, b); }
+extern fn usize::wrapping_add(a: usize, b: usize) -> usize { ensures result == click::rust::usize::wrapping_add(a, b); }
+extern fn usize::wrapping_sub(a: usize, b: usize) -> usize { ensures result == click::rust::usize::wrapping_sub(a, b); }
+extern fn usize::wrapping_mul(a: usize, b: usize) -> usize { ensures result == click::rust::usize::wrapping_mul(a, b); }
+```
+
+**Meaning:** `wrapping_add`, `wrapping_sub` and `wrapping_mul` are the library's
+modular sums, differences and products of each type.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `byte_ring` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs); [`tests/examples.rs`](https://github.com/clicklang/click/blob/master/tests/examples.rs) verifies `wrapping_add_u32`, `wrapping_sub_u32` and `wrapping_mul_u32` in [`examples/integer-languages/rust/integers.rs`](https://github.com/clicklang/click/blob/master/examples/integer-languages/rust/integers.rs) in `example_projects`.
+
+### Integer saturating arithmetic
+
+```click
+extern fn i8::saturating_add(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::saturating_add(a, b); }
+extern fn i8::saturating_sub(a: i8, b: i8) -> i8 { ensures result == click::rust::i8::saturating_sub(a, b); }
+extern fn i16::saturating_add(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::saturating_add(a, b); }
+extern fn i16::saturating_sub(a: i16, b: i16) -> i16 { ensures result == click::rust::i16::saturating_sub(a, b); }
+extern fn i32::saturating_add(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::saturating_add(a, b); }
+extern fn i32::saturating_sub(a: i32, b: i32) -> i32 { ensures result == click::rust::i32::saturating_sub(a, b); }
+extern fn i64::saturating_add(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::saturating_add(a, b); }
+extern fn i64::saturating_sub(a: i64, b: i64) -> i64 { ensures result == click::rust::i64::saturating_sub(a, b); }
+extern fn isize::saturating_add(a: isize, b: isize) -> isize { ensures result == click::rust::isize::saturating_add(a, b); }
+extern fn isize::saturating_sub(a: isize, b: isize) -> isize { ensures result == click::rust::isize::saturating_sub(a, b); }
+extern fn u8::saturating_add(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::saturating_add(a, b); }
+extern fn u8::saturating_sub(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::saturating_sub(a, b); }
+extern fn u16::saturating_add(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::saturating_add(a, b); }
+extern fn u16::saturating_sub(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::saturating_sub(a, b); }
+extern fn u32::saturating_add(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::saturating_add(a, b); }
+extern fn u32::saturating_sub(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::saturating_sub(a, b); }
+extern fn u64::saturating_add(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::saturating_add(a, b); }
+extern fn u64::saturating_sub(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::saturating_sub(a, b); }
+extern fn usize::saturating_add(a: usize, b: usize) -> usize { ensures result == click::rust::usize::saturating_add(a, b); }
+extern fn usize::saturating_sub(a: usize, b: usize) -> usize { ensures result == click::rust::usize::saturating_sub(a, b); }
+```
+
+**Meaning:** `saturating_add` and `saturating_sub` are the library's sums and
+differences clamped to the type's range.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `shortfall` and `sample_sum` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs).
+
+### Integer checked arithmetic
+
+```click
+extern fn i8::checked_add(a: i8, b: i8) -> Option<i8> { ensures result == click::rust::i8::checked_add(a, b); }
+extern fn i8::checked_sub(a: i8, b: i8) -> Option<i8> { ensures result == click::rust::i8::checked_sub(a, b); }
+extern fn i16::checked_add(a: i16, b: i16) -> Option<i16> { ensures result == click::rust::i16::checked_add(a, b); }
+extern fn i16::checked_sub(a: i16, b: i16) -> Option<i16> { ensures result == click::rust::i16::checked_sub(a, b); }
+extern fn i32::checked_add(a: i32, b: i32) -> Option<i32> { ensures result == click::rust::i32::checked_add(a, b); }
+extern fn i32::checked_sub(a: i32, b: i32) -> Option<i32> { ensures result == click::rust::i32::checked_sub(a, b); }
+extern fn i64::checked_add(a: i64, b: i64) -> Option<i64> { ensures result == click::rust::i64::checked_add(a, b); }
+extern fn i64::checked_sub(a: i64, b: i64) -> Option<i64> { ensures result == click::rust::i64::checked_sub(a, b); }
+extern fn isize::checked_add(a: isize, b: isize) -> Option<isize> { ensures result == click::rust::isize::checked_add(a, b); }
+extern fn isize::checked_sub(a: isize, b: isize) -> Option<isize> { ensures result == click::rust::isize::checked_sub(a, b); }
+extern fn u8::checked_add(a: u8, b: u8) -> Option<u8> { ensures result == click::rust::u8::checked_add(a, b); }
+extern fn u8::checked_sub(a: u8, b: u8) -> Option<u8> { ensures result == click::rust::u8::checked_sub(a, b); }
+extern fn u16::checked_add(a: u16, b: u16) -> Option<u16> { ensures result == click::rust::u16::checked_add(a, b); }
+extern fn u16::checked_sub(a: u16, b: u16) -> Option<u16> { ensures result == click::rust::u16::checked_sub(a, b); }
+extern fn u32::checked_add(a: u32, b: u32) -> Option<u32> { ensures result == click::rust::u32::checked_add(a, b); }
+extern fn u32::checked_sub(a: u32, b: u32) -> Option<u32> { ensures result == click::rust::u32::checked_sub(a, b); }
+extern fn u64::checked_add(a: u64, b: u64) -> Option<u64> { ensures result == click::rust::u64::checked_add(a, b); }
+extern fn u64::checked_sub(a: u64, b: u64) -> Option<u64> { ensures result == click::rust::u64::checked_sub(a, b); }
+extern fn usize::checked_add(a: usize, b: usize) -> Option<usize> { ensures result == click::rust::usize::checked_add(a, b); }
+extern fn usize::checked_sub(a: usize, b: usize) -> Option<usize> { ensures result == click::rust::usize::checked_sub(a, b); }
+```
+
+**Meaning:** `checked_add` and `checked_sub` return the library's `Option` of the
+type: `Some` of the sum or difference when it is in range, `None`
+otherwise.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `clamp_add` and `spend` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs), and refuses a fitting sum claimed `None`.
+
+### Integer `abs_diff` and `unsigned_abs`
+
+```click
+extern fn i8::abs_diff(a: i8, b: i8) -> u8 { ensures result == click::rust::i8::abs_diff(a, b); }
+extern fn i8::unsigned_abs(a: i8) -> u8 { ensures result == click::rust::i8::unsigned_abs(a); }
+extern fn i16::abs_diff(a: i16, b: i16) -> u16 { ensures result == click::rust::i16::abs_diff(a, b); }
+extern fn i16::unsigned_abs(a: i16) -> u16 { ensures result == click::rust::i16::unsigned_abs(a); }
+extern fn i32::abs_diff(a: i32, b: i32) -> u32 { ensures result == click::rust::i32::abs_diff(a, b); }
+extern fn i32::unsigned_abs(a: i32) -> u32 { ensures result == click::rust::i32::unsigned_abs(a); }
+extern fn i64::abs_diff(a: i64, b: i64) -> u64 { ensures result == click::rust::i64::abs_diff(a, b); }
+extern fn i64::unsigned_abs(a: i64) -> u64 { ensures result == click::rust::i64::unsigned_abs(a); }
+extern fn isize::abs_diff(a: isize, b: isize) -> usize { ensures result == click::rust::isize::abs_diff(a, b); }
+extern fn isize::unsigned_abs(a: isize) -> usize { ensures result == click::rust::isize::unsigned_abs(a); }
+extern fn u8::abs_diff(a: u8, b: u8) -> u8 { ensures result == click::rust::u8::abs_diff(a, b); }
+extern fn u16::abs_diff(a: u16, b: u16) -> u16 { ensures result == click::rust::u16::abs_diff(a, b); }
+extern fn u32::abs_diff(a: u32, b: u32) -> u32 { ensures result == click::rust::u32::abs_diff(a, b); }
+extern fn u64::abs_diff(a: u64, b: u64) -> u64 { ensures result == click::rust::u64::abs_diff(a, b); }
+extern fn usize::abs_diff(a: usize, b: usize) -> usize { ensures result == click::rust::usize::abs_diff(a, b); }
+```
+
+**Meaning:** `abs_diff` is the distance between its operands and `unsigned_abs` the
+magnitude of a signed value, each in the unsigned type of the operand's
+width.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `distance` and `magnitude` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs).
 
 ## `click::separation`
 
