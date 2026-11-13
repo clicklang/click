@@ -2798,6 +2798,10 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
                         .is_some_and(|(left, right)| left == right))
         }
         (
+            Proposition::Equal(Term::Algebraic(al), Term::Algebraic(ar)),
+            Proposition::Equal(Term::Algebraic(bl), Term::Algebraic(br)),
+        ) => retained_syntax::algebraic_equal(al, bl) && retained_syntax::algebraic_equal(ar, br),
+        (
             Proposition::CMemoryLoadable {
                 memory: left_memory,
                 base: left_base,

@@ -176,6 +176,9 @@ producer's application payload for compatibility reads. Boxed numeric inputs
 still import to shared children, including when an equivalent shared producer
 later reuses their root. Scaling checks cover borrowed readings, nested handoffs,
 and rewrite identities that distinguish snapshots, formats and polarity.
+Certification compares retained arguments by written call syntax, including
+algebraic variables, applications and exact snapshot reads, without replacing
+that syntax comparison with arithmetic observation equality.
 [PR #2701](https://github.com/clicklang/click/pull/2701) closes the integer
 call-result sequence, not the wider KernelTerm/SurfaceTerm migration or the
 other result families.
