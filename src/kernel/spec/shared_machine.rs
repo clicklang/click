@@ -119,6 +119,14 @@ pub(super) fn apply_values(
     ))
 }
 
+/// The execution producer uses the same retained tag-equation reader.
+pub(in crate::kernel) fn bitwise_tag_equation(
+    value: &KernelTerm,
+    assumptions: &PureFactContext,
+) -> Option<ConditionTerm> {
+    bitwise::tag_equation(value, assumptions)
+}
+
 pub(super) fn result_facts(
     expression: &SpecExpression,
     value: &KernelTerm,

@@ -382,7 +382,7 @@ pub(in crate::kernel) fn evaluate_c_add_paths(
 /// Only executed C folds: a written proposition is lowered through
 /// [`apply_c_add`] directly and keeps the shape its proof names, in which a
 /// compound operand can be an opaque affine atom.
-fn fold_c_int32_constant_increment(mut path: CExpressionPath) -> CExpressionPath {
+pub(super) fn fold_c_int32_constant_increment(mut path: CExpressionPath) -> CExpressionPath {
     if let CExpressionOutcome::Value(CValue::Int32(binary_term!(Int32, Add, base, increment))) =
         &path.outcome
         && let (binary_term!(Int32, Add, inner, addend), bits32_constant!(increment)) =
@@ -2082,7 +2082,7 @@ fn compared_pointer_holders_composition(
     Some((composition, separation))
 }
 
-fn apply_c_comparison(
+pub(super) fn apply_c_comparison(
     state: &CState,
     operator: CComparisonOperator,
     left: CValue,

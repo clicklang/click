@@ -33,6 +33,7 @@ pub(in crate::kernel) mod predicate_dependencies;
 mod quantifier_polarity;
 pub(in crate::kernel) mod required_constructions;
 mod shared_machine;
+pub(in crate::kernel) use shared_machine::bitwise_tag_equation;
 pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (CResource, ExecutionFacts, Vec<ProofObligation>);
@@ -465,16 +466,7 @@ pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
 ) -> ExecutionResult<Vec<CExpressionPath<SpecValue>>> {
     if let SpecExpression::CExpression(expression) = expression {
         let _specification = crate::kernel::eval::SpecificationReadScope::enter();
-        return Ok(
-            evaluate_c_expression_paths(state, expression, assumptions, budget)?
-                .into_iter()
-                .map(|path| CExpressionPath {
-                    outcome: path.outcome.map_value(SpecValue::from),
-                    facts: path.facts,
-                    obligations: path.obligations,
-                })
-                .collect(),
-        );
+        return evaluate_expression_value_paths(state, expression, assumptions, budget);
     }
     let rewritten;
     let expression = if integer_bindings.is_empty() {
