@@ -306,6 +306,16 @@ open their bodies or gather their memory/facts. With no owned composites, the
 frame is retained directly without constructing `ProofSearch`. The selected
 instance-count regression guards that route against discovery.
 
+The instance-removal experiment remains unlanded. Its explicit arena repair
+reaches `arena_free(second)`, where the simple step exhausts 750,000 work units
+inside `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`
+(`general distinctness: explicit range` / `explicit range: exact-fact candidates`).
+Isolate the selected pointer query and its call-checking caller, add the scoped
+scaling reproduction, then replace that discovery with explicit evidence or an
+ordinary obligation. Do not restore automatic instance opening or raise the
+simple-step budget. The prerequisite physical-range separation lookup fixes
+are tracked by PR #2671.
+
 Owned composite families still use the legacy framing search; bodies without
 the argument-direct property are opened. Skipping members of one direct family
 does not establish independence from the number of families.
