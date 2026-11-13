@@ -249,3 +249,95 @@ fn call_frame_preparation_ignores_unrelated_retained_instances() {
         "{samples:?}"
     );
 }
+
+/// One fixed call effect must not open every unrelated
+/// retained composite. Setup, havoc and subsequent observation are outside the meter.
+/// Exercise both a nested body and a body whose bound reads memory; neither
+/// qualifies for the argument-direct shortcut.
+#[test]
+fn call_frame_preparation_must_not_open_unrelated_composites() {
+    let mut curves = Vec::new();
+    for memory_bound in [false, true] {
+        let samples = [4_u64, 16, 64].map(|size| {
+            let _session = VerificationSession::enter();
+            let object = |index| Pointer::symbolic(Variable(8_700_000 + index));
+            let body = if memory_bound {
+                vec![
+                    CResourceSpec::owned_memory(CMemorySegment::new(
+                        c_variable("length"),
+                        c_int32_literal(0),
+                        c_int32_literal(1),
+                    )),
+                    CResourceSpec::owned_memory(CMemorySegment::new(
+                        c_variable("p"),
+                        c_int32_literal(0),
+                        c_load(c_variable("length")),
+                    )),
+                ]
+            } else {
+                vec![CResourceSpec::composite(
+                    CResourceAccessMode::Own,
+                    "boxed".into(),
+                    vec![c_variable("p")],
+                    vec![CType::Int32Pointer],
+                )]
+            };
+            let wrapper = CCompositeResourceDefinition::new(
+                "wrapper",
+                vec![
+                    c_parameter("p", CType::Int32Pointer),
+                    c_parameter("length", CType::Int32Pointer),
+                ],
+                None,
+                false,
+                body,
+                vec![],
+            );
+            assert!(!wrapper.has_argument_direct_body());
+            let definitions = [boxed_definition(), wrapper];
+            let mut residual = ResourceContext::new();
+            let mut memory = CMemory::new();
+            for index in 0..size {
+                residual = residual.unchecked_with_fact(CResourceFact::own_composite(
+                    "wrapper".into(),
+                    vec![
+                        CValue::pointer(object(index)),
+                        CValue::pointer(object(1_000 + index)),
+                    ],
+                ));
+                memory = memory.store(object(1_000 + index), int32(1));
+            }
+            let assumptions = PureFactContext::new();
+            let state = CState::new()
+                .with_memory(memory.clone())
+                .with_resource_context(residual.clone());
+            // The callee's effect and the observed retained cell are fixed at
+            // all sizes. Every added wrapper is unrelated to either one.
+            let written = CMemoryRange::new(object(2_000), 0u32.into(), 1u32.into());
+            let (kept, work) = crate::instrumentation::measure_deterministic_work(|| {
+                call_kept_ownership(&residual, &definitions, &state, &assumptions)
+            });
+            let opened = kept.opened_resources_for_test().facts().len();
+            let after = memory.with_call_memory_havoc(
+                Variable(8_710_000),
+                std::slice::from_ref(&written),
+                &assumptions,
+                Some(&kept),
+            );
+            assert_eq!(
+                opened, 0,
+                "opaque composites contribute no discovered ranges"
+            );
+            assert!(CallKeptRanges::recorded_on(&after).is_none());
+            work
+        });
+        eprintln!("memory_bound={memory_bound}, sizes=[4,16,64], call framing work={samples:?}");
+        curves.push(samples);
+    }
+    for samples in curves {
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 32),
+            "fixed call framing opens unrelated composites: {samples:?}"
+        );
+    }
+}

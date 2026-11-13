@@ -365,7 +365,7 @@ fn resource_satisfaction_uses_transitive_addresses_without_restoring_consumed_ow
 }
 
 #[test]
-fn framing_producer_publishes_opened_ownership_before_alias_lookup() {
+fn framing_producer_leaves_non_direct_ownership_opaque() {
     let (head, definition, memory, facts, sibling) = fixture();
     let head = CResourceFact::own(head.resource().clone());
     let residual = ResourceContext::new()
@@ -381,14 +381,11 @@ fn framing_producer_publishes_opened_ownership_before_alias_lookup() {
         &facts,
     );
     let opened = kept.opened_resources_for_test();
-    let alias = Pointer::symbolic(Variable(881_002));
     assert!(
-        opened
-            .concrete_write_entries(&alias, 4, &facts)
-            .is_some_and(|entries| entries.exact()),
-        "the framing producer did not publish its selected owned ranges"
+        opened.is_empty(),
+        "call framing must not open the retained body"
     );
-    assert!(opened.satisfies_fact(&coverage_piece(881_002, 0, 1), &facts));
+    assert!(!opened.satisfies_fact(&coverage_piece(881_002, 0, 1), &facts));
     assert!(!opened.satisfies_fact(&coverage_piece(881_002, 0, 1), &sibling));
     assert_eq!(residual.facts().len(), 1);
 }

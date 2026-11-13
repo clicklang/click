@@ -1,4 +1,4 @@
-//! Existing slow dependencies extracted without changing their decisions.
+//! Remaining legacy call-frame discovery dependencies.
 //! Each entry remains reachable only through its inventoried compatibility caller.
 use super::*;
 
@@ -6,18 +6,17 @@ impl crate::kernel::search::ProofSearch<CFunction> {
     pub(in crate::kernel) fn call_frame(
         residual: &ResourceContext,
         definitions: &[CCompositeResourceDefinition],
-        state: &CState,
+        _state: &CState,
         assumptions: &PureFactContext,
     ) -> CallKeptOwnership {
         #[cfg(test)]
         crate::kernel::search::record_discovery("call_frame");
-        let mut ranges = Vec::new();
         let premises = Vec::new();
         // A family whose bodies are argument-direct owns the same ranges
         // wherever its facts are held, so the kept set answers for those
         // composites per queried address and they are not opened here
-        // (`CallKeptRanges::range_holding`). Every other family opens each of
-        // its held composites at this state.
+        // (`CallKeptRanges::range_holding`). Other families remain opaque:
+        // discovering their hidden memory is separate proof reasoning.
         let definition = |name: &str| {
             definitions
                 .binary_search_by(|definition| definition.name().cmp(name))
@@ -25,7 +24,7 @@ impl crate::kernel::search::ProofSearch<CFunction> {
                 .map(|index| &definitions[index])
         };
         let mut direct = Vec::new();
-        for (name, facts) in residual.owned_composite_families() {
+        for (name, _) in residual.owned_composite_families() {
             if let Some(found) = definition(name)
                 && found.has_argument_direct_body()
             {
@@ -35,26 +34,12 @@ impl crate::kernel::search::ProofSearch<CFunction> {
                 {
                     direct.push(found.clone());
                 }
-                continue;
-            }
-            for fact in facts {
-                let Some(expanded) = expand_composites_for_frame(
-                    &ResourceContext::new_with_equalities(assumptions)
-                        .unchecked_with_fact(fact.clone()),
-                    definitions,
-                    state.memory(),
-                    assumptions,
-                ) else {
-                    continue;
-                };
-                ranges.extend(owned_memory_ranges_of(&expanded));
             }
         }
         CallKeptOwnership::new(
             residual.clone(),
             CallKeptRanges::new(
-                ResourceContext::new_with_equalities(assumptions)
-                    .unchecked_with_facts(ranges.into_iter().map(CResourceFact::own_memory)),
+                ResourceContext::new_with_equalities(assumptions),
                 premises,
                 (!direct.is_empty()).then(|| std::sync::Arc::new(direct)),
             ),
