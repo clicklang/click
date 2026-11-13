@@ -3888,3 +3888,45 @@ int32 f(int32 x) {
         refused.message()
     );
 }
+
+#[test]
+fn common_machine_call_certificates_preserve_calls_and_definedness() {
+    for (requirements, term) in [
+        ("", "to_integer(f(x))"),
+        ("", "to_integer(f(f(x)))"),
+        ("requires defined(x + 1);", "to_integer(f(x + 1))"),
+        ("", "to_integer(f(x) as uint64)"),
+    ] {
+        let source = format!(
+            "function f(x: int32) -> int32 {{ x }} theorem client(x: int32) {{ {requirements} ensures {term} == {term} by {{ arithmetic_certificate {{ trivial => {term} == {term}; conclusion 0; }} }} }}"
+        );
+        verify_c0_sources(&source, &[])
+            .unwrap_or_else(|error| panic!("{source}\n{}", error.message()));
+        let altered = source.replacen(
+            &format!("ensures {term} == {term}"),
+            &format!("ensures {term} != {term}"),
+            1,
+        );
+        assert!(verify_c0_sources(&altered, &[]).is_err());
+        if !requirements.is_empty() {
+            assert!(verify_c0_sources(&source.replace(requirements, ""), &[]).is_err());
+        }
+    }
+}
+
+#[test]
+fn common_machine_call_expansion_rechecks_selected_call_premises() {
+    let source = "function f(x: int32) -> int32 { x } theorem client(x: int32) { requires f(x) == 7; requires defined(f(x) + 1); ensures f(x) + 1 == 8 by { solve() using { f(x) == 7; defined(f(x) + 1); } } }";
+    verify_c0_sources(source, &[]).unwrap();
+    let expanded = expand_c0_claim_source_by_label(source, &[], "client.ensures_0").unwrap();
+    verify_c0_sources(&expanded, &[]).unwrap();
+    assert!(expanded.contains("f(x)"));
+    assert!(verify_c0_sources(&expanded.replace("requires f(x) == 7;", ""), &[]).is_err());
+    assert!(
+        verify_c0_sources(
+            &expanded.replace("ensures f(x) + 1 == 8", "ensures f(x) + 1 == 9"),
+            &[]
+        )
+        .is_err()
+    );
+}
