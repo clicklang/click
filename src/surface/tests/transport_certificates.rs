@@ -1604,3 +1604,31 @@ fn indexed_read_transport_expands_to_selected_preservation() {
     );
     without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
+
+#[test]
+#[ignore = "nightly: returned-have transport expansion and cold replay"]
+fn a_returned_have_expands_the_same_single_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/single_write_transport_expansion.md");
+    let source = source
+        .replace(
+            "    requires separate(memory(*p), memory(*q));",
+            "    requires separate(memory(*p), memory(*q));\n    ensures 1 == 1;",
+        )
+        .replace("    have *q ==", "    step();\n    have *q ==")
+        .replace("    step();\n}", "    assumption();\n}");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert_eq!(
+        expanded.matches("preserve(separate(").count(),
+        1,
+        "{expanded}"
+    );
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let changed = expanded.replace("at(statement(0).exit, *q)", "at(statement(0).exit, *p)");
+    assert_ne!(changed, expanded, "the preservation names its exit read");
+    assert!(without_implicit_solve(|| verify_c0_sources(&changed, &sources)).is_err());
+}
