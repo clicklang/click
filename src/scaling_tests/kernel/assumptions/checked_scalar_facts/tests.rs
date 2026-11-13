@@ -30,7 +30,7 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
         );
         let mut index = CheckedScalarFacts::default();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            index.adjust(&source, false, true);
+            index.adjust(&source, false);
             let (fact, truth) = index.literal_equality(operand.operand_view()).unwrap();
             assert_eq!((fact, *truth), (&source, false));
             assert_eq!(
@@ -47,15 +47,12 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
         }
         previous = Some((size, work));
         let parent = index.clone();
-        index.adjust(&source, false, false);
-        assert!(index.literal_equality(operand.operand_view()).is_none());
-        assert!(parent.literal_equality(operand.operand_view()).is_some());
         for value in 1..=size {
             let excluded = ConditionTerm::IntegerEqual(
                 observed.clone().into(),
                 IntegerTerm::constant(value.into()).into(),
             );
-            index.adjust(&excluded, false, true);
+            index.adjust(&excluded, false);
         }
         let (range, work) = crate::instrumentation::measure_deterministic_work(|| {
             index.past_exclusions(operand.operand_view(), 1, size as i64 + 1)
@@ -74,10 +71,9 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
 }
 
 #[test]
-fn scalar_sources_preserve_truth_format_and_removal() {
+fn scalar_sources_preserve_truth_and_format() {
     let term = MachineTerm::Variable(Variable(991702));
     let view = MachineOperandView::Legacy(&term);
-    let native = ConditionTerm::equal(term.clone(), MachineTerm::constant(7));
     let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
         MachineIntegerType::Int32,
         term.clone(),
@@ -85,17 +81,14 @@ fn scalar_sources_preserve_truth_format_and_removal() {
     let ordinary =
         ConditionTerm::IntegerNotEqual(observed.into(), IntegerTerm::constant(7.into()).into());
     let mut index = CheckedScalarFacts::default();
-    index.adjust(&ordinary, false, true);
-    index.adjust(&native, true, true);
-    index.adjust(&native, true, false);
+    index.adjust(&ordinary, false);
     assert_eq!(
         index.literal_equality(view),
         Some(&(ordinary.clone(), false))
     );
-    index.adjust(&ordinary, false, false);
-    assert!(index.literal_equality(view).is_none());
     let wide = ConditionTerm::int64_equal(term, MachineTerm::int64_constant(7));
-    index.adjust(&wide, true, true);
+    let mut index = CheckedScalarFacts::default();
+    index.adjust(&wide, true);
     assert!(index.literals.is_empty());
 }
 

@@ -7208,11 +7208,6 @@ mod tests {
         }
         assert!(context.pointers_known_equal(read.pointer(), &target));
         assert!(!bare.pointers_known_equal(read.pointer(), &target));
-        assert!(
-            !context
-                .without_exact_fact(&alias)
-                .pointers_known_equal(read.pointer(), &target)
-        );
         assert!(!ResourceContext::new().permits_memory_read(
             &argument.offset_by_bytes(8),
             8,

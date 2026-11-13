@@ -108,7 +108,6 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
     for size in [8, 16, 32, 64] {
         let (mut context, goal) = chain(8, 0);
         let memory = intern_c_memory(CMemory::new().with_block("other", size as u32 * 4));
-        let mut snapshot_facts = Vec::new();
         for index in 0..size {
             let condition = ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -123,8 +122,7 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
                     crate::kernel::LoadKind::Int32,
                 )),
             };
-            context = context.assume_condition(condition.clone(), true);
-            snapshot_facts.push(Proposition::ConditionIs(condition, true));
+            context = context.assume_condition(condition, true);
         }
         let (selected, cold) = crate::instrumentation::measure_deterministic_work(|| {
             connected_condition_premises(&context, &goal, false).unwrap()
@@ -148,15 +146,6 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
         assert_eq!(
             branch_work, warm,
             "scalar insertion must share the completed snapshot index"
-        );
-        let withdrawn = context.without_exact_fact(&snapshot_facts[0]);
-        let (selected, rebuilt) = crate::instrumentation::measure_deterministic_work(|| {
-            connected_condition_premises(&withdrawn, &goal, false).unwrap()
-        });
-        assert_eq!(selected, scanned_component(&withdrawn, &goal).0);
-        assert!(
-            rebuilt > warm && rebuilt <= warm + 8,
-            "snapshot withdrawal must apply only its delta: {rebuilt}, {warm}"
         );
         let extra = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -222,21 +211,24 @@ fn connected_condition_selection_scales_linearly_in_chain_and_context() {
                     "chain {length}, unrelated {}: selection {work}, complete {total}",
                     size * 4
                 );
-                // Every link is necessary, and withdrawing it must also
-                // change the selected component and invalidate the certificate.
+                // Every link is necessary: a chain without it neither checks
+                // the certificate nor proves the goal.
                 for index in 1..=length as u64 {
-                    let weakened = context
-                        .without_exact_fact(&Proposition::ConditionIs(chain_fact(index), true));
+                    let weakened = (1..=length as u64)
+                        .filter(|link| *link != index)
+                        .fold(PureFactContext::new(), |weakened, link| {
+                            weakened.assume_condition(chain_fact(link), true)
+                        });
                     assert!(!proof.check(&weakened));
+                    if index == length as u64 / 2 {
+                        assert!(
+                            crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                                &weakened, &goal
+                            )
+                            .is_none()
+                        );
+                    }
                 }
-                let broken = context.without_exact_fact(&Proposition::ConditionIs(
-                    chain_fact(length as u64 / 2),
-                    true,
-                ));
-                assert!(
-                    crate::kernel::search::ProofSearch::derive_atomic_proposition(&(broken), &goal)
-                        .is_none()
-                );
                 (work, total)
             })
             .join()

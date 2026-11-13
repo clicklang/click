@@ -101,12 +101,7 @@ impl OrderBoundIndex {
     pub(in crate::kernel) fn shares_root_with(&self, other: &Self) -> bool {
         self.format == other.format && self.endpoints.shares_root_with(&other.endpoints)
     }
-    pub(super) fn adjust(
-        &mut self,
-        view: &NativeComparisonView<'_>,
-        source: &Proposition,
-        insert: bool,
-    ) {
+    pub(super) fn adjust(&mut self, view: &NativeComparisonView<'_>, source: &Proposition) {
         self.format = Some(view.format);
         let [left, right] = view
             .operands
@@ -131,11 +126,7 @@ impl OrderBoundIndex {
             {
                 let mut bounds = self.endpoints.get(&endpoint).cloned().unwrap_or_default();
                 let sources = bounds.entries.get(&bound).cloned().unwrap_or_default();
-                let sources = if insert {
-                    sources.with_value(source.clone())
-                } else {
-                    sources.without_value(source)
-                };
+                let sources = sources.with_value(source.clone());
                 bounds.entries = if sources.is_empty() {
                     bounds.entries.without_key(&bound)
                 } else {
@@ -147,11 +138,7 @@ impl OrderBoundIndex {
                         .get(&bound)
                         .cloned()
                         .unwrap_or_default();
-                    let sources = if insert {
-                        sources.with_value(source.clone())
-                    } else {
-                        sources.without_value(source)
-                    };
+                    let sources = sources.with_value(source.clone());
                     bounds.written_signed = if sources.is_empty() {
                         bounds.written_signed.without_key(&bound)
                     } else {
@@ -170,7 +157,7 @@ impl OrderBoundIndex {
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct Edges {
-    entries: PersistentMap<(Key, bool), usize>,
+    entries: PersistentMap<(Key, bool), ()>,
 }
 impl Edges {
     pub(in crate::kernel) fn operand_keys(&self) -> impl Iterator<Item = (V<'_>, bool)> {
@@ -194,20 +181,13 @@ impl OrderEdgeIndex {
         from: V<'_>,
         to: V<'_>,
         strict: bool,
-        insert: bool,
     ) {
         self.format = Some(format);
         let from = Key::canonical(format, from);
         let edge = (Key::canonical(format, to), strict);
         let mut edges = self.endpoints.get(&from).cloned().unwrap_or_default();
-        let count = edges.entries.get(&edge).copied().unwrap_or(0);
-        if insert {
-            edges.entries = edges.entries.with_inserted(edge, count + 1);
-        } else if count <= 1 {
-            edges.entries = edges.entries.without_key(&edge);
-        } else {
-            edges.entries = edges.entries.with_inserted(edge, count - 1);
-        }
+        edges.entries = edges.entries.with_inserted(edge, ());
+
         self.endpoints = if edges.entries.is_empty() {
             self.endpoints.without_key(&from)
         } else {

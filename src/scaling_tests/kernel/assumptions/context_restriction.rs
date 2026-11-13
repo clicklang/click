@@ -413,7 +413,7 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
             assert!(context.contains_proposition_fact(&view));
         });
         samples.push(work);
-        context.clear_proposition_facts_with_graph_rebuild(false);
+        context.clear_proposition_facts();
         assert!(!context.contains_proposition_fact(&view));
     }
     assert!(

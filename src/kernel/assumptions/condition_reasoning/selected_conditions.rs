@@ -311,8 +311,7 @@ mod memory_condition_match_tests {
             assert!(!held.has_matching_condition_fact_for_memory_resolution(&goal, !value));
             let named = held.clone().assume_condition(goal.clone(), value);
             assert!(named.has_matching_condition_fact_for_memory_resolution(&goal, value));
-            let withdrawn = held.without_exact_fact(&Proposition::ConditionIs(source, value));
-            assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            assert!(!base.has_matching_condition_fact_for_memory_resolution(&goal, value));
             let signed = base.clone().assume_condition(
                 ConditionTerm::signed_less_than(sum.clone(), var(996_002)),
                 value,
@@ -322,7 +321,7 @@ mod memory_condition_match_tests {
     }
 
     #[test]
-    fn compound_memory_condition_candidates_preserve_snapshots_and_withdrawal() {
+    fn compound_memory_condition_candidates_preserve_snapshots() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = CMemory::new();
         let pointer = Pointer::symbolic(Variable(999_000));
@@ -366,9 +365,6 @@ mod memory_condition_match_tests {
                     &condition(kind, load(&changed)),
                     value
                 ));
-                let withdrawn =
-                    held.without_exact_fact(&Proposition::ConditionIs(source.clone(), value));
-                assert!(!withdrawn.has_matching_condition_fact_for_memory_resolution(&goal, value));
             }
         }
     }
@@ -414,7 +410,7 @@ mod memory_condition_match_tests {
     }
 
     #[test]
-    fn exact_memory_condition_matching_respects_truth_and_withdrawal() {
+    fn exact_memory_condition_matching_respects_truth() {
         let _session = crate::kernel::VerificationSession::enter();
         let goal = comparison(
             MachineIntegerType::UInt64,
@@ -423,11 +419,9 @@ mod memory_condition_match_tests {
             960_011,
         );
         let parent = PureFactContext::new().assume_condition(goal.clone(), true);
-        let child = parent.without_exact_fact(&Proposition::ConditionIs(goal.clone(), true));
         assert!(parent.has_matching_condition_fact_for_memory_resolution(&goal, true));
         assert!(!parent.has_matching_condition_fact_for_memory_resolution(&goal, false));
-        assert!(!child.has_matching_condition_fact_for_memory_resolution(&goal, true));
-        let child = child.assume_condition(goal.clone(), false);
+        let child = PureFactContext::new().assume_condition(goal.clone(), false);
         assert!(child.has_matching_condition_fact_for_memory_resolution(&goal, false));
         assert!(!child.has_matching_condition_fact_for_memory_resolution(&goal, true));
         let reversed = comparison(

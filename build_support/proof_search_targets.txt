@@ -23,7 +23,6 @@ derive_by_singleton_substitution
 derive_double_negation_rule
 derive_exists_from_fact
 derive_exists_from_witness
-derive_exists_loadable_range
 derive_finite_forall
 derive_forall_loadable_range
 derive_forall_rule

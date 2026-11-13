@@ -7,7 +7,7 @@ use std::sync::{Arc, OnceLock};
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct VariableChains {
-    sources: PersistentMap<(Variable, Variable), usize>,
+    sources: PersistentMap<(Variable, Variable), ()>,
     graph: Arc<OnceLock<ChainGraph>>,
 }
 
@@ -124,7 +124,7 @@ impl ChainGraph {
 }
 
 impl VariableChains {
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
         let Some(view) = retained_order_bounds::order_view(condition, value) else {
             return;
         };
@@ -145,30 +145,21 @@ impl VariableChains {
         }
         let (left, right) = (*left, *right);
         let edge = (left, right);
-        let count = self.sources.get(&edge).copied().unwrap_or(0);
-        if insert {
-            let graph = self
-                .graph
-                .get()
-                .cloned()
-                .or_else(|| self.sources.is_empty().then(ChainGraph::default));
-            self.sources.insert(edge, count + 1);
-            if count == 0 {
-                let updated = OnceLock::new();
-                if let Some(mut graph) = graph {
-                    graph.connect(left, right);
-                    let _ = updated.set(graph);
-                }
-                self.graph = Arc::new(updated);
-            }
-        } else if count > 1 {
-            self.sources.insert(edge, count - 1);
-        } else if count == 1 {
-            self.sources.remove(&edge);
-            // Removal can split a path. Rebuild only if a later query needs
-            // it, rather than rebuilding at every withdrawal in a batch.
-            self.graph = Arc::new(OnceLock::new());
+        if self.sources.contains_key(&edge) {
+            return;
         }
+        let graph = self
+            .graph
+            .get()
+            .cloned()
+            .or_else(|| self.sources.is_empty().then(ChainGraph::default));
+        self.sources.insert(edge, ());
+        let updated = OnceLock::new();
+        if let Some(mut graph) = graph {
+            graph.connect(left, right);
+            let _ = updated.set(graph);
+        }
+        self.graph = Arc::new(updated);
     }
 
     pub(in crate::kernel) fn span(&self, variable: Variable) -> Option<ChainSpan<'_>> {
@@ -298,18 +289,20 @@ mod tests {
         ];
         for reverse in [false, true] {
             let mut context = PureFactContext::new();
+            let mut broken = PureFactContext::new();
             let mut edges = variables.windows(2).collect::<Vec<_>>();
             if reverse {
                 edges.reverse();
             }
             for pair in edges {
-                context = context.assume_condition(
-                    ConditionTerm::signed_less_than(
-                        MachineTerm::Variable(pair[0]),
-                        MachineTerm::Variable(pair[1]),
-                    ),
-                    true,
+                let edge = ConditionTerm::signed_less_than(
+                    MachineTerm::Variable(pair[0]),
+                    MachineTerm::Variable(pair[1]),
                 );
+                context = context.assume_condition(edge.clone(), true);
+                if pair[0] != variables[1] {
+                    broken = broken.assume_condition(edge, true);
+                }
             }
             let first = context.signed_variable_chains.span(variables[0]).unwrap();
             assert_eq!(first.members.iter().copied().collect::<Vec<_>>(), variables);
@@ -323,14 +316,7 @@ mod tests {
                 MachineTerm::Variable(variables[4]),
             );
             assert_eq!(context.decide_from_variable_chain(&query), Some(true));
-            context.forget_condition_fact(
-                &ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(variables[1]),
-                    MachineTerm::Variable(variables[2]),
-                ),
-                true,
-            );
-            assert_eq!(context.decide_from_variable_chain(&query), None);
+            assert_eq!(broken.decide_from_variable_chain(&query), None);
         }
     }
 

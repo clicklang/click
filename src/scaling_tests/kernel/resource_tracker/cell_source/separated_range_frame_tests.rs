@@ -106,9 +106,11 @@ fn separated_range_frame_retains_full_access_and_range_extents() {
         assert!(
             typed_range_disjoint_from_pointer_evidence(&too_large, &read, 4, &context).is_none()
         );
-        let withdrawn = context.without_exact_fact(&authority);
-        assert!(!proof.checks(&child, &read, 4, &withdrawn));
-        assert!(typed_range_disjoint_from_pointer_evidence(&child, &read, 4, &withdrawn).is_none());
+        let unseparated = PureFactContext::new();
+        assert!(!proof.checks(&child, &read, 4, &unseparated));
+        assert!(
+            typed_range_disjoint_from_pointer_evidence(&child, &read, 4, &unseparated).is_none()
+        );
         assert!(work < 200, "size={size}, work={work}");
         samples.push(work);
     }

@@ -37,8 +37,9 @@ fn solve_retains_recorded_equality_edges_instead_of_connected_aliases() {
         assert_eq!(premises.len(), 2, "count {count}");
         assert!(premises.contains(&first) && premises.contains(&second));
         assert!(derivation.check(&context));
-        for missing in [&first, &second] {
-            assert!(!derivation.check(&context.without_exact_fact(missing)));
+        for remaining in [first, second] {
+            let partial = PureFactContext::new().assume_proposition(remaining);
+            assert!(!derivation.check(&partial));
         }
         samples.push((count, work));
     }
@@ -92,8 +93,9 @@ fn solve_reduces_connected_pointer_premises_before_spelling() {
         );
         assert!(derivation.check(&reduced));
         // Neither required link can be supplied by the discarded aliases.
-        for missing in [&first, &second] {
-            assert!(!derivation.check(&reduced.without_exact_fact(missing)));
+        for remaining in [first, second] {
+            let partial = PureFactContext::new().assume_proposition(remaining);
+            assert!(!derivation.check(&partial));
         }
         samples.push((count, work));
     }
@@ -145,7 +147,7 @@ fn solve_retains_recorded_load_address_equality_premises() {
         });
         assert_eq!(derivation.context_premises(), vec![required.clone()]);
         assert!(derivation.check(&context));
-        assert!(!derivation.check(&context.without_exact_fact(&required)));
+        assert!(!derivation.check(&PureFactContext::new()));
         samples.push((count, work));
     }
     for pair in samples.windows(2) {
@@ -192,9 +194,15 @@ fn native_view_prefix_retains_only_its_order_path() {
         });
         let premises = derivation.context_premises();
         assert_eq!(premises.len(), 3);
-        for required in [&source, &first, &second] {
-            assert!(premises.contains(required));
-            assert!(!derivation.check(&context.without_exact_fact(required)));
+        let required = [&source, &first, &second];
+        for missing in required {
+            assert!(premises.contains(missing));
+            let without = required
+                .into_iter()
+                .filter(|premise| *premise != missing)
+                .cloned()
+                .fold(PureFactContext::new(), PureFactContext::assume_proposition);
+            assert!(!derivation.check(&without));
         }
         assert!(derivation.check(&context));
         samples.push((count, work));
@@ -249,7 +257,7 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
         });
         assert_eq!(derivation.context_premises(), vec![required.clone()]);
         assert!(derivation.check(&context));
-        assert!(!derivation.check(&context.without_exact_fact(&required)));
+        assert!(!derivation.check(&PureFactContext::new()));
         samples.push((count, work));
     }
     for pair in samples.windows(2) {

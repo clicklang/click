@@ -4368,7 +4368,7 @@ mod packed_word_contract_tests {
     }
 
     #[test]
-    fn incoming_word_carriers_need_full_equality_and_lose_it_on_withdrawal() {
+    fn incoming_word_carriers_need_full_equality() {
         let _session = crate::kernel::VerificationSession::enter();
         let bits = MachineTerm::Variable(Variable(997_001));
         let word = CValue::UInt64(bits.clone()).complete_word(Pointer::symbolic(Variable(997_002)));
@@ -4398,8 +4398,6 @@ mod packed_word_contract_tests {
         let full = numeric.assume_proposition(relation.clone());
         assert!(full.pointer_designations_match(&reconstructed, &target));
         assert!(!full.pointer_designations_match(&unrelated, &target));
-        let withdrawn = full.without_exact_fact(&relation);
-        assert!(!withdrawn.pointer_designations_match(&reconstructed, &target));
     }
 
     #[test]

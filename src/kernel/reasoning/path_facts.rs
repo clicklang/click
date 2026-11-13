@@ -2912,7 +2912,6 @@ mod shared_reconstruction_tests {
         );
         let empty = PureFactContext::new();
         let bounded = empty.clone().assume_condition(bound.clone(), true);
-        let withdrawn = bounded.without_exact_fact(&Proposition::ConditionIs(bound, true));
         let low = root.checking_legacy_machine_conversion(T::UInt64, T::UInt32);
         let low_bound = crate::kernel::machine_integer::comparison::condition_for_operand_views(
             T::UInt32,
@@ -2925,7 +2924,7 @@ mod shared_reconstruction_tests {
         let low_only = empty.clone().assume_condition(low_bound, true);
         let exports = KernelTermExport::machine_export_count();
         assert!(shared_element_index_from_offset_with_facts(&offset, 8, &bounded).is_some());
-        for facts in [&empty, &withdrawn, &low_only] {
+        for facts in [&empty, &low_only] {
             assert!(shared_element_index_from_offset_with_facts(&offset, 8, facts).is_none());
         }
         assert!(shared_element_index_from_offset_with_facts(&offset, 4, &bounded).is_none());

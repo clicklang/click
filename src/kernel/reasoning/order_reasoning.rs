@@ -1823,8 +1823,6 @@ mod retained_fold_endpoint_tests {
                 });
             assert!(proved, "{format:?}");
             assert_eq!(sources, vec![original.clone()]);
-            let withdrawn = known.without_exact_fact(&original);
-            assert!(!equal(&withdrawn));
             assert!(!equal(&refuted));
             assert!(!equal(&empty));
             assert_eq!(KernelTermExport::machine_export_count(), exports);

@@ -3788,9 +3788,9 @@ fn two_edge_pointer_alias_witness_rechecks_each_named_premise() {
         &assumptions,
     ));
     assert!(mismatched_capture.finish().is_empty());
-    for premise in [first, second] {
-        let withdrawn = assumptions.without_exact_fact(&Proposition::ConditionIs(premise, true));
-        assert!(!witness.checks(&withdrawn));
+    for remaining in [first, second] {
+        let partial = PureFactContext::new().assume_condition(remaining, true);
+        assert!(!witness.checks(&partial));
     }
     assert!(!witness.checks(&PureFactContext::new()));
 }
@@ -4196,7 +4196,7 @@ fn numeric_address_byte_gaps_preserve_cache_and_read_history() {
             "gap {shift}: {history:?}"
         );
         if shift >= 8 {
-            let missing = context.without_exact_fact(&premise);
+            let missing = PureFactContext::new();
             assert!(
                 crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
                     &q, 8, &p, 8, &missing,
@@ -4232,7 +4232,7 @@ fn anchored_byte_separation_checks_full_width_and_scope() {
     assert!(check(&context, 8));
     assert!(!check(&context, 16));
     assert!(!check(&PureFactContext::new(), 8));
-    assert!(!check(&context.without_exact_fact(&separation), 8));
+    assert!(!check(&PureFactContext::new(), 8));
     let overlapping = context.assume_condition(
         ConditionTerm::uint64_equal(
             MachineTerm::pointer_address(q.clone()),
@@ -4253,20 +4253,19 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
             .unchecked_with_fact(CResourceFact::own_memory(memory_range(p.clone(), 0, 2)))
             .unchecked_with_fact(CResourceFact::own_memory(memory_range(q.clone(), 0, 2))),
     );
-    let context = PureFactContext::new()
-        .assume_proposition(owners.clone())
-        .assume_condition(
-            ConditionTerm::uint64_equal(
-                MachineTerm::pointer_address(q.clone()),
-                MachineTerm::Binary {
-                    format: MachineIntegerType::UInt64,
-                    op: MachineBinaryOp::Add,
-                    left: Box::new(MachineTerm::pointer_address(p.clone())),
-                    right: Box::new(MachineTerm::Variable(Variable(970_143))),
-                },
-            ),
-            true,
-        );
+    let address = PureFactContext::new().assume_condition(
+        ConditionTerm::uint64_equal(
+            MachineTerm::pointer_address(q.clone()),
+            MachineTerm::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(MachineTerm::pointer_address(p.clone())),
+                right: Box::new(MachineTerm::Variable(Variable(970_143))),
+            },
+        ),
+        true,
+    );
+    let context = address.clone().assume_proposition(owners.clone());
     assert!(!context.address_connected_objects(&q).is_empty());
     let before = intern_c_memory(
         CMemory::new().store(p.clone(), CValue::UInt64(MachineTerm::uint64_constant(17))),
@@ -4283,11 +4282,7 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
     ));
     assert!(
         crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
-            &q,
-            8,
-            &p,
-            8,
-            &context.with_only_proposition_facts(&[])
+            &q, 8, &p, 8, &address
         )
         .is_none()
     );
@@ -4428,8 +4423,9 @@ fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
             .expect("equal object origins preserve the neighboring eight-byte field");
     let goal = Proposition::ConditionIs(ConditionTerm::equal(new, old), true);
     assert!(proof.checks(&goal, &context));
-    for missing in [&first, &second] {
-        assert!(!proof.checks(&goal, &context.without_exact_fact(missing)));
+    for remaining in [first, second] {
+        let partial = PureFactContext::new().assume_proposition(remaining);
+        assert!(!proof.checks(&goal, &partial));
     }
     let overlapping = left.offset_by_bytes(4);
     assert!(
@@ -4511,8 +4507,14 @@ fn stated_separation_frames_equal_model_and_program_origins() {
             8,
             &context
         ));
-        for removed in [&first, &second, &separation] {
-            let missing = context.without_exact_fact(removed);
+        let facts = [&first, &second, &separation];
+        for removed in facts {
+            let missing = facts
+                .into_iter()
+                .filter(|fact| *fact != removed)
+                .fold(PureFactContext::new(), |missing, fact| {
+                    missing.assume_proposition(fact.clone())
+                });
             assert!(!proof.checks(&goal, &missing));
             assert!(!typed_read_has_same_memory_source(
                 before.memory(),

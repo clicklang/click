@@ -449,7 +449,7 @@ Caller-owned ranges retained across a checked call use the shared address-class
 owner selector. A transitive equality between native model pointers can select
 a retained field even when the pointer spellings have different symbolic
 blocks. Coverage still checks the complete byte extent; borrowed views do not
-become owned frames, and withdrawing an alias removes its lookup support.
+become owned frames, and a context without the alias has no lookup support.
 Recorded call snapshots can outlive the equality-input lineage that first
 prepared their frame index. During recheck that index may identify a candidate
 owner, but the current equality graph must establish the candidate's address;

@@ -220,13 +220,10 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
             CState::new(),
             CType::FunctionPointer(CallbackSignature::from_encoded(90_001))
         )));
-        assert!(
-            !context
-                .clone()
-                .without_exact_fact(&source)
-                .contains_known(&required)
-        );
-        assert!(!context.without_exact_fact(&alias).contains_known(&required));
+        for single in [&source, &alias] {
+            let partial = PureFactContext::new().assume_proposition(single.clone());
+            assert!(!partial.contains_known(&required));
+        }
     }
     assert!(samples[2].0 <= samples[0].0 * 2 + 16, "{samples:?}");
     assert!(samples[2].1 <= samples[0].1 * 3 + 128, "{samples:?}");
@@ -367,12 +364,6 @@ fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
             "each pinned term reads its own entry and nothing else at {size} facts"
         );
         samples.push((size, work));
-        // Withdrawing the pinning fact withdraws its entry.
-        let forgotten = assumptions.without_exact_fact(&Proposition::ConditionIs(
-            ConditionTerm::equal(pinned.clone(), MachineTerm::constant(7)),
-            true,
-        ));
-        assert_eq!(exact_signed_constant(&pinned, &forgotten), None);
     }
     assert!(
         samples.iter().all(|(_, work)| *work == samples[0].1),

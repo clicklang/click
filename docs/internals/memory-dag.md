@@ -135,8 +135,8 @@ access. It does not scan the shared external-argument block's separation facts.
 Owned compositions use the same full-access membership check, selected by the
 two base addresses without an interior block scan. Known equal addresses or
 partially overlapping windows take precedence over
-separation authority. Evidence stays local to the fact context; withdrawing a
-premise or taking another branch cannot retain that authority.
+separation authority. Evidence stays local to the fact context; a context without
+the premise, or another branch, does not hold that authority.
 
 ## What a snapshot's identity is
 

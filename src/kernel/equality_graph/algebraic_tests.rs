@@ -145,7 +145,7 @@ fn algebraic_closure_propagates_late_model_and_scalar_merges_through_calls() {
 }
 
 #[test]
-fn algebraic_closure_keeps_branch_scope_counted_support_and_withdrawal() {
+fn algebraic_closure_keeps_branch_scope() {
     let ty = model_type("Model", AlgebraicValueType::C(CType::Int32));
     let (a, b) = (variable(&ty, 30), variable(&ty, 31));
     let empty = constructor(&ty, "Empty", vec![]);
@@ -156,28 +156,13 @@ fn algebraic_closure_keeps_branch_scope_counted_support_and_withdrawal() {
     assert!(!base.contains_known(&eq(&a, &empty)));
     assert!(branch.contains_known(&eq(&a, &empty)));
     assert!(
-        !branch
-            .without_exact_fact(&edge)
-            .contains_known(&eq(&a, &empty))
-    );
-    assert!(
-        !branch
-            .without_exact_fact(&ctor)
+        !PureFactContext::new()
+            .assume_proposition(ctor)
             .contains_known(&eq(&a, &empty))
     );
     assert!(
         !branch
             .restricted_to_facts(&[], std::slice::from_ref(&edge))
-            .contains_known(&eq(&a, &empty))
-    );
-    let duplicate = condition(&b, &a, true);
-    let both = branch
-        .assume_proposition(duplicate.clone())
-        .without_exact_fact(&edge);
-    assert!(both.contains_known(&eq(&a, &empty)));
-    assert!(
-        !both
-            .without_exact_fact(&duplicate)
             .contains_known(&eq(&a, &empty))
     );
     let negative = base.assume_proposition(condition(&b, &empty, false));
@@ -262,7 +247,7 @@ fn algebraic_closure_retains_each_schema_allocation_behind_a_memo_key() {
 }
 
 #[test]
-fn scalar_conflicts_follow_model_congruence_and_withdrawn_support() {
+fn scalar_conflicts_follow_model_congruence() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = model_type("ConflictModel", AlgebraicValueType::C(CType::Int32));
     let (a, b) = (variable(&ty, 900), variable(&ty, 901));
@@ -280,8 +265,8 @@ fn scalar_conflicts_follow_model_congruence_and_withdrawn_support() {
     let second = value(b.clone(), 0);
     let edge = eq(&a, &b);
     let base = PureFactContext::new()
-        .assume_proposition(first)
-        .assume_proposition(second.clone());
+        .assume_proposition(first.clone())
+        .assume_proposition(second);
     assert!(!base.equality_graph.has_scalar_constant_conflict());
     assert!(!base.is_inconsistent());
     let child = base.clone().assume_proposition(edge.clone());
@@ -294,28 +279,14 @@ fn scalar_conflicts_follow_model_congruence_and_withdrawn_support() {
     )));
     assert!(!base.equality_graph.has_scalar_constant_conflict());
     for weakened in [
-        child.without_exact_fact(&edge),
-        child.without_exact_fact(&second),
+        PureFactContext::new()
+            .assume_proposition(first)
+            .assume_proposition(edge.clone()),
         child.restricted_to_facts(&[], std::slice::from_ref(&edge)),
     ] {
         assert!(!weakened.equality_graph.has_scalar_constant_conflict());
         assert!(!weakened.is_inconsistent());
     }
-    let duplicate = condition(&b, &a, true);
-    let still_supported = child
-        .assume_proposition(duplicate.clone())
-        .without_exact_fact(&edge);
-    assert!(
-        still_supported
-            .equality_graph
-            .has_scalar_constant_conflict()
-    );
-    assert!(
-        !still_supported
-            .without_exact_fact(&duplicate)
-            .equality_graph
-            .has_scalar_constant_conflict()
-    );
 }
 
 #[test]
@@ -397,13 +368,9 @@ fn model_constructor_lookup_uses_shared_classes_and_scoped_evidence() {
         };
         assert_eq!(joined.known_algebraic_constructor(&a), Some(ctor.clone()));
         assert_eq!(base.known_algebraic_constructor(&a), None);
-        let mut withdrawn = joined.clone();
-        withdrawn.remove_proposition_fact(&eq(&b, &c));
-        assert_eq!(withdrawn.known_algebraic_constructor(&a), None);
-        assert_eq!(
-            withdrawn.known_algebraic_constructor(&c),
-            Some(ctor.clone())
-        );
+        let unjoined = base.clone().assume_proposition(eq(&c, &ctor));
+        assert_eq!(unjoined.known_algebraic_constructor(&a), None);
+        assert_eq!(unjoined.known_algebraic_constructor(&c), Some(ctor.clone()));
         assert_eq!(joined.known_algebraic_constructor(&a), Some(ctor.clone()));
     }
     let other_ty = model_type(
@@ -468,23 +435,25 @@ fn constructor_classes_join_fields_and_refute_distinct_variants() {
     assert!(!joined.equality_graph.has_scalar_constant_conflict());
     assert!(!base.contains_known(&fields));
     for weakened in [
-        joined.without_exact_fact(&edge),
-        joined.without_exact_fact(&first),
+        PureFactContext::new()
+            .assume_proposition(second)
+            .assume_proposition(edge.clone()),
         joined.restricted_to_facts(&[], &[first.clone(), edge.clone()]),
     ] {
         assert!(!weakened.contains_known(&fields));
     }
 
     let empty = eq(&alias, &constructor(&ty, "Empty", vec![]));
-    let refuted = PureFactContext::new()
-        .assume_proposition(first)
+    let held = PureFactContext::new().assume_proposition(first);
+    let refuted = held
+        .clone()
         .assume_proposition(empty.clone())
         .assume_proposition(edge.clone());
     assert!(refuted.equality_graph.has_scalar_constant_conflict());
     assert!(refuted.is_inconsistent());
     for weakened in [
-        refuted.without_exact_fact(&edge),
-        refuted.without_exact_fact(&empty),
+        held.clone().assume_proposition(empty),
+        held.assume_proposition(edge),
     ] {
         assert!(!weakened.equality_graph.has_scalar_constant_conflict());
     }

@@ -20,10 +20,8 @@
 //! often. Both kinds of key are context-free, so a fact files the same way
 //! in every context that holds it.
 //!
-//! Withdrawing a fact reverses its entries, except an equality: a
-//! union-find cannot split, so withdrawing one clears the index, and the
-//! next query rebuilds it from the context's facts, as the difference graph
-//! does.
+//! A context only gains facts; a branch forks a persistent clone of its
+//! parent's index.
 //!
 //! See `docs/internals/verification-efficiency.md`.
 
@@ -78,14 +76,14 @@ impl Edge {
 /// facts that state it.
 #[derive(Clone, Debug, Default)]
 struct Range {
-    lower: PersistentMap<i64, u32>,
-    upper: PersistentMap<i64, u32>,
-    excluded: PersistentMap<i64, u32>,
+    lower: PersistentSet<i64>,
+    upper: PersistentSet<i64>,
+    excluded: PersistentSet<i64>,
 }
 
 impl Range {
     fn exhausted(&self) -> bool {
-        let (Some(lower), Some(upper)) = (self.lower.keys().next_back(), self.upper.keys().next())
+        let (Some(lower), Some(upper)) = (self.lower.iter().next_back(), self.upper.iter().next())
         else {
             return false;
         };
@@ -97,7 +95,7 @@ impl Range {
             && self.excluded.len() as i64 > upper - lower
             && (*lower..=*upper).all(|value| {
                 crate::instrumentation::record_deterministic_work(1);
-                self.excluded.contains_key(&value)
+                self.excluded.contains(&value)
             })
     }
 
@@ -106,23 +104,12 @@ impl Range {
     }
 }
 
-fn counted(map: &PersistentMap<i64, u32>, value: i64, insert: bool) -> PersistentMap<i64, u32> {
-    let count = map.get(&value).copied().unwrap_or(0);
-    if insert {
-        map.with_inserted(value, count + 1)
-    } else if count > 1 {
-        map.with_inserted(value, count - 1)
-    } else {
-        map.without_key(&value)
-    }
-}
-
 /// The contradiction index of one set of condition facts.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Contradictions {
     endpoints: EndpointKeys,
-    /// `[false, true]` fact counts under each canonical condition.
-    polarity: PersistentMap<ConditionTerm, [u32; 2]>,
+    /// Which of `[false, true]` is assumed under each canonical condition.
+    polarity: PersistentMap<ConditionTerm, [bool; 2]>,
     /// Union-find parents of non-root endpoint keys.
     parent: PersistentMap<Key, Key>,
     /// Member counts of class roots with more than one member.
@@ -142,24 +129,15 @@ impl Contradictions {
         !self.conflicts.is_empty()
     }
 
-    /// Whether withdrawing this fact needs a rebuild: it joined two
-    /// classes.
-    fn joins_classes(condition: &ConditionTerm, value: bool) -> bool {
-        scalar_evidence_pair(condition, value).is_some()
-            || comparison_view(condition, value).is_some_and(|view| {
-                view.format.format().bits() == 32 && view.relation == Relation::Equal
-            })
-    }
-
-    fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+    fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
         crate::instrumentation::record_deterministic_work(1);
-        self.adjust_polarity(canonical_contradiction_condition(condition), value, insert);
+        self.adjust_polarity(canonical_contradiction_condition(condition), value);
         if value && let ConditionTerm::PointerValueEqual(left, right) = condition {
             // Full pointer equality entails address equality, while its
             // negation makes no claim about addresses.
             let address =
                 ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone());
-            self.adjust_polarity(canonical_contradiction_condition(&address), true, insert);
+            self.adjust_polarity(canonical_contradiction_condition(&address), true);
         }
         let observation =
             crate::kernel::machine_integer::comparison::native_comparison_view(condition, value);
@@ -179,7 +157,7 @@ impl Contradictions {
                 .each_ref()
                 .map(|operand| operand.operand_view());
             let equal = view.relation == Relation::Equal;
-            if equal && insert {
+            if equal {
                 let left = self.register(left);
                 let right = self.register(right);
                 self.union(&left, &right);
@@ -192,16 +170,15 @@ impl Contradictions {
                 let constant = i64::from(bits as i32);
                 self.adjust_range(*variable, |range| {
                     if equal {
-                        range.lower = counted(&range.lower, constant, insert);
-                        range.upper = counted(&range.upper, constant, insert);
+                        range.lower = range.lower.with_value(constant);
+                        range.upper = range.upper.with_value(constant);
                     } else {
-                        range.excluded = counted(&range.excluded, constant, insert);
+                        range.excluded = range.excluded.with_value(constant);
                     }
                 });
             }
         }
-        if insert
-            && condition.true_pointer_offset_sides().is_some()
+        if condition.true_pointer_offset_sides().is_some()
             && let Some((left, right)) = scalar_evidence_pair(condition, value)
         {
             self.union(
@@ -217,11 +194,7 @@ impl Contradictions {
                 .each_ref()
                 .map(|operand| operand.operand_view());
             let strict = view.relation == Relation::Less;
-            let (left_key, right_key) = if insert {
-                (self.register(left), self.register(right))
-            } else {
-                (self.endpoints.key(left), self.endpoints.key(right))
-            };
+            let (left_key, right_key) = (self.register(left), self.register(right));
             let from = self.find(&left_key);
             let to = self.find(&right_key);
             let edge = if strict {
@@ -235,7 +208,7 @@ impl Contradictions {
                     strict: 0,
                 }
             };
-            self.adjust_edge(&from, &to, edge, insert);
+            self.adjust_edge(&from, &to, edge, true);
             self.refresh_order(&from, &to);
             if let (Some(variable), Some(bound)) = (
                 left.variable().copied(),
@@ -243,7 +216,7 @@ impl Contradictions {
             ) {
                 let upper = if strict { bound - 1 } else { bound };
                 self.adjust_range(variable, |range| {
-                    range.upper = counted(&range.upper, upper, insert);
+                    range.upper = range.upper.with_value(upper);
                 });
             }
             if let (Some(bound), Some(variable)) = (
@@ -252,7 +225,7 @@ impl Contradictions {
             ) {
                 let lower = if strict { bound + 1 } else { bound };
                 self.adjust_range(variable, |range| {
-                    range.lower = counted(&range.lower, lower, insert);
+                    range.lower = range.lower.with_value(lower);
                 });
             }
         }
@@ -266,21 +239,12 @@ impl Contradictions {
         };
     }
 
-    fn adjust_polarity(&mut self, key: ConditionTerm, value: bool, insert: bool) {
-        let mut counts = self.polarity.get(&key).copied().unwrap_or([0, 0]);
-        let slot = &mut counts[usize::from(value)];
-        if insert {
-            *slot += 1;
-        } else {
-            *slot = slot.saturating_sub(1);
-        }
-        let conflict = (counts[0] > 0 && counts[1] > 0)
-            || matches!(&key, ConditionTerm::Constant(actual) if counts[usize::from(!*actual)] > 0);
-        self.polarity = if counts == [0, 0] {
-            self.polarity.without_key(&key)
-        } else {
-            self.polarity.with_inserted(key.clone(), counts)
-        };
+    fn adjust_polarity(&mut self, key: ConditionTerm, value: bool) {
+        let mut held = self.polarity.get(&key).copied().unwrap_or([false, false]);
+        held[usize::from(value)] = true;
+        let conflict = (held[0] && held[1])
+            || matches!(&key, ConditionTerm::Constant(actual) if held[usize::from(!*actual)]);
+        self.polarity = self.polarity.with_inserted(key.clone(), held);
         self.set_conflict(Cell::Polarity(key), conflict);
     }
 
@@ -447,9 +411,8 @@ fn with_edge(
 }
 
 /// A fact context's index: extended as the context assumes condition facts,
-/// reversed as it withdraws one, cleared when it withdraws an equality, and
-/// rebuilt from the context's facts by the next query that finds it
-/// cleared. Clones share it, as proof branches share the context.
+/// cleared when the context is rebuilt, and rebuilt from the context's facts
+/// by the next query that finds it cleared. Clones share it, as proof branches share the context.
 #[derive(Clone)]
 pub(crate) struct ContextContradictions(std::sync::Arc<std::sync::OnceLock<Contradictions>>);
 
@@ -468,16 +431,12 @@ impl std::fmt::Debug for ContextContradictions {
 }
 
 impl ContextContradictions {
-    /// Follows the context assuming or withdrawing `condition` with
-    /// `value`; a cleared index stays cleared until its rebuild.
-    pub(crate) fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
-        if !insert && Contradictions::joins_classes(condition, value) {
-            self.0 = std::sync::Arc::new(std::sync::OnceLock::new());
-            return;
-        }
+    /// Follows the context assuming `condition` with `value`; a cleared
+    /// index stays cleared until its rebuild.
+    pub(crate) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
         if let Some(index) = self.0.get() {
             let mut index = index.clone();
-            index.adjust(condition, value, insert);
+            index.adjust(condition, value);
             self.0 = std::sync::Arc::new(std::sync::OnceLock::from(index));
         }
     }
@@ -496,7 +455,7 @@ impl ContextContradictions {
         self.0.get_or_init(|| {
             let mut index = Contradictions::default();
             for (condition, value) in facts() {
-                index.adjust(condition, value, true);
+                index.adjust(condition, value);
             }
             index
         })

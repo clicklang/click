@@ -59,7 +59,7 @@ fn address_separation_follows_checked_graph_aliases_early_and_late() {
 }
 
 #[test]
-fn address_separation_preserves_scope_alias_withdrawal_and_exact_sources() {
+fn address_separation_preserves_scope_alias_and_exact_sources() {
     let _session = VerificationSession::enter();
     let (a, b, c) = (pointer(10), pointer(11), pointer(12));
     let source = separate(&a, &b);
@@ -69,13 +69,8 @@ fn address_separation_preserves_scope_alias_withdrawal_and_exact_sources() {
     assert!(child.contains_known(&different(&a, &c)));
     assert!(!parent.contains_known(&different(&a, &c)));
     assert!(
-        !child
-            .without_exact_fact(&source)
-            .contains_known(&different(&a, &c))
-    );
-    assert!(
-        !child
-            .without_exact_fact(&equation)
+        !PureFactContext::new()
+            .assume_proposition(equation)
             .contains_known(&different(&a, &c))
     );
     assert!(
@@ -97,16 +92,11 @@ fn numeric_aliases_transfer_only_address_separation_not_pointer_identity() {
     let _session = VerificationSession::enter();
     let (a, b, c) = (pointer(30), pointer(31), pointer(32));
     let equation = Proposition::ConditionIs(numeric(&b, &c), true);
-    let context = PureFactContext::new()
-        .assume_proposition(separate(&a, &b))
-        .assume_proposition(equation.clone());
+    let separated = PureFactContext::new().assume_proposition(separate(&a, &b));
+    let context = separated.clone().assume_proposition(equation);
     assert!(context.contains_known(&different(&a, &c)));
     assert!(!context.contains_known(&alias(&b, &c)));
-    assert!(
-        !context
-            .without_exact_fact(&equation)
-            .contains_known(&different(&a, &c))
-    );
+    assert!(!separated.contains_known(&different(&a, &c)));
     let same = context.assume_proposition(Proposition::ConditionIs(numeric(&a, &c), true));
     assert!(!same.addresses_separated_by_class(&numeric(&a, &c)));
 }

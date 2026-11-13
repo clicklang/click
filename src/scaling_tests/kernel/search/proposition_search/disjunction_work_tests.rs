@@ -44,7 +44,7 @@ fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
                 .expect("the bound is stated")
         });
         assert!(proof.check(&context));
-        assert!(!proof.check(&context.without_exact_fact(&bound)));
+        assert!(!proof.check(&PureFactContext::new()));
         samples.push((size, work));
     }
     assert!(samples[2].1 <= samples[0].1 + 64, "{samples:?}");

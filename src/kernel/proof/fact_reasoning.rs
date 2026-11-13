@@ -4140,11 +4140,7 @@ mod annotated_address_condition_tests {
                         .decide_selected_condition(&queried),
                     Some(value)
                 );
-                for context in [
-                    parent,
-                    branch.without_exact_fact(&source),
-                    branch.restricted_to_facts(&[], &[]),
-                ] {
+                for context in [parent, branch.restricted_to_facts(&[], &[])] {
                     assert_eq!(context.decide(&queried), None);
                     assert_eq!(
                         context

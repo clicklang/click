@@ -119,7 +119,7 @@ fn selected_call_expression(root: MachineOperandView<'_>) -> bool {
 
 #[derive(Clone, Debug, Default)]
 struct Exclusions {
-    counts: PersistentMap<i64, usize>,
+    values: PersistentSet<i64>,
     runs: PersistentMap<i64, i64>,
 }
 
@@ -132,40 +132,22 @@ impl Exclusions {
             .map(|(start, end)| (*start, *end))
     }
 
-    fn adjust(&mut self, value: i64, insert: bool) {
-        let count = self.counts.get(&value).copied().unwrap_or(0);
-        if insert {
-            self.counts = self.counts.with_inserted(value, count + 1);
-            if count != 0 {
-                return;
-            }
-            let mut start = value;
-            let mut end = value;
-            if let Some((left, _)) = self.containing(value - 1) {
-                start = left;
-                self.runs = self.runs.without_key(&left);
-            }
-            if let Some(right) = self.runs.get(&(value + 1)).copied() {
-                end = right;
-                self.runs = self.runs.without_key(&(value + 1));
-            }
-            self.runs = self.runs.with_inserted(start, end);
-        } else {
-            if count > 1 {
-                self.counts = self.counts.with_inserted(value, count - 1);
-                return;
-            }
-            self.counts = self.counts.without_key(&value);
-            if let Some((start, end)) = self.containing(value) {
-                self.runs = self.runs.without_key(&start);
-                if start < value {
-                    self.runs = self.runs.with_inserted(start, value - 1);
-                }
-                if value < end {
-                    self.runs = self.runs.with_inserted(value + 1, end);
-                }
-            }
+    fn adjust(&mut self, value: i64) {
+        if self.values.contains(&value) {
+            return;
         }
+        self.values = self.values.with_value(value);
+        let mut start = value;
+        let mut end = value;
+        if let Some((left, _)) = self.containing(value - 1) {
+            start = left;
+            self.runs = self.runs.without_key(&left);
+        }
+        if let Some(right) = self.runs.get(&(value + 1)).copied() {
+            end = right;
+            self.runs = self.runs.without_key(&(value + 1));
+        }
+        self.runs = self.runs.with_inserted(start, end);
     }
 }
 
@@ -177,7 +159,7 @@ pub(in crate::kernel) struct CheckedScalarFacts {
 }
 
 impl CheckedScalarFacts {
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
         let Some(view) = comparison_view(condition, value) else {
             return;
         };
@@ -203,11 +185,7 @@ impl CheckedScalarFacts {
                 let key = ScalarOperandKey::new(endpoint);
                 let sources = self.literals.get(&key).cloned().unwrap_or_default();
                 let source = (condition.clone(), value);
-                let sources = if insert {
-                    sources.with_value(source)
-                } else {
-                    sources.without_value(&source)
-                };
+                let sources = sources.with_value(source);
                 self.literals = if sources.is_empty() {
                     self.literals.without_key(&key)
                 } else {
@@ -227,11 +205,7 @@ impl CheckedScalarFacts {
                 && value
             {
                 let sources = self.equalities.get(endpoint).cloned().unwrap_or_default();
-                let sources = if insert {
-                    sources.with_value(condition.clone())
-                } else {
-                    sources.without_value(condition)
-                };
+                let sources = sources.with_value(condition.clone());
                 self.equalities = if sources.is_empty() {
                     self.equalities.without_key(endpoint)
                 } else {
@@ -250,8 +224,8 @@ impl CheckedScalarFacts {
                 };
                 for key in std::iter::once(key).chain(alias) {
                     let mut excluded = self.exclusions.get(&key).cloned().unwrap_or_default();
-                    excluded.adjust(number, insert);
-                    self.exclusions = if excluded.counts.is_empty() {
+                    excluded.adjust(number);
+                    self.exclusions = if excluded.values.is_empty() {
                         self.exclusions.without_key(&key)
                     } else {
                         self.exclusions.with_inserted(key, excluded)

@@ -69,7 +69,7 @@ fn scaled_int32_literals_join_folded_constants_without_overflow() {
 }
 
 #[test]
-fn scaled_int32_context_rebuilds_remove_only_unsupported_consequences() {
+fn scaled_int32_restriction_removes_only_unsupported_consequences() {
     let equality = ConditionTerm::equal(scalar(1), scalar(2));
     let explicit = ConditionTerm::pointer_offset_equal(scaled(2, 4), offset(10));
     let context = PureFactContext::new()
@@ -79,17 +79,6 @@ fn scaled_int32_context_rebuilds_remove_only_unsupported_consequences() {
         context
             .equality_graph
             .are_offsets_equal(&scaled(1, 4), &offset(10))
-    );
-    let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(equality.clone(), true));
-    assert!(
-        !withdrawn
-            .equality_graph
-            .are_offsets_equal(&scaled(1, 4), &offset(10))
-    );
-    assert!(
-        withdrawn
-            .equality_graph
-            .are_offsets_equal(&scaled(2, 4), &offset(10))
     );
     let restricted = context.restricted_to_facts(&[(equality, true)], &[]);
     assert!(

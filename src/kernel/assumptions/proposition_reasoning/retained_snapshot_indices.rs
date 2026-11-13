@@ -174,11 +174,6 @@ fn snapshot_source_index_matches_retained_signed_and_unsigned_ring_terms() {
         assert!(context.has_pointer_offset_snapshot_fact(&end, &target));
         assert!(!context.has_pointer_offset_snapshot_fact(&changed, &end));
         assert!(!parent.has_pointer_offset_snapshot_fact(&target, &end));
-        assert!(
-            !context
-                .without_exact_fact(&fact)
-                .has_pointer_offset_snapshot_fact(&target, &end)
-        );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
@@ -204,12 +199,7 @@ fn cached_snapshot_syntax_never_caches_context_authority() {
     );
     let parent = PureFactContext::new();
     let child = parent.clone().assume_proposition(fact.clone());
-    for (context, expected) in [
-        (&child, true),
-        (&parent, false),
-        (&child.without_exact_fact(&fact), false),
-        (&child, true),
-    ] {
+    for (context, expected) in [(&child, true), (&parent, false), (&child, true)] {
         assert_eq!(
             context.operands_snapshot_equivalent(
                 MachineOperandView::Shared(&roots[0]),

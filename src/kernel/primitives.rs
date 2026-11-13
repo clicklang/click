@@ -13678,12 +13678,6 @@ pub(crate) enum PropositionDerivationRule {
     ForAllLoadableRange {
         source: Box<Proposition>,
     },
-    /// Prove an existential one-byte loadability fact by selecting the
-    /// constant zero index from one exact wider range.
-    ExistsLoadableRange {
-        source: Box<Proposition>,
-        witness: MachineTerm,
-    },
     FiniteForAll {
         instances: Vec<PropositionDerivation>,
     },
@@ -13986,7 +13980,7 @@ pub struct PureFactContext {
         crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
     >,
     pub(super) snapshot_condition_variable_changes:
-        crate::persistent::PersistentMap<ConditionTerm, Option<bool>>,
+        crate::persistent::PersistentMap<ConditionTerm, bool>,
     pub(super) snapshot_condition_variables: std::sync::Arc<
         std::sync::OnceLock<
             crate::persistent::PersistentMap<
@@ -14054,15 +14048,9 @@ pub struct PureFactContext {
         crate::persistent::PersistentMap<(PointerBlock, bool), ConditionTerm>,
     >,
     /// Trusted persistent equality closure for pointers, offsets, and int32
-    /// terms. Appended on insertion; withdrawal rebuilds from exact equality
-    /// indexes, preserving the remaining support in every fragment.
+    /// terms. Appended on insertion; restriction rebuilds from exact equality
+    /// indexes.
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
-    /// Producer-retained predecessor for withdrawing the latest full-pointer
-    /// premise. Exact persistent roots identify the unchanged fact frontier.
-    #[cfg(test)]
-    pub(super) pointer_value_undo: Option<Arc<super::assumptions::PointerValueUndo>>,
-    #[cfg(test)]
-    pub(super) restoring_pointer_graph: Option<Arc<super::equality_graph::EqualityGraph>>,
     /// Addresses of the first elements of two separated memory ranges of
     /// one block, keyed by the unordered pair and carrying the separation
     /// facts that state it. Mirrors `memory_separation_facts` under a key a
@@ -14127,8 +14115,8 @@ pub struct PureFactContext {
     /// Condition facts containing a memory-load atom, indexed by the loaded
     /// pointer's snapshot-blind structural fingerprint. This is derived from
     /// `condition_facts`; it narrows snapshot-aware load-form checks
-    /// without deciding them. It is maintained at each condition insert and
-    /// withdrawal, so a fork copies only the path to the keys it changes.
+    /// without deciding them. It is maintained at each condition insert, so a
+    /// fork copies only the path to the keys it changes.
     pub(super) memory_load_condition_facts: crate::persistent::PersistentMap<
         (PointerBlock, u64),
         crate::persistent::PersistentSet<ConditionTerm>,
@@ -14137,9 +14125,6 @@ pub struct PureFactContext {
     /// each lowering path and planning probe, so an extension must copy
     /// only a search path, not the whole set.
     pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
-    /// Numeric comparison views retain their exact source for withdrawal.
-    pub(super) comparison_sources:
-        PersistentMap<Proposition, super::assumptions::observation_comparisons::PropositionKey>,
     pub(super) comparison_views: PersistentMap<
         super::assumptions::observation_comparisons::PropositionKey,
         crate::persistent::PersistentSet<Proposition>,

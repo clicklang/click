@@ -1,6 +1,6 @@
 //! Exact, persistent admission inputs owned by the equality service.
-//! These indexes retain source spellings and premises for withdrawal and
-//! certificate selection. They are not independent equality decisions.
+//! These indexes retain source spellings and premises for certificate
+//! selection. They are not independent equality decisions.
 use crate::kernel::primitives::*;
 
 #[derive(Clone, Debug, Default)]
@@ -21,15 +21,10 @@ pub(in crate::kernel) struct InputData {
 
     /// Conservative source-dependency selectors for parameter-store shortcuts.
     /// These record syntax, not equality classes or permission authority.
-    pub(in crate::kernel) scalar_dependency_inputs: crate::persistent::PersistentMap<
-        ConditionTerm,
-        (std::collections::BTreeSet<Variable>, bool),
-    >,
-    pub(in crate::kernel) scalar_dependencies: crate::persistent::PersistentMap<Variable, usize>,
-    pub(in crate::kernel) scalar_deferred_inputs: usize,
-    /// Canonical edge receipts retain admission-time spellings for removal.
-    pub(in crate::kernel) int32_input_edges:
-        crate::persistent::PersistentMap<ConditionTerm, (super::MachineAtom, super::MachineAtom)>,
+    pub(in crate::kernel) scalar_dependencies: crate::persistent::PersistentSet<Variable>,
+    /// Whether an admitted scalar input has a deferred (snapshot) dependency.
+    pub(in crate::kernel) scalar_deferred_inputs: bool,
+    /// Canonical edge receipts retain admission-time spellings.
     pub(in crate::kernel) uint64_input_edges:
         crate::persistent::PersistentMap<ConditionTerm, (super::MachineAtom, super::MachineAtom)>,
     /// Full-width load premises by exact address and interpretation. Snapshot
@@ -81,7 +76,7 @@ pub(in crate::kernel) struct InputData {
             crate::kernel::SharedPureApplication,
             crate::kernel::SharedPureApplication,
         ),
-        usize,
+        (),
     >,
     pub(in crate::kernel) congruence_conditions:
         crate::persistent::PersistentMap<ConditionTerm, bool>,
@@ -98,16 +93,16 @@ pub(in crate::kernel) struct InputData {
             crate::kernel::equality_graph::MachineAtom,
             crate::kernel::equality_graph::MachineAtom,
         ),
-        usize,
+        (),
     >,
-    /// Counts exact int32 premises supporting each canonical oriented edge.
-    /// Several spellings can support one edge; withdrawal removes one support.
+    /// The canonical oriented edges of exact int32 premises. Several
+    /// spellings can name one edge.
     pub(in crate::kernel) int32_graph_equalities: crate::persistent::PersistentMap<
         (
             crate::kernel::equality_graph::MachineAtom,
             crate::kernel::equality_graph::MachineAtom,
         ),
-        usize,
+        (),
     >,
     /// Normalized same-block pointer equalities, indexed under each offset.
     pub(in crate::kernel) pointer_offset_aliases: crate::persistent::PersistentMap<
@@ -120,15 +115,15 @@ pub(in crate::kernel) struct InputData {
         Option<PointerOffsetTerm>,
         crate::persistent::PersistentSet<(PointerOffsetTerm, PointerOffsetTerm)>,
     >,
-    /// Admission-time keys, so later producer metadata cannot change withdrawal.
+    /// Admission-time keys of the admitted scalar evidence inputs.
     pub(in crate::kernel) scalar_evidence_keys: crate::persistent::PersistentMap<
         ConditionTerm,
         (SharedMachineIntegerTerm, SharedMachineIntegerTerm),
     >,
     /// Direct written scalar-to-literal equalities, independent of native vs
-    /// shared comparison spelling. Counts preserve independent supports.
+    /// shared comparison spelling.
     pub(in crate::kernel) scalar_literal_inputs:
-        crate::persistent::PersistentMap<(SharedMachineIntegerTerm, u32), usize>,
+        crate::persistent::PersistentSet<(SharedMachineIntegerTerm, u32)>,
     /// Canonical source endpoints and their exact admitted premises. Used only
     /// for evidence enumeration and paths, never as a second equality decision.
     pub(in crate::kernel) scalar_evidence_inputs: crate::persistent::PersistentMap<

@@ -122,10 +122,6 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
         address
     );
     assert_eq!(
-        pointer_with_exact_index_constants(&address, &context.without_exact_fact(&fact)),
-        address
-    );
-    assert_eq!(
         pointer_with_exact_index_constants(&pointer(i64::MAX), &context),
         pointer(i64::MAX)
     );

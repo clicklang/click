@@ -6074,10 +6074,6 @@ mod condition_fact_graph_equivalence_tests {
         assert!(!c_condition_facts_equivalent_for_memory_resolution(
             &source, &target, &parent,
         ));
-        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-        assert!(!c_condition_facts_equivalent_for_memory_resolution(
-            &source, &target, &withdrawn,
-        ));
         let false_target = Proposition::ConditionIs(
             ConditionTerm::signed_less_than(sum(load(&before, b.clone())), var(93)),
             false,
@@ -6097,7 +6093,7 @@ mod condition_fact_graph_equivalence_tests {
             &branch,
         ));
         let right_premise = ConditionTerm::equal(var(93), var(94));
-        let both = branch.assume_condition(right_premise.clone(), true);
+        let both = branch.clone().assume_condition(right_premise, true);
         let target_right = less_than(sum(load(&before, b.clone())), var(94));
         assert!(c_condition_facts_equivalent_for_memory_resolution(
             &source,
@@ -6115,12 +6111,10 @@ mod condition_fact_graph_equivalence_tests {
             &equal_target,
             &both,
         ));
-        let right_withdrawn =
-            both.without_exact_fact(&Proposition::ConditionIs(right_premise, true));
         assert!(!c_condition_facts_equivalent_for_memory_resolution(
             &source,
             &target_right,
-            &right_withdrawn,
+            &branch,
         ));
     }
 
@@ -7837,8 +7831,9 @@ mod opaque_pointer_frame_tests {
         let proof = typed_store_separated_ranges_evidence(&write, 4, &field, 8, &assumptions)
             .expect("one exact alias must select the stated range separation");
         assert!(proof.checks(&step, &field, 8, &assumptions));
-        for missing in [alias, separation] {
-            assert!(!proof.checks(&step, &field, 8, &assumptions.without_exact_fact(&missing)));
+        for remaining in [alias, separation] {
+            let missing = PureFactContext::new().assume_proposition(remaining);
+            assert!(!proof.checks(&step, &field, 8, &missing));
         }
         let wrong_step = CMemoryDerivation::Store {
             base: intern_c_memory(CMemory::default()),
@@ -7941,7 +7936,7 @@ mod opaque_pointer_frame_tests {
             c_condition_fact_transport_target_in_context(
                 &theorem,
                 &source,
-                &assumptions.without_exact_fact(&separation)
+                &PureFactContext::new().assume_proposition(source.clone())
             )
             .is_none()
         );
@@ -7961,7 +7956,7 @@ mod opaque_pointer_frame_tests {
             ConditionTerm::pointer_equal(left_pointer.clone(), right_pointer.clone()),
             true,
         );
-        let context = PureFactContext::new().assume_proposition(alias.clone());
+        let context = PureFactContext::new().assume_proposition(alias);
         let source = intern_c_memory(
             CMemory::new()
                 .with_block_without_derivation("local:projection-left", 4)
@@ -7992,7 +7987,7 @@ mod opaque_pointer_frame_tests {
         assert!(!wide_read_has_recorded_value(
             &left,
             &right,
-            &context.without_exact_fact(&alias),
+            &PureFactContext::new(),
         ));
         let narrow = MachineTerm::MemoryLoad(
             right_memory,
@@ -8027,7 +8022,7 @@ mod opaque_pointer_frame_tests {
             ConditionTerm::pointer_equal(write.clone(), address.clone()),
             true,
         );
-        let context = PureFactContext::new().assume_proposition(alias.clone());
+        let context = PureFactContext::new().assume_proposition(alias);
         let value = MachineTerm::uint64_constant(42);
         let source = intern_c_memory(
             CMemory::new()
@@ -8051,7 +8046,7 @@ mod opaque_pointer_frame_tests {
         assert!(!wide_read_has_recorded_value(
             &read,
             &value,
-            &context.without_exact_fact(&alias)
+            &PureFactContext::new()
         ));
         let projected_read = |memory| {
             let source = intern_c_memory(memory);
@@ -8155,7 +8150,7 @@ mod opaque_pointer_frame_tests {
             ConditionTerm::pointer_equal(parent.clone(), alias.clone()),
             true,
         );
-        let context = PureFactContext::new().assume_proposition(equality.clone());
+        let context = PureFactContext::new().assume_proposition(equality);
         let stored =
             MachineTerm::PointerAddress(Box::new(parent), crate::kernel::AddressObjectClass::NONE);
         let wanted =
@@ -8167,7 +8162,7 @@ mod opaque_pointer_frame_tests {
         assert!(wide_read_has_recorded_value(&read, &wanted, &context));
         assert!(wide_read_has_recorded_value(&wanted, &read, &context));
         let (proved, diagnostics) = capture_read_resolutions(|| {
-            wide_read_has_recorded_value(&read, &wanted, &context.without_exact_fact(&equality))
+            wide_read_has_recorded_value(&read, &wanted, &PureFactContext::new())
         });
         assert!(!proved);
         assert_eq!(diagnostics.len(), 1);
@@ -8366,14 +8361,6 @@ mod borrow_partition_tests {
                 .is_none()
         );
         assert!(!witness.checks(&step, read.base(), 4, &missing));
-        // Retain the candidate index but withdraw its authority.
-        let mut withdrawn = context.clone();
-        withdrawn.resource_compositions = withdrawn.resource_compositions.without_value(&bound);
-        assert!(!witness.checks(&step, read.base(), 4, &withdrawn));
-        assert!(
-            typed_store_separated_ranges_evidence(write.base(), 4, read.base(), 4, &withdrawn)
-                .is_none()
-        );
         assert!(!witness.checks(&step, read.base(), 8, &context));
         let overlapping = context.assume_condition(
             ConditionTerm::pointer_equal(write.base().clone(), read.base().clone()),

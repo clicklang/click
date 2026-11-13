@@ -74,23 +74,6 @@ fn unsigned_congruence_propagates_late_aliases_without_injectivity_or_signed_coe
 }
 
 #[test]
-fn unsigned_congruence_withdraws_with_its_operand_fact() {
-    let (a, b) = (var(90_010), var(90_011));
-    let fact = Proposition::ConditionIs(eq(&a, &b), true);
-    let context = PureFactContext::new().assume_proposition(fact.clone());
-    assert!(context.equality_graph.are_int32_equal(
-        &unsigned_composition(a.clone()),
-        &unsigned_composition(b.clone())
-    ));
-    let withdrawn = context.without_exact_fact(&fact);
-    assert!(
-        !withdrawn
-            .equality_graph
-            .are_int32_equal(&unsigned_composition(a), &unsigned_composition(b))
-    );
-}
-
-#[test]
 fn unsigned_congruence_keeps_load_snapshots_and_widths_distinct() {
     let _session = VerificationSession::enter();
     let before = intern_c_memory(CMemory::new().with_block("unsigned", 4));
@@ -169,11 +152,6 @@ fn shallow_scalar_decision_uses_graph_congruence_and_keeps_branch_scope() {
         parent.decide(&eq(&plus_one(a.clone()), &plus_one(b.clone()))),
         Some(true)
     );
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert_ne!(
-        withdrawn.decide_bitvector_equality_shallow(&plus_one(a), &plus_one(b)),
-        Some(true)
-    );
 }
 
 #[test]
@@ -190,8 +168,6 @@ fn fact_transport_uses_graph_int32_congruence_without_the_legacy_index() {
     assert!(branch.condition_matches(&source, &target));
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
     assert!(!parent.condition_matches(&source, &target));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(!withdrawn.condition_matches(&source, &target));
 }
 
 #[test]
@@ -300,8 +276,6 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
     );
     assert!(!branch.memory_loads_proven_equal(&byte_load, &target));
     assert!(!parent.memory_loads_proven_equal(&old_load, &target));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(!withdrawn.memory_loads_proven_equal(&old_load, &target));
 }
 
 #[test]
@@ -366,8 +340,6 @@ fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
     assert!(!branch.memory_loads_proven_equal(&left, &overwritten));
     assert!(!branch.memory_loads_proven_equal(&left, &byte_load));
     assert!(!parent.memory_loads_proven_equal(&left, &right));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(!withdrawn.memory_loads_proven_equal(&left, &right));
 }
 
 #[test]
@@ -410,10 +382,6 @@ fn direct_composite_int32_argument_uses_graph_with_snapshot_scope() {
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
     assert!(!crate::kernel::memory_provenance::c_resources_directly_match(&left, &later, &branch,));
     assert!(!crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &parent,));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(
-        !crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &withdrawn,)
-    );
 }
 
 #[test]
@@ -467,10 +435,6 @@ fn resource_instance_int32_field_uses_graph_with_snapshot_scope() {
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
     assert!(!crate::kernel::memory_provenance::c_resources_directly_match(&left, &later, &branch,));
     assert!(!crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &parent,));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(
-        !crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &withdrawn,)
-    );
 }
 
 #[test]
@@ -514,8 +478,6 @@ fn certification_uses_graph_int32_equality_with_snapshot_scope() {
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
     assert!(!certifies(&branch, &goal(later)));
     assert!(!certifies(&parent, &goal(right.clone())));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(!certifies(&withdrawn, &goal(right)));
 }
 
 #[test]
@@ -555,8 +517,6 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
     assert_eq!(branch.decide(&eq(&left, &right)), Some(true));
     assert!(!branch.bitvector_add_terms_proven_equal(&left, &later));
     assert!(!parent.bitvector_add_terms_proven_equal(&left, &right));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(!withdrawn.bitvector_add_terms_proven_equal(&left, &right));
 }
 
 #[test]
@@ -604,7 +564,7 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
 }
 
 #[test]
-fn int32_withdrawal_restriction_and_contradiction_preserve_support() {
+fn int32_restriction_and_contradiction_preserve_support() {
     let (a, b, c) = (var(10), var(11), var(12));
     let ab = eq(&a, &b);
     let bc = eq(&b, &c);
@@ -620,22 +580,6 @@ fn int32_withdrawal_restriction_and_contradiction_preserve_support() {
         .assume_condition(pq.clone(), true)
         .assume_condition(xy.clone(), true);
     assert!(context.equality_graph.are_int32_equal(&a, &c));
-    let weakened = context.without_exact_fact(&Proposition::ConditionIs(bc.clone(), true));
-    assert!(!weakened.equality_graph.are_int32_equal(&a, &c));
-    assert!(weakened.equality_graph.are_int32_equal(&a, &b));
-    assert!(
-        weakened
-            .equality_graph
-            .are_offsets_equal(&offset(30), &offset(31))
-    );
-    assert!(weakened.equality_graph.are_equal(
-        &Pointer::symbolic(Variable(20)),
-        &Pointer::symbolic(Variable(21))
-    ));
-    for fact in [pq, xy] {
-        let weakened = context.without_exact_fact(&Proposition::ConditionIs(fact, true));
-        assert!(weakened.equality_graph.are_int32_equal(&a, &c));
-    }
     let restricted = context.restricted_to_facts(&[(ab, true)], &[]);
     assert!(restricted.equality_graph.are_int32_equal(&a, &b));
     assert!(!restricted.equality_graph.are_int32_equal(&a, &c));
@@ -643,15 +587,10 @@ fn int32_withdrawal_restriction_and_contradiction_preserve_support() {
     assert!(replaced.is_inconsistent());
     assert!(replaced.equality_graph.are_int32_equal(&a, &c));
     assert!(context.equality_graph.are_int32_equal(&a, &c));
-    let reversed = context.clone().assume_condition(eq(&b, &a), true);
-    let once = reversed.without_exact_fact(&Proposition::ConditionIs(eq(&a, &b), true));
-    assert!(once.equality_graph.are_int32_equal(&a, &c));
-    let twice = once.without_exact_fact(&Proposition::ConditionIs(eq(&b, &a), true));
-    assert!(!twice.equality_graph.are_int32_equal(&a, &c));
 }
 
 #[test]
-fn int32_load_identity_keeps_snapshots_and_exact_support_separate() {
+fn int32_load_identity_keeps_snapshots_separate() {
     let _session = VerificationSession::enter();
     let before = intern_c_memory(CMemory::new().with_block("int32", 8));
     let pointer = Pointer::symbolic(Variable(40));
@@ -703,14 +642,10 @@ fn int32_load_identity_keeps_snapshots_and_exact_support_separate() {
             .equality_graph
             .are_int32_equal(&sum(load(&after)), &sum(a.clone()))
     );
-    let once = context.without_exact_fact(&Proposition::ConditionIs(eq(&load(&before), &a), true));
-    assert!(once.equality_graph.are_int32_equal(&named, &a));
-    let twice = once.without_exact_fact(&Proposition::ConditionIs(eq(&named, &a), true));
-    assert!(!twice.equality_graph.are_int32_equal(&load(&before), &a));
 }
 
 #[test]
-fn offset_premises_support_scalar_graph_edges_and_withdrawal() {
+fn offset_premises_support_scalar_graph_edges() {
     let (a, b, c) = (var(70), var(71), var(72));
     let offset_eq = |left: MachineTerm, right: MachineTerm| {
         ConditionTerm::pointer_offset_equal(
@@ -726,12 +661,6 @@ fn offset_premises_support_scalar_graph_edges_and_withdrawal() {
         .assume_condition(direct.clone(), true)
         .assume_condition(bc.clone(), true);
     assert!(context.equality_graph.are_int32_equal(&a, &c));
-    let without_direct = context.without_exact_fact(&Proposition::ConditionIs(direct, true));
-    assert!(without_direct.equality_graph.are_int32_equal(&a, &c));
-    let without_scaled =
-        without_direct.without_exact_fact(&Proposition::ConditionIs(scaled.clone(), true));
-    assert!(!without_scaled.equality_graph.are_int32_equal(&a, &c));
-    assert!(without_scaled.equality_graph.are_int32_equal(&b, &c));
     let restricted = context.restricted_to_facts(&[(scaled, true)], &[]);
     assert!(restricted.equality_graph.are_int32_equal(&a, &b));
     assert!(!restricted.equality_graph.are_int32_equal(&a, &c));
@@ -778,17 +707,6 @@ fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
             .equality_graph
             .offset_has_source_dependencies(&offset(3))
     );
-    let removed = facts.without_exact_fact(&Proposition::ConditionIs(input, true));
-    assert!(
-        !removed
-            .equality_graph
-            .offset_has_source_dependencies(&offset(1))
-    );
-    assert!(
-        facts
-            .equality_graph
-            .offset_has_source_dependencies(&offset(1))
-    );
 }
 
 #[test]
@@ -816,12 +734,6 @@ fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
         context
             .equality_graph
             .offset_has_source_dependencies(&left.offset)
-    );
-    let removed = context.without_exact_fact(&Proposition::ConditionIs(equality.clone(), true));
-    assert!(
-        !removed
-            .recorded_equality_class(&var(941_001))
-            .contains(&var(941_002))
     );
     let negative = PureFactContext::new().assume_condition(equality, false);
     assert!(
@@ -864,7 +776,6 @@ fn recorded_shared_index_members_keep_source_order_without_exporting() {
     );
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(equality.clone(), true);
-    let removed = facts.without_exact_fact(&Proposition::ConditionIs(equality, true));
     let exports = KernelTermExport::machine_export_count();
     let members = facts.recorded_equality_class_view(left.operand_view());
     assert!(members.iter().any(|member| {
@@ -873,11 +784,6 @@ fn recorded_shared_index_members_keep_source_order_without_exporting() {
     }));
     assert!(
         empty
-            .recorded_equality_class_view(left.operand_view())
-            .is_empty()
-    );
-    assert!(
-        removed
             .recorded_equality_class_view(left.operand_view())
             .is_empty()
     );

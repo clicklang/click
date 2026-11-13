@@ -286,8 +286,7 @@ fn decisions_hold_in_every_model_and_are_complete() {
 }
 
 /// A fact context's graph follows its facts: what it assumes extends the
-/// graph, what it withdraws is gone after the rebuild that withdrawal
-/// forces, and a context restricted to some facts answers from those alone.
+/// graph, and a context restricted to some facts answers from those alone.
 #[test]
 fn a_context_graph_follows_its_facts() {
     let (i, n) = (variable(0), variable(1));
@@ -305,9 +304,6 @@ fn a_context_graph_follows_its_facts() {
         unconstrained.difference_decision(&query, std::slice::from_ref(&bounded)),
         Some(true)
     );
-    let withdrawn =
-        context.without_exact_fact(&crate::kernel::Proposition::ConditionIs(below.0, below.1));
-    assert_eq!(withdrawn.difference_decision(&query, &[]), None);
     let restricted = context.restricted_to_facts(&[bounded], &[]);
     assert_eq!(restricted.difference_decision(&query, &[]), None);
     assert_eq!(
@@ -2046,7 +2042,7 @@ fn excluding_one_masked_wide_table_slot_selects_the_other() {
 }
 
 #[test]
-fn cached_context_graph_tracks_shared_order_addition_and_withdrawal() {
+fn cached_context_graph_tracks_shared_order_addition() {
     use crate::kernel::machine_integer::comparison::{
         comparison_view, condition_for_operand_views,
     };
@@ -2101,9 +2097,6 @@ fn cached_context_graph_tracks_shared_order_addition_and_withdrawal() {
                     "{format:?} {relation:?} {truth}"
                 );
                 assert_eq!(parent.built().unwrap().decide_shared_order(&view), None);
-                child.withdraw(&source);
-                assert!(child.built().is_none());
-                assert_eq!(child.graph(Vec::new).decide_shared_order(&view), None);
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
             }
         }
@@ -2148,9 +2141,6 @@ fn retained_equalities_exclusions_and_aliases_follow_context_updates() {
                 "{format:?} {truth}"
             );
             assert_eq!(parent.built().unwrap().decide(&query), None);
-            child.withdraw(&query);
-            assert!(child.built().is_none());
-            assert_eq!(child.graph(Vec::new).decide(&query), None);
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
         let y = MachineTerm::Variable(Variable(993232));
@@ -2352,9 +2342,6 @@ fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
                     "native source, shared query: {format:?} {relation:?} {truth}"
                 );
                 assert_eq!(decide(parent.built().unwrap()), None);
-                child.withdraw(&query);
-                assert!(child.built().is_none());
-                assert_eq!(decide(&child.graph(Vec::new)), None);
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
             }
         }

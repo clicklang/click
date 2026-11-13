@@ -717,15 +717,6 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
-        if matches!(
-            name,
-            "without_exact_fact" | "forget_condition_fact" | "remove_proposition_fact"
-        ) {
-            self.errors.push(format!(
-                "{}: {}: fact withdrawal is test-only; retain the parent context for branches ({name})",
-                self.path, self.function
-            ));
-        }
         if self.path == "src/surface/proof/cursor_execution.rs"
             && self.function == "listed_context_pure_facts"
             && name == "pure_facts"

@@ -66,7 +66,6 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
             .are_uint64_equal(&raw_address(&decoded), &raw_address(&pointer))
     );
     assert!(!base.contains_known(&goal));
-    assert!(!child.without_exact_fact(&equation).contains_known(&goal));
     assert!(!child.restricted_to_facts(&[], &[]).contains_known(&goal));
     let left = CPointerValue::new(decoded.clone(), CType::Int32Pointer);
     let right = CPointerValue::new(pointer.clone(), CType::Int32Pointer);
@@ -172,6 +171,7 @@ fn wide_read_and_packed_word_congruence_compose_early_and_late() {
             context = context
                 .assume_proposition(alias(&p, &zid))
                 .assume_proposition(alias(&q, &sid));
+            assert!(!proved(&context, &goal), "the premise is necessary");
         }
         context = context.assume_proposition(premise.clone());
         if !early {
@@ -182,10 +182,6 @@ fn wide_read_and_packed_word_congruence_compose_early_and_late() {
             context = context.assume_proposition(alias(&q, &sid));
         }
         assert!(proved(&context, &goal));
-        assert!(!proved(&context.without_exact_fact(&premise), &goal));
-        for missing in [alias(&p, &zid), alias(&q, &sid)] {
-            assert!(!proved(&context.without_exact_fact(&missing), &goal));
-        }
         assert!(!proved(&context.restricted_to_facts(&[], &[]), &goal));
         let impossible = context
             .clone()
@@ -330,13 +326,6 @@ fn shared_wide_endpoint_queries_preserve_exact_sources_and_scope() {
             .wide_equation_endpoints_equal_to(V::Shared(&root))
             .is_empty()
     );
-    let withdrawn = child.without_exact_fact(&edge);
-    assert!(
-        withdrawn
-            .equality_graph
-            .wide_equation_endpoints_equal_to(V::Shared(&root))
-            .is_empty()
-    );
     assert_eq!(KernelTermExport::machine_export_count(), exports);
 }
 
@@ -408,7 +397,6 @@ fn machine_observation_round_trip_keeps_equality_scope_and_format() {
         let child = parent.clone().assume_proposition(edge.clone());
         assert_eq!(child.decide(&goal), Some(true));
         assert_eq!(parent.decide(&goal), None);
-        assert_eq!(child.without_exact_fact(&edge).decide(&goal), None);
     }
     // Integer-to-machine conversion is range-checked, not a wrapping cast.
     // Equal widths alone cannot justify converting a negative signed value

@@ -123,10 +123,9 @@ premise, scalar specification addition, subtraction, multiplication, division an
 remainder construct their terms without ambient facts: falsehood discharges their
 arithmetic guards. Consistent contexts retain their usual definedness guards and
 provenance, and executed C keeps its undefined-behavior checks.
-Exact fact withdrawal is test-only, for negative controls that remove a premise;
-it is not a production backtracking operation. The build boundary also rejects
-production references to the withdrawal entry points. Tests may pay for index
-rebuilds after removing a premise; those helpers have no fast-checking guarantee.
+Fact contexts only grow and fork; there is no fact withdrawal. A branch
+retains its parent context and extends a persistent clone, and a negative
+control queries the context built without the premise.
 `tests/search_boundary.rs` checks rejected dependencies, aliases, method
 references, macro tokens, extra diagnostic scans, and capability privacy.
 

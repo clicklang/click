@@ -20,14 +20,12 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
     let field_alias = alias.offset_by_bytes(4);
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
-        let mut assumptions = PureFactContext::new()
-            .assume_proposition(validity.clone())
-            .assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::pointer_equal(alias.clone(), pointer.clone()),
-                true,
-            ));
+        let mut unrelated = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(alias.clone(), pointer.clone()),
+            true,
+        ));
         for index in 1..=count {
-            assumptions = assumptions.assume_proposition(Proposition::CMemoryReadDefined {
+            unrelated = unrelated.assume_proposition(Proposition::CMemoryReadDefined {
                 memory: memory.clone(),
                 pointer: Pointer {
                     block: PointerBlock::Heap(942_000 + index),
@@ -36,16 +34,13 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
                 value_type: CType::Int32,
             });
         }
+        let assumptions = unrelated.clone().assume_proposition(validity.clone());
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             assumptions.has_memory_read_defined_evidence(&memory, &field_alias, CType::Int32)
         });
         assert!(proved);
         samples.push(work);
-        assert!(
-            !assumptions
-                .without_exact_fact(&validity)
-                .has_memory_read_defined_evidence(&memory, &field_alias, CType::Int32)
-        );
+        assert!(!unrelated.has_memory_read_defined_evidence(&memory, &field_alias, CType::Int32));
     }
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
@@ -67,9 +62,9 @@ fn read_validity_lookup_ignores_unrelated_cells() {
     };
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
-        let mut assumptions = PureFactContext::new().assume_proposition(validity.clone());
+        let mut unrelated = PureFactContext::new();
         for index in 1..=count {
-            assumptions = assumptions.assume_proposition(Proposition::CMemoryReadDefined {
+            unrelated = unrelated.assume_proposition(Proposition::CMemoryReadDefined {
                 memory: memory.clone(),
                 pointer: Pointer {
                     block: PointerBlock::ExternalArgument,
@@ -78,16 +73,13 @@ fn read_validity_lookup_ignores_unrelated_cells() {
                 value_type: CType::Int32,
             });
         }
+        let assumptions = unrelated.clone().assume_proposition(validity.clone());
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             assumptions.has_memory_read_defined_evidence(&memory, &pointer, CType::Int32)
         });
         assert!(proved);
         samples.push(work);
-        assert!(
-            !assumptions
-                .without_exact_fact(&validity)
-                .has_memory_read_defined_evidence(&memory, &pointer, CType::Int32)
-        );
+        assert!(!unrelated.has_memory_read_defined_evidence(&memory, &pointer, CType::Int32));
     }
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),

@@ -109,7 +109,7 @@ fn object_type_evidence_follows_early_and_late_pointer_merges() {
 }
 
 #[test]
-fn object_type_support_is_scoped_counted_and_withdrawn_with_its_source() {
+fn object_type_support_is_scoped_to_its_source() {
     let _session = VerificationSession::enter();
     let (p, q) = (pointer(4), pointer(5));
     let alias = equal(&p, &q);
@@ -122,17 +122,16 @@ fn object_type_support_is_scoped_counted_and_withdrawn_with_its_source() {
         .assume_proposition(b.clone());
     assert!(can_type(&branch, &q));
     assert!(!can_type(&parent, &q));
-    let one = branch.without_exact_fact(&a);
-    assert!(can_type(&one, &q));
-    assert!(!can_type(&one.without_exact_fact(&b), &q));
-    let split = branch.without_exact_fact(&alias);
+    let split = PureFactContext::new()
+        .assume_proposition(a)
+        .assume_proposition(b);
     assert!(can_type(&split, &p));
     assert!(!can_type(&split, &q));
     assert!(can_type(&split.assume_proposition(alias), &q));
 }
 
 #[test]
-fn model_type_support_survives_only_the_kept_fact_partition() {
+fn model_type_support_needs_its_model_source() {
     let _session = VerificationSession::enter();
     let (p, q) = (pointer(6), pointer(7));
     for condition in [false, true] {
@@ -141,9 +140,8 @@ fn model_type_support_survives_only_the_kept_fact_partition() {
             .assume_proposition(model.clone())
             .assume_proposition(equal(&p, &q));
         assert!(can_type(&context, &q));
-        assert!(!can_type(&context.without_exact_fact(&model), &q));
-        context.retain_proposition_facts(|_| false);
-        assert_eq!(can_type(&context, &q), condition);
+        let unmodeled = PureFactContext::new().assume_proposition(equal(&p, &q));
+        assert!(!can_type(&unmodeled, &q));
         if let Proposition::ConditionIs(condition, _) = model {
             context = context.assume_proposition(Proposition::ConditionIs(condition, false));
             assert!(context.is_inconsistent());
@@ -247,5 +245,4 @@ fn checked_pointer_value_equalities_retain_their_scoped_type_receipts() {
     let branch = parent.clone().assume_proposition(equality.clone());
     assert!(can_type(&branch, &q));
     assert!(!can_type(&parent, &q));
-    assert!(!can_type(&branch.without_exact_fact(&equality), &q));
 }

@@ -73,12 +73,6 @@ fn formation_requires_the_original_domain_and_includes_one_past() {
     assert!(!permits(
         &p,
         4,
-        &full.without_exact_fact(&equality),
-        &resources
-    ));
-    assert!(!permits(
-        &p,
-        4,
         &root,
         &ResourceContext::new().unchecked_with_fact(view(&p, 1, 1))
     ));
@@ -99,7 +93,7 @@ fn formation_requires_the_original_domain_and_includes_one_past() {
 }
 
 #[test]
-fn member_coverage_does_not_follow_numeric_aliases_or_survive_withdrawal() {
+fn member_coverage_does_not_follow_numeric_aliases() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = pointer(930_200);
     let q = pointer(930_201);
@@ -111,12 +105,11 @@ fn member_coverage_does_not_follow_numeric_aliases_or_survive_withdrawal() {
             4,
         ))
         .unwrap();
-    let numeric = PureFactContext::new()
-        .assume_condition(
-            ConditionTerm::pointer_equal(p.pointer().clone(), q.pointer().clone()),
-            true,
-        )
-        .assume_proposition(coverage.clone());
+    let aliased = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(p.pointer().clone(), q.pointer().clone()),
+        true,
+    );
+    let numeric = aliased.clone().assume_proposition(coverage);
     let empty = ResourceContext::new();
     assert!(!permits(&p, 8, &numeric, &empty));
     let equality = Proposition::ConditionIs(
@@ -126,8 +119,8 @@ fn member_coverage_does_not_follow_numeric_aliases_or_survive_withdrawal() {
     let full = numeric.clone().assume_proposition(equality.clone());
     assert!(permits(&p, 12, &full, &empty));
     assert!(!permits(&p, 16, &full, &empty));
-    assert!(!permits(&p, 8, &full.without_exact_fact(&coverage), &empty));
-    assert!(!permits(&p, 8, &full.without_exact_fact(&equality), &empty));
+    let uncovered = aliased.assume_proposition(equality);
+    assert!(!permits(&p, 8, &uncovered, &empty));
     let member = p
         .clone()
         .with_extent(Some(SubobjectExtent::constant(p.pointer().clone(), 4)));
@@ -270,11 +263,7 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
         context.opaque_pointer_covers(&p, &position(start + 1), 0)
     });
     assert!(allowed && used.contains(&coverage));
-    assert!(
-        !context
-            .without_exact_fact(&coverage)
-            .opaque_pointer_covers(&p, &position(start + 1), 0)
-    );
+    assert!(!PureFactContext::new().opaque_pointer_covers(&p, &position(start + 1), 0));
     let record = CMemoryRange::from_pointer_value_wide(
         &p,
         MachineTerm::uint64_constant(0),
@@ -385,12 +374,12 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
         let linked = root
             .clone()
             .assume_proposition(equal(offset.clone(), alias));
-        let known = linked.clone().assume_proposition(alias_zero.clone());
+        let known = linked.clone().assume_proposition(alias_zero);
         let cases = [
             (root.clone(), false),
             (root.clone().assume_proposition(zero), true),
             (known.clone(), true),
-            (known.without_exact_fact(&alias_zero), false),
+            (linked, false),
             (
                 root.assume_proposition(equal(offset.clone(), constant(1))),
                 false,

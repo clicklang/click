@@ -2055,9 +2055,8 @@ impl DifferenceGraph {
 }
 
 /// A fact context's graph: extended as the context assumes condition
-/// facts, cleared when it withdraws one (a graph cannot drop an edge), and
-/// rebuilt from the context's facts by the next query that finds it
-/// cleared. Clones share it, as proof branches share the context.
+/// facts, cleared when the context is rebuilt, and rebuilt from the context's
+/// facts by the next query that finds it cleared. Clones share it, as proof branches share the context.
 #[derive(Clone)]
 pub(crate) struct ContextDifferenceGraph(std::sync::Arc<std::sync::OnceLock<DifferenceGraph>>);
 
@@ -2086,13 +2085,6 @@ impl ContextDifferenceGraph {
             let mut graph = graph.clone();
             graph.assume_condition(condition, value);
             self.0 = std::sync::Arc::new(std::sync::OnceLock::from(graph));
-        }
-    }
-
-    /// Follows the context withdrawing `condition`.
-    pub(crate) fn withdraw(&mut self, condition: &ConditionTerm) {
-        if expresses(condition) {
-            self.0 = std::sync::Arc::new(std::sync::OnceLock::new());
         }
     }
 
@@ -2151,8 +2143,7 @@ fn expresses(condition: &ConditionTerm) -> bool {
     use ConditionTerm as C;
     // The context cache must observe every order source accepted by
     // `assume_condition`, including retained Integer observations. Otherwise a
-    // graph built before the source was added misses its incremental update,
-    // and withdrawing a source leaves its old edge in the cached graph.
+    // graph built before the source was added misses its incremental update.
     if crate::kernel::machine_integer::comparison::comparison_view(condition, true).is_some_and(
         |view| {
             (order_domain(view.format).is_some() || view.format.format().bits() < 32)

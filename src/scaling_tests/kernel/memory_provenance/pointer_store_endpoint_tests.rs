@@ -70,7 +70,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
                 &address,
                 LoadKind::Int32,
                 8,
-                &context.without_exact_fact(&alias)
+                &PureFactContext::new()
             )
             .is_none()
         );

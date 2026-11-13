@@ -69,7 +69,6 @@ impl EqualityGraph {
         &mut self,
         condition: &ConditionTerm,
         value: bool,
-        insert: bool,
     ) {
         if !value {
             return;
@@ -110,70 +109,23 @@ impl EqualityGraph {
                 if let Some(bits) = literal.word32_constant() {
                     crate::instrumentation::record_deterministic_work(1);
                     let key = (term.retain(MachineIntegerType::Int32), bits);
-                    let count = self
-                        .admitted
-                        .scalar_literal_inputs
-                        .get(&key)
-                        .copied()
-                        .unwrap_or(0);
-                    if insert {
-                        self.admitted.scalar_literal_inputs.insert(key, count + 1);
-                    } else if count > 1 {
-                        self.admitted.scalar_literal_inputs.insert(key, count - 1);
-                    } else {
-                        self.admitted.scalar_literal_inputs.remove(&key);
-                    }
+                    self.admitted.scalar_literal_inputs =
+                        self.admitted.scalar_literal_inputs.with_value(key);
                 }
             }
         }
-        let (variables, deferred) = if insert {
-            let mut variables = BTreeSet::new();
-            let deferred =
-                crate::kernel::reasoning::variable_collection::collect_condition_coordinate_index_variables(
-                    condition,
-                    &mut variables,
-                );
-            self.admitted
-                .scalar_dependency_inputs
-                .insert(condition.clone(), (variables.clone(), deferred));
-            (variables, deferred)
-        } else {
-            let dependencies = self
-                .admitted
-                .scalar_dependency_inputs
-                .get(condition)
-                .cloned()
-                .unwrap_or_default();
-            self.admitted.scalar_dependency_inputs.remove(condition);
-            dependencies
-        };
-        if deferred {
-            if insert {
-                self.admitted.scalar_deferred_inputs += 1;
-            } else {
-                self.admitted.scalar_deferred_inputs -= 1;
-            }
+        let mut variables = BTreeSet::new();
+        if crate::kernel::reasoning::variable_collection::collect_condition_coordinate_index_variables(
+            condition,
+            &mut variables,
+        ) {
+            self.admitted.scalar_deferred_inputs = true;
         }
         for variable in variables {
-            let count = self
-                .admitted
-                .scalar_dependencies
-                .get(&variable)
-                .copied()
-                .unwrap_or(0);
-            if insert {
-                self.admitted
-                    .scalar_dependencies
-                    .insert(variable, count + 1);
-            } else if count > 1 {
-                self.admitted
-                    .scalar_dependencies
-                    .insert(variable, count - 1);
-            } else {
-                self.admitted.scalar_dependencies.remove(&variable);
-            }
+            self.admitted.scalar_dependencies =
+                self.admitted.scalar_dependencies.with_value(variable);
         }
-        let (a, b) = if insert {
+        let (a, b) = {
             let Some((a, b)) = shared_pair.or_else(|| scalar_evidence_pair(condition, value))
             else {
                 return;
@@ -182,12 +134,6 @@ impl EqualityGraph {
                 .scalar_evidence_keys
                 .insert(condition.clone(), (a.clone(), b.clone()));
             (a, b)
-        } else {
-            let Some(pair) = self.admitted.scalar_evidence_keys.get(condition).cloned() else {
-                return;
-            };
-            self.admitted.scalar_evidence_keys.remove(condition);
-            pair
         };
         for (key, other) in [(&a, &b), (&b, &a)] {
             crate::instrumentation::record_deterministic_work(1);
@@ -198,14 +144,10 @@ impl EqualityGraph {
                 .cloned()
                 .unwrap_or_default();
             let sources = neighbors.get(other).cloned().unwrap_or_default();
-            let sources = if insert {
-                sources.with_inserted(
-                    condition.clone(),
-                    Proposition::ConditionIs(condition.clone(), true),
-                )
-            } else {
-                sources.without_key(condition)
-            };
+            let sources = sources.with_inserted(
+                condition.clone(),
+                Proposition::ConditionIs(condition.clone(), true),
+            );
             let neighbors = if sources.is_empty() {
                 neighbors.without_key(other)
             } else {
@@ -423,7 +365,7 @@ impl EqualityGraph {
         crate::instrumentation::record_deterministic_work(1);
         self.admitted
             .scalar_literal_inputs
-            .contains_key(&(term.retain(MachineIntegerType::Int32), value as u32))
+            .contains(&(term.retain(MachineIntegerType::Int32), value as u32))
             .then_some(value as u32)
     }
 
@@ -462,7 +404,7 @@ impl EqualityGraph {
         &self,
         offset: &PointerOffsetTerm,
     ) -> bool {
-        if self.admitted.scalar_deferred_inputs != 0 {
+        if self.admitted.scalar_deferred_inputs {
             return true;
         }
         let root = crate::kernel::primitives::offset_root_atom(offset);
@@ -481,6 +423,6 @@ impl EqualityGraph {
         if crate::kernel::reasoning::variable_collection::collect_condition_coordinate_index_variables(&selector, &mut variables) { return true; }
         variables
             .iter()
-            .any(|variable| self.admitted.scalar_dependencies.contains_key(variable))
+            .any(|variable| self.admitted.scalar_dependencies.contains(variable))
     }
 }

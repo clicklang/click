@@ -2459,12 +2459,6 @@ mod shared_overflow_query_tests {
         assert_eq!(answer, Some(false));
         assert!(sources.contains(&source));
         assert_eq!(parent.decide_overflow_query(&query), None);
-        assert_eq!(
-            child
-                .without_exact_fact(&source)
-                .decide_overflow_query(&query),
-            None
-        );
         assert!(!operand.has_boxed_operand());
     }
 

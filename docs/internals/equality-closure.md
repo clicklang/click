@@ -11,9 +11,10 @@ resource-value, range, and resource-lookup consumers query it. Ordinary C
 pointer loads keep a storage-relative representation. Wider theories mentioned
 here are not implemented and have no current acceptance criteria.
 
-Premise-withdrawal controls described below are test-only: they check that a
-result depends on its support. Production branches retain the parent context
-and extend a persistent clone. Opposite assumptions record `false` without
+Fact contexts only grow and fork: a branch retains its parent context and
+extends a persistent clone, and nothing withdraws a fact. Negative controls
+check that a result depends on its support by querying the context built
+without the premise, usually the parent. Opposite assumptions record `false` without
 replacing the original condition
 or deleting its equality support. Explicit context restriction remains separate
 from branch backtracking and subject to the checking cost contract.
@@ -45,18 +46,18 @@ pointer comparison, it selects the source through the existing scalar-evidence
 adjacency index and retains that original pointer premise. The full offset
 sides must match; coordinate keys only nominate candidates. This avoids
 repeatedly proving restricted subsets of a connected component merely to
-rediscover the address alias, and withdrawing the named premise invalidates
-the derivation. The scaling control
+rediscover the address alias, and a context without the named premise does
+not check the derivation. The scaling control
 `solve_retains_common_base_pointer_equality_for_load_congruence` covers a field
 displacement and increasing connected aliases.
 
 The bridge registers only the selected addresses and offsets. It neither
 enumerates pointer aliases nor derives equal blocks from equal offsets.
-Truth remains scoped to its admitted premise; withdrawing either that premise
-or the required pointer alias removes the conclusion. The
+Truth remains scoped to its admitted premise; a context without either that
+premise or the required pointer alias does not hold the conclusion. The
 `pointer_comparison_preserves_base_evidence_through_aliases_and_scopes` and
 `pointer_comparison_evidence_work_ignores_unrelated_facts` regressions cover
-registration order, early queries, premise withdrawal, and ambient scaling.
+registration order, early queries, missing premises, and ambient scaling.
 
 A full pointer-value query also registers its two numeric addresses against
 the current affine block representatives before checking value congruence.
@@ -89,9 +90,8 @@ Query registration does not admit type evidence. Opaque call arguments can
 retain annotations from another interning context and are never used as type
 support. Alternative arms, binder bodies, snapshots, weak C declaration
 metadata, and destination casts do not
-supply positive support. Branches fork the persistent index. Removing a source
-removes its support, while removing an equality rebuilds the classes from the
-remaining inputs. Condition and proposition sources have separate indexes so
+supply positive support. Branches fork the persistent index. Condition and
+proposition sources have separate indexes so
 clearing one partition does not scan the other. The regressions live in
 `src/kernel/equality_graph/object_type_tests.rs`, with deterministic scaling
 controls beside the other graph scaling tests.
@@ -111,7 +111,7 @@ when a match selects `outer.model`. Each typed class retains one exact root
 constructor from an admitted equality. A union carries that witness with the
 class in constant local work; lookup visits only the selected expression and
 class. The witness shares its immutable payload across class forks and is
-rebuilt from surviving equality inputs on withdrawal. Retaining only root
+rebuilt from the selected equality inputs on restriction. Retaining only root
 operands avoids copying every nested constructor subtree during registration.
 The matched-resource regression is
 `mdtests/resource_unfold_uses_transitive_model_constructor.md`; its missing-link
@@ -145,8 +145,8 @@ Registration traverses only the selected expression, iteratively. Hot node and
 support keys are shallow IDs. Resolved root schemas are interned once per
 schema allocation and nominal instantiation; retained schema Arcs prevent
 allocation-identity reuse. Distinct nominal types, generic arguments, or root
-schemas do not share a type token. Exact checked edges retain counted support
-for withdrawal and rebuilding. Branches and restricted contexts use the same
+schemas do not share a type token. Exact checked edges are retained for
+restriction rebuilding. Branches and restricted contexts use the same
 scope rules as the other graph fragments. Restriction constructs the selected
 condition graph before filing selected proposition edges; it never rebuilds
 inherited scalar edges only to discard them. Clearing a model-free proposition
@@ -168,7 +168,7 @@ propagates late argument aliases without scanning ambient facts. Signatures
 retain function identity, argument order and types, and array-reference read
 snapshots. Calls grant no ownership or separation, and equal results do not
 imply equal arguments. The `pointer_call_tests` unit and scaling modules exercise
-late model aliases, nested calls, snapshots, withdrawal, and selected work at
+late model aliases, nested calls, snapshots, missing premises, and selected work at
 multiple input sizes. The surface regression is
 `mdtests/pure_pointer_call_congruence.md`.
 
@@ -204,7 +204,7 @@ Registration visits only selected expressions; shared Integer DAG nodes are
 visited once per registration. Curried applications use the existing indexed
 parent-use propagation for late equalities. There is no ambient-fact scan,
 function unfolding, cancellation, or arithmetic search. Existing branch,
-withdrawal, and snapshot restrictions apply unchanged. Regressions live in
+restriction, and snapshot scope rules apply unchanged. Regressions live in
 `integer_tests`, `ordinary_expression_tests`, and their scaling counterparts;
 `mdtests/integer_count_model_congruence.md` exercises source-level count lookup.
 
@@ -217,14 +217,14 @@ in that selector, while other arguments and memory versions remain. Matching
 checks all pointer arguments through equality closure with equal C types and
 all other arguments exactly, including the complete C state. This supplies
 pointer substitution only, without unfolding or snapshot transport. Exact
-membership still controls admission, provenance, and withdrawal.
+membership still controls admission and provenance.
 
 The same bucket mechanism indexes nominal callback witnesses by contract name.
 Call selection checks the declared contract's exact function signature, as
 before. Multiple witnesses of one contract retain their independent sources;
 lookup chooses one without scanning older state witnesses. Late address-class
 merges move only the affected buckets. Persistent branches share unchanged
-indexes, and withdrawal/restriction removes unsupported matches. The regressions
+indexes, and restriction removes unsupported matches. The regressions
 `callback_contract_uses_checked_pointer_equality` and
 `callback_call_uses_checked_pointer_equality` cover assumption and dispatch
 through an unchanged C callback table.
@@ -314,7 +314,7 @@ closure, exact fact lookup, `rewrite`, `contradiction` and theorem-premise
 matching. The supported tag operations carry the
 annotation to decoding; an integer-to-pointer cast restores the original
 class, never the destination type's class. A bare address remains unclassified,
-and unavailable or withdrawn origin evidence cannot supply a class. Loop
+and unavailable origin evidence cannot supply a class. Loop
 object-class joins and incompatible-access checks remain in force.
 
 A `Bits64` read uses its registered defining snapshot and complete address,
@@ -325,8 +325,7 @@ index propagates that equality through surrounding expressions. Different
 snapshots are not unified by this registration; existing checked frame or
 copy evidence must establish any cross-snapshot equality.
 
-Exact wide premises are retained as counted, typed edges for withdrawal and
-context rebuilding. Derived resource indexes receive them through the same
+Exact wide premises are retained as typed edges for context rebuilding. Derived resource indexes receive them through the same
 persistent input history. Ordinary condition and required-obligation checking
 query this closure, including contexts that defer broader search. In
 particular a fold needs no special rule to combine a read-address alias with
@@ -336,7 +335,7 @@ another pointer alias nested in a packed parent/color equation.
 
 `PureFactContext::contains_known` is the semantic lookup used by proof-fact
 availability and `assumption`. Exact membership remains a separate operation
-for premise admission, withdrawal, and provenance checks. Lookup first checks
+for premise admission and provenance checks. Lookup first checks
 the exact index, then asks the same scoped graph used by equality consumers.
 It performs no unfolding or implication search.
 
@@ -356,7 +355,7 @@ does not introduce injectivity, arithmetic solving, memory permissions, or
 implicit equality between different snapshots.
 
 Condition truth follows scoped persistent graph forks. Its exact support is
-retained for rebuilding after withdrawal, replacement, or context restriction;
+retained for rebuilding after replacement or context restriction;
 sibling branches cannot import each other's facts or query registrations.
 Resource-index checkpoints apply value equalities only: comparison truth does
 not invalidate a memory index or extend its admitted-equality history.
@@ -402,7 +401,7 @@ width; that internal definition introduces no path proposition or read authority
 A different snapshot still needs the existing checked normalization or frame
 bridge. `raw_read_address_registration_does_not_walk_memory_history` measures
 selected registration beside 0, 16, 64 and 256 unrelated classes. The existing
-snapshot/support regression separately checks raw/named equality and withdrawal.
+snapshot/support regression separately checks raw/named equality and premise scope.
 
 Kernel consumers use `PureFactContext::pointers_known_equal(left, right)`
 for equality already established by this trusted graph. It neither searches
@@ -447,7 +446,7 @@ parents of the lighter class are revisited. When a class first acquires a
 literal value, its existing parents also receive constant evaluation. It preserves widths,
 signedness, and machine-term snapshot identity, and adds no arithmetic solver
 or cancellation rule. Queries and additions use indexed access. Existing
-context restriction and equality-withdrawal rebuilds retain all graph
+context restriction rebuilds retain all graph
 fragments from their remaining exact equality indexes. The pointer query
 compares affine coordinates and whole offset classes inside the graph. Same-block pointer premises also join whole offsets.
 Equal-base and representable constant-displacement queries use direct offset
@@ -500,8 +499,7 @@ with the same byte width give equal offsets, and existing offset addition
 applications propagate that equality. Parent-use indexes handle late scalar
 merges in the same worklist. Literal indices join their folded byte constants
 when multiplication fits i64. This does not infer congruence for unsupported scalar operations,
-64-bit or mathematical-integer equality, or general injectivity of offset constructors. Exact scalar premises are counted under shallow canonical edge keys so
-withdrawal preserves other premises that support the same edge. `MemoryLoad`
+64-bit or mathematical-integer equality, or general injectivity of offset constructors. Exact scalar premises are filed under shallow canonical edge keys. `MemoryLoad`
 expressions are not separately interned for support tracking: that would allow
 cross-arena snapshot comparisons to traverse unrelated memory.
 
@@ -509,7 +507,7 @@ Checked signed int32 addition-overflow facts use the same predicate classes.
 Overflow checking consults this retained truth before reconstructing operand
 intervals, including the reversed operand order of this symmetric predicate.
 Thus an established `defined(x + z)` follows checked aliases of `x` and `z`;
-equality alone never establishes definedness. Withdrawal and snapshots retain
+equality alone never establishes definedness. Branches and snapshots retain
 the ordinary typed graph scope, and this predicate does not match subtraction
 or a 64-bit overflow condition.
 
@@ -539,8 +537,8 @@ test `a_byte_product_merge_is_keyed_and_ignores_unrelated_products`.
 Constant endpoints of checked signed int32 order facts annotate their value
 class with an interval. A class union intersects these intervals, so overflow
 checking can use bounds supplied on an equal variable or a same-snapshot read.
-The annotations are persistent across forks and are rebuilt from surviving
-facts after withdrawal. Strict and complemented comparisons retain their signed
+The annotations are persistent across forks and are rebuilt from the selected
+facts after restriction. Strict and complemented comparisons retain their signed
 meaning; unsigned and 64-bit comparisons do not contribute. This ranges the
 wrapped value only: bounds on an expression's result do not establish that its
 own C operation is defined. Lookup follows the class representative rather than
@@ -550,8 +548,8 @@ cover incremental aliases beside unrelated bounds without a fallback fact scan.
 True offset premises also feed the shared graph through the existing checked
 int32 element-index interpretation: four-byte scaling, aligned constants, and
 supported additions. Equal byte offsets then imply equal int32 index residues.
-This premise translation shares support counting with explicit scalar edges;
-withdrawing one premise retains any other support for that edge. It does not
+This premise translation files into the same edges as explicit scalar
+premises. It does not
 infer exact offset equality from equal wrapping residues.
 
 `PureFactContext::int32_values_known_equal(left, right)` is the shared query
@@ -620,7 +618,7 @@ ranges; its offset query still treats equal wrapping int32 residues as
 insufficient unless the existing exact-index rebuild check succeeds. A graph
 offset edge can flow
 through int32 scaling and offset addition into a pointer address without
-building the legacy scalar fact index. Context forks, fact withdrawal, and
+building the legacy scalar fact index. Context forks and
 restriction keep these answers scoped to their supporting premises. Broader
 memory arithmetic and framing rules remain in the resolver.
 
@@ -654,28 +652,28 @@ start and end values through the shared known-value query. These fields are
 scalar values, not byte-offset equivalences; the resource base still follows
 its separate pointer check. Congruent sums and registered same-snapshot loads
 can therefore identify equal range endpoints, while changed snapshots and
-withdrawn premises remain distinct.
+missing premises remain distinct.
 
 The checked `CValue::Int32` value comparison queries the graph before its
 broader memory-resolution path. Direct composite, token, and instance matching
 use that shared typed rule for resource arguments and instance fields, rather
 than maintaining a resource-specific graph check. Byte-typed values and pointer
 arguments retain their separate rules. Registered loads in one snapshot may
-match as values, while changed snapshots and withdrawn premises do not.
+match as values, while changed snapshots and missing premises do not.
 Multi-size regressions check that graph matches avoid building the legacy fact
 index.
 
 Contract certification's `int32` equality check uses this typed int32
 value rule after its checked cross-snapshot load rule. Graph-congruent sums and
 same-snapshot loads therefore certify without searching the legacy fact index;
-changed snapshots and withdrawn premises still fail. This affects scalar
+changed snapshots and missing premises still fail. This affects scalar
 equality claims, not pointer-offset certification.
 
 Certification of call- and loop-havoc mutable-range lists uses the typed
 int32 value rule for each start and end, after separate width and pointer-base
 checks. The general range-endpoint helper also serves scaled pointer offsets;
 it has not been changed to accept wrapping graph equality as exact address
-equality. Regressions cover same-snapshot loads, changed snapshots, withdrawn
+equality. Regressions cover same-snapshot loads, changed snapshots, missing
 premises, width mismatch, and multi-size queries without the legacy fact index.
 
 The structural, memory-resolution, and covering-span loadable-range readers
@@ -700,19 +698,19 @@ search every order fact for a graph-equivalent endpoint.
 The kernel comparison of condition facts for certified transport uses the
 typed int32 value rule for operands of matching signed-order or equality
 conditions. Condition kind and truth value must still match. Registered loads
-remain scoped to their defining snapshot, and withdrawn premises lose their
-consequences. Multi-size queries avoid the legacy fact index.
+remain scoped to their defining snapshot, and a context without the premise
+lacks its consequences. Multi-size queries avoid the legacy fact index.
 
 Allocation continuity across a call compares its two 32-bit size values
 through the typed graph rule after the separate allocation-base check. This
 does not use wrapping value equality to establish pointer-base equality.
-Regressions cover same-snapshot loads, overwrite and withdrawal boundaries,
+Regressions cover same-snapshot loads, overwrite and missing-premise boundaries,
 different bases, and multi-size graph queries without the legacy fact index.
 
 After indexed resource matching misses, the zero-ownership fallback uses
 the typed int32 graph rule for the required quantity. This is value equality
 with zero, not a resource-key or pointer match. Regressions cover graph-
-congruent registered loads, changed snapshots, withdrawn premises, and
+congruent registered loads, changed snapshots, missing premises, and
 multi-size zero-quantity queries without the legacy fact index.
 
 For a range pair already selected for composition, endpoint comparison uses
@@ -725,12 +723,12 @@ After the existing memory resolver establishes a four-byte scalar load's
 value, load equality compares it through the shared int32 query. Resolution still supplies the value in the
 load's snapshot; graph equality neither resolves stores nor grants read or
 frame permission. Other load widths keep their existing comparison path.
-Regressions cover both comparison directions, a changed snapshot, withdrawn
+Regressions cover both comparison directions, a changed snapshot, missing
 premises, a one-byte load, and multi-size query work.
 
 When both operands are resolved four-byte loads, the same path compares their
 checked stored values through the same graph query. Neither load's opaque name needs to equal the other load's stored term.
-Each value still comes from its own recorded snapshot. Changed or withdrawn
+Each value still comes from its own recorded snapshot. Changed or missing
 evidence and a resolved one-byte read do not use this two-load rule.
 
 Registered four-byte scalar loads also participate as int32 applications. Their
@@ -762,7 +760,7 @@ combines this edge with current-snapshot load congruence to prove the same for
 [The executable composition example](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_transported_int32_loads.md)
 keeps the transport and graph steps explicit. Regression tests remove either
 premise or the bridge, reject an overlapping store, recheck expansion, and
-verify that withdrawing the bridge removes only its cross-snapshot consequences.
+verify that a context without the bridge lacks only its cross-snapshot consequences.
 
 ## Scope
 
@@ -1639,7 +1637,7 @@ remain outside this bridge.
 [`function_pointer_read_uses_checked_table_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/function_pointer_read_uses_checked_table_alias.md)
 checks a complete callback-field copy through a proved constant-table alias;
 its missing-alias counterpart is refused. Kernel tests cover checked statement
-publication, redundant producer equations, sibling isolation, withdrawal,
+publication, redundant producer equations, sibling isolation, missing premises,
 changed sources, and absence of additional read permission. Predicate and callback lookup consume these checked pointer classes through
 the shared buckets described above; no additional transport proof is needed
 when the predicate's other arguments match.
@@ -1721,10 +1719,9 @@ Avoid whole-state clones, deep structural cache keys, repeated same-snapshot
 load scans, and alias enumeration on each resource access.
 
 Restricted contexts rebuild from the selected premises and required term DAG.
-They must not inherit ambient merges or explanations. Fact withdrawal likewise
-must invalidate every consequence that depended on the withdrawn fact; either
-rebuild the affected context under a documented bound or use a justified
-persistent strategy. Execution writes do not withdraw facts about old snapshots.
+They must not inherit ambient merges or explanations. Contexts never withdraw
+a fact: a branch forks the persistent parent, so no consequence needs
+invalidating. Execution writes do not remove facts about old snapshots.
 
 Deterministic regressions vary multiple input sizes along these axes:
 
@@ -1803,10 +1800,8 @@ wide operators. Full-width constant discovery first asks the shared class engine
 contextual folding and implicit-provenance collection retain exact source
 premises. None of these operations grants memory access or snapshot transport.
 
-Withdrawal rebuilds closure from the service's retained inputs. Admission-time
-canonical edge receipts prevent later producer canonicalization from changing
-which support is withdrawn. Branch clones share persistent input roots and
-fork subsequent changes. Pointer-predicate source handles are retained with
+Restriction resets the closure and refiles only the selected facts. Branch clones
+share persistent input roots and fork subsequent changes. Pointer-predicate source handles are retained with
 the service so reconstruction cannot import facts from a sibling context.
 Atomic condition matching checks only the selected spellings for full-width
 sources. Parameter-store shortcuts consult selected coordinate dependencies;
@@ -1817,7 +1812,7 @@ Memory authorization, contextual
 snapshot reasoning, and explicit tactic search remain separate judgments with
 their own contracts; they are not alternate stores answering value equality.
 Scaling regressions cover selected source enumeration, long constant chains,
-range-value equality, withdrawal, and unrelated ambient facts. Gate and nightly
+range-value equality, missing premises, and unrelated ambient facts. Gate and nightly
 validation remain required evidence for changes to this representation.
 
 Complete pointer comparisons retain their common base rather than becoming
@@ -1826,7 +1821,7 @@ nonempty-range separation index for that form too. Common-block anchors use
 the existing offset-pair key; different symbolic blocks use a complete-pointer
 pair key, since separating different objects does not distinguish their
 numerical offsets. Both indexes retain the exact source proposition and track
-its insertion, withdrawal, restriction, and test rebuild. Empty or unresolved
+its insertion and restriction. Empty or unresolved
 ranges add no anchor evidence. C condition decisions and proof-side known-fact
 lookup (including `assumption()`) share this indexed rule. The latter also
 handles negated pointer equality and retains the exact separation premise;
@@ -1835,9 +1830,7 @@ it performs no owned-composition scan, alias search, or unfolding.
 Store framing also retrieves stated separation authority through the checked
 address classes of both range anchors. `SeparatedAddressIndex` retains each
 exact proposition and follows term-class merge deltas, rekeying only incident
-pairs. Persistent roots and separate cache locks preserve context forks;
-withdrawing equality support reconstructs the index against the remaining
-checked graph. The existing direct anchor lookup stays first. Every retrieved
+pairs. Persistent roots and separate cache locks preserve context forks. The existing direct anchor lookup stays first. Every retrieved
 candidate still needs membership evidence covering both complete byte ranges,
 and an overlapping numeric address relation rejects the frame.
 
@@ -1846,8 +1839,8 @@ and an overlapping numeric address relation rejects the frame.
 Opening an active selected resource body retains the nominal pointer domains of
 its logical calls and algebraic constructor fields as explicit
 `object_type[CLASS](pointer)` facts. These facts
-use the existing supported pointer-type buckets and their ordinary scope and
-withdrawal rules. They are produced along the selected lowering path, rather
+use the existing supported pointer-type buckets and their ordinary scope
+rules. They are produced along the selected lowering path, rather
 than recovered from annotations in opaque interned call arguments. An inactive
 body exports none. Folding uses ordinary lowering: it must establish every
 nominal call or constructor field domain before the proposed resource can be
@@ -1859,8 +1852,8 @@ The executable controls are `model_pointer_resource_call_domains.md`,
 `model_pointer_empty_resource_does_not_type_parameter.md`, and
 `model_pointer_resource_inactive_call_domains.md` in `mdtests/`.
 `held_resource_constructor_pointer_domain.md` checks unfolding and refolding
-a constructor-bearing fact; kernel controls check missing, withdrawn, and
-incompatible evidence.
+a constructor-bearing fact; kernel controls check missing and incompatible
+evidence.
 
 Complete C pointer-to-integer copies retain nominal type receipts in the
 `PointerInteger` representation record. A numeric `PointerAddress` observation
@@ -1882,6 +1875,6 @@ bounds already match reduce the remaining zero-offset constructor comparison to
 uint64 equality. The internal constructor does not enter the result-domain
 congruence used for actual pointer-returning pure functions. Numeric definitions
 alone establish no designation, bounds, object type, or memory authority.
-The explicit source control is `tagged_pointer_explicit_round_trip.md`; scoped
-withdrawal, displaced addresses, snapshot distinctions, and designation
+The explicit source control is `tagged_pointer_explicit_round_trip.md`; branch
+scope, displaced addresses, snapshot distinctions, and designation
 separation are covered by the equality-graph unit tests.

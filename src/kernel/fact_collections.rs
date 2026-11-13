@@ -142,14 +142,6 @@ impl<K: Ord, V> FactMap<K, V> {
         Self(self.0.with_inserted(key, value))
     }
 
-    pub(crate) fn without_key(&self, key: &K) -> Self
-    where
-        K: Clone,
-        V: Clone,
-    {
-        Self(self.0.without_key(key))
-    }
-
     pub(crate) fn shares_root_with(&self, other: &Self) -> bool {
         self.0.shares_root_with(&other.0)
     }
@@ -244,11 +236,6 @@ impl<T: Clone + Ord> FactSet<T> {
 
     pub(crate) fn insert(&mut self, value: T) -> Option<T> {
         self.0.insert(value)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn remove(&mut self, value: &T) -> Option<T> {
-        self.0.remove(value)
     }
 
     pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
@@ -351,10 +338,6 @@ impl<T: Ord + Eq> Eq for ScanSet<T> {}
 impl<T: Ord> ScanSet<T> {
     pub(crate) fn with_value(&self, value: T) -> Self {
         Self(self.0.with_value(value))
-    }
-
-    pub(crate) fn without_value(&self, value: &T) -> Self {
-        Self(self.0.without_value(value))
     }
 
     pub(crate) fn contains<Q: Ord + ?Sized>(&self, value: &Q) -> bool

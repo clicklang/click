@@ -3,7 +3,7 @@ use super::*;
 use crate::kernel::*;
 
 #[test]
-fn designation_queries_and_withdrawal_ignore_unrelated_origins() {
+fn designation_queries_ignore_unrelated_origins() {
     let mut measurements = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let mut classes = ValueClasses::<u64>::default();
@@ -14,9 +14,7 @@ fn designation_queries_and_withdrawal_ignore_unrelated_origins() {
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(classes.equal(&1, &3));
-            classes.remove(&1, &2, |a, _| *a);
-            assert!(!classes.equal(&1, &3));
-            assert!(classes.equal(&2, &3));
+            assert!(!classes.equal(&1, &10));
         });
         measurements.push(work);
     }
@@ -172,8 +170,6 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
             assert!(!parent.pointer_designations_match(&source, &target));
             let child = parent.clone().assume_proposition(relation.clone());
             assert!(child.pointer_designations_match(&source, &target));
-            let withdrawn = child.without_exact_fact(&relation);
-            assert!(!withdrawn.pointer_designations_match(&source, &target));
             assert!(!parent.pointer_designations_match(&source, &target));
         });
         measurements.push(work);
@@ -230,7 +226,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         }
         let missing = context.clone();
         let selected_fact = fact(&selected);
-        context = context.assume_proposition(selected_fact.clone());
+        context = context.assume_proposition(selected_fact);
         let range = CMemoryRange::new(selected.clone(), 0u32.into(), 2u32.into());
         let kept = CallKeptOwnership::new(
             ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range.clone())),
@@ -273,11 +269,6 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         assert!(matched);
         samples.push(work);
         assert!(!missing.pointer_designations_match(&target, &value));
-        assert!(
-            !context
-                .without_exact_fact(&selected_fact)
-                .pointer_designations_match(&target, &value)
-        );
         let overwritten = after.store(selected.clone(), CValue::UInt32(0u32.into()));
         let partial = read(&intern_c_memory_ref(&overwritten), &selected);
         assert!(!context.pointer_designations_match(&partial, &value));

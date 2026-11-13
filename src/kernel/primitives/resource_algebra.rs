@@ -9292,12 +9292,8 @@ mod zero_quantity_graph_tests {
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
         assert!(!empty.satisfies_fact(&later, &branch));
         assert!(!empty.satisfies_fact(&source, &address_only));
-        let address_withdrawn =
-            branch.without_exact_fact(&Proposition::ConditionIs(address_premise, true));
-        assert!(!empty.satisfies_fact(&source, &address_withdrawn));
-        let zero_withdrawn =
-            branch.without_exact_fact(&Proposition::ConditionIs(zero_premise, true));
-        assert!(!empty.satisfies_fact(&source, &zero_withdrawn));
+        let zero_only = parent.assume_condition(zero_premise, true);
+        assert!(!empty.satisfies_fact(&source, &zero_only));
     }
 
     #[cfg(test)]
@@ -12659,8 +12655,6 @@ mod support_removal_tests {
         );
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
         assert!(merge_memory_ranges(&left, &right, &parent).is_none());
-        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-        assert!(merge_memory_ranges(&left, &right, &withdrawn).is_none());
     }
 
     #[test]

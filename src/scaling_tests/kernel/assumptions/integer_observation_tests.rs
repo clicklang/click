@@ -308,7 +308,6 @@ fn observation_alias_source_lookup_does_not_scan_supports() {
                         bound,
                     ),
                     true,
-                    true,
                 );
             }
             let hit = ConditionTerm::unsigned_less_equal(word(991900), MachineTerm::constant(100));
@@ -350,7 +349,6 @@ fn shared_contradiction_admission_updates_only_new_additive_structure() {
                         IntegerTerm::Machine(operand.clone()).into(),
                         constant(100),
                     ),
-                    true,
                     true,
                 );
                 assert!(!operand.has_boxed_operand());
@@ -497,14 +495,14 @@ fn shared_bound_source_selection_uses_existing_index_across_branches() {
                 MachineOperandView::Shared(&root),
             ],
         );
-        let mut parent = PureFactContext::new().assume_proposition(source.clone());
+        let mut child = PureFactContext::new();
         for n in 0..size {
-            parent = parent.assume_condition(
+            child = child.assume_condition(
                 ConditionTerm::signed_less_equal(zero.clone(), word(189150 + n)),
                 true,
             );
         }
-        let child = parent.without_exact_fact(&source);
+        let parent = child.clone().assume_proposition(source.clone());
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(

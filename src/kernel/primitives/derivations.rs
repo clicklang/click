@@ -36,7 +36,6 @@ impl PropositionDerivation {
             PropositionDerivationRule::ExistsFromFact { .. } => "ExistsFromFact",
             PropositionDerivationRule::ExistsFromWitness { .. } => "ExistsFromWitness",
             PropositionDerivationRule::ForAllLoadableRange { .. } => "ForAllLoadableRange",
-            PropositionDerivationRule::ExistsLoadableRange { .. } => "ExistsLoadableRange",
             PropositionDerivationRule::FiniteForAll { .. } => "FiniteForAll",
             PropositionDerivationRule::SingletonSubstitution { .. } => "SingletonSubstitution",
             PropositionDerivationRule::DisjunctionCases { .. } => "DisjunctionCases",
@@ -667,9 +666,6 @@ impl PropositionDerivation {
                 body.collect_context_premises(premises);
             }
             PropositionDerivationRule::ForAllLoadableRange { source } => {
-                premises.insert(source.as_ref().clone());
-            }
-            PropositionDerivationRule::ExistsLoadableRange { source, .. } => {
                 premises.insert(source.as_ref().clone());
             }
             PropositionDerivationRule::Implies { antecedent, body } => {

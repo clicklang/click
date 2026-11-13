@@ -133,12 +133,6 @@ fn retained_memory_bound_sources_keep_written_direction_and_branch_isolation() {
     );
     let branch = parent.clone().assume_condition(source.clone(), true);
     assert!(recorded_less_equal_candidates(&lower, &upper, &branch).any(|(_, _, strict)| strict));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(source, true));
-    assert!(
-        recorded_less_equal_candidates(&lower, &upper, &withdrawn)
-            .next()
-            .is_none()
-    );
     assert!(
         recorded_less_equal_candidates(&lower, &upper, &parent)
             .next()

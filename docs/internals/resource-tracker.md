@@ -1165,9 +1165,9 @@ This handles a post-call pointer connected to a model
 identity through another alias. The checker requires full pointer equality in
 the current context and checks the first and last addressed elements against
 the selected range; equality alone grants neither membership nor separation.
-It does not enumerate aliases or recover older memory. Withdrawing a required
-alias or separation, or extending either access beyond its range, invalidates
-the store witness. The named-root-call fixture and
+It does not enumerate aliases or recover older memory. A context without a
+required alias or separation, or either access extended beyond its range, does
+not check the store witness. The named-root-call fixture and
 `graph_aliased_range_membership_checks_complete_access_and_scales` cover this
 case, including unrelated aliases and partial coverage. This fallback follows
 the direct and exact-alias checks. It reads the affine class coordinates without

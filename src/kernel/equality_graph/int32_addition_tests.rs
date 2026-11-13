@@ -93,7 +93,7 @@ fn int32_addition_does_not_cancel_commute_or_merge_other_sorts() {
 }
 
 #[test]
-fn int32_addition_context_rebuilds_preserve_only_supported_equalities() {
+fn int32_addition_restriction_preserves_only_supported_equalities() {
     let premise = eq(var(1), var(2));
     let explicit = eq(add(var(2), var(3)), var(10));
     let context = PureFactContext::new()
@@ -101,13 +101,6 @@ fn int32_addition_context_rebuilds_preserve_only_supported_equalities() {
         .assume_condition(explicit.clone(), true);
     let query = add(var(1), var(3));
     assert!(context.equality_graph.are_int32_equal(&query, &var(10)));
-    let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(premise.clone(), true));
-    assert!(!withdrawn.equality_graph.are_int32_equal(&query, &var(10)));
-    assert!(
-        withdrawn
-            .equality_graph
-            .are_int32_equal(&add(var(2), var(3)), &var(10))
-    );
     let restricted = context.restricted_to_facts(&[(premise, true)], &[]);
     assert!(
         restricted

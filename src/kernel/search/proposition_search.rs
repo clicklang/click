@@ -11,8 +11,7 @@
 //!
 //! It plans; it does not issue authority. It advances state only through
 //! checked kernel operations ([`PureFactContext::assume_proposition`],
-//! [`PureFactContext::restricted_to_facts`],
-//! [`PureFactContext::with_only_proposition_facts`]) and public exact queries, and
+//! [`PureFactContext::restricted_to_facts`]) and public exact queries, and
 //! everything it finds is returned as a [`PropositionDerivation`] whose
 //! checker is local, deterministic, and still in the kernel. The atomic
 //! theory checkers the leaves call (`decide`, `proves_memory_loadable`,
@@ -972,11 +971,6 @@ impl super::ProofSearch<PureFactContext> {
                 crate::kernel::search::ProofSearch::derive_exists_from_fact(
                     context, *var, sort, body,
                 )
-            })
-            .or_else(|| {
-                crate::kernel::search::ProofSearch::derive_exists_loadable_range(
-                    context, *var, sort, body,
-                )
             }),
             _ => crate::kernel::search::ProofSearch::derive_atomic_rule(
                 context,
@@ -1355,40 +1349,6 @@ impl super::ProofSearch<PureFactContext> {
             if covered {
                 return Some(PropositionDerivationRule::ForAllLoadableRange {
                     source: Box::new(source.clone()),
-                });
-            }
-        }
-        None
-    }
-
-    pub(crate) fn derive_exists_loadable_range(
-        context: &PureFactContext,
-        var: Variable,
-        sort: &Sort,
-        body: &Proposition,
-    ) -> Option<PropositionDerivationRule> {
-        #[cfg(test)]
-        crate::kernel::search::record_discovery("derive_exists_loadable_range");
-        if sort != &Sort::CInt32 {
-            return None;
-        }
-        let witness = MachineTerm::constant(0);
-        let instantiated = substitute_bitvector_variable_in_proposition(body, var, &witness);
-        if !matches!(instantiated, Proposition::CMemoryLoadable { .. }) {
-            return None;
-        }
-        for source in context.search_memory_loadable_candidates_for_base(
-            SearchPermission::new(),
-            match &instantiated {
-                Proposition::CMemoryLoadable { base, .. } => base,
-                _ => unreachable!(),
-            },
-        ) {
-            let candidate = context.with_only_proposition_facts(std::slice::from_ref(source));
-            if crate::kernel::api::loadable_covered_by_fact(&candidate, &instantiated) {
-                return Some(PropositionDerivationRule::ExistsLoadableRange {
-                    source: Box::new(source.clone()),
-                    witness,
                 });
             }
         }
@@ -1806,8 +1766,8 @@ mod condition_premise_tests {
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([left.clone(), right.clone()])
         );
-        for premise in [left.clone(), right] {
-            assert!(!proof.check(&context.without_exact_fact(&premise)));
+        for remaining in [left.clone(), right] {
+            assert!(!proof.check(&PureFactContext::new().assume_proposition(remaining)));
         }
         assert!(
             crate::kernel::search::ProofSearch::derive_atomic_proposition(
@@ -2450,7 +2410,7 @@ fn reduce_solve_atomic_premises(
         } else if end - start > 1 {
             let middle = start + (end - start) / 2;
             // Conditions precede propositions in the retained selection.
-            // Try withdrawing the later chunk first, so irrelevant frame
+            // Try dropping the later chunk first, so irrelevant frame
             // propositions do not accompany every trial on an exact scalar
             // equality's condition sources.
             pending.push((start, middle));
@@ -2505,7 +2465,7 @@ mod shared_atomic_premise_tests {
                 )
                 .expect("the stated premise is available");
                 assert!(proof.check(&context));
-                assert!(!proof.check(&context.without_exact_fact(&source)));
+                assert!(!proof.check(&PureFactContext::new()));
                 context
             });
             assert!(context.proves_exact(&source));

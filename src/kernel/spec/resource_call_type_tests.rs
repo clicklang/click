@@ -49,7 +49,7 @@ fn lower(
     .unwrap()
 }
 #[test]
-fn held_call_domains_are_explicit_scoped_and_withdrawable() {
+fn held_call_domains_are_explicit_and_scoped() {
     let _session = VerificationSession::enter();
     let source = clause(value(945_001));
     let parent = PureFactContext::new();
@@ -70,7 +70,6 @@ fn held_call_domains_are_explicit_scoped_and_withdrawable() {
     let opened = parent.clone().assume_proposition(receipts[0].clone());
     assert_eq!(lower(&source, &opened, false).len(), 1);
     assert!(lower(&source, &parent, false).is_empty());
-    assert!(lower(&source, &opened.without_exact_fact(&receipts[0]), false).is_empty());
     assert!(lower(&clause(value(945_002)), &opened, false).is_empty());
 }
 #[test]
@@ -150,10 +149,6 @@ fn held_constructor_domains_are_scoped_and_require_compatible_evidence() {
     }
     assert_eq!(lower(&source, &opened, false).len(), 1);
     assert!(lower(&source, &parent, false).is_empty());
-    for receipt in &receipts {
-        opened = opened.without_exact_fact(receipt);
-    }
-    assert!(lower(&source, &opened, false).is_empty());
     assert!(lower(&constructor_clause(value(945_012)), &opened, false).is_empty());
     let wrong = value(945_011)
         .with_pointer_object_class(Some(CAccessClass::Struct(CStructClass::opaque("other"))));

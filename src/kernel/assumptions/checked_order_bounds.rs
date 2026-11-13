@@ -11,8 +11,8 @@ type Bound = (i64, ConditionTerm, bool);
 struct EndpointBounds {
     symbolic_lower: PersistentSet<(ConditionTerm, bool)>,
     symbolic_upper: PersistentSet<(ConditionTerm, bool)>,
-    strict_lower: usize,
-    strict_upper: usize,
+    strict_lower: bool,
+    strict_upper: bool,
     lower: PersistentSet<Bound>,
     upper: PersistentSet<Bound>,
 }
@@ -25,8 +25,8 @@ pub(in crate::kernel) struct CheckedOrderBounds {
 }
 
 impl CheckedOrderBounds {
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
-        if self.adjust_signed_wide(condition, value, insert) {
+    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
+        if self.adjust_signed_wide(condition, value) {
             return;
         }
         use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
@@ -48,7 +48,6 @@ impl CheckedOrderBounds {
                 strict,
                 condition,
                 value,
-                insert,
             );
         }
     }
@@ -65,17 +64,12 @@ impl CheckedOrderBounds {
         strict: bool,
         condition: &ConditionTerm,
         value: bool,
-        insert: bool,
     ) {
         if kind == 0 && strict {
             let left = Self::word_key(left);
             let mut sources = self.strict_upper.get(&left).cloned().unwrap_or_default();
             let source = (condition.clone(), value);
-            sources = if insert {
-                sources.with_value(source)
-            } else {
-                sources.without_value(&source)
-            };
+            sources = sources.with_value(source);
             self.strict_upper = if sources.is_empty() {
                 self.strict_upper.without_key(&left)
             } else {
@@ -117,22 +111,13 @@ impl CheckedOrderBounds {
                         &mut bounds.symbolic_lower
                     };
                     let source = (condition.clone(), value);
-                    *sources = if insert {
-                        sources.with_value(source)
-                    } else {
-                        sources.without_value(&source)
-                    };
+                    *sources = sources.with_value(source);
                 }
                 if strict {
-                    let count = if upper {
-                        &mut bounds.strict_upper
+                    if upper {
+                        bounds.strict_upper = true;
                     } else {
-                        &mut bounds.strict_lower
-                    };
-                    if insert {
-                        *count += 1;
-                    } else {
-                        *count -= 1;
+                        bounds.strict_lower = true;
                     }
                 }
                 if let Some(number) = number {
@@ -142,18 +127,14 @@ impl CheckedOrderBounds {
                         &mut bounds.lower
                     };
                     let source = (number, condition.clone(), value);
-                    *sources = if insert {
-                        sources.with_value(source)
-                    } else {
-                        sources.without_value(&source)
-                    };
+                    *sources = sources.with_value(source);
                 }
                 self.endpoints[kind] = if bounds.lower.is_empty()
                     && bounds.upper.is_empty()
                     && bounds.symbolic_lower.is_empty()
                     && bounds.symbolic_upper.is_empty()
-                    && bounds.strict_lower == 0
-                    && bounds.strict_upper == 0
+                    && !bounds.strict_lower
+                    && !bounds.strict_upper
                 {
                     self.endpoints[kind].without_key(&key)
                 } else {
@@ -163,7 +144,7 @@ impl CheckedOrderBounds {
         }
     }
 
-    fn adjust_signed_wide(&mut self, condition: &ConditionTerm, value: bool, insert: bool) -> bool {
+    fn adjust_signed_wide(&mut self, condition: &ConditionTerm, value: bool) -> bool {
         use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
         if let Some(view) = comparison_view(condition, value)
             && view.format == MachineIntegerType::Int64
@@ -186,7 +167,7 @@ impl CheckedOrderBounds {
                     MachineIntegerType::UInt64,
                     endpoint.operand_view(),
                 );
-                self.adjust_wide_endpoint(key, number, upper, condition, value, insert);
+                self.adjust_wide_endpoint(key, number, upper, condition, value);
                 // Shared arithmetic has no atomic load/cast payload to
                 // canonicalize; legacy inputs retain their exact alias key.
                 if let crate::kernel::MachineOperandView::Legacy(term) = endpoint.operand_view() {
@@ -198,7 +179,6 @@ impl CheckedOrderBounds {
                             upper,
                             condition,
                             value,
-                            insert,
                         );
                     }
                 }
@@ -225,7 +205,6 @@ impl CheckedOrderBounds {
         upper: bool,
         condition: &ConditionTerm,
         value: bool,
-        insert: bool,
     ) {
         crate::instrumentation::record_deterministic_work(1);
         let mut bounds = self.signed_wide.get(&key).cloned().unwrap_or_default();
@@ -235,11 +214,7 @@ impl CheckedOrderBounds {
             &mut bounds.lower
         };
         let source = (number, condition.clone(), value);
-        *sources = if insert {
-            sources.with_value(source)
-        } else {
-            sources.without_value(&source)
-        };
+        *sources = sources.with_value(source);
         if bounds.lower.is_empty() && bounds.upper.is_empty() {
             self.signed_wide.remove(&key);
         } else {
@@ -410,8 +385,8 @@ impl CheckedOrderBounds {
             .interval_view(term, false)
             .unwrap_or((i64::from(i32::MIN), i64::from(i32::MAX)));
         Some((
-            lower.max(i64::from(i32::MIN) + i64::from(bounds.strict_lower > 0)),
-            upper.min(i64::from(i32::MAX) - i64::from(bounds.strict_upper > 0)),
+            lower.max(i64::from(i32::MIN) + i64::from(bounds.strict_lower)),
+            upper.min(i64::from(i32::MAX) - i64::from(bounds.strict_upper)),
         ))
     }
 
@@ -481,7 +456,7 @@ mod tests {
                 IntegerTerm::Machine(right.clone()),
             );
             let mut index = CheckedOrderBounds::default();
-            index.adjust(&condition, true, true);
+            index.adjust(&condition, true);
             let read = |index: &CheckedOrderBounds| {
                 if format == MachineIntegerType::Int64 {
                     index.signed_wide_interval_view(left.operand_view())
@@ -490,39 +465,30 @@ mod tests {
                 }
             };
             assert_eq!(read(&index).unwrap().1, 3);
-            let mut branch = index.clone();
-            branch.adjust(&condition, true, false);
-            assert_eq!(read(&branch), None);
-            assert_eq!(read(&index).unwrap().1, 3);
             assert!(!left.has_boxed_operand());
             assert!(!right.has_boxed_operand());
         }
     }
 
     #[test]
-    fn signed_wide_extrema_keep_strictness_withdrawal_and_branches() {
+    fn signed_wide_extrema_keep_strictness_and_branches() {
         let _session = crate::kernel::VerificationSession::enter();
         let x = MachineTerm::Variable(Variable(982000));
         let less =
             |n| ConditionTerm::int64_signed_less_than(x.clone(), MachineTerm::int64_constant(n));
         let mut index = CheckedOrderBounds::default();
-        index.adjust(&less(10), true, true);
-        index.adjust(&less(0), false, true);
+        index.adjust(&less(10), true);
+        index.adjust(&less(0), false);
         assert_eq!(index.signed_wide_interval(&x), Some((0, 9)));
         let mut branch = index.clone();
-        branch.adjust(&less(5), true, true);
+        branch.adjust(&less(5), true);
         assert_eq!(branch.signed_wide_interval(&x), Some((0, 4)));
         assert_eq!(index.signed_wide_interval(&x), Some((0, 9)));
-        branch.adjust(&less(5), true, false);
-        assert_eq!(branch.signed_wide_interval(&x), Some((0, 9)));
-        branch.adjust(&less(10), true, false);
-        assert_eq!(branch.signed_wide_interval(&x), Some((0, i64::MAX)));
-        branch.adjust(&less(0), false, false);
-        assert_eq!(branch.signed_wide_interval(&x), None);
         // Preserve the old interval reader's refusal to wrap an impossible
         // strict endpoint. Contradiction handling remains a separate rule.
-        branch.adjust(&less(i64::MIN), true, true);
-        assert_eq!(branch.signed_wide_interval(&x), None);
+        let mut impossible = CheckedOrderBounds::default();
+        impossible.adjust(&less(i64::MIN), true);
+        assert_eq!(impossible.signed_wide_interval(&x), None);
     }
 
     #[cfg(test)]

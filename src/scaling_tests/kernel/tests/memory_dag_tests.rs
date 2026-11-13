@@ -461,12 +461,10 @@ fn named_snapshot_alias_equality_does_not_depend_on_sibling_observation_origins(
             assert!(witness.checks(&assumptions));
             witness.clone()
         });
-        // Withdrawal constructs a new assumption context and is outside the
-        // measurement of the selected equality check.
-        for premise in [first.clone(), second.clone()] {
-            let withdrawn =
-                assumptions.without_exact_fact(&Proposition::ConditionIs(premise, true));
-            assert!(!witness.checks(&withdrawn));
+        // Each link alone is outside the measurement of the selected check.
+        for remaining in [first.clone(), second.clone()] {
+            let partial = PureFactContext::new().assume_condition(remaining, true);
+            assert!(!witness.checks(&partial));
         }
         // The witness names the exact snapshot, address, and read kind.
         let changed = crate::kernel::intern_c_memory(
@@ -560,9 +558,8 @@ fn kept_range_lookup_follows_exact_aliases_without_scanning_unrelated_members() 
                 .is_none()
         );
     }
-    let withdrawn = assumptions.without_exact_fact(&Proposition::ConditionIs(alias, true));
     assert!(
-        withdrawn
+        PureFactContext::new()
             .kept_range_holding_access(&ranges, || None, &pointer, 8)
             .is_none()
     );
@@ -941,9 +938,14 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
             continue;
         }
         assert!(!witness.checks(&step, &read, 8, &no_separation));
-        for alias in &aliases {
-            let missing =
-                context.without_exact_fact(&Proposition::ConditionIs(alias.clone(), true));
+        for absent in &aliases {
+            let missing = aliases
+                .iter()
+                .filter(|alias| *alias != absent)
+                .fold(PureFactContext::new(), |missing, alias| {
+                    missing.assume_condition(alias.clone(), true)
+                })
+                .assume_proposition(separation(16));
             assert!(!witness.checks(&step, &read, 8, &missing));
             assert!(typed_store_separated_ranges_evidence(&write, 8, &read, 8, &missing).is_none());
         }
@@ -1148,7 +1150,6 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
             );
         }
         let ordered = context.clone().assume_condition(order.clone(), true);
-        let withdrawn = ordered.without_exact_fact(&Proposition::ConditionIs(order.clone(), true));
         let reversed = context.clone().assume_condition(order.clone(), false);
         let first_edge = Proposition::ConditionIs(
             ConditionTerm::signed_less_than(left_index.clone(), middle.clone()),
@@ -1160,9 +1161,9 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
         );
         let chained = context
             .clone()
-            .assume_proposition(first_edge.clone())
-            .assume_proposition(second_edge);
-        let broken = chained.without_exact_fact(&first_edge);
+            .assume_proposition(first_edge)
+            .assume_proposition(second_edge.clone());
+        let broken = context.clone().assume_proposition(second_edge);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(
                 access_byte_overlap(&left, 4, &right, 8, &context),
@@ -1181,10 +1182,6 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
             assert_eq!(
                 access_byte_overlap(&right, 8, &left, 4, &ordered),
                 AccessByteOverlap::Separate
-            );
-            assert_eq!(
-                access_byte_overlap(&left, 4, &right, 8, &withdrawn),
-                AccessByteOverlap::Unknown
             );
             assert_eq!(
                 access_byte_overlap(&left, 4, &right, 8, &reversed),
