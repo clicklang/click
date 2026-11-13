@@ -2,9 +2,10 @@
 
 With no written `preserve` proof, the loop closer splits at each C `if` of the
 body, as a function's implicit tail does, so eleven sequential branches give
-it 2,047 splits. Past 1,024 it stops and names the explicit join, as
-`execute_stops_at_its_split_limit_on_sequential_branches.md` does for a
-function body.
+it 2,047 splits. Past 1,024 it stops and names the explicit join. The
+ordinary `implicit_tail_budget_errors_check_boundaries_without_exploring_paths`
+unit test checks the exact step and split boundaries directly, without
+constructing exponentially many function paths.
 
 ```c filename=a_loop_body_stops_at_the_split_limit.c
 int32 f(int32 n, int32 a0, int32 a1, int32 a2, int32 a3, int32 a4, int32 a5, int32 a6, int32 a7, int32 a8, int32 a9, int32 a10) {
