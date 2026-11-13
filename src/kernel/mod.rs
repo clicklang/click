@@ -32,6 +32,7 @@ mod difference_graph;
 pub(crate) mod effective_type;
 mod equality_graph;
 mod eval;
+mod execution_value;
 pub(crate) use eval::typed_reads::{
     FieldScope as TransportFieldScope, ReadScope as TransportReadScope,
     record_field as record_transport_field,
