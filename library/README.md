@@ -25,7 +25,7 @@ imports with `import click::...;`, and the modules those import:
 | `cpp/as_writable_bytes.click` | appended to a C++ sidecar when an import calls it | The `std::as_writable_bytes<T, N>` contract, a function template written out at each called instance |
 | `rust/vec.click` | `import click::rust::vec;` | The primitive type `Vec<T>`, its bodyless operations and their trusted axioms |
 | `rust/slice.click` | `import click::rust::slice;` | `Slice<T>`, a Rust slice as its data pointer and length |
-| `rust/core.click` | appended to a Rust sidecar when an import calls one of its methods | `Vec::new`, `Vec::with_capacity`, `Vec::push`, `Vec::len`, `Vec::index` and `slice::swap` contracts, as generic `extern fn` blocks written out at each called element type; a block no call names is dropped |
+| `rust/core.click` | appended to a Rust sidecar when an import calls one of its methods | The `Vec`, `slice::swap`, `Option`/`Result` unwrapping, slice-value, `SliceIter` and `ChunksExact` contracts, as generic `extern fn` blocks written out at each called type; a block no call names is dropped |
 
 Each declaration is in one layer, which sets its trust:
 
@@ -38,9 +38,9 @@ Each declaration is in one layer, which sets its trust:
   Rust library the verified code calls, listed in
   [trust](../docs/concepts/trust.md#the-click-library). `c/string.click`
   and the `cpp/` files are written here; the allocator family and
-  `snprintf` contracts are built into the C front end. The Rust `Vec`
-  methods and `<[T]>::swap` are written in `rust/core.click`; the other Rust
-  core-method contracts are generated per use.
+  `snprintf` contracts are built into the C front end. The Rust core-method
+  contracts are written in `rust/core.click`, except the integer methods',
+  which are generated per use.
 - **The specification library** is every other module: checked types, pure
   functions, predicates and theorems, plus the trusted `rust/vec.click` axioms.
 

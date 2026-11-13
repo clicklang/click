@@ -388,11 +388,12 @@ Each step is a separate PR that leaves every example verifying:
        as a method instance does. The remaining Rust contract templates
        (`CATALOG`, `catalog_contract`) are deleted; the importer keeps only
        the name table.
-  - **Rust core (open), after the C++ steps.** The `Vec`, slice, iterator
-    and `Option`/`Result` builders in `src/languages/rust/standard_library.rs`
-    become generic `extern fn` blocks in `library/rust/`, instantiated
-    through `rust_generic_functions.rs` as a sidecar's generic functions
-    are, in three steps:
+  - **Rust core (open: step 3), after the C++ steps.** The `Vec`, slice,
+    iterator and `Option`/`Result` builders in
+    `src/languages/rust/standard_library.rs` become generic `extern fn`
+    blocks in `library/rust/`, instantiated through
+    `rust_generic_functions.rs` as a sidecar's generic functions are, in
+    three steps:
     1. Done: a core method the name table maps is an instance of the
        library generic function (`instance_of` from the table at
        lowering), a library generic nothing instantiates is dropped with
@@ -401,15 +402,29 @@ Each step is a separate PR that leaves every example verifying:
        the selected library files. The `Vec` methods and `<[T]>::swap` are
        `library/rust/core.click`; their contracts, instances, `Rust core`
        report tag and refusals are unchanged.
-    2. Open: `Option`/`Result` `unwrap`, the byte `Slice` methods,
-       `SliceIter` and `ChunksExact`, which need multi-token type arguments
-       (`Option<&[u8]>`, `&T`) in the instance writer, which today pushes
-       each argument as one identifier.
-    3. Open, proposed: integer methods (`u32::min`) need no contract text,
-       since each is the library function of the same path; the proposal is
-       to bind them structurally from a method-to-function table. The
-       alternative is about 110 plain library `extern`s. The maintainer has
-       not decided between them.
+    2. Done: `Option` and `Result` `unwrap`, `expect` and `unwrap_or`, the
+       slice-value reads `slice::as_ptr` and `slice::len`, `SliceIter` and
+       `ChunksExact` (both models) are generic blocks in
+       `library/rust/core.click`; the name table matches an import's core
+       method by its path. No instance needs a multi-token type argument:
+       each is named at its scalar element or payload types, and the
+       written block spells `Option<&T>` and `&[T]` at them. Two front-end
+       gaps closed for users too: a written instance at any scalar,
+       `Option::unwrap<i64>`, is concrete, not at an abstract parameter
+       named `i64`; and a function head's path, `fn slice::len<T>`, is the
+       program's function, never resolved to the library module function
+       of the same path. The `ChunksExact` operations are declared at `u8`
+       only, the element type of the library's chunk axioms.
+    3. Open: integer methods (`u32::min`). Maintainer leaning, not yet
+       confirmed: a plain one-line library `extern` next to each
+       specification function in `library/rust/<int>.click`, `extern fn
+       u32::min(a: u32, b: u32) -> u32 { ensures result ==
+       click::rust::u32::min(a, b); }`, rather than a structural binding
+       from a method-to-function table. To check: the `extern`'s path is
+       the module function's (`u32::min` in module `click::rust::u32`).
+       A function head's path no longer resolves as a library path, but
+       a module file that declares both `function min` and `extern fn
+       u32::min` must keep the two names apart in its own scope.
   - **Allocator (open).** `malloc`, `calloc`, `realloc` and `free` become
     `extern` contracts over the `allocation` primitive in
     `library/c/stdlib.click`, if the kernel's allocation model is

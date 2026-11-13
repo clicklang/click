@@ -553,11 +553,15 @@ fn library_path_at(
     let Some(Token::Ident(first)) = tokens.get(start) else {
         return Ok(None);
     };
-    // The tail of a longer path, `core::u32::min`, is no library path.
+    // The tail of a longer path, `core::u32::min`, is no library path, and
+    // nor is the path a function head declares, `fn slice::len<T>(...)`: a
+    // Rust contract's path names the program's function, which may share a
+    // library module function's path.
     if tokens.get(start + 1) != Some(&Token::ColonColon)
-        || start
-            .checked_sub(1)
-            .is_some_and(|previous| tokens.get(previous) == Some(&Token::ColonColon))
+        || start.checked_sub(1).is_some_and(|previous| {
+            matches!(&tokens[previous], Token::ColonColon)
+                || matches!(&tokens[previous], Token::Ident(word) if word == "fn")
+        })
     {
         return Ok(None);
     }
@@ -949,4 +953,39 @@ pub(in crate::surface) fn library_theorem_identity(name: &str) -> String {
         .get(name)
         .cloned()
         .unwrap_or_else(|| name.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A function head's path is the program's function, even where it is a
+    // library module function's path: the library's `extern fn
+    // slice::len<T>` models Rust's `<[T]>::len`, and its contract's
+    // `slice::len(s)` is the `click::rust::slice` function.
+    #[test]
+    fn a_function_head_path_is_not_a_library_path() {
+        let source = "import click::rust::slice; \
+                      extern fn slice::len<T>(s: Slice<T>) -> usize { ensures result == slice::len(s); }";
+        let (tokens, positions) = tokenizer::tokenize(source, None).unwrap();
+        let tokens = resolve_library_paths(tokens, positions, None)
+            .unwrap()
+            .tokens;
+        let head = tokens
+            .iter()
+            .position(|token| *token == Token::Ident("fn".into()))
+            .unwrap();
+        assert_eq!(
+            tokens[head + 1..head + 4],
+            [
+                Token::Ident("slice".into()),
+                Token::ColonColon,
+                Token::Ident("len".into())
+            ]
+        );
+        assert!(tokens[head + 4..].contains(&Token::Ident(resolved_name(
+            "library/rust/slice.click",
+            "len"
+        ))));
+    }
 }

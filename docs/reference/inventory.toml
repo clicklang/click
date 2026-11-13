@@ -2467,6 +2467,74 @@ id = "library.cpp.std::span<T>::subspan"
 path = "reference/library/index.md#stdspant"
 
 [[item]]
+id = "library.rust.ChunksExact::after_next"
+path = "reference/library/index.md#chunksexactt-methods"
+
+[[item]]
+id = "library.rust.ChunksExact::item_len"
+path = "reference/library/index.md#chunksexactt-methods"
+
+[[item]]
+id = "library.rust.ChunksExact::item_ptr"
+path = "reference/library/index.md#chunksexactt-methods"
+
+[[item]]
+id = "library.rust.ChunksExact::len"
+path = "reference/library/index.md#chunksexactt-methods"
+
+[[item]]
+id = "library.rust.ChunksExact::new"
+path = "reference/library/index.md#chunksexactt-methods"
+
+[[item]]
+id = "library.rust.ChunksExact::next"
+path = "reference/library/index.md#chunksexactt-methods"
+
+[[item]]
+id = "library.rust.ChunksExact::remainder"
+path = "reference/library/index.md#chunksexactt-methods"
+
+[[item]]
+id = "library.rust.ChunksExact::remainder_len"
+path = "reference/library/index.md#chunksexactt-methods"
+
+[[item]]
+id = "library.rust.ChunksExact::remainder_ptr"
+path = "reference/library/index.md#chunksexactt-methods"
+
+[[item]]
+id = "library.rust.Option::expect"
+path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
+
+[[item]]
+id = "library.rust.Option::unwrap"
+path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
+
+[[item]]
+id = "library.rust.Option::unwrap_or"
+path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
+
+[[item]]
+id = "library.rust.Result::expect"
+path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
+
+[[item]]
+id = "library.rust.Result::unwrap"
+path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
+
+[[item]]
+id = "library.rust.Result::unwrap_or"
+path = "reference/library/index.md#optiont-and-resultt-e-unwrapping"
+
+[[item]]
+id = "library.rust.SliceIter::iter"
+path = "reference/library/index.md#sliceitert-methods"
+
+[[item]]
+id = "library.rust.SliceIter::next"
+path = "reference/library/index.md#sliceitert-methods"
+
+[[item]]
 id = "library.rust.Vec::index"
 path = "reference/library/index.md#vect-methods"
 
@@ -2485,6 +2553,14 @@ path = "reference/library/index.md#vect-methods"
 [[item]]
 id = "library.rust.Vec::with_capacity"
 path = "reference/library/index.md#vect-methods"
+
+[[item]]
+id = "library.rust.slice::as_ptr"
+path = "reference/library/index.md#slice-value-methods"
+
+[[item]]
+id = "library.rust.slice::len"
+path = "reference/library/index.md#slice-value-methods"
 
 [[item]]
 id = "library.rust.slice::swap"
