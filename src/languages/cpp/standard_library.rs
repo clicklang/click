@@ -103,17 +103,6 @@ fn has_path(
         .is_some_and(|inner| has_path(layouts, inner, rest))
 }
 
-/// A standard function Click has a contract for, keyed on its qualified name
-/// and canonical signature as Clang spells them. The contract is a template:
-/// `{name}` is the function's proof name, `{record}` its receiver's record,
-/// and `{p1}`, `{p2}`, ... its parameters after the receiver, as the
-/// interface names them.
-struct CatalogEntry {
-    qualified_name: &'static str,
-    signature: &'static str,
-    contract: &'static str,
-}
-
 /// An element type the library's class templates are written out at.
 struct SpanElement {
     /// The element as Clang spells it in a qualified name.
@@ -173,6 +162,24 @@ pub(crate) const SPAN_LIBRARY: &str = include_str!("../../../library/cpp/span.cl
 
 /// The Click library file that states the `std::array<T, N>` contracts.
 pub(crate) const ARRAY_LIBRARY: &str = include_str!("../../../library/cpp/array.click");
+
+/// The Click library file that states `std::as_writable_bytes`, a function
+/// template written `std::as_writable_bytes<T, N>` by its element and
+/// extent.
+pub(crate) const AS_WRITABLE_BYTES_LIBRARY: &str =
+    include_str!("../../../library/cpp/as_writable_bytes.click");
+
+/// The standard function templates outside a class that the Click library
+/// states: each instance's qualified name and canonical signature as Clang
+/// spells them, the library template's path, and its file. An axiom
+/// matching one is an instance of that template, written out at the
+/// template arguments its own path names.
+const LIBRARY_FUNCTIONS: &[(&str, &str, &[&str], &str)] = &[(
+    "std::as_writable_bytes",
+    "class std::span<enum std::byte> (class std::span<int>) noexcept",
+    &["std", "as_writable_bytes<T, N>"],
+    AS_WRITABLE_BYTES_LIBRARY,
+)];
 
 /// The methods of `std::span<T>` and `std::span<T, N>` that
 /// [`SPAN_LIBRARY`] states, each with its canonical signature as Clang
@@ -261,6 +268,15 @@ const LIBRARY_CLASSES: &[LibraryClass] = &[
 /// static extent, or one whose byte size does not fit a `uint64`, is no
 /// instance, so a call is refused by name.
 fn library_method(axiom: &super::schema::CppAxiom) -> Option<(String, &'static str)> {
+    if let Some((_, _, path, library)) =
+        LIBRARY_FUNCTIONS
+            .iter()
+            .find(|(qualified_name, signature, _, _)| {
+                *qualified_name == axiom.qualified_name && *signature == axiom.signature
+            })
+    {
+        return Some((super::names::path_name(path), library));
+    }
     let (class, rest) = axiom
         .qualified_name
         .strip_prefix("std::")?
@@ -313,94 +329,41 @@ pub(super) fn library_generic(axiom: &super::schema::CppAxiom) -> Option<String>
 /// template's method: such a template has no generic method in the import,
 /// only the instances its axioms are.
 pub(crate) fn is_library_generic(generic: &str) -> bool {
-    LIBRARY_CLASSES.iter().any(|class| {
-        [class.dynamic, class.fixed]
-            .into_iter()
-            .flatten()
-            .any(|template| {
-                class
-                    .methods
-                    .iter()
-                    .any(|(name, _)| super::names::path_name(&["std", template, name]) == generic)
-            })
-    })
-}
-
-// Entries for one instantiation, outside the library's class templates.
-const CATALOG: &[CatalogEntry] = &[CatalogEntry {
-    qualified_name: "std::as_writable_bytes",
-    signature: "class std::span<enum std::byte> (class std::span<int>) noexcept",
-    contract: "extern struct {result_record} {name}(struct {argument_record} {p0}) {
-    ensures std_span_data(result) == old(std_span_data({p0}) as (uint8 *));
-    ensures std_span_size(result) == old(std_span_size({p0})) * 4u64;
-}",
-}];
-
-/// The catalog contract template for a standard function.
-fn catalog_contract(axiom: &super::schema::CppAxiom) -> Option<&'static str> {
-    CATALOG
+    LIBRARY_FUNCTIONS
         .iter()
-        .find(|entry| {
-            entry.qualified_name == axiom.qualified_name && entry.signature == axiom.signature
+        .any(|(_, _, path, _)| super::names::path_name(path) == generic)
+        || LIBRARY_CLASSES.iter().any(|class| {
+            [class.dynamic, class.fixed]
+                .into_iter()
+                .flatten()
+                .any(|template| {
+                    class.methods.iter().any(|(name, _)| {
+                        super::names::path_name(&["std", template, name]) == generic
+                    })
+                })
         })
-        .map(|entry| entry.contract)
 }
 
-/// The Click contracts for the axioms an import reaches: the library's
-/// templates, whose instances the axioms are, then the catalog's `extern`
-/// declarations. An axiom with neither gets none, so a caller is refused
-/// unless the sidecar states one itself. Returns the text and the name of
-/// each function it declares.
+/// The Click library files stating the axioms an import reaches: the
+/// library's templates, whose instances the axioms are. An axiom that is
+/// none gets no contract, so a caller is refused unless the sidecar states
+/// one itself. Returns the text and the name of each function it states.
 pub(super) fn contracts(
     export: &super::CppExport,
     names: &super::names::ResolvedNames,
 ) -> Result<(String, BTreeSet<String>), String> {
-    let mut source = String::new();
     let mut models = BTreeSet::new();
     let mut libraries = Vec::new();
     for function in &export.reachable_functions {
-        let Some(axiom) = &function.axiom else {
+        let Some((_, library)) = function.axiom.as_ref().and_then(library_method) else {
             continue;
         };
-        if let Some((_, library)) = library_method(axiom) {
-            models.insert(names.require(&function.declaration_id)?.to_string());
-            if !libraries.contains(&library) {
-                libraries.push(library);
-            }
-            continue;
+        models.insert(names.require(&function.declaration_id)?.to_string());
+        if !libraries.contains(&library) {
+            libraries.push(library);
         }
-        let Some(contract) = catalog_contract(axiom) else {
-            continue;
-        };
-        let record = match &function.function_kind {
-            super::CppFunctionKind::Method { record_name, .. } => record_name.as_str(),
-            _ => "",
-        };
-        let name = names.require(&function.declaration_id)?;
-        models.insert(name.to_string());
-        let mut contract = contract.replace("{name}", name).replace("{record}", record);
-        if let super::CppType::Record { name, .. } = &function.return_type {
-            contract = contract.replace("{result_record}", name);
-        }
-        if let Some(parameter) = function.parameters.first()
-            && let super::CppType::Record { name, .. } = &parameter.value_type
-        {
-            contract = contract.replace("{argument_record}", name);
-        }
-        let receiver_count = usize::from(matches!(
-            function.function_kind,
-            super::CppFunctionKind::Method { .. }
-        ));
-        for (index, parameter) in function.parameters.iter().enumerate().skip(receiver_count) {
-            contract = contract.replace(&format!("{{p{index}}}"), &parameter.name);
-        }
-        source.push_str(&contract);
-        source.push('\n');
     }
-    for library in libraries.into_iter().rev() {
-        source.insert_str(0, library);
-    }
-    Ok((source, models))
+    Ok((libraries.concat(), models))
 }
 
 #[cfg(test)]
@@ -573,5 +536,30 @@ mod tests {
         assert!(is_library_generic(&mutable));
         assert!(front("const int", "4", "const int &(void) noexcept").is_none());
         assert!(front("int", "4611686018427387904", "int &(void) noexcept").is_none());
+    }
+
+    // `std::as_writable_bytes` is an instance of the library's function
+    // template at the one signature the name table states.
+    #[test]
+    fn as_writable_bytes_is_a_library_instance_at_its_one_signature() {
+        let axiom = |signature: &str| super::super::schema::CppAxiom {
+            qualified_name: "std::as_writable_bytes".into(),
+            signature: signature.into(),
+        };
+        let generic = library_generic(&axiom(
+            "class std::span<enum std::byte> (class std::span<int>) noexcept",
+        ))
+        .unwrap();
+        assert!(is_library_generic(&generic));
+        assert_eq!(
+            crate::languages::cpp::names::cpp_display_name(&generic).unwrap(),
+            "std::as_writable_bytes<T, N>"
+        );
+        assert!(
+            library_generic(&axiom(
+                "class std::span<enum std::byte> (class std::span<long>) noexcept"
+            ))
+            .is_none()
+        );
     }
 }
