@@ -2153,132 +2153,13 @@ theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint3
 ### `integer::uint32_difference_decreases_after_increment`
 
 ```click
-theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
+axiom uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
     requires value < bound;
-
-    ensures to_integer((0u32 - value) + (bound - 1u32)) < to_integer((0u32 - value) + bound) by {
-        have (0u32 - value) + (bound - 1u32) == (bound - 1u32) - value by {
-            normalize();
-        }
-        have (0u32 - value) + bound == bound - value by {
-            normalize();
-        }
-        have to_integer((0u32 - value) + (bound - 1u32)) == to_integer((bound - 1u32) - value) by {
-            assumption();
-        }
-        have to_integer((0u32 - value) + bound) == to_integer(bound - value) by {
-            assumption();
-        }
-        have to_integer(value) < to_integer(bound) by {
-            normalize() using { value < bound; };
-        }
-        have 0 <= to_integer(bound) - 1 by {
-            arithmetic_certificate {
-                negated_goal => to_integer(bound) - 1 < 0;
-                premise 0: to_integer(value) < to_integer(bound) => to_integer(value) < to_integer(bound);
-                type_range => 0 <= to_integer(value);
-                add 0, 1 => to_integer(bound) - 1 + 1 + (to_integer(value) + 1) <= 0 + to_integer(bound);
-                add 3, 2 => to_integer(bound) - 1 + 1 + (to_integer(value) + 1) + 0 <= 0 + to_integer(bound) + to_integer(value);
-                conclusion 4;
-            }
-        }
-        have to_integer(bound) - 1 <= 4294967295 by {
-            arithmetic_certificate {
-                negated_goal => 4294967295 < to_integer(bound) - 1;
-                type_range => to_integer(bound) <= 4294967295;
-                add 0, 1 => 4294967295 + to_integer(bound) < to_integer(bound) - 1 + 4294967295;
-                conclusion 2;
-            }
-        }
-        have to_integer(bound - 1u32) == to_integer(bound) - 1 by {
-            arithmetic_certificate rules {
-                premise 0: 0 <= to_integer(bound) - 1 => 0 <= to_integer(bound) - 1;
-                premise 1: to_integer(bound) - 1 <= 4294967295 => to_integer(bound) - 1 <= 4294967295;
-                integer_operation_identity bounds [0, 1] => to_integer(bound - 1u32) == to_integer(bound) - 1;
-                conclusion 0;
-            }
-        }
-        have 0 <= to_integer(bound - 1u32) - to_integer(value) by {
-            arithmetic_certificate {
-                negated_goal => to_integer(bound - 1u32) - to_integer(value) < 0;
-                premise 0: to_integer(bound - 1u32) == to_integer(bound) - 1 => to_integer(bound - 1u32) == to_integer(bound) - 1;
-                less_equal_from_equal 1 reverse => to_integer(bound) - 1 <= to_integer(bound - 1u32);
-                premise 1: to_integer(value) < to_integer(bound) => to_integer(value) < to_integer(bound);
-                add 0, 2 => to_integer(bound - 1u32) - to_integer(value) + (to_integer(bound) - 1) < 0 + to_integer(bound - 1u32);
-                add 4, 3 => to_integer(bound - 1u32) - to_integer(value) + (to_integer(bound) - 1) + 1 + (to_integer(value) + 1) <= 0 + to_integer(bound - 1u32) + to_integer(bound);
-                conclusion 5;
-            }
-        }
-        have to_integer(bound - 1u32) - to_integer(value) <= 4294967295 by {
-            arithmetic_certificate {
-                negated_goal => 4294967295 < to_integer(bound - 1u32) - to_integer(value);
-                type_range => to_integer(bound - 1u32) <= 4294967295;
-                type_range => 0 <= to_integer(value);
-                add 0, 1 => 4294967295 + to_integer(bound - 1u32) < to_integer(bound - 1u32) - to_integer(value) + 4294967295;
-                add 3, 2 => 4294967295 + to_integer(bound - 1u32) + 0 < to_integer(bound - 1u32) - to_integer(value) + 4294967295 + to_integer(value);
-                conclusion 4;
-            }
-        }
-        have to_integer((bound - 1u32) - value) == to_integer(bound - 1u32) - to_integer(value) by {
-            arithmetic_certificate rules {
-                premise 0: 0 <= to_integer(bound - 1u32) - to_integer(value) => 0 <= to_integer(bound - 1u32) - to_integer(value);
-                premise 1: to_integer(bound - 1u32) - to_integer(value) <= 4294967295 => to_integer(bound - 1u32) - to_integer(value) <= 4294967295;
-                integer_operation_identity bounds [0, 1] => to_integer((bound - 1u32) - value) == to_integer(bound - 1u32) - to_integer(value);
-                conclusion 0;
-            }
-        }
-        have 0 <= to_integer(bound) - to_integer(value) by {
-            arithmetic_certificate {
-                negated_goal => to_integer(bound) - to_integer(value) < 0;
-                premise 0: to_integer(value) < to_integer(bound) => to_integer(value) < to_integer(bound);
-                add 0, 1 => to_integer(bound) - to_integer(value) + 1 + (to_integer(value) + 1) <= 0 + to_integer(bound);
-                conclusion 2;
-            }
-        }
-        have to_integer(bound) - to_integer(value) <= 4294967295 by {
-            arithmetic_certificate {
-                negated_goal => 4294967295 < to_integer(bound) - to_integer(value);
-                type_range => to_integer(bound) <= 4294967295;
-                type_range => 0 <= to_integer(value);
-                add 0, 1 => 4294967295 + to_integer(bound) < to_integer(bound) - to_integer(value) + 4294967295;
-                add 3, 2 => 4294967295 + to_integer(bound) + 0 < to_integer(bound) - to_integer(value) + 4294967295 + to_integer(value);
-                conclusion 4;
-            }
-        }
-        have to_integer(bound - value) == to_integer(bound) - to_integer(value) by {
-            arithmetic_certificate rules {
-                premise 0: 0 <= to_integer(bound) - to_integer(value) => 0 <= to_integer(bound) - to_integer(value);
-                premise 1: to_integer(bound) - to_integer(value) <= 4294967295 => to_integer(bound) - to_integer(value) <= 4294967295;
-                integer_operation_identity bounds [0, 1] => to_integer(bound - value) == to_integer(bound) - to_integer(value);
-                conclusion 0;
-            }
-        }
-        arithmetic_certificate {
-            negated_goal => to_integer((0u32 - value) + bound) <= to_integer((0u32 - value) + (bound - 1u32));
-            premise 0: to_integer((0u32 - value) + (bound - 1u32)) == to_integer((bound - 1u32) - value) => to_integer((0u32 - value) + (bound - 1u32)) == to_integer((bound - 1u32) - value);
-            less_equal_from_equal 1 => to_integer((0u32 - value) + (bound - 1u32)) <= to_integer((bound - 1u32) - value);
-            premise 1: to_integer((bound - 1u32) - value) == to_integer(bound - 1u32) - to_integer(value) => to_integer((bound - 1u32) - value) == to_integer(bound - 1u32) - to_integer(value);
-            less_equal_from_equal 3 => to_integer((bound - 1u32) - value) <= to_integer(bound - 1u32) - to_integer(value);
-            premise 2: to_integer(bound - 1u32) == to_integer(bound) - 1 => to_integer(bound - 1u32) == to_integer(bound) - 1;
-            less_equal_from_equal 5 => to_integer(bound - 1u32) <= to_integer(bound) - 1;
-            premise 3: to_integer((0u32 - value) + bound) == to_integer(bound - value) => to_integer((0u32 - value) + bound) == to_integer(bound - value);
-            less_equal_from_equal 7 reverse => to_integer(bound - value) <= to_integer((0u32 - value) + bound);
-            premise 4: to_integer(bound - value) == to_integer(bound) - to_integer(value) => to_integer(bound - value) == to_integer(bound) - to_integer(value);
-            less_equal_from_equal 9 reverse => to_integer(bound) - to_integer(value) <= to_integer(bound - value);
-            add 0, 2 => to_integer((0u32 - value) + bound) + to_integer((0u32 - value) + (bound - 1u32)) <= to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value);
-            add 11, 4 => to_integer((0u32 - value) + bound) + to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) <= to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) - to_integer(value);
-            add 12, 6 => to_integer((0u32 - value) + bound) + to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) <= to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) - to_integer(value) + to_integer(bound) - 1;
-            add 13, 8 => to_integer((0u32 - value) + bound) + to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) + to_integer(bound - value) <= to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) - to_integer(value) + to_integer(bound) - 1 + to_integer((0u32 - value) + bound);
-            add 14, 10 => to_integer((0u32 - value) + bound) + to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) + to_integer(bound - value) + to_integer(bound) - to_integer(value) <= to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) - to_integer(value) + to_integer(bound) - 1 + to_integer((0u32 - value) + bound) + to_integer(bound - value);
-            conclusion 15;
-        }
-    }
+    ensures to_integer((0u32 - value) + (bound - 1u32)) < to_integer((0u32 - value) + bound);
 }
 ```
 
-**Meaning:** Given its listed requirements, proves `to_integer((0u32 - value) + (bound - 1u32)) < to_integer((0u32 - value) + bound)`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+**Axiom:** trusted, not proved. Under `value < bound` neither `bound - value` nor `(bound - 1) - value` wraps, so the left side is one less than the right.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 

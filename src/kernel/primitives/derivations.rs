@@ -1790,6 +1790,12 @@ impl ExecutionBudget {
         self.next_kernel_variable = self.next_kernel_variable.max(variable.0 + 1);
     }
 
+    /// Whether this budget evaluates beside a live state, where it may not
+    /// invent an execution identity ([`Self::beside_live_state`]).
+    pub(in crate::kernel) fn refuses_execution_identities(&self) -> bool {
+        self.refuses_execution_identities
+    }
+
     pub(in crate::kernel) fn allocate_kernel_variable(&mut self) -> ExecutionResult<Variable> {
         if self.refuses_execution_identities {
             return Err(ExecutionLimit::ExecutionIdentityBesideLiveState);

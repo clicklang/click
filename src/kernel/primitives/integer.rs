@@ -256,6 +256,11 @@ impl SharedPureApplication {
     pub(crate) fn id(&self) -> u64 {
         self.0.identity.id
     }
+    /// Exact producer payload identity, distinct from semantic application identity.
+    /// A retained application keeps this allocation alive while its key is used.
+    pub(crate) fn payload_id(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
+    }
     pub(crate) fn name(&self) -> &str {
         &self.0.name
     }

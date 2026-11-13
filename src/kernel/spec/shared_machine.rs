@@ -12,6 +12,16 @@ pub(super) use casts::cast;
 #[cfg(test)]
 pub(super) use casts::{cast_narrowing, cast_signedness, cast_widening};
 
+/// Native wide conversion rejects call roots even for a same-format cast.
+/// Retained identity shortcuts must preserve that refusal without exporting
+/// arguments merely to discover the unsupported root.
+pub(super) fn call_cast_refused(value: &SpecValue, target: CType) -> bool {
+    matches!(value, SpecValue::Shared(root)
+        if matches!(root.node(), KernelTermNode::Call { .. })
+            && matches!(value.c_type(), CType::Int128 | CType::UInt128)
+            && MachineIntegerType::from_c_type(target).is_some())
+}
+
 pub(super) struct PreparedExpression {
     pub(super) value: KernelTerm,
     pub(super) obligations: Vec<ProofObligation>,
@@ -379,6 +389,9 @@ fn wrap(format: MachineIntegerType, value: MachineTerm) -> CValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod call_tests {
+        include!("shared_machine/call_tests.rs");
+    }
     mod wide_tests {
         include!("shared_machine/wide_tests.rs");
     }

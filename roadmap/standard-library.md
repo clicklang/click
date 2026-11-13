@@ -24,16 +24,11 @@ generic width-free names, step 6, and the generic `permutation::count` and
 to 3, and Stage 4's front ends; Rust names for the lemmas a Rust proof
 applies; the product-identity, `<=`-and-`!=` and round-trip width gaps
 (2026-11-12). The library's own
-proof check runs in the gate. Of the library's 148 theorems, 112 have checked proofs and 36 are
+proof check runs in the gate. Of the library's 147 theorems, 111 have checked proofs and 36 are
 kernel standard theorems.
 
 Open:
 
-- The width-uniformity gaps: family/format pairs the omitted proof does
-  not close ([below](#width-uniformity-gaps)). Decided 2026-11-09: no
-  generic `T: intn` library mechanism; the kernel rules are stated once
-  over a format and `src/surface/tests/width_uniformity.rs` guards width
-  uniformity ([One machine-integer design](#one-machine-integer-design)).
 - One convention for the language library models: where the C library,
   allocator, `snprintf`, C++ catalog and Rust core contracts are stated
   ([Layers](#layers)). Their reporting is done (2026-11-13): one
@@ -70,9 +65,9 @@ trust:
   and reasonably organized.
 - **Machine-integer bridges.** At filing, 110 of the 162 theorems were
   width-specific lemmas such as `int32_less_equal_transitive` and
-  `uint64_subtract_to_integer`. Today 64 of the 148 theorems are: 56
+  `uint64_subtract_to_integer`. Today 63 of the 147 theorems are: 55
   width-prefixed `integer::` lemmas and the eight `integer::to_*_round_trip`
-  laws. 112 of the 148 have checked proofs and 36 are kernel standard
+  laws. 111 of the 147 have checked proofs and 36 are kernel standard
   theorems ([trust](../docs/concepts/trust.md#the-click-library)).
 
 The width lemmas have no consistent coverage across widths. On master at the
@@ -313,7 +308,7 @@ Each step is a separate PR that leaves every example verifying:
      `mdtests/a_realloc_grows_a_64_bit_block_and_keeps_its_prefix.md`).
    - Done, by decision (maintainer, 2026-11-09): the width-lemma
      families are not restated over a format. The width-uniformity fixture
-     checks each family at every format; its gaps stay open
+     checks each family at every format and has no gaps
      ([below](#width-uniformity-gaps)).
 
 ## Design
@@ -380,8 +375,8 @@ Each step is a separate PR that leaves every example verifying:
   decided); what is kept complete is the kernel's reach. The checked list
   is `FAMILIES` in `src/surface/tests/width_uniformity.rs`: each family's
   statement at every format in `machine_integer::FORMATS`, proved by the
-  omitted proof with no library import, or excluded with a reason, or a
-  listed gap ([below](#width-uniformity-gaps)).
+  omitted proof with no library import, or excluded with a reason
+  ([below](#width-uniformity-gaps)).
 - Container and array predicates are generic over the element type where
   the kernel supports it. `permutation::count` and
   `permutation::permutation` become generic if the kernel's generic folds
@@ -637,25 +632,23 @@ others, which have no Rust wrapper), as do the archived `design/charon-trial` si
 
 ## Width-uniformity gaps
 
-`src/surface/tests/width_uniformity.rs` states 39 families at the ten
-formats of `machine_integer::FORMATS` (`int8` to `uint128`). The omitted
-proof closes 280 statements; 4 are gaps, open here, and the nightly
-`width_family_gaps_are_still_refused` checks each is still refused with
-its recorded diagnostic. Division and remainder by a symbolic divisor have
-no kernel rule (they stay kernel standard theorems, maintainer decision)
-and are not families there; neither are the byte-packing laws
-(`uint32_pack_uint16_*`, `uint32_unpack_uint16_*`, `uint64_*_uint16_*`,
-`uint32_from_le_bytes`), which state a field layout of particular widths.
-The product identity, `<=`-and-`!=` and round-trip gaps closed on
-2026-11-12: `solve` plans a product's bounds by `integer_product_bounds`,
-the Integer certificate's `less_than_from_not_equal` makes a bound strict
-by a disequality, and `integer_cast_identity` reads `to_integer(to_T(z))` as
-`z` under `T`'s range, so the eight `to_*_round_trip` laws are proved. The
-one gap left is open by decision.
-
-- **Wrapping difference order** (`difference_decreases_after_increment`
-  at `uint8` to `uint64`, 4 pairs). The library's `uint32` proof is about
-  120 lines of modular reasoning `solve` does not plan.
+`src/surface/tests/width_uniformity.rs` states 38 families at the ten
+formats of `machine_integer::FORMATS` (`int8` to `uint128`), and the
+omitted proof closes all 280 statements that apply. Division and
+remainder by a symbolic divisor have no kernel rule (they stay kernel
+standard theorems, maintainer decision) and are not families there;
+neither are the byte-packing laws (`uint32_pack_uint16_*`,
+`uint32_unpack_uint16_*`, `uint64_*_uint16_*`, `uint32_from_le_bytes`),
+which state a field layout of particular widths. The product identity,
+`<=`-and-`!=` and round-trip gaps closed on 2026-11-12: `solve` plans a
+product's bounds by `integer_product_bounds`, the Integer certificate's
+`less_than_from_not_equal` makes a bound strict by a disequality, and
+`integer_cast_identity` reads `to_integer(to_T(z))` as `z` under `T`'s
+range, so the eight `to_*_round_trip` laws are proved. The wrapping
+difference order (`difference_decreases_after_increment`) left the list on
+2026-11-13 (maintainer): its `uint32` form is the library axiom that one
+loop-measure closure applies, and no other width has a client, so the
+120-line proof and the per-width family went.
 
 Excluded pairs are statements that do not apply: an operation at 128 bits
 (no operator node), `defined(...)` outside `int32` and `int64` (C has no
@@ -668,8 +661,8 @@ an unsigned-only law at a signed one, where each is false.
   at every supported width, so a missing width fails the gate. Done:
   `width_family_representatives_close_at_every_format` proves the
   `<=`-to-`to_integer` bridge and the range at every format in the gate,
-  `every_format_is_tested_and_every_pair_is_accounted_for` fails on a
-  format with no test or a family/format pair with no verdict, and the
+  `every_format_is_tested_and_family_names_are_unique` fails on a
+  format with no test, and the
   nightly `width_families_close_at_*` tests prove every family
   (`src/surface/tests/width_uniformity.rs`).
 - `mdtests/stdlib_list*.md`-style positive and negative clients for a
@@ -705,7 +698,7 @@ an unsigned-only law at a signed one, where each is false.
 - The checked list of width-lemma families has no gaps, and the decision on
   each family follows the Integer-default arithmetic decision described
   above. The list exists (`FAMILIES` in
-  `src/surface/tests/width_uniformity.rs`); its gaps are open
+  `src/surface/tests/width_uniformity.rs`) and has no gaps
   ([Width-uniformity gaps](#width-uniformity-gaps)).
 - ~~If [design/machine-integers.md](../design/machine-integers.md) is
   accepted, each surviving width-lemma family is one statement over a

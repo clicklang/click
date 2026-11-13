@@ -1474,18 +1474,13 @@ at `T` (inside `to_integer(...)` an 8- or 16-bit sum is C's promoted `int32`
 sum); `defined(...)` families apply only where
 `representation::files_definedness` holds (`int32`, `int64`).
 
-Each family/format pair is proved, excluded with a reason (`Exclusion`), or
-a gap (`Gap`) with its recorded refusal. The gate runs
-`every_format_is_tested_and_every_pair_is_accounted_for`, which fails on a
-format with no test or a gap listed where its family is excluded, and
+Each family/format pair is proved or excluded with a reason (`Exclusion`).
+The gate runs `every_format_is_tested_and_family_names_are_unique`, which
+fails on a format with no test, and
 `width_family_representatives_close_at_every_format`, which proves the
 `<=` bridge and the range at all ten formats in about 0.4s, most of it the
 first verification's library setup. The per-format
-`width_families_close_at_*` tests (0.4s to 1.3s each) and
-`width_family_gaps_are_still_refused` (about 2s) are nightly. Closing a gap
-fails the nightly test until the gap is removed from its family; the open
-gaps are listed in `roadmap/standard-library.md` ("Width-uniformity
-gaps").
+`width_families_close_at_*` tests (0.4s to 1.3s each) are nightly.
 
 ## Example project tests
 

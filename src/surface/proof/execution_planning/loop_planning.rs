@@ -819,6 +819,29 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
             pending.extend(preservation_step_paths(&proof)?);
             continue;
         }
+        // A Rust `match` arm's variant test splits into the variants the
+        // facts leave live, each its own path to the back edge, as the
+        // function's implicit tail splits it and as a written `match` would.
+        if proof.is_at_enum_match_test()? {
+            let error = match preservation_smart_step(&proof) {
+                Ok(stepped) => {
+                    pending.push(stepped);
+                    continue;
+                }
+                Err(error) => error,
+            };
+            let Some(split) = error.path_case_match().cloned() else {
+                return Err(error);
+            };
+            let split = Arc::new(split);
+            let prepared = proof.prepare_execution_match(false, 0)?;
+            let plan = prepared.plan_execution_match(&split, |_| usize::MAX)?;
+            splits += 1;
+            for index in plan.live_cases() {
+                pending.push(prepared.enter_execution_match_arm(&plan, index)?);
+            }
+            continue;
+        }
         let FrontierPosition::StatementEntry { remaining } = &view.frontier.position else {
             return Err(
                 proof.step_error("automatic preservation branch is not at a statement entry")

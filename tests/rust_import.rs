@@ -5295,6 +5295,47 @@ fn rust_empty_slice_iterator_needs_no_read_authority() {
     }
 }
 
+// A `match` on an `Option` a call returns, inside a `while` loop whose
+// invariants the implicit preservation proves. Its variant test is lowered
+// beside the live state, which may not invent the payload's witnesses, and
+// its arms are split as the function's implicit tail splits them. Both used
+// to stop the loop: the first with an internal error.
+#[test]
+fn rust_match_in_a_loop_body_is_split_by_the_implicit_preservation() {
+    let p = gate_fixtures::project(
+        "match-in-loop",
+        include_str!("../design/charon-trial/gate-fixtures/match-in-loop/borrow.rs"),
+    );
+    let prepared = p.prepared().unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+fn take(c: &mut C) -> Option<u32> {
+    owns c.n;
+    ensures old(c.n) == 0u32 implies result == Option<u32>::None and c.n == 0u32;
+    ensures old(c.n) != 0u32 implies
+        result == Option<u32>::Some(old(c.n) - 1u32) and c.n == old(c.n) - 1u32;
+}
+fn seen(n: u32) -> u32 {
+    ensures result <= n;
+} by {
+    step_until(loop(0));
+    loop {
+        decreases k;
+        invariant k <= n;
+        invariant to_integer(seen) + to_integer(k) <= to_integer(n);
+    }
+}
+";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    // `n == 0` runs no pass, so a strict bound is false.
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("ensures result <= n;", "ensures result < n;"),
+            &prepared
+        )
+        .is_err()
+    );
+}
+
 const SLICE_SUM_SIDECAR: &str = include_str!("../examples/rust-iterators/sum.click");
 
 // A loop's iterator is `iter` inside the loop and `loop(i).iter` anywhere,

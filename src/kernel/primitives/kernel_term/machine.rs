@@ -51,6 +51,34 @@ impl KernelTerm {
         {
             return Some(operand);
         }
+        if let KernelTermNode::Call { name, arguments } = self.node()
+            && matches!(self.ty(), KernelType::C(ty) if MachineIntegerType::from_c_type(*ty).is_some())
+        {
+            // A bounded compatibility reading of this root. Machine arguments
+            // keep their shared handles; no surrounding prefix is exported.
+            return Some(self.0.machine_leaf.get_or_init(|| {
+                crate::instrumentation::record_deterministic_work(name.len() + arguments.len() + 1);
+                let mut export = KernelTermExport::default();
+                let arguments = arguments
+                    .iter()
+                    .map(|argument| {
+                        if let KernelType::C(ty) = argument.ty()
+                            && let Some(format) = MachineIntegerType::from_c_type(*ty)
+                            && let Some(value) =
+                                SharedMachineIntegerTerm::from_shared(format, argument.clone())
+                        {
+                            PureFunctionArgument::SharedMachine(value)
+                        } else {
+                            export.argument(argument).expect("typed call argument")
+                        }
+                    })
+                    .collect();
+                MachineTerm::ClickFunctionApplication {
+                    name: name.clone(),
+                    arguments,
+                }
+            }));
+        }
         if let KernelTermNode::BoolCast {
             destination,
             operand,
@@ -509,6 +537,39 @@ impl KernelTermImport {
         Some(KernelTerm::intern(KernelType::C(result.c_type()), node))
     }
 
+    /// Prepare a common machine call root without enabling the evaluator's
+    /// producer switch. Numeric children retain their structure; opaque argument
+    /// descriptors retain this producer's exact payload, not a semantic alias.
+    pub(crate) fn machine_call(
+        &mut self,
+        result: MachineIntegerType,
+        application: &SharedPureApplication,
+    ) -> KernelTerm {
+        let arguments = application
+            .arguments()
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| match argument {
+                PureFunctionArgument::Integer(_)
+                | PureFunctionArgument::SharedMachine(_)
+                | PureFunctionArgument::Value(integer_c_value!(_)) => self.argument(argument),
+                _ => KernelTerm::legacy_at(
+                    argument.clone(),
+                    LegacyIdentity::ExactApplicationArgument {
+                        application: application.clone(),
+                        payload: application.payload_id(),
+                        index,
+                    },
+                ),
+            })
+            .collect();
+        KernelTerm::checked_call(
+            KernelType::C(result.c_type()),
+            application.name().into(),
+            arguments,
+        )
+    }
+
     pub(crate) fn machine(&mut self, result: MachineIntegerType, term: &MachineTerm) -> KernelTerm {
         use KernelMachineLiteral as Literal;
         use KernelTermNode as Node;
@@ -612,6 +673,17 @@ impl KernelTermExport {
         MACHINE_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
+            Node::Call { name, arguments } if matches!(term.ty(), KernelType::C(ty) if MachineIntegerType::from_c_type(*ty).is_some()) =>
+            {
+                let mut export = Self::default();
+                Old::ClickFunctionApplication {
+                    name: name.clone(),
+                    arguments: arguments
+                        .iter()
+                        .map(|arg| export.argument(arg))
+                        .collect::<Result<_, _>>()?,
+                }
+            }
             Node::MachineIf { arguments } => Old::If {
                 condition: Box::new(Self::condition(&arguments[0])?),
                 then_term: Box::new(Self::machine(&arguments[1])?),
@@ -1100,4 +1172,9 @@ impl KernelTerm {
         }
         value.with_machine_observation_type(destination)
     }
+}
+
+#[cfg(test)]
+mod call_tests {
+    include!("machine_call_tests.rs");
 }
