@@ -7,6 +7,7 @@ mod bitwise;
 mod casts;
 mod narrow;
 mod shifts;
+mod wide;
 pub(super) use casts::cast;
 #[cfg(test)]
 pub(super) use casts::{cast_narrowing, cast_signedness, cast_widening};
@@ -86,6 +87,9 @@ pub(super) fn apply_values(
         MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
     ) {
         return shifts::apply(operator, (a, left), (b, right));
+    }
+    if a.format().bits() == 128 || b.format().bits() == 128 {
+        return wide::apply(operator, a, left, b, right, budget);
     }
     let format = crate::kernel::machine_integer::conversion::usual_arithmetic_format(a, b)?;
     let promote = |source, value| {
@@ -375,6 +379,9 @@ fn wrap(format: MachineIntegerType, value: MachineTerm) -> CValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod wide_tests {
+        include!("shared_machine/wide_tests.rs");
+    }
     mod bitwise_tests {
         include!("shared_machine/bitwise_tests.rs");
     }

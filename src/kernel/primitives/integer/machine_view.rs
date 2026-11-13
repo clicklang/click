@@ -558,6 +558,11 @@ impl<'a> MachineOperandView<'a> {
             if self.variable().is_some() {
                 return true;
             }
+            if ty.format().bits() == 128
+                && let Some((_, _, kind)) = self.read()
+            {
+                return LoadKind::of_type(ty.c_type()) == Some(kind);
+            }
             if let Self::Legacy(value) = self {
                 return ty.accepts_cast_operand(value);
             }
@@ -868,6 +873,8 @@ impl<'a> MachineOperandView<'a> {
             Self::Shared(term)
                 if ty.format().bits() == 128
                     && !matches!(term.node(), KernelTermNode::Variable(_))
+                    && !matches!(self.read(), Some((_, _, kind))
+                        if LoadKind::of_type(ty.c_type()) == Some(kind))
                     && !matches!(self.cast(), Some((MachineCastSpelling::Generic, source, destination, operand))
                         if destination == ty && operand.accepts_cast_operand(source)) =>
             {
