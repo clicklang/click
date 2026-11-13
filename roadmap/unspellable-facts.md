@@ -189,8 +189,17 @@ false retained disequality as its equality, and certificate source collection
 retains the written operands under negation. Tests cover all 64 value/count
 format pairs, boundary counts including 2^32, native/shared and opaque operands,
 native shared-root identity, explicit bound certificates and expansion/replay,
-and deterministic growing value/count chains with zero exports. Subchunks 4h–4j
-remain open.
+and deterministic growing value/count chains with zero exports.
+[PR #2682](https://github.com/clicklang/click/pull/2682) merged and its pushed
+commit was verified on upstream. All 1,517 scaling tests and all 5,275 regular
+fixtures passed, with zero fact-stability differences.
+
+Subchunk 4h retains Rust shift operands and results through the existing unsigned
+left-shift conversion, signed right-shift promotion and conversion back to the
+original type. The count bound uses that original 8/16/32/64-bit width while
+sharing 4g's independent count handling. Native term/domain and shared-root
+identity parity, nested evaluator/refusal controls and growing chains cover the
+Rust boundary. Subchunks 4i–4j remain open.
 
 For each PR:
 

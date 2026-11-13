@@ -39,6 +39,17 @@ pub(super) fn apply_expression_values(
     if budget.machine_result_production_disabled {
         return None;
     }
+    if matches!(
+        expression,
+        SpecExpression::RustShiftLeft(..) | SpecExpression::RustShiftRight(..)
+    ) {
+        let op = if matches!(expression, SpecExpression::RustShiftLeft(..)) {
+            MachineBinaryOp::ShiftLeft
+        } else {
+            MachineBinaryOp::ShiftRight
+        };
+        return shifts::rust(op, left, right);
+    }
     if let SpecExpression::NarrowArithmetic(operation, format) = expression {
         return narrow::apply(*format, operator(operation)?, left, right);
     }
