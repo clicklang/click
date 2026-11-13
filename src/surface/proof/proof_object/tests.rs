@@ -72,6 +72,78 @@ fn unfinished_callback_error_does_not_execute_the_next_statement() {
     assert!(root.certificate().steps().is_empty());
 }
 
+#[test]
+fn implicit_tail_budget_errors_check_boundaries_without_exploring_paths() {
+    let click_file = crate::surface::parse("void bounded() { ensures 0 == 0; }").unwrap();
+    let parsed = syntax::parse_functions_for_source("void bounded() {}", "bounded.c")
+        .unwrap()
+        .remove(0);
+    let function = parsed.to_kernel_function();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let resources = ResourceEnvironment::new(&[]);
+    let environment = CExecutionEnvironment::new();
+    let root = Proof::for_execution_frontier(
+        "bounded implicit tail",
+        0,
+        ExecutionProofState::at_entry(
+            CState::new(),
+            ExecutionFrontier::default(),
+            RecordedSnapshots::new(),
+            SurfacePropositionMap::default(),
+            PersistentSequence::default(),
+        ),
+        vec![],
+        ExecutionProofConstants {
+            source_layout: SourceExecutionLayout::new(parsed.body()),
+            ..ExecutionProofConstants::default()
+        },
+        &click_file.function_blocks()[0],
+        &function,
+        &parsed,
+        &[],
+        &environment,
+        &resources,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+    );
+    let split_limit = super::super::cursor_execution::BOUNDED_EXECUTE_SPLIT_LIMIT;
+    let step_limit = super::super::cursor_execution::BOUNDED_EXECUTE_STEP_LIMIT;
+    let mut steps = step_limit - 1;
+    root.charge_execute_step(&mut steps, split_limit)
+        .expect("both limits permit the last allowed step");
+    assert_eq!(steps, step_limit);
+    let step_error = root
+        .charge_execute_step(&mut steps, split_limit)
+        .unwrap_err();
+    let message = step_error.message();
+    assert!(
+        message.contains(&format!("execution exhausted its {step_limit}-step budget")),
+        "{message}"
+    );
+    assert!(message.contains("branch ensuring"), "{message}");
+    assert_eq!(steps, step_limit, "refusal must not charge another step");
+
+    let mut steps = 0;
+    let split_error = root
+        .charge_execute_step(&mut steps, split_limit + 1)
+        .unwrap_err();
+    let message = split_error.message();
+    assert!(
+        message.contains(&format!("split at more than {split_limit} C branches")),
+        "{message}"
+    );
+    assert!(message.contains("at region(0)"), "{message}");
+    assert!(message.contains("branch ensuring"), "{message}");
+    assert!(
+        message.contains("proof `if <condition> ensuring"),
+        "{message}"
+    );
+    assert_eq!(steps, 0, "refusal must not charge a step");
+    assert!(root.certificate().steps().is_empty());
+}
+
 fn indexed_fact(index: u32) -> Proposition {
     Proposition::ConditionIs(
         ConditionTerm::Compare {
