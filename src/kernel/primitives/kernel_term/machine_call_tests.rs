@@ -46,10 +46,7 @@ fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
                 arguments: native.arguments().to_vec()
             }
         );
-        assert!(
-            !root.is_shared_machine_operand(),
-            "consumer admission is a later slice"
-        );
+        assert!(root.is_shared_machine_operand());
         roots.push(root);
     }
     for (i, a) in roots.iter().enumerate() {

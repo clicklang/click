@@ -92,8 +92,8 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 ## Chunk 3: machine-valued pure-function results
 
 Finish the remaining machine-valued call-result boundaries in six sequential
-PRs, preparing consumers before switching the evaluator. Pointer, algebraic and
-Boolean result families remain in their own packages. Preserve existing call
+PRs, preparing consumers before switching the evaluator. Pointer, algebraic, Boolean and
+floating-point result families remain in their own packages. Preserve existing call
 semantics, exact producer metadata, proof/refusal behavior and fact stability;
 do not introduce search strategies, indexes or larger budgets to compensate for
 representation changes.
@@ -112,6 +112,18 @@ switching the evaluator or admitting calls into the shared machine operand
 fragment. Opaque argument descriptors use the retained application's exact
 payload identity, separately from semantic application equality. Consumers are
 prepared in the following slices before producer activation.
+[PR #2686](https://github.com/clicklang/click/pull/2686) merged and its pushed
+commit was verified on upstream. All 1,536 selected tests (including all 1,525
+scaling tests) and all 5,275 regular fixtures passed, with zero fact-stability
+differences.
+
+3b admits common integer call roots to numeric operand views, preserving their
+root in mathematical observations and retaining argument handles in the cached
+compatibility reading. Casts and arithmetic retain their operands and ordinary
+definedness debts. The native 128-bit call-root refusal includes identity casts;
+the shared shortcut reports the same type error without exporting arguments.
+The actual call evaluator remains native until 3f; comparison/fact matching,
+transport and Surface integration remain the following slices.
 
 ## Chunk 4: one producer boundary per PR
 

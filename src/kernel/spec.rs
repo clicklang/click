@@ -6111,6 +6111,14 @@ fn evaluate_spec_add_chain_paths_in(
             SpecScalarChainStep::Cast(target) => {
                 for mut path in paths {
                     if !budget.machine_result_production_disabled
+                        && shared_machine::call_cast_refused(&path.value, *target)
+                    {
+                        budget
+                            .dropped_runtime_error
+                            .get_or_insert(CRuntimeError::TypeMismatch);
+                        continue;
+                    }
+                    if !budget.machine_result_production_disabled
                         && let Some(value) = shared_machine::cast(&path.value, *target)
                     {
                         path.value = value.into();
@@ -8509,6 +8517,15 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
         {
             path.value = value.into();
             paths.push(path);
+            continue;
+        }
+        if !budget.machine_result_production_disabled
+            && retained_type
+                .is_some_and(|target| shared_machine::call_cast_refused(&path.value, target))
+        {
+            budget
+                .dropped_runtime_error
+                .get_or_insert(CRuntimeError::TypeMismatch);
             continue;
         }
         if !budget.machine_result_production_disabled
