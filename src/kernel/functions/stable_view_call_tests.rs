@@ -1267,7 +1267,7 @@ fn candidate_unresolved_return_obligation_refuses_recovery() {
         &caller,
         &function,
         CStatementOutcome::Return {
-            value: int32(7),
+            value: int32(7).into(),
             state: Box::new(callee),
         },
         vec![unresolved.clone()],
@@ -1549,7 +1549,7 @@ fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
             paths[0].outcome
         );
     };
-    assert_eq!(value, &int32(7));
+    assert_eq!(value.native().as_ref(), &int32(7));
     assert!(state.resources().satisfies_fact(
         &CResourceFact::own_memory(CMemoryRange::new(
             pointer,

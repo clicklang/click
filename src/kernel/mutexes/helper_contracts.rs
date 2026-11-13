@@ -758,7 +758,7 @@ mod tests {
             function,
             &[],
             &CFunctionOutcome::Return {
-                value: CValue::Void,
+                value: CValue::Void.into(),
                 state: Box::new(returned.clone()),
             },
             &PureFactContext::new(),

@@ -1485,7 +1485,7 @@ pub(super) fn project_outcome_resource_facts(
         parameter_binding,
         pre_state,
         state,
-        value,
+        &value.native(),
         &mut facts,
         spec_definitions,
     )
@@ -4070,7 +4070,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                         FixedStateFrame::new(
                             pre_state,
                             &guard_state,
-                            Some(&guard_result),
+                            Some(&guard_result.native()),
                             &snapshots,
                         ),
                         spec_definitions,
@@ -4090,7 +4090,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             resource,
             parameter_binding,
             &guard_state,
-            Some(&guard_result),
+            Some(&guard_result.native()),
             pure_facts.assumptions(),
             resource_environment,
             spec_definitions,
@@ -4102,7 +4102,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             parameter_binding,
             pre_state,
             &guard_state,
-            &guard_result,
+            &guard_result.native(),
             pure_facts.assumptions(),
             spec_definitions,
         )
@@ -4131,7 +4131,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 resource,
                 parameter_binding,
                 state,
-                Some(value),
+                Some(&value.native()),
                 pure_facts.assumptions(),
             )?;
             let quantity = population
@@ -4221,7 +4221,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 resource,
                 parameter_binding,
                 state,
-                Some(value),
+                Some(&value.native()),
                 pure_facts.assumptions(),
             )?;
             let assumptions = pure_facts.assumptions();
@@ -4322,7 +4322,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 &contained,
                 parameter_binding,
                 &guard_state,
-                Some(&guard_result),
+                Some(&guard_result.native()),
                 pure_facts.assumptions(),
             )?;
             if lowered.is_view()
@@ -4365,7 +4365,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                     parameter_binding,
                     pre_state,
                     state,
-                    value,
+                    &value.native(),
                     pure_facts.assumptions(),
                     &fact,
                     spec_definitions,
@@ -4622,7 +4622,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 &contained,
                 parameter_binding,
                 &post_state,
-                Some(&value),
+                Some(&value.native()),
                 pure_facts.assumptions(),
             )?;
             if lowered.is_view() {
@@ -4745,7 +4745,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 resource,
                 parameter_binding,
                 &post_state,
-                Some(&value),
+                Some(&value.native()),
                 pure_facts.assumptions(),
             )?;
             // An owned composite that packages a loan-backed view is a
@@ -4856,7 +4856,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 resource,
                 parameter_binding,
                 &post_state,
-                Some(&value),
+                Some(&value.native()),
                 pure_facts.assumptions(),
             )?;
             let assumptions = pure_facts.assumptions();
@@ -4905,7 +4905,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 resource,
                 parameter_binding,
                 &post_state,
-                Some(&value),
+                Some(&value.native()),
                 pure_facts.assumptions(),
             )?;
             if let CResource::Composite { name, arguments } | CResource::Token { name, arguments } =
@@ -4925,7 +4925,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             resource,
             parameter_binding,
             &post_state,
-            Some(&value),
+            Some(&value.native()),
             pure_facts.assumptions(),
         )?);
         outcome = CFunctionOutcome::Return {
@@ -5061,7 +5061,7 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
                 parameter_binding,
                 pre_state,
                 state,
-                value,
+                &value.native(),
                 &mut facts,
                 spec_definitions,
             )
@@ -5130,7 +5130,7 @@ fn fold_composite_resource_for_proof_with_closure(
 ) -> Result<CheckedResourceFold, ClickError> {
     let facts = ProofResourcePureFacts::new(facts);
     let outcome = CFunctionOutcome::Return {
-        value: CValue::Int32(MachineTerm::constant(0)),
+        value: CValue::Int32(MachineTerm::constant(0)).into(),
         state: Box::new(state),
     };
     let (outcome, mut selections, loan_holds) = fold_composite_resources_on_outcome_with_facts(

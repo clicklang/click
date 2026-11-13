@@ -3067,14 +3067,15 @@ fn execute_c_return_expression_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     let mut paths = Vec::new();
-    for expression_path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
-        let CExpressionPath {
+    for expression_path in evaluate_expression_value_paths(state, expression, assumptions, budget)?
+    {
+        let ExecutionValuePath {
             outcome,
             facts,
             obligations,
         } = expression_path;
         match outcome {
-            CExpressionOutcome::Value(CValue::Pointer(pointer))
+            CExpressionOutcome::Value(ExecutionValue::Native(CValue::Pointer(pointer)))
                 if state.memory.heap.pending_allocations.contains_key(&pointer) =>
             {
                 for truthiness_path in pending_allocation_outcome_paths(
@@ -3109,7 +3110,8 @@ fn execute_c_return_expression_paths(
                             value: CValue::typed_pointer(resolved_pointer, pointer.c_type())
                                 .with_pointer_object_type_evidence(
                                     pointer.object_type_evidence().cloned(),
-                                ),
+                                )
+                                .into(),
                             state: Box::new(resolved_state),
                         }
                     };
@@ -3127,7 +3129,7 @@ fn execute_c_return_expression_paths(
                     CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
                 } else {
                     CStatementOutcome::Return {
-                        value,
+                        value: value.into(),
                         state: Box::new(state.clone()),
                     }
                 };
@@ -4182,7 +4184,7 @@ fn execute_c_statement_leaf_paths(
                 CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
             } else {
                 CStatementOutcome::Return {
-                    value: CValue::Void,
+                    value: CValue::Void.into(),
                     state: Box::new(state.clone()),
                 }
             };
@@ -4197,14 +4199,14 @@ fn execute_c_statement_leaf_paths(
         }
         CStatement::Throw(expression) => {
             let mut paths = Vec::new();
-            for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
+            for path in evaluate_expression_value_paths(state, expression, assumptions, budget)? {
                 let outcome = match path.outcome {
-                    CExpressionOutcome::Value(value @ CValue::Int32(_)) => {
+                    CExpressionOutcome::Value(value) if value.c_type() == CType::Int32 => {
                         if let Some(refusal) = return_authority_refusal(state) {
                             refusal
                         } else {
                             CStatementOutcome::Throw {
-                                value,
+                                value: value.into(),
                                 state: Box::new(state.clone()),
                             }
                         }
@@ -4243,9 +4245,10 @@ fn execute_c_statement_leaf_paths(
                 judgment,
             )? {
                 if let CStatementOutcome::Throw {
-                    value: value @ CValue::Int32(_),
+                    value,
                     state: thrown_state,
                 } = &try_path.outcome
+                    && value.c_type() == CType::Int32
                 {
                     if thrown_state.locals.bindings.contains_key(binding) {
                         paths.push(CStatementExecutionPath {
@@ -4266,7 +4269,10 @@ fn execute_c_statement_leaf_paths(
                     let bound_handler = c_seq(
                         c_declare(binding.clone(), CType::Int32),
                         c_seq(
-                            c_assign(binding.clone(), CExpression::Value(value.clone())),
+                            c_assign(
+                                binding.clone(),
+                                CExpression::Value(value.clone().into_native()),
+                            ),
                             (**handler).clone(),
                         ),
                     );

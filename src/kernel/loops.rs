@@ -18,11 +18,12 @@ mod head_invariant_refusal_tests;
 pub(super) fn assign_call_result(
     state: &mut CState,
     target: &str,
-    value: CValue,
+    value: impl Into<StoredExecutionValue>,
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Result<(), CRuntimeError> {
-    if value == CValue::Void {
+    let value = value.into();
+    if value.c_type() == CType::Void {
         return Err(CRuntimeError::TypeMismatch);
     }
     let (c_type, volatile, pointee_volatile, pointee_constant) = match state.locals.binding(target)
@@ -63,18 +64,37 @@ pub(super) fn assign_call_result(
             value.c_type(),
             false,
             false,
-            matches!(&value, CValue::Pointer(pointer) if pointer.pointee_constant()),
+            value
+                .pointer()
+                .is_some_and(|pointer| pointer.pointee_constant()),
         ),
     };
-    let value = super::functions::coerce_c_value_with_pointee_constant(
-        value,
-        c_type,
-        pointee_constant,
-        obligations,
-        assumptions,
-    )
-    .ok_or(CRuntimeError::TypeMismatch)?
-    .with_pointer_pointee_volatile(pointee_volatile);
+    let value = if value.shared().is_some()
+        && value.c_type() == c_type
+        && matches!(
+            c_type,
+            CType::Int8
+                | CType::UInt8
+                | CType::Int16
+                | CType::UInt16
+                | CType::Int32
+                | CType::UInt32
+                | CType::Int64
+                | CType::UInt64
+        ) {
+        value
+    } else {
+        super::functions::coerce_c_value_with_pointee_constant(
+            value.into_native(),
+            c_type,
+            pointee_constant,
+            obligations,
+            assumptions,
+        )
+        .ok_or(CRuntimeError::TypeMismatch)?
+        .with_pointer_pointee_volatile(pointee_volatile)
+        .into()
+    };
     if let Some(pointer) = state.locals.slot(target) {
         let range = CMemoryRange::new_with_element_width(
             pointer.clone(),
@@ -86,8 +106,8 @@ pub(super) fn assign_call_result(
             return Err(error);
         }
     }
-    sync_stack_local(state, target, &value);
-    state.locals.set_typed_with_all_qualifiers(
+    sync_retained_stack_local(state, target, &value);
+    state.locals.set_retained_typed_with_all_qualifiers(
         target.to_string(),
         value,
         c_type,
@@ -320,13 +340,13 @@ pub(super) fn execute_c_call_assign_paths(
     .into_iter()
     .map(|mut path| {
         let call_result = match &path.outcome {
-            CFunctionOutcome::Return { value, .. } if *value != CValue::Void => Some(value.clone()),
+            CFunctionOutcome::Return { value, .. } if value.c_type() != CType::Void => Some(value.clone()),
             _ => None,
         };
         let outcome = match path.outcome {
             CFunctionOutcome::Return { value, mut state } => {
                 if function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Construction {
-                    let exact = matches!(&value, CValue::Pointer(pointer)
+                    let exact = matches!(value.native_payload(), Some(CValue::Pointer(pointer))
                         if state.locals.aggregate_object_pointer(target) == Some(pointer.pointer()));
                     state.aggregate_destination = original_destination.clone();
                     return CStatementExecutionPath {
@@ -343,7 +363,7 @@ pub(super) fn execute_c_call_assign_paths(
                     };
                 }
 
-                if value == CValue::Void {
+                if value.c_type() == CType::Void {
                     return CStatementExecutionPath {
                         call_parameters: path.call_parameters.clone(),
                         loop_invariant_correspondence: Default::default(),
@@ -395,7 +415,7 @@ pub(super) fn execute_c_call_assign_paths(
                             loan_evidence: path.loan_evidence.clone(),
                         };
                     }
-                    let CValue::Pointer(pointer) = &value else {
+                    let Some(CValue::Pointer(pointer)) = value.native_payload() else {
                         return CStatementExecutionPath {
                             call_parameters: path.call_parameters.clone(),
                             loop_invariant_correspondence: Default::default(),
@@ -652,7 +672,7 @@ pub(super) fn execute_c_call_paths(
             call_parameters: path.call_parameters.clone(),
             loop_invariant_correspondence: Default::default(),
             call_result: match &path.outcome {
-                CFunctionOutcome::Return { value, .. } if *value != CValue::Void => {
+                CFunctionOutcome::Return { value, .. } if value.c_type() != CType::Void => {
                     Some(value.clone())
                 }
                 _ => None,
@@ -700,7 +720,9 @@ pub(super) fn execute_c_call_paths(
         call_parameters: path.call_parameters.clone(),
         loop_invariant_correspondence: Default::default(),
         call_result: match &path.outcome {
-            CFunctionOutcome::Return { value, .. } if *value != CValue::Void => Some(value.clone()),
+            CFunctionOutcome::Return { value, .. } if value.c_type() != CType::Void => {
+                Some(value.clone())
+            }
             _ => None,
         },
         outcome: match path.outcome {
@@ -1193,7 +1215,7 @@ fn execute_modeled_pthread_mutex_paths(
             call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: matches!(outcome, CStatementOutcome::Normal(_))
-                .then(|| CValue::Int32(MachineTerm::constant(0))),
+                .then(|| CValue::Int32(MachineTerm::constant(0)).into()),
             outcome,
             facts: path.facts,
             obligations: path.obligations,
@@ -1617,14 +1639,14 @@ fn execute_c_indirect_call_assign_paths(
         .into_iter()
         .map(|mut path| {
             let call_result = match &path.outcome {
-                CFunctionOutcome::Return { value, .. } if *value != CValue::Void => {
+                CFunctionOutcome::Return { value, .. } if value.c_type() != CType::Void => {
                     Some(value.clone())
                 }
                 _ => None,
             };
             let outcome = match path.outcome {
                 CFunctionOutcome::Return { value, mut state } => {
-                    if value == CValue::Void || state.locals.is_array_object(target) {
+                    if value.c_type() == CType::Void || state.locals.is_array_object(target) {
                         CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
                     } else {
                         let current =
@@ -9553,22 +9575,22 @@ mod wide_range_reader_tests;
 #[cfg(test)]
 mod resource_argument_diagnostic_tests;
 
-fn c_value_subobject_extent(value: &LocalExecutionValue) -> Option<&SubobjectExtent> {
+fn c_value_subobject_extent(value: &StoredExecutionValue) -> Option<&SubobjectExtent> {
     value.pointer()?.extent()
 }
 
 fn c_value_object_class(
-    value: &LocalExecutionValue,
+    value: &StoredExecutionValue,
 ) -> Option<crate::kernel::effective_type::CAccessClass> {
     value.pointer()?.object_class()
 }
 
-fn with_retained_object_class(fresh: CValue, previous: Option<&LocalExecutionValue>) -> CValue {
+fn with_retained_object_class(fresh: CValue, previous: Option<&StoredExecutionValue>) -> CValue {
     fresh.with_pointer_declared_object_class(previous.and_then(c_value_object_class))
 }
 
 /// Legacy fresh-pointer construction is the output boundary for this loop abstraction.
-fn with_retained_extent(fresh: CValue, previous: Option<&LocalExecutionValue>) -> CValue {
+fn with_retained_extent(fresh: CValue, previous: Option<&StoredExecutionValue>) -> CValue {
     let Some(previous) = previous.filter(|value| value.pointer().is_some()) else {
         return fresh;
     };

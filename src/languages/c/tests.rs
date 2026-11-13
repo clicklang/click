@@ -1381,13 +1381,19 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
     let crate::kernel::Proposition::CFunctionExecutes {
         outcome:
             crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::CValue::Pointer(pointer),
+                value: retained_result,
                 ..
             },
         ..
     } = proposition
     else {
         panic!("pointer-valued volatile accesses should preserve the return pointer")
+    };
+    let crate::kernel::CValue::Pointer(pointer) = retained_result
+        .native_payload()
+        .expect("native Pointer payload")
+    else {
+        panic!("expected Pointer result");
     };
     assert_eq!(pointer.pointer(), &node_pointer);
     assert_eq!(pointer.c_type(), crate::kernel::CType::Int32Pointer);
@@ -5607,7 +5613,7 @@ fn c0_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(7),
+                value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
         }
@@ -6189,7 +6195,7 @@ fn c0_enum_field_comparison_lowers_named_constant() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(1),
+                value: crate::kernel::int32(1).into(),
                 state: Box::new(final_state),
             },
         }
@@ -6639,11 +6645,13 @@ fn c0_chained_field_load_executes_through_typed_pointer_memory() {
         proposition,
         crate::kernel::Proposition::CStatementExecutes {
             outcome: crate::kernel::CStatementOutcome::Return {
-                value: crate::kernel::CValue::Int32(int32_constant!(9)),
+                value,
                 ..
             },
             ..
-        }
+        } if matches!(value.native().as_ref(), crate::kernel::CValue::Int32(
+                    int32_constant!(9)
+                ))
     ));
 }
 
@@ -6747,7 +6755,7 @@ fn c0_syntax_targets_kernel_max_body() {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: crate::kernel::CStatementOutcome::Return {
-                    value: crate::kernel::int32(crate::kernel::MachineTerm::Variable(b)),
+                    value: crate::kernel::int32(crate::kernel::MachineTerm::Variable(b)).into(),
                     state: Box::new(state),
                 },
             }),
@@ -6793,7 +6801,7 @@ fn c0_syntax_targets_kernel_max_function_call() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(1),
+                value: crate::kernel::int32(1).into(),
                 state: Box::new(state),
             },
         }
@@ -6827,7 +6835,7 @@ fn c0_syntax_targets_kernel_assignment_and_sequence() {
             state: Box::new(initial),
             statement: Box::new(statement),
             outcome: crate::kernel::CStatementOutcome::Return {
-                value: crate::kernel::int32(2),
+                value: crate::kernel::int32(2).into(),
                 state: Box::new(final_state),
             },
         }
@@ -6863,7 +6871,7 @@ fn c0_syntax_targets_kernel_assignment_function_call() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(2),
+                value: crate::kernel::int32(2).into(),
                 state: Box::new(state),
             },
         }
@@ -6913,7 +6921,7 @@ fn c0_syntax_targets_kernel_store_and_load() {
             state: Box::new(initial),
             statement: Box::new(statement),
             outcome: crate::kernel::CStatementOutcome::Return {
-                value: crate::kernel::int32(9),
+                value: crate::kernel::int32(9).into(),
                 state: Box::new(final_state),
             },
         }
@@ -6966,7 +6974,7 @@ fn c0_syntax_targets_kernel_struct_field_load() {
             state: Box::new(initial.clone()),
             statement: Box::new(statement),
             outcome: crate::kernel::CStatementOutcome::Return {
-                value: crate::kernel::int32(3),
+                value: crate::kernel::int32(3).into(),
                 state: Box::new(initial),
             },
         }
@@ -7016,7 +7024,7 @@ fn c0_syntax_targets_kernel_float64_struct_field_load() {
             state: Box::new(initial.clone()),
             statement: Box::new(statement),
             outcome: crate::kernel::CStatementOutcome::Return {
-                value,
+                value: value.into(),
                 state: Box::new(initial),
             },
         }
@@ -7078,7 +7086,7 @@ fn c0_syntax_targets_kernel_struct_field_store() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(5),
+                value: crate::kernel::int32(5).into(),
                 state: Box::new(final_state),
             },
         }
@@ -7152,7 +7160,7 @@ fn c0_syntax_targets_kernel_multifield_struct_offset_load() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(7),
+                value: crate::kernel::int32(7).into(),
                 state: Box::new(state),
             },
         }
@@ -7228,7 +7236,7 @@ fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
         panic!("expected function execution theorem, got {:#?}", theorem);
     };
 
-    assert_eq!(value, &crate::kernel::int32(1));
+    assert_eq!(value.native().as_ref(), &crate::kernel::int32(1));
     assert_eq!(
         final_state.memory().load(&owner),
         crate::kernel::CExpressionOutcome::Value(crate::kernel::int32(1))
@@ -7284,7 +7292,7 @@ fn c0_syntax_targets_kernel_store_and_load_function_call() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(9),
+                value: crate::kernel::int32(9).into(),
                 state: Box::new(final_state),
             },
         }
@@ -7334,7 +7342,7 @@ fn c0_syntax_targets_kernel_pointer_addition_load() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(23),
+                value: crate::kernel::int32(23).into(),
                 state: Box::new(state),
             },
         }
@@ -7384,7 +7392,7 @@ fn c0_syntax_targets_kernel_array_index_load() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(23),
+                value: crate::kernel::int32(23).into(),
                 state: Box::new(state),
             },
         }
@@ -7440,7 +7448,7 @@ fn c0_syntax_targets_kernel_array_index_store() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(7),
+                value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
         }
@@ -7511,7 +7519,7 @@ fn c0_syntax_targets_kernel_address_of_array_index() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(23),
+                value: crate::kernel::int32(23).into(),
                 state: Box::new(final_state),
             },
         }
@@ -7555,7 +7563,7 @@ fn c0_syntax_targets_kernel_pointer_null_equality() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(1),
+                value: crate::kernel::int32(1).into(),
                 state: Box::new(state),
             },
         }
@@ -7632,7 +7640,7 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
                 function: Box::new(function.clone()),
                 arguments,
                 outcome: crate::kernel::CFunctionOutcome::Return {
-                    value: expected,
+                    value: expected.into(),
                     state: Box::new(state),
                 },
             }
@@ -7677,7 +7685,7 @@ fn c0_syntax_targets_kernel_unary_not() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(1),
+                value: crate::kernel::int32(1).into(),
                 state: Box::new(state),
             },
         }
@@ -7729,7 +7737,7 @@ fn c0_syntax_targets_kernel_local_address_of() {
             function: Box::new(function),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(5),
+                value: crate::kernel::int32(5).into(),
                 state: Box::new(final_state),
             },
         }
@@ -7787,7 +7795,7 @@ fn c0_syntax_targets_kernel_local_array_storage() {
             function: Box::new(function),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(7),
+                value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
         }
@@ -7848,7 +7856,7 @@ fn c0_syntax_lowers_local_array_initializer_stores() {
             function: Box::new(function),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(0),
+                value: crate::kernel::int32(0).into(),
                 state: Box::new(final_state),
             },
         }
@@ -7906,7 +7914,7 @@ fn c0_syntax_flattens_multidimensional_local_array_indices() {
             function: Box::new(function),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(7),
+                value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
         }
@@ -7994,7 +8002,7 @@ fn c0_syntax_lowers_nested_multidimensional_array_initializers() {
             function: Box::new(function),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(6),
+                value: crate::kernel::int32(6).into(),
                 state: Box::new(final_state),
             },
         }
@@ -8057,7 +8065,7 @@ fn c0_syntax_lowers_local_struct_array_fields_with_abi_stride() {
             function: Box::new(function),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(10),
+                value: crate::kernel::int32(10).into(),
                 state: Box::new(final_state),
             },
         }
@@ -8191,7 +8199,7 @@ fn c0_syntax_lowers_local_struct_array_initializers() {
             function: Box::new(function),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(43),
+                value: crate::kernel::int32(43).into(),
                 state: Box::new(final_state),
             },
         }
@@ -8320,7 +8328,7 @@ fn c0_syntax_local_array_decays_to_pointer_argument() {
             function: Box::new(caller),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(11),
+                value: crate::kernel::int32(11).into(),
                 state: Box::new(final_state),
             },
         }
@@ -8570,7 +8578,7 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
     else {
         panic!("function result")
     };
-    *value = value.numeric_value().clone();
+    *value = value.native().numeric_value().clone().into();
     assert_eq!(
         &numeric_result,
         &crate::kernel::Proposition::CFunctionExecutes {
@@ -8578,7 +8586,8 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(11)),
+                value: crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(11))
+                    .into(),
                 state: Box::new(final_state),
             },
         }
@@ -9048,13 +9057,19 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
     let crate::kernel::Proposition::CFunctionExecutes {
         outcome:
             crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::CValue::Pointer(return_pointer),
+                value: retained_result,
                 state: final_state,
             },
         ..
     } = theorem.proposition()
     else {
         panic!("expected a pointer-bearing aggregate return");
+    };
+    let crate::kernel::CValue::Pointer(return_pointer) = retained_result
+        .native_payload()
+        .expect("native Pointer payload")
+    else {
+        panic!("expected Pointer result");
     };
     let return_data = return_pointer.pointer().offset_by_bytes(0);
     assert_eq!(
@@ -9409,7 +9424,7 @@ fn c0_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::uint8(7),
+                value: crate::kernel::uint8(7).into(),
                 state: Box::new(final_state),
             },
         }
@@ -9478,7 +9493,7 @@ fn c0_struct_multidimensional_scalar_array_field_flattens_row_major() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(7),
+                value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
         }
@@ -9630,7 +9645,7 @@ fn c0_struct_scalar_array_element_address_executes_at_element_width() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(7),
+                value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
         }
@@ -9713,7 +9728,7 @@ fn c0_struct_byte_array_element_address_executes_at_byte_width() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::uint8(9),
+                value: crate::kernel::uint8(9).into(),
                 state: Box::new(final_state),
             },
         }
@@ -9822,7 +9837,7 @@ fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(7),
+                value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
         }
@@ -9932,7 +9947,7 @@ fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(7),
+                value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
         }
@@ -10391,7 +10406,7 @@ fn c0_syntax_targets_kernel_int32_subtraction_and_comparisons() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(3),
+                value: crate::kernel::int32(3).into(),
                 state: Box::new(state),
             },
         }
@@ -10431,7 +10446,7 @@ fn c0_if_condition_uses_c_int32_truthiness() {
             function: Box::new(function.clone()),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(1),
+                value: crate::kernel::int32(1).into(),
                 state: Box::new(state.clone()),
             },
         }
@@ -10453,7 +10468,7 @@ fn c0_if_condition_uses_c_int32_truthiness() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(0),
+                value: crate::kernel::int32(0).into(),
                 state: Box::new(state),
             },
         }
@@ -10533,7 +10548,7 @@ fn c0_clamp_demo_proves_symbolic_branch_specifications() {
             arguments.clone(),
             requires.clone(),
             crate::kernel::CFunctionOutcome::Return {
-                value,
+                value: value.into(),
                 state: Box::new(crate::kernel::CState::new()),
             },
         );
@@ -10788,7 +10803,7 @@ fn c0_syntax_targets_kernel_known_function_call_assignment() {
             function: Box::new(caller),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(42),
+                value: crate::kernel::int32(42).into(),
                 state: Box::new(final_state),
             },
         }
@@ -10830,13 +10845,19 @@ fn c0_syntax_targets_kernel_float_argument_conversion() {
     let crate::kernel::Proposition::CFunctionExecutes {
         outcome:
             crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::CValue::Float64(value),
+                value: retained_result,
                 ..
             },
         ..
     } = theorem.proposition()
     else {
         panic!("integer-to-double call argument should return a double");
+    };
+    let crate::kernel::CValue::Float64(value) = retained_result
+        .native_payload()
+        .expect("native Float64 payload")
+    else {
+        panic!("expected Float64 result");
     };
     assert_eq!(
         value,
@@ -11075,7 +11096,7 @@ fn c0_assignment_expression_result_uses_the_target_type() {
             theorem.proposition()
         );
     };
-    assert_eq!(value, &crate::kernel::uint8(42));
+    assert_eq!(value.native().as_ref(), &crate::kernel::uint8(42));
 }
 
 #[test]
@@ -11114,7 +11135,7 @@ fn c0_assignment_expression_short_circuits_a_guard_read() {
     else {
         panic!("the short-circuit guard should return normally");
     };
-    assert_eq!(value, &crate::kernel::int32(0));
+    assert_eq!(value.native().as_ref(), &crate::kernel::int32(0));
 }
 
 #[test]
@@ -11178,7 +11199,7 @@ fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
             theorem.proposition()
         );
     };
-    assert_eq!(value, &crate::kernel::int32(3));
+    assert_eq!(value.native().as_ref(), &crate::kernel::int32(3));
     let calls = crate::kernel::Pointer {
         block: "local:calls".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -11342,7 +11363,7 @@ fn c0_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
     else {
         panic!("expected union aggregate copy to return, got {theorem:?}");
     };
-    assert_eq!(value, &crate::kernel::int32(42));
+    assert_eq!(value.native().as_ref(), &crate::kernel::int32(42));
 }
 
 #[test]
@@ -11544,7 +11565,7 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
             function: Box::new(caller),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(38),
+                value: crate::kernel::int32(38).into(),
                 // `caller` and `apply` each declare a `result`, and they are
                 // two objects. `apply` runs on the caller's memory with its
                 // own names, so its declaration takes the next generation
@@ -11785,7 +11806,7 @@ fn c0_struct_function_pointer_fields_load_and_dispatch_known_targets() {
             theorem
         );
     };
-    assert_eq!(value, &crate::kernel::int32(38));
+    assert_eq!(value.native().as_ref(), &crate::kernel::int32(38));
 }
 
 #[test]
@@ -11858,7 +11879,7 @@ fn c0_struct_function_pointer_fields_support_direct_calls() {
             theorem
         );
     };
-    assert_eq!(value, &crate::kernel::int32(38));
+    assert_eq!(value.native().as_ref(), &crate::kernel::int32(38));
 }
 
 #[test]
@@ -12030,7 +12051,7 @@ fn c0_syntax_targets_kernel_while_countdown() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(0),
+                value: crate::kernel::int32(0).into(),
                 state: Box::new(crate::kernel::CState::new()),
             },
         }
@@ -12104,7 +12125,7 @@ fn c0_memory_safety_demo_fill_three_ints() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(2),
+                value: crate::kernel::int32(2).into(),
                 state: Box::new(
                     crate::kernel::CState::new()
                         .with_memory(final_memory)
@@ -12518,7 +12539,7 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::int32(42),
+                value: crate::kernel::int32(42).into(),
                 state: Box::new(final_state),
             },
         }
@@ -12717,11 +12738,11 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
             execution.proposition(),
             crate::kernel::Proposition::CFunctionExecutes {
                 outcome: crate::kernel::CFunctionOutcome::Return {
-                    value: crate::kernel::CValue::Bool(value),
+                    value,
                     ..
                 },
                 ..
-            } if value.bool_constant_value() == Some(expected == 1)
+            } if matches!(value.native_payload(), Some(crate::kernel::CValue::Bool(bits)) if bits.bool_constant_value() == Some(expected == 1))
         ));
     }
 
@@ -12741,11 +12762,13 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
         execution.proposition(),
         crate::kernel::Proposition::CFunctionExecutes {
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::CValue::Int32(int32_constant!(1)),
+                value,
                 ..
             },
             ..
-        }
+        } if matches!(value.native().as_ref(), crate::kernel::CValue::Int32(
+                    int32_constant!(1)
+                ))
     ));
 }
 
@@ -12779,11 +12802,13 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
         null.proposition(),
         crate::kernel::Proposition::CFunctionExecutes {
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::CValue::Int32(int32_constant!(0)),
+                value,
                 ..
             },
             ..
-        }
+        } if matches!(value.native().as_ref(), crate::kernel::CValue::Int32(
+                    int32_constant!(0)
+                ))
     ));
     let non_null = crate::kernel::prove_symbolic_c_function_execution(
         crate::kernel::CState::new(),
@@ -12799,11 +12824,13 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
         non_null.proposition(),
         crate::kernel::Proposition::CFunctionExecutes {
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::CValue::Int32(int32_constant!(1)),
+                value,
                 ..
             },
             ..
-        }
+        } if matches!(value.native().as_ref(), crate::kernel::CValue::Int32(
+                    int32_constant!(1)
+                ))
     ));
 
     let bool_callback = syntax::parse_function(
@@ -12931,7 +12958,7 @@ fn c0_body_call_updates_a_local_array_without_rebinding_it_as_a_scalar() {
     assert!(
         matches!(theorem.proposition(), crate::kernel::Proposition::CFunctionExecutes {
         outcome: crate::kernel::CFunctionOutcome::Return { value, .. }, ..
-    } if value == &crate::kernel::int32(9))
+    } if value.native().as_ref() == &crate::kernel::int32(9))
     );
 }
 
@@ -14249,7 +14276,7 @@ fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
         assert!(
             matches!(theorem.proposition(), Proposition::CFunctionExecutes {
             outcome: CFunctionOutcome::Return { value, .. }, ..
-        } if value == &expected),
+        } if value.native().as_ref() == &expected),
             "{source}: {:?}",
             theorem.proposition()
         );
@@ -14277,7 +14304,7 @@ fn c0_scalar_updates_keep_const_pointer_reads_and_nominal_stride() {
         assert!(
             matches!(theorem.proposition(), crate::kernel::Proposition::CFunctionExecutes {
             outcome: crate::kernel::CFunctionOutcome::Return { value, .. }, ..
-        } if value == &crate::kernel::int32(262)),
+        } if value.native().as_ref() == &crate::kernel::int32(262)),
             "{source}: {:?}",
             theorem.proposition()
         );

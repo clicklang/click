@@ -142,23 +142,23 @@ impl From<CExpressionPath> for CExpressionPath<ExecutionValue> {
     }
 }
 
-/// A stored value keeps its exact producer payload. State identity observes the
+/// A local or outcome value keeps its exact producer payload. Stored identity observes the
 /// same native machine key across native and retained storage representations;
 /// specification producer equality remains exact on ExecutionValue itself.
 #[derive(Clone, Debug)]
-pub struct LocalExecutionValue(std::sync::Arc<LocalValueData>);
+pub struct StoredExecutionValue(std::sync::Arc<StoredValueData>);
 #[derive(Debug)]
-struct LocalValueData {
+struct StoredValueData {
     value: ExecutionValue,
     identity: std::sync::OnceLock<Option<SharedMachineIntegerTerm>>,
 }
 #[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
-enum LocalIdentity<'a> {
+enum StoredIdentity<'a> {
     Machine(&'a SharedMachineIntegerTerm),
     Native(&'a CValue),
 }
-impl LocalExecutionValue {
-    fn identity(&self) -> LocalIdentity<'_> {
+impl StoredExecutionValue {
+    fn identity(&self) -> StoredIdentity<'_> {
         match self.0.identity.get_or_init(|| match &self.0.value {
             ExecutionValue::Shared(root) => Some(
                 SharedMachineIntegerTerm::observe_shared(
@@ -177,8 +177,8 @@ impl LocalExecutionValue {
                 ))
             }
         }) {
-            Some(identity) => LocalIdentity::Machine(identity),
-            None => LocalIdentity::Native(self.native_payload().expect("native storage")),
+            Some(identity) => StoredIdentity::Machine(identity),
+            None => StoredIdentity::Native(self.native_payload().expect("native storage")),
         }
     }
     pub fn matches_native(&self, value: &CValue) -> bool {
@@ -194,13 +194,13 @@ impl LocalExecutionValue {
         self.into_value().into_native()
     }
 }
-impl std::ops::Deref for LocalExecutionValue {
+impl std::ops::Deref for StoredExecutionValue {
     type Target = ExecutionValue;
     fn deref(&self) -> &Self::Target {
         &self.0.value
     }
 }
-impl From<ExecutionValue> for LocalExecutionValue {
+impl From<ExecutionValue> for StoredExecutionValue {
     fn from(value: ExecutionValue) -> Self {
         let value = if value
             .shared()
@@ -210,39 +210,39 @@ impl From<ExecutionValue> for LocalExecutionValue {
         } else {
             value
         };
-        Self(std::sync::Arc::new(LocalValueData {
+        Self(std::sync::Arc::new(StoredValueData {
             value,
             identity: Default::default(),
         }))
     }
 }
-impl From<CValue> for LocalExecutionValue {
+impl From<CValue> for StoredExecutionValue {
     fn from(value: CValue) -> Self {
         ExecutionValue::from(value).into()
     }
 }
-impl From<LocalExecutionValue> for ExecutionValue {
-    fn from(value: LocalExecutionValue) -> Self {
+impl From<StoredExecutionValue> for ExecutionValue {
+    fn from(value: StoredExecutionValue) -> Self {
         value.into_value()
     }
 }
-impl PartialEq for LocalExecutionValue {
+impl PartialEq for StoredExecutionValue {
     fn eq(&self, other: &Self) -> bool {
         self.identity() == other.identity()
     }
 }
-impl Eq for LocalExecutionValue {}
-impl std::hash::Hash for LocalExecutionValue {
+impl Eq for StoredExecutionValue {}
+impl std::hash::Hash for StoredExecutionValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         std::hash::Hash::hash(&self.identity(), state);
     }
 }
-impl PartialOrd for LocalExecutionValue {
+impl PartialOrd for StoredExecutionValue {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-impl Ord for LocalExecutionValue {
+impl Ord for StoredExecutionValue {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.identity().cmp(&other.identity())
     }
@@ -266,11 +266,11 @@ mod tests {
         let shared = ExecutionValue::from(root.clone());
         assert_ne!(native, shared, "producer equality stays exact");
         let exports = KernelTermExport::machine_export_count();
-        let native = LocalExecutionValue::from(native);
-        let shared = LocalExecutionValue::from(shared);
+        let native = StoredExecutionValue::from(native);
+        let shared = StoredExecutionValue::from(shared);
         assert_eq!(native, shared);
         assert_eq!(native.cmp(&shared), std::cmp::Ordering::Equal);
-        let hash = |value: &LocalExecutionValue| {
+        let hash = |value: &StoredExecutionValue| {
             use std::hash::{Hash, Hasher};
             let mut hash = std::collections::hash_map::DefaultHasher::new();
             value.hash(&mut hash);

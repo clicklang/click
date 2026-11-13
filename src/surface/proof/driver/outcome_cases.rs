@@ -146,7 +146,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             context.parameter_binding(),
                             &pre_state,
                             state,
-                            value,
+                            &value.native(),
                             &retained_query,
                             condition,
                             context.spec_definitions,
@@ -157,7 +157,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             context.parameter_binding(),
                             &pre_state,
                             state,
-                            value,
+                            &value.native(),
                             facts,
                             condition,
                             context.spec_definitions,
@@ -173,6 +173,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 &match_cases,
                 &|surface, written, facts, provenance, bindings| {
                     let result = (|| {
+                        let native_value = value.native();
                         let fixed = Proof::for_fixed_state(
                             context.claim_label,
                             written.map_or(context.tactic_index, |source| source.tactic_index),
@@ -182,7 +183,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             FixedStateFrame::new(
                                 &pre_state,
                                 state,
-                                Some(value),
+                                Some(&native_value),
                                 &provenance.recorded_snapshots,
                             ),
                             frontier_premise_anchor(&execution),

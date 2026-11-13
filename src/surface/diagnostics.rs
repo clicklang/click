@@ -1622,10 +1622,16 @@ pub(super) fn describe_function_outcome(
 ) -> String {
     match outcome {
         CFunctionOutcome::Return { value, .. } => {
-            format!("returned {}", describe_c_value(value, parameter_binding))
+            format!(
+                "returned {}",
+                describe_c_value(&value.native(), parameter_binding)
+            )
         }
         CFunctionOutcome::Throw { value, .. } => {
-            format!("threw {}", describe_c_value(value, parameter_binding))
+            format!(
+                "threw {}",
+                describe_c_value(&value.native(), parameter_binding)
+            )
         }
         CFunctionOutcome::VerificationDiverges => "has no verified return frontier".to_string(),
         CFunctionOutcome::UndefinedBehavior(kind) => {

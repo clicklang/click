@@ -6200,7 +6200,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
             function: Box::new(function.clone()),
             arguments: arguments.clone(),
             outcome: CFunctionOutcome::Return {
-                value: int32(42),
+                value: int32(42).into(),
                 state: Box::new(expected_state),
             },
         }

@@ -93,12 +93,12 @@ impl<'a> Proof<'a> {
         let state = (*goal.data.core.state).clone();
         Ok(if goal.data.core.is_exceptional {
             CFunctionOutcome::Throw {
-                value,
+                value: value.into(),
                 state: Box::new(state),
             }
         } else {
             CFunctionOutcome::Return {
-                value,
+                value: value.into(),
                 state: Box::new(state),
             }
         })
@@ -361,7 +361,7 @@ impl<'a> Proof<'a> {
         // pre-fold state. CState's components are shared immutable roots, so
         // this update is constant-size rather than a resource/history
         // materialization.
-        data.core.result = Arc::new(value.clone());
+        data.core.result = Arc::new(value.clone().into_native());
         data.core.state = (*state.clone()).into();
         let data = Arc::new(data);
         let obligation = match self.focused_obligation() {
@@ -533,7 +533,7 @@ impl<'a> Proof<'a> {
                         .frontier
                         .execution_start_state(&execution.core.state),
                     state,
-                    value,
+                    &value.native(),
                     &facts,
                     &case.condition,
                     context.spec_definitions,
@@ -879,7 +879,7 @@ impl<'a> Proof<'a> {
                         OutcomeProofCore {
                             identity: crate::kernel::proof::OutcomeIdentity::fresh(),
                             store_consequences_available: false,
-                            result: Arc::new(result),
+                            result: Arc::new(result.into_native()),
                             state: (*state).into(),
                             is_exceptional,
                             effect_facts: execution_facts,

@@ -31,7 +31,7 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
                     .collect();
                 (
                     CFunctionOutcome::Return {
-                        value: int32(0),
+                        value: int32(0).into(),
                         state: Box::new(CState::new()),
                     },
                     facts,
@@ -98,7 +98,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
                 .map(|index| {
                     (
                         CFunctionOutcome::Return {
-                            value: int32(index as u32),
+                            value: int32(index as u32).into(),
                             state: Box::new(CState::new()),
                         },
                         vec![ExecutionPureFact::new(proposition.clone()); payload_size],
@@ -172,7 +172,7 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
         vec![],
         vec![(
             CFunctionOutcome::Return {
-                value: int32(0),
+                value: int32(0).into(),
                 state: Box::new(state),
             },
             [public.clone(), effect.clone()].into(),
@@ -806,7 +806,7 @@ fn local_declaration_allocates_stack_object_for_address_of() {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(5),
+                value: int32(5).into(),
                 state: Box::new(final_state),
             },
         }
@@ -895,7 +895,7 @@ fn symbolic_execution_reports_branch_facts() {
                 state: Box::new(state.clone()),
                 statement: Box::new(c_max_body()),
                 outcome: CStatementOutcome::Return {
-                    value: int32(MachineTerm::Variable(b)),
+                    value: int32(MachineTerm::Variable(b)).into(),
                     state: Box::new(state.clone()),
                 },
             }),
@@ -918,7 +918,7 @@ fn symbolic_execution_reports_branch_facts() {
                 state: Box::new(state.clone()),
                 statement: Box::new(c_max_body()),
                 outcome: CStatementOutcome::Return {
-                    value: int32(MachineTerm::Variable(a)),
+                    value: int32(MachineTerm::Variable(a)).into(),
                     state: Box::new(state),
                 },
             }),
@@ -967,7 +967,8 @@ fn symbolic_execution_reports_overflow_facts() {
                         Add,
                         Box::new(left_bits),
                         Box::new(right_bits)
-                    )),
+                    ))
+                    .into(),
                     state: Box::new(state.clone()),
                 },
             }),
@@ -1025,7 +1026,8 @@ fn symbolic_execution_uses_no_overflow_fact() {
                         Add,
                         Box::new(left_bits),
                         Box::new(right_bits)
-                    )),
+                    ))
+                    .into(),
                     state: Box::new(state),
                 },
             }),
@@ -1106,7 +1108,8 @@ fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
                         Add,
                         Box::new(x_bits),
                         Box::new(MachineTerm::constant(1)),
-                    )),
+                    ))
+                    .into(),
                     state: Box::new(state),
                 },
             }),
@@ -1304,7 +1307,7 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
             state: Box::new(CState::new()),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(5),
+                value: int32(5).into(),
                 state: Box::new(final_state),
             },
         }
@@ -1477,7 +1480,7 @@ fn symbolic_path_can_only_certify_its_exact_function_specification() {
         Vec::new(),
         Vec::new(),
         CFunctionOutcome::Return {
-            value: int32(1),
+            value: int32(1).into(),
             state: Box::new(CState::new()),
         },
     );
@@ -1546,7 +1549,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     else {
         panic!("opaque call should produce an abstract return branch")
     };
-    assert!(*value != int32(99));
+    assert!(*value.native() != int32(99));
     let propositions = path
         .facts()
         .iter()
@@ -1557,7 +1560,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         "verified-call ensures should be marked as kernel-certified facts"
     );
     let assumptions = assumptions_with_propositions(&PureFactContext::new(), &propositions);
-    let CValue::Int32(result) = value else {
+    let CValue::Int32(result) = value.clone().into_native() else {
         panic!("opaque helper should return int32")
     };
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -1589,7 +1592,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
         Proposition::CStatementExecutes {
             outcome: CStatementOutcome::Return { value, .. },
             ..
-        } if *value == int32(99)
+        } if *value.native() == int32(99)
     ));
 }
 
@@ -1868,7 +1871,7 @@ fn verified_immutable_calls_allocate_distinct_results() {
     let local_native_output_1880 = state.locals().get_native("second");
     let second = local_native_output_1880.as_deref().expect("second result");
     assert_ne!(first, second);
-    assert_eq!(value, second);
+    assert_eq!(value.native().as_ref(), second);
 }
 
 #[test]
@@ -2122,7 +2125,7 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
     );
 
     let throw_outcome = CFunctionOutcome::Throw {
-        value: int32(7),
+        value: int32(7).into(),
         state: Box::new(CState::new()),
     };
     let goals = c_function_exceptional_ensure_goals(
@@ -2328,7 +2331,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                     state.locals().get_native("after").as_deref(),
                     Some(&int32(1))
                 );
-                let CValue::Int32(value) = value else {
+                let CValue::Int32(value) = value.clone().into_native() else {
                     panic!("normal result should be int32")
                 };
                 assert!(crate::kernel::search::ProofSearch::proves(
@@ -2366,7 +2369,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                     Some(&int32(0))
                 );
                 assert!(state.locals().get("call_result").is_none());
-                let CValue::Int32(value) = value else {
+                let CValue::Int32(value) = value.clone().into_native() else {
                     panic!("exceptional payload should be int32")
                 };
                 assert!(crate::kernel::search::ProofSearch::proves(
@@ -2476,12 +2479,12 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         };
         if state.locals().get("caught").is_none() {
             saw_normal = true;
-            assert_eq!(value, &int32(99));
+            assert_eq!(value.native().as_ref(), &int32(99));
             continue;
         }
         saw_caught = true;
-        assert_eq!(state.locals().get_native("caught").as_deref(), Some(value));
-        let CValue::Int32(value) = value else {
+        assert_eq!(state.locals().get("caught"), Some(value));
+        let CValue::Int32(value) = value.clone().into_native() else {
             panic!("caught payload should be int32");
         };
         let assumptions = assumptions_with_propositions(
@@ -3414,7 +3417,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
         function: Box::new(function.clone()),
         arguments: Vec::new(),
         outcome: CFunctionOutcome::Return {
-            value: int32(0),
+            value: int32(0).into(),
             state: Box::new(state),
         },
     };
@@ -3494,7 +3497,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
         function: Box::new(function.clone()),
         arguments: Vec::new(),
         outcome: CFunctionOutcome::Return {
-            value: int32(0),
+            value: int32(0).into(),
             state: Box::new(state),
         },
     };
@@ -3617,7 +3620,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
         function: Box::new(function.clone()),
         arguments: Vec::new(),
         outcome: CFunctionOutcome::Return {
-            value: int32(0),
+            value: int32(0).into(),
             state: Box::new(state),
         },
     };
@@ -3945,7 +3948,7 @@ fn completion_accepts_a_return_that_leaves_source_behind_it() {
     )
     .expect("entry state");
     let returning = CStatementOutcome::Return {
-        value: int32(0),
+        value: int32(0).into(),
         state: Box::new(entry_state),
     };
     let (candidates, function, trace) = early_return_inputs(returning);
@@ -3990,7 +3993,7 @@ fn completion_refuses_a_trace_that_stops_before_the_path_ends() {
 
     // A trace that continues past its returning statement is refused too.
     let returning = CStatementOutcome::Return {
-        value: int32(0),
+        value: int32(0).into(),
         state: Box::new(entry_state.clone()),
     };
     let (candidates, function, mut trace) = early_return_inputs(returning);
@@ -3999,7 +4002,7 @@ fn completion_refuses_a_trace_that_stops_before_the_path_ends() {
             state: Box::new(entry_state.clone()),
             statement: Box::new(c_return(c_int32_literal(1))),
             outcome: CStatementOutcome::Return {
-                value: int32(1),
+                value: int32(1).into(),
                 state: Box::new(entry_state),
             },
         }),
@@ -4027,7 +4030,7 @@ fn skip_inputs(
     );
     let caller_state = CState::new();
     let outcome = CStatementOutcome::Return {
-        value: int32(1),
+        value: int32(1).into(),
         state: Box::new(caller_state.clone()),
     };
     let (function_outcome, obligations) = c_function_outcome_from_statement_outcome(
@@ -4066,7 +4069,7 @@ fn return_one_theorem(state: CState) -> crate::kernel::proof::CheckedExecutionEv
             state: Box::new(state.clone()),
             statement: Box::new(c_return(c_int32_literal(1))),
             outcome: CStatementOutcome::Return {
-                value: int32(1),
+                value: int32(1).into(),
                 state: Box::new(state),
             },
         },
@@ -4121,7 +4124,7 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
     )
     .expect("entry state");
     let returning = CStatementOutcome::Return {
-        value: int32(0),
+        value: int32(0).into(),
         state: Box::new(entry_state),
     };
     let (candidates, function, trace) = early_return_inputs(returning);
@@ -4224,7 +4227,7 @@ fn contract_exit_rule_is_the_plain_outcome_without_resources() {
     let caller_state = CState::new();
     let entry_state = c_function_entry_state(&caller_state, &function, &[]).expect("entry");
     let returning = CStatementOutcome::Return {
-        value: int32(3),
+        value: int32(3).into(),
         state: Box::new(entry_state),
     };
     let (plain, _) = c_function_outcome_from_statement_outcome(
@@ -4270,7 +4273,7 @@ fn recording_complete_sequence_requires_exact_remaining_source() {
             state: Box::new(entry.clone()),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(0),
+                value: int32(0).into(),
                 state: Box::new(entry.clone()),
             },
         });
@@ -4310,7 +4313,7 @@ fn recording_statement_evidence_checks_it_advances_the_frontier() {
         state: Box::new(state.clone()),
         statement: Box::new(statement),
         outcome: CStatementOutcome::Return {
-            value: int32(0),
+            value: int32(0).into(),
             state: Box::new(state),
         },
     };
@@ -4522,7 +4525,7 @@ fn recorded_evidence_reaches_the_theorem_outcome_not_the_driver_state() {
             state: Box::new(state.clone()),
             statement: Box::new(tail.clone()),
             outcome: CStatementOutcome::Return {
-                value: int32(1),
+                value: int32(1).into(),
                 state: Box::new(state),
             },
         })
@@ -4588,7 +4591,7 @@ fn recorded_evidence_consumes_the_source_not_the_driver_frontier() {
             state: Box::new(entry_state.clone()),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(value),
+                value: int32(value).into(),
                 state: Box::new(entry_state.clone()),
             },
         })
@@ -4683,7 +4686,7 @@ fn void_fallthrough_completion_requires_consuming_the_entire_source() {
             &caller,
             &function,
             CStatementOutcome::Return {
-                value: CValue::Void,
+                value: CValue::Void.into(),
                 state: Box::new(entry),
             },
             Vec::new(),
@@ -4721,7 +4724,7 @@ fn a_completed_proof_object_yields_its_checked_execution() {
     )
     .expect("entry state");
     let returning = CStatementOutcome::Return {
-        value: int32(0),
+        value: int32(0).into(),
         state: Box::new(entry_state.clone()),
     };
     let (candidates, function, trace) = early_return_inputs(returning);
@@ -5470,7 +5473,10 @@ fn an_outer_locals_address_survives_an_inner_scope() {
     let CStatementOutcome::Return { value, .. } = outcome else {
         panic!("expected a return: {outcome:?}");
     };
-    assert_eq!(value, &CValue::Int32(MachineTerm::constant(5)));
+    assert_eq!(
+        value.native().as_ref(),
+        &CValue::Int32(MachineTerm::constant(5))
+    );
 }
 
 fn path_exists_at_snapshot(
@@ -5934,7 +5940,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                 let outcome = Arc::new(OutcomeProofState::new(
                     OutcomeProofCore {
                         identity: OutcomeIdentity::fresh(),
-                        result: Arc::new(value.clone()),
+                        result: Arc::new(value.clone().into_native()),
                         store_consequences_available: true,
                         state: state.as_ref().clone().into(),
                         is_exceptional: false,
@@ -6037,7 +6043,7 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
         .fold(PureFactContext::new(), |context, fact| {
             context.assume_proposition(fact.proposition().clone())
         });
-    let CValue::Int32(value) = value else {
+    let CValue::Int32(value) = value.clone().into_native() else {
         panic!("constructed int32 field");
     };
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -6631,7 +6637,7 @@ fn cloned_functions_and_specifications_share_their_contracts() {
             .collect(),
         vec![Proposition::ConditionIs(ConditionTerm::Constant(true), true); 8],
         CFunctionOutcome::Return {
-            value: int32(0),
+            value: int32(0).into(),
             state: Box::new(CState::new()),
         },
     );

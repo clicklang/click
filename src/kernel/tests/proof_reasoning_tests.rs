@@ -5403,7 +5403,7 @@ fn symbolic_max_lt_branch_is_native_theorem() {
                         state: Box::new(state.clone()),
                         statement: Box::new(c_max_body()),
                         outcome: CStatementOutcome::Return {
-                            value: int32(MachineTerm::Variable(b)),
+                            value: int32(MachineTerm::Variable(b)).into(),
                             state: Box::new(state),
                         },
                     }),
@@ -5441,7 +5441,7 @@ fn symbolic_max_not_lt_branch_is_native_theorem() {
                         state: Box::new(state.clone()),
                         statement: Box::new(c_max_body()),
                         outcome: CStatementOutcome::Return {
-                            value: int32(MachineTerm::Variable(a)),
+                            value: int32(MachineTerm::Variable(a)).into(),
                             state: Box::new(state),
                         },
                     }),

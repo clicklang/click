@@ -1418,7 +1418,7 @@ fn complete_void_fallthrough(
     match (function.return_type(), outcome) {
         (CType::Void, CStatementOutcome::Normal(state)) => {
             super::eval::return_authority_refusal(&state).unwrap_or(CStatementOutcome::Return {
-                value: CValue::Void,
+                value: CValue::Void.into(),
                 state,
             })
         }
@@ -4790,7 +4790,7 @@ fn execute_verified_function_applications_with_suspension(
         return_state.next_local_frame = post_state.next_local_frame;
         return_state.next_local_lifetime = post_state.next_local_lifetime;
         let outcome = CFunctionOutcome::Return {
-            value: result,
+            value: result.into(),
             state: Box::new(return_state),
         };
         if let Some(function) = evidence {
@@ -4883,7 +4883,7 @@ fn exceptional_direct_function_path(
         post_state.population_effects.creation.as_ref(),
     );
     let outcome = CFunctionOutcome::Throw {
-        value: payload,
+        value: payload.into(),
         state: Box::new(throw_state),
     };
     if let Some(evidence) = evidence {
@@ -15939,7 +15939,7 @@ pub(super) fn function_return_resources_definitionally_established(
     else {
         return false;
     };
-    let exit_memory = function_exit_memory(caller_state, return_state, value, function);
+    let exit_memory = function_exit_memory(caller_state, return_state, &value.native(), function);
     let mut claim_return_state = return_state.clone();
     claim_return_state.set_memory(exit_memory.clone());
     let definitions = function.composite_resource_definitions();
@@ -15967,7 +15967,7 @@ pub(super) fn function_return_resources_definitionally_established(
     if function.return_type() != CType::Void {
         post_state.locals.set_typed(
             C_CONTRACT_RESULT_NAME.to_string(),
-            value.clone(),
+            value.clone().into_native(),
             function.return_type(),
         );
     }
@@ -20194,7 +20194,8 @@ fn function_outcome_from_body_changing_quantities(
     if let Some(refusal) = incompatible_pointer_return(&state, function, &value, assumptions) {
         return Ok((CFunctionOutcome::RuntimeError(refusal), obligations));
     }
-    let Some(value) = coerce_function_return_value(value, function, &mut obligations, assumptions)
+    let Some(value) =
+        coerce_retained_function_return_value(value, function, &mut obligations, assumptions)
     else {
         return Ok((
             CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
@@ -20273,7 +20274,8 @@ fn function_outcome_from_body_with_resource_transfer(
     if let Some(refusal) = incompatible_pointer_return(&state, function, &value, assumptions) {
         return Ok((CFunctionOutcome::RuntimeError(refusal), obligations, None));
     }
-    let Some(value) = coerce_function_return_value(value, function, &mut obligations, assumptions)
+    let Some(value) =
+        coerce_retained_function_return_value(value, function, &mut obligations, assumptions)
     else {
         return Ok((
             CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
@@ -20297,8 +20299,8 @@ fn function_outcome_from_body_with_resource_transfer(
     // Resource completion over an already completed outcome keeps its result.
     let value = if reestablish_population_invariants && function.return_aggregate_layout().is_some()
     {
-        match complete_aggregate_return(&mut state, function, value) {
-            Ok(value) => value,
+        match complete_aggregate_return(&mut state, function, value.into_native()) {
+            Ok(value) => value.into(),
             Err(AggregateReturnRefusal::UninitializedRead) => {
                 return Ok((
                     CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
@@ -20325,7 +20327,7 @@ fn function_outcome_from_body_with_resource_transfer(
         &state,
         function,
         caller_state.memory(),
-        Some(&value),
+        value.native_payload(),
     ) {
         Ok(memory) => memory,
         Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
@@ -21291,9 +21293,12 @@ pub(super) fn function_outcome_from_body(
             {
                 return (CFunctionOutcome::RuntimeError(refusal), obligations);
             }
-            let Some(value) =
-                coerce_function_return_value(value, function, &mut obligations, assumptions)
-            else {
+            let Some(value) = coerce_retained_function_return_value(
+                value,
+                function,
+                &mut obligations,
+                assumptions,
+            ) else {
                 return (
                     CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
                         "{} {RETURN_TYPE_MISMATCH}",
@@ -21303,8 +21308,8 @@ pub(super) fn function_outcome_from_body(
                 );
             };
             let value = if function.return_aggregate_layout().is_some() {
-                match complete_aggregate_return(&mut state, function, value) {
-                    Ok(value) => value,
+                match complete_aggregate_return(&mut state, function, value.into_native()) {
+                    Ok(value) => value.into(),
                     Err(AggregateReturnRefusal::UninitializedRead) => {
                         return (
                             CFunctionOutcome::UndefinedBehavior(
@@ -21335,7 +21340,7 @@ pub(super) fn function_outcome_from_body(
                     &state,
                     function,
                     caller_state.memory(),
-                    Some(&value),
+                    value.native_payload(),
                 )
             };
             let retired_creation_blocks = match retired_memory {
@@ -21412,7 +21417,7 @@ pub(super) fn function_outcome_from_body(
             )
         }
         CStatementOutcome::Throw { value, state } => {
-            if !function.exceptional_signature().permits(&value) {
+            if !function.exceptional_signature().permits(&value.native()) {
                 return (
                     CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(format!(
                         "{} produced an exceptional outcome not declared by its signature",
@@ -21522,7 +21527,7 @@ fn exceptional_outcome_declaration_error(
     let CStatementOutcome::Throw { value, .. } = outcome else {
         return None;
     };
-    (!function.exceptional_signature().permits(value)).then(|| {
+    (!function.exceptional_signature().permits(&value.native())).then(|| {
         CRuntimeError::FunctionContract(format!(
             "{} produced an exceptional outcome not declared by its signature",
             function.name()

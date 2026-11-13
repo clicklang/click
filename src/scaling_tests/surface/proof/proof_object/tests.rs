@@ -1036,8 +1036,8 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
         assert!(!paths.is_empty());
         for path in paths {
             assert!(matches!(path.outcome(),
-                CFunctionOutcome::Return { value: CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)), .. }
-                    if **at == pointer));
+                CFunctionOutcome::Return { value, .. }
+                    if matches!(value.native().as_ref(), CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
         }
         let execution = joined.execution().expect("joined execution should remain");
         (

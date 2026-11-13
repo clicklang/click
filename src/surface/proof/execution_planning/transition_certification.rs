@@ -960,7 +960,7 @@ fn certified_transitions_from_execution(
                 let generated_load_source_events =
                     generated_load_source_events_from_facts(&execution_facts);
                 return Ok(CertifiedStatementTransition {
-                call_result: path.call_result().cloned(),
+                call_result: path.call_result().cloned().map(crate::kernel::StoredExecutionValue::into_native),
                 call_parameters: path.call_parameters().cloned(),
                     theorem: path.theorem().clone(),
                     context: executed_under.clone(),
@@ -984,7 +984,7 @@ fn certified_transitions_from_execution(
             let generated_load_source_events =
                 generated_load_source_events_from_facts(&execution_facts);
             Ok(CertifiedStatementTransition {
-                call_result: path.call_result().cloned(),
+                call_result: path.call_result().cloned().map(crate::kernel::StoredExecutionValue::into_native),
                 call_parameters: path.call_parameters().cloned(),
                 theorem: path.theorem().clone(),
                 context: executed_under.clone(),
@@ -1196,8 +1196,8 @@ mod condition_transition_tests {
         assert!(transition.generated_load_bindings.is_empty());
         assert!(transition.generated_load_source_events.is_empty());
         assert!(matches!(&transition.outcome,
-            CStatementOutcome::Return { value: CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)), .. }
-                if **at == pointer));
+            CStatementOutcome::Return { value, .. }
+                if matches!(value.native().as_ref(), CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
 
         // Feed the producer-issued transition metadata through the same
         // persistent presentation store used by the execution cursor. This

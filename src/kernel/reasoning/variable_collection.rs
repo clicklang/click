@@ -1420,7 +1420,7 @@ pub(in crate::kernel) fn collect_c_statement_outcome_bitvector_variables(
             collect_c_state_bitvector_variables(state, variables)
         }
         CStatementOutcome::Return { value, state } | CStatementOutcome::Throw { value, state } => {
-            collect_c_value_bitvector_variables(value, variables);
+            collect_expression_value_bitvector_variables(value, variables);
             collect_c_state_bitvector_variables(state, variables);
         }
         CStatementOutcome::VerificationDiverges
@@ -1435,7 +1435,7 @@ pub(in crate::kernel) fn collect_c_function_outcome_bitvector_variables(
 ) {
     match outcome {
         CFunctionOutcome::Return { value, state } | CFunctionOutcome::Throw { value, state } => {
-            collect_c_value_bitvector_variables(value, variables);
+            collect_expression_value_bitvector_variables(value, variables);
             collect_c_state_bitvector_variables(state, variables);
         }
         CFunctionOutcome::VerificationDiverges

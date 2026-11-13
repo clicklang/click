@@ -458,7 +458,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement.clone()),
                 outcome: CStatementOutcome::Return {
-                    value: int32(7),
+                    value: int32(7).into(),
                     state: Box::new(state),
                 },
             },
@@ -489,11 +489,11 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
             size / 2,
             Arc::new(CheckedReturnContext {
                 origin: CStatementOutcome::Return {
-                    value: int32(7),
+                    value: int32(7).into(),
                     state: Box::new(open.clone()),
                 },
                 published: CFunctionOutcome::Return {
-                    value: int32(7),
+                    value: int32(7).into(),
                     state: Box::new(open.clone()),
                 },
                 facts: ExecutionFacts::new(),
@@ -545,7 +545,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         let CStatementOutcome::Return { value, state } = outcome else {
             panic!("the completion returns");
         };
-        assert_eq!(value, int32(7));
+        assert_eq!(*value.native(), int32(7));
         let resources = state
             .resources()
             .clone()

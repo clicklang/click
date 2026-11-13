@@ -1874,7 +1874,7 @@ fn returning_malloc_result_resolves_null_and_success_outcomes() {
         let CStatementOutcome::Return { value, state } = path.outcome else {
             panic!("malloc return should not produce a diagnostic");
         };
-        let CValue::Pointer(pointer) = value else {
+        let CValue::Pointer(pointer) = value.clone().into_native() else {
             panic!("malloc should return a pointer");
         };
         assert!(!state.memory().has_pending_heap_allocation());

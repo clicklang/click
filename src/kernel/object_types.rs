@@ -157,11 +157,11 @@ pub(super) fn execution_pointer_result(
         arguments: BTreeSet::new(),
     };
     for path in cases.iter().flatten().flat_map(|set| &set.paths) {
-        let CFunctionOutcome::Return {
-            value: CValue::Pointer(pointer),
-            state,
-        } = super::api::path_function_outcome(path)?
+        let CFunctionOutcome::Return { value, state } = super::api::path_function_outcome(path)?
         else {
+            continue;
+        };
+        let Some(pointer) = value.pointer() else {
             continue;
         };
         if pointer.is_null() {

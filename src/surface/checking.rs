@@ -122,7 +122,7 @@ pub(super) fn check_allocation_lifetime(
             crate::kernel::unreturned_allocation_with_checked_returned_resources(
                 checked_execution.allocation_entry_state(),
                 state,
-                value,
+                &value.native(),
                 checked_execution.function(),
                 checked_execution.function_arguments(),
                 returned_resources,
@@ -133,7 +133,7 @@ pub(super) fn check_allocation_lifetime(
         None => crate::kernel::unreturned_allocation_at_function_exit(
             checked_execution.allocation_entry_state(),
             state,
-            value,
+            &value.native(),
             checked_execution.function(),
             checked_execution.function_arguments(),
             assumptions,
@@ -272,7 +272,7 @@ pub(super) fn prove_ensure_resource<'e>(
                 parameter_binding,
                 entry_state,
                 clause_state,
-                result,
+                &result.native(),
                 &assumptions,
             )
         };
@@ -536,7 +536,7 @@ pub(super) fn lower_ensure_proposition_goal(
         parameter_binding,
         pre_state,
         state,
-        value,
+        &value.native(),
         available_pure_facts,
         proposition,
         spec_definitions,

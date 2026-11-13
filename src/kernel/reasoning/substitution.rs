@@ -614,11 +614,11 @@ fn walk_c_function_outcome<S: VariableSubstitution + ?Sized>(
 ) -> CFunctionOutcome {
     match outcome {
         CFunctionOutcome::Return { value, state } => CFunctionOutcome::Return {
-            value: s.c_value(value),
+            value: s.expression_value(value).into(),
             state: Box::new(walk_c_state(state, s)),
         },
         CFunctionOutcome::Throw { value, state } => CFunctionOutcome::Throw {
-            value: s.c_value(value),
+            value: s.expression_value(value).into(),
             state: Box::new(walk_c_state(state, s)),
         },
         CFunctionOutcome::VerificationDiverges => CFunctionOutcome::VerificationDiverges,
@@ -1152,11 +1152,11 @@ fn walk_c_statement_outcome<S: VariableSubstitution + ?Sized>(
             state: Box::new(walk_c_state(state, s)),
         },
         CStatementOutcome::Return { value, state } => CStatementOutcome::Return {
-            value: s.c_value(value),
+            value: s.expression_value(value).into(),
             state: Box::new(walk_c_state(state, s)),
         },
         CStatementOutcome::Throw { value, state } => CStatementOutcome::Throw {
-            value: s.c_value(value),
+            value: s.expression_value(value).into(),
             state: Box::new(walk_c_state(state, s)),
         },
         CStatementOutcome::VerificationDiverges => CStatementOutcome::VerificationDiverges,
@@ -2771,7 +2771,7 @@ pub(in crate::kernel) fn collect_statement_outcome_bound_variables(
             collect_c_state_bound_variables(state, variables)
         }
         CStatementOutcome::Return { value, state } | CStatementOutcome::Throw { value, state } => {
-            collect_c_value_bound_variables(value, variables);
+            collect_expression_value_bound_variables(value, variables);
             collect_c_state_bound_variables(state, variables);
         }
         CStatementOutcome::VerificationDiverges
@@ -2786,7 +2786,7 @@ fn collect_function_outcome_bound_variables(
 ) {
     match outcome {
         CFunctionOutcome::Return { value, state } | CFunctionOutcome::Throw { value, state } => {
-            collect_c_value_bound_variables(value, variables);
+            collect_expression_value_bound_variables(value, variables);
             collect_c_state_bound_variables(state, variables);
         }
         CFunctionOutcome::VerificationDiverges
