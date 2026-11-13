@@ -1468,3 +1468,33 @@ fn retaining_call_compositions_ignores_unused_aliases() {
         );
     }
 }
+
+/// Unfolding retains the opaque predicate as well as its body. Loop entry
+/// must retain that context too, rather than delete the atom and rebuild it.
+#[test]
+#[ignore = "nightly: sequential unfolded loops at three sizes"]
+fn unfolded_loop_predicates_retain_the_fact_context() {
+    fn unfolded_loops(n: usize) -> (String, String) {
+        let (c, click) = loops(n);
+        let click = click
+            .replace(
+                "int32 caller",
+                "predicate reflexive(x: int32) { x == x }\nint32 caller",
+            )
+            .replace("owns p[0..4];", "owns p[0..4]; requires reflexive(0);")
+            .replace("} by {", "} by { unfold(reflexive);");
+        (c, click)
+    }
+    let counts = [3, 6, 12].map(|n| {
+        let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        run(unfolded_loops, n);
+        crate::kernel::reasoning::path_facts::context_rebuild_entries() - before
+    });
+    eprintln!("unfolded loop context entries: {counts:?}");
+    let early = (counts[1] - counts[0]) / 3;
+    let late = (counts[2] - counts[1]) / 6;
+    assert!(
+        late <= early + band(early),
+        "unfolded predicates cause growing context rebuilds per loop: {counts:?}"
+    );
+}
