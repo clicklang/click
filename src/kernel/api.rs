@@ -615,7 +615,7 @@ impl CLoopBreakExit {
 /// would otherwise swallow it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CLoopReturnExit {
-    value: CValue,
+    value: StoredExecutionValue,
     state: CState,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: std::sync::Arc<[Proposition]>,
@@ -623,10 +623,14 @@ pub(crate) struct CLoopReturnExit {
 }
 
 impl CLoopReturnExit {
-    pub(crate) fn new(value: CValue, state: CState, pure_facts: Vec<Proposition>) -> Self {
+    pub(crate) fn new(
+        value: impl Into<StoredExecutionValue>,
+        state: CState,
+        pure_facts: Vec<Proposition>,
+    ) -> Self {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
-            value,
+            value: value.into(),
             state,
             pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
@@ -641,7 +645,7 @@ impl CLoopReturnExit {
         self
     }
 
-    pub(crate) fn value(&self) -> &CValue {
+    pub(crate) fn value(&self) -> &StoredExecutionValue {
         &self.value
     }
 
@@ -6106,7 +6110,7 @@ mod proof_case_evidence_tests {
                 state: Box::new(entry_state.clone()),
                 statement: Box::new(CStatement::Skip),
                 outcome: CStatementOutcome::Return {
-                    value: int32(value),
+                    value: int32(value).into(),
                     state: Box::new(entry_state.clone()),
                 },
             })
@@ -7437,7 +7441,7 @@ pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem>
 
     if outcome
         != (CStatementOutcome::Return {
-            value: b_value,
+            value: b_value.into(),
             state: Box::new(state.clone()),
         })
     {
@@ -7473,7 +7477,7 @@ pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theor
 
     if outcome
         != (CStatementOutcome::Return {
-            value: a_value,
+            value: a_value.into(),
             state: Box::new(state.clone()),
         })
     {

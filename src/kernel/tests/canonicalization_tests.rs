@@ -278,7 +278,7 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
         let CStatementOutcome::Return { value, .. } = outcome else {
             continue;
         };
-        let CValue::Pointer(pointer) = value else {
+        let CValue::Pointer(pointer) = value.clone().into_native() else {
             panic!("indexing should return a pointer");
         };
         for index in pointer.offset.native_scaled_values_for_output() {
@@ -320,9 +320,9 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
             continue;
         };
         let mut load_variables = BTreeSet::new();
-        collect_offset_load_variables_from_value(value, &mut load_variables);
+        collect_offset_load_variables_from_value(&value.native(), &mut load_variables);
         assert_load_variables_have_defining_facts(&load_variables, &path.execution_facts());
-        if let CValue::Pointer(pointer) = value
+        if let CValue::Pointer(pointer) = value.clone().into_native()
             && let Some(read) = pointer.pointer().as_loaded_value()
         {
             assert_eq!(read.defining_address, cell);

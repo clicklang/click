@@ -7,7 +7,7 @@ use super::reasoning::{
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
     signed_bitvector_constant, signed_i64_bitvector_constant,
 };
-use super::{ExecutionFacts, LocalExecutionValue};
+use super::{ExecutionFacts, StoredExecutionValue};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -8034,12 +8034,12 @@ pub enum CStatementOutcome {
         state: Box<CState>,
     },
     Return {
-        value: CValue,
+        value: StoredExecutionValue,
         state: Box<CState>,
     },
     /// An exceptional transfer that has not yet been handled in this function.
     Throw {
-        value: CValue,
+        value: StoredExecutionValue,
         state: Box<CState>,
     },
     /// Internal to `CStatementVerifies`: the statement has no finite
@@ -8052,12 +8052,12 @@ pub enum CStatementOutcome {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CFunctionOutcome {
     Return {
-        value: CValue,
+        value: StoredExecutionValue,
         state: Box<CState>,
     },
     /// An exceptional outcome crossing this function boundary.
     Throw {
-        value: CValue,
+        value: StoredExecutionValue,
         state: Box<CState>,
     },
     /// Internal to `CFunctionVerifies`: no return frontier exists, but the
@@ -8115,7 +8115,7 @@ pub(super) enum CLocalBinding {
         /// True only for an allocated scalar binding, not a logical parameter
         /// whose compatibility pseudo-slot happens to have the same name.
         storage_declared: bool,
-        value: LocalExecutionValue,
+        value: StoredExecutionValue,
         c_type: CType,
         slot: Pointer,
         volatile: bool,
@@ -14946,7 +14946,7 @@ pub struct SymbolicCExecutionPath {
     /// same producer applies the contract exit rule. Ordinary symbolic paths
     /// have no separate proof-completion origin.
     pub(super) completion_origin: Option<CFunctionOutcome>,
-    pub(super) call_result: Option<CValue>,
+    pub(super) call_result: Option<StoredExecutionValue>,
     pub(super) call_parameters: Option<CallParameters>,
     pub(super) assumptions: PureFactContext,
     /// The checked body context, retained by the Proof completion producer.
@@ -15080,7 +15080,7 @@ pub(super) struct CStatementExecutionPath {
     /// This is presentation metadata, never an additional assumption.
     pub(super) loop_invariant_correspondence: LoopInvariantCorrespondence,
     /// Exact non-void result retained by the call producer, even when discarded.
-    pub(super) call_result: Option<CValue>,
+    pub(super) call_result: Option<StoredExecutionValue>,
     /// The callee's by-value aggregate parameters as the call bound them
     /// ([`CallParameters`]), retained by the call producer.
     pub(super) call_parameters: Option<CallParameters>,
@@ -15091,9 +15091,14 @@ pub(super) struct CStatementExecutionPath {
 }
 
 impl CStatementExecutionPath {
-    pub(super) fn with_call_result(mut self, result: Option<CValue>) -> Self {
+    pub(super) fn with_call_result(
+        mut self,
+        result: Option<impl Into<StoredExecutionValue>>,
+    ) -> Self {
         if matches!(self.outcome, CStatementOutcome::Normal(_)) {
-            self.call_result = result.filter(|value| *value != CValue::Void);
+            self.call_result = result
+                .map(Into::into)
+                .filter(|value| value.c_type() != CType::Void);
         }
         self
     }

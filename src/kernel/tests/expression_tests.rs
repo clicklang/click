@@ -1163,7 +1163,7 @@ fn int32_subtraction_is_native() {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(5),
+                value: int32(5).into(),
                 state: Box::new(state),
             },
         }
@@ -1824,7 +1824,7 @@ fn symbolic_pointer_equality_reports_branch_facts() {
             state: Box::new(state.clone()),
             statement: Box::new(statement.clone()),
             outcome: CStatementOutcome::Return {
-                value: int32(1),
+                value: int32(1).into(),
                 state: Box::new(state.clone()),
             },
         }
@@ -1842,7 +1842,7 @@ fn symbolic_pointer_equality_reports_branch_facts() {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(0),
+                value: int32(0).into(),
                 state: Box::new(state),
             },
         }
@@ -1867,7 +1867,7 @@ fn if_uses_c_int32_truthiness() {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(1),
+                value: int32(1).into(),
                 state: Box::new(state),
             },
         }
@@ -1889,7 +1889,7 @@ fn if_uses_c_int32_truthiness() {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(0),
+                value: int32(0).into(),
                 state: Box::new(state),
             },
         }
@@ -1911,7 +1911,7 @@ fn assignment_and_sequence_update_native_state() {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(2),
+                value: int32(2).into(),
                 state: Box::new(final_state),
             },
         }
@@ -1947,7 +1947,7 @@ fn store_then_load_threads_native_memory() {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(9),
+                value: int32(9).into(),
                 state: Box::new(final_state),
             },
         }
@@ -1981,7 +1981,8 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
-                ))),
+                )))
+                .into(),
                 state: Box::new(state),
             },
         }
@@ -2020,7 +2021,7 @@ fn block_backed_store_then_load_needs_no_memory_obligation() {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(9),
+                value: int32(9).into(),
                 state: Box::new(final_state),
             },
         }
@@ -2053,7 +2054,8 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
                     crate::kernel::intern_c_memory(memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32
-                ))),
+                )))
+                .into(),
                 state: Box::new(state),
             },
         }
@@ -2089,7 +2091,7 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(23),
+                value: int32(23).into(),
                 state: Box::new(
                     CState::new()
                         .with_local(
@@ -2719,7 +2721,8 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
                     crate::kernel::intern_c_memory(memory),
                     Box::new(derived),
                     crate::kernel::LoadKind::Int32,
-                ))),
+                )))
+                .into(),
                 state: Box::new(state),
             },
         }
@@ -2795,7 +2798,7 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(3),
+                value: int32(3).into(),
                 state: Box::new(final_state),
             },
         }

@@ -328,7 +328,7 @@ fn wide_multiply_calls_keep_wide_result_and_caller_storage() {
     assert_eq!(**returned, state);
     assert_eq!(
         MachineIntegerType::Int128
-            .constant_from_value(value)
+            .constant_from_value(&value.native())
             .unwrap()
             .to_integer(),
         BigInt::from(i64::MIN) * BigInt::from(i32::MIN)

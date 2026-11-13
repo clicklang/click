@@ -168,7 +168,7 @@ fn construction_return_preserves_exact_destination_through_two_factories() {
         panic!("construction failed: {:?}", path.outcome);
     };
     assert!(path.obligations.is_empty(), "{:?}", path.obligations);
-    assert_eq!(pointer(value), destination);
+    assert_eq!(pointer(&value.native()), destination);
     assert_eq!(
         state.memory.known_value(&destination),
         Some(CValue::typed_pointer(
@@ -311,7 +311,7 @@ fn construction_destination_can_alias_an_argument_without_becoming_fresh() {
             let CFunctionOutcome::Return { value, state } = &path.outcome else {
                 panic!("alias store construction failed: {:?}", path.outcome);
             };
-            assert_eq!(pointer(value), at);
+            assert_eq!(pointer(&value.native()), at);
             assert_eq!(
                 state.memory.known_value(&at.offset_by_bytes(8)),
                 Some(int32(7))
@@ -461,7 +461,7 @@ fn construction_temporary_retirement_preserves_copies_and_external_backing() {
             ));
         } else {
             assert!(
-                matches!(&read[0].outcome, CStatementOutcome::Return { value, .. } if *value == int32(23))
+                matches!(&read[0].outcome, CStatementOutcome::Return { value, .. } if *value.native() == int32(23))
             );
         }
     }
@@ -559,7 +559,7 @@ fn supplied_constructor_destination_survives_two_procedure_boundaries() {
     let CFunctionOutcome::Return { value, state } = &path.outcome else {
         panic!("constructor failed: {:?}", path.outcome);
     };
-    assert_eq!(*value, CValue::Void);
+    assert_eq!(*value.native(), CValue::Void);
     assert!(path.obligations.is_empty(), "{:?}", path.obligations);
     assert_eq!(
         state.memory.known_value(&destination),

@@ -161,7 +161,7 @@ pub(crate) fn c_checked_function_proposition_with_reason(
             _ => return false,
         };
         completed.is_exceptional == exceptional
-            && completed.result.as_ref() == value
+            && value.matches_native(completed.result.as_ref())
             && memories_match_up_to_cached_reads(completed.state.memory(), state.memory())
             && completed.state.locals() == state.locals()
             && completed.state.aggregate_destination == state.aggregate_destination
@@ -268,7 +268,7 @@ mod cached_read_completion_tests {
             c_return(c_int32_literal(0)),
         );
         let outcome = CFunctionOutcome::Return {
-            value: int32(0),
+            value: int32(0).into(),
             state: Box::new(state.clone()),
         };
         let specification =
@@ -475,12 +475,15 @@ pub fn c_function_outcomes_program_state_definitionally_equal(
                 state: right_state,
             },
         ) => {
-            c_values_proven_equal_for_memory_resolution(left_value, right_value, assumptions)
-                && c_memories_definitionally_equal(
-                    left_state.memory(),
-                    right_state.memory(),
-                    assumptions,
-                )
+            c_values_proven_equal_for_memory_resolution(
+                &left_value.native(),
+                &right_value.native(),
+                assumptions,
+            ) && c_memories_definitionally_equal(
+                left_state.memory(),
+                right_state.memory(),
+                assumptions,
+            )
         }
         _ => left == right,
     }
@@ -515,7 +518,11 @@ pub fn c_function_outcomes_program_state_equal_by_execution_provenance(
         right_state.memory(),
         right_facts,
         assumptions,
-    ) && c_values_proven_equal_for_memory_resolution(left_value, right_value, assumptions)
+    ) && c_values_proven_equal_for_memory_resolution(
+        &left_value.native(),
+        &right_value.native(),
+        assumptions,
+    )
 }
 
 fn memories_equal_by_execution_provenance(
@@ -1379,7 +1386,7 @@ fn prepare_function_claim_path(
     let (value, raw_exit_state, exceptional) = match &adopted_outcome {
         CFunctionOutcome::Return { value, state } => (value, state, false),
         CFunctionOutcome::Throw { value, state }
-            if function.exceptional_signature().permits(value) =>
+            if function.exceptional_signature().permits(&value.native()) =>
         {
             (value, state, true)
         }
@@ -1442,7 +1449,7 @@ fn prepare_function_claim_path(
         crate::kernel::functions::function_exit_memory(
             caller_state,
             raw_exit_state,
-            value,
+            &value.native(),
             function,
         )
     };
@@ -1483,13 +1490,13 @@ fn prepare_function_claim_path(
     if exceptional {
         post_state.locals.set_typed(
             C_EXCEPTIONAL_RESULT_NAME.to_string(),
-            value.clone(),
+            value.clone().into_native(),
             CType::Int32,
         );
     } else if function.return_type() != CType::Void {
         post_state.locals.set_typed(
             C_CONTRACT_RESULT_NAME.to_string(),
-            value.clone(),
+            value.clone().into_native(),
             function.return_type(),
         );
     }
@@ -2384,7 +2391,7 @@ impl<'a> CFunctionEnsureGoalContext<'a> {
         let exit_memory = crate::kernel::functions::function_exit_memory(
             caller_state,
             return_state,
-            value,
+            &value.native(),
             function,
         );
         let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
@@ -2403,7 +2410,7 @@ impl<'a> CFunctionEnsureGoalContext<'a> {
         if function.return_type() != CType::Void {
             post_state.locals.set_typed(
                 C_CONTRACT_RESULT_NAME.to_string(),
-                value.clone(),
+                value.clone().into_native(),
                 function.return_type(),
             );
         }
@@ -2539,7 +2546,7 @@ pub(crate) fn c_function_exceptional_ensure_goals(
     post_state.observed_population_families = throw_state.observed_population_families.clone();
     post_state.locals.set_typed(
         C_EXCEPTIONAL_RESULT_NAME.to_string(),
-        value.clone(),
+        value.clone().into_native(),
         CType::Int32,
     );
     let lowering_assumptions = assumptions
@@ -2782,7 +2789,8 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
         CFunctionOutcome::Throw { value, .. } => (true, value),
         _ => return None,
     };
-    let term = match value.numeric_value() {
+    let native = value.native();
+    let term = match native.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Void => return Some((exceptional, CValue::Void)),
         CValue::Bool(term)
@@ -2801,7 +2809,7 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
         CValue::Pointer(_) | CValue::Parameter(_) => return None,
     };
     match term {
-        MachineTerm::Constant { .. } => Some((exceptional, value.clone())),
+        MachineTerm::Constant { .. } => Some((exceptional, value.clone().into_native())),
         _ => None,
     }
 }
@@ -3526,7 +3534,7 @@ mod checked_proposition_index_tests {
                 Vec::new(),
                 Vec::new(),
                 CFunctionOutcome::Return {
-                    value: CValue::Void,
+                    value: CValue::Void.into(),
                     state: Box::new(CState::new()),
                 },
             );
@@ -3576,7 +3584,7 @@ mod checked_proposition_index_tests {
             function: Box::new(function.clone()),
             arguments: Vec::new(),
             outcome: CFunctionOutcome::Return {
-                value: CValue::Int32(MachineTerm::constant(0)),
+                value: CValue::Int32(MachineTerm::constant(0)).into(),
                 state: Box::new(state),
             },
         };
@@ -3646,11 +3654,11 @@ mod heap_status_equality_tests {
         ));
 
         let left = CFunctionOutcome::Return {
-            value: CValue::Int32(MachineTerm::constant(0)),
+            value: CValue::Int32(MachineTerm::constant(0)).into(),
             state: Box::new(CState::new().with_memory(base)),
         };
         let right = CFunctionOutcome::Return {
-            value: CValue::Int32(MachineTerm::constant(0)),
+            value: CValue::Int32(MachineTerm::constant(0)).into(),
             state: Box::new(CState::new().with_memory(other)),
         };
         assert!(!c_function_outcomes_program_state_definitionally_equal(

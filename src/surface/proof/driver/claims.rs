@@ -1489,7 +1489,7 @@ fn close_claim_directly_from_outcome<'a>(
         labels.register_current_state(state);
     }
     if let CFunctionOutcome::Return { value, .. } = outcome {
-        labels.source_result(value);
+        labels.source_result(&value.native());
     }
     // A value the outcome state no longer names may be what a local held
     // at a statement boundary this path recorded, which an `ensures` cites
@@ -1517,7 +1517,12 @@ fn close_claim_directly_from_outcome<'a>(
                     expression,
                     root.facts().assumptions(),
                     ContractEnvironment::new(&values, &array_refs),
-                    FixedStateFrame::new(pre_state, state, Some(value), &RecordedSnapshots::new()),
+                    FixedStateFrame::new(
+                        pre_state,
+                        state,
+                        Some(&value.native()),
+                        &RecordedSnapshots::new(),
+                    ),
                     spec_definitions,
                     &BTreeSet::new(),
                 )
@@ -1662,15 +1667,16 @@ fn close_claim_directly_from_outcome<'a>(
     // The pure facts listed are those bearing on the goal, so a premise the
     // closure lacked is not pushed past the item limit by unrelated ones.
     let path_facts = root.facts().propositions().cloned().collect::<Vec<_>>();
+    let native_result = match outcome {
+        CFunctionOutcome::Return { value, .. } => Some(value.native()),
+        _ => None,
+    };
     let context = describe_goal_proof_context(
         listed_goal.as_ref(),
         &path_facts,
         &path_case_facts(entry_facts, execution_paths, path_index),
         resource_facts,
-        match outcome {
-            CFunctionOutcome::Return { value, .. } => Some(value),
-            _ => None,
-        },
+        native_result.as_deref(),
         &mut labels,
     );
     // A read of a cell a store dropped after the store search missed names
@@ -1964,7 +1970,7 @@ fn fold_produced_resources<'a>(
                 resource,
                 context.parameter_binding(),
                 state,
-                value,
+                &value.native(),
             )
             && state.resources().contains_exact_representation(&held)
         {

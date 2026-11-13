@@ -1593,7 +1593,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     let after = before.clone().store(alias.clone(), int32(1));
     let pre_state = CState::new().with_memory(before.clone());
     let outcome = CFunctionOutcome::Return {
-        value: int32(0),
+        value: int32(0).into(),
         state: Box::new(CState::new().with_memory(after.clone())),
     };
     let aliases_global =

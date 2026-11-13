@@ -2009,7 +2009,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
             "outcomes",
             StatementPrerequisitePolicy::Retained,
             context,
-            value,
+            &value.native(),
             state,
             &transition.pure_facts,
         )? {
@@ -3334,7 +3334,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 && execution.core.frontier.continuations.is_empty() =>
         {
             CStatementOutcome::Return {
-                value: CValue::Void,
+                value: CValue::Void.into(),
                 state,
             }
         }
@@ -3540,7 +3540,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     tactic_name,
                     prerequisite_policy,
                     context,
-                    value,
+                    &value.native(),
                     state,
                     &successor_pure_facts,
                 )?

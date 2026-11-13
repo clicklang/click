@@ -37,7 +37,7 @@ pub(crate) use eval::typed_reads::{
     FieldScope as TransportFieldScope, ReadScope as TransportReadScope,
     record_field as record_transport_field,
 };
-pub use execution_value::{ExecutionValue, LocalExecutionValue};
+pub use execution_value::{ExecutionValue, StoredExecutionValue};
 pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
 mod fold_read_summary;
@@ -271,7 +271,7 @@ mod prelude {
     pub(super) use super::reasoning::*;
     pub(super) use super::spec::*;
     pub(super) use super::{
-        ExecutionFactSource, ExecutionFacts, ExecutionValue, LocalExecutionValue,
+        ExecutionFactSource, ExecutionFacts, ExecutionValue, StoredExecutionValue,
     };
     pub(super) use std::collections::{BTreeMap, BTreeSet};
 }

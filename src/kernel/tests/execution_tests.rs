@@ -114,11 +114,11 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
             theorem.proposition(),
             Proposition::CFunctionExecutes {
                 outcome: CFunctionOutcome::Return {
-                    value: CValue::Int32(int32_constant!(1)),
+                    value,
                     ..
                 },
                 ..
-            }
+            } if matches!(value.native().as_ref(), CValue::Int32(int32_constant!(1)))
         ),
         "{:?}",
         theorem.proposition()
@@ -730,7 +730,7 @@ fn concrete_max_executes_without_list_encoding() {
             state: Box::new(state.clone()),
             statement: Box::new(c_max_body()),
             outcome: CStatementOutcome::Return {
-                value: int32(1),
+                value: int32(1).into(),
                 state: Box::new(state),
             },
         }
@@ -757,7 +757,7 @@ fn concrete_max_function_call_preserves_caller_locals() {
             function: Box::new(function),
             arguments,
             outcome: CFunctionOutcome::Return {
-                value: int32(1),
+                value: int32(1).into(),
                 state: Box::new(state),
             },
         }
@@ -802,7 +802,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
                 function: Box::new(function.clone()),
                 arguments: arguments.clone(),
                 outcome: CFunctionOutcome::Return {
-                    value: int32(b_bits),
+                    value: int32(b_bits).into(),
                     state: Box::new(state.clone()),
                 },
             }),
@@ -826,7 +826,7 @@ fn symbolic_max_function_call_reports_branch_facts() {
                 function: Box::new(function),
                 arguments,
                 outcome: CFunctionOutcome::Return {
-                    value: int32(a_bits),
+                    value: int32(a_bits).into(),
                     state: Box::new(state),
                 },
             }),
@@ -841,7 +841,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
     let first_range = memory_range(arc_pointer(0), 0, 1);
     let other_range = memory_range(arc_pointer(4), 0, 1);
     let left = CFunctionOutcome::Return {
-        value: int32(0),
+        value: int32(0).into(),
         state: Box::new(
             CState::new().with_memory(base.clone().with_call_memory_havoc(
                 Variable(41),
@@ -852,7 +852,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
         ),
     };
     let equivalent = CFunctionOutcome::Return {
-        value: int32(0),
+        value: int32(0).into(),
         state: Box::new(
             CState::new().with_memory(base.clone().with_call_memory_havoc(
                 Variable(42),
@@ -863,7 +863,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
         ),
     };
     let different = CFunctionOutcome::Return {
-        value: int32(0),
+        value: int32(0).into(),
         state: Box::new(CState::new().with_memory(base.with_call_memory_havoc(
             Variable(43),
             &[other_range],
@@ -933,7 +933,7 @@ fn function_call_threads_memory_but_discards_callee_locals() {
             function: Box::new(function),
             arguments,
             outcome: CFunctionOutcome::Return {
-                value: int32(9),
+                value: int32(9).into(),
                 state: Box::new(final_state),
             },
         }
@@ -995,7 +995,7 @@ fn concrete_function_specification_is_native_theorem() {
         vec![c_int32_literal(0), c_int32_literal(1)],
         Vec::new(),
         CFunctionOutcome::Return {
-            value: int32(1),
+            value: int32(1).into(),
             state: Box::new(CState::new()),
         },
     );
@@ -1031,7 +1031,7 @@ fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
         ],
         vec![Proposition::ConditionIs(condition.clone(), true)],
         CFunctionOutcome::Return {
-            value: int32(MachineTerm::Variable(b)),
+            value: int32(MachineTerm::Variable(b)).into(),
             state: Box::new(CState::new()),
         },
     );
@@ -1067,7 +1067,7 @@ fn incomplete_symbolic_function_specification_does_not_prove() {
         ],
         Vec::new(),
         CFunctionOutcome::Return {
-            value: int32(MachineTerm::Variable(b)),
+            value: int32(MachineTerm::Variable(b)).into(),
             state: Box::new(CState::new()),
         },
     );
@@ -1108,7 +1108,7 @@ fn call_assign_uses_function_environment() {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(42),
+                value: int32(42).into(),
                 state: Box::new(final_state),
             },
         }
@@ -1145,7 +1145,7 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Throw {
-                value: int32(7),
+                value: int32(7).into(),
                 state: Box::new(state),
             },
         }
@@ -1186,7 +1186,7 @@ fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
     else {
         panic!("expected a caught return: {:?}", theorem.proposition());
     };
-    assert_eq!(value, &int32(7));
+    assert_eq!(value.native().as_ref(), &int32(7));
     assert_eq!(state.locals.get_native("x").as_deref(), Some(&int32(9)));
     assert_eq!(
         state.locals.get_native("caught").as_deref(),
@@ -1211,11 +1211,11 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
         theorem.proposition(),
         Proposition::CStatementExecutes {
             outcome: CStatementOutcome::Return {
-                value: CValue::Int32(int32_constant!(9)),
+                value,
                 ..
             },
             ..
-        }
+        } if matches!(value.native().as_ref(), CValue::Int32(int32_constant!(9)))
     ));
     let returning = c_try_catch_int32(
         c_return(c_int32_literal(3)),
@@ -1228,11 +1228,11 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
         theorem.proposition(),
         Proposition::CStatementExecutes {
             outcome: CStatementOutcome::Return {
-                value: CValue::Int32(int32_constant!(3)),
+                value,
                 ..
             },
             ..
-        }
+        } if matches!(value.native().as_ref(), CValue::Int32(int32_constant!(3)))
     ));
 }
 
@@ -1249,11 +1249,11 @@ fn throw_from_int32_handler_escapes_instead_of_being_recaught() {
         theorem.proposition(),
         Proposition::CStatementExecutes {
             outcome: CStatementOutcome::Throw {
-                value: CValue::Int32(int32_constant!(7)),
+                value,
                 ..
             },
             ..
-        }
+        } if matches!(value.native().as_ref(), CValue::Int32(int32_constant!(7)))
     ));
 }
 
@@ -1302,11 +1302,11 @@ fn caught_throw_satisfies_a_nonthrowing_function_signature() {
         theorem.proposition(),
         Proposition::CFunctionExecutes {
             outcome: CFunctionOutcome::Return {
-                value: CValue::Int32(int32_constant!(7)),
+                value,
                 ..
             },
             ..
-        }
+        } if matches!(value.native().as_ref(), CValue::Int32(int32_constant!(7)))
     ));
 }
 
@@ -1367,13 +1367,15 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
             }
             match proposition {
                 Proposition::CFunctionExecutes {
-                    outcome:
-                        CFunctionOutcome::Return {
-                            value: CValue::Int32(int32_constant!(value)),
-                            ..
-                        },
+                    outcome: CFunctionOutcome::Return { value, .. },
                     ..
-                } => constant_u32(*value),
+                } => {
+                    let native = value.native();
+                    let CValue::Int32(int32_constant!(bits)) = native.as_ref() else {
+                        panic!("constant return");
+                    };
+                    constant_u32(*bits)
+                }
                 other => panic!("conditional catch produced a non-return outcome: {other:?}"),
             }
         })
@@ -1931,7 +1933,7 @@ fn while_loop_executes_concrete_countdown() {
             state: Box::new(state),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(0),
+                value: int32(0).into(),
                 state: Box::new(final_state),
             },
         }

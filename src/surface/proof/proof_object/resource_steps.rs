@@ -3082,7 +3082,7 @@ impl<'a> Proof<'a> {
             .frontier
             .execution_start_state(&execution.core.state);
         let outcome = CFunctionOutcome::Return {
-            value: (*goal.data.core.result).clone(),
+            value: (*goal.data.core.result).clone().into(),
             state: Box::new((*goal.data.core.state).clone()),
         };
         let family_reaches_population = self.family_reaches_population(resource);
@@ -3178,7 +3178,7 @@ impl<'a> Proof<'a> {
             );
         }
         let mut data = (*goal.data).clone();
-        data.core.result = Arc::new(value);
+        data.core.result = Arc::new(value.into_native());
         data.core.state = (*state).into();
         let mut updated = goal.clone();
         updated.data = Arc::new(data);

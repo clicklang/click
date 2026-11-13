@@ -268,7 +268,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
             .unwrap()
         });
         assert!(
-            matches!(&paths[0].outcome, CStatementOutcome::Return { value: CValue::UInt32(value), .. } if value.as_const() == Some(7))
+            matches!(&paths[0].outcome, CStatementOutcome::Return { value, .. } if *value.native() == CValue::UInt32(MachineTerm::uint32_constant(7)))
         );
         measurements.push(work);
     }

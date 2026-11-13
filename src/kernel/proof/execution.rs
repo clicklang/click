@@ -5,7 +5,6 @@
 //! certificate builder, diagnostic cursor, or smart-planning state.
 
 use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, SharedVec};
-use crate::kernel::LoadKind;
 use crate::kernel::population_authority::c_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
@@ -18,6 +17,7 @@ use crate::kernel::{
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
+use crate::kernel::{LoadKind, StoredExecutionValue};
 use crate::persistent::PersistentSet;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::{Deref, DerefMut};
@@ -317,7 +317,7 @@ impl CheckedReturnProposition {
         // As for checked function propositions, resource representation may
         // change during the proof. The program snapshot and result may not.
         if outcome.is_exceptional
-            || outcome.result.as_ref() != value
+            || !value.matches_native(outcome.result.as_ref())
             || outcome.state.locals() != state.locals()
             || outcome.state.aggregate_destination != state.aggregate_destination
             || !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
@@ -7193,7 +7193,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                             }
                         };
                         let returning = CStatementOutcome::Return {
-                            value: CValue::Void,
+                            value: CValue::Void.into(),
                             state: state.clone(),
                         };
                         if last_statement == Some(index) {
@@ -8493,7 +8493,7 @@ impl ExecutionProofCore {
     /// returned, read from the theorem that completed it and the state the
     /// evidence reached after it (automatic lifetimes the `return` ended
     /// included). `None` for an open frontier or one completed otherwise.
-    pub(crate) fn completed_return_outcome(&self) -> Option<(CValue, CState)> {
+    pub(crate) fn completed_return_outcome(&self) -> Option<(StoredExecutionValue, CState)> {
         if !self.evidence_completed || self.execution_evidence.len() != 1 {
             return None;
         }
@@ -9533,7 +9533,7 @@ impl ExecutionProofCore {
                         function: Box::new(entry.function.as_ref().clone()),
                         arguments: entry.arguments.clone(),
                         outcome: CFunctionOutcome::Return {
-                            value: CValue::Void,
+                            value: CValue::Void.into(),
                             state: Box::new(entry.entry_state.clone()),
                         },
                     },

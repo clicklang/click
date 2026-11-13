@@ -2472,7 +2472,7 @@ fn collect_term_memory_loads(
             CStatementOutcome::Return { value, state }
             | CStatementOutcome::Throw { value, state } => {
                 let _ = state;
-                collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)
+                collect_cvalue_memory_loads(&value.native(), current_memory, loads, seen_integers)
             }
             CStatementOutcome::VerificationDiverges
             | CStatementOutcome::UndefinedBehavior(_)
@@ -2482,7 +2482,7 @@ fn collect_term_memory_loads(
             CFunctionOutcome::Return { value, state }
             | CFunctionOutcome::Throw { value, state } => {
                 let _ = state;
-                collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)
+                collect_cvalue_memory_loads(&value.native(), current_memory, loads, seen_integers)
             }
             CFunctionOutcome::VerificationDiverges
             | CFunctionOutcome::UndefinedBehavior(_)
@@ -10517,7 +10517,7 @@ impl SymbolicCExecution {
 }
 
 impl SymbolicCExecutionPath {
-    pub(crate) fn call_result(&self) -> Option<&CValue> {
+    pub(crate) fn call_result(&self) -> Option<&StoredExecutionValue> {
         self.call_result.as_ref()
     }
 

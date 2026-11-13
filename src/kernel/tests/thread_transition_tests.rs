@@ -1717,11 +1717,11 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         CStatementOutcome::Break(Box::new(state.clone())),
         CStatementOutcome::Continue(Box::new(state.clone())),
         CStatementOutcome::Return {
-            value: int32(0),
+            value: int32(0).into(),
             state: Box::new(state.clone()),
         },
         CStatementOutcome::Throw {
-            value: int32(0),
+            value: int32(0).into(),
             state: Box::new(state.clone()),
         },
         CStatementOutcome::Jump {

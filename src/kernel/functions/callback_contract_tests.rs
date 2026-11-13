@@ -634,7 +634,7 @@ fn direct_and_callback_resource_transition(
     environment: &CExecutionEnvironment,
 ) -> (CState, CState) {
     let direct_outcome = CFunctionOutcome::Return {
-        value: CValue::Void,
+        value: CValue::Void.into(),
         state: Box::new(state.clone()),
     };
     let (direct_outcome, direct_obligations) = apply_c_function_contract_resource_transition(
@@ -653,7 +653,7 @@ fn direct_and_callback_resource_transition(
     else {
         panic!("direct resource transition did not return");
     };
-    assert_eq!(direct_value, CValue::Void);
+    assert_eq!(*direct_value.native(), CValue::Void);
 
     let paths = execute_c_function_contracts_paths(
         state,
@@ -676,7 +676,7 @@ fn direct_and_callback_resource_transition(
             paths[0].outcome
         );
     };
-    assert_eq!(callback_value, &CValue::Void);
+    assert_eq!(callback_value.native().as_ref(), &CValue::Void);
     assert_eq!(direct_state.memory(), callback_state.memory());
     assert_eq!(
         direct_state.observed_population_families,

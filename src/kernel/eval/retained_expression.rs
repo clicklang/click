@@ -874,6 +874,58 @@ mod tests {
     }
 
     #[test]
+    fn retained_execution_return_and_function_handoff_keep_the_root() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let statement = CStatement::Return(CExpression::Multiply(
+            Box::new(CExpression::Value(CValue::UInt32(MachineTerm::Variable(
+                Variable(998330),
+            )))),
+            Box::new(CExpression::Value(CValue::UInt32(
+                MachineTerm::uint32_constant(3),
+            ))),
+        ));
+        let exports = KernelTermExport::machine_export_count();
+        let outcome = super::super::statements::execute_c_statement(
+            &CState::new(),
+            &statement,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        let CStatementOutcome::Return { value, .. } = outcome else {
+            panic!("return result");
+        };
+        let root = value.shared().expect("retained return root").clone();
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        let function = c_function(CType::UInt32, "retained_return", Vec::new(), statement);
+        let environment = CExecutionEnvironment::new();
+        let paths = execute_c_function_paths(
+            &CState::new(),
+            &function,
+            &[],
+            &PureFactContext::new(),
+            CExecutionContext::execute_bodies(&environment),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let CFunctionOutcome::Return { value, .. } = &paths[0].outcome else {
+            panic!("function result");
+        };
+        assert_eq!(value.shared(), Some(&root));
+        let mut caller = CState::new();
+        let mut obligations = Vec::new();
+        crate::kernel::loops::assign_call_result(
+            &mut caller,
+            "received",
+            value.clone(),
+            &mut obligations,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert_eq!(caller.locals.get("received").unwrap().shared(), Some(&root));
+        assert!(obligations.is_empty());
+    }
+
+    #[test]
     fn retained_local_reads_restore_roots_and_preserve_const_refusal() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;

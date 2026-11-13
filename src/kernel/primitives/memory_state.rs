@@ -1508,7 +1508,7 @@ impl CLocalEnvironment {
     pub(in crate::kernel) fn set_retained_typed_with_all_qualifiers(
         &mut self,
         name: impl Into<String>,
-        value: impl Into<LocalExecutionValue>,
+        value: impl Into<StoredExecutionValue>,
         c_type: CType,
         volatile: bool,
         pointee_volatile: bool,
@@ -1559,7 +1559,7 @@ impl CLocalEnvironment {
     }
 
     /// Borrow the exact retained value. Use `get_native` only at a native output boundary.
-    pub fn get(&self, name: &str) -> Option<&LocalExecutionValue> {
+    pub fn get(&self, name: &str) -> Option<&StoredExecutionValue> {
         match self.bindings.get(name) {
             Some(CLocalBinding::Object { value, .. }) => Some(value),
             Some(CLocalBinding::UninitializedObject { .. })
@@ -1613,7 +1613,7 @@ impl CLocalEnvironment {
     }
 
     /// Iterate values without expanding shared expression payloads.
-    pub fn object_values(&self) -> impl Iterator<Item = (&str, &LocalExecutionValue)> {
+    pub fn object_values(&self) -> impl Iterator<Item = (&str, &StoredExecutionValue)> {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
@@ -2177,7 +2177,7 @@ impl CLocalEnvironment {
         })
     }
 
-    fn names_holding_integer_matching<'a, 't, F: FnMut(&LocalExecutionValue) -> bool + 't>(
+    fn names_holding_integer_matching<'a, 't, F: FnMut(&StoredExecutionValue) -> bool + 't>(
         &'a self,
         fingerprint: Option<u64>,
         mut matches: F,
@@ -10658,7 +10658,7 @@ mod local_variable_spelling_tests {
         }
     }
 
-    fn held_integer_term_of(value: &LocalExecutionValue) -> Option<&MachineTerm> {
+    fn held_integer_term_of(value: &StoredExecutionValue) -> Option<&MachineTerm> {
         match value.native_payload()?.numeric_value() {
             crate::kernel::integer_c_value!(term) | CValue::Bool(term) => Some(term),
             _ => None,

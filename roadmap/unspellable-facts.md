@@ -257,6 +257,20 @@ range-fact producer. All 1,823 affected evaluator, specification, scaling and
 example checks and all 5,279 regular fixtures passed; the fact-stability audit
 recorded zero differences.
 
+[PR #2722](https://github.com/clicklang/click/pull/2722) merged 5e; its pushed
+commit is included in upstream `master`.
+
+5f extends the stored execution carrier to return and exceptional outcomes,
+loop return exits and call-result metadata. Return evaluation and same-format
+machine result receipt preserve the common root; pointer/aggregate checks and
+unmigrated conversions keep their existing native boundaries. The stored
+carrier's identity is shared with local storage; specification producer equality
+remains exact. Contract lowering and presentation still have explicit native
+result consumers. The full pre-integration regular suite passed all 7,492
+checks. After integrating upstream's Rust-library and diagnostic changes, all
+1,911 affected/scaling checks and all 5,281 regular fixtures passed; the
+fact-stability audit recorded zero differences.
+
 ## Chunk 4: one producer boundary per PR
 
 Chunk 4 migrates existing numeric producers to retain `KernelTerm` operands and

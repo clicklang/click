@@ -11613,8 +11613,8 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     }
     for path in terminal_view.frontier.execution().unwrap().paths() {
         assert!(matches!(path.outcome(),
-            CFunctionOutcome::Return { value: CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)), .. }
-                if **at == pointer));
+            CFunctionOutcome::Return { value, .. }
+                if matches!(value.native().as_ref(), CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
     }
 
     // A condition fact selects one arm, exercising the single-transition

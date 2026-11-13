@@ -1403,7 +1403,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
             .specification
             .outcome()
             .equal_up_to_unused_creation_ledgers(&CFunctionOutcome::Return {
-                value: int32(2),
+                value: int32(2).into(),
                 state: Box::new(
                     CState::new()
                         .with_population_creation_tracking()

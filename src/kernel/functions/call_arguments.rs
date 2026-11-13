@@ -69,8 +69,16 @@ pub(super) fn with_contract_interface_argument_views(
     state
 }
 
-pub(super) fn set_function_result(state: &mut CState, function: &CFunction, value: CValue) {
-    set_contract_result(state, function.contract_interface(), value);
+pub(super) fn set_function_result(
+    state: &mut CState,
+    function: &CFunction,
+    value: impl Into<StoredExecutionValue>,
+) {
+    set_contract_result(
+        state,
+        function.contract_interface(),
+        value.into().into_native(),
+    );
 }
 
 pub(super) fn set_contract_result(
@@ -176,9 +184,10 @@ pub(super) fn complete_aggregate_return(
 pub(super) fn freed_pointer_return_conversion(
     state: &CState,
     function: &CFunction,
-    value: &CValue,
+    value: &StoredExecutionValue,
     assumptions: &PureFactContext,
 ) -> Option<CUndefinedBehavior> {
+    let value = value.native_payload()?;
     let return_type = function.return_type();
     if return_type == CType::Void
         || return_type.is_pointer()
@@ -268,9 +277,10 @@ pub(super) fn incompatible_pointer_argument(
 pub(super) fn incompatible_pointer_return(
     state: &CState,
     function: &CFunction,
-    value: &CValue,
+    value: &StoredExecutionValue,
     assumptions: &PureFactContext,
 ) -> Option<CRuntimeError> {
+    let value = value.native_payload()?;
     let pointee = function.contract_interface().return_pointee_class()?;
     let CValue::Pointer(pointer) = value else {
         return None;
@@ -300,6 +310,32 @@ pub(super) fn incompatible_pointer_return(
             pointee.spelling(),
         ))
     })
+}
+
+pub(in crate::kernel) fn coerce_retained_function_return_value(
+    value: StoredExecutionValue,
+    function: &CFunction,
+    obligations: &mut Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Option<StoredExecutionValue> {
+    if value.shared().is_some()
+        && matches!(
+            value.c_type(),
+            CType::Int8
+                | CType::UInt8
+                | CType::Int16
+                | CType::UInt16
+                | CType::Int32
+                | CType::UInt32
+                | CType::Int64
+                | CType::UInt64
+        )
+        && value.c_type() == function.return_type()
+    {
+        return Some(value);
+    }
+    coerce_function_return_value(value.into_native(), function, obligations, assumptions)
+        .map(Into::into)
 }
 
 pub(super) fn coerce_function_return_value(

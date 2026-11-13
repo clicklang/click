@@ -214,11 +214,11 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
         );
         if pointer.pointer() == &Pointer::null() {
             saw_failure = true;
-            assert_eq!(value, CValue::Int32(0.into()));
+            assert_eq!(*value.native(), CValue::Int32(0.into()));
             assert!(!resumed.population_storage_created_here(pointer));
         } else {
             saw_success = true;
-            assert_eq!(value, CValue::Int32(1.into()));
+            assert_eq!(*value.native(), CValue::Int32(1.into()));
             assert!(matches!(pointer.block, PointerBlock::Heap(_)));
             assert!(resumed.population_storage_created_here(pointer));
         }

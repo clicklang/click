@@ -3278,11 +3278,11 @@ mod tests {
             CStatementOutcome::Break(Box::new(state.clone())),
             CStatementOutcome::Continue(Box::new(state.clone())),
             CStatementOutcome::Return {
-                value: int32(0),
+                value: int32(0).into(),
                 state: Box::new(state.clone()),
             },
             CStatementOutcome::Throw {
-                value: int32(0),
+                value: int32(0).into(),
                 state: Box::new(state.clone()),
             },
             CStatementOutcome::Jump {

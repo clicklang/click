@@ -654,7 +654,7 @@ fn returned_proposition_trace(
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: CStatementOutcome::Return {
-                value: int32(0),
+                value: int32(0).into(),
                 state: Box::new(state.clone()),
             },
         })),
@@ -689,7 +689,7 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
         let candidate = crate::kernel::CFunctionExecutionCandidate {
             data: Arc::new(crate::kernel::CFunctionExecutionCandidateData {
                 outcome: Arc::new(CFunctionOutcome::Return {
-                    value: int32(0),
+                    value: int32(0).into(),
                     state: Box::new(state.clone()),
                 }),
                 facts: facts.clone(),
@@ -701,7 +701,7 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
         };
         let context = CheckedReturnContext::from_candidate(
             CStatementOutcome::Return {
-                value: int32(0),
+                value: int32(0).into(),
                 state: Box::new(state),
             },
             &candidate,
@@ -722,11 +722,11 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
 fn returned_proposition_context(state: &CState) -> Arc<CheckedReturnContext> {
     Arc::new(CheckedReturnContext {
         origin: CStatementOutcome::Return {
-            value: int32(0),
+            value: int32(0).into(),
             state: Box::new(state.clone()),
         },
         published: CFunctionOutcome::Return {
-            value: int32(0),
+            value: int32(0).into(),
             state: Box::new(state.clone()),
         },
         facts: ExecutionFacts::new(),
@@ -1286,7 +1286,7 @@ fn return_exchange_keeps_the_published_body_snapshot() {
     core.evidence_completed = true;
     let mut context = returned_proposition_context(&physical);
     Arc::make_mut(&mut context).published = CFunctionOutcome::Return {
-        value: int32(0),
+        value: int32(0).into(),
         state: Box::new(published.clone()),
     };
     core.return_proof_contexts = core.return_proof_contexts.with_inserted(0, context);
@@ -1436,7 +1436,7 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
                 state: Box::new(open.clone()),
                 statement: Box::new(statement),
                 outcome: CStatementOutcome::Return {
-                    value: int32(0),
+                    value: int32(0).into(),
                     state: Box::new(open),
                 },
             },

@@ -39,8 +39,8 @@ fn concrete_inline_loops_still_unroll_and_restore_the_call_context_on_error() {
         let mut budget = ExecutionBudget::new();
         let paths = call(int32(count), &mut budget).unwrap();
         assert!(matches!(paths.as_slice(), [CFunctionPath {
-                outcome: CFunctionOutcome::Return { value: CValue::Int32(value), .. }, ..
-            }] if value.as_const() == Some(0)));
+                outcome: CFunctionOutcome::Return { value, .. }, ..
+            }] if matches!(value.native().as_ref(), CValue::Int32(bits) if bits.as_const() == Some(0))));
         assert!(budget.inline_call_name.is_none());
     }
     let mut budget = ExecutionBudget::new();

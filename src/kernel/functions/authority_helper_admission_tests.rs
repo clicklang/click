@@ -335,7 +335,7 @@ fn boundary_receipt_rejects_other_callers_functions_and_arguments() {
             candidate_function,
             candidate_arguments,
             &CFunctionOutcome::Return {
-                value: int32(0),
+                value: int32(0).into(),
                 state: Box::new(caller.clone()),
             },
             Some(&receipt),

@@ -92,7 +92,7 @@ fn wide_scalar_locals_declare_assign_and_return_without_word_truncation() {
         let CStatementOutcome::Return { value, state } = outcome else {
             panic!("{outcome:?}");
         };
-        assert_eq!(value, &expected);
+        assert_eq!(value.native().as_ref(), &expected);
         assert_eq!(state.locals.get_native("wide").as_deref(), Some(&expected));
     }
 }
@@ -264,7 +264,10 @@ fn wide_scalar_function_parameters_and_returns_keep_caller_storage() {
         else {
             panic!("{outcome:?}");
         };
-        assert_eq!(CExpressionOutcome::Value(value.clone()), expected);
+        assert_eq!(
+            CExpressionOutcome::Value(value.clone().into_native()),
+            expected
+        );
         assert_eq!(**returned, state);
     }
 }
@@ -461,11 +464,13 @@ fn wide_cast_function_argument_widens_and_return_narrows_without_truncating_earl
         theorem.proposition(),
         Proposition::CFunctionExecutes {
             outcome: CFunctionOutcome::Return {
-                value: CValue::UInt64(uint64_constant!(0xFFFF_FFFF_FFFF_FFFF)),
+                value,
                 ..
             },
             ..
-        }
+        } if matches!(value.native().as_ref(), CValue::UInt64(uint64_constant!(
+                    0xFFFF_FFFF_FFFF_FFFF
+                )))
     ));
 }
 
