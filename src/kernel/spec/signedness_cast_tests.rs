@@ -8,7 +8,7 @@ const PAIRS: [(MachineIntegerType, MachineIntegerType); 4] = [
     (MachineIntegerType::Int64, MachineIntegerType::UInt64),
 ];
 
-fn check_native_parity(root: KernelTerm, destination: MachineIntegerType) {
+pub(super) fn check_native_parity(root: KernelTerm, destination: MachineIntegerType) {
     let native = SpecValue::Shared(root.clone()).into_native();
     let expected =
         crate::kernel::machine_integer::conversion::convert_value(native, destination).unwrap();

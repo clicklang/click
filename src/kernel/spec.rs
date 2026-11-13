@@ -6111,7 +6111,7 @@ fn evaluate_spec_add_chain_paths_in(
             SpecScalarChainStep::Cast(target) => {
                 for mut path in paths {
                     if !budget.machine_result_production_disabled
-                        && let Some(value) = shared_machine::cast_signedness(&path.value, *target)
+                        && let Some(value) = shared_machine::cast(&path.value, *target)
                     {
                         path.value = value.into();
                         next.push(path);
@@ -8488,7 +8488,7 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
     )? {
         if !budget.machine_result_production_disabled
             && let Some(target) = retained_type
-            && let Some(value) = shared_machine::cast_signedness(&path.value, target)
+            && let Some(value) = shared_machine::cast(&path.value, target)
         {
             path.value = value.into();
             paths.push(path);
@@ -9879,6 +9879,8 @@ mod binding_tests;
 mod identity_cast_tests;
 #[cfg(test)]
 mod signedness_cast_tests;
+#[cfg(test)]
+mod widening_cast_tests;
 
 #[cfg(test)]
 mod resource_call_type_tests;
