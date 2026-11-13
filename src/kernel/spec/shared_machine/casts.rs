@@ -2,6 +2,30 @@
 use super::*;
 use crate::kernel::MachineCastSpelling as E;
 
+pub(in crate::kernel::spec) fn cast(value: &SpecValue, target: CType) -> Option<KernelTerm> {
+    cast_signedness(value, target).or_else(|| cast_widening(value, target))
+}
+
+/// Widening changes only the selected value's format. Native inputs and
+/// operands outside the retained machine fragment keep their existing path.
+pub(in crate::kernel::spec) fn cast_widening(
+    value: &SpecValue,
+    target: CType,
+) -> Option<KernelTerm> {
+    let SpecValue::Shared(root) = value else {
+        return None;
+    };
+    let source = MachineIntegerType::from_c_type(value.c_type())?;
+    let destination = MachineIntegerType::from_c_type(target)?;
+    if source.format().bits() >= destination.format().bits()
+        || destination.format().bits() > 64
+        || !root.is_shared_machine_operand()
+    {
+        return None;
+    }
+    Some(cast_root(root, source, destination))
+}
+
 /// Same-width signedness conversions of an already shared operand. Other
 /// conversions and native inputs keep their existing compatibility boundary.
 pub(in crate::kernel::spec) fn cast_signedness(
@@ -20,6 +44,14 @@ pub(in crate::kernel::spec) fn cast_signedness(
     {
         return None;
     }
+    Some(cast_root(root, source, destination))
+}
+
+fn cast_root(
+    root: &KernelTerm,
+    source: MachineIntegerType,
+    destination: MachineIntegerType,
+) -> KernelTerm {
     // Only explicit native leaves use the native constructor. Shared prefixes
     // never cross this boundary, including when their leaf is opaque.
     let native = match root.node() {
@@ -30,10 +62,10 @@ pub(in crate::kernel::spec) fn cast_signedness(
     if let Some(native) = native {
         let converted =
             crate::kernel::machine_integer::conversion::convert_term(source, destination, native);
-        return Some(KernelTerm::retained_machine_operand(
+        return KernelTerm::retained_machine_operand(
             destination,
             crate::kernel::MachineOperandView::Legacy(&converted),
-        ));
+        );
     }
     let result = if source.format().bits() < 64 {
         // Producer syntax keeps the native constructor's inverse sign pair;
@@ -64,5 +96,5 @@ pub(in crate::kernel::spec) fn cast_signedness(
     } else {
         root.checking_legacy_machine_conversion(source, destination)
     };
-    Some(result.with_machine_observation_type(destination))
+    result.with_machine_observation_type(destination)
 }

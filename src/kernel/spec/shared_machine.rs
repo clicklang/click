@@ -4,7 +4,9 @@
 //! Mixed-format and other unmigrated operations keep explicit native boundaries.
 use super::*;
 mod casts;
-pub(super) use casts::cast_signedness;
+pub(super) use casts::cast;
+#[cfg(test)]
+pub(super) use casts::{cast_signedness, cast_widening};
 
 pub(super) struct PreparedExpression {
     pub(super) value: KernelTerm,

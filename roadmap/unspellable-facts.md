@@ -131,7 +131,17 @@ Opaque native operands retain shared cast parents after their input boundary;
 general calls outside the shared machine fragment keep the compatibility path.
 Fixed-size cast-variable comparison guards preserve their native spelling so
 cited quotient/remainder bounds continue to match. Tests compare exported terms
-against native conversions and check no-export scaling at 16/64/256 casts. Subchunks 4c–4j remain open.
+against native conversions and check no-export scaling at 16/64/256 casts.
+[PR #2677](https://github.com/clicklang/click/pull/2677) merged; both pushed
+commits were verified on upstream. All 5,273 regular fixtures and all 1,509
+scaling tests passed, with zero fact-stability differences.
+
+Subchunk 4c retains already-shared operands through the 24 widening conversions
+among signed/unsigned 8/16/32/64-bit types. It reuses the same selected-root
+constructor as 4b, including the native conversion table's generic casts and
+32-to-64-bit extension nodes. Exact-term parity covers constants, opaque leaves,
+arithmetic, and prior conversion roots; growing-prefix scaling checks retained
+children and zero exports at 16/64/256 steps. Subchunks 4d–4j remain open.
 
 For each PR:
 
