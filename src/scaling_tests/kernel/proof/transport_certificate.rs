@@ -440,3 +440,43 @@ fn abstract_memory_preservation_does_not_walk_read_history() {
     assert!(costs[0] > 0);
     assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
 }
+
+#[test]
+fn definedness_preservation_ignores_history_and_ambient_facts() {
+    let costs = [4, 16, 64, 256].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (certificate, separation, old, goal) = tests::definedness_fixture(size, CType::UInt8);
+        let mut facts = crate::kernel::proof::ProofFacts::from_ordered(&[]);
+        facts = facts.with_fact(separation);
+        facts = facts.with_fact(old.clone());
+        for i in 0..size {
+            let Proposition::CMemoryReadDefined {
+                memory,
+                pointer,
+                value_type,
+            } = &old
+            else {
+                unreachable!()
+            };
+            facts = facts.with_fact(Proposition::CMemoryReadDefined {
+                memory: memory
+                    .clone()
+                    .store(pointer.clone(), CValue::Int32((i as u32).into())),
+                pointer: pointer.clone(),
+                value_type: *value_type,
+            });
+            facts = facts.with_fact(Proposition::CMemoryReadDefined {
+                memory: memory.clone(),
+                pointer: Pointer::symbolic(Variable(8_500_000 + i)),
+                value_type: *value_type,
+            });
+        }
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            certificate.apply(|p| facts.contains(p))
+        });
+        assert_eq!(result.unwrap(), goal);
+        work
+    });
+    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+    assert!(costs[0] > 0);
+}

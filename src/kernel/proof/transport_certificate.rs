@@ -58,7 +58,19 @@ impl TransportCertificate {
                 } => {
                     let separation = prior(*separation)?;
                     if effect.is_none() {
-                        let derived = if let Some(field) = field {
+                        let derived = if let Proposition::CMemoryReadDefined {
+                            value_type, ..
+                        } = result
+                        {
+                            let (before, after) = preserve_definedness(separation, *value_type)
+                                .ok_or("preserve definedness requires a footprint separated from a complete typed cell")?;
+                            if !available(&before) {
+                                return Err(
+                                    "preserve requires definedness at the footprint entry".into()
+                                );
+                            }
+                            after
+                        } else if let Some(field) = field {
                             preserve_field(separation, *field)
                                 .ok_or("preserve requires the selected field of a resource separated from the footprint")?
                         } else if matches!(
@@ -221,6 +233,36 @@ fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Propos
     let (address, bytes) = kept.byte_footprint();
     let observed = observation_type(kind, bytes.as_const()?)?;
     observation_equality(&footprint.before, &footprint.after, address, observed, kind)
+}
+
+/// The footprint and separated cell determine both endpoints. The goal selects
+/// only the read type; it cannot supply a different address or snapshot.
+fn preserve_definedness(
+    separation: &Proposition,
+    value_type: CType,
+) -> Option<(Proposition, Proposition)> {
+    crate::instrumentation::record_deterministic_work(1);
+    let Proposition::CResourceSeparate { left, right } = separation else {
+        return None;
+    };
+    let (footprint, kept) = match (left.as_ref(), right.as_ref()) {
+        (CResource::Footprint(fp), CResource::Memory(kept))
+        | (CResource::Memory(kept), CResource::Footprint(fp)) => (fp, kept),
+        _ => return None,
+    };
+    if kept.wide_bounds().is_some() {
+        return None;
+    }
+    let (pointer, bytes) = kept.byte_footprint();
+    if bytes.as_const()? != value_type.byte_width() {
+        return None;
+    }
+    let defined = |memory: &CMemory| Proposition::CMemoryReadDefined {
+        memory: memory.clone(),
+        pointer: pointer.clone(),
+        value_type,
+    };
+    Some((defined(&footprint.before), defined(&footprint.after)))
 }
 
 // Resource field values are retained by the persistent resource contexts.
@@ -491,6 +533,133 @@ mod tests {
         assert_eq!(transitive(&identity, &complete), Some(complete.clone()));
         assert_eq!(transitive(&complete, &identity), Some(complete.clone()));
         assert!(transitive(&address_only, &complete).is_none());
+    }
+
+    pub(super) fn definedness_fixture(
+        history: u64,
+        ty: CType,
+    ) -> (TransportCertificate, Proposition, Proposition, Proposition) {
+        let pointer = Pointer::symbolic(Variable(8_410_000));
+        let mut memory = CMemory::new();
+        for i in 0..history {
+            // Grow both related history and unrelated memory.
+            memory = memory.store(
+                pointer.clone(),
+                CValue::Int32(MachineTerm::constant(i as u32)),
+            );
+            memory = memory.store(
+                Pointer::symbolic(Variable(8_420_000 + i)),
+                CValue::Int32(MachineTerm::constant(i as u32)),
+            );
+        }
+        let before = CState::new().with_memory(memory.clone());
+        let after = CState::new().with_memory(memory.store(
+            Pointer::symbolic(Variable(8_430_000)),
+            CValue::Int32(1u32.into()),
+        ));
+        let footprint = crate::kernel::RegionFootprint::transition(
+            "selected".into(),
+            &before,
+            &after,
+            &Vec::<ExecutionPureFact>::new(),
+        );
+        let separation = Proposition::CResourceSeparate {
+            left: Box::new(CResource::Footprint(footprint)),
+            right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                pointer.clone(),
+                0u32.into(),
+                1u32.into(),
+                ty.byte_width(),
+            ))),
+        };
+        let old = Proposition::CMemoryReadDefined {
+            memory: before.memory().clone(),
+            pointer: pointer.clone(),
+            value_type: ty,
+        };
+        let goal = Proposition::CMemoryReadDefined {
+            memory: after.memory().clone(),
+            pointer,
+            value_type: ty,
+        };
+        (
+            TransportCertificate {
+                nodes: vec![
+                    TransportNode::Premise {
+                        proposition: separation.clone(),
+                        result: separation.clone(),
+                    },
+                    TransportNode::Preserve {
+                        field: None,
+                        effect: None,
+                        separation: 0,
+                        result: goal.clone(),
+                    },
+                ],
+                conclusion: 1,
+            },
+            separation,
+            old,
+            goal,
+        )
+    }
+
+    #[test]
+    fn preserve_definedness_requires_exact_entry_evidence_and_complete_cell() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for ty in [
+            CType::UInt8,
+            CType::Int32,
+            CType::UInt64,
+            CType::Int32Pointer,
+        ] {
+            let (mut certificate, separation, old, goal) = definedness_fixture(4, ty);
+            let available = |p: &Proposition| p == &separation || p == &old;
+            assert_eq!(certificate.apply(available).unwrap(), goal);
+            assert!(
+                certificate
+                    .apply(|p| p == &separation)
+                    .unwrap_err()
+                    .contains("footprint entry")
+            );
+            assert!(certificate.apply(|p| p == &old).is_err());
+            for corruption in 0..3 {
+                let mut bad = goal.clone();
+                let Proposition::CMemoryReadDefined {
+                    memory,
+                    pointer,
+                    value_type,
+                } = &mut bad
+                else {
+                    unreachable!()
+                };
+                match corruption {
+                    0 => *memory = CMemory::new(),
+                    1 => *pointer = Pointer::symbolic(Variable(8_499_000)),
+                    _ => {
+                        *value_type = if ty == CType::UInt8 {
+                            CType::Int32
+                        } else {
+                            CType::UInt8
+                        }
+                    }
+                }
+                let TransportNode::Preserve { result, .. } = &mut certificate.nodes[1] else {
+                    unreachable!()
+                };
+                *result = bad;
+                assert!(
+                    certificate.apply(available).is_err(),
+                    "corruption {corruption}"
+                );
+            }
+            let mut swapped = separation.clone();
+            let Proposition::CResourceSeparate { left, right } = &mut swapped else {
+                unreachable!()
+            };
+            std::mem::swap(left, right);
+            assert_eq!(preserve_definedness(&swapped, ty), Some((old, goal)));
+        }
     }
 
     pub(super) fn resource_fixture(size: u64) -> (TransportCertificate, Proposition) {

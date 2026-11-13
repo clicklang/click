@@ -5088,28 +5088,6 @@ fn checked_contract_control_read_state(
     Ok(state.clone().with_resource_context(resources))
 }
 
-pub(super) fn retained_population_call_partition(
-    caller_frame: &ResourceContext,
-    callee_resources: &ResourceContext,
-    assumptions: &PureFactContext,
-) -> Option<ResourceContext> {
-    // Consumption already retained a valid caller frame. Extend it with
-    // the selected callee pieces without rechecking untouched owner pairs.
-    let mut partition = caller_frame.clone();
-    for fact in callee_resources
-        .facts()
-        .iter()
-        .filter(|fact| fact.is_own() && matches!(fact.resource(), CResource::Memory(_)))
-    {
-        if !partition.contains_exact_representation(fact) {
-            partition = partition
-                .try_compose_into_valid_context_delaying_normalization([fact.clone()], assumptions)
-                .ok()?;
-        }
-    }
-    Some(partition)
-}
-
 fn prepare_verified_function_call<'a>(
     caller_state: &CState,
     application: CFunctionContractApplication<'a>,
@@ -5700,35 +5678,31 @@ fn prepare_verified_function_call<'a>(
                 )), facts, obligations)));
         }
     }
-    // The transfer's exposed population body and its untouched caller
-    // frame are parts of the same checked ownership partition. Retain
-    // that partition before consumption hides the body, so a later
-    // disjoint caller store can transport the callee's returned facts.
-    let original_flat_partition = transfer.helper_call.is_none()
-        && transfer.consumed_inputs.is_empty()
-        && !transfer.borrowed_inputs.is_empty()
-        && transfer.borrowed_inputs.iter().all(|input| {
-            input.fact.memory_own_range().is_some()
-                && caller_state
-                    .resources()
-                    .contains_exact_representation(&input.fact)
-        });
-    let partition = if original_flat_partition {
-        // These are the caller's already checked, exactly borrowed memory
-        // pieces. Retain their original partition rather than rebuilding it
-        // and rechecking every unrelated owner.
-        Some(caller_state.resources().clone())
-    } else {
-        retained_population_call_partition(
-            &transfer.caller_resources_after_requirements,
-            precondition_state.resources(),
-            &path_assumptions,
-        )
-    };
-    if let Some(partition) = partition {
-        facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
-            partition,
-        )));
+    // Reuse an existing caller partition only for exact entry borrows.
+    // Exposed callee pieces do not trigger another ownership inference here.
+    {
+        #[cfg(test)]
+        let _fast =
+            crate::kernel::search::FastOperationScope::enter("call entry composition retention");
+        let _timing = crate::instrumentation::OperationTiming::new(
+            application.name,
+            "verified function rule application",
+            "call entry composition retention",
+        );
+        let original_flat_partition = transfer.helper_call.is_none()
+            && transfer.consumed_inputs.is_empty()
+            && !transfer.borrowed_inputs.is_empty()
+            && transfer.borrowed_inputs.iter().all(|input| {
+                input.fact.memory_own_range().is_some()
+                    && caller_state
+                        .resources()
+                        .contains_exact_representation(&input.fact)
+            });
+        if original_flat_partition {
+            facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
+                caller_state.resources().clone(),
+            )));
+        }
     }
 
     let mut established_requirements = Vec::new();

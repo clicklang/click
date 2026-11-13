@@ -1980,12 +1980,19 @@ planning again.
 
 **Form:** `preserve(separate(region.footprint, resource));`
 
-A simple tactic for a read-equality goal. Cite an exactly available separation
+A simple tactic for a read-equality or read-definedness goal. Cite an exactly available separation
 between a recorded region footprint and the resource being read. The tactic
 constructs equality of the selected read at the region's exit and entry, in
 that order. It uses the same primitive as a transport certificate's `preserve`
 node, with no premise discovery or history search. The current goal selects
 the read type or named-resource field; it must match the constructed equality.
+
+For `defined(read)`, the separated resource must be the complete typed cell.
+The tactic looks up the exact `defined(read)` fact at the footprint's entry
+and constructs it at the exit. The footprint supplies both snapshots; the
+separated cell supplies the address. Missing old definedness is a local refusal,
+not a request to search memory history. This rule preserves definedness; it
+does not establish initialization from ownership or value equality alone.
 
 Use an ordinary `have` to establish this equality, then `rewrite` and
 `assumption` to carry a proposition across the change. The tactic remains
