@@ -1187,6 +1187,16 @@ fn written_integer_observations<'s>(
             } => (Some(selector), proposition.as_ref()),
             surface => (None, surface),
         };
+        // A negated comparison names the same operands, including when
+        // its retained kernel condition needs no separate native reading.
+        let comparison = match comparison {
+            ClickProposition::Not(inner)
+                if matches!(inner.as_ref(), ClickProposition::Comparison { .. }) =>
+            {
+                inner.as_ref()
+            }
+            comparison => comparison,
+        };
         if let ClickProposition::Comparison { left, right, .. } = comparison {
             for side in [left, right] {
                 if matches!(side, ContractExpression::IntegerLiteral(_))

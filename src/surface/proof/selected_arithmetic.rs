@@ -648,6 +648,39 @@ mod tests {
     }
 
     #[test]
+    fn retained_shift_bounds_expand_and_replay_without_search() {
+        for (premise, goal) in [
+            ("(v >> 32) != 0u64", "4294967296u64 <= v"),
+            ("(v >> 32) == 0u64", "v < 4294967296u64"),
+            ("not ((v >> 32) != 0u64)", "v < 4294967296u64"),
+        ] {
+            let source = format!(
+                r#"
+theorem shift_bound(v: uint64) {{
+    requires {premise};
+    ensures {goal} by {{
+        solve();
+    }}
+}}
+"#
+            );
+            crate::surface::verify_click_theorems(&source).unwrap();
+            let line = source
+                .lines()
+                .position(|line| line.contains("solve()"))
+                .unwrap();
+            let column = source.lines().nth(line).unwrap().find("solve()").unwrap();
+            let expanded =
+                crate::surface::expand_c0_tactic_source_at(&source, &[], line + 1, column + 1)
+                    .unwrap();
+            assert!(expanded.contains("operation_bound"), "{expanded}");
+            without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
+            let missing = source.replace(&format!("    requires {premise};\n"), "");
+            assert!(crate::surface::verify_click_theorems(&missing).is_err());
+        }
+    }
+
+    #[test]
     fn listed_narrowed_length_equalities_expand_to_explicit_rewrites() {
         let source = r#"
 import click::format;

@@ -112,6 +112,22 @@ pub(crate) fn condition_for_operand_views(
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> ConditionTerm {
     use crate::kernel::{CompareRelation as R, MachineOperandView as V};
+    if format == MachineIntegerType::Int64 && relation != R::Equal {
+        let holds = |a, b| match relation {
+            R::LessThan => a < b,
+            R::LessEqual => a <= b,
+            R::GreaterThan => a > b,
+            R::GreaterEqual => a >= b,
+            R::Equal => unreachable!(),
+        };
+        if let Some(value) = crate::kernel::primitives::int64_signed_order_by_width_views(
+            operands[0],
+            operands[1],
+            holds,
+        ) {
+            return ConditionTerm::Constant(value);
+        }
+    }
     if format == MachineIntegerType::UInt32
         && let Some(bound) = operands[1].literal().and_then(|word| word.constant32())
     {

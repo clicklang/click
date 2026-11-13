@@ -5,6 +5,7 @@
 use super::*;
 mod casts;
 mod narrow;
+mod shifts;
 pub(super) use casts::cast;
 #[cfg(test)]
 pub(super) use casts::{cast_narrowing, cast_signedness, cast_widening};
@@ -45,7 +46,7 @@ pub(super) fn apply_expression_values(
 }
 
 /// Retain evaluated operands through the existing usual arithmetic conversions.
-/// Mixed-format shifts keep their separate compatibility boundary.
+/// Shifts retain their independent count promotion and definedness rules.
 pub(super) fn apply_values(
     operator: Option<MachineBinaryOp>,
     left: &SpecValue,
@@ -58,25 +59,13 @@ pub(super) fn apply_values(
     let operator = operator?;
     let (a, left) = left.machine()?;
     let (b, right) = right.machine()?;
-    let format = if matches!(
+    if matches!(
         operator,
         MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
     ) {
-        if a != b
-            || !matches!(
-                a,
-                MachineIntegerType::Int32
-                    | MachineIntegerType::UInt32
-                    | MachineIntegerType::Int64
-                    | MachineIntegerType::UInt64
-            )
-        {
-            return None;
-        }
-        a
-    } else {
-        crate::kernel::machine_integer::conversion::usual_arithmetic_format(a, b)?
-    };
+        return shifts::apply(operator, (a, left), (b, right));
+    }
+    let format = crate::kernel::machine_integer::conversion::usual_arithmetic_format(a, b)?;
     let promote = |source, value| {
         let root = retained_operand(source, value);
         if source == format {
@@ -218,7 +207,6 @@ pub(super) fn apply(
     budget: &SpecEvaluation<'_>,
 ) -> PreparedExpression {
     let mut obligations = Vec::new();
-    let mut importer = KernelTermImport::default();
     let left_view = MachineOperandView::Shared(&left);
     let right_view = MachineOperandView::Shared(&right);
     let mut domain = Vec::new();
@@ -286,22 +274,39 @@ pub(super) fn apply(
             }),
         );
     }
-    // Preserve the existing evaluator's literal-only folding.
-    // Shared node construction itself is always structural.
-    let term = if let (KernelTermNode::MachineLiteral(a), KernelTermNode::MachineLiteral(b)) =
+    PreparedExpression {
+        value: logical_binary(format, op, left, right),
+        obligations,
+    }
+}
+
+fn logical_binary(
+    format: MachineIntegerType,
+    op: MachineBinaryOp,
+    left: KernelTerm,
+    right: KernelTerm,
+) -> KernelTerm {
+    // Literal-only folding is the native producer's policy. For a symbolic
+    // 32-bit operation, normalize literal spellings at the immediate roots.
+    if let (KernelTermNode::MachineLiteral(a), KernelTermNode::MachineLiteral(b)) =
         (left.node(), right.node())
     {
-        let a = a.legacy_term();
-        let b = b.legacy_term();
-        let value = MachineTerm::logical_machine_binary(format, op, a, b);
-        let value = wrap(format, value);
-        importer.argument(&PureFunctionArgument::Value(value))
+        let value =
+            MachineTerm::logical_machine_binary(format, op, a.legacy_term(), b.legacy_term());
+        KernelTermImport::default().argument(&PureFunctionArgument::Value(wrap(format, value)))
     } else {
-        KernelTerm::machine_binary_shared(format, op, [left, right])
-    };
-    PreparedExpression {
-        value: term,
-        obligations,
+        let operand = |root: KernelTerm| {
+            if format.format().bits() == 32
+                && let KernelTermNode::MachineLiteral(literal) = root.node()
+            {
+                let word = MachineTerm::operand32(format, literal.legacy_term());
+                return KernelTerm::retained_native_machine_operand(format, &word);
+            }
+            // Native import gives both children the operator's reading.
+            // Count guards retain their independent type before this point.
+            root.with_machine_observation_type(format)
+        };
+        KernelTerm::machine_binary_shared(format, op, [operand(left), operand(right)])
     }
 }
 
@@ -318,6 +323,9 @@ fn wrap(format: MachineIntegerType, value: MachineTerm) -> CValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod shift_tests {
+        include!("shared_machine/shift_tests.rs");
+    }
     mod narrow_tests {
         include!("shared_machine/narrow_tests.rs");
     }

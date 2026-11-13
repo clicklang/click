@@ -152,7 +152,7 @@ pub(crate) use term_operations::{
     proposition_holds_without_facts, single_variable_of_c_value,
 };
 pub(in crate::kernel) use term_operations::{
-    int64_add_interval_fits, int64_subtract_interval_fits,
+    int64_add_interval_fits, int64_signed_order_by_width_views, int64_subtract_interval_fits,
 };
 pub(crate) use term_shape::{BitvectorBinaryOp, BitvectorComparisonOp, BitvectorUnaryOp};
 pub(crate) use term_width::*;

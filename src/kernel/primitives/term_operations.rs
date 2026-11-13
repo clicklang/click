@@ -142,6 +142,18 @@ fn int64_signed_order_by_width(
     right: &MachineTerm,
     holds: impl Fn(i64, i64) -> bool,
 ) -> Option<bool> {
+    int64_signed_order_by_width_views(
+        MachineOperandView::Legacy(left),
+        MachineOperandView::Legacy(right),
+        holds,
+    )
+}
+
+pub(in crate::kernel) fn int64_signed_order_by_width_views(
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+    holds: impl Fn(i64, i64) -> bool,
+) -> Option<bool> {
     let whole = (i64::MIN, i64::MAX);
     let (left_lower, left_upper) = left.int64_width_interval().unwrap_or(whole);
     let (right_lower, right_upper) = right.int64_width_interval().unwrap_or(whole);

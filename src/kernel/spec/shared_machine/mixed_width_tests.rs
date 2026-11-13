@@ -38,7 +38,7 @@ fn operand(format: MachineIntegerType, value: &MachineTerm, shared: bool) -> Spe
 
 // Materialize only in the oracle: shared observations deliberately keep an
 // opaque operand behind a retained cast rather than a boxed native tree.
-fn native_integer(value: &SharedIntegerTerm) -> IntegerTerm {
+pub(super) fn native_integer(value: &SharedIntegerTerm) -> IntegerTerm {
     match value.as_ref() {
         IntegerTerm::Machine(m) => IntegerTerm::from_machine(m.ty(), m.value().clone()).unwrap(),
         IntegerTerm::Add(a, b) => IntegerTerm::add(native_integer(a), native_integer(b)),
@@ -47,7 +47,7 @@ fn native_integer(value: &SharedIntegerTerm) -> IntegerTerm {
         value => value.clone(),
     }
 }
-fn native_domain(value: &Proposition) -> Proposition {
+pub(super) fn native_domain(value: &Proposition) -> Proposition {
     match value {
         Proposition::And(a, b) => {
             Proposition::And(Box::new(native_domain(a)), Box::new(native_domain(b)))
@@ -195,7 +195,7 @@ fn mixed_arithmetic_evaluator_preserves_nested_results_and_refusals() {
     let budget = SpecEvaluation::logical(&mut execution);
     let left = SpecValue::Native(CValue::Int32(MachineTerm::Variable(Variable(995455))));
     let right = SpecValue::Native(CValue::UInt64(MachineTerm::Variable(Variable(995456))));
-    assert!(apply_values(Some(MachineBinaryOp::ShiftLeft), &left, &right, &budget).is_none());
+    assert!(apply_values(Some(MachineBinaryOp::ShiftLeft), &left, &right, &budget).is_some());
     let wide = SpecValue::Native(CValue::Int128(MachineTerm::Variable(Variable(995457))));
     assert!(apply_values(Some(MachineBinaryOp::Add), &wide, &right, &budget).is_none());
 }
