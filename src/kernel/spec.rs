@@ -9860,6 +9860,8 @@ mod compound_conditional_tests;
 
 #[cfg(test)]
 mod binding_tests;
+#[cfg(test)]
+mod identity_cast_tests;
 
 #[cfg(test)]
 mod resource_call_type_tests;
