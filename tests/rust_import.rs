@@ -1064,11 +1064,11 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         let result = if length < 4 { 0 } else { 4 };
         let proof = if length < 4 {
             format!(
-                "apply(chunks_exact::len_chunks_exact({BYTES_SLICE}, 4u64)); step_until(assignment(chunks, 0)); step(); have chunks_exact::len(chunks) == 0u64; step_until(function.exit); solve();"
+                "apply(chunks_exact::len_chunks_exact({BYTES_SLICE}, 4u64)); step_until(assignment(chunks_tail, 0)); have chunks_exact::len(chunks) == 0u64; step_until(function.exit); solve();"
             )
         } else {
             format!(
-                "have 0u64 < bytes.len() / 4u64; apply(chunks_exact::len_chunks_exact({BYTES_SLICE}, 4u64)); apply(chunks_exact::nth_chunks_exact({BYTES_SLICE}, 4u64, 0u64)); step_until(function.exit); solve();"
+                "have 0u64 < bytes.len() / 4u64; apply(chunks_exact::len_chunks_exact({BYTES_SLICE}, 4u64)); apply(chunks_exact::nth_chunks_exact({BYTES_SLICE}, 4u64, 0u64)); step_until(assignment(chunks_tail, 0)); have 0u64 < chunks_exact::len(chunks); step_until(function.exit); solve();"
             )
         };
         let claim = format!(
@@ -5601,7 +5601,7 @@ fn chunks_loop_project(by_reference: bool) -> (Project, String) {
     // The proof names the loop's iterator as `iter` and the library's
     // contract, so it is the same proof whether the loop consumes the
     // iterator or borrows it.
-    let p = Project::new(&source);
+    let p = Project::with_library_iterators(&source);
     p.refresh().unwrap();
     (p, sidecar)
 }

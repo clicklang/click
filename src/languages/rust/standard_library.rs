@@ -171,6 +171,10 @@ pub(super) fn declare_iterator_operations(export: &mut RustExport) {
     if !has_chunks {
         return;
     }
+    if export.library_iterators {
+        declare_library_chunk_operations(export);
+        return;
+    }
     let bytes = || Type::ByteSlice { mutable: false };
     let byte_pointer = || Type::Reference {
         mutable: false,
@@ -212,6 +216,168 @@ pub(super) fn declare_iterator_operations(export: &mut RustExport) {
             span: Span { line: 1, column: 1 },
         });
     }
+}
+
+/// The importer's name for the library's `Slice<u8>`, Rust's `&[u8]` as one
+/// value: the chunk `ChunksExact::next` returns and its `remainder()`.
+pub(super) fn byte_slice_value_name() -> String {
+    let mut name = "Slice".to_string();
+    super::names::push_type_argument(&mut name, "u8");
+    name
+}
+
+/// The importer's name for Rust `Option<&[u8]>`, which
+/// `ChunksExact::next` returns.
+pub(super) fn option_byte_slice_name() -> String {
+    super::names::option_type_name("&[u8]")
+}
+
+/// Declares a `chunks_exact` iterator's operations as Rust has them:
+/// `ChunksExact::new`, which `<[T]>::chunks_exact` calls, `Iterator::next`,
+/// which takes the iterator by `&mut` and returns an `Option<&[u8]>`, and
+/// `ChunksExact::remainder`, which returns a `&[u8]`. A returned slice is
+/// one value of the library's `Slice<u8>`.
+fn declare_library_chunk_operations(export: &mut RustExport) {
+    use super::schema::{Enum, Function, Place, Span, Variant};
+    let slice_value = byte_slice_value_name();
+    let option = option_byte_slice_name();
+    let slice_type = || Type::Enum {
+        name: slice_value.clone(),
+    };
+    if !export
+        .enums
+        .iter()
+        .any(|declared| declared.name == slice_value)
+    {
+        export.enums.push(Enum {
+            name: slice_value.clone(),
+            generic: Some("Slice".into()),
+            arguments: vec![Type::U8],
+            variants: vec![Variant {
+                name: "Slice".into(),
+                field_names: Vec::new(),
+                fields: vec![
+                    Type::Reference {
+                        mutable: false,
+                        pointee: Box::new(Type::U8),
+                    },
+                    Type::Usize,
+                ],
+            }],
+        });
+    }
+    if !export.enums.iter().any(|declared| declared.name == option) {
+        export.enums.push(Enum {
+            name: option.clone(),
+            generic: Some("Option".into()),
+            arguments: vec![slice_type()],
+            variants: vec![
+                Variant {
+                    name: "None".into(),
+                    field_names: Vec::new(),
+                    fields: Vec::new(),
+                },
+                Variant {
+                    name: "Some".into(),
+                    field_names: Vec::new(),
+                    fields: vec![slice_type()],
+                },
+            ],
+        });
+    }
+    let reference = |mutable| Type::Reference {
+        mutable,
+        pointee: Box::new(Type::ChunkIterator),
+    };
+    let operations: [(&str, Vec<(&str, Type)>, Type); 5] = [
+        (
+            "new",
+            vec![
+                ("s", Type::ByteSlice { mutable: false }),
+                ("n", Type::Usize),
+            ],
+            Type::ChunkIterator,
+        ),
+        (
+            "next",
+            vec![("it", reference(true))],
+            Type::Enum {
+                name: option.clone(),
+            },
+        ),
+        ("remainder", vec![("it", reference(false))], slice_type()),
+        // A returned slice is read as the body reads a slice, its data and
+        // its length, through Rust's own `<[T]>::as_ptr` and `<[T]>::len`.
+        (
+            "as_ptr",
+            vec![("s", slice_type())],
+            Type::Reference {
+                mutable: false,
+                pointee: Box::new(Type::U8),
+            },
+        ),
+        ("len", vec![("s", slice_type())], Type::Usize),
+    ];
+    for (operation, parameters, return_type) in operations {
+        let (name, core_method) = match operation {
+            "as_ptr" | "len" => (
+                byte_slice_function(operation),
+                format!("{SLICE_VALUE}{operation}"),
+            ),
+            _ => (
+                chunks_exact_function(operation),
+                format!("{CHUNKS_EXACT}{operation}"),
+            ),
+        };
+        export.functions.push(Function {
+            name,
+            return_type,
+            parameters: parameters
+                .into_iter()
+                .map(|(name, value_type)| Place {
+                    name: name.into(),
+                    value_type,
+                    span: Span { line: 1, column: 1 },
+                })
+                .collect(),
+            body: vec![],
+            mir: None,
+            external: true,
+            captures: 0,
+            implements: None,
+            instance_of: None,
+            core_method: Some(core_method),
+            span: Span { line: 1, column: 1 },
+        });
+    }
+}
+
+/// The prefix of the `core_method` of a method of Rust's `[u8]` read from a
+/// slice value: `Slice::as_ptr`, `Slice::len`.
+pub(super) const SLICE_VALUE: &str = "Slice::";
+
+/// The name of the external function for the `[u8]` method `operation`
+/// over a slice value.
+pub(super) fn byte_slice_function(operation: &str) -> String {
+    let mut name = super::names::qualified_name(["slice", operation]);
+    super::names::push_type_argument(&mut name, "u8");
+    name
+}
+
+/// The contract of the `[u8]` method `operation` over a slice value.
+fn byte_slice_contract(function: &super::schema::Function, operation: &str) -> Option<String> {
+    const SLICE: &str = "click::rust::slice";
+    let name = &function.name;
+    let body = match operation {
+        "as_ptr" => format!(
+            "extern fn {name}(s: Slice<u8>) -> &u8 {{\n    ensures result == {SLICE}::as_ptr(s);\n}}"
+        ),
+        "len" => format!(
+            "extern fn {name}(s: Slice<u8>) -> usize {{\n    ensures result == {SLICE}::len(s);\n}}"
+        ),
+        _ => return None,
+    };
+    Some(format!("\n{body}\n"))
 }
 
 /// The prefix of the `core_method` of each slice iterator operation the
@@ -409,6 +575,18 @@ fn chunks_exact_contract(function: &super::schema::Function, operation: &str) ->
         "after_next" => format!(
             "extern fn {name}(it: {iterator}) -> {iterator} {{\n    requires 0u64 < {LIBRARY}::len(it);\n    ensures result == {LIBRARY}::after_next(it);\n}}"
         ),
+        // Rust's `Iterator::next` over the library value: the first chunk
+        // still to come, and the iterator after it.
+        "next" => {
+            let option = "Option<&[u8]>";
+            let len = format!("{LIBRARY}::len(old(*it))");
+            format!(
+                "extern fn {name}(it: &mut {iterator}) -> {option} {{\n    owns *it;\n    ensures {len} == 0u64 implies result == {option}::None;\n    ensures {len} == 0u64 implies *it == old(*it);\n    ensures 0u64 < {len} implies result == {option}::Some({LIBRARY}::nth(old(*it), 0u64));\n    ensures 0u64 < {len} implies *it == {LIBRARY}::after_next(old(*it));\n}}"
+            )
+        }
+        "remainder" => format!(
+            "extern fn {name}(it: &{iterator}) -> Slice<u8> {{\n    views *it;\n    ensures result == {LIBRARY}::remainder(old(*it));\n}}"
+        ),
         _ => unreachable!("declared by `declare_iterator_operations`"),
     };
     format!("\n{body}\n")
@@ -426,6 +604,12 @@ pub(super) fn contracts(export: &RustExport) -> String {
         }
         if specification == SLICE_SWAP {
             source.push_str(&slice_swap_contract(function));
+            continue;
+        }
+        if let Some(operation) = specification.strip_prefix(SLICE_VALUE) {
+            if let Some(contract) = byte_slice_contract(function, operation) {
+                source.push_str(&contract);
+            }
             continue;
         }
         if let Some(operation) = specification.strip_prefix(CHUNKS_EXACT) {
