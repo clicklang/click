@@ -3826,8 +3826,11 @@ fn expanded_roundtrip_sample(unrelated: usize, extra_copies: usize) -> (usize, S
         .spawn(move || {
             let c = roundtrip_with_unrelated_allocations(unrelated, extra_copies);
             let sources = [("rep_copy.c", c.as_str())];
+            // Grouped expansion needs a written proof to replace. Check the
+            // first real statement and let the implicit tail prove the rest.
+            let proof = format!("{ROUNDTRIP_CLICK} by {{ step(); }}");
             let expanded =
-                expand_c0_claim_source(ROUNDTRIP_CLICK, &sources, "f", CProofClaim::Grouped)
+                expand_c0_claim_source(&proof, &sources, "f", CProofClaim::Grouped)
                     .unwrap_or_else(|error| {
                         panic!(
                             "round trip beside {unrelated} allocations with {extra_copies} extra copies should expand: {}",
