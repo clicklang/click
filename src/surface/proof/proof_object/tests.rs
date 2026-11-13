@@ -5816,7 +5816,14 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
             complete.certificate().steps().first(),
             Some(&ProofStep::Extract(premise.clone()))
         );
-        assert_eq!(complete.certificate().steps().get(1), Some(&step));
+        assert_eq!(
+            complete.certificate().steps().get(1),
+            Some(&ProofStep::Have {
+                proposition: premise.clone(),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Assumption]).unwrap()),
+            })
+        );
+        assert_eq!(complete.certificate().steps().get(2), Some(&step));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
     }
@@ -9106,7 +9113,14 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
             "size {size} pure linear script allocated {script_allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(complete.is_complete());
-        assert_eq!(complete.certificate().steps().first(), Some(&step));
+        assert_eq!(
+            complete.certificate().steps().first(),
+            Some(&ProofStep::Have {
+                proposition: premise.clone(),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Assumption]).unwrap()),
+            })
+        );
+        assert_eq!(complete.certificate().steps().get(1), Some(&step));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
     }
@@ -9880,7 +9894,12 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
             folded.certificate().steps(),
             &[
                 ProofStep::UnfoldResource(resource.clone()),
-                ProofStep::FoldResource(resource.clone()),
+                ProofStep::StepProved {
+                    step: Box::new(ProofStep::FoldResource(resource.clone())),
+                    proof: StepProofCertificate::By(Box::new(
+                        ProofCertificate::from_steps(vec![ProofStep::Assumption]).unwrap(),
+                    )),
+                },
             ]
         );
         assert!(folded.added_facts().is_empty());
