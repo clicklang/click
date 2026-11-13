@@ -9,7 +9,7 @@
 //! that names those fields. The parser rewrites an accessor application into
 //! its field path, so the result is checked like any written field access.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::languages::c::syntax::C0StructLayout;
 
@@ -526,12 +526,14 @@ fn catalog_contract(axiom: &super::schema::CppAxiom) -> Option<String> {
 
 /// The Click contracts for the axioms an import reaches, as `extern`
 /// declarations. An axiom without a catalog entry gets none, so a caller
-/// is refused unless the sidecar states one itself.
+/// is refused unless the sidecar states one itself. Returns the text and
+/// the name of each function it declares.
 pub(super) fn contracts(
     export: &super::CppExport,
     names: &super::names::ResolvedNames,
-) -> Result<String, String> {
+) -> Result<(String, BTreeSet<String>), String> {
     let mut source = String::new();
+    let mut models = BTreeSet::new();
     for function in &export.reachable_functions {
         let Some(axiom) = &function.axiom else {
             continue;
@@ -543,9 +545,9 @@ pub(super) fn contracts(
             super::CppFunctionKind::Method { record_name, .. } => record_name.as_str(),
             _ => "",
         };
-        let mut contract = contract
-            .replace("{name}", names.require(&function.declaration_id)?)
-            .replace("{record}", record);
+        let name = names.require(&function.declaration_id)?;
+        models.insert(name.to_string());
+        let mut contract = contract.replace("{name}", name).replace("{record}", record);
         if let super::CppType::Record { name, .. } = &function.return_type {
             contract = contract.replace("{result_record}", name);
         }
@@ -564,7 +566,7 @@ pub(super) fn contracts(
         source.push_str(&contract);
         source.push('\n');
     }
-    Ok(source)
+    Ok((source, models))
 }
 
 #[cfg(test)]

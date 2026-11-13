@@ -257,6 +257,14 @@ impl<'a> CSourceContext<'a> {
         }
     }
 
+    /// The functions [`Self::library_contracts`] declares.
+    fn library_models(&self) -> Option<&BTreeSet<String>> {
+        match &self.source {
+            ProgramSource::Program { execution, .. } => Some(&execution.library_models),
+            _ => None,
+        }
+    }
+
     /// `click_source` followed by [`Self::library_contracts`]. Appending
     /// keeps every position in the sidecar unchanged.
     pub(in crate::surface) fn with_library_contracts<'s>(
@@ -3961,6 +3969,34 @@ fn verification_required_functions_with_blocks(
     function_blocks: &[FunctionBlock],
     runtime: crate::languages::c::thread_runtime::CThreadRuntime,
 ) -> Result<BTreeSet<String>, ClickError> {
+    required_functions(
+        parsed_sources,
+        function_name,
+        function_blocks,
+        runtime,
+        None,
+    )
+}
+
+/// What the assumption report's closure walk records beside the closure.
+struct AssumptionWalk<'a> {
+    /// The allocator functions the closure calls.
+    allocator: &'a mut BTreeSet<&'static str>,
+    /// Every `extern` function, by name.
+    externals: &'a BTreeMap<String, ModelFamily>,
+}
+
+/// The closure [`verification_required_functions_with_blocks`] computes.
+/// With `report`, the walk also records the allocator functions the closure
+/// calls and follows the calls of a body a typed frontend lowered itself, so
+/// that a C++ or Rust function's library models are reported.
+fn required_functions(
+    parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
+    function_name: &str,
+    function_blocks: &[FunctionBlock],
+    runtime: crate::languages::c::thread_runtime::CThreadRuntime,
+    mut report: Option<AssumptionWalk<'_>>,
+) -> Result<BTreeSet<String>, ClickError> {
     if !function_blocks
         .iter()
         .any(|function| function.signature().name() == function_name)
@@ -4013,7 +4049,24 @@ fn verification_required_functions_with_blocks(
             }
             return Err(ClickError::new(format!("no C source defines `{name}`")));
         };
-        pending.extend(c0_statement_calls(parsed).into_iter().flatten());
+        let Some(report) = report.as_mut() else {
+            pending.extend(c0_statement_calls(parsed).into_iter().flatten());
+            continue;
+        };
+        pending.extend(
+            c0_statement_calls_recording(parsed, report.allocator)
+                .into_iter()
+                .flatten(),
+        );
+        if let Some(lowered) = parsed.prelowered_kernel_function() {
+            pending.extend(
+                crate::kernel::c_function_callees(lowered)
+                    .into_iter()
+                    .filter(|callee| {
+                        parsed_sources.contains_key(callee) || report.externals.contains_key(callee)
+                    }),
+            );
+        }
     }
     required.insert(function_name.to_string());
     Ok(required)
@@ -4036,8 +4089,8 @@ pub fn c0_external_dependencies(
 /// relies on, and how many proof units are selected.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CProjectSummary {
-    /// Each selected function's assumed external contracts, by function.
-    pub external_dependencies: BTreeMap<String, Vec<String>>,
+    /// Each function's assumed library models and `extern` contracts.
+    pub assumptions: BTreeMap<String, Vec<ModelAssumption>>,
     /// Selected function proofs plus selected theorems.
     pub selected_proof_count: usize,
     /// Every function the sidecar's `verifying` sources define, with the
@@ -4061,7 +4114,7 @@ fn c0_project_summary_file(
     let parsed_sources =
         parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
     Ok(CProjectSummary {
-        external_dependencies: c0_external_dependencies_parsed(file, &parsed_sources)?,
+        assumptions: c0_assumptions_parsed(file, &parsed_sources, sources.library_models())?,
         selected_proof_count: file
             .function_blocks()
             .iter()
@@ -4182,44 +4235,174 @@ fn c0_external_dependencies_file(
     // program-entry storage, so it does not build it.
     let parsed_sources =
         parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
-    c0_external_dependencies_parsed(file, &parsed_sources)
+    Ok(
+        c0_assumptions_parsed(file, &parsed_sources, sources.library_models())?
+            .into_iter()
+            .filter_map(|(function, assumptions)| {
+                let external = assumptions
+                    .into_iter()
+                    .filter(|assumption| assumption.family != ModelFamily::Allocator)
+                    .map(|assumption| assumption.name)
+                    .collect::<Vec<_>>();
+                (!external.is_empty()).then_some((function, external))
+            })
+            .collect(),
+    )
 }
 
-fn c0_external_dependencies_parsed(
+/// Where the contract a verification assumes for code Click does not verify
+/// comes from. `docs/concepts/trust.md` lists each family.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ModelFamily {
+    /// An `extern` contract a sidecar declares.
+    Extern,
+    /// A C library contract in `library/c/`.
+    CLibrary,
+    /// The C allocator the kernel models: `malloc`, `calloc`, `realloc`
+    /// and `free`.
+    Allocator,
+    /// The contract the C front end writes for one `snprintf` format.
+    Snprintf,
+    /// A C++ standard-library catalog contract.
+    CppStd,
+    /// A Rust core-method contract.
+    RustCore,
+    /// The contract of a verifier primitive in `library/c/builtins.click`:
+    /// the value of `__builtin_constant_p`.
+    Primitive,
+}
+
+impl ModelFamily {
+    /// Every family a function's assumptions can belong to; the thread
+    /// runtime, which a whole verification assumes, is reported apart.
+    pub const ALL: [Self; 7] = [
+        Self::Extern,
+        Self::CLibrary,
+        Self::Allocator,
+        Self::Snprintf,
+        Self::CppStd,
+        Self::RustCore,
+        Self::Primitive,
+    ];
+
+    /// The tag `click verify` prints before the family's names.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Extern => "extern",
+            Self::CLibrary => "C library",
+            Self::Allocator => "allocator",
+            Self::Snprintf => "snprintf",
+            Self::CppStd => "C++ std",
+            Self::RustCore => "Rust core",
+            Self::Primitive => "primitive",
+        }
+    }
+}
+
+/// One contract a verified function relies on without Click verifying it.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ModelAssumption {
+    pub family: ModelFamily,
+    /// The function's name as its contract declares it.
+    pub name: String,
+}
+
+impl ModelAssumption {
+    /// How a report names the model: a formatted-output function by its
+    /// format, `"%s"`, and any other by its name.
+    pub fn display(&self) -> String {
+        match crate::languages::c::formatted_output::function_format(&self.name) {
+            Some(format) => format!("\"{}\"", String::from_utf8_lossy(&format).escape_default()),
+            None => self.name.clone(),
+        }
+    }
+}
+
+/// Each function's assumptions, from the call closure targeted verification
+/// already computes: the `extern` contracts it reaches, tagged by where each
+/// comes from, and the allocator functions its closure calls.
+fn c0_assumptions_parsed(
     file: &ClickFile,
     parsed_sources: &BTreeMap<String, (String, syntax::C0Function)>,
-) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
+    library_models: Option<&BTreeSet<String>>,
+) -> Result<BTreeMap<String, Vec<ModelAssumption>>, ClickError> {
     let function_blocks = combined_external_function_blocks(file)?;
-    let external_names = function_blocks
+    // The standard library's blocks lead the combined list.
+    let library_blocks = super::validation::file_library(file)?
+        .function_blocks()
+        .len();
+    let frontend_family = match file.source_language() {
+        crate::languages::SourceLanguage::Rust => ModelFamily::RustCore,
+        _ => ModelFamily::CppStd,
+    };
+    let external_families = function_blocks
         .iter()
-        .filter(|function| function.is_external())
-        .map(|function| function.signature().name().to_string())
-        .collect::<BTreeSet<_>>();
-    let mut dependencies = BTreeMap::new();
+        .enumerate()
+        .filter(|(_, function)| function.is_external())
+        .map(|(index, function)| {
+            let name = function.signature().name();
+            let family = if index < library_blocks {
+                if name == syntax::CONSTANT_P_UNKNOWN {
+                    ModelFamily::Primitive
+                } else {
+                    ModelFamily::CLibrary
+                }
+            } else if name
+                .starts_with(crate::languages::c::formatted_output::FORMATTED_OUTPUT_PREFIX)
+            {
+                ModelFamily::Snprintf
+            } else if library_models.is_some_and(|models| models.contains(name)) {
+                frontend_family
+            } else {
+                ModelFamily::Extern
+            };
+            (name.to_string(), family)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut assumptions = BTreeMap::new();
     for function in file
         .function_blocks()
         .iter()
         .filter(|function| !function.is_external())
     {
-        let required = verification_required_functions_with_blocks(
+        let mut allocator = BTreeSet::new();
+        let required = required_functions(
             parsed_sources,
             function.signature().name(),
             &function_blocks,
             file.selected_thread_runtime(),
+            Some(AssumptionWalk {
+                allocator: &mut allocator,
+                externals: &external_families,
+            }),
         )?;
-        let external = required
-            .intersection(&external_names)
-            .cloned()
+        let mut assumed = required
+            .iter()
+            .filter_map(|name| {
+                external_families.get(name).map(|family| ModelAssumption {
+                    family: *family,
+                    name: name.clone(),
+                })
+            })
+            .chain(allocator.into_iter().map(|name| ModelAssumption {
+                family: ModelFamily::Allocator,
+                name: name.to_string(),
+            }))
             .collect::<Vec<_>>();
-        if !external.is_empty() {
-            dependencies.insert(function.signature().name().to_string(), external);
+        if !assumed.is_empty() {
+            assumed.sort();
+            assumptions.insert(function.signature().name().to_string(), assumed);
         }
     }
-    Ok(dependencies)
+    Ok(assumptions)
 }
 
-fn is_c0_builtin_function(name: &str) -> bool {
-    matches!(name, "malloc" | "calloc" | "realloc" | "free")
+/// The allocator function `name` names, which the C front end models as an
+/// allocation rather than a call.
+fn c0_allocator_function(name: &str) -> Option<&'static str> {
+    ["malloc", "calloc", "realloc", "free"]
+        .into_iter()
+        .find(|function| *function == name)
 }
 
 /// The functions the modeled-pthread runtime specifies instead of executing:
@@ -4312,6 +4495,15 @@ fn with_modeled_pthread_workers(
 
 pub(in crate::surface) fn c0_statement_calls(
     function: &syntax::C0Function,
+) -> Vec<BTreeSet<String>> {
+    c0_statement_calls_recording(function, &mut BTreeSet::new())
+}
+
+/// [`c0_statement_calls`], also recording in `allocator` each allocator
+/// function the body calls, which is not a call dependency.
+fn c0_statement_calls_recording(
+    function: &syntax::C0Function,
+    allocator: &mut BTreeSet<&'static str>,
 ) -> Vec<BTreeSet<String>> {
     fn collect_function_pointer_names(
         statement: &syntax::C0Statement,
@@ -4505,6 +4697,7 @@ pub(in crate::surface) fn c0_statement_calls(
         statement: &syntax::C0Statement,
         calls: &mut Vec<BTreeSet<String>>,
         function_pointer_names: &BTreeSet<String>,
+        allocator: &mut BTreeSet<&'static str>,
     ) {
         match statement {
             syntax::C0Statement::Skip
@@ -4512,11 +4705,11 @@ pub(in crate::surface) fn c0_statement_calls(
             | syntax::C0Statement::Continue => {}
             syntax::C0Statement::Goto { .. } => calls.push(BTreeSet::new()),
             syntax::C0Statement::Label { statement, .. } => {
-                visit(statement, calls, function_pointer_names)
+                visit(statement, calls, function_pointer_names, allocator)
             }
             syntax::C0Statement::Seq(first, second) => {
-                visit(first, calls, function_pointer_names);
-                visit(second, calls, function_pointer_names);
+                visit(first, calls, function_pointer_names, allocator);
+                visit(second, calls, function_pointer_names, allocator);
             }
             syntax::C0Statement::If {
                 condition,
@@ -4527,8 +4720,8 @@ pub(in crate::surface) fn c0_statement_calls(
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);
-                visit(then_branch, calls, function_pointer_names);
-                visit(else_branch, calls, function_pointer_names);
+                visit(then_branch, calls, function_pointer_names, allocator);
+                visit(else_branch, calls, function_pointer_names, allocator);
             }
             syntax::C0Statement::While {
                 condition, body, ..
@@ -4539,7 +4732,7 @@ pub(in crate::surface) fn c0_statement_calls(
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);
-                visit(body, calls, function_pointer_names);
+                visit(body, calls, function_pointer_names, allocator);
             }
             syntax::C0Statement::For {
                 initializer,
@@ -4551,9 +4744,9 @@ pub(in crate::surface) fn c0_statement_calls(
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);
-                visit(initializer, calls, function_pointer_names);
-                visit(body, calls, function_pointer_names);
-                visit(step, calls, function_pointer_names);
+                visit(initializer, calls, function_pointer_names, allocator);
+                visit(body, calls, function_pointer_names, allocator);
+                visit(step, calls, function_pointer_names, allocator);
             }
             syntax::C0Statement::Switch {
                 expression, cases, ..
@@ -4562,7 +4755,7 @@ pub(in crate::surface) fn c0_statement_calls(
                 collect_function_addresses(expression, &mut dependencies);
                 calls.push(dependencies);
                 for case in cases {
-                    visit(case.body(), calls, function_pointer_names);
+                    visit(case.body(), calls, function_pointer_names, allocator);
                 }
             }
             syntax::C0Statement::CallAssign {
@@ -4571,10 +4764,15 @@ pub(in crate::surface) fn c0_statement_calls(
                 ..
             } => {
                 let mut dependencies = BTreeSet::new();
-                if !function_pointer_names.contains(function_name)
-                    && !is_c0_builtin_function(function_name)
-                {
-                    dependencies.insert(function_name.clone());
+                if !function_pointer_names.contains(function_name) {
+                    match c0_allocator_function(function_name) {
+                        Some(function) => {
+                            allocator.insert(function);
+                        }
+                        None => {
+                            dependencies.insert(function_name.clone());
+                        }
+                    }
                 }
                 for argument in arguments {
                     collect_function_addresses(argument, &mut dependencies);
@@ -4587,10 +4785,15 @@ pub(in crate::surface) fn c0_statement_calls(
                 ..
             } => {
                 let mut dependencies = BTreeSet::new();
-                if !function_pointer_names.contains(function_name)
-                    && !is_c0_builtin_function(function_name)
-                {
-                    dependencies.insert(function_name.clone());
+                if !function_pointer_names.contains(function_name) {
+                    match c0_allocator_function(function_name) {
+                        Some(function) => {
+                            allocator.insert(function);
+                        }
+                        None => {
+                            dependencies.insert(function_name.clone());
+                        }
+                    }
                 }
                 for argument in arguments {
                     collect_function_addresses(argument, &mut dependencies);
@@ -4626,6 +4829,15 @@ pub(in crate::surface) fn c0_statement_calls(
                 ..
             }
             | syntax::C0Statement::Return(expression, _) => {
+                match statement {
+                    syntax::C0Statement::HeapAllocate { zeroed, .. } => {
+                        allocator.insert(if *zeroed { "calloc" } else { "malloc" });
+                    }
+                    syntax::C0Statement::HeapFree { .. } => {
+                        allocator.insert("free");
+                    }
+                    _ => {}
+                }
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(expression, &mut dependencies);
                 calls.push(dependencies);
@@ -4665,7 +4877,12 @@ pub(in crate::surface) fn c0_statement_calls(
     }
 
     let mut calls = Vec::new();
-    visit(function.body(), &mut calls, &function_pointer_names);
+    visit(
+        function.body(),
+        &mut calls,
+        &function_pointer_names,
+        allocator,
+    );
     calls
 }
 

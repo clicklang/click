@@ -117,7 +117,7 @@ pub(crate) fn parse_format(format: &[u8]) -> Result<Vec<FormatPiece>, String> {
 }
 
 /// The format of the formatted-output function `name`, when it is one.
-fn function_format(name: &str) -> Option<Vec<u8>> {
+pub(crate) fn function_format(name: &str) -> Option<Vec<u8>> {
     let hex = name.strip_prefix(FORMATTED_OUTPUT_PREFIX)?;
     (0..hex.len())
         .step_by(2)

@@ -11,8 +11,8 @@ use click::languages::cpp::PreparedCppImport;
 #[path = "support/cpp_description.rs"]
 mod cpp_description;
 use click::surface::{
-    ProgramInputs, display_source_names, expand_project_claim_source_by_label,
-    verify_program_prepared_project,
+    ModelFamily, ProgramInputs, display_source_names, expand_project_claim_source_by_label,
+    project_summary, verify_program_prepared_project,
 };
 use cpp_description::{load_import, refresh_import};
 
@@ -162,6 +162,18 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
             sidecar.replace("    requires 2u64 <= std_span_size(s);\n", ""),
             "::operator[]",
         )],
+    );
+    // `click verify` reports the catalog contract the read relies on.
+    let source = format!("verifying \"span-probe.cpp\";\n{sidecar}\n");
+    let parsed = read_click_project(&root.join("span.click"), &source).unwrap();
+    let summary = project_summary(&parsed, &ProgramInputs::program(&import)).unwrap();
+    let reported = summary.assumptions["probe"]
+        .iter()
+        .map(|model| (model.family, display_source_names(&model.name).into_owned()))
+        .collect::<Vec<_>>();
+    assert!(
+        matches!(&reported[..], [(ModelFamily::CppStd, name)] if name.ends_with("::operator[]")),
+        "{reported:?}"
     );
     fs::remove_dir_all(root).unwrap();
 }

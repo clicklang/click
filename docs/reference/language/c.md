@@ -128,7 +128,8 @@ the binding. The first model accepts only null create attributes, a direct
 worker function, and a null join-result slot.
 The verified artifact and incremental session bind the selected declarations
 and the trusted specification in `src/languages/c/modeled_pthread_spec.md` by
-digest; verification and proof profiling report the runtime assumption.
+digest; verification reports it as the `runtime` assumption, and proof
+profiling reports it too.
 
 The selection states a conditional client assumption about create and join:
 the proof holds for any C library that implements the specification. Click
@@ -1276,7 +1277,7 @@ Supported C surface includes:
   and no claim depends on which arm the compiler kept. The operand is not
   evaluated and must be free of side effects. The unknown value comes from
   the verifier primitive [`__click_constant_p_unknown`](index.md#__click_constant_p_unknown), whose `extern` contract
-  `click verify` lists among the external assumptions. See
+  `click verify` lists among the assumptions as a `primitive`. See
   `mdtests/c_builtin_constant_p.md`
 - `sizeof(expression)` for an operand of scalar or pointer type, or a named
   complete array object such as a local array or a string literal, whose size
@@ -1705,8 +1706,9 @@ fixes the call's arity and each argument's type, so the call becomes a call to
 one fixed-arity function for that format, `__click_snprintf_` followed by the
 format's bytes in hexadecimal, and the C front end writes that function's
 `extern` contract from the format. `click verify` lists it among the
-`external assumptions:`. The contract is generated text, and trusted as every
-`extern` contract is ([trust](../../concepts/trust.md)).
+`assumptions:` as `snprintf: "<format>"`. The contract is generated text, and
+trusted as every library model is
+([trust](../../concepts/trust.md#library-models)).
 
 The modeled conversions are `%u` with an optional `0` flag and field width,
 `%d` and `%i`, `%s`, and `%%`; ordinary characters are copied. Each argument

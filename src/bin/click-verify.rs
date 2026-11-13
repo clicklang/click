@@ -544,7 +544,7 @@ fn verify_changed_sidecar(
         )
     }
     .map_err(|error| proof_error_report(&error, sidecar, false, &project, &inputs, 0, None))?;
-    print_external_dependencies(&summary.external_dependencies, &verified_theorems);
+    print_assumptions(&summary.assumptions, &verified_theorems);
     if full_rebuild
         && project.modules().len() == 1
         && project.c_profile().is_none()
@@ -1614,7 +1614,7 @@ fn verify_file_within_limits(
         })?;
         println!("{trace}\n");
     }
-    print_external_dependencies(&summary.external_dependencies, &verified);
+    print_assumptions(&summary.assumptions, &verified);
     // The count comes from the summary's resolution of the sources, so
     // reporting it does not parse every source again after verification.
     let selected = if trace_proof.is_some() {
@@ -1705,13 +1705,16 @@ fn verify_location_within_limits(
             )
         })
     }?;
-    print_external_dependencies(&summary.external_dependencies, &verified);
+    print_assumptions(&summary.assumptions, &verified);
     println!("1 selected proof verified");
     Ok(())
 }
 
-fn print_external_dependencies(
-    dependencies: &BTreeMap<String, Vec<String>>,
+/// The one assumption report: each verified function's library models and
+/// `extern` contracts, by family, after the thread runtime the whole
+/// verification assumes.
+fn print_assumptions(
+    assumptions: &BTreeMap<String, Vec<click::surface::ModelAssumption>>,
     verified: &[VerifiedCTheorem],
 ) {
     if let Some(selection) = verified
@@ -1719,21 +1722,39 @@ fn print_external_dependencies(
         .and_then(|theorem| theorem.selection.as_ref())
     {
         for assumption in &selection.runtime_assumptions {
-            println!("runtime assumption: {assumption}");
+            println!("assumptions: every function -> runtime: {assumption}");
         }
     }
     let verified_functions = verified
         .iter()
         .map(|theorem| theorem.function_block.signature().name())
         .collect::<std::collections::BTreeSet<_>>();
-    for (function, external) in dependencies {
+    for (function, assumed) in assumptions {
         if verified_functions.contains(function.as_str()) {
-            println!(
-                "external assumptions: {function} -> {}",
-                external.join(", ")
-            );
+            // An imported name reads as its source language spells it.
+            let line = format!("assumptions: {function} -> {}", render_assumptions(assumed));
+            println!("{}", click::surface::display_source_names(&line));
         }
     }
+}
+
+/// `C library: strlen; allocator: free, malloc`: the names of each family,
+/// in the order the summary sorted them.
+fn render_assumptions(assumed: &[click::surface::ModelAssumption]) -> String {
+    let mut groups = Vec::<(click::surface::ModelFamily, Vec<String>)>::new();
+    for assumption in assumed {
+        match groups.last_mut() {
+            Some((family, names)) if *family == assumption.family => {
+                names.push(assumption.display());
+            }
+            _ => groups.push((assumption.family, vec![assumption.display()])),
+        }
+    }
+    groups
+        .iter()
+        .map(|(family, names)| format!("{}: {}", family.label(), names.join(", ")))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 #[cfg(test)]
@@ -2686,6 +2707,39 @@ int32 read_first(int32 m) {
         (root, click_path)
     }
 
+    /// One report line names every library model family a C function
+    /// relies on, each tagged, from the summary's one closure walk.
+    #[test]
+    fn the_assumption_report_tags_each_c_library_model_family() {
+        let (root, click_path) = temporary_project(
+            "assumption-families",
+            "unsigned long strlen(const char *s);\n\
+             int snprintf(char *buf, unsigned long size, const char *fmt, ...);\n\
+             int helper(int x);\n\
+             int f(char *buf, int x) {\n\
+                 int *p = malloc(sizeof(int));\n\
+                 if (p != 0) { free(p); }\n\
+                 unsigned long n = strlen(\"abc\");\n\
+                 int w = snprintf(buf, 8, \"%s\", \"kB\");\n\
+                 return helper(x);\n\
+             }\n",
+            "target \"x86_64-unknown-linux-gnu\";\n\
+             verifying \"program.c\";\n\
+             extern int32 helper(int32 x) { ensures result == x; }\n\
+             int32 f(char buf[], int32 x) { owns buf[0..8]; ensures result == x; }\n",
+        );
+        let LoadedTarget {
+            project, inputs, ..
+        } = load_target_inputs(&click_path, Some(&root)).expect("the project loads");
+        let summary = project_summary(&project, &inputs.program_inputs());
+        fs::remove_dir_all(&root).expect("temporary verification directory should be removable");
+        let summary = summary.expect("the summary resolves");
+        assert_eq!(
+            render_assumptions(&summary.assumptions["f"]),
+            "extern: helper; C library: strlen; allocator: free, malloc; snprintf: \"%s\""
+        );
+    }
+
     /// The project summary (external dependencies and the selected proof
     /// count) reads function names, signatures, and call graphs. It once
     /// built `main`'s whole program-entry storage too and dropped it, which
@@ -2756,7 +2810,7 @@ int32 read_first(int32 m) {
                 "verification builds entry storage"
             );
             assert_eq!(summary.selected_proof_count, 1);
-            assert!(summary.external_dependencies.is_empty());
+            assert!(summary.assumptions.is_empty());
             summary_work as i64 - resolution_work as i64
         });
         assert_eq!(

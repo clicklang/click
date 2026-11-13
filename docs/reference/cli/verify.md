@@ -119,10 +119,25 @@ target with the `target` directive described in
 [Supported C](../language/c.md#selecting-a-target), and that selection also
 separates incremental verification markers.
 
-Successful file or location verification prints one `external assumptions:`
-line for each verified function whose transitive C call closure uses an
-external contract, for example `external assumptions: probe -> strlen`.
-Directory verification also prints these lines alongside its progress.
+Successful file or location verification reports every
+[library model](../../concepts/trust.md#library-models) the result relied on
+in one place: one `assumptions:` line for each verified function whose
+transitive call closure uses one, listing the models by family:
+
+```text
+assumptions: every function -> runtime: modeled-pthread v11: pthread create/join, ...
+assumptions: probe -> extern: helper; C library: strlen; allocator: free, malloc; snprintf: "%u"
+```
+
+The families and their tags are `extern` (a sidecar's own `extern`
+contract), `C library`, `allocator`, `snprintf` (by format), `C++ std`,
+`Rust core`, `primitive` and `runtime`. The thread runtime is assumed by the
+whole verification, so it is one `every function` line, printed first, when
+the sidecar selects one. The other families come from the same call closure
+targeted verification computes; a C++ or Rust function's closure follows the
+calls of its imported body, and imported names are spelled as their source
+language spells them (`slice::len<u8>`). Directory verification also prints
+these lines alongside its progress.
 
 An external assumption is one about a function the project does not verify.
 Before a project directory's sidecars are verified, the command reads every

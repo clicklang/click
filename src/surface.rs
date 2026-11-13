@@ -146,15 +146,16 @@ use validation::{
 pub(in crate::surface) use verification::CSourceContext;
 pub(in crate::surface) use verification::*;
 pub use verification::{
-    C0IncrementalSelection, CProjectSummary, CProofArtifactIdentity, ProgramInputs, SorryAdmission,
-    SummarizedVerification, c0_external_dependencies, c0_function_names, c0_incremental_selection,
-    c0_prepared_external_dependencies, c0_project_function_names, parse,
-    project_selected_proof_names, project_summary, take_sorry_admissions,
-    verify_c0_prepared_project, verify_c0_prepared_sources, verify_c0_prepared_sources_functions,
-    verify_c0_project, verify_c0_sources, verify_c0_sources_at, verify_c0_sources_functions,
-    verify_click_theorems, verify_program_prepared_project, verify_project_at,
-    verify_project_functions, verify_project_theorem, verify_project_with_summary,
-    verify_sources_at, verify_standard_library, with_allow_sorry,
+    C0IncrementalSelection, CProjectSummary, CProofArtifactIdentity, ModelAssumption, ModelFamily,
+    ProgramInputs, SorryAdmission, SummarizedVerification, c0_external_dependencies,
+    c0_function_names, c0_incremental_selection, c0_prepared_external_dependencies,
+    c0_project_function_names, parse, project_selected_proof_names, project_summary,
+    take_sorry_admissions, verify_c0_prepared_project, verify_c0_prepared_sources,
+    verify_c0_prepared_sources_functions, verify_c0_project, verify_c0_sources,
+    verify_c0_sources_at, verify_c0_sources_functions, verify_click_theorems,
+    verify_program_prepared_project, verify_project_at, verify_project_functions,
+    verify_project_theorem, verify_project_with_summary, verify_sources_at,
+    verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
 pub use proof::{without_implicit_solve, without_implicit_solve_for_claim};

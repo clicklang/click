@@ -19,11 +19,12 @@ pub(crate) fn prepare_execution(
 ) -> Result<std::sync::Arc<crate::languages::PreparedExecution>, String> {
     let (functions, layouts) =
         lowering::lower_with_identity(import.export(), Some(import.identity()))?;
+    let (contracts, library_models) = standard_library::contracts(import.export());
     Ok(std::sync::Arc::new(crate::languages::PreparedExecution {
         functions,
         layouts,
-        library_contracts: enum_declarations(import.export())
-            + &standard_library::contracts(import.export()),
+        library_contracts: enum_declarations(import.export()) + &contracts,
+        library_models,
         record_spellings: Default::default(),
     }))
 }

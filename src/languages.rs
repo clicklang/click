@@ -159,6 +159,9 @@ pub(crate) struct PreparedExecution {
     /// Click `extern` contracts the frontend supplies for library functions
     /// the program calls but does not define, parsed with the sidecar.
     pub library_contracts: String,
+    /// The name of each `extern` function `library_contracts` declares: the
+    /// library models a verification that calls one relies on.
+    pub library_models: std::collections::BTreeSet<String>,
     /// The layout name of each record whose source spelling differs from
     /// it, by that spelling: a C++ class template instance,
     /// `Stored<long long>`, is laid out as `Stored__long_long`.

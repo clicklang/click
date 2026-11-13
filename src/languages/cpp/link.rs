@@ -110,6 +110,7 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
     let mut spelling_sources = BTreeMap::<&str, &str>::new();
     let mut contract_blocks = BTreeSet::new();
     let mut library_contracts = String::new();
+    let mut library_models = BTreeSet::new();
     for (source, execution) in parts {
         for function in &execution.functions {
             crate::instrumentation::record_deterministic_work(1);
@@ -201,11 +202,13 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
                 library_contracts.push_str(block);
             }
         }
+        library_models.extend(execution.library_models.iter().cloned());
     }
     Ok(PreparedExecution {
         functions,
         layouts,
         library_contracts,
+        library_models,
         record_spellings,
     })
 }
