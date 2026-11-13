@@ -33,6 +33,9 @@ pub(in crate::kernel) mod predicate_dependencies;
 mod quantifier_polarity;
 pub(in crate::kernel) mod required_constructions;
 mod shared_machine;
+pub(in crate::kernel) use shared_machine::{
+    bitwise_tag_equation, execution_narrow_binary, execution_rust_shift,
+};
 pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (CResource, ExecutionFacts, Vec<ProofObligation>);
@@ -462,10 +465,10 @@ pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     integer_bindings: &BTreeMap<Variable, IntegerTerm>,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<CExpressionPath<SpecValue>>> {
     if let SpecExpression::CExpression(expression) = expression {
         let _specification = crate::kernel::eval::SpecificationReadScope::enter();
-        return evaluate_c_expression_paths(state, expression, assumptions, budget);
+        return evaluate_expression_value_paths(state, expression, assumptions, budget);
     }
     let rewritten;
     let expression = if integer_bindings.is_empty() {
@@ -494,7 +497,7 @@ pub(in crate::kernel) fn evaluate_resource_child_argument_paths(
     Ok(paths
         .into_iter()
         .map(|path| CExpressionPath {
-            outcome: CExpressionOutcome::Value(path.value.into_native()),
+            outcome: CExpressionOutcome::Value(path.value),
             facts: path.facts,
             obligations: path.obligations,
         })
@@ -10162,3 +10165,6 @@ mod shared_fold_operand_tests {
 
 #[cfg(test)]
 mod conditional_tests;
+
+#[cfg(test)]
+mod execution_handoff_tests;

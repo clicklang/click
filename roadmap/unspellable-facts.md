@@ -82,7 +82,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 2 | Symbolic conditional joins | Merged [PR #2638](https://github.com/clicklang/click/pull/2638). Typed guards and shared arms survive checking, transport, snapshot matching and Surface spelling. The full gate passed 7,294 unit/API tests, 5,240 fixtures and all examples; its 15m54s run exceeded the ten-minute target. The final conditional-equality follow-up passed 1,884 selected checks, including all scaling, Rust import and expansion tests. Its full-corpus fact-stability audit passed all 5,240 fixtures with zero differences. |
 | 3 | Pure-function arguments and results | In progress. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. The integer machine call-result sequence 3a–3f below completes common result production and its consumers; pointer, algebraic, Boolean and floating-point result families remain separate work. |
 | 4 | Mixed-width arithmetic and casts | Implemented as subchunks 4a–4j below, one PR per subchunk. Numeric producers retain shared operands and results within the existing supported profile. General call and nonnumeric compatibility boundaries belong to the remaining packages; the previous combined branch stays unmerged reference material. |
-| 5 | C/Rust execution result carriers | Open |
+| 5 | C/Rust execution result carriers | In progress in subchunks 5a–5g below. Carrier preparation merged in [PR #2714](https://github.com/clicklang/click/pull/2714); execution handoffs remain. |
 | 6 | Folds, binders and algebraic matches | Open |
 | 7 | Complete pointers and read addresses | Open |
 | 8 | Remaining Boolean and opaque expression payloads | Open |
@@ -204,6 +204,43 @@ result families remain in their own packages.
 parameter, defaulting to their existing native carrier. No producer switches in
 this preparatory slice. A deterministic scaling regression checks that repeated
 retained handoffs and operand reads do not walk or export growing value DAGs.
+
+[PR #2714](https://github.com/clicklang/click/pull/2714) merged 5a; its pushed
+commit was verified upstream. All 1,678 selected checks and all 5,279 regular
+fixtures passed, with zero fact-stability differences.
+
+5b retains the specification evaluator's result carrier in resource-child
+execution paths. Facts and obligations move with the original result, and the C
+fragment route preserves its existing error outcomes. The two resource-schema
+consumers make their native compatibility read explicitly at their existing
+argument-coercion boundary; coercion and prerequisite rules are unchanged.
+
+[PR #2716](https://github.com/clicklang/click/pull/2716) merged 5b; both pushed
+commits were verified upstream. All 1,681 selected checks, 84 integrated Rust and
+handoff checks, and all 5,279 regular fixtures passed; the fact-stability audit
+recorded zero differences.
+
+5c introduces retained C expression paths. Unsigned arithmetic, supported bitwise
+operations and order comparisons consume shared operands directly. Bitwise AND
+retains the existing bounded-tag side facts and no-carry requirements; conditional
+paths forward the selected result with its facts and obligations. Native
+primitive fallbacks keep their existing guards and complete value payloads,
+then retain compound machine results. Scalar leaves and other result families
+keep their cheap native carriers. Native-only consumers use an explicit output
+adapter; local storage and return handoffs are the following slices.
+
+[PR #2718](https://github.com/clicklang/click/pull/2718) merged 5c; its pushed
+commit was verified upstream.
+Its 1,743 selected checks and all 5,279 regular fixtures passed, with zero
+fact-stability differences; final tag/no-carry regressions also passed.
+
+5d forwards Rust shift and supported narrow-arithmetic results through the
+execution carrier, using the existing shared producers. Original-width shift
+count requirements remain mandatory; only requirements established by the
+incoming facts are discharged. Inherited debts are not hypotheses. Unsupported
+operator and value families retain their explicit native compatibility routes.
+Its 12 focused tests, all 1,633 scaling and Rust import checks, and all 5,279
+regular fixtures passed; the fact-stability audit recorded zero differences.
 
 ## Chunk 4: one producer boundary per PR
 

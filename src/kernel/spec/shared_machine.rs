@@ -27,6 +27,24 @@ pub(super) struct PreparedExpression {
     pub(super) obligations: Vec<ProofObligation>,
 }
 
+/// Execution uses the same Rust producer and count debts as specification lowering.
+pub(in crate::kernel) fn execution_rust_shift(
+    op: MachineBinaryOp,
+    left: &SpecValue,
+    right: &SpecValue,
+) -> Option<(KernelTerm, Vec<ProofObligation>)> {
+    shifts::rust(op, left, right).map(|result| (result.value, result.obligations))
+}
+
+pub(in crate::kernel) fn execution_narrow_binary(
+    format: MachineIntegerType,
+    op: MachineBinaryOp,
+    left: &SpecValue,
+    right: &SpecValue,
+) -> Option<KernelTerm> {
+    narrow::apply(format, op, left, right).map(|result| result.value)
+}
+
 pub(super) fn operator(expression: &SpecExpression) -> Option<MachineBinaryOp> {
     Some(match expression {
         SpecExpression::Add(..) => MachineBinaryOp::Add,
@@ -117,6 +135,14 @@ pub(super) fn apply_values(
         promote(b, right)?,
         budget,
     ))
+}
+
+/// The execution producer uses the same retained tag-equation reader.
+pub(in crate::kernel) fn bitwise_tag_equation(
+    value: &KernelTerm,
+    assumptions: &PureFactContext,
+) -> Option<ConditionTerm> {
+    bitwise::tag_equation(value, assumptions)
 }
 
 pub(super) fn result_facts(

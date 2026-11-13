@@ -2,6 +2,8 @@ use super::prelude::*;
 
 mod byte_view;
 mod expression;
+mod retained_expression;
+pub(in crate::kernel) use retained_expression::evaluate_expression_value_paths;
 mod memory_loads;
 mod operators;
 pub(in crate::kernel) mod pointer_tags;
