@@ -94,8 +94,9 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   migration boundaries. Its original R1–R7 reproductions are closed; use its
   current closure checklist for remaining work. Those identifiers are local to
   that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
-- **Operation guards:** theorem application, scope completion, prepared-step
-  publication, have opening and contract-claim opening have test-build discovery guards.
+- **Operation guards:** theorem application, scope completion, statement-result
+  publication, prepared-step publication, have opening and contract-claim opening
+  have test-build discovery guards.
   Statement preparation retains loan-access, raw ownership-validation and
   composite-framing dependencies. First guard failures mask later crossings;
   re-probe complete preparation as each route is removed. See the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
