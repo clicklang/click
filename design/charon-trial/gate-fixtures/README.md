@@ -1,6 +1,6 @@
 # Frozen Rust gate inputs
 
-These twelve unchanged inputs separate proof regressions from compiler work in
+These eighteen unchanged inputs separate proof regressions from compiler work in
 `tests/rust_import.rs`. Each directory contains the source, pinned native
 Charon artifact, import configuration, and input lock. Normal proof tests copy
 these files to an isolated directory, assert that the source exactly matches
@@ -14,7 +14,7 @@ Compiler rejection, crate-input identity, and extraction reproducibility tests
 also run nightly; they still invoke the real pinned compiler.
 
 `gate_fixtures::frozen_gate_fixtures_match_live_charon_extraction` re-extracts
-all twelve inputs in temporary projects and requires identical native
+all eighteen inputs in temporary projects and requires identical native
 artifacts after relocating the one absolute source-path metadata field. It runs in `scripts/check.sh --nightly`. To deliberately refresh a
 fixture after a compiler/model update, build the pinned Charon exporter and
 run `click import lock design/charon-trial/gate-fixtures/<name>/borrow.click`.

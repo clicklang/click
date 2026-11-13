@@ -2715,6 +2715,43 @@ pub(in crate::kernel) fn enum_variant_paths(
 
 /// `value is variant` as a `bool`, on each path [`enum_variant_paths`]
 /// splits `value` into.
+/// `term is variant` as one `Bool`, without splitting `term` into its
+/// variants: beside a live state a split cannot invent the fields' witnesses
+/// ([`ExecutionBudget::beside_live_state`]). A variant without fields is the
+/// equation with its constructor; when every other variant is without
+/// fields, as `Option::Some` is, it is unequal to each of theirs. `None` for
+/// a type with two variants that carry fields.
+fn enum_is_without_witnesses(term: &AlgebraicTerm, variant: &str) -> Option<ConditionTerm> {
+    let equals = |name: &str| {
+        ConditionTerm::AlgebraicEqual(
+            Box::new(term.clone()),
+            Box::new(AlgebraicTerm {
+                algebraic_type: term.algebraic_type.clone(),
+                node: AlgebraicTermNode::Constructor {
+                    variant: name.to_string(),
+                    fields: Vec::new(),
+                },
+            }),
+        )
+    };
+    let variants = &term.algebraic_type.variants;
+    let tested = variants.iter().find(|schema| schema.name == variant)?;
+    if tested.fields.is_empty() {
+        return Some(equals(variant));
+    }
+    let others = variants.iter().filter(|schema| schema.name != variant);
+    if others.clone().any(|schema| !schema.fields.is_empty()) {
+        return None;
+    }
+    Some(others.fold(ConditionTerm::Constant(true), |all, schema| {
+        ConditionTerm::bool_if(
+            all,
+            ConditionTerm::bool_not(equals(&schema.name)),
+            ConditionTerm::Constant(false),
+        )
+    }))
+}
+
 fn evaluate_c_enum_is_paths(
     state: &CState,
     value: &CExpression,
@@ -2750,6 +2787,17 @@ fn evaluate_c_enum_is_paths(
                 continue;
             }
         };
+        if budget.refuses_execution_identities()
+            && known_enum_constructor(&term, &facts, assumptions).is_none()
+            && let Some(test) = enum_is_without_witnesses(&term, variant)
+        {
+            paths.push(CExpressionPath {
+                outcome: CExpressionOutcome::Value(CValue::of_bool(test)),
+                facts,
+                obligations,
+            });
+            continue;
+        }
         match enum_variant_paths(&term, &facts, assumptions, budget)? {
             Ok(cases) => {
                 for (constructor, case_facts) in cases {
