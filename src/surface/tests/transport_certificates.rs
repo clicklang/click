@@ -1581,3 +1581,26 @@ fn computed_scalar_transport_expands_read_preservation() {
     assert_ne!(changed, expanded);
     assert!(without_implicit_solve(|| verify_c0_sources(&changed, &sources)).is_err());
 }
+
+#[test]
+#[ignore = "nightly: indexed transport expansion and cold replay"]
+fn indexed_read_transport_expands_to_selected_preservation() {
+    let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
+    let source = source.replace("*q", "q[0]").replace("*r", "q[1]");
+    let source = source.replace(
+        "            separate(statement(0).footprint, memory(q[0]));",
+        "            at(statement(0).entry, q[0] == q[1]);\n            separate(statement(0).footprint, memory(q[0]));",
+    );
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert_eq!(
+        expanded.matches("preserve(separate(").count(),
+        2,
+        "{expanded}"
+    );
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
