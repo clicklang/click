@@ -490,3 +490,39 @@ fn actual_call_arithmetic_keeps_native_values_and_definedness() {
         }
     }
 }
+
+#[test]
+fn actual_call_comparisons_preserve_native_fact_forms() {
+    let _session = VerificationSession::enter();
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let expression = call_expression(format, vec![]);
+        let actual = produced_paths(&expression, false).pop().unwrap().value;
+        let expected = produced_paths(&expression, true).pop().unwrap().value;
+        let other =
+            SpecValue::Native(format.value_from_term(MachineTerm::Variable(Variable(995832))));
+        for op in [
+            CComparisonOperator::Equal,
+            CComparisonOperator::NotEqual,
+            CComparisonOperator::LessThan,
+            CComparisonOperator::LessEqual,
+            CComparisonOperator::GreaterThan,
+            CComparisonOperator::GreaterEqual,
+        ] {
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(
+                actual.comparison(op, &other).unwrap(),
+                expected.comparison(op, &other).unwrap()
+            );
+            assert_eq!(
+                other.comparison(op, &actual).unwrap(),
+                other.comparison(op, &expected).unwrap()
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+}

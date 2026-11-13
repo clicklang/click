@@ -164,7 +164,11 @@ actual production, native parity for arithmetic and definedness, wide cast
 refusals, selected fact identity and linear nested-call handoffs with zero
 machine exports. Pointer-dependency discovery in the equality graph reads
 common calls through the existing call-argument path, retaining complete-pointer
-equality requirements. This closes the integer call-result sequence, not the wider
+equality requirements. Direct call comparisons preserve their native machine
+fact form instead of selecting Integer rewrite/search dispatch merely because
+the producer is shared. Snapshot keys reinterpret conditional operands at their
+existing canonical observation type for every integer format. This closes the
+integer call-result sequence, not the wider
 KernelTerm/SurfaceTerm migration or the other result families.
 
 ## Chunk 4: one producer boundary per PR
