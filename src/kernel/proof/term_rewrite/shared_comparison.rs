@@ -228,19 +228,12 @@ impl TermRewrite<'_> {
                     )
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
-                KernelTermNode::Legacy(_) => {
+                KernelTermNode::Legacy(_) | KernelTermNode::Call { .. } => {
                     let original = term
                         .machine_conversion_leaf()
                         .expect("retained native operand");
                     let value = self.bits(original);
-                    if value == *original {
-                        term.clone()
-                    } else {
-                        KernelTerm::retained_machine_operand(
-                            format,
-                            MachineOperandView::Legacy(&value),
-                        )
-                    }
+                    term.rewritten_machine_leaf(format, original, &value)
                 }
                 KernelTermNode::IntegerToMachine { .. } => {
                     let value = self.bits(term.machine_conversion_leaf().expect("conversion leaf"));
@@ -1608,4 +1601,105 @@ mod tests {
 mod scaling_tests {
     use super::*;
     include!("../../../scaling_tests/kernel/proof/shared_comparison.rs");
+}
+
+#[cfg(test)]
+mod call_tests {
+    use super::*;
+
+    fn call(format: MachineIntegerType, argument: KernelTerm) -> KernelTerm {
+        let application = SharedPureApplication::intern(
+            "rewrite_call".into(),
+            vec![PureFunctionArgument::SharedMachine(
+                SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, argument).unwrap(),
+            )],
+        );
+        KernelTermImport::default().machine_call(format, &application)
+    }
+
+    #[test]
+    fn common_calls_rewrite_arguments_and_keep_exact_noop_roots() {
+        let _session = VerificationSession::enter();
+        let from = MachineTerm::Variable(Variable(995860));
+        let to = MachineTerm::Variable(Variable(995861));
+        let missing = MachineTerm::Variable(Variable(995862));
+        for format in crate::kernel::machine_integer::FORMATS {
+            let argument = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995860));
+            let root = call(format, argument);
+            let native = KernelTermExport::machine(&root).unwrap();
+            let expected = TermRewrite::for_bits_checked(&from, &to).bits(&native);
+            let exports = KernelTermExport::machine_export_count();
+            let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+            let result = rewrite.shared_machine_operand(&root).unwrap();
+            assert_eq!(rewrite.refusal(), None);
+            assert!(matches!(result.node(), KernelTermNode::Call { .. }));
+            assert_ne!(result, root);
+            let mut noop = TermRewrite::for_bits_checked(&missing, &to);
+            assert_eq!(noop.shared_machine_operand(&root), Some(root.clone()));
+            assert_eq!(noop.refusal(), None);
+            let mut exact = TermRewrite::for_machine_operands_checked(
+                MachineOperandView::Shared(&root),
+                MachineOperandView::Legacy(&to),
+            );
+            assert_eq!(exact.bits(&native), to);
+            assert_eq!(exact.refusal(), None);
+            let mut matcher = crate::kernel::proof::machine_source_match::MachineSourceMatcher::new(
+                MachineOperandView::Legacy(&native),
+            );
+            assert_eq!(matcher.matches(format, &root), Some(true));
+            assert_eq!(matcher.matches(format, &result), Some(false));
+            let legacy = KernelTerm::retained_native_machine_operand(format, &native);
+            assert!(crate::kernel::shared_machine_syntax_equal(&root, &legacy));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(KernelTermExport::machine(&result).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn common_call_substitution_preserves_capture_avoidance_inside_arguments() {
+        let _session = VerificationSession::enter();
+        let from = MachineTerm::Variable(Variable(995890));
+        let to = MachineTerm::Variable(Variable(995891));
+        let fold = MachineTerm::RangeFold {
+            start: Box::new(MachineTerm::constant(0)),
+            end: Box::new(MachineTerm::constant(3)),
+            initial: Box::new(from.clone()),
+            accumulator: Variable(995891),
+            item: Variable(995892),
+            body: Box::new(MachineTerm::add(to.clone(), from.clone())),
+        };
+        let application = SharedPureApplication::intern(
+            "binder_call".into(),
+            vec![PureFunctionArgument::Value(CValue::Int32(fold))],
+        );
+        let root =
+            KernelTermImport::default().machine_call(MachineIntegerType::Int32, &application);
+        let native = KernelTermExport::machine(&root).unwrap();
+        let mut native_rewrite = TermRewrite::for_bits_checked(&from, &to);
+        let expected = native_rewrite.bits(&native);
+        assert_eq!(native_rewrite.refusal(), None);
+        let exports = KernelTermExport::machine_export_count();
+        let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+        let result = rewrite.shared_machine_operand(&root).unwrap();
+        assert_eq!(rewrite.refusal(), None);
+        assert!(matches!(result.node(), KernelTermNode::Call { .. }));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        let actual = KernelTermExport::machine(&result).unwrap();
+        assert_eq!(actual, expected);
+        let MachineTerm::ClickFunctionApplication { arguments, .. } = actual else {
+            panic!()
+        };
+        let PureFunctionArgument::Value(CValue::Int32(MachineTerm::RangeFold {
+            accumulator, ..
+        })) = &arguments[0]
+        else {
+            panic!()
+        };
+        assert_ne!(*accumulator, Variable(995891));
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../../scaling_tests/kernel/proof/shared_call_rewrites.rs");
+    }
 }
