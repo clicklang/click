@@ -27,13 +27,13 @@
               "path": ".click/chunks/chunks.rs.ullbc",
               "sha256": "5f006f4545bee555d37778e07d3a023e12e349bccefdd74add2575a06cafe695"
             },
-            "identity": "de102c993df12f78763fcd9b3bc4defd02ec9bdd0e5ae6da32986f735b51dc2a",
+            "identity": "a520cfb7fa1e1f3d071df9f9bacbbb39434ff97d2070b3140e8e357ad38f0df1",
             "inputs": {
               "chunks.rs": "3dd037699182a7d3e1701cdb16424ca55cccca61e44b1e873b1dc286890771bd"
             }
           }
         },
-        "unit": "2bd402cdcb5cf5458b9ec48afb8a527a62f340c57cc7f7aec58d6b4cb79d541c"
+        "unit": "f62af4c1c4b4f4da3e7f068adcbb0d39a5efe5ecfea4e2b07cbd8e4e0e5d5405"
       }
     }
   }

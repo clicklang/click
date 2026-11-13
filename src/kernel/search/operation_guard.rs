@@ -67,3 +67,18 @@ mod tests {
         assert!(std::panic::catch_unwind(|| record_discovery("outer search")).is_err());
     }
 }
+
+#[cfg(test)]
+#[test]
+#[should_panic(expected = "entered discovery condition fact transport")]
+fn condition_transport_cannot_hide_inside_statement_publication() {
+    let _operation = FastOperationScope::enter("statement result publication");
+    crate::kernel::memory_provenance::prove_c_condition_fact_direct_transport(
+        &crate::kernel::Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::Constant(true),
+            true,
+        ),
+        &crate::kernel::CMemory::new(),
+        &crate::kernel::PureFactContext::new(),
+    );
+}

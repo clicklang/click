@@ -94,12 +94,12 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   migration boundaries. Its original R1–R7 reproductions are closed; use its
   current closure checklist for remaining work. Those identifiers are local to
   that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
-- **Operation guards:** theorem application, scope completion, prepared-step
-  publication, have opening and contract-claim opening have test-build discovery guards.
-  Statement preparation has two first-failure reproductions through existing
-  bridges. Removing the optional call-partition inference also exposes
-  `call_frame` through `call_kept_ownership`; first guard failures mask later
-  crossings. See the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
+- **Operation guards:** theorem application, scope completion, statement-result
+  publication, prepared-step publication, have opening and contract-claim opening
+  have test-build discovery guards.
+  Statement preparation retains loan-access, raw ownership-validation and
+  composite-framing dependencies. First guard failures mask later crossings;
+  re-probe complete preparation as each route is removed. See the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
   Statement preparation remains unguarded; no exception exempts its search.
 - **Enforcement gap:** lexical dependency freezing and selected work counters
   do not prohibit every search call during expanded replay or detect arbitrary
@@ -302,15 +302,41 @@ overlap and ended-scope safety controls.
 
 When a verified call has memory effects,
 [`functions.rs`](../src/kernel/functions.rs) calls `call_kept_ownership` on the
-caller frame. It enumerates owned instances and composite families; bodies
-without the argument-direct property are opened. Skipping members of one direct
-family does not establish independence from the number of families.
+caller frame. Field-bearing instances stay opaque: call preparation does not
+open their bodies or gather their memory/facts. With no owned composites, the
+frame is retained directly without constructing `ProofSearch`. The selected
+instance-count regression guards that route against discovery.
+
+The retained-instance route is covered by a discovery guard and the fixed-call
+instance-count scaling regression. The arena proof uses explicit separation
+and preservation for its selected retained headers and cells. Automatic
+statement-exit fact restatement is removed; calls publish producer facts at
+their original snapshots rather than searching for extra current-state facts.
+
+Owned composite families still use the legacy framing search; bodies without
+the argument-direct property are opened. Skipping members of one direct family
+does not establish independence from the number of families.
 
 Hold the callee contract/effect fixed and grow kept instances, non-direct
 composites, then distinct direct families. Measure call preparation, execution
 and completion together; include memory/condition/witness-dependent bodies and
 refusals. Coordinate with [Scaling](scaling.md), cause 3, without duplicating its
 implementation work or changing its priority here.
+
+### Statement-exit fact transport — boundary and remaining coverage
+
+Statement result publication now has a test-build discovery guard. Condition
+fact transport is registered as discovery, including its formerly unregistered
+"direct" route. Call-result/postcondition integration coverage and an adversarial
+guard test prevent that helper from silently returning to publication. The
+removed adapter's lower-level red diagnostic is retired: it measured a helper
+that publication no longer calls, not the cost of the operation after removal.
+
+This does not guard all statement preparation. Other cell-map/effect searches,
+transport re-validation, ownership validation, loan access, and composite
+framing remain separately scoped candidates. Keep ordinary obligation solving
+on the driver and optional fact discovery in expandable search; a missing
+bonus fact is not a new mandatory obligation.
 
 ### M1: reads, caches and history — coverage gaps
 

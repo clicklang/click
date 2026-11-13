@@ -453,6 +453,14 @@ fn resource_fact_content_hash(fact: &CResourceFact) -> u64 {
     hasher.finish()
 }
 
+fn spatial_memory_fact_key(fact: &CResourceFact) -> Option<CResourceFact> {
+    let resource = CResource::Memory(fact.memory_range()?.spatial_key());
+    Some(match fact {
+        CResourceFact::Own(_, units) => CResourceFact::Own(resource, units.clone()),
+        CResourceFact::View(_) => CResourceFact::View(resource),
+    })
+}
+
 impl ResourceContextIndex {
     /// Files or withdraws one identity as able to fail instance validity:
     /// held twice, or held once with other than one owned unit.
@@ -602,6 +610,9 @@ impl ResourceContextIndex {
         result.fact_hash = result.fact_hash.wrapping_add(hash);
         result.canonical = result.canonical.with_inserted(fact, hash);
         result.exact = insert_resource_index_entry(&result.exact, fact.clone(), entry);
+        if let Some(key) = spatial_memory_fact_key(fact) {
+            result.spatial_memory = insert_resource_index_entry(&result.spatial_memory, key, entry);
+        }
         result.by_resource =
             insert_resource_index_entry(&result.by_resource, fact.resource().clone(), entry);
         if let Some(amount) = numeric_population_owned_units(fact) {
@@ -884,6 +895,10 @@ impl ResourceContextIndex {
         result.fact_hash = result.fact_hash.wrapping_sub(hash);
         result.canonical = result.canonical.without_one(fact, hash);
         result.exact = remove_resource_index_entry(&result.exact, fact, entry);
+        if let Some(key) = spatial_memory_fact_key(fact) {
+            result.spatial_memory =
+                remove_resource_index_entry(&result.spatial_memory, &key, entry);
+        }
         result.by_resource =
             remove_resource_index_entry(&result.by_resource, fact.resource(), entry);
         if let Some(amount) = numeric_population_owned_units(fact) {
@@ -1607,14 +1622,19 @@ impl ResourceContext {
         #[cfg(test)]
         let _operation =
             crate::kernel::search::FastOperationScope::enter("exact partition separation");
-        if left == right {
+        if left == right
+            || matches!((left, right), (CResource::Memory(a), CResource::Memory(b))
+            if a.spatial_key() == b.spatial_key())
+        {
             return false;
         }
         let direct = |fact: CResourceFact| {
-            self.storage
-                .index
-                .exact
-                .get(&fact)
+            let entry = if let Some(key) = spatial_memory_fact_key(&fact) {
+                self.storage.index.spatial_memory.get(&key)
+            } else {
+                self.storage.index.exact.get(&fact)
+            };
+            entry
                 .and_then(|entries| entries.iter().next())
                 .is_some_and(|entry| {
                     !self.storage.supported_by.contains_key(entry)
@@ -3043,23 +3063,6 @@ impl ResourceContext {
                         .filter(|fact| fact.is_own()),
                 )
             })
-    }
-
-    /// The owned field-bearing instances of this context, from the instance
-    /// index. Charges one work unit per visited fact.
-    pub(in crate::kernel) fn owned_instances<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = &'a CResourceFact> + 'a {
-        self.storage
-            .index
-            .instances
-            .iter()
-            .flat_map(|(_, entries)| entries.iter())
-            .map(|entry| {
-                crate::instrumentation::record_deterministic_work(1);
-                self.fact(*entry)
-            })
-            .filter(|fact| fact.is_own())
     }
 
     /// Whether this context holds any owned instance with a C pointer

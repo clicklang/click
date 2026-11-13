@@ -622,6 +622,26 @@ impl Parser {
             // iterator yields, `Option<&u8>`.
             if self.peek() == Some(&Token::Amp) {
                 self.position += 1;
+                // A shared slice, `&[u8]`: the chunk a `chunks_exact`
+                // iterator yields, `Option<&[u8]>`.
+                if self.peek() == Some(&Token::LBracket) {
+                    self.position += 1;
+                    let element = self.expect_ident("type argument")?;
+                    if rust_scalar_type(&element).is_none() {
+                        return Err(self.error(
+                            "a slice type argument is a shared slice of a scalar, `&[u8]`",
+                        ));
+                    }
+                    self.expect(Token::RBracket)?;
+                    arguments.push(format!("&[{element}]"));
+                    match self.peek() {
+                        Some(Token::Comma) => {
+                            self.position += 1;
+                            continue;
+                        }
+                        _ => break,
+                    }
+                }
                 let pointee = self.expect_ident("type argument")?;
                 if rust_scalar_type(&pointee).is_none() {
                     return Err(self.error(

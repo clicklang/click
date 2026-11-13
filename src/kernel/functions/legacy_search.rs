@@ -12,17 +12,7 @@ impl crate::kernel::search::ProofSearch<CFunction> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("call_frame");
         let mut ranges = Vec::new();
-        let mut premises = Vec::new();
-        for fact in residual.owned_instances() {
-            if let Some((body_ranges, body_premises)) =
-                unmatched_instance_body_ownership(fact, definitions, state, assumptions).or_else(
-                    || matched_instance_body_ownership(fact, definitions, state, assumptions),
-                )
-            {
-                ranges.extend(body_ranges);
-                premises.extend(body_premises);
-            }
-        }
+        let premises = Vec::new();
         // A family whose bodies are argument-direct owns the same ranges
         // wherever its facts are held, so the kept set answers for those
         // composites per queried address and they are not opened here

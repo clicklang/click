@@ -68,6 +68,20 @@ Two separate limits remain:
   a complete-operation cost violation before treating bounded repeated lowering
   as a bad-scaling defect.
 
+## Statement-exit fact transport: removed operation discovery
+
+Statement publication retains producer facts at their original snapshots.
+It no longer calls condition transport to discover bonus final-snapshot facts,
+builds no extra transport context, and adds no replacement obligations.
+Existing producer-issued transport metadata is still published.
+
+A test-build `FastOperationScope` guards result publication; condition fact
+transport is registered as discovery even though the helper does not construct
+`ProofSearch`. The adversarial guard test rejects that crossing, and an ordinary
+call-assignment proof checks that the result and postcondition remain available.
+This closes this call site, not every search reachable during step preparation.
+See [remaining coverage](../roadmap/smart-tactics.md#statement-exit-fact-transport--boundary-and-remaining-coverage).
+
 ## Findings
 
 The old categories describe code placement, not the reason search runs. Most
@@ -235,7 +249,7 @@ mutation tests prevent deleting or postponing their guards. The guards detect
 registered search, not uninstrumented loops or copying.
 
 The same guard cannot yet be retained on `prepare_step`.
-The gate mdtest corpus reproduces two remaining operation/entry pairs:
+Earlier whole-operation probes reproduced these operation/entry pairs:
 
 | Operation | Discovery entry | Reproduction (`mdtests/`) |
 | --- | --- | --- |
@@ -246,9 +260,12 @@ These reuse two existing bridge entries; they are not two new independent
 walks. A first guard failure can mask a later dependency. No guard escape was
 added, and the existing source dependency records remain frozen.
 
-With optional call-partition inference removed, the same 64-bit window fixture
-gets past `ownership_validity_candidates` and reaches `call_frame` through
-`call_kept_ownership`. The local signedness fixture still reaches `loan_access`
+Removing optional call-partition inference exposed `call_frame` through
+`call_kept_ownership` in the same 64-bit window fixture. With instance-body
+opening removed, frames without owned composites now construct their kept set
+directly; that route no longer enters `ProofSearch::call_frame`. Composite
+families still do. Re-probe complete preparation before treating the old
+window's first-failure entry as current. The local signedness fixture still reaches `loan_access`
 through `memory_write_permission_outcome_for_local`. These probe results do not
 justify a whole-preparation guard or a new exception. The temporary probe is
 not retained in the source.

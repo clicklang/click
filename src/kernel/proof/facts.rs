@@ -22,6 +22,23 @@ use std::collections::{BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+/// Separation describes physical regions, not authority to access them. Keep
+/// the address, endpoints, index domain and width exact, but omit the carrier
+/// ancestry that ownership and typed access must continue to distinguish.
+/// This key is only for memory/memory separation, never containment or views.
+fn spatial_separation_key(fact: &Proposition) -> Option<Proposition> {
+    let Proposition::CResourceSeparate { left, right } = fact else {
+        return None;
+    };
+    let (CResource::Memory(left), CResource::Memory(right)) = (&**left, &**right) else {
+        return None;
+    };
+    Some(Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(left.spatial_key())),
+        right: Box::new(CResource::Memory(right.spatial_key())),
+    })
+}
+
 #[cfg(test)]
 mod constant_truth_tests {
     use super::*;
@@ -1140,6 +1157,9 @@ impl ProofFacts {
                     algebraic_equalities_by_term =
                         index_algebraic_equality_fact(algebraic_equalities_by_term, &conjunct);
                     call_payloads = index_call_payload(call_payloads, &conjunct);
+                    if let Some(key) = spatial_separation_key(&conjunct) {
+                        exact = exact.with_value(Arc::new(key));
+                    }
                     exact = exact.with_value(conjunct);
                 }
             }
@@ -1155,6 +1175,9 @@ impl ProofFacts {
             algebraic_equalities_by_term =
                 index_algebraic_equality_fact(algebraic_equalities_by_term, fact);
             call_payloads = index_call_payload(call_payloads, fact);
+            if let Some(key) = spatial_separation_key(fact) {
+                exact = exact.with_value(Arc::new(key));
+            }
             exact = exact.with_value(Arc::clone(fact));
             implicit_transport_assumptions =
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
@@ -1203,6 +1226,7 @@ impl ProofFacts {
     /// (`kernel::comparison_form`), under which every fact is filed too.
     pub(crate) fn contains(&self, fact: &Proposition) -> bool {
         self.exact.contains(fact)
+            || spatial_separation_key(fact).is_some_and(|key| self.exact.contains(&key))
             || call_payload_identity_key(fact).is_some_and(|key| self.call_payloads.contains(&key))
             || crate::kernel::comparison_form(fact)
                 .is_some_and(|comparison| self.exact.contains(&comparison))
@@ -1313,6 +1337,9 @@ impl ProofFacts {
                 algebraic_equalities_by_term =
                     index_algebraic_equality_fact(algebraic_equalities_by_term, &conjunct);
                 call_payloads = index_call_payload(call_payloads, &conjunct);
+                if let Some(key) = spatial_separation_key(&conjunct) {
+                    exact = exact.with_value(Arc::new(key));
+                }
                 exact = exact.with_value(conjunct);
             }
         }
@@ -1328,6 +1355,9 @@ impl ProofFacts {
         algebraic_equalities_by_term =
             index_algebraic_equality_fact(algebraic_equalities_by_term, &fact);
         call_payloads = index_call_payload(call_payloads, &fact);
+        if let Some(key) = spatial_separation_key(&fact) {
+            exact = exact.with_value(Arc::new(key));
+        }
         exact = exact.with_value(Arc::clone(&fact));
         // Filed under its comparison form too, so a lookup of either form,
         // or of another proposition with that comparison form, finds it.
@@ -4834,6 +4864,99 @@ mod retained_root_context_tests {
 #[cfg(test)]
 mod held_separation_tests {
     use super::*;
+
+    fn alternate_carrier(resource: CResource) -> CResource {
+        let CResource::Memory(range) = resource else {
+            unreachable!()
+        };
+        let CResource::Memory(origin) = cell(999) else {
+            unreachable!()
+        };
+        CResource::Memory(
+            range
+                .with_designation(Arc::new(origin.base().clone()))
+                .with_opaque_extent(Some(Arc::new(origin.base().clone())), false)
+                .with_typed_carrier(),
+        )
+    }
+
+    #[test]
+    fn partition_spatial_lookup_keeps_access_support_and_branch_scope() {
+        let a = cell(0);
+        let a_other = alternate_carrier(a.clone());
+        let b = cell(1);
+        let owner = CResourceFact::own(a.clone());
+        let root = ResourceContext::new()
+            .unchecked_with_facts([owner.clone(), CResourceFact::own(b.clone())]);
+        assert!(root.proves_exact_partition_separation(&a_other, &b));
+        assert!(!root.proves_exact_partition_separation(&a_other, &a));
+        let removed = root.clone().without_exact_representation(&owner).unwrap();
+        assert!(!removed.proves_exact_partition_separation(&a_other, &b));
+        assert!(root.proves_exact_partition_separation(&a_other, &b));
+        let views = ResourceContext::new().unchecked_with_facts([
+            CResourceFact::View(a.clone()),
+            CResourceFact::View(b.clone()),
+        ]);
+        assert!(!views.proves_exact_partition_separation(&a_other, &b));
+        let projected = ResourceContext::new()
+            .unchecked_with_facts([CResourceFact::own(b.clone())])
+            .unchecked_with_supported_facts(
+                &CResourceFact::own(b.clone()),
+                [CResourceFact::View(a.clone())],
+            );
+        assert!(!projected.proves_exact_partition_separation(&a_other, &b));
+        let non_unit = ResourceContext::new().unchecked_with_facts([
+            CResourceFact::Own(a, Box::new(MachineTerm::constant(0))),
+            CResourceFact::own(b.clone()),
+        ]);
+        assert!(!non_unit.proves_exact_partition_separation(&a_other, &b));
+    }
+
+    #[test]
+    fn separation_reuses_physical_ranges_without_reusing_authority() {
+        let left = range(0, 1, 3, 4);
+        let other_carrier = alternate_carrier(left.clone());
+        assert_ne!(left, other_carrier);
+        let right = cell(1);
+        let original = separation(left.clone(), right.clone());
+        let restated = separation(other_carrier.clone(), right.clone());
+        for (held, goal) in [(&original, &restated), (&restated, &original)] {
+            for source in [
+                held.clone(),
+                Proposition::And(Box::new(held.clone()), Box::new(held.clone())),
+            ] {
+                let root = ProofFacts::default();
+                let facts = root.with_fact(source);
+                assert!(facts.pure_assumption_available(goal));
+                assert!(!root.contains(goal));
+                for changed in [
+                    range(2, 1, 3, 4),
+                    range(0, 0, 3, 4),
+                    range(0, 1, 4, 4),
+                    range(0, 1, 3, 8),
+                ] {
+                    assert!(!facts.contains(&separation(changed, right.clone())));
+                }
+                let CResource::Memory(narrow) = &left else {
+                    unreachable!()
+                };
+                let wide = CResource::Memory(CMemoryRange::new_wide(
+                    narrow.base().clone(),
+                    narrow.start().clone(),
+                    narrow.end().clone(),
+                    4,
+                ));
+                assert!(!facts.contains(&separation(wide, right.clone())));
+            }
+        }
+        // The spatial equivalence does not generalize to containment authority.
+        let contains = |part| Proposition::CResourceContains {
+            parent: Box::new(part),
+            child: Box::new(right.clone()),
+        };
+        let facts = ProofFacts::default().with_fact(contains(left));
+        assert!(!facts.contains(&contains(other_carrier)));
+    }
 
     fn cell(index: u64) -> CResource {
         CResource::Memory(CMemoryRange::new(

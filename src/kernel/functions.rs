@@ -7386,17 +7386,15 @@ pub(super) fn assumed_mutex_input_reservations(
 
 /// What a caller keeps unchanged across a call whose resource transfer left it
 /// `residual`: the residual itself, whose flat owners and views the havoc finds
-/// through its base index, and the owned memory of each owned residual
-/// instance and folded composite, opened one body layer at `state` exactly as
+/// through its base index, and the owned memory of folded composites,
+/// opened one body layer at `state` exactly as
 /// `unfold` opens it, with composites in that body expanded.
 ///
 /// Only exactly held bytes count. An iterated fact in an opened body is
-/// skipped rather than counted at its span, a nested instance is not opened
-/// again, viewed composite bodies are not opened, and an instance this layer
-/// cannot open -- a matched body whose arm is not decided, a recursive or witness-bearing
-/// body -- contributes nothing, so the rule never keeps a cell on the
-/// strength of a body it could not read. The opening is paid once per call,
-/// one unit per visited residual instance or composite and its body, except
+/// skipped rather than counted at its span, field-bearing instances stay
+/// opaque, and viewed composite bodies are not opened. Hidden instance memory
+/// requires explicit unfolding or preservation. Composite opening is paid
+/// once per call, one unit per visited composite and its body, except
 /// for a family whose bodies are argument-direct: its composites are not
 /// visited, and the kept memory answers for them per queried address
 /// (`CallKeptRanges::range_holding`).
@@ -7408,6 +7406,19 @@ pub(super) fn call_kept_ownership(
     state: &CState,
     assumptions: &PureFactContext,
 ) -> CallKeptOwnership {
+    // Flat ownership is already indexed; opaque instances add no ranges.
+    // The persistent composite index answers emptiness without visiting shapes.
+    if residual.owned_composite_facts().is_empty() {
+        return CallKeptOwnership::new(
+            residual.clone(),
+            CallKeptRanges::new(
+                ResourceContext::new_with_equalities(assumptions),
+                vec![],
+                None,
+            ),
+            assumptions,
+        );
+    }
     crate::kernel::search::ProofSearch::<CFunction>::call_frame(
         residual,
         definitions,
@@ -7611,98 +7622,18 @@ fn matched_instance_body_ownership(
     Some((ranges, premises))
 }
 
-/// The memory an owned field-bearing instance's unconditional, unmatched
-/// body owns, one layer deep, evaluated at `state` with the instance's own
-/// fields and arguments as [`unmatched_instance_body_views`] evaluates it,
-/// with the body's field-free composites expanded, and the body's own facts
-/// as condition premises. Unlike those views this counts only what the body
-/// *owns*: a `views` clause, an iterated clause (whose span over-approximates
-/// what it holds) and a nested instance contribute nothing. A matched,
-/// guarded or witness-bearing body, or one whose clauses or facts cannot be
-/// evaluated here, contributes nothing at all.
-fn unmatched_instance_body_ownership(
-    fact: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
-    state: &CState,
-    assumptions: &PureFactContext,
-) -> Option<(Vec<CMemoryRange>, Vec<(ConditionTerm, bool)>)> {
-    let UnmatchedInstanceBody {
-        definition,
-        evaluation,
-        evaluation_assumptions,
-        body_resources,
-        expanded,
-    } = open_unmatched_instance_body(fact, definitions, state, assumptions)?;
-    let mut budget = ExecutionBudget::beside_live_state();
-    // The facts read the body's own cells, as an unfold reads them: with the
-    // body as the evaluation's resources and its observable facts assumed.
-    let mut body_facts = body_resources.observable_facts_assuming_valid(assumptions);
-    for fact in body_resources.facts() {
-        if let Some(coverage) = fact.allocation_bounds_fact(assumptions) {
-            body_facts.push(coverage);
-        }
-        let Some(range) = fact.memory_range() else {
-            continue;
-        };
-        body_facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
-        body_facts.push(range.loadable_fact(&state.memory));
-    }
-    body_facts.push(Proposition::CResourceComposition(body_resources.clone()));
-    let fact_assumptions = body_facts
-        .into_iter()
-        .fold(evaluation_assumptions, |facts, fact| {
-            facts.assume_proposition(fact)
-        });
-    let mut fact_evaluation = evaluation;
-    fact_evaluation.resources = body_resources;
-    let (clauses, _) = lower_selected_resource_body_clauses(
-        &fact_evaluation,
-        &definition.facts,
-        None,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &fact_assumptions,
-        None,
-        &mut budget,
-    )
-    .ok()?;
-    let premises = clauses
-        .into_iter()
-        .filter_map(|clause| match clause.proposition {
-            Proposition::ConditionIs(condition, value) => {
-                crate::instrumentation::record_deterministic_work(1);
-                Some((condition, value))
-            }
-            _ => None,
-        })
-        .collect();
-    Some((owned_memory_ranges_of(&expanded), premises))
-}
-
-/// One layer of an owned field-bearing instance's unconditional, unmatched
-/// body, evaluated at a state that holds the instance: the evaluation state
-/// and assumptions, the body's resources, and the same with field-free
-/// composites expanded.
-struct UnmatchedInstanceBody<'a> {
-    definition: &'a CCompositeResourceDefinition,
-    evaluation: CState,
-    evaluation_assumptions: PureFactContext,
-    body_resources: ResourceContext,
-    expanded: ResourceContext,
-}
-
 /// Opens an owned instance one body layer at `state`, exactly as `unfold`
 /// evaluates it: the instance's own fields and arguments bound, the body's
 /// clauses evaluated, and its field-free composites expanded. `None` for
 /// anything but an instance whose definition is unconditional, unmatched,
 /// witness-free and owns something, and for a body that does not evaluate
 /// here. Charges one unit, plus the evaluation's own work.
-fn open_unmatched_instance_body<'a>(
+fn open_unmatched_instance_body(
     fact: &CResourceFact,
-    definitions: &'a [CCompositeResourceDefinition],
+    definitions: &[CCompositeResourceDefinition],
     state: &CState,
     assumptions: &PureFactContext,
-) -> Option<UnmatchedInstanceBody<'a>> {
+) -> Option<ResourceContext> {
     crate::instrumentation::record_deterministic_work(1);
     let CResource::Instance(instance) = fact.resource() else {
         return None;
@@ -7752,13 +7683,7 @@ fn open_unmatched_instance_body<'a>(
     } else {
         body_resources.clone()
     };
-    Some(UnmatchedInstanceBody {
-        definition,
-        evaluation,
-        evaluation_assumptions,
-        body_resources,
-        expanded,
-    })
+    Some(expanded)
 }
 
 /// The composition a store at `write` of `bytes` adds to the partition law
@@ -7774,8 +7699,7 @@ fn open_unmatched_instance_body<'a>(
 /// disjoint from every other owned member of the context and from every other
 /// instance's body. Its ranges are spelled with this snapshot's load
 /// variables, so like any composition fact the claim is about addresses and
-/// stays true after the store. It is `unmatched_instance_body_ownership`'s
-/// opening at a call (the kept-by-caller rule), asked at a store.
+/// stays true after the store. This is a selected store-side body observation.
 ///
 /// **What it opens.** Only instances this context holds now, never one a
 /// recorded composition names: a body read at a snapshot where the instance
@@ -7838,7 +7762,7 @@ pub(in crate::kernel) fn store_opened_instance_composition(
     let mut opened = Vec::new();
     for fact in instances.values() {
         if let Some(body) = open_unmatched_instance_body(fact, &definitions, state, assumptions) {
-            opened.extend(owned_memory_ranges_of(&body.expanded));
+            opened.extend(owned_memory_ranges_of(&body));
         }
     }
     if opened.is_empty() {

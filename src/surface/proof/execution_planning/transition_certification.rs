@@ -25,45 +25,6 @@ pub(in crate::surface::proof) fn record_loop_exit_invariants(
     Ok(())
 }
 
-/// Carry source correspondence through the exact same checked transport
-/// sequence as the facts. Index only this output-sized collection; repeated
-/// declarations share the index entry and each keeps its own association.
-fn transport_loop_invariant_correspondence<'a>(
-    correspondence: &mut [(usize, Proposition)],
-    transports: impl Iterator<Item = (&'a Proposition, &'a Proposition)>,
-) {
-    let mut indices = BTreeMap::<Proposition, Vec<usize>>::new();
-    for (position, (_, proposition)) in correspondence.iter().enumerate() {
-        indices
-            .entry(proposition.clone())
-            .or_default()
-            .push(position);
-    }
-    for (source, target) in transports {
-        if let Some(mut positions) = indices.remove(source) {
-            match indices.entry(target.clone()) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(positions);
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    // Move the smaller group when two facts converge. A long
-                    // transport chain must not revisit every duplicate clause
-                    // at every hop.
-                    if entry.get().len() < positions.len() {
-                        std::mem::swap(entry.get_mut(), &mut positions);
-                    }
-                    entry.get_mut().extend(positions);
-                }
-            }
-        }
-    }
-    for (target, positions) in indices {
-        for position in positions {
-            correspondence[position].1 = target.clone();
-        }
-    }
-}
-
 fn missing_prerequisite_error(
     message: impl Into<String>,
     obligation: &ProofObligation,
@@ -569,7 +530,6 @@ pub(in crate::surface) fn certified_statement_transitions(
         predicate_environment,
         context_label,
         prerequisite_policy,
-        statement_contains_call(statement),
         context,
         &executed_under,
     )?;
@@ -624,7 +584,6 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
         predicate_environment,
         context_label,
         StatementPrerequisitePolicy::Fast,
-        statement_contains_call(statement),
         None,
         &executed_under,
     )
@@ -683,7 +642,6 @@ fn certified_transitions_from_execution(
     predicate_environment: Option<&PredicateEnvironment>,
     context_label: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
-    normalize_statement_facts_to_exit: bool,
     context: Option<&PureFactContext>,
     executed_under: &PureFactContext,
 ) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
@@ -713,7 +671,7 @@ fn certified_transitions_from_execution(
         .enumerate()
         .filter(|(_, path)| feasible(path))
         .map(|(path_index, path)| {
-            let mut loop_invariant_correspondence = loop_rule.as_ref()
+            let loop_invariant_correspondence = loop_rule.as_ref()
                 .map(|rule| rule.loop_invariant_correspondence(path_index).to_vec())
                 .unwrap_or_default();
             let loop_iterations = loop_rule
@@ -727,41 +685,7 @@ fn certified_transitions_from_execution(
                 .collect::<Vec<_>>();
             let statement_fact_sources = statement_facts.clone();
             successor_facts.extend(statement_facts.iter().cloned());
-            let mut execution_facts = path.execution_facts();
-            // The direct-transport context of the successor facts followed by
-            // the execution facts, built when a transport first asks for it:
-            // the context `pure_facts` carries, extended by this path's
-            // statement and execution facts as they stand here.
-            let transport_sources = statement_facts
-                .iter()
-                .cloned()
-                .chain(execution_facts.iter().map(|fact| fact.proposition().clone()))
-                .collect::<Vec<_>>();
-            let transport_assumptions = std::cell::OnceCell::new();
-            let transport_assumptions = || {
-                transport_assumptions.get_or_init(|| {
-                    let mut premises = Vec::new();
-                    for fact in &transport_sources {
-                        crate::kernel::proof::fact_reasoning::direct_fact_transport_premises(
-                            fact,
-                            &mut premises,
-                        );
-                    }
-                    crate::kernel::reasoning::path_facts::count_uncharged_context_entries(
-                        premises.len(),
-                    );
-                    // Uncharged with the list's own transport context; see
-                    // `PureFactList::direct_transport_context`.
-                    premises.into_iter().fold(
-                        // A checked step already executed under this exact
-                        // context. Reuse its indexed graph rather than
-                        // rebuilding every enclosing branch condition solely
-                        // to normalize the statement's own call facts.
-                        executed_under.clone(),
-                        |context, fact| context.assume_proposition_uncharged(fact),
-                    )
-                })
-            };
+            let execution_facts = path.execution_facts();
             let prerequisite_assumptions = match context {
                 Some(context) => statement_facts
                     .iter()
@@ -977,7 +901,11 @@ fn certified_transitions_from_execution(
                     prerequisite_derivations.push(derivation);
                 }
             }
-            let mut introduced_facts = statement_facts.clone();
+            #[cfg(test)]
+            let _publication = crate::kernel::search::FastOperationScope::enter(
+                "statement result publication",
+            );
+            let introduced_facts = statement_facts.clone();
             let Proposition::CStatementVerifies {
                 state: _,
                 outcome,
@@ -989,123 +917,12 @@ fn certified_transitions_from_execution(
                     "{context_label} saw an unexpected execution theorem"
                 )));
             };
-            if let CStatementOutcome::Normal(post_state)
-            | CStatementOutcome::Return {
-                state: post_state, ..
-            } = outcome
+            if matches!(outcome, CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. })
             {
-                // A compound source statement can produce a fact before its
-                // final internal state change. For example, a verified call
-                // produces postcondition facts before CallAssign stores the
-                // return value in a stack local. That intermediate snapshot
-                // has no source-level program point, so normalize facts
-                // produced by the statement itself to the statement exit as
-                // part of the statement step. Surface transports remain
-                // responsible only for facts that predated the statement.
+                // Publish the producer's facts at their original snapshots.
+                // Extra current-state consequences belong to explicit proof or
+                // expandable search, not automatic statement-exit discovery.
                 let mut transported_facts = Vec::new();
-                let mut certified_transport_sources = Vec::new();
-                if normalize_statement_facts_to_exit {
-                    let mut normalization_sources = statement_facts.into_iter().collect::<Vec<_>>();
-                    for execution_fact in &execution_facts {
-                        if execution_fact.is_certified()
-                            && !pure_facts.has_exact_conjunct(execution_fact.proposition())
-                            && !normalization_sources.contains(execution_fact.proposition())
-                        {
-                            normalization_sources.push(execution_fact.proposition().clone());
-                        }
-                    }
-                    for fact in normalization_sources {
-                        let (theorem, frame_premises) = direct_transport_with_frame_premises(
-                            &fact,
-                            post_state.memory(),
-                            transport_assumptions(),
-                        );
-                        let Some(theorem) = theorem else {
-                            continue;
-                        };
-                        let (_, target) = crate::kernel::c_condition_fact_transport_parts(
-                            &theorem, &fact,
-                        )
-                        .expect("condition transport must retain its explicit source");
-                        if target == &fact {
-                            continue;
-                        }
-                        // A snapshot-bearing source stays true after the step;
-                        // its read descriptor retains the old state. A premise
-                        // may cite it at the statement entry. Keep it.
-                        if !crate::kernel::proposition_mentions_scalar_read(&fact) {
-                            successor_facts.remove_all(&fact);
-                        }
-                        if !successor_facts.contains(target) {
-                            successor_facts.push(target.clone());
-                        }
-                        if execution_facts.iter().any(|execution_fact| {
-                            execution_fact.is_certified() && execution_fact.proposition() == &fact
-                        }) && !certified_transport_sources.contains(&fact)
-                        {
-                            certified_transport_sources.push(fact.clone());
-                        }
-                        transported_facts.push(CertifiedFactTransport {
-                            source: fact,
-                            target: target.clone(),
-                            theorem,
-                            statement_local: true,
-                            frame_premises,
-                        });
-                    }
-                }
-
-                let mut transported_execution_facts = Vec::new();
-                for transport in &transported_facts {
-                    // A carried fact retains its reads' snapshots,
-                    // so the pre-step form stays true after the
-                    // step: a later premise may cite either the entry
-                    // form (`at(statement(n).entry, ...)`) or the carried
-                    // one. Keep both.
-                    if crate::kernel::proposition_mentions_scalar_read(
-                        &transport.source,
-                    ) {
-                        if !successor_facts.contains(&transport.target) {
-                            successor_facts.push(transport.target.clone());
-                        }
-                    } else {
-                        successor_facts.replace_fact_in_place(
-                            &transport.source,
-                            &transport.target,
-                        );
-                    }
-                    // Every producer-side fact can be a premise of the
-                    // statement theorem, including an ordinary call bound.
-                    // Keep its exact snapshot alongside the transported
-                    // copy exposed at the source-statement exit. Replacing
-                    // an uncertified source loses the theorem's premise;
-                    // certification controls later publication, not whether
-                    // this statement may still need its original fact.
-                    transported_execution_facts.extend(
-                        execution_facts
-                            .iter()
-                            .filter(|fact| fact.proposition() == &transport.source)
-                            .map(|fact| {
-                                fact.clone().with_proposition(transport.target.clone())
-                            }),
-                    );
-                }
-                for transport in &transported_facts {
-                    replace_fact_in_place(
-                        &mut introduced_facts,
-                        &transport.source,
-                        &transport.target,
-                    );
-                }
-                transport_loop_invariant_correspondence(
-                    &mut loop_invariant_correspondence,
-                    transported_facts.iter().map(|transport| (&transport.source, &transport.target)),
-                );
-                for fact in transported_execution_facts {
-                    if !execution_facts.contains(&fact) {
-                        execution_facts.push(fact);
-                    }
-                }
                 for execution_fact in &execution_facts {
                     let (Some(source), Some(theorem)) = (
                         execution_fact.transport_source(),
@@ -1132,17 +949,12 @@ fn certified_transitions_from_execution(
                         transported_facts.push(transport);
                     }
                 }
-                let mut path_facts = path
+                let path_facts = path
                     .facts()
                     .iter()
                     .map(|fact| fact.proposition().clone())
                     .filter(|fact| statement_fact_sources.contains(fact))
                     .collect::<Vec<_>>();
-                for source in certified_transport_sources {
-                    if !path_facts.contains(&source) {
-                        path_facts.push(source);
-                    }
-                }
                 let generated_load_bindings =
                     generated_load_bindings_from_facts(&execution_facts);
                 let generated_load_source_events =
@@ -1253,79 +1065,10 @@ fn generated_load_source_events_from_facts(
         .collect()
 }
 
-/// Replaces a transported fact's source with its target at the source's
-/// position: downstream premise selection is order-sensitive, so rewriting
-/// must not reorder the working set. Keep the by-value proposition handling
-/// out of the shared transition dispatcher; the expansion small-stack
-/// regression pins that boundary.
-#[inline(never)]
-fn replace_fact_in_place(facts: &mut Vec<Proposition>, source: &Proposition, target: &Proposition) {
-    if let Some(position) = facts.iter().position(|fact| fact == source) {
-        if facts.contains(target) {
-            facts.remove(position);
-        } else {
-            facts[position] = target.clone();
-        }
-    } else if !facts.contains(target) {
-        facts.push(target.clone());
-    }
-}
-
-/// Direct transport of one fact across the statement effect, together with
-/// the exact facts its bounded frame check consumed (recorded so check
-/// frames the fact from the same evidence). The source fact itself is not a
-/// frame premise.
-fn direct_transport_with_frame_premises(
-    fact: &Proposition,
-    after: &crate::kernel::CMemory,
-    assumptions: &PureFactContext,
-) -> (Option<Theorem>, Vec<Proposition>) {
-    let Some(theorem) = prove_c_condition_fact_direct_transport(fact, after, assumptions) else {
-        return (None, Vec::new());
-    };
-    let Some((premises, _)) = crate::kernel::c_condition_fact_transport_parts(&theorem, fact)
-    else {
-        return (None, Vec::new());
-    };
-    let frame_premises = premises
-        .into_iter()
-        .filter(|premise| assumptions.proves_exact(premise))
-        .cloned()
-        .collect();
-    (Some(theorem), frame_premises)
-}
-
 #[cfg(test)]
 mod condition_transition_tests {
     use super::*;
     use crate::kernel::{CRuntimeError, c_load, c_variable};
-
-    fn named_fact(name: &str) -> Proposition {
-        Proposition::Predicate {
-            name: name.to_owned(),
-            arguments: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn loop_invariant_correspondence_follows_checked_transport_chains() {
-        let old = named_fact("old");
-        let middle = named_fact("middle");
-        let new = named_fact("new");
-        let sibling = named_fact("sibling");
-        let mut correspondence = vec![
-            (0, old.clone()),
-            (2, old.clone()),
-            (4, middle.clone()),
-            (5, sibling.clone()),
-        ];
-        let transports = [(&old, &middle), (&middle, &new), (&new, &new)];
-        transport_loop_invariant_correspondence(&mut correspondence, transports.into_iter());
-        assert_eq!(
-            correspondence,
-            [(0, new.clone()), (2, new.clone()), (4, new), (5, sibling)]
-        );
-    }
 
     #[test]
     fn condition_transition_still_checks_execution_obligations() {

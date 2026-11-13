@@ -4265,6 +4265,8 @@ mod tests {
         )
         .unwrap();
         let mut export = export;
+        // The fixture's unit imports its iterators as library values.
+        export.library_iterators = true;
         super::super::standard_library::declare_iterator_operations(&mut export);
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         C0VerificationSession::new_program_prepared(
@@ -5102,14 +5104,20 @@ mod tests {
                         .retain(|s| !matches!(s, S::ChunkInitialize { .. }));
                 }
             }
+            // The fixture's unit imports its iterators as library values.
+            export.library_iterators = true;
             super::super::standard_library::declare_iterator_operations(&mut export);
             let prepared = super::super::import::prepared_for_test(export).unwrap();
+            // The repeated move reads the iterator once more, so the loop
+            // body's first byte read is one read later.
+            let sidecar = include_str!("../../../design/charon-trial/chunks/chunks.click");
+            let sidecar = if duplicate {
+                sidecar.replace("step_until(read(1))", "step_until(read(2))")
+            } else {
+                sidecar.to_string()
+            };
             assert_eq!(
-                C0VerificationSession::new_program_prepared(
-                    include_str!("../../../design/charon-trial/chunks/chunks.click"),
-                    &prepared
-                )
-                .is_err(),
+                C0VerificationSession::new_program_prepared(&sidecar, &prepared).is_err(),
                 !duplicate,
                 "duplicate={duplicate}"
             );
