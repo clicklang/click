@@ -112,6 +112,15 @@ pub(crate) fn condition_for_operand_views(
     operands: [crate::kernel::MachineOperandView<'_>; 2],
 ) -> ConditionTerm {
     use crate::kernel::{CompareRelation as R, MachineOperandView as V};
+    // Calls remain native comparison atoms, as before producer migration.
+    // The root reading retains numeric argument handles; it does not export
+    // the argument DAG or turn a machine fact into an Integer fact.
+    let operands = operands.map(|operand| match operand {
+        V::Shared(root) if matches!(root.node(), crate::kernel::KernelTermNode::Call { .. }) => {
+            V::Legacy(root.machine_conversion_leaf().expect("machine call root"))
+        }
+        operand => operand,
+    });
     if format == MachineIntegerType::Int64 && relation != R::Equal {
         let holds = |a, b| match relation {
             R::LessThan => a < b,

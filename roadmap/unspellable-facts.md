@@ -80,7 +80,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | --- | --- | --- |
 | 1 | Let bindings and local value handoffs | Merged in [PR #2617](https://github.com/clicklang/click/pull/2617); specification bindings retain shared values through selected lookups, with shadowing and snapshot scope preserved. |
 | 2 | Symbolic conditional joins | Merged [PR #2638](https://github.com/clicklang/click/pull/2638). Typed guards and shared arms survive checking, transport, snapshot matching and Surface spelling. The full gate passed 7,294 unit/API tests, 5,240 fixtures and all examples; its 15m54s run exceeded the ten-minute target. The final conditional-equality follow-up passed 1,884 selected checks, including all scaling, Rust import and expansion tests. Its full-corpus fact-stability audit passed all 5,240 fixtures with zero differences. |
-| 3 | Pure-function arguments and results | In progress. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. Common machine call result roots and remaining result consumers are still open. |
+| 3 | Pure-function arguments and results | In progress. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. The integer machine call-result sequence 3a–3f below completes common result production and its consumers; pointer, algebraic, Boolean and floating-point result families remain separate work. |
 | 4 | Mixed-width arithmetic and casts | Implemented as subchunks 4a–4j below, one PR per subchunk. Numeric producers retain shared operands and results within the existing supported profile. General call and nonnumeric compatibility boundaries belong to the remaining packages; the previous combined branch stays unmerged reference material. |
 | 5 | C/Rust execution result carriers | Open |
 | 6 | Folds, binders and algebraic matches | Open |
@@ -148,7 +148,40 @@ machine call spells its selected integer type explicitly, including a signed
 reading of an unsigned call. Native 128-bit call identity-cast refusals remain
 unchanged. Source roundtrips cover all ten integer result types, nested calls,
 casts and arithmetic; certificate checks preserve definedness and selected
-premises. The actual evaluator producer switch is the remaining 3f slice.
+premises. [PR #2697](https://github.com/clicklang/click/pull/2697) merged and
+its pushed commit was verified on upstream. All 1,642 selected regressions and
+all 5,275 regular fixtures passed with zero fact-stability differences.
+
+3f switches the actual integer pure-call evaluator to common result roots for
+all ten integer formats. Nested calls and deferred bindings retain their
+arguments; native result handoffs use the existing root reading with shared
+numeric argument handles, instead of structurally exporting the argument DAG.
+Explicit structural export remains available at its named boundary. Projection
+of an existing constructor field still returns that field, and other result
+families retain their existing producers. The native producer remains as the
+parity-test control and the fallback for unmigrated result sorts. Tests cover
+actual production, native parity for arithmetic and definedness, wide cast
+refusals, selected fact identity and linear nested-call handoffs with zero
+machine exports. Pointer-dependency discovery in the equality graph reads
+common calls through the existing call-argument path, retaining complete-pointer
+equality requirements. Direct call comparisons preserve their native machine
+fact form instead of selecting Integer rewrite/search dispatch merely because
+the producer is shared. Snapshot keys reinterpret conditional operands at their
+existing canonical observation type for every integer format. Native comparison
+and algebraic reflexivity readers use the existing typed application identity.
+The existing rewrite history uses snapshot-aware proposition identity so fresh
+argument carriers do not restart visited branches; search strategies and limits
+are unchanged. Calls whose numeric arguments are already retained borrow their
+producer's application payload for compatibility reads. Boxed numeric inputs
+still import to shared children, including when an equivalent shared producer
+later reuses their root. Scaling checks cover borrowed readings, nested handoffs,
+and rewrite identities that distinguish snapshots, formats and polarity.
+Certification compares retained arguments by written call syntax, including
+algebraic variables, applications and exact snapshot reads, without replacing
+that syntax comparison with arithmetic observation equality.
+[PR #2701](https://github.com/clicklang/click/pull/2701) closes the integer
+call-result sequence, not the wider KernelTerm/SurfaceTerm migration or the
+other result families.
 
 ## Chunk 4: one producer boundary per PR
 

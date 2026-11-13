@@ -300,6 +300,22 @@ fn algebraic_terms_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
     // Reflexivity applies to opaque applications and symbolic matches too.
     // This checks exact terms, not injectivity or evaluation of pure calls.
     left.node == right.node
+        || match (&left.node, &right.node) {
+            (
+                AlgebraicTermNode::PureFunctionApplication {
+                    name: an,
+                    arguments: aa,
+                },
+                AlgebraicTermNode::PureFunctionApplication {
+                    name: bn,
+                    arguments: ba,
+                },
+            ) if an == bn => {
+                crate::kernel::SharedPureApplication::intern(an.clone(), aa.clone())
+                    == crate::kernel::SharedPureApplication::intern(bn.clone(), ba.clone())
+            }
+            _ => false,
+        }
 }
 
 fn algebraic_terms_definitely_distinct(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {

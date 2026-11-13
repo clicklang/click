@@ -537,8 +537,8 @@ impl KernelTermImport {
         Some(KernelTerm::intern(KernelType::C(result.c_type()), node))
     }
 
-    /// Prepare a common machine call root without enabling the evaluator's
-    /// producer switch. Numeric children retain their structure; opaque argument
+    /// Construct a common machine call root. Numeric children retain their
+    /// structure; opaque argument
     /// descriptors retain this producer's exact payload, not a semantic alias.
     pub(crate) fn machine_call(
         &mut self,
@@ -563,11 +563,24 @@ impl KernelTermImport {
                 ),
             })
             .collect();
-        KernelTerm::checked_call(
+        let root = KernelTerm::checked_call(
             KernelType::C(result.c_type()),
             application.name().into(),
             arguments,
-        )
+        );
+        // Boxed numeric inputs have just been imported as shared children.
+        // Their compatibility reading must use those handles, even if a later
+        // producer reuses this root with an already-shared argument. Opaque
+        // descriptors and shared numeric inputs can borrow the original call.
+        crate::instrumentation::record_deterministic_work(application.arguments().len());
+        if application
+            .arguments()
+            .iter()
+            .all(|argument| !matches!(argument, PureFunctionArgument::Value(integer_c_value!(_))))
+        {
+            root.0.machine_leaf.retain_application(application);
+        }
+        root
     }
 
     pub(crate) fn machine(&mut self, result: MachineIntegerType, term: &MachineTerm) -> KernelTerm {

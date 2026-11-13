@@ -56,17 +56,11 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
             )
             .unwrap()
         });
-        let SpecValue::Native(CValue::UInt32(MachineTerm::ClickFunctionApplication {
-            arguments,
-            ..
-        })) = &calls[0].value
-        else {
-            panic!("expected a scalar call payload");
+        let SpecValue::Shared(value) = &calls[0].value else {
+            panic!("expected a common scalar call");
         };
-        let [PureFunctionArgument::SharedMachine(value)] = arguments.as_slice() else {
-            panic!("expected a retained call argument");
-        };
-        assert_eq!(value.shared_operand(), Some(&root));
+        assert!(matches!(value.node(), KernelTermNode::Call { .. }));
+        assert_eq!(value.children(), &[root.clone()]);
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(work < 128, "scalar call at depth {depth}: {work} work");
 
@@ -129,9 +123,10 @@ fn retained_constant_call_arguments_keep_existing_decision_identity() {
         &mut SpecEvaluation::logical(&mut execution),
     )
     .unwrap();
-    let SpecValue::Native(CValue::Int32(produced)) = &calls[0].value else {
+    let SpecValue::Shared(root) = &calls[0].value else {
         panic!("scalar call");
     };
+    let produced = root.machine_conversion_leaf().unwrap();
     let native = MachineTerm::ClickFunctionApplication {
         name: "retained_steps".into(),
         arguments: vec![PureFunctionArgument::Value(CValue::Int32(

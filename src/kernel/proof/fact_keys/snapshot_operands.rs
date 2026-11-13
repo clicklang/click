@@ -268,7 +268,7 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
                 intern(Node::ExactConditional(
                     crate::kernel::SharedMachineIntegerTerm::observe_shared(
                         MachineIntegerType::Int32,
-                        root.clone(),
+                        root.with_machine_observation_type(MachineIntegerType::Int32),
                     )
                     .expect("conditional observation"),
                 ))
@@ -314,11 +314,13 @@ mod tests {
                 then_term: Box::new(MachineTerm::Variable(Variable(998206))),
                 else_term: Box::new(MachineTerm::constant(1)),
             };
-            let shared = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
-            let expected = written(&native);
-            let exports = KernelTermExport::machine_export_count();
-            assert_eq!(operand(V::Shared(&shared)), expected);
-            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            for format in crate::kernel::machine_integer::FORMATS {
+                let shared = KernelTermImport::default().machine(format, &native);
+                let expected = written(&native);
+                let exports = KernelTermExport::machine_export_count();
+                assert_eq!(operand(V::Shared(&shared)), expected, "{format:?}");
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
         }
     }
 

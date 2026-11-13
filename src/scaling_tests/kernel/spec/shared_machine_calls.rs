@@ -54,8 +54,9 @@ fn common_call_borrowing_scales_with_arity_and_reuses_the_reading() {
                 .map(|n| PureFunctionArgument::Integer(IntegerTerm::constant_i64(n).into()))
                 .collect(),
         );
-        let root =
-            KernelTermImport::default().machine_call(MachineIntegerType::Int32, &application);
+        let (root, construction) = crate::instrumentation::measure_deterministic_work(|| {
+            KernelTermImport::default().machine_call(MachineIntegerType::Int32, &application)
+        });
         let exports = KernelTermExport::machine_export_count();
         let (first, cold) = crate::instrumentation::measure_deterministic_work(|| {
             root.machine_conversion_leaf().unwrap()
@@ -64,12 +65,72 @@ fn common_call_borrowing_scales_with_arity_and_reuses_the_reading() {
             root.machine_conversion_leaf().unwrap()
         });
         assert!(std::ptr::eq(first, second));
+        assert!(std::ptr::eq(first, application.native_call()));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(cold, 0, "the input payload is already produced");
         assert_eq!(warm, 0);
-        work.push(cold);
+        work.push(construction);
     }
     assert!(
         work[0] > 0 && work[1] <= 5 * work[0] && work[2] <= 5 * work[1],
         "{work:?}"
+    );
+}
+
+#[test]
+fn actual_nested_call_production_and_native_handoffs_scale_linearly() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let state = CState::new();
+        let mut values = crate::persistent::PersistentMap::default();
+        let mut root = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(995831));
+        let expression = call_expression(
+            MachineIntegerType::UInt32,
+            vec![SpecExpression::CExpression(CExpression::Variable(
+                "x".into(),
+            ))],
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                values.insert("x".into(), root.clone());
+                let scope = SpecScope {
+                    values: Some(&values),
+                    ..SpecScope::unbound(&state, None)
+                };
+                let mut execution = ExecutionBudget::new();
+                let mut paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                    scope,
+                    &expression,
+                    &PureFactContext::new(),
+                    &mut SpecEvaluation::logical(&mut execution),
+                )
+                .unwrap();
+                assert_eq!(paths.len(), 1);
+                let value = paths.pop().unwrap().value;
+                let SpecValue::Shared(next) = &value else {
+                    panic!("common call result")
+                };
+                assert_eq!(next.children(), &[root.clone()]);
+                let next = next.clone();
+                let CValue::UInt32(MachineTerm::ClickFunctionApplication { arguments, .. }) =
+                    value.into_native()
+                else {
+                    panic!()
+                };
+                let [PureFunctionArgument::SharedMachine(argument)] = arguments.as_slice() else {
+                    panic!("retained argument")
+                };
+                assert_eq!(argument.shared_operand(), Some(&root));
+                root = next;
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples[0] > 0 && samples[1] <= 5 * samples[0] && samples[2] <= 5 * samples[1],
+        "{samples:?}"
     );
 }

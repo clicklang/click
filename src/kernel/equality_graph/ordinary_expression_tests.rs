@@ -423,3 +423,32 @@ fn a_uint32_constant_is_one_class_with_its_word() {
         );
     }
 }
+
+#[test]
+fn common_call_operands_register_complete_pointer_arguments() {
+    use crate::kernel::{
+        CPointerValue, KernelTermExport, KernelTermImport, MachineOperandView as V,
+        SharedPureApplication,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = CPointerValue::new(Pointer::symbolic(Variable(940_061)), CType::Int32Pointer);
+    let q = CPointerValue::new(Pointer::symbolic(Variable(940_062)), CType::Int32Pointer);
+    let call = |pointer: CPointerValue| {
+        KernelTermImport::default().machine_call(
+            M::Int32,
+            &SharedPureApplication::intern(
+                "common_pointer_getter".into(),
+                vec![PureFunctionArgument::Value(CValue::Pointer(pointer))],
+            ),
+        )
+    };
+    let (a, b) = (call(p.clone()), call(q.clone()));
+    let exports = KernelTermExport::machine_export_count();
+    let mut graph = EqualityGraph::default();
+    assert!(!graph.are_int32_equal_views(V::Shared(&a), V::Shared(&b)));
+    graph.add_equality(p.pointer(), q.pointer());
+    assert!(!graph.are_int32_equal_views(V::Shared(&a), V::Shared(&b)));
+    graph.add_pointer_value_equality(&p, &q);
+    assert!(graph.are_int32_equal_views(V::Shared(&a), V::Shared(&b)));
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+}
