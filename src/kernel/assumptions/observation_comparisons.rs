@@ -210,11 +210,22 @@ fn key(view: &NativeComparisonView<'_>) -> Key {
     };
     let mut operands = view.operands.each_ref().map(|operand| {
         let operand = operand.operand_view();
-        if let Some(value) = operand
-            .literal()
-            .and_then(|literal| view.format.constant_from_term(&literal))
-        {
-            OperandKey::Constant(value.bits())
+        if let Some(bits) = operand.literal().and_then(|literal| {
+            // Native 64-bit equality uses Int64 even for UInt64 literals.
+            // Its shared Integer reading spells the same bits as Int64.
+            // Give these fixed-size endpoints the same existing index key.
+            if equality && view.format.format().bits() == 64 {
+                literal
+                    .as_machine_constant()
+                    .filter(|constant| constant.format().bits() == 64)
+                    .map(|constant| constant.bits())
+            } else {
+                view.format
+                    .constant_from_term(&literal)
+                    .map(|constant| constant.bits())
+            }
+        }) {
+            OperandKey::Constant(bits)
         } else {
             OperandKey::Term(ScalarOperandKey::for_format(format, operand))
         }

@@ -26,7 +26,12 @@ pub(super) fn apply(
     if !crate::kernel::eval::is_narrow_format(format)
         || !matches!(
             op,
-            MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply
+            MachineBinaryOp::Add
+                | MachineBinaryOp::Subtract
+                | MachineBinaryOp::Multiply
+                | MachineBinaryOp::BitwiseAnd
+                | MachineBinaryOp::BitwiseOr
+                | MachineBinaryOp::BitwiseXor
         )
     {
         return None;
@@ -46,4 +51,27 @@ pub(super) fn apply(
         value,
         obligations: Vec::new(),
     })
+}
+
+pub(super) fn not(format: MachineIntegerType, value: &SpecValue) -> Option<KernelTerm> {
+    if !crate::kernel::eval::is_narrow_format(format) {
+        return None;
+    }
+    let operand = operand(format, value)?;
+    Some(
+        if let KernelTermNode::MachineLiteral(literal) = operand.node() {
+            let word = MachineTerm::machine_unary(
+                format,
+                crate::kernel::MachineUnaryOp::BitwiseNot,
+                literal.legacy_term(),
+            );
+            KernelTerm::retained_native_machine_operand(format, &word)
+        } else {
+            KernelTerm::machine_unary_shared(
+                format,
+                crate::kernel::MachineUnaryOp::BitwiseNot,
+                operand,
+            )
+        },
+    )
 }

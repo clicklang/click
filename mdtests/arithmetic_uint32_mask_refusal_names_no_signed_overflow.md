@@ -14,5 +14,5 @@ theorem masked(units: uint32) {
 ```
 
 ```expect
-fail: exactly the listed premises were insufficient
+fail: from only its listed premises
 ```

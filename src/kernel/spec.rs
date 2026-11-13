@@ -7258,6 +7258,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
                 Some(*target_type),
+                None,
                 |value, facts, obligations| {
                     apply_spec_cast(value, *target_type, facts, obligations, assumptions)
                 },
@@ -7265,13 +7266,17 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             budget.pointer_cast_operand = saved;
             result?
         }
-        SpecExpression::BitwiseNot(expression) => evaluate_spec_scalar_unary_paths_in(
-            SpecScope { state, ..scope },
-            expression,
-            assumptions,
-            budget,
-            apply_c_bitwise_not,
-        )?,
+        SpecExpression::BitwiseNot(expression) => {
+            evaluate_spec_scalar_unary_paths_retaining_type_in(
+                SpecScope { state, ..scope },
+                expression,
+                assumptions,
+                budget,
+                None,
+                Some(None),
+                apply_c_bitwise_not,
+            )?
+        }
         SpecExpression::NarrowArithmetic(operation, format) => 'narrow: {
             let format = *format;
             let (op, left, right) = match operation.as_ref() {
@@ -7286,11 +7291,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     (MachineBinaryOp::BitwiseXor, left, right)
                 }
                 SpecExpression::BitwiseNot(operand) => {
-                    break 'narrow evaluate_spec_scalar_unary_paths_in(
+                    break 'narrow evaluate_spec_scalar_unary_paths_retaining_type_in(
                         scope,
                         operand,
                         assumptions,
                         budget,
+                        None,
+                        Some(Some(format)),
                         |value, facts, obligations| match crate::kernel::eval::native_narrow_not(
                             format, &value,
                         ) {
@@ -8435,8 +8442,13 @@ fn evaluate_spec_scalar_binary_paths_in(
                 let mut obligations = obligations;
                 obligations.extend(result.obligations);
                 paths.push(SpecExpressionPath {
+                    facts: shared_machine::result_facts(
+                        expression,
+                        &result.value,
+                        facts,
+                        assumptions,
+                    ),
                     value: result.value.into(),
-                    facts,
                     obligations,
                 });
                 continue;
@@ -8468,18 +8480,20 @@ fn evaluate_spec_scalar_unary_paths_in(
         assumptions,
         budget,
         None,
+        None,
         apply,
     )
 }
 
 // A same-format cast changes neither a retained machine value nor its debts.
-// Other unary operations still cross their explicit native result boundary.
+// Bitwise NOT retains its ordinary promotion or annotated narrow format.
 fn evaluate_spec_scalar_unary_paths_retaining_type_in(
     scope: SpecScope<'_>,
     expression: &SpecExpression,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
     retained_type: Option<CType>,
+    bitwise_not: Option<Option<MachineIntegerType>>,
     apply: impl Fn(CValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
@@ -8489,6 +8503,14 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
         assumptions,
         budget,
     )? {
+        if !budget.machine_result_production_disabled
+            && let Some(narrow) = bitwise_not
+            && let Some(value) = shared_machine::bitwise_not(&path.value, narrow)
+        {
+            path.value = value.into();
+            paths.push(path);
+            continue;
+        }
         if !budget.machine_result_production_disabled
             && let Some(target) = retained_type
             && let Some(value) = shared_machine::cast(&path.value, target)
