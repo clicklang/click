@@ -42,11 +42,14 @@ struct Block {
     /// Its method's parameters' names, by position, `None` for one the head
     /// does not name.
     parameters: Vec<Option<String>>,
+    /// Whether its head is `const`, `T* Box<T>::get() const`.
+    constant: bool,
 }
 
-/// An instance's type arguments, with its parameters' names after its
-/// receiver.
-pub(super) type Instances = BTreeMap<Vec<String>, Vec<String>>;
+/// Each instance's parameters' names after its receiver, by whether its
+/// receiver is `const` and its type arguments: a `const` method's instances
+/// are written from its `const` overload.
+pub(super) type Instances = BTreeMap<(bool, Vec<String>), Vec<String>>;
 
 /// Writes out each instance of the sidecar's generic methods, by the
 /// generic method's importer name, at the type arguments the import
@@ -65,6 +68,9 @@ pub(super) fn expand_generic_methods(
         .map(|(token, _)| token.clone())
         .collect::<Vec<_>>();
     let mut output = Vec::with_capacity(source.len());
+    // The generic methods written out, by path and constness: overloads
+    // that differ otherwise are not told apart.
+    let mut expanded = BTreeSet::new();
     let mut depth = 0i32;
     let mut index = 0;
     while index < source.len() {
@@ -75,7 +81,21 @@ pub(super) fn expand_generic_methods(
             if !crate::languages::cpp::standard_library::is_library_generic(&name) {
                 output.extend(source[index..block.end].iter().cloned());
             }
-            for (arguments, parameters) in instances.get(&name).into_iter().flatten() {
+            let mut block_instances = instances
+                .get(&name)
+                .into_iter()
+                .flatten()
+                .filter(|((constant, _), _)| *constant == block.constant)
+                .peekable();
+            if block_instances.peek().is_some() && !expanded.insert((name.clone(), block.constant))
+            {
+                return Err(error_at(
+                    &source[index].1,
+                    "a generic method's overloads are told apart by their receiver's constness \
+                     alone",
+                ));
+            }
+            for ((_, arguments), parameters) in block_instances {
                 if arguments.len() != block.names.len() {
                     return Err(error_at(
                         &source[index].1,
@@ -170,6 +190,7 @@ fn block_at(
     if source.get(clauses_open).map(|(token, _)| token) != Some(&Token::LBrace) {
         return Err(error_at(position, "a generic method states its contract"));
     }
+    let constant = is_ident(source.get(parameters_close + 1), "const");
     let clauses_end = matching(source, clauses_open).ok_or_else(unterminated)?;
     let mut end = clauses_end + 1;
     if is_ident(source.get(end), "by")
@@ -185,6 +206,7 @@ fn block_at(
             clauses_end,
             names,
             parameters,
+            constant,
         },
     )))
 }
@@ -423,10 +445,18 @@ mod tests {
     fn expand(source: &str, generic: &[&str], arguments: &[&str], parameters: &[&str]) -> String {
         let (tokens, positions) = tokenizer::tokenize(source, None).unwrap();
         let generic_name = crate::languages::cpp::names::path_name(generic);
+        // The instance's receiver is `const` when the source's last head is.
+        let constant = source
+            .rsplit("template<")
+            .next()
+            .is_some_and(|head| head.split('{').next().unwrap().ends_with(") const "));
         let instances = BTreeMap::from([(
             generic_name,
             BTreeMap::from([(
-                arguments.iter().map(|a| a.to_string()).collect::<Vec<_>>(),
+                (
+                    constant,
+                    arguments.iter().map(|a| a.to_string()).collect::<Vec<_>>(),
+                ),
                 parameters.iter().map(|p| p.to_string()).collect::<Vec<_>>(),
             )]),
         )]);
@@ -476,6 +506,24 @@ mod tests {
             "extern unsigned long Buf `<` int `,` number `4` `>` `::` get `(` unsigned long i \
              `)` const `{` requires i `<` uint64 number `4u64` `;` ensures result `==` \
              uint64 number `4u64` `*` sizeof `(` int `)` `;` `}`"
+        );
+    }
+
+    // Overloads of a method are told apart by their receiver's constness:
+    // a `const` instance is written from the `const` head.
+    #[test]
+    fn a_const_instance_is_written_from_the_const_overload() {
+        let written = expand(
+            "template<class T> T& Box<T>::get() { ensures &result == &this->v; } \
+             template<class T> const T& Box<T>::get() const { ensures &result == &this->v; }",
+            &["Box<T>", "get"],
+            &["int"],
+            &[],
+        );
+        assert_eq!(
+            written,
+            "extern const int `&` Box `<` int `>` `::` get `(` `)` const `{` ensures `&` result \
+             `==` `&` this `->` v `;` `}`"
         );
     }
 }

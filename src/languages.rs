@@ -166,6 +166,10 @@ pub(crate) struct PreparedExecution {
     /// it, by that spelling: a C++ class template instance,
     /// `Stored<long long>`, is laid out as `Stored__long_long`.
     pub record_spellings: std::collections::BTreeMap<String, String>,
+    /// The importer name of each C++ declaration named otherwise because
+    /// another shares its path, as overloads do, by the name it has: a head
+    /// at that path selects it by signature.
+    pub overload_paths: std::collections::BTreeMap<String, String>,
 }
 
 /// `text` with every whole importer name it contains spelled as its source

@@ -26,6 +26,7 @@ pub(crate) fn prepare_execution(
         library_contracts: enum_declarations(import.export()) + &contracts,
         library_models,
         record_spellings: Default::default(),
+        overload_paths: Default::default(),
     }))
 }
 

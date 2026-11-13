@@ -5596,6 +5596,19 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
     c_frontend::c_layouts(verifying_paths, c_sources, target)
 }
 
+/// A C++ method's receiver, its first parameter `this`.
+fn receiver(function: &syntax::C0Function) -> Option<&syntax::C0Parameter> {
+    function
+        .parameters()
+        .first()
+        .filter(|parameter| parameter.name() == "this")
+}
+
+/// Whether a C++ method's receiver is `const`.
+fn receiver_constant(function: &syntax::C0Function) -> bool {
+    receiver(function).is_some_and(syntax::C0Parameter::pointee_is_constant)
+}
+
 impl parser::ProgramLayouts {
     /// The layouts and per-function locals of a prepared program's
     /// execution. A prepared program exposes no globals or unions.
@@ -5695,7 +5708,24 @@ impl parser::ProgramLayouts {
                                 .to_string()
                         })
                         .collect(),
+                    receiver_constant(function),
                 ));
+            }
+            if let Some(path) = execution.overload_paths.get(function.name()) {
+                tables
+                    .cpp_overloads
+                    .entry(path.clone())
+                    .or_default()
+                    .push(parser::CppOverload {
+                        name: function.source_name().to_string(),
+                        constant: receiver_constant(function),
+                        parameters: function
+                            .parameters()
+                            .iter()
+                            .skip(usize::from(receiver(function).is_some()))
+                            .map(|parameter| parameter.c_type())
+                            .collect(),
+                    });
             }
             if let Some((trait_name, arguments)) =
                 crate::languages::rust::names::interface_instance(function.name())

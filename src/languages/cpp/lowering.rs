@@ -177,6 +177,16 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         &polymorphism.receiver_calls.into_inner(),
     )?;
     execution.library_models = library_models;
+    // An overload's head at its shared path selects it by signature.
+    for (id, path) in &paths {
+        crate::instrumentation::record_deterministic_work(1);
+        let name = names.require(id)?;
+        if name != path {
+            execution
+                .overload_paths
+                .insert(name.to_string(), path.clone());
+        }
+    }
     Ok(LoweredCppFunction {
         execution: std::sync::Arc::new(execution),
         names,
