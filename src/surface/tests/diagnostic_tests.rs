@@ -3975,15 +3975,12 @@ mod scaling_tests {
 #[test]
 #[ignore = "nightly: repeated-retain source diagnostic took 0.63s in parallel"]
 fn a_failed_retain_names_the_population_count_requirement() {
-    for (name, requirement) in [
+    for (name, call_line) in [
         (
             "repeated_child_retains_require_enough_count_capacity.md",
-            "old(count(child_ref(obj))) < 8",
+            11,
         ),
-        (
-            "repeated_child_retains_grown_count_requirement.md",
-            "to_integer(old(count(child_ref(obj))) + 1) < 8",
-        ),
+        ("repeated_child_retains_grown_count_requirement.md", 12),
     ] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests")
@@ -4002,8 +3999,16 @@ fn a_failed_retain_names_the_population_count_requirement() {
             report.contains("precondition clause 1 of `child_retain`"),
             "{report}"
         );
-        // The second call observes the machine sum, not the exact Integer sum.
-        assert!(report.contains(requirement), "{report}");
+        // Both obligations name the current count. The second fixture must
+        // accept the first call and reject the next one after count growth.
+        assert!(
+            report.contains("to_integer(count(child_ref(obj))) < 8"),
+            "{report}"
+        );
+        assert!(
+            report.contains(&format!("C statement at retain.c:{call_line}:5")),
+            "{report}"
+        );
         assert!(!report.contains("*obj"), "{report}");
     }
 }
