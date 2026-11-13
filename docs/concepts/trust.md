@@ -208,8 +208,11 @@ allocation limit aborts.
 tags above, after one `assumptions: every function -> runtime: ...` line when
 the sidecar selects a thread runtime
 ([`click verify`](../reference/cli/verify.md#output-and-exit-behavior)).
-The gate checks that this table names every family the report can print and
-every `extern` the library declares.
+The gate checks that this table names every family the report can print,
+every `extern` the C library declares, and each `library/cpp/` and
+`library/rust/core.click` file in its family's row; the contracts of those
+files are listed one by one in the
+[library reference](../reference/library/index.md#c-standard-library-models).
 
 ## Your assumptions
 

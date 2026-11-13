@@ -3696,6 +3696,15 @@ fn axiomatic_span_element_references_read_and_write() {
     ensures result == std_span_data(s)[std_span_size(s) - 1u64];
 }}"#
     );
+    let front = format!(
+        r#"uint32 probe({UINT_SPAN}& s) {{
+    views std_span_data(s);
+    views std_span_size(s);
+    views std_span_data(s)[0];
+    requires 1u64 <= std_span_size(s);
+    ensures result == std_span_data(s)[0];
+}}"#
+    );
     check_generic_span_cases(vec![
         GenericSpanCase {
             name: "element-read",
@@ -3738,6 +3747,16 @@ fn axiomatic_span_element_references_read_and_write() {
                 "precondition clause 3 of `std::span<unsigned int>::back`",
             )],
             sidecar: back,
+        },
+        GenericSpanCase {
+            name: "element-front",
+            dependencies: SPAN_DEPENDENCIES,
+            harness: "unsigned int probe(std::span<unsigned int>& s) noexcept { return s.front(); }",
+            refusals: vec![(
+                front.replace("    requires 1u64 <= std_span_size(s);\n", ""),
+                "precondition clause 3 of `std::span<unsigned int>::front`",
+            )],
+            sidecar: front,
         },
     ]);
 }
