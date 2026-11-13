@@ -362,8 +362,14 @@ Each step is a separate PR that leaves every example verifying:
        too), a C++ sidecar spells `std::byte` as `uint8`, and the linker
        splits template blocks. Dynamic-extent `std::span<T>` is
        `library/cpp/span.click`.
-    2. Non-type template parameters, for a static extent `N`, and
-       static-extent `std::span<T, N>`.
+    2. Done: non-type template parameters, an extent `std::size_t N`
+       written as a `uint64` literal in a contract and as Clang prints it
+       in a path, and static-extent `std::span<T, N>` in
+       `library/cpp/span.click`. The name table keeps the guards the
+       catalog had: no `std::dynamic_extent` extent and no extent whose
+       byte size overflows. A user's template with a non-type parameter is
+       expanded the same way, but the exporter still refuses to export one
+       at abstract arguments.
     3. Const and non-const overload matching, and `std::array<T, N>`.
        Blocker: `std::array`'s `data`, `front`, `back` and `operator[]`
        have a const and a mutable overload under one qualified name, which
