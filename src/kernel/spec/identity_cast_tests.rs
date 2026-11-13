@@ -14,7 +14,11 @@ const FORMATS: [MachineIntegerType; 10] = [
     MachineIntegerType::UInt128,
 ];
 
-fn cast_chain(root: &KernelTerm, target: CType, count: usize) -> (SpecExpressionPath, usize) {
+pub(super) fn cast_chain(
+    root: &KernelTerm,
+    target: CType,
+    count: usize,
+) -> (SpecExpressionPath, usize) {
     let state = CState::new();
     let mut values = crate::persistent::PersistentMap::default();
     values.insert("x".to_string(), root.clone());

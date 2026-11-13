@@ -132,7 +132,32 @@ pub(crate) fn condition_for_operand_views(
             .machine_constant_reading()
             .map(|literal| literal.legacy_term())
             .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
-            .or_else(|| root.machine_read_leaf().cloned()),
+            .or_else(|| root.machine_read_leaf().cloned())
+            .or_else(|| {
+                // A signedness cast of one variable is still a fixed-size
+                // atom. Keep the native guard spelling used by cited bounds;
+                // never export a shared arithmetic operand here.
+                let crate::kernel::KernelTermNode::MachineCast {
+                    encoding: crate::kernel::MachineCastSpelling::Generic,
+                    source,
+                    destination,
+                    operand,
+                } = root.node()
+                else {
+                    return None;
+                };
+                if !crate::kernel::is_sign_cast32(*source, *destination) {
+                    return None;
+                }
+                let crate::kernel::KernelTermNode::Variable(variable) = operand.node() else {
+                    return None;
+                };
+                Some(MachineTerm::sign_cast32(
+                    *source,
+                    *destination,
+                    MachineTerm::Variable(*variable),
+                ))
+            }),
         V::Legacy(_) => None,
     });
     let operands: [V<'_>; 2] = std::array::from_fn(|index| {

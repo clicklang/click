@@ -6109,7 +6109,14 @@ fn evaluate_spec_add_chain_paths_in(
         let mut next = Vec::new();
         let right = match step {
             SpecScalarChainStep::Cast(target) => {
-                for path in paths {
+                for mut path in paths {
+                    if !budget.machine_result_production_disabled
+                        && let Some(value) = shared_machine::cast_signedness(&path.value, *target)
+                    {
+                        path.value = value.into();
+                        next.push(path);
+                        continue;
+                    }
                     if !budget.machine_result_production_disabled
                         && matches!(path.value, SpecValue::Shared(_))
                         && path.value.c_type() == *target
@@ -8473,12 +8480,20 @@ fn evaluate_spec_scalar_unary_paths_retaining_type_in(
     apply: impl Fn(CValue, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
-    for path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
+    for mut path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
         expression,
         assumptions,
         budget,
     )? {
+        if !budget.machine_result_production_disabled
+            && let Some(target) = retained_type
+            && let Some(value) = shared_machine::cast_signedness(&path.value, target)
+        {
+            path.value = value.into();
+            paths.push(path);
+            continue;
+        }
         if !budget.machine_result_production_disabled
             && matches!(path.value, SpecValue::Shared(_))
             && retained_type == Some(path.value.c_type())
@@ -9862,6 +9877,8 @@ mod compound_conditional_tests;
 mod binding_tests;
 #[cfg(test)]
 mod identity_cast_tests;
+#[cfg(test)]
+mod signedness_cast_tests;
 
 #[cfg(test)]
 mod resource_call_type_tests;
