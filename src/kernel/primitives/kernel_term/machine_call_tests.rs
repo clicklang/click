@@ -149,3 +149,40 @@ fn machine_call_argument_order_and_read_snapshots_remain_distinct() {
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/kernel_term_machine_calls.rs");
 }
+
+#[test]
+fn common_call_numeric_identity_matches_native_without_changing_payloads() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [
+        MachineIntegerType::Int8,
+        MachineIntegerType::UInt8,
+        MachineIntegerType::Int16,
+        MachineIntegerType::UInt16,
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+        MachineIntegerType::Int128,
+        MachineIntegerType::UInt128,
+    ] {
+        let application = SharedPureApplication::intern(
+            "numeric_call".into(),
+            vec![PureFunctionArgument::Value(CValue::UInt32(
+                MachineTerm::Variable(Variable(995820)),
+            ))],
+        );
+        let root = KernelTermImport::default().machine_call(format, &application);
+        let native = MachineTerm::ClickFunctionApplication {
+            name: application.name().into(),
+            arguments: application.arguments().to_vec(),
+        };
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(
+            SharedMachineIntegerTerm::observe_shared(format, root.clone()).unwrap(),
+            SharedMachineIntegerTerm::intern(format, native.clone())
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(matches!(root.node(), KernelTermNode::Call { .. }));
+        assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
+    }
+}

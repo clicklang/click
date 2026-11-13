@@ -74,14 +74,15 @@ fn native_integer(value: &SharedIntegerTerm) -> IntegerTerm {
     }
 }
 fn native_domain(value: &Proposition) -> Proposition {
-    match value {
+    let value = boxed_domain(value);
+    match &value {
         Proposition::And(a, b) => {
             Proposition::And(Box::new(native_domain(a)), Box::new(native_domain(b)))
         }
         Proposition::Or(a, b) => {
             Proposition::Or(Box::new(native_domain(a)), Box::new(native_domain(b)))
         }
-        Proposition::ConditionIs(c, t) => boxed_domain(&Proposition::ConditionIs(
+        Proposition::ConditionIs(c, t) => Proposition::ConditionIs(
             match c {
                 ConditionTerm::IntegerEqual(a, b) => {
                     ConditionTerm::integer_equal(native_integer(a), native_integer(b))
@@ -106,7 +107,7 @@ fn native_domain(value: &Proposition) -> Proposition {
                 c => c.clone(),
             },
             *t,
-        )),
+        ),
         p => p.clone(),
     }
 }

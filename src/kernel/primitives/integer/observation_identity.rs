@@ -91,9 +91,7 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                     arguments.to_vec()
                 }
                 KernelTermNode::IntegerOperation { arguments, .. } => arguments.clone(),
-                KernelTermNode::Call { arguments, .. } if term.ty() == &KernelType::Bool => {
-                    arguments.clone()
-                }
+                KernelTermNode::Call { arguments, .. } => arguments.clone(),
                 KernelTermNode::MachineObservation { operand, .. }
                 | KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => vec![operand.clone()],
@@ -105,7 +103,9 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let normalized = match term.node() {
-                KernelTermNode::Legacy(_) if machine_payload(&term).is_some() => {
+                KernelTermNode::Legacy(_) | KernelTermNode::Call { .. }
+                    if machine_payload(&term).is_some() =>
+                {
                     let value = machine_payload(&term).expect("retained machine leaf");
                     let identity = SharedMachineIntegerTerm::intern_key(MachineIntegerKey::native(
                         format,

@@ -223,6 +223,9 @@ impl NodeKey {
                     LegacyIdentity::Fresh(_) | LegacyIdentity::Machine(_)
                 )
             }
+            KernelTermNode::Call { .. } if matches!(ty, KernelType::C(ty) if MachineIntegerType::from_c_type(ty).is_some()) => {
+                true
+            }
             KernelTermNode::Call { arguments, .. }
             | KernelTermNode::IntegerOperation { arguments, .. } => arguments
                 .iter()

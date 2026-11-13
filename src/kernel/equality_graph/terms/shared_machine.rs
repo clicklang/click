@@ -455,10 +455,11 @@ impl TermClasses {
                         }
                     }
                 }
-                N::IntegerToMachine { .. } | N::Legacy(_) => self.intern_typed_machine(
-                    term.machine_conversion_leaf().expect("conversion leaf"),
-                    width,
-                ),
+                N::IntegerToMachine { .. } | N::Legacy(_) | N::Call { .. } => self
+                    .intern_typed_machine(
+                        term.machine_conversion_leaf().expect("conversion leaf"),
+                        width,
+                    ),
                 N::Variable(variable) => self.intern_typed_machine(&T::Variable(*variable), width),
                 N::MachineLiteral(value) => {
                     crate::instrumentation::record_deterministic_work(1);
@@ -486,6 +487,35 @@ impl TermClasses {
 mod tests {
     use super::*;
     use crate::kernel::{IntegerTerm, KernelTermImport, SharedMachineIntegerTerm};
+
+    #[test]
+    fn common_call_registration_matches_native_classes() {
+        use crate::kernel::{
+            CValue, KernelTermExport, PureFunctionArgument, SharedPureApplication,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in crate::kernel::machine_integer::FORMATS {
+            let application = SharedPureApplication::intern(
+                "registered_call".into(),
+                vec![PureFunctionArgument::Value(CValue::Int32(T::Variable(
+                    Variable(995850),
+                )))],
+            );
+            let root = KernelTermImport::default().machine_call(format, &application);
+            let native = T::ClickFunctionApplication {
+                name: application.name().into(),
+                arguments: application.arguments().to_vec(),
+            };
+            let mut classes = TermClasses::default();
+            let width = W::of_machine_type(format);
+            let exports = KernelTermExport::machine_export_count();
+            let shared = classes.intern_shared_machine(&root, width);
+            let written = classes.intern_typed_machine(&native, width);
+            assert_eq!(classes.root(shared), classes.root(written), "{format:?}");
+            assert_eq!(classes.intern_shared_machine(&root, width), shared);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
 
     #[test]
     fn comparison_nodes_match_legacy_across_formats_and_merges() {

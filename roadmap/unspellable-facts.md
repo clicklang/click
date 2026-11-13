@@ -122,8 +122,15 @@ root in mathematical observations and retaining argument handles in the cached
 compatibility reading. Casts and arithmetic retain their operands and ordinary
 definedness debts. The native 128-bit call-root refusal includes identity casts;
 the shared shortcut reports the same type error without exporting arguments.
-The actual call evaluator remains native until 3f; comparison/fact matching,
-transport and Surface integration remain the following slices.
+[PR #2690](https://github.com/clicklang/click/pull/2690) merged and its pushed
+commit was verified on upstream.
+
+3c gives common call observations the existing native typed application key,
+without replacing their exact producer roots. Comparison sources retain their
+written premises, polarity and branch authority. The existing observation memo
+walks selected children once; repeated queries do not scan accumulated facts.
+The actual call evaluator remains native until 3f; transport and Surface
+integration remain the following slices.
 
 ## Chunk 4: one producer boundary per PR
 
