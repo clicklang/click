@@ -8349,7 +8349,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     let CExpressionOutcome::Value(value) = &path.outcome else {
                         return None;
                     };
-                    coerce_c_function_argument_without_obligations(value, parameter)
+                    coerce_c_function_argument_without_obligations(&value.native(), parameter)
                         .map(AlgebraicValue::C)
                 })
                 .collect::<Option<Vec<_>>>();
@@ -14735,9 +14735,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 }
                 match &paths[0].outcome {
                     CExpressionOutcome::Value(value) => {
-                        let value =
-                            coerce_c_function_argument_without_obligations(value, parameter)
-                                .ok_or("recursive child argument type mismatch")?;
+                        let value = coerce_c_function_argument_without_obligations(
+                            &value.native(),
+                            parameter,
+                        )
+                        .ok_or("recursive child argument type mismatch")?;
                         // The readable expression has passed every prerequisite.
                         // Retain its producer-known term definitions before
                         // comparing or publishing child indices. This adds no
