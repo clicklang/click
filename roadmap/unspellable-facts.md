@@ -121,8 +121,17 @@ all ten integer formats, registered-read snapshot controls, a changed-type
 negative control, and no-export scaling over 16/32/64 casts. Native inputs retain
 their existing compatibility boundary. Focused tests and all 1,507 scaling tests
 passed; the unchanged `preserve_apply_names_its_missing_viewable.md` passed its
-fact-stability audit with zero differences. Merge remains subject to the PR gate.
-Subchunks 4b–4j remain open.
+fact-stability audit with zero differences. [PR #2674](https://github.com/clicklang/click/pull/2674)
+merged and its pushed commit was verified on upstream.
+
+Subchunk 4b retains already-shared operands in same-width signedness casts at
+8, 16, 32 and 64 bits. It preserves the native conversion table's exact written
+terms, including inverse 32-bit sign pairs and selected 64-bit extension roots.
+Opaque native operands retain shared cast parents after their input boundary;
+general calls outside the shared machine fragment keep the compatibility path.
+Fixed-size cast-variable comparison guards preserve their native spelling so
+cited quotient/remainder bounds continue to match. Tests compare exported terms
+against native conversions and check no-export scaling at 16/64/256 casts. Subchunks 4c–4j remain open.
 
 For each PR:
 

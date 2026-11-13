@@ -3,6 +3,8 @@
 //! Deferred paths use the same constructor after evaluating both operands.
 //! Mixed-format and other unmigrated operations keep explicit native boundaries.
 use super::*;
+mod casts;
+pub(super) use casts::cast_signedness;
 
 pub(super) struct PreparedExpression {
     pub(super) value: KernelTerm,
