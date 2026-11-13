@@ -61,15 +61,22 @@ fn opaque_signedness_cast_chains_keep_shared_parents() {
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
                     root = shared_machine::cast_signedness(
-                        &SpecValue::Shared(root), unsigned.c_type()).unwrap();
+                        &SpecValue::Shared(root),
+                        unsigned.c_type(),
+                    )
+                    .unwrap();
                     assert!(!matches!(root.node(), KernelTermNode::Legacy(_)));
-                    root = shared_machine::cast_signedness(
-                        &SpecValue::Shared(root), signed.c_type()).unwrap();
+                    root =
+                        shared_machine::cast_signedness(&SpecValue::Shared(root), signed.c_type())
+                            .unwrap();
                 }
             });
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             if let Some(before) = previous {
-                assert!(work <= before * 5 + 8, "{signed:?}: {size}: {work} vs {before}");
+                assert!(
+                    work <= before * 5 + 8,
+                    "{signed:?}: {size}: {work} vs {before}"
+                );
             }
             previous = Some(work);
         }
