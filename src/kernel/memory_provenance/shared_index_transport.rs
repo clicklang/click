@@ -94,17 +94,10 @@ pub(in crate::kernel) fn map_index_with_descent(
                 .map(std::borrow::Cow::Owned)
                 .or_else(|| view.read_source())?;
             let next = map_leaf(&leaf)?;
-            if matches!(node.node(), KernelTermNode::Legacy(_)) && next == *leaf {
-                node.clone()
-            } else {
-                let KernelType::C(ty) = node.ty() else {
-                    return None;
-                };
-                KernelTerm::retained_machine_operand(
-                    MachineIntegerType::from_c_type(*ty)?,
-                    MachineOperandView::Legacy(&next),
-                )
-            }
+            let KernelType::C(ty) = node.ty() else {
+                return None;
+            };
+            node.rewritten_machine_leaf(MachineIntegerType::from_c_type(*ty)?, &leaf, &next)
         } else {
             let children: Vec<_> = children
                 .iter()
@@ -152,7 +145,14 @@ pub(in crate::kernel) fn transported_scaled_index(
     if let Some(native) = view
         .literal()
         .map(std::borrow::Cow::Owned)
-        .or_else(|| view.read_source())
+        .or_else(|| match view {
+            MachineOperandView::Shared(root)
+                if matches!(root.node(), KernelTermNode::Call { .. }) =>
+            {
+                None
+            }
+            _ => view.read_source(),
+        })
     {
         return match wide {
             None => PointerOffsetTerm::scale_int32(native.into_owned(), byte_width),
@@ -227,6 +227,54 @@ pub(in crate::kernel) fn transported_scaled_index(
 mod tests {
     use super::*;
     use crate::kernel::{KernelTermExport, VerificationSession};
+
+    #[test]
+    fn common_call_indices_keep_roots_and_original_read_snapshots() {
+        use crate::kernel::{KernelTermImport, PureFunctionArgument, SharedPureApplication};
+        let _session = VerificationSession::enter();
+        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("call-snapshot", 8));
+        let address = CMemory::global_pointer("call-snapshot");
+        let after = before
+            .memory()
+            .clone()
+            .store(address.clone(), CValue::Int32(7u32.into()));
+        let application = SharedPureApplication::intern(
+            "snapshot_call".into(),
+            vec![PureFunctionArgument::Value(CValue::Int32(
+                MachineTerm::MemoryLoad(before.clone(), address.into(), LoadKind::Int32),
+            ))],
+        );
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let root = KernelTermImport::default().machine_call(format, &application);
+            let value = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
+            let exports = KernelTermExport::machine_export_count();
+            let framed = transport_framed_index(&value, &after, None).unwrap();
+            assert_eq!(framed.shared_operand(), Some(&root));
+            let normalized = normalize_exact_index(&value, &PureFactContext::new()).unwrap();
+            assert_eq!(normalized.shared_operand(), Some(&root));
+            let wide = (format != MachineIntegerType::Int32)
+                .then_some(format == MachineIntegerType::UInt64);
+            let offset = transported_scaled_index(framed, 4, wide);
+            let (PointerOffsetTerm::Int32Scaled { value, .. }
+            | PointerOffsetTerm::Int64Scaled { value, .. }) = offset
+            else {
+                panic!("retained scaled call");
+            };
+            assert_eq!(
+                value.shared_operand(),
+                Some(&root.with_machine_observation_type(if wide.is_some() {
+                    MachineIntegerType::Int64
+                } else {
+                    MachineIntegerType::Int32
+                }))
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
 
     fn retained(ty: MachineIntegerType, term: &MachineTerm) -> SharedMachineIntegerTerm {
         let root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(term));

@@ -683,6 +683,32 @@ impl KernelTerm {
             })
     }
 
+    /// Rebuild a selected native leaf while preserving a common call producer.
+    /// No-op rewrites keep exact payload metadata, as on the native path.
+    pub(crate) fn rewritten_machine_leaf(
+        &self,
+        format: MachineIntegerType,
+        original: &MachineTerm,
+        rewritten: &MachineTerm,
+    ) -> Self {
+        if matches!(
+            self.node(),
+            KernelTermNode::Legacy(_) | KernelTermNode::Call { .. }
+        ) && rewritten == original
+        {
+            return self.clone();
+        }
+        if matches!(self.node(), KernelTermNode::Call { .. })
+            && let MachineTerm::ClickFunctionApplication { name, arguments } = rewritten
+        {
+            return KernelTermImport::default().machine_call(
+                format,
+                &SharedPureApplication::intern(name.clone(), arguments.clone()),
+            );
+        }
+        Self::retained_native_machine_operand(format, rewritten)
+    }
+
     /// Numeric observation identity is distinct from a producer's exact payload
     /// identity. Only observation construction uses this leaf; address indices
     /// and stored results retain their original producer metadata.
