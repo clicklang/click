@@ -1246,135 +1246,153 @@ that model error.
 
 ## Symbolic execution
 
-The symbolic executor produces execution paths. Each path includes:
+### What stepping a statement means
 
-- public/private execution-derived pure facts
-- proof obligations
-- outcome theorem
+Click never runs code. Stepping a statement records what the statement means
+in four parts, on each path it opens:
 
-`prove_symbolic_c_condition_evaluation` is the corresponding direct rule for
-C control-flow conditions. It evaluates an expression under assumptions,
-applies C truthiness, and returns `CConditionEvaluates` paths for true, false,
-undefined-behavior, or runtime-error outcomes. Tactics use this rule to
-select `if` edges without constructing a synthetic C statement.
+1. **Terms for its values.** Each operand becomes a term at the current state:
+   a variable's current value, a read `load(snapshot, address)` at the
+   snapshot it reads (a proof spells it `at(point, e)`), or arithmetic,
+   comparison and pure-function application over other terms.
+2. **Facts.** Equalities and other facts join the path's fact context: the
+   assignment `x = e` adds `x == <term of e>` to the e-graph, and operations
+   add their side facts, such as a narrow value's range.
+3. **Obligations.** What the statement owes: no undefined behavior (overflow,
+   out-of-bounds or unviewable reads, division by zero) and each callee's
+   `requires`.
+4. **Memory and resources.** The one part that is not facts: what is stored
+   where, and what is owned, viewed or lent. Stores, declarations, scope ends
+   and calls change it; arithmetic and reads do not.
 
-The function-specification prover checks that all paths satisfy the function
-contract and that remaining facts/obligations are justified by requirements and
-proof machinery.
+A condition whose value the facts do not decide splits the path, once per
+truth value, and each side gains the condition or its negation as a fact.
+`prove_symbolic_c_condition_evaluation` is that rule for a control-flow
+condition; tactics use it to select `if` edges.
 
-`prove_c_function_satisfies_specification_from_symbolic_path` accepts only the
-exact function, entry state, arguments, and outcome recorded in the certified
-path. It does not turn arbitrary outcomes into theorems. The separate
-`c_function_execution_candidates_from_outcomes` API constructs no theorem.
+A call is one more part of an expression, not a separate mode. Proofs
+execute under `CExecutionSemantics::APPLY_VERIFIED_RULES` (below), so a call
+applies its callee's contract and never its body. It owes the `requires`;
+its result is a fresh symbol, which a proof names by its site,
+`statement(i).call(f, j).result`; the `ensures` become facts about that
+symbol and the arguments; and memory and resources become what the contract
+says the call leaves. The result is not the term `f(args)`: the contract may
+leave it open or depend on memory, so two calls with equal arguments are not
+known to agree. Only a pure function's application is a term, equal for
+equal arguments by congruence.
 
-Budget exhaustion is represented as `ExecutionLimit`. It is a proof/executor
-failure, not C undefined behavior.
+So `int x = foo(bar(y));` steps as:
 
-One symbolic execution has exactly one fresh-identity counter, and it lives on
-that execution's `ExecutionBudget`. A loop head's havoc of modified locals, a
-re-bound binder's model fields, an opaque call result, a heap allocation, an
-aggregate field, and a branch join's abstraction all draw from it, so two of
-them cannot hand the same identity to two different things. Reserved-set
-probing narrows what an individual stream will issue; it is not the mechanism
-that keeps allocators apart, because several allocators do not probe at all.
+```text
+r1 := statement(i).call(bar, 0).result   owes bar's requires on y; facts: bar's ensures
+r2 := statement(i).call(foo, 0).result   owes foo's requires on r1; facts: foo's ensures
+x == r2                                  memory and resources: bar's effects, then foo's
+```
 
-Fresh execution reservations include free Integer identities inside every
-specification application argument, whether its result is a machine value,
-an Integer, or an algebraic value. The specification walker visits those
-explicit arguments while keeping execution-memory snapshots opaque. The
-statement-reservation regressions in `src/kernel/tests/execution_tests.rs`
-check that machine-valued and algebraic applications cannot surrender a held
-argument identity to the execution counter.
+A loop applies the same model at its head. Each pass checks the condition and
+then runs the body, so the body starts with the condition as a fact and the
+exit with its negation; a condition that calls a function contributes that
+call's result and effects like any other expression.
 
-A rule that abstracts a state therefore both takes the counter and reports
-where it left it. `abstract_c_state_for_join` and its siblings take the
-maximum of the arms' counters — the arms' abstractions are compared for
-equality, so they must count from one shared lower bound — and return a
-`CStateJoinAbstraction` carrying the state beside the mark the joined
-execution continues from. Returning the pair is deliberate: a caller cannot
-take the abstract state and keep the old counter. A loop head's
-`CLoopPreservationContext` reports its mark the same way, and both the
-iteration that continues past the loop and the body proof that runs inside it
-start from that mark rather than at the base of the range.
+#### Where the implementation departs from this
 
-**Within one execution the counter only moves forward, and only the kernel
-moves it.** `ExecutionProofCore::next_kernel_variable` is private: a caller
-reads it with `kernel_variable_mark` and can only change it through
-`advance_kernel_variable_mark`, which refuses a mark below the current one. A
-rewound counter re-issues identities that a loop havoc, a join abstraction, a
-heap block, an opaque call result or a resource model field is still using,
-which is a false-theorem hazard rather than merely wasted identities. Where a
-step's evaluation advances the counter, the surface reads a copy, runs the
-evaluation, and installs the result through that setter; where a join invents
-identities, the kernel installs the mark of the abstraction it recomputed
-itself (`ExecutionProofCore::record_interface_branch_join`), so a surface-
-chosen successor counter cannot survive the check.
+Program expressions (`CExpression`) have no call. Calls are statements,
+`CStatement::CallAssign` and `CStatement::Call`, so each front end moves a
+call out of the expression that holds it into a local:
 
-**A budget is either the start of an execution or a continuation of one;
-there is no default.** `ExecutionBudget` has no `Default` outside tests, and
-no constructor that supplies a fresh-identity counter to a caller who wrote
-nothing. Every construction says which it is:
-`ExecutionBudget::for_new_execution` starts the counter at
-`KERNEL_VARIABLE_BASE` and is legitimate only where no live state carries
-identities some execution issued — a symbolic execution over a state the
-caller built, a whole-function contract certification, a refinement context
-invented from two contract interfaces. `ExecutionBudget::continuing_from`
-takes the mark an execution has already reached and counts up from there.
-The work allowances of a selected expression, statement or function are
-builder steps (`with_c_expression_cost` and its siblings) added to whichever
-of the two the call site opened, so the choice stays visible there rather
-than hiding inside a constructor. Restarting the counter by writing nothing
-was how a loop-havocked local and a re-bound model field, and a
-join-abstracted pointer and a later heap block, became one `Variable`.
+- The C front end assigns each call nested in an expression to a temporary
+  `__click_call_result<N>` (`fresh_synthesized_call_name` in
+  `src/languages/c/syntax.rs`), and a loop whose condition calls a function
+  becomes `while (1) { t = f(...); if (!t) break; ... }`: its proof steps the
+  call and then splits an `if` in the body.
+- The Rust importer gives every MIR local the user did not name a local
+  `__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR assigns every call's
+  result to such a temporary, so a `for` loop's `next` result is one and a
+  proof sees it.
+- The surface recognizes the C temporaries by name to hide them
+  (`is_call_result_temporary` and its callers in `source_layout`,
+  `execution_planning/context`, `cursor_execution` and `surface_synthesis`).
 
-`ExecutionBudget::beside_live_state` is the third constructor, and **it
-cannot invent an execution identity at all** — it may still mint match
-binders, which come from their own reserved range. Its users are the
-proof-side evaluation families reached from the surface's `have`, `fold`,
-`unfold` and theorem-application drivers — the fixed-state spec lowering and
-capture entry points, the composite-resource proposition evaluators, the
-instance fold/unfold rewrites, the arm-premise and witness binders, the loop
-invariant and effect obligation APIs, and independent contract certification.
-Those drivers do not carry the execution's mark, so a counter started at the
-base of the range would name what the live state already holds: a havocked
-local, a join abstraction, a heap block. `allocate_kernel_variable` refuses
-with `ExecutionLimit::ExecutionIdentityBesideLiveState` — "internal: execution
-identity requested beside a live state" — rather than restarting silently.
-Fifty-one named-hazard sites become enforced cannot-allocate sites without
-threading anything through the proof engine; a site that genuinely needs an
-execution identity has to be given the mark and use `continuing_from`.
+The target is the model above: a call is a node of the expression that holds
+it, its result is named by its site, and no compiler temporary becomes a
+program variable a proof can see.
 
-This is enforceable because the one site that did allocate no longer needs to.
-`c_lower_spec_proposition_with_checked_obligations`, the lowering every
-proof-side proposition and contract clause shares, handed out the first
-identities of the range as match-arm binders — one per constructor field of a
-`match` whose scrutinee is not a literal. Those binders are *bound* variables
-of the lowered term, and a bound variable that equals a live free identity is
-only harmless while every rewrite that eliminates a binder renames on capture.
-`rewrite_integer_match_typed_fields` does not see the binding at all: it is
-handed the arm body alone, lifted out of its `Match`, where a bound occurrence
-of the binder and a free occurrence of a loop-havocked local with the same
-identity are the same syntax. It substituted both, so `have match Box::Wrap(m)
-{ Box::Wrap(h) => to_integer(i) } == to_integer(m)` proved `i == m` for the
-loop's arbitrary `i` (`mdtests/match_binder_captures_havocked_local.md`).
+### Paths and outcomes
 
-Binders now come from `ExecutionBudget::MATCH_BINDER_VARIABLE_BASE` through a
-counter the budget owns, so nested matches within one lowering get distinct
-binders and no binder can equal a free identity of any execution. Two
-separately lowered terms do reuse binder identities, because each budget
-starts that counter at the base; that is safe because they are bound.
-Substituting one such term under the other's binder goes through `TermRewrite`,
-which alpha-renames a binder that would capture a free variable of the
-replacement and stops substituting under a binder that shadows the variable
-being replaced, and alpha-equivalent terms are interchangeable. A shared
-*free* identity is not, which is why the case witnesses of
-`algebraic_case_paths_in` — free variables of the constructor equation they
-publish, not binders — still come from the execution counter and therefore
-refuse beside a live state. `rewrite_integer_match_typed_fields` also checks
-what it is given: every identity it substitutes must satisfy
-`ExecutionBudget::is_match_binder_variable`, which is what makes the
-substitution capture-correct on its own terms rather than by trusting its
-caller.
+The symbolic executor produces execution paths. Each path includes
+execution-derived pure facts (public or private), proof obligations, and an
+outcome theorem. The function-specification prover checks that every path
+satisfies the function contract and that its remaining facts and obligations
+are justified by requirements and proof machinery.
+
+`prove_c_function_satisfies_specification_from_symbolic_path` accepts only
+the exact function, entry state, arguments and outcome recorded in the
+certified path; it does not turn arbitrary outcomes into theorems.
+`c_function_execution_candidates_from_outcomes` constructs no theorem.
+Budget exhaustion is an `ExecutionLimit`: a proof or executor failure, not C
+undefined behavior.
+
+### Fresh identities
+
+One symbolic execution has exactly one fresh-identity counter, on its
+`ExecutionBudget`. A loop head's havoc of modified locals, a re-bound
+binder's model fields, an opaque call result, a heap allocation, an aggregate
+field and a join's abstraction all draw from it, so no two of them share an
+identity. Reserved-set probing narrows what one stream issues; it is not what
+keeps allocators apart. Fresh reservations include the free Integer
+identities inside every specification application argument, whatever the
+result sort, while execution-memory snapshots stay opaque (regressions in
+`src/kernel/tests/execution_tests.rs`).
+
+- **A rule that abstracts a state takes the counter and returns where it
+  left it.** `abstract_c_state_for_join` and its siblings take the maximum of
+  the arms' counters, since the arms' abstractions are compared for equality,
+  and return a `CStateJoinAbstraction` pairing the state with that mark, so a
+  caller cannot keep the old counter. A loop head's
+  `CLoopPreservationContext` reports its mark the same way; both the
+  continuing iteration and the body proof start from it.
+- **The counter only moves forward, and only the kernel moves it.**
+  `ExecutionProofCore::next_kernel_variable` is private; callers read
+  `kernel_variable_mark` and change it only through
+  `advance_kernel_variable_mark`, which refuses a lower mark. A rewound
+  counter would re-issue identities still in use, a false-theorem hazard.
+  Where a join invents identities, the kernel installs the mark of the
+  abstraction it recomputed (`ExecutionProofCore::record_interface_branch_join`).
+- **Every budget says how it starts; there is no default.**
+  `ExecutionBudget::for_new_execution` starts at `KERNEL_VARIABLE_BASE` and is
+  legitimate only where no live state carries issued identities: an
+  execution over a state the caller built, whole-function contract
+  certification, a refinement context built from two contract interfaces.
+  `ExecutionBudget::continuing_from` counts up from a mark an execution has
+  reached. Work allowances (`with_c_expression_cost` and its siblings) are
+  builder steps on either.
+- **`ExecutionBudget::beside_live_state` cannot invent an execution identity
+  at all.** Its users are the proof-side families reached from `have`,
+  `fold`, `unfold` and theorem application: fixed-state spec lowering and
+  capture, composite-resource proposition evaluators, instance fold and
+  unfold rewrites, arm-premise and witness binders, the loop invariant and
+  effect obligation APIs, and independent contract certification. They do not
+  carry the execution's mark, so `allocate_kernel_variable` refuses with
+  `ExecutionLimit::ExecutionIdentityBesideLiveState` ("internal: execution
+  identity requested beside a live state"). A site that needs an identity must
+  be given the mark and use `continuing_from`.
+
+Match-arm binders do not need the execution counter: they are *bound*
+variables of the lowered term, drawn from
+`ExecutionBudget::MATCH_BINDER_VARIABLE_BASE` by a counter the budget owns,
+so nested matches get distinct binders and no binder equals a free identity.
+Separately lowered terms reuse binder identities safely because `TermRewrite`
+alpha-renames a binder that would capture and stops under a shadowing one.
+`rewrite_integer_match_typed_fields` receives an arm body without its `Match`,
+so it checks that every identity it substitutes satisfies
+`ExecutionBudget::is_match_binder_variable`
+(`mdtests/match_binder_captures_havocked_local.md`). Case witnesses are
+different: the fields of an undecided `algebraic_case_paths_in` split are
+*free* variables of the constructor equation it publishes, so they come from
+the execution counter and refuse beside a live state. A variant test
+`x is V` beside a live state therefore splits nothing: it lowers to `x == V`
+for a variant without fields, or to `x != W` for each other variant when
+none of them has fields (`enum_is_without_witnesses`).
 
 The mark is execution-relative — an offset from `KERNEL_VARIABLE_BASE`, which
 is the representation `ExecutionBudget::continuing_from` takes and
@@ -1383,14 +1401,10 @@ compares a candidate `Variable` against it must add the base back:
 `ExecutionProofCore::issued_kernel_variable_bound` closes the range
 `KERNEL_VARIABLE_BASE .. bound` holding everything this execution has issued.
 
-The counter's range is bounded at both ends. It starts at
-`ExecutionBudget::KERNEL_VARIABLE_BASE` and refuses at
-`ExecutionBudget::KERNEL_VARIABLE_CEILING`, which is the lowest identity a
-producer outside the execution reserves by a constant base. Those producers
-use bounded counters or a name hash within their own ranges, so the execution
-refuses before entering any of them with
-`ExecutionLimit::KernelVariables` instead, which is one comparison per
-allocation. The reserved ranges are:
+The counter runs from `ExecutionBudget::KERNEL_VARIABLE_BASE` and refuses
+with `ExecutionLimit::KernelVariables` at `KERNEL_VARIABLE_CEILING`, the lowest
+base another producer reserves, one comparison per allocation. Each producer
+stays within its own range:
 
 | Range | Producer |
 | --- | --- |
@@ -1414,13 +1428,10 @@ reads only its syntax; a fact that names a memory snapshot is queued and taken
 whole, the snapshot's variables included, the first time an execution asks,
 so asking at every call costs what was filed since the last call.
 
-Direct contract `forall` certification now introduces its witness through
-`Variable::allocate_fresh`. This kernel allocator uses a private identity
-origin and a process-wide counter, so `Variable(n)` cannot forge its result
-even when `n` is the same number. The rule substitutes that witness in the
-body and keeps the ambient fact context intact. Numeric allocation by the
-older producers above remains separate; new kernel rules needing an arbitrary
-fresh variable should use the allocator rather than invent another range.
+Direct contract `forall` certification introduces its witness through
+`Variable::allocate_fresh`, whose private identity origin and process-wide
+counter mean `Variable(n)` cannot forge its result. New kernel rules that need
+an arbitrary fresh variable use this allocator rather than another range.
 
 The match-binder and spec-fold-binder ranges carry soundness obligations:
 a binder that equals an unrelated free identity can capture it. The
@@ -1431,16 +1442,14 @@ their boundaries. Match lowering refuses with
 start at `1 << 56`, and structural induction starts at `1 << 60`, above the
 fold range.
 
-The witness range carries the same kind of obligation. `intro` on
-`forall v. body` replaces `v` by a free identity standing for an arbitrary
-value, so it must name nothing the surrounding state names — and the facts are
-not the whole of that state, since a C proof also carries program variables, a
-symbolic store, a memory snapshot and a resource context. Choosing the witness by
-scanning up from `Variable(0)` for an identity no fact mentions therefore
-started in the C identity range and could land on a live program variable;
-`the_universal_witness_range_is_disjoint_from_every_other_producer` and
-`a_freshened_universal_witness_never_takes_a_c_identity` assert the range
-instead. A proof that exhausts it refuses rather than reusing an identity.
+The witness range carries the same obligation. `intro` on `forall v. body`
+replaces `v` by a free identity that must name nothing the state names,
+including program variables, the store, the memory snapshot and resources,
+not only the facts; so it comes from its own range rather than from the
+facts' unused identities
+(`the_universal_witness_range_is_disjoint_from_every_other_producer`,
+`a_freshened_universal_witness_never_takes_a_c_identity`). A proof that
+exhausts it refuses rather than reusing an identity.
 
 Freshening a binder is a renaming, so it must not change what the proposition
 says *or how it is spelled*: a proof state matches a goal against a fact
@@ -1855,8 +1864,7 @@ hypothesis, and checks every proof branch through the kernel `ProofObject`.
 Applying that hypothesis goes through the kernel's exact `forall int32`
 instantiation operation: the quantified fact, nonnegative argument, strict
 decrease, substituted theorem requirements, and resulting predicate must all
-match. The legacy surface checker is presentation-only and cannot publish
-theorem authority. The ordinary one-step pure-function elaborator then exposes
+match. The ordinary one-step pure-function elaborator then exposes
 the current defining equation; it never uses an unfolding-depth budget. This
 machinery is separate from recursive C contract and C-termination judgments.
 
@@ -1869,6 +1877,4 @@ check that the completion's goal is exactly the declared conclusion, that the
 facts its root branch assumed are exactly the declared requirements, and that
 the declared binders are exactly the free variables. The rewrite variant
 additionally cites each equality it applied, which must be exactly available
-among the requirements and must rewrite the goal in the listed order. A proof
-the kernel proof object does not check, such as a script the legacy pure
-driver accepts, publishes no such authority.
+among the requirements and must rewrite the goal in the listed order.

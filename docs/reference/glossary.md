@@ -1075,8 +1075,11 @@ proof uses it.
 
 ### Symbolic execution
 
-Evaluation of C over symbolic values and path conditions so one proof can
-  cover many concrete inputs.
+Stepping C over symbolic values so one proof covers every concrete input.
+Nothing runs: each step names its values as terms, adds facts, owes
+obligations, and updates memory and resources, and a call applies its
+callee's contract
+([what stepping means](../internals/kernel.md#what-stepping-a-statement-means)).
 
 ### Symbolic memory
 
