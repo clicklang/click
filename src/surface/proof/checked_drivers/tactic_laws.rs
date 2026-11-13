@@ -46,7 +46,6 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     let tactic_index = proof_context.tactic_index;
 
     let state: &mut CState = &mut execution.core.state;
-    let unfolded_predicates: &[String] = &execution.core.unfolded_predicates;
 
     if execution.core.frontier.is_at_function_exit() {
         return Err(ClickError::new(format!(
@@ -355,25 +354,12 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     // on the path's own list first, its context is built once here and
     // carried by every copy, rather than once by each.
     available_pure_facts.context();
-    // `unfold` retains the opaque predicate atom alongside its definition so
-    // later surface tactics can still refer to either form.  A verified
-    // loop rule must not turn that proof-context convenience into an ambient
-    // kernel prerequisite: exact contract certification exposes the fully
-    // unfolded definition.  Keep every other fact, including the expanded
-    // proposition, and omit only predicate atoms whose names have explicitly
-    // been unfolded on this path.
-    let mut loop_pure_facts = available_pure_facts.clone();
-    if !unfolded_predicates.is_empty() {
-        loop_pure_facts.retain(|fact| {
-            !matches!(fact, Proposition::Predicate { name, .. } if unfolded_predicates.contains(name))
-        });
-    }
     let exit_contexts = verify_execution_proofs_forward(
         expansion_capture,
         &current_loop,
         vec![PlanningExecutionContext {
             state: state.clone(),
-            pure_facts: loop_pure_facts,
+            pure_facts: available_pure_facts.clone(),
             surface_propositions: execution.presentation.surface_propositions.clone(),
             recorded_snapshots: execution.presentation.recorded_snapshots.clone(),
             case_path,

@@ -725,7 +725,9 @@ A `loop` tactic at the k-th of N sequential loops pays for its own loop:
 
 - The path's facts are a persistent `PureFactList` with indexes of exact
   facts, conjuncts, and transport candidates; the next `loop` extends the
-  list its predecessor copied by the facts gained since.
+  list its predecessor copied by the facts gained since. Unfolded predicates
+  retain both their opaque atom and definition at loop entry; deleting the
+  atom would invalidate the shared reasoning context and force a rebuild.
 - Fresh-identity reservations are `LazyReservedVariables`, answering
   execution-range candidates above the context's ceiling without collecting
   variables. Loop rules are a persistent `VerifiedLoopRules` indexed by a
