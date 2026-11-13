@@ -5958,6 +5958,39 @@ impl ResourceContext {
         Ok((frame, inserted))
     }
 
+    /// Apply the framed definitional exchange R * F -> body(R) * F.
+    /// The instance rewrite constructs this body from the exclusively held
+    /// parent after selecting its definition/arm and checking child identities.
+    /// This is not admission of arbitrary new ownership: no overlap search
+    /// against the retained frame is needed to expose ownership already held.
+    pub(in crate::kernel) fn unfold_instance_body(
+        self,
+        instance: &ResourceInstance,
+        body: impl IntoIterator<Item = CResourceFact>,
+        assumptions: &PureFactContext,
+    ) -> Result<Option<Self>, ResourceContextValidityError> {
+        #[cfg(test)]
+        let _fast =
+            crate::kernel::search::FastOperationScope::enter("instance unfold frame replacement");
+        let parent = CResourceFact::own(CResource::Instance(instance.clone()));
+        let Some(mut next) = self.without_exact_representation(&parent) else {
+            return Ok(None);
+        };
+        if next.storage.facts.is_empty() {
+            next.synchronize_memory_equalities(assumptions);
+        }
+        for fact in body {
+            next.insert_fact(fact.clone());
+            // Retain exact exclusive-identity checks. Memory/frame overlap
+            // discovery is the revalidation removed by this exchange rule.
+            if let Some(error) = next.exclusive_validity_error(&fact) {
+                return Err(error);
+            }
+        }
+        next.advance_prepared_memory_equalities(assumptions);
+        Ok(Some(next))
+    }
+
     pub(crate) fn try_compose_into_valid_context_with_occurrences(
         mut self,
         facts: impl IntoIterator<Item = CResourceFact>,

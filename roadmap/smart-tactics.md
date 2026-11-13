@@ -241,6 +241,30 @@ base/endpoint equality, without enumerating aliases. Its fixed-query alias
 regression and translated-address refusal controls do not settle the separate
 candidate-selection scan or the cost of a complete ownership insertion.
 
+Instance `unfold` now replaces the exact held parent with its selected body
+through `ResourceContext::unfold_instance_body`, using the framed definitional
+exchange `R * F -> body(R) * F`. It does not search the frame for memory overlap
+or generate a new separation obligation. Exact exclusive-resource checks remain;
+definition, arm, parent ownership and child-identity checks remain in the rewrite.
+The replacement has a test-build discovery guard.
+
+`instance_unfold_frame_replacement_ignores_ambient_pointer_aliases` measures this
+selected replacement at 4/16/64 aliases with one body cell and one retained owner.
+Replacement work is 124 / 124 / 124 at those sizes.
+It includes both adjacent ownership and contradictory memory premises, checking
+that the parent persists and the successor exchanges only the selected parent.
+Contradictory memory premises are not grounds for reinstating overlap discovery.
+Raw admission still records its old overlap refusal; duplicate exclusive
+resources still fail by exact indexed checks.
+
+The ignored `unfolding_one_cell_must_not_search_ambient_pointer_aliases` diagnostic
+keeps the complete kernel unfold and raw-admission curves visible. Remaining
+successful-unfold work is 456 / 552 / 936 at those sizes, so growth remains
+outside the selected exchange; body evaluation and
+fact publication need separate attribution. This is not a whole-unfold fast
+bound. Raw ownership admission and output-description validation remain separate
+callers to diagnose and migrate.
+
 Hold one inserted owner and one relevant neighbor fixed. Independently grow
 same-block owners, owned blocks, coordinate origins and exact/offset aliases;
 use symbolic bounds and different origins, not just the indexed constant case.
