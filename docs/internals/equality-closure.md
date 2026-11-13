@@ -513,6 +513,29 @@ equality alone never establishes definedness. Withdrawal and snapshots retain
 the ordinary typed graph scope, and this predicate does not match subtraction
 or a 64-bit overflow condition.
 
+A false checked signed int32 multiplication-overflow fact on `x` and a
+constant `K` from two to `INT_MAX`, in either operand order, merges the byte
+offset of the product, `Int32Scaled { x * K, 1 }`, with element `x` at stride
+`K`, `Int32Scaled { x, K }`. Both sign-extend before scaling, so they differ
+only where the `int32` product wraps, which the fact excludes. The rule fires
+in either registration order through two maps keyed by the product's shared
+kernel term: admission files the product as defined and merges the byte-offset
+node if one is already registered; registering a byte-offset node of a
+product by a constant files the node and merges it if the product is already
+defined. Admission interns nothing when no byte-offset node exists, so an
+operand held only in shared form stays unexported
+(`retained_overflow_source_lookup_ignores_unrelated_guards`). A defined
+product counts as a pending equivalence, so an offset query registers its
+offsets rather than answering from spelling alone. The work is a constant-size
+match and one keyed lookup per admission or registration; no node or fact is
+scanned. C
+pointer arithmetic over a `char`-width displacement `i * K` records this fact
+when the path's facts decide it, since lowering keeps the written byte offset
+(`docs/internals/spellability.md#lowering-is-fact-stable`). Regressions:
+`a_byte_product_joins_its_element_offset_in_either_registration_order`,
+`a_byte_product_stays_apart_without_its_no_overflow_fact`, and the scaling
+test `a_byte_product_merge_is_keyed_and_ignores_unrelated_products`.
+
 Constant endpoints of checked signed int32 order facts annotate their value
 class with an interval. A class union intersects these intervals, so overflow
 checking can use bounds supplied on an equal variable or a same-snapshot read.

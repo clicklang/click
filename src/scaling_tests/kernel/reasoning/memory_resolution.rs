@@ -438,3 +438,47 @@ fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
         );
     }
 }
+
+/// Reading a byte product as its element index is one overflow decision on
+/// the product's own operands: the comparison's work does not grow as
+/// unrelated bounded indices and their facts grow.
+#[cfg(test)]
+#[test]
+fn a_byte_product_comparison_ignores_unrelated_bounded_indices() {
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 512] {
+        let scalar = |id| MachineTerm::Variable(Variable(96_000 + id));
+        let bounds = |context: PureFactContext, id| {
+            context
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), scalar(id)),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_than(scalar(id), MachineTerm::constant(4)),
+                    true,
+                )
+        };
+        let mut context = bounds(PureFactContext::new(), 0);
+        for id in 1..=size {
+            context = bounds(context, id);
+        }
+        let bytes = PointerOffsetTerm::scale_int32(
+            MachineTerm::multiply(scalar(0), MachineTerm::constant(4)),
+            1,
+        );
+        let elements = PointerOffsetTerm::scale_int32(scalar(0), 4);
+        let _scope = context.enter_id_scope();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(
+                pointer_offsets_equal_for_memory_resolution(&bytes, &elements, &context),
+                Some(true)
+            );
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "unrelated indices changed the comparison's work: {samples:?}"
+    );
+}

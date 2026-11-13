@@ -1549,6 +1549,7 @@ fn close_claim_directly_from_outcome<'a>(
                         &kernel_left,
                         &kernel_right,
                         parameter_binding,
+                        Some(root.facts().assumptions()),
                     ) {
                         format!(
                             "; left side evaluated to {rendered_left}, right side evaluated to \

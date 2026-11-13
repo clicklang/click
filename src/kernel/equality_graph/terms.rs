@@ -528,6 +528,41 @@ pub(super) struct BoolCastLink {
     one: u64,
 }
 
+/// The identity of a product's shared kernel term: one hash-consed root,
+/// whichever handle names it. A legacy spelling is imported, which reads its
+/// two operands and attaches nothing to them.
+fn byte_product_key(value: &crate::kernel::SharedMachineIntegerTerm) -> Option<u64> {
+    match value.operand_view() {
+        crate::kernel::MachineOperandView::Shared(root) => Some(root.id()),
+        crate::kernel::MachineOperandView::Legacy(term) => {
+            crate::kernel::KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, term)
+                .map(|root| root.id())
+        }
+    }
+}
+
+/// The index and stride of an `int32` product by a constant from two to
+/// `INT_MAX`, in either operand order: the products whose byte offset names
+/// an element (`byte_product_offsets`). A constant-size match on the root.
+pub(super) fn byte_product_operands(
+    value: &crate::kernel::SharedMachineIntegerTerm,
+) -> Option<(crate::kernel::SharedMachineIntegerTerm, i64)> {
+    let (MachineIntegerType::Int32, MachineBinaryOp::Multiply, [left, right]) =
+        value.operand_view().binary()?
+    else {
+        return None;
+    };
+    let (index, stride) = match (left.word32_constant(), right.word32_constant()) {
+        (None, Some(stride)) => (left, stride),
+        (Some(stride), None) => (right, stride),
+        _ => return None,
+    };
+    (2..=i32::MAX as u32)
+        .contains(&stride)
+        .then(|| (index.retain(MachineIntegerType::Int32), i64::from(stride)))
+}
+
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
     // Derived residue operations use shallow graph IDs. Repeated cancellation
@@ -670,6 +705,14 @@ pub(super) struct TermClasses {
         ),
     >,
     alignment_witnesses: PersistentMap<u64, (u64, Pointer)>,
+    // Byte products `x * K` whose `int32` multiplication the context knows
+    // does not wrap, keyed by the product's shared kernel term: the element
+    // index `x` and stride `K` their byte offset is one exact offset with.
+    defined_byte_products: PersistentMap<u64, (crate::kernel::SharedMachineIntegerTerm, i64)>,
+    // The registered byte-offset node `Int32Scaled { x * K, 1 }` of each such
+    // product spelling, keyed the same way, so a fact admitted after the node
+    // finds it without a scan.
+    byte_product_nodes: PersistentMap<u64, u64>,
     // One zero-offset pointer read or pure-call value per class. Congruence emits only
     // newly identified pairs for the legacy affine/index projection.
     pointer_value_witnesses: PersistentMap<u64, PointerBlock>,
@@ -1473,8 +1516,11 @@ impl TermClasses {
         self.scalar_constant_conflict
     }
 
+    /// Whether a query can find two offsets equal that differ in spelling: a
+    /// merge exists, or a defined byte product joins its byte offset to its
+    /// element offset as soon as the query registers that node.
     pub(super) fn has_equivalences(&self) -> bool {
-        !self.parents.is_empty()
+        !self.parents.is_empty() || !self.defined_byte_products.is_empty()
     }
 
     /// A non-affine offset equality can add suppliers not represented by an
@@ -1560,11 +1606,23 @@ impl TermClasses {
                     OffsetAtom::Variable(variable) if coefficient == 1 => Node::Variable(*variable),
                     OffsetAtom::Variable(_) => return None,
                     OffsetAtom::Int32(value) => {
+                        let shared = value;
                         let value = match value.operand_view() {
                             V::Legacy(term) => self.intern_int32(term),
                             V::Shared(root) => self
                                 .intern_shared_machine(root, crate::kernel::CarrierWidth::Bits32),
                         };
+                        if coefficient == 1 {
+                            let id = self.intern_node(Node::Int32Scaled(value, 1));
+                            self.register_byte_product_node(&shared.0, id);
+                            result = if empty {
+                                id
+                            } else {
+                                self.intern_node(Node::Add(result, id))
+                            };
+                            empty = false;
+                            continue;
+                        }
                         Node::Int32Scaled(value, coefficient)
                     }
                     OffsetAtom::Int64 { value, unsigned } => {
@@ -1594,6 +1652,7 @@ impl TermClasses {
         }
         let mut pending = vec![Work::Term(term)];
         let mut values = Vec::new();
+        let mut byte_products = Vec::new();
         while let Some(work) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             let node = match work {
@@ -1611,16 +1670,28 @@ impl TermClasses {
                         pending.push(Work::Term(left));
                         continue;
                     }
-                    PointerOffsetTerm::Int32Scaled { value, byte_width } => Node::Int32Scaled(
-                        match value.operand_view() {
-                            crate::kernel::MachineOperandView::Legacy(term) => {
-                                self.intern_int32(term)
-                            }
-                            crate::kernel::MachineOperandView::Shared(root) => self
-                                .intern_shared_machine(root, crate::kernel::CarrierWidth::Bits32),
-                        },
-                        *byte_width,
-                    ),
+                    PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                        let node = Node::Int32Scaled(
+                            match value.operand_view() {
+                                crate::kernel::MachineOperandView::Legacy(term) => {
+                                    self.intern_int32(term)
+                                }
+                                crate::kernel::MachineOperandView::Shared(root) => self
+                                    .intern_shared_machine(
+                                        root,
+                                        crate::kernel::CarrierWidth::Bits32,
+                                    ),
+                            },
+                            *byte_width,
+                        );
+                        if *byte_width == 1 {
+                            let id = self.intern_node(node);
+                            byte_products.push((value, id));
+                            values.push(id);
+                            continue;
+                        }
+                        node
+                    }
                     PointerOffsetTerm::Int64Scaled {
                         value,
                         byte_width,
@@ -1641,7 +1712,62 @@ impl TermClasses {
             let id = self.intern_node(node);
             values.push(id);
         }
+        for (value, id) in byte_products {
+            self.register_byte_product_node(value, id);
+        }
         values.pop().expect("offset term")
+    }
+
+    /// File the byte-offset node `Int32Scaled { x * K, 1 }` under its
+    /// product's identity, and join it to element `x` at stride `K` when the
+    /// product is already known not to wrap. One keyed lookup; any other
+    /// value is left alone.
+    fn register_byte_product_node(
+        &mut self,
+        value: &crate::kernel::SharedMachineIntegerTerm,
+        id: u64,
+    ) {
+        if byte_product_operands(value).is_none() {
+            return;
+        }
+        let Some(key) = byte_product_key(value) else {
+            return;
+        };
+        if self.byte_product_nodes.get(&key).is_none() {
+            self.byte_product_nodes.insert(key, id);
+        }
+        if let Some((index, stride)) = self.defined_byte_products.get(&key).cloned() {
+            let element = self.intern(&PointerOffsetTerm::Int32Scaled {
+                value: index,
+                byte_width: stride,
+            });
+            self.close(vec![(id, element)]);
+        }
+    }
+
+    /// Admit that the `int32` product `value`, `index * stride`, does not
+    /// wrap: its byte offset and element `index` at `stride` are one exact
+    /// offset. A byte-offset node already registered for the product is joined
+    /// now; one registered later joins when it is registered. Nothing is
+    /// interned unless that node exists.
+    pub(super) fn admit_defined_byte_product(
+        &mut self,
+        value: &crate::kernel::SharedMachineIntegerTerm,
+        index: crate::kernel::SharedMachineIntegerTerm,
+        stride: i64,
+    ) {
+        let Some(key) = byte_product_key(value) else {
+            return;
+        };
+        self.defined_byte_products
+            .insert(key, (index.clone(), stride));
+        if let Some(node) = self.byte_product_nodes.get(&key).copied() {
+            let element = self.intern(&PointerOffsetTerm::Int32Scaled {
+                value: index,
+                byte_width: stride,
+            });
+            self.close(vec![(node, element)]);
+        }
     }
 
     fn intern_node(&mut self, node: Node) -> u64 {

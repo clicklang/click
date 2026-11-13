@@ -91,3 +91,61 @@ fn learning_a_literal_does_not_revisit_unrelated_boolean_parents() {
         );
     }
 }
+
+/// Admitting a byte product's no-overflow fact is one keyed lookup of its
+/// byte-offset node and one merge: constant work as unrelated products, their
+/// facts, and unrelated offset aliases grow, and work bounded by the affected
+/// parents as aliases of the byte offset itself grow.
+#[test]
+fn a_byte_product_merge_is_keyed_and_ignores_unrelated_products() {
+    let mut unrelated_samples = Vec::new();
+    let mut related_samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let mut graph = EqualityGraph::default();
+        for i in 0..size {
+            let id = 1_000 + i;
+            graph.add_condition(&no_overflow(id, 4, true), false);
+            graph.add_offset_equality(&byte_product(id, 8, true), &offset(10_000 + i));
+            graph.add_offset_equality(&scaled(id, 4), &offset(20_000 + i));
+        }
+        graph.add_offset_equality(&nested(byte_product(1, 4, true)), &offset(10));
+        graph.add_offset_equality(&nested(scaled(1, 4)), &offset(11));
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            graph.add_condition(&no_overflow(1, 4, true), false);
+            assert!(graph.are_offsets_equal(&offset(10), &offset(11)));
+        });
+        unrelated_samples.push(work);
+
+        let mut related = EqualityGraph::default();
+        for i in 0..size {
+            related.add_offset_equality(
+                &PointerOffsetTerm::Add(
+                    Box::new(byte_product(1, 4, true)),
+                    Box::new(offset(30_000 + i)),
+                ),
+                &offset(40_000 + i),
+            );
+        }
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            related.add_condition(&no_overflow(1, 4, true), false);
+            assert!(related.are_offsets_equal(&byte_product(1, 4, true), &scaled(1, 4)));
+        });
+        assert!(
+            work < 100 * size as usize,
+            "size={size}, related work={work}"
+        );
+        related_samples.push(work);
+    }
+    assert!(
+        unrelated_samples
+            .iter()
+            .all(|work| *work == unrelated_samples[0]),
+        "unrelated products changed the merge's work: {unrelated_samples:?}"
+    );
+    assert!(
+        related_samples
+            .windows(2)
+            .all(|pair| pair[1] <= pair[0] * 8),
+        "related work grew faster than its affected parents: {related_samples:?}"
+    );
+}

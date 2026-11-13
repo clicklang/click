@@ -363,6 +363,12 @@ wraparound. The speller structurally removes that implicit widening and writes
 `a[i]` again; supported native wide indices, including Rust `usize`, also retain
 bracket syntax. Range checking uses the maintained order graph to relate the
 unsigned word to its exact widening, without changing the address term.
+A byte offset keeps its written shape the same way: `(char *)q + i * 4` is the
+byte displacement `i * 4` at stride one whatever the facts say. The pointer
+arithmetic records `defined(i * 4)` when the facts decide it, and the equality
+graph then joins that offset to element `i` at stride four; memory resolution
+asks the same overflow question itself within the statement that forms it
+(`a_word_read_through_a_byte_offset_is_the_element_read.md`).
 Literal-mask bounds are recorded when the graph introduces the index node;
 address equalities over a common exact wide stride retain full-width index
 equalities. A table-read branch extends its context with its one new address

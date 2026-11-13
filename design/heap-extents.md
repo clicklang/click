@@ -595,10 +595,14 @@ exactly the recorded kind and extent. No new trusted assumption
 Out of scope: zero-size allocation, `void *` results, `aligned_alloc`,
 `posix_memalign`, blocks above `PTRDIFF_MAX`, non-constant zeroed-prefix
 realloc, Integer extents, moving `int32` or constant sizes to the wide kind,
-ILP32 targets, C++ `new[]`, the Rust `Vec` model, and `byte_stride_index`.
+ILP32 targets, C++ `new[]`, the Rust `Vec` model, and the byte-offset
+restride.
 
 The fact-dependent lowerings in `roadmap/standard-library.md` stay separate.
-The byte-offset restride (`byte_stride_index`, `operators.rs`) applies only to
-narrow signed displacements; wide heap blocks reach it only through 32-bit
-`char` displacements, as parameter ranges do. Both it and (a) read a
-`Multiply` as an exact product only under a decided no-wrap condition.
+The byte-offset restride (`byte_stride_index`, `operators.rs`) has since been
+removed: a narrow signed displacement `i * K` keeps its written byte offset,
+and the equality graph relates it to element `i` at stride `K` under the
+path's `defined(i * K)` fact (`docs/internals/equality-closure.md`). Wide heap
+blocks reach that relation only through 32-bit `char` displacements, as
+parameter ranges do. Both it and (a) read a `Multiply` as an exact product
+only under a decided no-wrap condition.

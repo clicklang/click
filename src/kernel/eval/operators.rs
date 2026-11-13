@@ -2506,11 +2506,21 @@ fn pointer_offset_by_elements_paths(
     let result = if literally_zero {
         pointer.clone()
     } else {
-        match byte_stride_index(&offset, byte_width, unsigned, wide, &facts, assumptions) {
-            Some((index, stride)) => pointer.offset_by_typed_elements(index, stride, false, false),
-            None => pointer.offset_by_typed_elements(offset.clone(), byte_width, unsigned, wide),
-        }
+        pointer.offset_by_typed_elements(offset.clone(), byte_width, unsigned, wide)
     };
+    // A byte displacement `i * K` keeps its written spelling. When the facts
+    // decide the product does not wrap, the path keeps that fact, so the
+    // equality graph relates the byte offset to element `i` at stride `K`
+    // (`byte_product_offsets`). The term is the same either way.
+    let mut facts = facts;
+    if !literally_zero
+        && let Some(no_overflow) =
+            byte_product_no_overflow(&offset, byte_width, unsigned, wide, &facts, assumptions)
+    {
+        // Only a path whose facts are already contradictory can refuse it,
+        // and such a path decides every condition; it needs no relation.
+        let _ = add_decided_condition_path_fact(&mut facts, assumptions, no_overflow, false);
+    }
     // The formation checks may use the facts: a displacement they prove zero
     // is checked as the pointer itself.
     let checked = if displaces {
@@ -2641,50 +2651,44 @@ fn pointer_offset_by_elements_paths(
     owed
 }
 
-/// The element index and stride of a byte displacement `index * stride`.
+/// The overflow condition of a byte displacement `index * stride`, an `int32`
+/// product by a constant from two to `INT_MAX`, when the facts decide it
+/// false.
 ///
-/// The C frontend addresses an element of a struct array through the bytes
-/// of the array: `items[i]` is the byte pointer `items + i * sizeof(item)`,
-/// with the multiplication evaluated as a C `int`. That spelling is a byte
-/// offset whose index is a product, and the element-index rules that bound a
-/// scalar store `values[i]` by `0 <= i < n` cannot read it. Forming the
-/// address as `i` scaled by the stride gives it the scalar shape, with the
-/// struct size as the element width, so the same membership rules apply.
-///
-/// The two spellings name one address only where the product did not wrap:
-/// the scaled form sign-extends `i` before scaling, the product form
-/// sign-extends the wrapped product. The multiplication that produced the
-/// product refused the overflowing path, so its result path carries that
-/// exclusion, and the rewrite is taken only when the path facts decide it.
-fn byte_stride_index(
+/// The C multiplication that produced the product refused its overflowing
+/// path, so the facts decide it: as a path fact when the operands left it
+/// open, or from their bounds. The condition is stated on the product's own
+/// operands, the ones the equality graph rebuilds the product from. One
+/// decision on the operation's operands; no fact is scanned.
+fn byte_product_no_overflow(
     offset: &MachineTerm,
     byte_width: u32,
     unsigned: bool,
     wide: bool,
     facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
-) -> Option<(MachineTerm, u32)> {
+) -> Option<ConditionTerm> {
     if byte_width != 1 || unsigned || wide {
         return None;
     }
     let binary_term!(Int32, Multiply, left, right) = offset else {
         return None;
     };
-    let (index, stride) = match (left.as_const(), right.as_const()) {
-        (None, Some(stride)) => (left.as_ref(), stride),
-        (Some(stride), None) => (right.as_ref(), stride),
+    let stride = match (left.as_const(), right.as_const()) {
+        (None, Some(stride)) | (Some(stride), None) => stride,
         _ => return None,
     };
-    // Only a positive stride that is itself an `int32` names an element width.
-    if stride < 2 || stride > i32::MAX as u32 {
+    if !(2..=i32::MAX as u32).contains(&stride) {
         return None;
     }
-    let overflow = ConditionTerm::signed_multiply_overflows(
+    // Decided as the multiplication stated it, with exact loads normalized.
+    let decided = ConditionTerm::signed_multiply_overflows(
         normalize_exact_memory_loads_in_bitvector(left, assumptions),
         normalize_exact_memory_loads_in_bitvector(right, assumptions),
     );
-    (decide_with_facts(assumptions, facts, &overflow) == Some(false))
-        .then(|| (index.clone(), stride))
+    (decide_with_facts(assumptions, facts, &decided) == Some(false)).then(|| {
+        ConditionTerm::signed_multiply_overflows(left.as_ref().clone(), right.as_ref().clone())
+    })
 }
 
 pub(in crate::kernel) fn pointer_offset_by_bytes_paths(

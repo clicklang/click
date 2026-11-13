@@ -524,8 +524,9 @@ matrices); what remains of it is this issue's library families.
 Found while making lowering structural (every fact must be spellable:
 lowering a raised fact gives the fact back, so lowering never consults the
 facts to choose a term). These three sites are integer design questions,
-so they wait for this work rather than being fixed one by one. The first
-is decided, and the third is done.
+so they wait for this work rather than being fixed one by one. All three
+are decided: the first and third are done, and the second is done by the
+fact-stable rule.
 
 - **Specification `/` and `%`.** Decided and done (option B, maintainer
   2026-11-07): specification `/` and `%` are total. A zero divisor owes
@@ -542,13 +543,17 @@ is decided, and the third is done.
   facts. The option form (`checked_div(a, b) == Some(result)`) was not
   taken.
 - **Byte offset restrided to an element index**
-  (`byte_stride_index`, `src/kernel/eval/operators.rs`). A `char`-width
-  displacement `i * K` becomes element index `i` with stride `K` only when
-  the facts decide `signed_multiply_overflows(i, K)` false, so the pointer
-  term's shape depends on the facts. Choosing one spelling needs a rule for
-  when a `Multiply` term may be read as an exact product: always (sound
-  only if every such term is a C signed multiply whose overflow is already
-  undefined), never, or with an explicit no-overflow obligation.
+  (`byte_stride_index`, `src/kernel/eval/operators.rs`). Done
+  (2026-11-13), decided by the fact-stable rule: lowering keeps the written
+  byte offset `i * K` at stride one, and checking relates it to element `i`
+  at stride `K`. Before, the displacement became the element index whenever
+  the facts decided `signed_multiply_overflows(i, K)` false, so the pointer
+  term's shape depended on the facts. Now the pointer arithmetic records
+  `defined(i * K)` when the facts decide it, the equality graph merges the
+  two offsets under that fact, and memory resolution asks the same question
+  within the statement that forms the offset
+  ([equality closure](../docs/internals/equality-closure.md),
+  [spellability](../docs/internals/spellability.md#lowering-is-fact-stable)).
 - **Unsigned index spelling** (`pointer_index_term`, same file). Done in
   5854abb33 (2026-10-30): `pointer_index_term` no longer takes facts, and a
   `uint32` index is always the zero-extended 64-bit `uint64_from_32(x)`.
