@@ -697,14 +697,21 @@ fn lower_function(
         if f.mir.is_some() || !f.body.is_empty() {
             return Err("Rust extern function must not carry a body".into());
         }
+        // A core method the Click library states is an instance of its
+        // library generic function.
+        let instance_of = f
+            .instance_of
+            .clone()
+            .or_else(|| super::standard_library::library_generic(f));
+        let generic = instance_of.is_some();
         let mut declaration = C0Function::external(return_type, f.name.clone(), parameters)
-            .with_generic_instance(f.instance_of.clone());
+            .with_generic_instance(instance_of);
         if let Some((name, layout)) = return_layout {
             declaration = declaration.with_struct_return(name.clone(), layout.clone());
         }
         // A generic function's instance names its parameters as the generic
         // function does.
-        return Ok(if f.instance_of.is_some() {
+        return Ok(if generic {
             declaration
         } else {
             declaration.with_positional_parameters()

@@ -927,8 +927,14 @@ library function is checked at the edge of its type in
 [`design/charon-trial/core-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.click)
 verifies calls at several widths.
 
-`xs.swap(a, b)` on a mutable slice of integers calls `slice::swap<T>`, whose
-contract states the call's effect rather than a result:
+`xs.swap(a, b)` on a mutable slice of integers calls an instance of
+`slice::swap<T>`, whose contract states the call's effect rather than a
+result. The contract is the generic `extern fn` block in
+`library/rust/core.click`, written out at each called element type as a
+sidecar's generic function is, with the instance's own parameter names by
+position; the `Vec` methods (`Vec::new`, `Vec::with_capacity`,
+`Vec::push`, `Vec::len`, `Vec::index`) are stated there the same way
+([Vec values](#vec-values)). The instance at `u32` is:
 
 ```text
 extern fn slice::swap<u32>(s: &mut [u32], a: usize, b: usize) {
@@ -1860,7 +1866,9 @@ for a reference). A signature that names a `Vec` brings the library module
 `click::rust::vec` in, so a sidecar needs no import to use them.
 
 `Vec::new()`, `Vec::with_capacity(n)`, `v.push(x)`, `v.len()` and `v[i]`
-call external functions whose contracts Click supplies:
+call external functions whose contracts Click supplies, the generic
+`extern fn` blocks `Vec::new<T>` ... `Vec::index<T>` of
+`library/rust/core.click` written out at the element type, `Vec::push<u32>`:
 
 - `new` and `with_capacity` ensure `vec::len(result) == 0`; the reserved
   capacity is not modeled.

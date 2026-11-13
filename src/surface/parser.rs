@@ -1386,16 +1386,16 @@ impl Parser {
         parser.rust_generic_instances = layouts.rust_generic_instances;
         parser.cpp_overloads = layouts.cpp_overloads;
         // A generic function's instances are written out at their types.
-        let mut function_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
+        let mut function_instances = BTreeMap::<String, rust_generic_functions::Instances>::new();
         let mut impl_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
-        for (instance, generic, _, _, _, _) in &parser.rust_generic_instances {
+        for (instance, generic, _, _, parameters, _) in &parser.rust_generic_instances {
             if let Some(arguments) =
                 crate::languages::rust::names::instance_type_arguments(instance, generic)
             {
                 function_instances
                     .entry(generic.clone())
                     .or_default()
-                    .insert(arguments);
+                    .insert(arguments, parameters.clone());
             } else if let Some((record, arguments)) =
                 crate::languages::rust::names::impl_instance_arguments(instance, generic)
             {

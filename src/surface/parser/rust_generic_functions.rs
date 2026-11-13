@@ -29,11 +29,21 @@ struct Block {
     clauses_end: usize,
     /// Its type parameters' names.
     names: Vec<String>,
+    /// Its parameters' names, by position, `None` for one that names none,
+    /// a pattern or a receiver.
+    parameters_named: Vec<Option<String>>,
 }
+
+/// Each instance of a generic function, by its type arguments, with its
+/// parameters' names: an instance takes its declaration's names by
+/// position.
+pub(super) type Instances = BTreeMap<Vec<String>, Vec<String>>;
 
 /// Writes out each instance of the sidecar's generic functions, by the
 /// function's importer name, at the type arguments the import declares,
-/// after the generic block.
+/// after the generic block. A Click library generic function
+/// (`library/rust/core.click`), which no import has, is dropped with its
+/// `extern`: only its instances are written.
 /// Returns the tokens with the index of each written instance's `fn`.
 #[allow(clippy::type_complexity)]
 ///
@@ -45,7 +55,7 @@ struct Block {
 pub(super) fn expand_generic_functions(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
-    instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
+    instances: &BTreeMap<String, Instances>,
     impl_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
 ) -> Result<(Vec<Token>, Vec<SourcePosition>, BTreeSet<usize>), ClickError> {
     let mut written = BTreeSet::new();
@@ -58,12 +68,21 @@ pub(super) fn expand_generic_functions(
             && is_ident(source.get(index), "fn")
             && let Some((name, block)) = block_at(&source, index)?
         {
-            output.extend(source[index..block.end].iter().cloned());
-            for arguments in instances.get(&name).into_iter().flatten() {
+            if crate::languages::rust::standard_library::is_library_generic(&name) {
+                if output
+                    .last()
+                    .is_some_and(|(token, _)| *token == Token::Ident("extern".into()))
+                {
+                    output.pop();
+                }
+            } else {
+                output.extend(source[index..block.end].iter().cloned());
+            }
+            for (arguments, parameters) in instances.get(&name).into_iter().flatten() {
                 if arguments.len() == block.names.len() {
                     // After its `extern`.
                     written.insert(output.len() + 1);
-                    output.extend(instance(&source, index, &block, arguments));
+                    output.extend(instance(&source, index, &block, arguments, parameters)?);
                 }
             }
             index = block.end;
@@ -144,6 +163,7 @@ fn block_at(source: &[Spanned], start: usize) -> Result<Option<(String, Block)>,
     let name = crate::languages::rust::names::path_name(
         &segments.iter().map(String::as_str).collect::<Vec<_>>(),
     );
+    let parameters_close = matching(source, close + 1).ok_or_else(unterminated)?;
     Ok(Some((
         name,
         Block {
@@ -152,8 +172,36 @@ fn block_at(source: &[Spanned], start: usize) -> Result<Option<(String, Block)>,
             parameters: (open, close),
             clauses_end,
             names,
+            parameters_named: parameter_names(source, close + 1, parameters_close),
         },
     )))
+}
+
+/// The name each parameter between `(` at `open` and `)` at `close` binds,
+/// `x` of `x: T` or `mut x: T`, `None` for any other parameter.
+fn parameter_names(source: &[Spanned], open: usize, close: usize) -> Vec<Option<String>> {
+    let mut names = Vec::new();
+    let mut depth = 0i32;
+    let mut start = open + 1;
+    for at in open + 1..=close {
+        match source[at].0 {
+            Token::LParen | Token::LBracket | Token::LessThan => depth += 1,
+            Token::RParen | Token::RBracket | Token::GreaterThan if at < close => depth -= 1,
+            Token::ShiftRight => depth -= 2,
+            _ => {}
+        }
+        if at == close || (depth == 0 && source[at].0 == Token::Comma) {
+            if start < at {
+                let first = start + usize::from(is_ident(source.get(start), "mut"));
+                names.push(match source.get(first..first + 2) {
+                    Some([(Token::Ident(name), _), (Token::Colon, _)]) => Some(name.clone()),
+                    _ => None,
+                });
+            }
+            start = at + 1;
+        }
+    }
+    names
 }
 
 /// The names of the type parameters between `<` at `open` and `>` at
@@ -368,14 +416,38 @@ fn impl_instance(
 
 /// The instance block of the generic `fn` block at `start` at `arguments`:
 /// `extern fn path<i32>(...) -> ... { ... }`, its signature and clauses with
-/// each type parameter read as its argument.
-fn instance(source: &[Spanned], start: usize, block: &Block, arguments: &[String]) -> Vec<Spanned> {
+/// each type parameter read as its argument and each parameter renamed to
+/// the instance's `parameters`, by position.
+fn instance(
+    source: &[Spanned],
+    start: usize,
+    block: &Block,
+    arguments: &[String],
+    parameters: &[String],
+) -> Result<Vec<Spanned>, ClickError> {
     let position = source[start].1.clone();
     let substitution = block
         .names
         .iter()
         .zip(arguments)
         .collect::<BTreeMap<_, _>>();
+    // A block names its declaration's parameters, which an instance may
+    // name otherwise; a count that differs is the signature check's.
+    let renaming = if block.parameters_named.len() == parameters.len() {
+        block
+            .parameters_named
+            .iter()
+            .zip(parameters)
+            .filter_map(|(generic, instance)| {
+                generic
+                    .as_ref()
+                    .filter(|generic| *generic != instance)
+                    .map(|generic| (generic.as_str(), instance.as_str()))
+            })
+            .collect::<BTreeMap<_, _>>()
+    } else {
+        BTreeMap::new()
+    };
     // The instance has no body of its own: its contract is an `extern fn`'s.
     let mut tokens = vec![
         (Token::Ident("extern".into()), position.clone()),
@@ -390,15 +462,99 @@ fn instance(source: &[Spanned], start: usize, block: &Block, arguments: &[String
         tokens.push((Token::Ident(argument.clone()), position.clone()));
     }
     tokens.push((Token::GreaterThan, position));
-    tokens.extend(
-        source[block.parameters.1 + 1..=block.clauses_end]
+    for at in block.parameters.1 + 1..=block.clauses_end {
+        let (token, position) = &source[at];
+        // A field or path segment of a parameter's spelling is not the
+        // parameter.
+        let member = matches!(
+            source[at - 1].0,
+            Token::Dot | Token::Arrow | Token::ColonColon
+        );
+        tokens.push(match token {
+            Token::Ident(word) if substitution.contains_key(word) => {
+                (Token::Ident(substitution[word].clone()), position.clone())
+            }
+            Token::Ident(word) if !member && renaming.contains_key(word.as_str()) => (
+                Token::Ident(renaming[word.as_str()].into()),
+                position.clone(),
+            ),
+            Token::Ident(word) if !member && renaming.values().any(|name| name == word) => {
+                return Err(error_at(
+                    position,
+                    format!(
+                        "the instance names a parameter `{word}`, which the generic function's \
+                         contract already uses; rename that parameter in the contract"
+                    ),
+                ));
+            }
+            token => (token.clone(), position.clone()),
+        });
+    }
+    Ok(tokens)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The source with each generic function's instances written out, by
+    /// path, type arguments and parameter names, as words.
+    fn expand(source: &str, instances: &[(&[&str], &[&str], &[&str])]) -> String {
+        let (tokens, positions) = tokenizer::tokenize(source, None).unwrap();
+        let mut map = BTreeMap::<String, Instances>::new();
+        for (path, arguments, parameters) in instances {
+            map.entry(crate::languages::rust::names::path_name(path))
+                .or_default()
+                .insert(
+                    arguments.iter().map(|a| a.to_string()).collect(),
+                    parameters.iter().map(|p| p.to_string()).collect(),
+                );
+        }
+        let (tokens, _, _) =
+            expand_generic_functions(tokens, positions, &map, &BTreeMap::new()).unwrap();
+        tokens
             .iter()
-            .map(|(token, position)| match token {
-                Token::Ident(word) if substitution.contains_key(word) => {
-                    (Token::Ident(substitution[word].clone()), position.clone())
-                }
-                token => (token.clone(), position.clone()),
-            }),
-    );
-    tokens
+            .map(|token| match token {
+                Token::Ident(word) => word.clone(),
+                token => token.describe(),
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    // A user's generic function is kept, and its instance takes the
+    // instance's parameter names by position; a field of the same spelling
+    // keeps its name.
+    #[test]
+    fn an_instance_takes_its_parameter_names_by_position() {
+        let written = expand(
+            "fn cells::read<T: Copy>(c: &cells::Cell<T>) -> T { ensures result == (*c).c; }",
+            &[(&["cells", "read"], &["i32"], &["cell"])],
+        );
+        assert!(written.starts_with("fn cells `::` read `<` T `:` Copy `>`"));
+        assert!(
+            written.ends_with(
+                "extern fn cells `::` read `<` i32 `>` `(` cell `:` `&` cells `::` Cell `<` i32 \
+                 `>` `)` `->` i32 `{` ensures result `==` `(` `*` cell `)` `.` c `;` `}`"
+            ),
+            "{written}"
+        );
+    }
+
+    // A Click library generic function is dropped with its `extern`: only
+    // its instances are written, and with none nothing is.
+    #[test]
+    fn a_library_generic_function_is_dropped_with_its_extern() {
+        let source = "extern fn slice::swap<T>(s: &mut [T], a: usize, b: usize) { owns *s; } \
+                      extern fn other(x: u32) { }";
+        assert_eq!(
+            expand(source, &[]),
+            "extern fn other `(` x `:` u32 `)` `{` `}`"
+        );
+        assert_eq!(
+            expand(source, &[(&["slice", "swap"], &["u8"], &["xs", "a", "b"])]),
+            "extern fn slice `::` swap `<` u8 `>` `(` xs `:` `&` mut `[` u8 `]` `,` a `:` usize \
+             `,` b `:` usize `)` `{` owns `*` xs `;` `}` extern fn other `(` x `:` u32 `)` `{` `}`"
+        );
+    }
 }

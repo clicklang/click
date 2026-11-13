@@ -25,9 +25,11 @@ how far it is trusted:
   in Click below. The C front end builds in the allocator family
   ([heap allocation](../language/c.md#heap-allocation)) and writes the
   `snprintf` contracts ([formatted output](../language/c.md#formatted-output)),
-  and the C++ and Rust importers write their catalog and core-method
-  contracts per use. The Rust core-method contracts state their results with
-  the `click::rust::` modules below.
+  and the C++ and Rust importers append the generic contracts of
+  `library/cpp/` and `library/rust/core.click` (`Vec` methods and
+  `<[T]>::swap`), written out at each called instance, and write the other
+  Rust core-method contracts per use. The Rust core-method contracts state
+  their results with the `click::rust::` modules below.
 - **The specification library** is checked Click: types, pure functions,
   predicates and theorems. A theorem is either proved or a kernel standard
   theorem whose declaration is checked against its kernel builder. The
