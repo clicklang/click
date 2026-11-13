@@ -108,26 +108,18 @@ fn has_path(
 /// `{name}` is the function's proof name, `{record}` its receiver's record,
 /// and `{p1}`, `{p2}`, ... its parameters after the receiver, as the
 /// interface names them.
-///
-/// An entry over `std::array<T, N>` is generic in its element and extent:
-/// `{T}` in the qualified name and `{T_signature}` in the signature are the
-/// element as Clang spells it there, `{element}` is its Click type, and
-/// `{N}` and `{extent}` the extent. An element outside [`SPAN_ELEMENTS`]
-/// matches no entry, so a call is refused by name.
 struct CatalogEntry {
     qualified_name: &'static str,
     signature: &'static str,
     contract: &'static str,
 }
 
-/// A `std::span` element type the catalog can state contracts for.
+/// An element type the library's class templates are written out at.
 struct SpanElement {
     /// The element as Clang spells it in a qualified name.
     name: &'static str,
     /// The element as Clang spells it in a canonical signature.
     signature: &'static str,
-    /// The element's Click type.
-    click: &'static str,
     /// `sizeof` the element.
     bytes: u64,
 }
@@ -136,49 +128,41 @@ const SPAN_ELEMENTS: &[SpanElement] = &[
     SpanElement {
         name: "int",
         signature: "int",
-        click: "int32",
         bytes: 4,
     },
     SpanElement {
         name: "unsigned int",
         signature: "unsigned int",
-        click: "uint32",
         bytes: 4,
     },
     SpanElement {
         name: "unsigned char",
         signature: "unsigned char",
-        click: "uint8",
         bytes: 1,
     },
     SpanElement {
         name: "std::byte",
         signature: "enum std::byte",
-        click: "uint8",
         bytes: 1,
     },
     SpanElement {
         name: "const int",
         signature: "const int",
-        click: "const int32",
         bytes: 4,
     },
     SpanElement {
         name: "const unsigned int",
         signature: "const unsigned int",
-        click: "const uint32",
         bytes: 4,
     },
     SpanElement {
         name: "const unsigned char",
         signature: "const unsigned char",
-        click: "const uint8",
         bytes: 1,
     },
     SpanElement {
         name: "const std::byte",
         signature: "const enum std::byte",
-        click: "const uint8",
         bytes: 1,
     },
 ];
@@ -186,6 +170,9 @@ const SPAN_ELEMENTS: &[SpanElement] = &[
 /// The Click library file that states the `std::span<T>` and
 /// `std::span<T, N>` contracts, as template methods a sidecar writes.
 pub(crate) const SPAN_LIBRARY: &str = include_str!("../../../library/cpp/span.click");
+
+/// The Click library file that states the `std::array<T, N>` contracts.
+pub(crate) const ARRAY_LIBRARY: &str = include_str!("../../../library/cpp/array.click");
 
 /// The methods of `std::span<T>` and `std::span<T, N>` that
 /// [`SPAN_LIBRARY`] states, each with its canonical signature as Clang
@@ -215,25 +202,80 @@ const SPAN_METHODS: &[(&str, &str)] = &[
     ),
 ];
 
-/// The library's span class templates: dynamic and static extent.
-const SPAN_TEMPLATES: [&str; 2] = ["span<T>", "span<T, N>"];
+/// The methods of `std::array<T, N>` that [`ARRAY_LIBRARY`] states. Its
+/// element accessors are each a mutable and a `const` overload, which the
+/// library writes as two template methods at one path.
+const ARRAY_METHODS: &[(&str, &str)] = &[
+    ("size", "unsigned long (void) const noexcept"),
+    ("data", "{T} *(void) noexcept"),
+    ("data", "const {T} *(void) const noexcept"),
+    ("operator[]", "{T} &(unsigned long) noexcept"),
+    ("operator[]", "const {T} &(unsigned long) const noexcept"),
+    ("front", "{T} &(void) noexcept"),
+    ("front", "const {T} &(void) const noexcept"),
+    ("back", "{T} &(void) noexcept"),
+    ("back", "const {T} &(void) const noexcept"),
+];
 
-/// The library method an axiom is an instance of, by importer name, when
-/// the Click library states it for the axiom's template arguments: for
-/// `std::span<unsigned int>::size`, `std::span<T>::size`, and for
-/// `std::span<int, 4>::size`, `std::span<T, N>::size`. An element outside
-/// [`SPAN_ELEMENTS`], a signature the library does not state,
-/// `std::dynamic_extent` as a static extent, or one whose byte size does
-/// not fit a `uint64`, is no instance, so a call is refused by name.
-pub(super) fn library_generic(axiom: &super::schema::CppAxiom) -> Option<String> {
-    let (arguments, method) = axiom
+/// A class template the Click library states: its name in the importer's
+/// qualified names, its library template with a dynamic and a static
+/// extent (`None` where it has no such form), its methods and its file.
+struct LibraryClass {
+    class: &'static str,
+    dynamic: Option<&'static str>,
+    fixed: Option<&'static str>,
+    methods: &'static [(&'static str, &'static str)],
+    /// Whether a `const` element is one the library states: an array's
+    /// elements are its own objects, which a `const` element type makes
+    /// immutable, and the library states only mutable ones.
+    const_elements: bool,
+    library: &'static str,
+}
+
+const LIBRARY_CLASSES: &[LibraryClass] = &[
+    LibraryClass {
+        class: "span",
+        dynamic: Some("span<T>"),
+        fixed: Some("span<T, N>"),
+        methods: SPAN_METHODS,
+        const_elements: true,
+        library: SPAN_LIBRARY,
+    },
+    LibraryClass {
+        class: "array",
+        dynamic: None,
+        fixed: Some("array<T, N>"),
+        methods: ARRAY_METHODS,
+        const_elements: false,
+        library: ARRAY_LIBRARY,
+    },
+];
+
+/// The library method an axiom is an instance of, by importer name, with
+/// the library file stating it, when the Click library states it for the
+/// axiom's template arguments: for `std::span<unsigned int>::size`,
+/// `std::span<T>::size`, and for `std::array<int, 4>::data`,
+/// `std::array<T, N>::data`, whichever overload the signature is. An
+/// element outside [`SPAN_ELEMENTS`], a signature the library does not
+/// state, an extent the class does not take, `std::dynamic_extent` as a
+/// static extent, or one whose byte size does not fit a `uint64`, is no
+/// instance, so a call is refused by name.
+fn library_method(axiom: &super::schema::CppAxiom) -> Option<(String, &'static str)> {
+    let (class, rest) = axiom
         .qualified_name
-        .strip_prefix("std::span<")?
-        .rsplit_once(">::")?;
+        .strip_prefix("std::")?
+        .split_once('<')?;
+    let class = LIBRARY_CLASSES
+        .iter()
+        .find(|candidate| candidate.class == class)?;
+    let (arguments, method) = rest.rsplit_once(">::")?;
     let (element, extent) = match arguments.rsplit_once(", ") {
         Some((element, extent)) => (element, Some(extent.parse::<u64>().ok()?)),
         None => (arguments, None),
     };
+    if !class.const_elements && element.starts_with("const ") {
+        return None;
+    }
     let element = SPAN_ELEMENTS
         .iter()
         .find(|candidate| candidate.name == element)?;
@@ -242,102 +284,49 @@ pub(super) fn library_generic(axiom: &super::schema::CppAxiom) -> Option<String>
     {
         return None;
     }
-    let template = SPAN_TEMPLATES[usize::from(extent.is_some())];
-    SPAN_METHODS
+    let template = if extent.is_some() {
+        class.fixed
+    } else {
+        class.dynamic
+    }?;
+    class
+        .methods
         .iter()
         .find(|(name, signature)| {
             *name == method && signature.replace("{T}", element.signature) == axiom.signature
         })
-        .map(|(name, _)| super::names::path_name(&["std", template, name]))
+        .map(|(name, _)| {
+            (
+                super::names::path_name(&["std", template, name]),
+                class.library,
+            )
+        })
+}
+
+/// The library method an axiom is an instance of, by importer name
+/// ([`library_method`]).
+pub(super) fn library_generic(axiom: &super::schema::CppAxiom) -> Option<String> {
+    library_method(axiom).map(|(generic, _)| generic)
 }
 
 /// Whether `generic`, a method's importer name, is a Click library
 /// template's method: such a template has no generic method in the import,
 /// only the instances its axioms are.
 pub(crate) fn is_library_generic(generic: &str) -> bool {
-    SPAN_TEMPLATES.iter().any(|template| {
-        SPAN_METHODS
-            .iter()
-            .any(|(name, _)| super::names::path_name(&["std", template, name]) == generic)
+    LIBRARY_CLASSES.iter().any(|class| {
+        [class.dynamic, class.fixed]
+            .into_iter()
+            .flatten()
+            .any(|template| {
+                class
+                    .methods
+                    .iter()
+                    .any(|(name, _)| super::names::path_name(&["std", template, name]) == generic)
+            })
     })
 }
 
-// `std::array<T, N>`: `N` elements held in the object, `std_array_data(a)`.
-// The element accessors have a const and a mutable overload; they require
-// an index inside the array and form an address without reading it.
-const ARRAY_CATALOG: &[CatalogEntry] = &[
-    CatalogEntry {
-        qualified_name: "std::array<{T}, {N}>::size",
-        signature: "unsigned long (void) const noexcept",
-        contract: "extern uint64 {name}(const struct {record}* this) {
-    ensures result == {extent}u64;
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::array<{T}, {N}>::data",
-        signature: "{T_signature} *(void) noexcept",
-        contract: "extern {element}* {name}(struct {record}* this) {
-    ensures result == &std_array_data(this)[0];
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::array<{T}, {N}>::data",
-        signature: "const {T_signature} *(void) const noexcept",
-        contract: "extern const {element}* {name}(const struct {record}* this) {
-    ensures result == &std_array_data(this)[0];
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::array<{T}, {N}>::operator[]",
-        signature: "{T_signature} &(unsigned long) noexcept",
-        contract: "extern {element}& {name}(struct {record}* this, uint64 {p1}) {
-    requires {p1} < {extent}u64;
-    ensures &result == &std_array_data(this)[{p1}];
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::array<{T}, {N}>::operator[]",
-        signature: "const {T_signature} &(unsigned long) const noexcept",
-        contract: "extern const {element}& {name}(const struct {record}* this, uint64 {p1}) {
-    requires {p1} < {extent}u64;
-    ensures &result == &std_array_data(this)[{p1}];
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::array<{T}, {N}>::front",
-        signature: "{T_signature} &(void) noexcept",
-        contract: "extern {element}& {name}(struct {record}* this) {
-    requires 1u64 <= {extent}u64;
-    ensures &result == &std_array_data(this)[0];
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::array<{T}, {N}>::front",
-        signature: "const {T_signature} &(void) const noexcept",
-        contract: "extern const {element}& {name}(const struct {record}* this) {
-    requires 1u64 <= {extent}u64;
-    ensures &result == &std_array_data(this)[0];
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::array<{T}, {N}>::back",
-        signature: "{T_signature} &(void) noexcept",
-        contract: "extern {element}& {name}(struct {record}* this) {
-    requires 1u64 <= {extent}u64;
-    ensures &result == &std_array_data(this)[{extent}u64 - 1u64];
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::array<{T}, {N}>::back",
-        signature: "const {T_signature} &(void) const noexcept",
-        contract: "extern const {element}& {name}(const struct {record}* this) {
-    requires 1u64 <= {extent}u64;
-    ensures &result == &std_array_data(this)[{extent}u64 - 1u64];
-}",
-    },
-];
-
-// Entries for one instantiation, outside the generic span family.
+// Entries for one instantiation, outside the library's class templates.
 const CATALOG: &[CatalogEntry] = &[CatalogEntry {
     qualified_name: "std::as_writable_bytes",
     signature: "class std::span<enum std::byte> (class std::span<int>) noexcept",
@@ -347,51 +336,14 @@ const CATALOG: &[CatalogEntry] = &[CatalogEntry {
 }",
 }];
 
-/// The catalog contract template for a standard function, with its span
-/// element, if any, substituted.
-fn catalog_contract(axiom: &super::schema::CppAxiom) -> Option<String> {
-    if let Some(entry) = CATALOG.iter().find(|entry| {
-        entry.qualified_name == axiom.qualified_name && entry.signature == axiom.signature
-    }) {
-        return Some(entry.contract.to_string());
-    }
-    // The element and extent are the template arguments the qualified name
-    // spells; an entry matches only when its signature spells the same
-    // element. A span's methods are the library's templates.
-    let arguments = axiom
-        .qualified_name
-        .strip_prefix("std::array<")?
-        .rsplit_once(">::")?
-        .0;
-    let (element_name, extent) = arguments.rsplit_once(", ")?;
-    let extent = extent.parse::<u64>().ok()?;
-    // An array's elements are its own objects; a const element type is
-    // not one the catalog states.
-    if element_name.starts_with("const ") {
-        return None;
-    }
-    let element = SPAN_ELEMENTS
+/// The catalog contract template for a standard function.
+fn catalog_contract(axiom: &super::schema::CppAxiom) -> Option<&'static str> {
+    CATALOG
         .iter()
-        .find(|element| element.name == element_name)?;
-    // An extent whose byte size does not fit is not stated.
-    extent.checked_mul(element.bytes)?;
-    let extent = extent.to_string();
-    let instantiate = |pattern: &str| {
-        pattern
-            .replace("{T_signature}", element.signature)
-            .replace("{T}", element.name)
-            .replace("{N}", &extent)
-    };
-    let entry = ARRAY_CATALOG.iter().find(|entry| {
-        instantiate(entry.qualified_name) == axiom.qualified_name
-            && instantiate(entry.signature) == axiom.signature
-    })?;
-    Some(
-        entry
-            .contract
-            .replace("{element}", element.click)
-            .replace("{extent}", &extent),
-    )
+        .find(|entry| {
+            entry.qualified_name == axiom.qualified_name && entry.signature == axiom.signature
+        })
+        .map(|entry| entry.contract)
 }
 
 /// The Click contracts for the axioms an import reaches: the library's
@@ -405,14 +357,16 @@ pub(super) fn contracts(
 ) -> Result<(String, BTreeSet<String>), String> {
     let mut source = String::new();
     let mut models = BTreeSet::new();
-    let mut library = false;
+    let mut libraries = Vec::new();
     for function in &export.reachable_functions {
         let Some(axiom) = &function.axiom else {
             continue;
         };
-        if library_generic(axiom).is_some() {
+        if let Some((_, library)) = library_method(axiom) {
             models.insert(names.require(&function.declaration_id)?.to_string());
-            library = true;
+            if !libraries.contains(&library) {
+                libraries.push(library);
+            }
             continue;
         }
         let Some(contract) = catalog_contract(axiom) else {
@@ -443,8 +397,8 @@ pub(super) fn contracts(
         source.push_str(&contract);
         source.push('\n');
     }
-    if library {
-        source.insert_str(0, SPAN_LIBRARY);
+    for library in libraries.into_iter().rev() {
+        source.insert_str(0, library);
     }
     Ok((source, models))
 }
@@ -594,5 +548,30 @@ mod tests {
         assert!(is_library_generic(&size("4").unwrap()));
         assert!(size("18446744073709551615").is_none());
         assert!(size("4611686018427387904").is_none());
+    }
+
+    // Both overloads of an array's element accessor are instances of the
+    // library's method at its path; a `const` element, or an extent whose
+    // byte size does not fit, is none.
+    #[test]
+    fn array_overloads_are_library_instances_over_mutable_elements_only() {
+        let front = |element: &str, extent: &str, signature: &str| {
+            library_generic(&super::super::schema::CppAxiom {
+                qualified_name: format!("std::array<{element}, {extent}>::front"),
+                signature: signature.into(),
+            })
+        };
+        let mutable = front("int", "4", "int &(void) noexcept").unwrap();
+        assert_eq!(
+            front("int", "4", "const int &(void) const noexcept"),
+            Some(mutable.clone())
+        );
+        assert_eq!(
+            crate::languages::cpp::names::cpp_display_name(&mutable).unwrap(),
+            "std::array<T, N>::front"
+        );
+        assert!(is_library_generic(&mutable));
+        assert!(front("const int", "4", "const int &(void) noexcept").is_none());
+        assert!(front("int", "4611686018427387904", "int &(void) noexcept").is_none());
     }
 }

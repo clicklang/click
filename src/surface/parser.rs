@@ -244,8 +244,10 @@ pub(in crate::surface) struct ProgramLayouts {
     /// the generic function, the instance's parameter and result types, and
     /// its parameters' names as a head writes them: it has the generic
     /// function's contract at those types.
-    pub(in crate::surface) rust_generic_instances:
-        Vec<(String, String, Vec<C0Type>, C0Type, Vec<String>)>,
+    pub(in crate::surface) rust_generic_instances: Vec<GenericInstance>,
+    /// The C++ declarations that share a path, as overloads do, by the
+    /// importer name of that path: a head there selects one by signature.
+    pub(in crate::surface) cpp_overloads: BTreeMap<String, Vec<CppOverload>>,
     /// The instances of each generic crate trait the import declares an
     /// interface of, by the trait's importer name.
     pub(in crate::surface) rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
@@ -262,6 +264,23 @@ pub(in crate::surface) struct ProgramLayouts {
     /// The typedef names of the verified C sources a function head may
     /// write, with their types.
     pub(in crate::surface) c_typedefs: BTreeMap<String, syntax::C0HeadTypedef>,
+}
+
+/// An instance of a generic function the import declares: its name, the
+/// generic function's, its parameter and result types, its parameters'
+/// names as a head writes them, and whether a method's receiver is `const`.
+pub(in crate::surface) type GenericInstance =
+    (String, String, Vec<C0Type>, C0Type, Vec<String>, bool);
+
+/// One of the C++ declarations that share a path: its importer name,
+/// whether a method's receiver is `const`, and its parameters' types after
+/// the receiver. A head at the path names the one whose constness and
+/// parameter types it writes.
+#[derive(Clone, Debug)]
+pub(in crate::surface) struct CppOverload {
+    pub(in crate::surface) name: String,
+    pub(in crate::surface) constant: bool,
+    pub(in crate::surface) parameters: Vec<C0Type>,
 }
 
 /// A braced proof block as the parser read it: the positions of its braces
@@ -913,7 +932,9 @@ struct Parser {
     rust_abstract_type_parameters: BTreeSet<String>,
     /// The generic Rust function instances the import declares, as the
     /// layouts give them.
-    rust_generic_instances: Vec<(String, String, Vec<C0Type>, C0Type, Vec<String>)>,
+    rust_generic_instances: Vec<GenericInstance>,
+    /// The C++ overloads by their shared path, as the layouts give them.
+    cpp_overloads: BTreeMap<String, Vec<CppOverload>>,
     /// The index of each `fn` token of a generic function's instance the
     /// parser wrote out: only these may name an instance.
     rust_written_instances: BTreeSet<usize>,
@@ -1363,10 +1384,11 @@ impl Parser {
         parser.local_struct_pointers_by_function = layouts.local_struct_pointers;
         parser.closure_captures = layouts.closure_captures;
         parser.rust_generic_instances = layouts.rust_generic_instances;
+        parser.cpp_overloads = layouts.cpp_overloads;
         // A generic function's instances are written out at their types.
         let mut function_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
         let mut impl_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
-        for (instance, generic, _, _, _) in &parser.rust_generic_instances {
+        for (instance, generic, _, _, _, _) in &parser.rust_generic_instances {
             if let Some(arguments) =
                 crate::languages::rust::names::instance_type_arguments(instance, generic)
             {
@@ -1452,12 +1474,22 @@ impl Parser {
             }
             parser.language = SourceLanguage::Cpp;
             // A generic class template's method is written out at each of
-            // its instances the import declares.
-            let mut method_instances =
-                BTreeMap::<String, BTreeMap<Vec<String>, Vec<String>>>::new();
-            for (instance, generic, _, _, parameters) in &parser.rust_generic_instances {
+            // its instances the import declares, by the generic's path and
+            // the instance's constness: an overload is named by neither.
+            let paths = parser
+                .cpp_overloads
+                .iter()
+                .flat_map(|(path, overloads)| {
+                    overloads
+                        .iter()
+                        .map(move |overload| (overload.name.as_str(), path.as_str()))
+                })
+                .collect::<BTreeMap<_, _>>();
+            let mut method_instances = BTreeMap::<String, cpp_generic_templates::Instances>::new();
+            for (instance, generic, _, _, parameters, constant) in &parser.rust_generic_instances {
+                let path = paths.get(instance.as_str()).copied().unwrap_or(instance);
                 let arguments =
-                    cpp_generic_templates::instance_arguments(instance).ok_or_else(|| {
+                    cpp_generic_templates::instance_arguments(path).ok_or_else(|| {
                         ClickError::new(format!(
                             "the C++ generic instance `{instance}` names no class template instance"
                         ))
@@ -1467,10 +1499,11 @@ impl Parser {
                     Some((receiver, rest)) if receiver == "this" => rest,
                     _ => parameters,
                 };
+                let generic_path = paths.get(generic.as_str()).copied().unwrap_or(generic);
                 method_instances
-                    .entry(generic.clone())
+                    .entry(generic_path.to_string())
                     .or_default()
-                    .insert(arguments, parameters.to_vec());
+                    .insert((*constant, arguments), parameters.to_vec());
                 parser
                     .cpp_generic_instances
                     .insert(instance.clone(), generic.clone());
@@ -1616,6 +1649,7 @@ impl Parser {
             rust_trait_type_parameters: BTreeSet::new(),
             rust_abstract_type_parameters: BTreeSet::new(),
             rust_generic_instances: Vec::new(),
+            cpp_overloads: BTreeMap::new(),
             rust_written_instances: BTreeSet::new(),
             cpp_generic_instances: BTreeMap::new(),
             rust_trait_implementations: Vec::new(),
@@ -2174,7 +2208,7 @@ impl Parser {
         }
         // A generic function's instance the sidecar does not state has the
         // generic function's contract at its types.
-        for (instance, generic, parameter_types, return_type, _) in
+        for (instance, generic, parameter_types, return_type, _, _) in
             std::mem::take(&mut self.rust_generic_instances)
         {
             if function_blocks
@@ -5513,12 +5547,15 @@ impl Parser {
                  `void Rec::method(int x)`, `Rec::Rec(int x)` or `Rec::~Rec()`",
             ));
         }
+        let mut receiver_constant = false;
+        let has_receiver = receiver.is_some();
         if let Some(record) = receiver {
             // `Rec::m(...) const` reads through a `const Rec* this`.
             let constant = self.peek_ident() == Some("const");
             if constant {
                 self.position += 1;
             }
+            receiver_constant = constant;
             let this = self.parse_parameter_array_suffix(
                 "this".into(),
                 ParsedType {
@@ -5535,6 +5572,38 @@ impl Parser {
                 .struct_params
                 .insert("this".into(), record);
         }
+        // A path several C++ declarations share, as overloads do, names the
+        // one whose receiver constness and parameter types the head writes.
+        let name = match self.cpp_overloads.get(&name) {
+            Some(overloads) => {
+                let written = &parsed_parameters.parameters[usize::from(has_receiver)..];
+                let mut selected = overloads.iter().filter(|overload| {
+                    overload.constant == receiver_constant
+                        && overload.parameters.len() == written.len()
+                        && overload
+                            .parameters
+                            .iter()
+                            .zip(written)
+                            .all(|(expected, parameter)| *expected == parameter.c_type())
+                });
+                match (selected.next(), selected.next()) {
+                    (Some(overload), None) => overload.name.clone(),
+                    (selected, _) => {
+                        return Err(self.error(format!(
+                            "`{}` names C++ overloads, {} this head's receiver constness \
+                             and parameter types",
+                            crate::languages::display_source_names(&name),
+                            if selected.is_some() {
+                                "more than one with"
+                            } else {
+                                "none with"
+                            }
+                        )));
+                    }
+                }
+            }
+            None => name,
+        };
         let exceptional_type = if self.peek_ident() == Some("throws") {
             self.position += 1;
             let parsed = self.parse_type()?;

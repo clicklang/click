@@ -89,6 +89,7 @@ pub(super) fn prepare(
         library_contracts,
         library_models: BTreeSet::new(),
         record_spellings,
+        overload_paths: BTreeMap::new(),
     })
 }
 

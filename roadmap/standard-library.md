@@ -370,12 +370,15 @@ Each step is a separate PR that leaves every example verifying:
        byte size overflows. A user's template with a non-type parameter is
        expanded the same way, but the exporter still refuses to export one
        at abstract arguments.
-    3. Const and non-const overload matching, and `std::array<T, N>`.
-       Blocker: `std::array`'s `data`, `front`, `back` and `operator[]`
-       have a const and a mutable overload under one qualified name, which
-       instance matching by name cannot tell apart yet.
+    3. Done: const and mutable overloads, and `std::array<T, N>` in
+       `library/cpp/array.click`. A C++ head at a path overloads share
+       selects the overload whose receiver constness and parameter types
+       it writes, for users' heads too, and an instance is written out
+       from the template method whose head has its receiver's constness.
+       The name table keeps the catalog's guards: a static extent, no
+       `const` element and no extent whose byte size overflows.
     4. `std::as_writable_bytes` as a plain library `extern`, deleting the
-       Rust templates.
+       remaining Rust templates (`CATALOG` and `catalog_contract`).
   - **Rust core (open), after the C++ steps.** The `Vec`, slice, iterator
     and `Option`/`Result` builders in `src/languages/rust/standard_library.rs`
     become generic `extern fn` blocks in `library/rust/`, instantiated
