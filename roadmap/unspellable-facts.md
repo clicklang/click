@@ -183,6 +183,28 @@ that syntax comparison with arithmetic observation equality.
 call-result sequence, not the wider KernelTerm/SurfaceTerm migration or the
 other result families.
 
+## Chunk 5: execution value handoffs
+
+Retain already-supported machine-integer results through execution, one PR per
+slice in order. Preserve proofs, refusals, obligations and search budgets. Other
+result families remain in their own packages.
+
+| Subchunk | Boundary | Completion criterion |
+| --- | --- | --- |
+| 5a | Execution carrier | Reuse the specification value carrier for execution; prepare typed outcome containers and explicit compatibility readers. |
+| 5b | Specification handoff | Specification-to-execution adapters retain common roots until an unmigrated consumer explicitly reads them. |
+| 5c | C expression handoffs | C expression results retain common machine operands across supported evaluation paths. |
+| 5d | Rust expression handoffs | Rust expression results retain common machine operands, preserving Rust operation semantics. |
+| 5e | Assignments and locals | Local assignment and readback preserve retained machine results. |
+| 5f | Function return handoffs | Return production and caller receipt preserve retained machine results. |
+| 5g | Closure | Remove superseded adapters and verify complete supported execution paths. |
+
+5a extracts the existing specification carrier as `ExecutionValue`, retaining
+`SpecValue` as a local alias. Expression outcomes and paths accept a value-carrier
+parameter, defaulting to their existing native carrier. No producer switches in
+this preparatory slice. A deterministic scaling regression checks that repeated
+retained handoffs and operand reads do not walk or export growing value DAGs.
+
 ## Chunk 4: one producer boundary per PR
 
 Chunk 4 migrates existing numeric producers to retain `KernelTerm` operands and

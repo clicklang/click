@@ -7992,10 +7992,21 @@ pub struct DroppedFoldBody {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum CExpressionOutcome {
-    Value(CValue),
+pub enum CExpressionOutcome<V = CValue> {
+    Value(V),
     UndefinedBehavior(CUndefinedBehavior),
     RuntimeError(CRuntimeError),
+}
+
+impl<V> CExpressionOutcome<V> {
+    /// Change only the value carrier; refusals keep their original identity.
+    pub fn map_value<W>(self, map: impl FnOnce(V) -> W) -> CExpressionOutcome<W> {
+        match self {
+            Self::Value(value) => CExpressionOutcome::Value(map(value)),
+            Self::UndefinedBehavior(error) => CExpressionOutcome::UndefinedBehavior(error),
+            Self::RuntimeError(error) => CExpressionOutcome::RuntimeError(error),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -15031,8 +15042,8 @@ pub struct SymbolicCConditionEvaluationPath {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct CExpressionPath {
-    pub(super) outcome: CExpressionOutcome,
+pub(super) struct CExpressionPath<V = CValue> {
+    pub(super) outcome: CExpressionOutcome<V>,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
 }
