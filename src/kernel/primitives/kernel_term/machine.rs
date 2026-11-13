@@ -579,6 +579,12 @@ impl KernelTermImport {
             return read;
         }
         let node = match term {
+            Old::ClickFunctionApplication { name, arguments } => {
+                return self.machine_call(
+                    result,
+                    &SharedPureApplication::intern(name.clone(), arguments.clone()),
+                );
+            }
             Old::If {
                 condition,
                 then_term,

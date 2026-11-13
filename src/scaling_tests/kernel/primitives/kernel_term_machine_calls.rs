@@ -68,3 +68,32 @@ fn common_call_numeric_identity_is_linear_cold_and_constant_warm() {
         assert_eq!(pair[1].1, pair[0].1, "{samples:?}");
     }
 }
+
+#[test]
+fn common_call_import_keeps_growing_shared_arguments_without_exporting() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995910));
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                let argument = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
+                let native = MachineTerm::ClickFunctionApplication {
+                    name: "imported_call".into(),
+                    arguments: vec![PureFunctionArgument::SharedMachine(argument)],
+                };
+                root = KernelTermImport::default().machine(format, &native);
+                assert!(matches!(root.node(), KernelTermNode::Call { .. }));
+                assert_eq!(KernelTermImport::default().machine(format, &native), root);
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples[1] <= 5 * samples[0] && samples[2] <= 5 * samples[1],
+        "{samples:?}"
+    );
+}

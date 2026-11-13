@@ -4081,3 +4081,103 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
     );
     assert_eq!(KernelTermExport::machine_export_count(), exports);
 }
+
+#[test]
+fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, KernelTermNode, PureFunctionArgument};
+    for (format, spelling) in [
+        (MachineIntegerType::Int8, "int8"),
+        (MachineIntegerType::UInt8, "uint8"),
+        (MachineIntegerType::Int16, "int16"),
+        (MachineIntegerType::UInt16, "uint16"),
+        (MachineIntegerType::Int32, "int32"),
+        (MachineIntegerType::UInt32, "uint32"),
+        (MachineIntegerType::Int64, "int64"),
+        (MachineIntegerType::UInt64, "uint64"),
+        (MachineIntegerType::Int128, "int128"),
+        (MachineIntegerType::UInt128, "uint128"),
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let declarations = format!(
+            "function inner(x: int32) -> int32 {{ x }} function outer(x: int32) -> {spelling} {{ x as {spelling} }}"
+        );
+        let file = parser::parse(&declarations).unwrap();
+        let variable = CValue::Int32(MachineTerm::Variable(Variable(995900)));
+        let state = CState::new().with_local("x", variable.clone());
+        let values = BTreeMap::from([("x".to_string(), variable)]);
+        let parse_expression = |text: &str, result_type: &str| {
+            let parsed = parser::parse(&format!(
+                "{declarations} function probe(x: int32) -> {result_type} {{ {text} }}"
+            ))
+            .unwrap();
+            parsed
+                .click_function_definitions()
+                .last()
+                .unwrap()
+                .body()
+                .unwrap()
+                .clone()
+        };
+        let lower = |expression: &SurfaceTerm| {
+            let spec = crate::surface::lowering::elaborate_fixed_state_expression(
+                expression,
+                BTreeMap::new(),
+                &state,
+                values.clone(),
+                values.clone(),
+                None,
+                &RecordedSnapshots::new(),
+                SpecDefinitions::new(
+                    &PredicateEnvironment::new(&[]),
+                    &ClickFunctionEnvironment::new(file.click_function_definitions()),
+                ),
+                BTreeSet::new(),
+                BTreeMap::new(),
+            )
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{spelling}: {}: {error}",
+                    diagnostics::describe_contract_expression(expression)
+                )
+            });
+            let (value, _) =
+                crate::kernel::c_evaluate_spec_resource_expression_with_checked_obligations(
+                    &state,
+                    &spec,
+                    Some(&state),
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+            KernelTermImport::default().argument(&PureFunctionArgument::Value(value))
+        };
+        let mut expressions = vec![
+            ("outer(x)", spelling),
+            ("outer(inner(x))", spelling),
+            ("outer(inner(x + 1))", spelling),
+        ];
+        if format.format().bits() <= 64 {
+            expressions.push(("outer(x) as int64", "int64"));
+            expressions.push(("(outer(inner(x)) as uint64) + 1u64", "uint64"));
+        }
+        for (expression, result_type) in expressions {
+            let root = lower(&parse_expression(expression, result_type));
+            let mut pending = vec![&root];
+            let mut calls = 0;
+            while let Some(node) = pending.pop() {
+                if matches!(node.node(), KernelTermNode::Call { .. }) {
+                    calls += 1;
+                }
+                pending.extend(node.children());
+            }
+            assert!(calls > 0, "{spelling}: {expression}");
+            let exports = KernelTermExport::machine_export_count();
+            let surface =
+                raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
+                    .unwrap();
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let text = diagnostics::describe_contract_expression(&surface);
+            let restored = lower(&parse_expression(&text, result_type));
+            assert_eq!(restored, root, "{spelling}: {expression} => {text}");
+        }
+    }
+}
