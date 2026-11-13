@@ -157,7 +157,7 @@ follow it. None of these whole-operation rows is marked complete.
 | Select, consume, fold or unfold ownership; pay for explicitly selected pieces/body | `ResourceContext::{satisfies_fact,without_fact_incrementally_impl,consume_unit_owned_memory}`, `ExecutionProofCore` fold construction | `kernel/loans/tests.rs`: `call_fragment_composition_stops_at_a_fixed_gap`; `kernel/proof/execution/tests.rs`: `constructing_an_instance_fold_pays_for_its_body_once`; source fold/unfold controls | R1 reachability gap for other quantities; R2 source candidates for ownership validity, alias/root discovery and overlap. |
 | Observe separation or resource facts; pay for selected operands/evidence | `surface/proof/proof_object/splits_and_scopes.rs`, `kernel/proof/facts.rs`, `kernel/assumptions/memory_reasoning.rs` | source `observing_one_owner_ignores_unused_parameters`; transport footprint tests, including `two_footprints_do_not_expand_into_a_cartesian_product` | F2: composition/member bucket growth remains a coverage gap; frontier opening no longer reconstructs a composition-only context. |
 | Check a write against loans; pay for selected conflict/evidence, not all loans or aliases | `LoanLedger::permits_memory_access_with_assumptions`, called by memory-access checking | `kernel/loans/tests.rs`: `write_barrier_does_not_enumerate_overlapping_loans`, `writes_without_active_memory_loans_do_not_walk_pointer_aliases` | L1: aliases with active loans and symbolic-loan comparisons. Zero-loan and concrete-overlap controls do not finish this operation. |
-| Apply a modular call, transfer resources and finish it; pay for selected contract and effects | `kernel/functions.rs`: `execute_verified_function_applications_with_suspension`, `call_kept_ownership`; `kernel/proof/execution.rs` | source `a_call_ignores_unrelated_owned_objects`; `kernel/functions/stable_view_call_tests.rs`: `returning_one_borrowed_owner_does_not_rebuild_its_memory_block` | C1: residual instances, non-argument-direct composites, and number of resource families. E1: execution/publication/completion accounting. |
+| Apply a modular call, transfer resources and finish it; pay for selected contract and effects | `kernel/functions.rs`: `execute_verified_function_applications_with_suspension`, `call_kept_ownership`; `kernel/proof/execution.rs` | source `a_call_ignores_unrelated_owned_objects`; `kernel/functions/stable_view_call_tests.rs`: `returning_one_borrowed_owner_does_not_rebuild_its_memory_block` | C1: resource-family selection and selected-address composite candidates; non-direct member-count preparation is now flat. E1: execution/publication/completion accounting. |
 | Split/join branches and enter/exit loops; pay for explicit arms/interfaces and actual changes | `kernel/api.rs`: `abstract_c_state_for_interface_join_across`; `kernel/loops.rs`; `kernel/proof/execution.rs` | `kernel/loops/contract_exit_join_tests.rs`, `kernel/loops/frame_resource_tests.rs`; branch availability and interface-join controls | J1 coverage gap: fixed-delta joins across growing stable state; loop-head abstraction uses a different policy. Existing growth allowances do not establish ambient independence. |
 | Apply an explicit equality, arithmetic or transport certificate; pay for written nodes/premises | `kernel/proof/{transport_certificate,integer_arithmetic,term_rewrite}.rs` | `kernel/proof/transport_certificate.rs`: history independence, explicit-node linearity, selected resource fields; `kernel/proof/integer_arithmetic/tests.rs`: repeated premise and shared-DAG controls | Coverage gap: map every Surface certificate driver through lowering, premise lookup, application and publication; preserve cold expansion/replay evidence. Do not re-enter discovery during application. |
 | Introduce binders, apply logical rules and publish checked results; pay for explicit proof structure | `ProofObject::apply_intro`, `ProofFacts::freshen_integer_forall_body`, proof execution event recording | selected term-rewrite, fact-key and event-publication controls | Q1 deferred nested-quantifier work; E1 deferred/revalidation candidates. A helper's flat lookup says nothing about repeated whole-body copying. |
@@ -313,14 +313,33 @@ and preservation for its selected retained headers and cells. Automatic
 statement-exit fact restatement is removed; calls publish producer facts at
 their original snapshots rather than searching for extra current-state facts.
 
-Owned composite families still use the legacy framing search; bodies without
-the argument-direct property are opened. Skipping members of one direct family
-does not establish independence from the number of families.
+Experimental removal: `ProofSearch::call_frame` no longer opens retained
+non-argument-direct composite bodies to discover hidden memory ranges. It
+retains ownership unchanged and adds no replacement obligations or bonus facts.
+The argument-direct family selection and lazy selected-address opening remain;
+neither family-count independence nor bounded candidate lookup is established.
 
-Hold the callee contract/effect fixed and grow kept instances, non-direct
-composites, then distinct direct families. Measure call preparation, execution
-and completion together; include memory/condition/witness-dependent bodies and
-refusals. Coordinate with [Scaling](scaling.md), cause 3, without duplicating its
+`call_frame_preparation_must_not_open_unrelated_composites` grows one retained
+family at 4/16/64 members, with a fixed one-cell call effect. It covers a nested
+one-cell wrapper and a load-dependent range body. Preparation work is now
+1 / 1 / 1 in both cases (previously 1,078 / 4,294 / 17,158 and
+1,926 / 7,686 / 30,726 respectively). The regression checks that no opened
+ranges are recorded. Setup, havoc and observation are outside the meter, so
+this is scoped frame-preparation evidence, not a complete call/step bound.
+
+The normal examples and markdown proof corpus both pass without proof repairs
+(104s and 353s). No C, contracts, axioms, obligations or e-graph reasoning changed.
+The population-membership safety test now expects opaque composite wrappers to
+record no hidden private range, retaining its shared-mutation rejection checks.
+Validation: 1,866 normal scaling/affected-module tests pass, plus the one
+directly affected nightly publication-scaling test. The full nightly was not run.
+Direct-family selection and selected-address candidate scans remain separate
+follow-up work; this removal does not establish the whole-call fast bound.
+
+For remaining coverage, hold the callee contract/effect fixed and grow
+distinct direct families and selected-address candidates. Measure call
+preparation, execution and completion together; retain opaque-body and
+refusal coverage. Coordinate with [Scaling](scaling.md), cause 3, without duplicating its
 implementation work or changing its priority here.
 
 ### Statement-exit fact transport — boundary and remaining coverage

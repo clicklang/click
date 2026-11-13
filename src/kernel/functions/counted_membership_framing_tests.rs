@@ -279,13 +279,13 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             )
         };
         let recorded = CallKeptRanges::recorded_on(&after);
-        if wrapper_kind == 2 {
+        if wrapper_kind != 0 {
             assert!(
                 recorded.is_none(),
-                "a field-bearing instance stays opaque until explicitly opened"
+                "nested composites and field-bearing instances stay opaque"
             );
         } else {
-            let recorded = recorded.expect("flat or composite caller custody");
+            let recorded = recorded.expect("flat caller custody");
             assert!(recorded.holds_access(&private, 4, &assumptions));
             assert!(!recorded.holds_access(&shared, 4, &assumptions));
         }

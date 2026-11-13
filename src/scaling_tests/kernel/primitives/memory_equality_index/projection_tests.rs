@@ -231,15 +231,8 @@ fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
                 );
                 let opened = kept.opened_resources_for_test();
                 assert!(
-                    opened
-                        .concrete_write_entries(&alias, 4, &facts)
-                        .unwrap()
-                        .exact()
-                );
-                assert_eq!(
-                    opened.facts().len(),
-                    2,
-                    "ambient authority must not enter the frontier"
+                    opened.is_empty(),
+                    "call framing must not open the retained body"
                 );
                 assert!(!opened.satisfies_fact(&coverage_piece(895_000, 0, 1), &facts));
             })
