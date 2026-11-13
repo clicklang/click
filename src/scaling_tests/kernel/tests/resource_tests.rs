@@ -4810,7 +4810,7 @@ fn symbolic_ownership_query_scales_with_selected_pieces() {
 
 /// Measure the selected exchange separately from the still-unmigrated raw
 /// insertion and the rest of the complete kernel unfold.
-fn instance_unfold_alias_work() -> Vec<[(usize, usize, usize); 3]> {
+fn instance_unfold_alias_work() -> Vec<[(usize, usize, usize, usize); 3]> {
     let mut curves = Vec::new();
     for overlap in [false, true] {
         let samples = [4_u64, 16, 64].map(|size| {
@@ -4866,6 +4866,33 @@ fn instance_unfold_alias_work() -> Vec<[(usize, usize, usize); 3]> {
                 rewrite_resource_instance(&state, &instance, &definition, &assumptions, true)
             });
             assert!(result.is_ok(), "size={size}, overlap={overlap}: {result:?}");
+            let (_, facts) = result.unwrap();
+            // Keep the caller's stated index cold. Measure normal publication
+            // and exact reinsertion too, so removing a producer-side lookup
+            // cannot merely move its ambient work into fact admission.
+            let ((published, repeated), publication_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let publish = |context: PureFactContext| {
+                        facts
+                            .iter()
+                            .cloned()
+                            .fold(context, PureFactContext::assume_proposition)
+                    };
+                    let published = publish(assumptions.clone());
+                    let repeated = publish(published.clone());
+                    (published, repeated)
+                });
+            assert_eq!(published.fact_counts(), repeated.fact_counts());
+            for fact in &facts {
+                assert!(published.contains_assumed_exact(fact));
+                assert!(repeated.contains_assumed_exact(fact));
+            }
+            assert!(
+                state
+                    .resources()
+                    .owned_instance(instance.identity())
+                    .is_some()
+            );
             assert_eq!(
                 state.resources().facts().len(),
                 2,
@@ -4890,10 +4917,15 @@ fn instance_unfold_alias_work() -> Vec<[(usize, usize, usize); 3]> {
                 });
             assert_eq!(result.is_ok(), !overlap);
             assert_eq!(context.facts().len(), 1);
-            (unfold_work, insertion_work, replacement_work)
+            (
+                unfold_work,
+                insertion_work,
+                replacement_work,
+                publication_work,
+            )
         });
         eprintln!(
-            "overlap={overlap}, aliases=[4,16,64], (unfold,raw insertion,replacement)={samples:?}"
+            "overlap={overlap}, aliases=[4,16,64], (unfold,raw insertion,replacement,publication twice)={samples:?}"
         );
         curves.push(samples);
     }
@@ -4901,24 +4933,26 @@ fn instance_unfold_alias_work() -> Vec<[(usize, usize, usize); 3]> {
 }
 
 #[test]
-fn instance_unfold_frame_replacement_ignores_ambient_pointer_aliases() {
+fn instance_unfold_ignores_ambient_pointer_aliases() {
     for samples in instance_unfold_alias_work() {
         assert!(
-            samples.iter().all(|sample| sample.2 <= samples[0].2 + 16),
-            "selected parent/body replacement walks aliases: {samples:?}"
+            samples.iter().all(|sample| {
+                sample.0 <= samples[0].0 + 16
+                    && sample.2 <= samples[0].2 + 16
+                    && sample.3 <= samples[0].3 + 16
+            }),
+            "unfold or fact publication walks aliases: {samples:?}"
         );
     }
 }
 
 #[test]
-#[ignore = "red diagnostic: full unfold publication and raw ownership admission still grow"]
-fn unfolding_one_cell_must_not_search_ambient_pointer_aliases() {
+#[ignore = "red diagnostic: raw ownership admission still grows"]
+fn raw_ownership_admission_must_not_search_ambient_pointer_aliases() {
     for samples in instance_unfold_alias_work() {
         assert!(
-            samples
-                .iter()
-                .all(|sample| sample.0 <= samples[0].0 + 64 && sample.1 <= samples[0].1 + 32),
-            "remaining full-unfold/raw-admission work: {samples:?}"
+            samples.iter().all(|sample| sample.1 <= samples[0].1 + 32),
+            "remaining raw-admission work: {samples:?}"
         );
     }
 }

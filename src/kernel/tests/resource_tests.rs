@@ -3932,11 +3932,16 @@ fn matched_resource_integer_binding_is_checked_and_substituted() {
         selected.body_clauses[0].proposition
     );
     assert!(
-        !repeated
+        repeated
             .semantic_facts
             .contains(&selected.body_clauses[0].proposition),
-        "the semantic delta must omit an existing clause without losing its record"
+        "unfold returns its justified clause without querying caller membership"
     );
+    let readmitted = already_known
+        .clone()
+        .assume_proposition(selected.body_clauses[0].proposition.clone());
+    assert_eq!(already_known.fact_counts(), readmitted.fact_counts());
+    assert!(readmitted.contains_assumed_exact(&selected.body_clauses[0].proposition));
 
     let mut malformed = definition.clone();
     malformed.matched.as_mut().unwrap().arms[1].binding_variables = vec![None];
