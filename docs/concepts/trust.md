@@ -28,7 +28,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
 | Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 148 theorems, 36 of them kernel standard, in 4,100 lines | `library/` |
-| `extern` contracts | Yes: assumptions | 5 in the library, one per `snprintf` format a program uses, one per Rust core method an import calls, plus any you declare | `library/c/`, `src/languages/c/formatted_output.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
+| Library models: contracts for code Click does not verify | Yes: assumptions | Eight families, each reported by `click verify` ([Library models](#library-models)) | `library/c/`, `src/languages/c/`, `src/languages/cpp/standard_library.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
 Line counts exclude test files and inline `#[cfg(test)]` modules, and are
@@ -97,8 +97,7 @@ Click verifies C as it models it. The following are trusted:
 - Modeled system headers: `src/languages/c/modeled_*.h` declare `memcpy`,
   `memcmp`, `memset`, `strlen`, the allocation functions, and the selected
   pthread and atomic interfaces. They carry no executable semantics; their
-  behavior comes from the library's `extern` contracts and the kernel's
-  allocation model.
+  behavior comes from the [library models](#library-models).
 
 A verified claim says nothing about a different target, compiler flag set, or
 data layout. Click does not discover your compiler flags.
@@ -114,8 +113,8 @@ C++ and Rust code reaches Click through pinned external front ends: a Clang
 `scripts/build-cpp-exporter.sh`) and Charon at the revision recorded in
 `src/languages/rust/charon-profile.json`. Clang's typed source semantics,
 Charon's translation, and Click's translators from their output are trusted.
-C++ system-header functions are axioms checked against Click's catalog
-contracts in `src/languages/cpp/standard_library.rs`. See
+A C++ system-header function or a Rust core method is not translated: a
+call to one is checked against its [library model](#library-models). See
 [Experimental Rust imports](../reference/rust.md).
 
 ## The Click library
@@ -159,45 +158,62 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares seven `axiom`s, which are trusted, not proved: the
-laws of the primitive type `Vec<T>` in `library/rust/vec.click`, which relate
-its bodyless operations `vec::len`, `vec::get`, `vec::push` and `vec::set`
-([Rust vectors](../reference/library/index.md#rust-vectors)). Finite
-sequences of fewer than 2^64 values satisfy them all, so they are consistent.
+The library also declares 20 `axiom`s, which are trusted, not proved: the
+seven laws of the primitive type `Vec<T>` in `library/rust/vec.click`, which
+relate its bodyless operations `vec::len`, `vec::get`, `vec::push` and
+`vec::set` ([Rust vectors](../reference/library/index.md#rust-vectors)), and
+the laws of the Rust iterator models in `library/rust/slice_iter.click` (2)
+and `library/rust/chunks_exact.click` (11). Finite sequences of fewer than
+2^64 values satisfy the `Vec` laws, so they are consistent.
 Only the built-in library modules may declare a primitive `type`, a bodyless
 `function` or an `axiom`; the parser refuses each in any other file. The
 kernel reads each instance of a primitive type as a rigid type, so no
 constructor case, `match` or induction follows from its having no written
 constructors.
 
-The library also declares five `extern` contracts that are assumed, not
-proved: `memcpy`, `memcmp`, `memset` and `strlen` in `library/c/string.click`,
-and the verifier primitive `__click_constant_p_unknown` in
-`library/c/builtins.click`, the value of `__builtin_constant_p`
-([verifier primitives](../reference/language/index.md#verifier-primitives)).
-The C front end also writes one `extern` contract for each `snprintf` format
-a program uses, from the format string, and it is assumed the same way
-([formatted output](../reference/language/c.md#formatted-output)).
-The Rust importer writes one `extern` contract for each Rust core integer
-method an import calls, `u32::min` or `i8::wrapping_add`, stating its result
-with the library function of the same path in `library/rust/`
-([core library methods](../reference/rust.md#core-library-methods)). The
-contract is assumed: it trusts that the library function is the method Rust
-runs. The functions themselves are ordinary Click definitions, and
-`mdtests/stdlib_every_symbol.md` checks each at the edge of its type.
-It writes one for each `Vec` method an import calls, `Vec::push<u32>`,
-stating the call with the library's `vec` operations
-([Vec values](../reference/rust.md#vec-values)): these are assumed too,
-including that pushing past `u64::MAX` elements, the model's bound, cannot
-happen before Rust's own allocation limit aborts.
+## Library models
+
+A library model is the contract Click assumes for code it does not verify:
+a C library function, the allocator, a C++ standard function, a Rust core
+method, the thread runtime, or a function you declare `extern`. Every call
+is checked against the model; that the real code meets it is assumed, not
+proved. Each family is an assumption in the same sense:
+
+| Family | Reported as | What is assumed | Where it is stated |
+| --- | --- | --- | --- |
+| Your `extern` contracts | `extern` | Each `extern` block a sidecar declares | Your sidecars |
+| C library | `C library` | `memcpy`, `memcmp`, `memset` and `strlen` meet their contracts | `library/c/string.click` |
+| Allocator | `allocator` | `malloc`, `calloc`, `realloc` and `free` behave as the kernel's allocation model: a fresh block or null, released once | Built into the C front end and the kernel (`allocation` resource) |
+| Formatted output | `snprintf` | One contract per `snprintf` format a program uses, written from the format ([formatted output](../reference/language/c.md#formatted-output)) | `src/languages/c/formatted_output.rs` |
+| C++ standard library | `C++ std` | The catalog contract of each `std::span`, `std::array` and `std::as_writable_bytes` function an import calls | `src/languages/cpp/standard_library.rs` |
+| Rust core library | `Rust core` | The contract of each core method an import calls: integer methods (`u32::min`), `Vec`, slice, slice-iterator and `chunks_exact` operations, and `Option`/`Result` unwrapping ([core library methods](../reference/rust.md#core-library-methods)), with the 20 `axiom`s above | `src/languages/rust/standard_library.rs`, `library/rust/` |
+| Verifier primitive | `primitive` | `__click_constant_p_unknown`, the value of `__builtin_constant_p`, is 0 or 1 ([verifier primitives](../reference/language/index.md#verifier-primitives)): it stands for a compiler decision, not a library function | `library/c/builtins.click` |
+| Thread runtime | `runtime` | The selected `modeled-pthread` specification: create/join, shared mutex calls and one-shot atomic publication obey it | `src/languages/c/thread_runtime.rs` |
+
+A Rust core contract states the method's result with the library function
+of the same path in `library/rust/`, `click::rust::u32::min`, and so trusts
+that the library function is the method Rust runs; the functions themselves
+are ordinary Click definitions, and `mdtests/stdlib_every_symbol.md` checks
+each at the edge of its type. The `Vec` contracts also assume that pushing
+past `u64::MAX` elements, the model's bound, cannot happen before Rust's own
+allocation limit aborts.
+
+`click verify` reports every model a verification relied on in one place: an
+`assumptions:` line for each verified function, its models grouped by the
+tags above, after one `assumptions: every function -> runtime: ...` line when
+the sidecar selects a thread runtime
+([`click verify`](../reference/cli/verify.md#output-and-exit-behavior)).
+The gate checks that this table names every family the report can print and
+every `extern` the library declares.
 
 ## Your assumptions
 
 Some trust comes from the sidecar itself:
 
 - An `extern` contract describes a function Click does not verify. Its
-  requirements and guarantees are trusted. `click verify` prints an
-  `external assumptions:` line for each verified function that depends on one.
+  requirements and guarantees are trusted, as every
+  [library model](#library-models) is, and `click verify` reports it with
+  them.
 - A `diverges` contract drops the claim that the function returns, so the
   result is partial correctness.
 - Requirements are assumptions about callers. A claim about a function says
@@ -213,7 +229,7 @@ Some trust comes from the sidecar itself:
 and verify the result through the ordinary entry point. This catches bugs in
 smart search, extraction, and rendering. It does not catch bugs in the kernel,
 obligation construction, the C front end, the target model, importers, or
-`extern` contracts, because the same code checks the expanded proof.
+library models, because the same code checks the expanded proof.
 
 Click does not serialize proof objects, and there is no independent checker
 that re-checks a proof outside Click.

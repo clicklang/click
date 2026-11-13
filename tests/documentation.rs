@@ -1142,6 +1142,37 @@ fn every_standard_library_symbol_has_a_verified_use() {
     }
 }
 
+/// `docs/concepts/trust.md` lists every library model family the
+/// `click verify` assumption report prints, the thread runtime included, and
+/// names every `extern` model the C library declares.
+#[test]
+fn every_library_model_family_is_a_listed_assumption() {
+    let trust = fs::read_to_string(root().join("docs/concepts/trust.md")).expect("read trust");
+    let models = trust
+        .split_once("\n## Library models\n")
+        .and_then(|(_, rest)| rest.split("\n## ").next())
+        .expect("trust.md has a Library models section");
+    let tags = click::surface::ModelFamily::ALL
+        .map(click::surface::ModelFamily::label)
+        .into_iter()
+        .chain(["runtime"]);
+    for tag in tags {
+        assert!(
+            models.contains(&format!("| `{tag}` |")),
+            "library model family `{tag}` is not listed in trust.md's Library models"
+        );
+    }
+    for id in inventory_ids("library.extern.")
+        .into_iter()
+        .chain(inventory_ids("primitive.extern."))
+    {
+        assert!(
+            models.contains(&format!("`{id}`")),
+            "library model `{id}` is not listed in trust.md's Library models"
+        );
+    }
+}
+
 #[test]
 fn tactic_inventory_matches_canonical_surface_names() {
     let source = fs::read_to_string(root().join("src/surface/validation/type_validation.rs"))

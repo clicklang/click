@@ -331,6 +331,12 @@ pub(in crate::surface) struct LibrarySelection {
 }
 
 impl LibrarySelection {
+    /// The library's function blocks, which lead
+    /// [`combined_external_function_blocks`].
+    pub(in crate::surface) fn function_blocks(&'static self) -> &'static [FunctionBlock] {
+        self.file.function_blocks()
+    }
+
     pub(in crate::surface) fn theorem_definitions(&'static self) -> &'static [TheoremDefinition] {
         self.file.theorem_definitions()
     }

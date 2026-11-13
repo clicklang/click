@@ -373,7 +373,7 @@ $ click import lock label.click
 
 ```console
 $ click verify label.click
-external assumptions: label_measure -> strlen
+assumptions: label_measure -> C library: strlen
 2 selected proofs verified
 ```
 
@@ -404,8 +404,8 @@ parameter `let n: uint64;`, and returns its length `n`. The caller must hold
 the string: `label_measure` declares its own `let n: uint64;`, views
 `cstr_at(src, n)` itself and names the length `n`, which the C signature does
 not carry, so its postcondition can compare the result with it.
-`external assumptions` lists every contract the result depends on but did
-not check: here, Click's `strlen` contract.
+`assumptions` lists every contract the result depends on but did not check,
+by family: here, Click's `strlen` contract.
 
 ### Calls into other project functions
 
@@ -420,7 +420,7 @@ A function whose body is outside the program you verify, such as one from
 another library, gets an `extern` contract instead: an `extern` block states
 its contract without a body. Callers must establish its `requires`, Click
 assumes its `ensures` without checking any implementation, and `click verify`
-lists it among the external assumptions. See
+lists it among the `extern` assumptions. See
 [External function contracts](../reference/language/c.md#external-function-contracts).
 
 ## What to do when Click refuses a construct
@@ -558,6 +558,6 @@ names common gaps. Then:
 - Libc calls use Click's modeled headers and contracts; calls between project
   functions use the callee's verified contract; a function outside the
   program gets an `extern` contract. `click verify` reports the unchecked
-  contracts as external assumptions.
+  contracts as assumptions.
 - Read a failure by its step: a refused source or operation is a coverage
   question; an unclosed goal or missing prerequisite is a proof question.

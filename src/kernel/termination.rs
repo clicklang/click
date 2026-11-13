@@ -1619,6 +1619,14 @@ fn statement_calls(statement: &CStatement, calls: &mut BTreeSet<String>) {
     statement_calls_visiting(statement, calls, &mut |_| true);
 }
 
+/// The functions `function`'s body calls by name: the call graph of a body a
+/// typed frontend lowered itself, which has no C syntax to read calls from.
+pub fn c_function_callees(function: &CFunction) -> BTreeSet<String> {
+    let mut calls = BTreeSet::new();
+    statement_calls(&function.source_body, &mut calls);
+    calls
+}
+
 /// Identity memoization visits a shared summary body once even when distinct
 /// checked theorems apply it at different snapshots. The evidence keeps every
 /// node alive for the traversal; no deep structural key is constructed.

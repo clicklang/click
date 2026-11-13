@@ -87,6 +87,7 @@ pub(super) fn prepare(
         functions,
         layouts,
         library_contracts,
+        library_models: BTreeSet::new(),
         record_spellings,
     })
 }

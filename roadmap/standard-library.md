@@ -35,8 +35,9 @@ Open:
   over a format and `src/surface/tests/width_uniformity.rs` guards width
   uniformity ([One machine-integer design](#one-machine-integer-design)).
 - One convention for the language library models: where the C library,
-  allocator, `snprintf`, C++ catalog and Rust core contracts are stated and
-  how they are reported ([Layers](#layers)).
+  allocator, `snprintf`, C++ catalog and Rust core contracts are stated
+  ([Layers](#layers)). Their reporting is done (2026-11-13): one
+  `assumptions:` report and the trust-listing gate test.
 - The fact-dependent integer lowerings
   ([below](#fact-dependent-integer-lowerings)).
 - The follow-ups from the Integer-default flip
@@ -325,12 +326,43 @@ Each step is a separate PR that leaves every example verifying:
   meaning, and keep them available without an import. Whether they remain
   written in Click syntax is an implementation choice. Either way, the
   library reference should no longer present them as library content.
-- **Language library models.** These are the C library (`string.h` and the
-  allocator family) and the C++ std catalog. Use one convention for where
-  their contracts are stated and how they are reported as external
-  assumptions, whether they are written in Click like the `string.h`
-  externs or generated like the C++ catalog. Every model is listed in
-  [trust](../docs/concepts/trust.md) and has a checked use.
+- **Language library models.** These are the contracts Click assumes for
+  code it does not verify: the C library (`string.h`), the allocator family,
+  `snprintf` formats, the C++ std catalog, Rust core methods and the
+  pthread runtime. Every model is listed in
+  [trust](../docs/concepts/trust.md#library-models) and has a checked use.
+  Accepted design (maintainer, 2026-11-13):
+  - **Reporting (done, 2026-11-13).** `click verify` reports every model a
+    verification relied on in one `assumptions:` report, per verified
+    function and tagged by family (`extern`, `C library`, `allocator`,
+    `snprintf`, `C++ std`, `Rust core`, `primitive`, plus one `runtime`
+    line per verification), built from the call closure targeted
+    verification already computes. A gate test
+    (`every_library_model_family_is_a_listed_assumption` in
+    `tests/documentation.rs`) checks that trust lists every family and
+    every library `extern`; `every_standard_library_symbol_has_a_verified_use`
+    already checks each library `extern` and `axiom` has a use.
+  - **Contracts are Click text in `library/<lang>/` (open).** Each model is
+    stated in Click under `library/c/`, `library/cpp/` or `library/rust/`
+    and attached by use through one per-language name table, as
+    `library_contract_module_named` attaches `library/c/string.click` today.
+    A contract is generated only where it depends on the program: the
+    `snprintf` contract of each format.
+  - **C++ catalog (open).** The catalog templates in
+    `src/languages/cpp/standard_library.rs` move to `library/cpp/` through
+    the existing C++ sidecar generic-template expansion
+    (`src/surface/parser/cpp_generic_templates.rs`), which first needs
+    non-type template parameters for a static extent `N`
+    (`std::span<T, N>`, `std::array<T, N>`).
+  - **Rust core (open).** The `Vec`, slice, iterator and `Option`/`Result`
+    builders in `src/languages/rust/standard_library.rs` move to
+    `library/rust/` through `rust_generic_functions.rs`.
+  - **Allocator (open).** `malloc`, `calloc`, `realloc` and `free` become
+    `extern` contracts over the `allocation` primitive in
+    `library/c/stdlib.click`, if the kernel's allocation model is
+    expressible there; otherwise they stay built in and documented as such.
+  - **pthread runtime.** It stays a runtime selected by the sidecar, with
+    its trusted specification, but is reported in the same list.
 - **Specification library.** These are the checked types, pure functions,
   predicates and theorems. Split them into modules (for example `nat`,
   `list`, `integer`, `bytes`, `cstr`, `permutation`) using the module
@@ -660,7 +692,8 @@ an unsigned-only law at a signed one, where each is false.
   Every declaration is in exactly one layer, and primitives are documented
   in the language reference.
 - C library and C++ catalog models follow one documented convention and
-  are listed in [trust](../docs/concepts/trust.md).
+  are listed in [trust](../docs/concepts/trust.md). Listing and one report
+  are done (2026-11-13); the convention for where they are stated is open.
 - The library is split into `library/` modules. `Nat`, `List` and the
   primitives are implicit; every other specification module is imported with
   `import click::...;`, so a sidecar's imports show which modules it uses.

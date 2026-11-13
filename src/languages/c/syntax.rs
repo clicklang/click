@@ -2741,7 +2741,7 @@ fn integer_type_bits(c_type: C0Type) -> Option<u32> {
 
 /// The standard-library function a `__builtin_constant_p` call lowers to.
 /// Its contract leaves the result an unknown 0 or 1.
-const CONSTANT_P_UNKNOWN: &str = "__click_constant_p_unknown";
+pub(crate) const CONSTANT_P_UNKNOWN: &str = "__click_constant_p_unknown";
 
 /// C's null pointer constant: the integer constant `0`, or that constant
 /// cast to `void *`.

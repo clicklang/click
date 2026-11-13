@@ -23,6 +23,7 @@ fn linking_work_scales_with_the_functions_each_source_holds() {
             functions,
             layouts: Default::default(),
             library_contracts: String::new(),
+            library_models: Default::default(),
             record_spellings: Default::default(),
         };
         // The second source repeats every declaration of the first and adds

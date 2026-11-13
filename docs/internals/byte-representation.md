@@ -38,7 +38,7 @@ lends its ranges (`mdtests/byte_representation_overlapping_copy_rejected.md`).
 
 The contract is a trusted specification of the client's view of `memcpy`,
 not a proof of libc. Every sidecar that calls it reports
-`external assumptions: <caller> -> memcpy`. The standard library is part of
+`assumptions: <caller> -> C library: memcpy`. The standard library is part of
 the verifier executable, so it is part of the executable identity that
 incremental baselines compare (see [Testing](testing.md)).
 

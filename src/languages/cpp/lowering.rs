@@ -164,8 +164,9 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let library_contracts = super::standard_library::contracts(import.export(), &names)?;
-    let execution = std::sync::Arc::new(super::interface::prepare(
+    let (library_contracts, library_models) =
+        super::standard_library::contracts(import.export(), &names)?;
+    let mut execution = super::interface::prepare(
         import,
         &functions,
         &reachable_functions,
@@ -174,9 +175,10 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         &polymorphism.coercions.into_inner(),
         &polymorphism.dispatches.into_inner(),
         &polymorphism.receiver_calls.into_inner(),
-    )?);
+    )?;
+    execution.library_models = library_models;
     Ok(LoweredCppFunction {
-        execution,
+        execution: std::sync::Arc::new(execution),
         names,
         source: import.clone(),
         functions,

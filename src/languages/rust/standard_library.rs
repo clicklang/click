@@ -3,6 +3,7 @@
 //! of the same path, `ensures result == click::rust::u32::min(a, b);`. They
 //! are assumptions, as an `extern fn` contract is.
 use super::schema::{RustExport, Type};
+use std::collections::BTreeSet;
 
 /// The `core_method` of `<[T]>::swap`, whose contract states its effect on
 /// the slice rather than a result.
@@ -592,80 +593,80 @@ fn chunks_exact_contract(function: &super::schema::Function, operation: &str) ->
     format!("\n{body}\n")
 }
 
-pub(super) fn contracts(export: &RustExport) -> String {
+/// The `extern fn` contracts of the core methods `export` calls, with the
+/// name of each function they declare.
+pub(super) fn contracts(export: &RustExport) -> (String, BTreeSet<String>) {
     let mut source = String::new();
+    let mut models = BTreeSet::new();
     for function in &export.functions {
         let Some(specification) = &function.core_method else {
             continue;
         };
-        if let Some(method) = specification.strip_prefix(VEC) {
-            source.push_str(&vec_contract(function, method));
-            continue;
+        if let Some(contract) = core_method_contract(function, specification) {
+            source.push_str(&contract);
+            models.insert(function.name.clone());
         }
-        if specification == SLICE_SWAP {
-            source.push_str(&slice_swap_contract(function));
-            continue;
-        }
-        if let Some(operation) = specification.strip_prefix(SLICE_VALUE) {
-            if let Some(contract) = byte_slice_contract(function, operation) {
-                source.push_str(&contract);
-            }
-            continue;
-        }
-        if let Some(operation) = specification.strip_prefix(CHUNKS_EXACT) {
-            source.push_str(&chunks_exact_contract(function, operation));
-            continue;
-        }
-        if let Some(operation) = specification.strip_prefix(SLICE_ITER) {
-            if let Some(contract) = slice_iter_contract(function, operation) {
-                source.push_str(&contract);
-            }
-            continue;
-        }
-        if specification == OPTION_UNWRAP {
-            source.push_str(&option_unwrap_contract(function));
-            continue;
-        }
-        if specification == RESULT_UNWRAP {
-            source.push_str(&result_unwrap_contract(function));
-            continue;
-        }
-        if specification == RESULT_UNWRAP_OR {
-            source.push_str(&result_unwrap_or_contract(function));
-            continue;
-        }
-        // An `Option` is of the type of the method's scalar parameter:
-        // `checked_add`'s operands, `unwrap_or`'s default.
-        let payload = function
-            .parameters
-            .iter()
-            .find_map(|parameter| parameter.value_type.scalar_name())
-            .expect("a core method takes a scalar");
-        let spell = |ty: &Type| -> String {
-            match ty.scalar_name() {
-                Some(name) => name.into(),
-                None => format!("Option<{payload}>"),
-            }
-        };
-        let parameters = function
-            .parameters
-            .iter()
-            .map(|parameter| format!("{}: {}", parameter.name, spell(&parameter.value_type)))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let arguments = function
-            .parameters
-            .iter()
-            .map(|parameter| parameter.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        source.push_str(&format!(
-            "\nextern fn {}({parameters}) -> {} {{\n    ensures result == {specification}({arguments});\n}}\n",
-            function.name,
-            spell(&function.return_type),
-        ));
     }
-    source
+    (source, models)
+}
+
+/// The contract of the core method `function`, whose specification path
+/// is `specification`, if Click states one.
+fn core_method_contract(function: &super::schema::Function, specification: &str) -> Option<String> {
+    if let Some(method) = specification.strip_prefix(VEC) {
+        return Some(vec_contract(function, method));
+    }
+    if specification == SLICE_SWAP {
+        return Some(slice_swap_contract(function));
+    }
+    if let Some(operation) = specification.strip_prefix(SLICE_VALUE) {
+        return byte_slice_contract(function, operation);
+    }
+    if let Some(operation) = specification.strip_prefix(CHUNKS_EXACT) {
+        return Some(chunks_exact_contract(function, operation));
+    }
+    if let Some(operation) = specification.strip_prefix(SLICE_ITER) {
+        return slice_iter_contract(function, operation);
+    }
+    if specification == OPTION_UNWRAP {
+        return Some(option_unwrap_contract(function));
+    }
+    if specification == RESULT_UNWRAP {
+        return Some(result_unwrap_contract(function));
+    }
+    if specification == RESULT_UNWRAP_OR {
+        return Some(result_unwrap_or_contract(function));
+    }
+    // An `Option` is of the type of the method's scalar parameter:
+    // `checked_add`'s operands, `unwrap_or`'s default.
+    let payload = function
+        .parameters
+        .iter()
+        .find_map(|parameter| parameter.value_type.scalar_name())
+        .expect("a core method takes a scalar");
+    let spell = |ty: &Type| -> String {
+        match ty.scalar_name() {
+            Some(name) => name.into(),
+            None => format!("Option<{payload}>"),
+        }
+    };
+    let parameters = function
+        .parameters
+        .iter()
+        .map(|parameter| format!("{}: {}", parameter.name, spell(&parameter.value_type)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let arguments = function
+        .parameters
+        .iter()
+        .map(|parameter| parameter.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!(
+        "\nextern fn {}({parameters}) -> {} {{\n    ensures result == {specification}({arguments});\n}}\n",
+        function.name,
+        spell(&function.return_type),
+    ))
 }
 
 #[cfg(test)]
@@ -765,7 +766,7 @@ mod tests {
             }],
         };
         assert_eq!(
-            contracts(&export),
+            contracts(&export).0,
             "\nextern fn __rust_q_I3_u32_I11_checked_add(a: u32, b: u32) -> Option<u32> {\n    \
              ensures result == click::rust::u32::checked_add(a, b);\n}\n"
         );
