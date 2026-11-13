@@ -73,7 +73,8 @@ fn pointee_const_return_inline_call_preserves_pointer_identity() {
     let CStatementOutcome::Normal(state) = &paths[0].outcome else {
         panic!("inline call must return")
     };
-    let result = state.locals.get("temporary").unwrap();
+    let local_native_output_76 = state.locals.get_native("temporary");
+    let result = local_native_output_76.as_deref().unwrap();
     assert!(matches!(result, CValue::Pointer(pointer) if pointer.pointee_constant()));
     let equality =
         c_value_comparison_proposition(result, CComparisonOperator::Equal, &value).unwrap();
@@ -208,8 +209,8 @@ fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifier
                 );
                 if result.is_ok() {
                     assert!(
-                        matches!(state.locals.binding("text"), Some(CLocalBinding::Object { value: CValue::Pointer(pointer), pointee_constant, .. })
-                            if *pointee_constant == destination_const && pointer.pointee_constant() == destination_const)
+                        matches!(state.locals.binding("text"), Some(CLocalBinding::Object { value, pointee_constant, .. })
+                            if *pointee_constant == destination_const && value.pointer().is_some_and(|pointer| pointer.pointee_constant() == destination_const))
                     );
                 }
             }
@@ -306,7 +307,7 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
         .unwrap();
         if signature == qualified && !mutable_destination {
             assert!(matches!(&paths[0].outcome, CStatementOutcome::Normal(state)
-                    if matches!(state.locals.binding("temporary"), Some(CLocalBinding::Object { value: CValue::Pointer(pointer), pointee_constant: true, .. }) if pointer.pointee_constant())));
+                    if matches!(state.locals.binding("temporary"), Some(CLocalBinding::Object { value, pointee_constant: true, .. }) if value.pointer().is_some_and(|pointer| pointer.pointee_constant()))));
         } else {
             assert!(matches!(
                 &paths[0].outcome,

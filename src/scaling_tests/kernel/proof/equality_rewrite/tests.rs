@@ -1251,3 +1251,79 @@ fn retained_pointer_index_rewrite_scales_with_distinct_nodes() {
     assert!(costs[1] <= costs[0] * 5 + 100, "{costs:?}");
     assert!(costs[2] <= costs[1] * 5 + 100, "{costs:?}");
 }
+
+/// A reverse-direction rewrite used to rebuild every selected premise before
+/// checking the explicitly available opposite orientation. Neither orientation,
+/// including one selected from a conjunction, may reconstruct a fact context.
+#[test]
+fn selected_rewrite_premises_never_rebuild_a_context() {
+    let eq = |a: u64, b: u64| {
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(MachineTerm::Variable(Variable(a))),
+                right: Box::new(MachineTerm::Variable(Variable(b))),
+            },
+            true,
+        )
+    };
+    for n in [4_u64, 16, 64] {
+        let _session = VerificationSession::enter();
+        for conjunction in [false, true] {
+            let mut available = (0..n)
+                .map(|i| eq(100 + 2 * i, 101 + 2 * i))
+                .collect::<Vec<_>>();
+            let premise = eq(1, 2);
+            available.push(if conjunction {
+                Proposition::And(Box::new(premise), Box::new(eq(4, 5)))
+            } else {
+                premise
+            });
+            let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+            for (from, to) in [(1, 2), (2, 1)] {
+                let result =
+                    rewrite_proposition_by_exact_equality(&eq(from, 3), &eq(from, to), &available)
+                        .unwrap();
+                assert_eq!(result, eq(to, 3));
+            }
+            assert!(
+                rewrite_proposition_by_exact_equality(&eq(6, 3), &eq(6, 7), &available).is_err()
+            );
+            assert_eq!(
+                crate::kernel::reasoning::path_facts::context_rebuild_entries() - before,
+                0,
+                "n={n}, conjunction={conjunction}: selected rewrite rebuilt its premise context"
+            );
+        }
+    }
+}
+
+#[test]
+fn selected_rewrite_does_not_discover_a_load_equality_chain() {
+    let _session = VerificationSession::enter();
+    let x = MachineTerm::Variable(Variable(800_001));
+    let y = MachineTerm::Variable(Variable(800_002));
+    let read = MachineTerm::MemoryLoad(
+        intern_c_memory(CMemory::new()),
+        Box::new(Pointer::symbolic(Variable(800_003))),
+        crate::kernel::LoadKind::Int32,
+    );
+    let eq = |a: MachineTerm, b: MachineTerm| {
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(a),
+                right: Box::new(b),
+            },
+            true,
+        )
+    };
+    let premises = [eq(x.clone(), read.clone()), eq(read.clone(), y.clone())];
+    let goal = eq(x.clone(), MachineTerm::constant(9));
+    assert!(rewrite_proposition_by_exact_equality(&goal, &eq(x, y.clone()), &premises).is_err());
+    let first = rewrite_proposition_by_exact_equality(&goal, &premises[0], &premises).unwrap();
+    let second = rewrite_proposition_by_exact_equality(&first, &premises[1], &premises).unwrap();
+    assert_eq!(second, eq(y, MachineTerm::constant(9)));
+}

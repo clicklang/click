@@ -854,7 +854,10 @@ fn full_guarded_requirement_with_variable_argument_round_trips() {
         crate::kernel::proof::proposition_identity_key(&resolve(&requirement)),
         "the variable argument must preserve canonical load identity"
     );
-    assert_eq!(state.locals().get("bytes"), Some(&CValue::Pointer(pointer)));
+    assert_eq!(
+        state.locals().get_native("bytes").as_deref(),
+        Some(&CValue::Pointer(pointer))
+    );
 }
 
 #[test]
@@ -898,7 +901,10 @@ fn full_guarded_constant_byte_requirement_with_variable_argument_round_trips() {
         crate::kernel::proof::proposition_identity_key(&resolve(&requirement)),
         "the variable argument must preserve canonical load identity"
     );
-    assert_eq!(state.locals().get("bytes"), Some(&CValue::Pointer(pointer)));
+    assert_eq!(
+        state.locals().get_native("bytes").as_deref(),
+        Some(&CValue::Pointer(pointer))
+    );
 }
 
 #[test]

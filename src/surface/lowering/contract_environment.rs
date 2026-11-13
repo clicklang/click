@@ -37,7 +37,7 @@ pub(in crate::surface) fn contract_environment_at_state(
         state
             .locals()
             .object_values()
-            .map(|(name, value)| (name.to_string(), value.clone())),
+            .map(|(name, value)| (name.to_string(), value.clone().into_native())),
     );
 
     let mut state_array_refs = array_refs_with_memory(array_refs, state.memory());
@@ -48,7 +48,7 @@ pub(in crate::surface) fn contract_environment_at_state(
     // argument naming that parameter then read two different pointers under
     // one name.
     for (name, value) in state.locals().object_values() {
-        if let CValue::Pointer(pointer) = value
+        if let Some(pointer) = value.pointer()
             && let Some(array_ref) = state_array_refs.get_mut(name)
         {
             array_ref.pointer = pointer.pointer().clone();
@@ -92,12 +92,12 @@ pub(in crate::surface) fn contract_environment_for_names(
         if let Some(value) = state.locals().get(name) {
             // As in `contract_environment_at_state`, a parameter's array
             // reference follows the variable's current pointer.
-            if let CValue::Pointer(pointer) = value
+            if let Some(pointer) = value.pointer()
                 && let Some(array_ref) = array_refs.get_mut(name)
             {
                 array_ref.pointer = pointer.pointer().clone();
             }
-            values.insert(name.clone(), value.clone());
+            values.insert(name.clone(), value.clone().into_native());
         } else if let Some((value, element_type)) = state.locals().array_object_value(name) {
             let CValue::Pointer(pointer) = &value else {
                 unreachable!("local array values are pointers")

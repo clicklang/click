@@ -3126,13 +3126,69 @@ pub(in crate::kernel) fn read_c_lvalue_expression_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CExpressionPath>> {
+    Ok(
+        read_retained_lvalue_expression_paths(state, expression, assumptions, budget)?
+            .into_iter()
+            .map(ExecutionValuePath::into_native)
+            .collect(),
+    )
+}
+
+pub(in crate::kernel) fn read_c_lvalue_paths(
+    state: &CState,
+    outcome: CLValueOutcome,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    source: Option<&LoadSourceId>,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CExpressionPath>> {
+    Ok(read_retained_lvalue_paths(
+        state,
+        outcome,
+        facts,
+        obligations,
+        source,
+        assumptions,
+        budget,
+    )?
+    .into_iter()
+    .map(ExecutionValuePath::into_native)
+    .collect())
+}
+
+fn retained_value_accepted(ty: CType, value: &ExecutionValue) -> bool {
+    if value.shared().is_some()
+        && matches!(
+            value.c_type(),
+            CType::Int8
+                | CType::Int16
+                | CType::Int32
+                | CType::Int64
+                | CType::UInt8
+                | CType::UInt16
+                | CType::UInt32
+                | CType::UInt64
+        )
+    {
+        return value.c_type() == ty;
+    }
+    ty.accepts(&value.native())
+}
+
+pub(in crate::kernel) fn read_retained_lvalue_expression_paths(
+    state: &CState,
+    expression: &CExpression,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<ExecutionValuePath>> {
     let source = match expression {
         CExpression::TypedLoad { source, .. } => source.as_ref(),
         _ => None,
     };
     let mut paths = Vec::new();
     for lvalue_path in evaluate_c_lvalue_paths(state, expression, assumptions, budget)? {
-        paths.extend(read_c_lvalue_paths(
+        paths.extend(read_retained_lvalue_paths(
             state,
             lvalue_path.outcome,
             lvalue_path.facts,
@@ -3157,7 +3213,7 @@ pub(in crate::kernel) fn read_c_lvalue_expression_paths(
 /// is filed at those two points, once where the value is produced, and no
 /// operator that later widens the value restates it. A range the context
 /// already holds exactly is not refiled.
-pub(in crate::kernel) fn read_c_lvalue_paths(
+pub(in crate::kernel) fn read_retained_lvalue_paths(
     state: &CState,
     outcome: CLValueOutcome,
     facts: ExecutionFacts,
@@ -3165,7 +3221,7 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
     source: Option<&LoadSourceId>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExecutionValuePath>> {
     let mut access_state = None;
     if let CLValueOutcome::LValue(lvalue) = &outcome {
         if let Some(reference) = &lvalue.local_reference {
@@ -3187,7 +3243,7 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
                     access_state = Some(state.clone().with_resource_context(resources))
                 }
                 Err(error) => {
-                    return Ok(vec![CExpressionPath {
+                    return Ok(vec![ExecutionValuePath {
                         outcome: CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(
                             Box::new(
                                 error.diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
@@ -3218,7 +3274,7 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
                     )
                     .is_none()
             {
-                return Ok(vec![CExpressionPath {
+                return Ok(vec![ExecutionValuePath {
                     outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
                         resource: Box::new(CResourceFact::own_memory(
                             CMemoryRange::new_with_element_width(
@@ -3235,7 +3291,7 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
             }
         }
     }
-    let mut paths = read_c_lvalue_paths_without_ranges(
+    let mut paths = read_retained_lvalue_paths_without_ranges(
         access_state.as_ref().unwrap_or(state),
         outcome,
         facts,
@@ -3248,12 +3304,22 @@ pub(in crate::kernel) fn read_c_lvalue_paths(
         let CExpressionOutcome::Value(value) = &path.outcome else {
             continue;
         };
-        add_narrow_integer_range_execution_pure_facts(&mut path.facts, assumptions, value);
+        add_retained_local_range_facts(&mut path.facts, assumptions, value);
     }
     Ok(paths)
 }
 
-fn read_c_lvalue_paths_without_ranges(
+fn add_retained_local_range_facts(
+    facts: &mut ExecutionFacts,
+    assumptions: &PureFactContext,
+    value: &ExecutionValue,
+) {
+    if let Some(native) = value.native_payload() {
+        return add_narrow_integer_range_execution_pure_facts(facts, assumptions, native);
+    }
+}
+
+fn read_retained_lvalue_paths_without_ranges(
     state: &CState,
     outcome: CLValueOutcome,
     facts: ExecutionFacts,
@@ -3261,7 +3327,7 @@ fn read_c_lvalue_paths_without_ranges(
     source: Option<&LoadSourceId>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExecutionValuePath>> {
     // A scalar declared without a value whose storage a callee's checked
     // postcondition states `defined` is read from that storage: the call
     // wrote it through its address, which the name's binding never sees.
@@ -3278,7 +3344,7 @@ fn read_c_lvalue_paths_without_ranges(
     {
         let memory =
             CLValue::memory_with_qualifiers(slot.clone(), *c_type, *volatile, *pointee_volatile);
-        return read_c_lvalue_paths_without_ranges(
+        return read_retained_lvalue_paths_without_ranges(
             state,
             CLValueOutcome::LValue(memory),
             facts,
@@ -3301,7 +3367,7 @@ fn read_c_lvalue_paths_without_ranges(
                         assumptions,
                     )
                 {
-                    return Ok(vec![CExpressionPath {
+                    return Ok(vec![ExecutionValuePath {
                         outcome: CExpressionOutcome::UndefinedBehavior(refusal),
                         facts,
                         obligations,
@@ -3321,7 +3387,7 @@ fn read_c_lvalue_paths_without_ranges(
                         &local_assumptions,
                     )
                 {
-                    return Ok(vec![CExpressionPath {
+                    return Ok(vec![ExecutionValuePath {
                         outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
                             resource: Box::new(CResourceFact::view_memory(
                                 CMemoryRange::new_with_element_width(
@@ -3354,7 +3420,7 @@ fn read_c_lvalue_paths_without_ranges(
                         assumptions,
                     )
                 {
-                    return Ok(vec![CExpressionPath {
+                    return Ok(vec![ExecutionValuePath {
                         outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
                             resource: Box::new(CResourceFact::view_memory(
                                 CMemoryRange::new_with_element_width(
@@ -3370,18 +3436,28 @@ fn read_c_lvalue_paths_without_ranges(
                     }]);
                 }
                 let outcome = match state.locals.get(name) {
-                    Some(value) if lvalue.value_type.accepts(value) => CExpressionOutcome::Value(
-                        match value {
-                            // A specification names the local's stored value;
-                            // facts justify equalities, not a different domain.
-                            CValue::Pointer(pointer) if !SpecificationReadScope::is_active() => {
-                                CValue::Pointer(local_assumptions.pointer_value_at_entry(pointer))
-                            }
-                            _ => value.clone(),
-                        }
-                        .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
-                        .with_pointer_pointee_constant(lvalue.pointee_is_constant()),
-                    ),
+                    Some(value) if retained_value_accepted(lvalue.value_type, value) => {
+                        let value = if value.shared().is_some() && !value.c_type().is_pointer() {
+                            value.clone().into_value()
+                        } else {
+                            let native = value.native();
+                            let native = match native.as_ref() {
+                                CValue::Pointer(pointer)
+                                    if !SpecificationReadScope::is_active() =>
+                                {
+                                    CValue::Pointer(
+                                        local_assumptions.pointer_value_at_entry(pointer),
+                                    )
+                                }
+                                value => value.clone(),
+                            };
+                            native
+                                .with_pointer_pointee_volatile(lvalue.pointee_is_volatile())
+                                .with_pointer_pointee_constant(lvalue.pointee_is_constant())
+                                .into()
+                        };
+                        CExpressionOutcome::Value(value)
+                    }
                     Some(_) => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                     None if matches!(
                         state.locals.binding(name),
@@ -3405,10 +3481,10 @@ fn read_c_lvalue_paths_without_ranges(
                         false,
                         pointer,
                         lvalue.value_type,
-                        value.clone(),
+                        value.clone().into_native(),
                     )?);
                 }
-                vec![CExpressionPath {
+                vec![ExecutionValuePath {
                     outcome,
                     facts,
                     obligations,
@@ -3422,7 +3498,7 @@ fn read_c_lvalue_paths_without_ranges(
                     .values()
                     .any(|pending| pending.old_pointer.block == pointer.block)
                 {
-                    return Ok(vec![CExpressionPath {
+                    return Ok(vec![ExecutionValuePath {
                         outcome: CExpressionOutcome::RuntimeError(
                             CRuntimeError::UnresolvedAllocationOutcome,
                         ),
@@ -3431,7 +3507,7 @@ fn read_c_lvalue_paths_without_ranges(
                     }]);
                 }
                 if state.memory.is_ended_local_address(pointer) {
-                    return Ok(vec![CExpressionPath {
+                    return Ok(vec![ExecutionValuePath {
                         outcome: CExpressionOutcome::UndefinedBehavior(
                             CUndefinedBehavior::InvalidMemory,
                         ),
@@ -3443,7 +3519,7 @@ fn read_c_lvalue_paths_without_ranges(
                     .memory
                     .is_deallocated_heap_address(pointer, assumptions)
                 {
-                    return Ok(vec![CExpressionPath {
+                    return Ok(vec![ExecutionValuePath {
                         outcome: CExpressionOutcome::UndefinedBehavior(
                             CUndefinedBehavior::InvalidMemory,
                         ),
@@ -3464,7 +3540,7 @@ fn read_c_lvalue_paths_without_ranges(
                         .then(|| effective_type_refusal(&state.memory, pointer, &lvalue))
                         .flatten()
                 }) {
-                    return Ok(vec![CExpressionPath {
+                    return Ok(vec![ExecutionValuePath {
                         outcome: CExpressionOutcome::UndefinedBehavior(refusal),
                         facts,
                         obligations,
@@ -3498,7 +3574,7 @@ fn read_c_lvalue_paths_without_ranges(
                             )
                         }));
                 if (is_external || require_owned) && !has_read_resource {
-                    return Ok(vec![CExpressionPath {
+                    return Ok(vec![ExecutionValuePath {
                         outcome: CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource {
                             resource: Box::new(CResourceFact::view_memory(
                                 CMemoryRange::new_with_element_width(
@@ -3572,7 +3648,7 @@ fn read_c_lvalue_paths_without_ranges(
                     }
                 }
                 if !lvalue.is_volatile() || SpecificationAccessScope::is_active() {
-                    return Ok(paths);
+                    return Ok(paths.into_iter().map(Into::into).collect());
                 }
                 for path in &mut paths {
                     if let CExpressionOutcome::Value(value) = &path.outcome {
@@ -3586,15 +3662,15 @@ fn read_c_lvalue_paths_without_ranges(
                         )?);
                     }
                 }
-                paths
+                paths.into_iter().map(Into::into).collect()
             }
         },
-        CLValueOutcome::UndefinedBehavior(undefined_behavior) => vec![CExpressionPath {
+        CLValueOutcome::UndefinedBehavior(undefined_behavior) => vec![ExecutionValuePath {
             outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
             facts,
             obligations,
         }],
-        CLValueOutcome::RuntimeError(error) => vec![CExpressionPath {
+        CLValueOutcome::RuntimeError(error) => vec![ExecutionValuePath {
             outcome: CExpressionOutcome::RuntimeError(error),
             facts,
             obligations,

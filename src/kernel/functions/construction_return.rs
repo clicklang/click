@@ -133,9 +133,7 @@ pub(super) fn bind(
         if !parameter.c_type().is_pointer() || parameter.aggregate_layout().is_some() {
             return None;
         }
-        let CValue::Pointer(value) = callee.locals.get(parameter.name())? else {
-            return None;
-        };
+        let value = callee.locals.get(parameter.name())?.pointer()?;
         parameter_destination = caller
             .clone()
             .with_aggregate_return_destination(value.pointer().clone(), layout.clone());

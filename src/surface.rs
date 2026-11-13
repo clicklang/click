@@ -4209,7 +4209,8 @@ impl RecordedSnapshots {
         let state = self
             .get(&SnapshotSelector::ProgramPoint(point))
             .ok_or("`.allocation` names an allocation this proof has not executed yet")?;
-        let Some(CValue::Pointer(result)) = state.locals().get(&local) else {
+        let result_value = state.locals().get_native(&local);
+        let Some(CValue::Pointer(result)) = result_value.as_deref() else {
             return Err("allocation result was not recorded at its exit".to_string());
         };
         state
@@ -4452,7 +4453,8 @@ impl RecordedSnapshots {
             return;
         };
         let result = |state: &CState| {
-            let CValue::Pointer(value) = state.locals().get(local)? else {
+            let native = state.locals().get_native(local)?;
+            let CValue::Pointer(value) = native.as_ref() else {
                 return None;
             };
             state
@@ -4604,7 +4606,7 @@ impl RecordedSnapshots {
                 .as_ref()
                 .and_then(|layout| layout.call_result_local(*index))
                 .and_then(|local| state.locals().get(local))
-                .cloned();
+                .map(|value| value.clone().into_native());
             self.record_call_result(*index, result);
         }
         self.record_value_points(&selector, &state);

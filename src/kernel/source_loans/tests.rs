@@ -758,7 +758,7 @@ fn source_scalar_lease_branches_keep_identical_live_ledger_until_common_end() {
             .object_values()
             .map(|(name, value)| (name.to_string(), value.clone()))
             .collect::<std::collections::BTreeMap<_, _>>();
-        common.retain(|name, value| right.locals().get(name) == Some(value));
+        common.retain(|name, value| right.locals().get(name) == Some(&*value));
         let joined =
             abstract_c_state_for_interface_join_across(&left, &[&left, &right], 0).unwrap();
         assert_eq!(joined.state.loan_ledger(), active.loan_ledger());
@@ -791,8 +791,8 @@ fn source_scalar_lease_branches_keep_identical_live_ledger_until_common_end() {
                 CExpressionOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
             ),
             "stale result: {stale:?}; before join: {:?}; after recovery: {:?}",
-            active.locals().get("child"),
-            recovered.locals().get("child")
+            active.locals().get_native("child").as_deref(),
+            recovered.locals().get_native("child").as_deref()
         );
         assert!(matches!(
             execute(&recovered, &endings[0]),
@@ -906,7 +906,7 @@ fn source_scalar_lease_branch_conditions_and_later_join_reads_extend_the_frontie
         let recovered = normal(execute(&active, &ending));
         assert!(!recovered.has_local_scalar_references());
         if late_read {
-            assert_eq!(recovered.locals.get("x"), Some(&int32(4)));
+            assert_eq!(recovered.locals.get_native("x").as_deref(), Some(&int32(4)));
         }
     }
 }
@@ -1145,7 +1145,8 @@ fn scope_initial() -> (CState, ResourceOccurrenceId) {
     )
 }
 fn scope_parent(state: &CState) -> CPointerValue {
-    let CValue::Pointer(pointer) = state.locals().get("parent").unwrap() else {
+    let local_native_output_1148 = state.locals().get_native("parent");
+    let CValue::Pointer(pointer) = local_native_output_1148.as_deref().unwrap() else {
         panic!("parent");
     };
     pointer.clone()

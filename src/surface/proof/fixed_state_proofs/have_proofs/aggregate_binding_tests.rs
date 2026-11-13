@@ -132,7 +132,11 @@ fn retired_aggregate_copy_uses_the_contract_argument_image() {
         entry.locals().aggregate_object_pointer("input_0")
     );
     assert_eq!(
-        selected.lowering_state.locals().get("input_0"),
+        selected
+            .lowering_state
+            .locals()
+            .get_native("input_0")
+            .as_deref(),
         values.get("input_0")
     );
     assert_eq!(

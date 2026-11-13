@@ -518,7 +518,7 @@ fn compact_array_region_write_refreshes_an_addressed_scalar_local() {
         panic!("authorized region write must execute");
     };
     assert_eq!(
-        state.locals().get("value"),
+        state.locals().get_native("value").as_deref(),
         Some(&crate::kernel::uint32(7u32))
     );
 }

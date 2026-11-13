@@ -1782,7 +1782,14 @@ impl Printer<'_> {
                 pointer,
                 kind,
                 ParameterBinding::new(&naming.0, &naming.1),
-            ) {
+            )
+            .or_else(|| {
+                crate::surface::diagnostics::diagnostic_aggregate_parameter_load_cell(
+                    pointer,
+                    kind,
+                    ParameterBinding::new(&naming.0, &naming.1),
+                )
+            }) {
                 return Some(model);
             }
             // An address spelling alone does not establish the type of a

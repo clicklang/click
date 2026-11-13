@@ -32,7 +32,7 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
     let pointer = state.locals.slot("x").unwrap().clone();
     assert!(state.memory.is_read_only_block(&pointer.block));
     assert!(state.memory.requires_explicit_scalar_ownership(&pointer));
-    assert_eq!(state.locals.get("x"), Some(&int32(7)));
+    assert_eq!(state.locals.get_native("x").as_deref(), Some(&int32(7)));
     assert!(matches!(
         execute(&state, &c_assign("x", c_int32_literal(9)))[0].outcome,
         CStatementOutcome::UndefinedBehavior(_)
@@ -282,7 +282,10 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
     let value = CValue::typed_pointer(Pointer::symbolic(Variable(93_700)), CType::UInt8Pointer);
     let copy = c_assign("p", CExpression::Value(value.clone()));
     assert_eq!(
-        normal_state(&execute(&state, &copy)).locals().get("p"),
+        normal_state(&execute(&state, &copy))
+            .locals()
+            .get_native("p")
+            .as_deref(),
         Some(&value)
     );
     let discard_const = c_assign(
@@ -576,8 +579,14 @@ fn join_state_forgets_changed_scalars_and_memory() {
     // execution continues above everything the join spent.
     assert!(abstract_zero.next_kernel_variable > 0);
     let abstract_zero = abstract_zero.state;
-    assert_eq!(abstract_zero.locals().get("x"), Some(&stable_x));
-    assert_ne!(abstract_zero.locals().get("y"), Some(&int32(0)));
+    assert_eq!(
+        abstract_zero.locals().get_native("x").as_deref(),
+        Some(&stable_x)
+    );
+    assert_ne!(
+        abstract_zero.locals().get_native("y").as_deref(),
+        Some(&int32(0))
+    );
     assert!(abstract_zero.resources().is_empty());
 }
 
@@ -605,7 +614,8 @@ fn join_state_abstracts_changed_pointer_locals() {
     .expect("pointer join abstraction");
 
     assert_eq!(abstract_left, abstract_right);
-    let Some(CValue::Pointer(selected)) = abstract_left.state.locals().get("selected") else {
+    let local_native_output_596 = abstract_left.state.locals().get_native("selected");
+    let Some(CValue::Pointer(selected)) = local_native_output_596.as_deref() else {
         panic!("selected should remain a pointer local");
     };
     assert!(selected.has_symbolic_block());
@@ -624,7 +634,8 @@ fn join_state_fresh_variables_do_not_collide_with_symbolic_pointer_blocks() {
     // The counter it returns is above both, and the joined execution
     // continues from there.
     assert_eq!(abstract_state.next_kernel_variable, 3);
-    let Some(CValue::Pointer(selected)) = abstract_state.state.locals().get("selected") else {
+    let local_native_output_615 = abstract_state.state.locals().get_native("selected");
+    let Some(CValue::Pointer(selected)) = local_native_output_615.as_deref() else {
         panic!("selected should remain a pointer local");
     };
 
@@ -1176,8 +1187,11 @@ fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
         panic!("expected a caught return: {:?}", theorem.proposition());
     };
     assert_eq!(value, &int32(7));
-    assert_eq!(state.locals.get("x"), Some(&int32(9)));
-    assert_eq!(state.locals.get("caught"), Some(&int32(7)));
+    assert_eq!(state.locals.get_native("x").as_deref(), Some(&int32(9)));
+    assert_eq!(
+        state.locals.get_native("caught").as_deref(),
+        Some(&int32(7))
+    );
 }
 
 #[test]
@@ -2546,8 +2560,9 @@ fn a_post_join_allocation_never_reuses_a_join_abstracted_variable() {
         arms_next_kernel_variable,
     )
     .expect("the arms have one deterministic abstraction");
+    let local_native_output_2533 = abstraction.state.locals().get_native("picked");
     let Some(CValue::Int32(MachineTerm::Variable(abstracted))) =
-        abstraction.state.locals().get("picked")
+        local_native_output_2533.as_deref()
     else {
         panic!("a local the arms disagree on abstracts to one symbolic int32");
     };
@@ -3365,7 +3380,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
         let back = CState::new().with_local("parent", CValue::Pointer(pointer));
         assert!(c_loop_state_components_match_at_back_edge(&head, &back, facts, &[]).is_ok());
         assert!(
-            matches!(back.locals().get("parent"), Some(CValue::Pointer(p)) if p.object_class().is_none())
+            matches!(back.locals().get_native("parent").as_deref(), Some(CValue::Pointer(p)) if p.object_class().is_none())
         );
     }
     let back = CState::new().with_local("parent", CValue::Pointer(unknown.clone()));

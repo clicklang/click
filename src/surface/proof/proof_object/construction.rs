@@ -44,6 +44,7 @@ impl<'a> Proof<'a> {
         parameter_binding: ParameterBinding<'a>,
         entry: &'a CState,
         post: &'a CState,
+        result: Option<&'a CValue>,
         snapshots: &'a RecordedSnapshots,
         surfaces: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,
@@ -67,12 +68,7 @@ impl<'a> Proof<'a> {
                 )
             },
             parameter_binding,
-            FixedStateFrame::new(
-                entry,
-                post,
-                post.locals().get(crate::kernel::C_CONTRACT_RESULT_NAME),
-                snapshots,
-            ),
+            FixedStateFrame::new(entry, post, result, snapshots),
             None,
             surfaces,
             spec_definitions,

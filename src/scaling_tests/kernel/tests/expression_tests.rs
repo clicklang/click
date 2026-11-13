@@ -268,7 +268,14 @@ fn narrow_value_range_construction_ignores_unrelated_order_facts() {
         assert_eq!(paths.len(), 1);
         assert_eq!(
             paths[0].outcome,
-            CExpressionOutcome::Value(state.locals().get("byte").unwrap().clone())
+            CExpressionOutcome::Value(
+                state
+                    .locals()
+                    .get_native("byte")
+                    .as_deref()
+                    .unwrap()
+                    .clone()
+            )
         );
         // A `uint8` value is of its own format; reading it files no range.
         assert!(paths[0].facts.is_empty());
@@ -321,7 +328,8 @@ fn rust_bool_values_do_not_split_paths() {
         let CStatementOutcome::Normal(state) = &paths[0].outcome else {
             panic!("{size}: {:?}", paths[0].outcome);
         };
-        let Some(CValue::Bool(word)) = state.locals.get("c_0") else {
+        let local_native_output_324 = state.locals.get_native("c_0");
+        let Some(CValue::Bool(word)) = local_native_output_324.as_deref() else {
             panic!("{size}: `c_0` is a `Bool`");
         };
         assert!(word.bool_cast_operand().is_some(), "{size}: {word:?}");

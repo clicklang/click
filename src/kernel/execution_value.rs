@@ -3,7 +3,7 @@
 use super::prelude::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::kernel) enum ExecutionValue {
+pub enum ExecutionValue {
     Native(CValue),
     Shared(KernelTerm),
 }
@@ -19,6 +19,27 @@ impl From<KernelTerm> for ExecutionValue {
     }
 }
 impl ExecutionValue {
+    pub fn shared(&self) -> Option<&KernelTerm> {
+        match self {
+            Self::Shared(root) => Some(root),
+            Self::Native(_) => None,
+        }
+    }
+    pub fn native_payload(&self) -> Option<&CValue> {
+        match self {
+            Self::Native(value) => Some(value),
+            Self::Shared(_) => None,
+        }
+    }
+    pub fn pointer(&self) -> Option<&CPointerValue> {
+        match self.native_payload()? {
+            CValue::Pointer(pointer) => Some(pointer),
+            _ => None,
+        }
+    }
+    pub fn byte_width(&self) -> u32 {
+        self.c_type().byte_width()
+    }
     /// Import a native machine producer's result once at its execution boundary.
     /// Other result families keep their exact native payloads.
     pub(in crate::kernel) fn retain_native(value: CValue) -> Self {
@@ -32,12 +53,14 @@ impl ExecutionValue {
                 return Self::Native(value);
             }
             let format = MachineIntegerType::from_c_type(value.c_type()).unwrap();
-            return Self::Shared(KernelTermImport::default().machine(format, term));
+            if let Some(root) = KernelTermImport::default().machine_arithmetic(format, term) {
+                return Self::Shared(root);
+            }
         }
         Self::Native(value)
     }
 
-    pub(in crate::kernel) fn into_native(self) -> CValue {
+    pub fn into_native(self) -> CValue {
         match self {
             Self::Native(value) => value,
             Self::Shared(term) => {
@@ -66,13 +89,13 @@ impl ExecutionValue {
             }
         }
     }
-    pub(in crate::kernel) fn native(&self) -> std::borrow::Cow<'_, CValue> {
+    pub fn native(&self) -> std::borrow::Cow<'_, CValue> {
         match self {
             Self::Native(value) => std::borrow::Cow::Borrowed(value),
             Self::Shared(_) => std::borrow::Cow::Owned(self.clone().into_native()),
         }
     }
-    pub(in crate::kernel) fn c_type(&self) -> CType {
+    pub fn c_type(&self) -> CType {
         match self {
             Self::Native(value) => value.c_type(),
             Self::Shared(term) => match term.ty() {
@@ -107,15 +130,156 @@ impl<V> CExpressionPath<V> {
     }
 }
 
+impl CExpressionPath<ExecutionValue> {
+    pub(in crate::kernel) fn into_native(self) -> CExpressionPath {
+        self.map_value(ExecutionValue::into_native)
+    }
+}
+
 impl From<CExpressionPath> for CExpressionPath<ExecutionValue> {
     fn from(path: CExpressionPath) -> Self {
         path.map_value(ExecutionValue::retain_native)
     }
 }
 
+/// A stored value keeps its exact producer payload. State identity observes the
+/// same native machine key across native and retained storage representations;
+/// specification producer equality remains exact on ExecutionValue itself.
+#[derive(Clone, Debug)]
+pub struct LocalExecutionValue(std::sync::Arc<LocalValueData>);
+#[derive(Debug)]
+struct LocalValueData {
+    value: ExecutionValue,
+    identity: std::sync::OnceLock<Option<SharedMachineIntegerTerm>>,
+}
+#[derive(Eq, PartialEq, Hash, Ord, PartialOrd)]
+enum LocalIdentity<'a> {
+    Machine(&'a SharedMachineIntegerTerm),
+    Native(&'a CValue),
+}
+impl LocalExecutionValue {
+    fn identity(&self) -> LocalIdentity<'_> {
+        match self.0.identity.get_or_init(|| match &self.0.value {
+            ExecutionValue::Shared(root) => Some(
+                SharedMachineIntegerTerm::observe_shared(
+                    MachineIntegerType::from_c_type(self.c_type()).expect("machine storage"),
+                    root.clone(),
+                )
+                .expect("retained machine storage"),
+            ),
+            ExecutionValue::Native(value) => {
+                let (crate::kernel::integer_c_value!(term)) = value else {
+                    return None;
+                };
+                Some(SharedMachineIntegerTerm::intern(
+                    MachineIntegerType::from_c_type(value.c_type()).unwrap(),
+                    term.clone(),
+                ))
+            }
+        }) {
+            Some(identity) => LocalIdentity::Machine(identity),
+            None => LocalIdentity::Native(self.native_payload().expect("native storage")),
+        }
+    }
+    pub fn matches_native(&self, value: &CValue) -> bool {
+        self == &Self::from(value.clone())
+    }
+    pub fn into_value(self) -> ExecutionValue {
+        match std::sync::Arc::try_unwrap(self.0) {
+            Ok(data) => data.value,
+            Err(data) => data.value.clone(),
+        }
+    }
+    pub fn into_native(self) -> CValue {
+        self.into_value().into_native()
+    }
+}
+impl std::ops::Deref for LocalExecutionValue {
+    type Target = ExecutionValue;
+    fn deref(&self) -> &Self::Target {
+        &self.0.value
+    }
+}
+impl From<ExecutionValue> for LocalExecutionValue {
+    fn from(value: ExecutionValue) -> Self {
+        let value = if value
+            .shared()
+            .is_some_and(|root| !root.is_shared_machine_operand())
+        {
+            ExecutionValue::Native(value.into_native())
+        } else {
+            value
+        };
+        Self(std::sync::Arc::new(LocalValueData {
+            value,
+            identity: Default::default(),
+        }))
+    }
+}
+impl From<CValue> for LocalExecutionValue {
+    fn from(value: CValue) -> Self {
+        ExecutionValue::from(value).into()
+    }
+}
+impl From<LocalExecutionValue> for ExecutionValue {
+    fn from(value: LocalExecutionValue) -> Self {
+        value.into_value()
+    }
+}
+impl PartialEq for LocalExecutionValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity() == other.identity()
+    }
+}
+impl Eq for LocalExecutionValue {}
+impl std::hash::Hash for LocalExecutionValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.identity(), state);
+    }
+}
+impl PartialOrd for LocalExecutionValue {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for LocalExecutionValue {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.identity().cmp(&other.identity())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_storage_identity_matches_native_without_changing_producer_equality() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let term = MachineTerm::machine_binary(
+            MachineIntegerType::UInt32,
+            MachineBinaryOp::Multiply,
+            MachineTerm::Variable(Variable(998320)),
+            MachineTerm::uint32_constant(3),
+        );
+        let native = ExecutionValue::from(CValue::UInt32(term.clone()));
+        let root = KernelTermImport::default().machine(MachineIntegerType::UInt32, &term);
+        let shared = ExecutionValue::from(root.clone());
+        assert_ne!(native, shared, "producer equality stays exact");
+        let exports = KernelTermExport::machine_export_count();
+        let native = LocalExecutionValue::from(native);
+        let shared = LocalExecutionValue::from(shared);
+        assert_eq!(native, shared);
+        assert_eq!(native.cmp(&shared), std::cmp::Ordering::Equal);
+        let hash = |value: &LocalExecutionValue| {
+            use std::hash::{Hash, Hasher};
+            let mut hash = std::collections::hash_map::DefaultHasher::new();
+            value.hash(&mut hash);
+            hash.finish()
+        };
+        assert_eq!(hash(&native), hash(&shared));
+        assert_eq!(shared.shared(), Some(&root));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
 
     #[test]
     fn execution_outcomes_preserve_native_values_and_refusals() {

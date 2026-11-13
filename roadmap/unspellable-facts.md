@@ -242,6 +242,21 @@ operator and value families retain their explicit native compatibility routes.
 Its 12 focused tests, all 1,633 scaling and Rust import checks, and all 5,279
 regular fixtures passed; the fact-stability audit recorded zero differences.
 
+[PR #2719](https://github.com/clicklang/click/pull/2719) merged 5d; its pushed
+commit is included in upstream `master`.
+
+5e retains supported machine results in scalar local bindings, assignments,
+initializers and checked reads. The stored payload stays exact; local-state
+identity uses the existing machine observation key without changing specification
+producer equality. Local-name lookup reads retained roots through the existing
+held-term index. Ownership, lifetime, initialization, constness and range-fact
+checks remain at their existing boundaries. Memory-resident cells, volatile
+events, specification C-fragment lowering and unmigrated coercions remain
+explicit native consumers. Boolean-cast payloads keep their original native
+range-fact producer. All 1,823 affected evaluator, specification, scaling and
+example checks and all 5,279 regular fixtures passed; the fact-stability audit
+recorded zero differences.
+
 ## Chunk 4: one producer boundary per PR
 
 Chunk 4 migrates existing numeric producers to retain `KernelTerm` operands and

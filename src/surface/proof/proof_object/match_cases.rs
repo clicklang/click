@@ -484,7 +484,7 @@ impl<'a> Proof<'a> {
             | ContractExpression::CFragment(CExpression::Variable(name))
                 if !values.contains_key(name) && !self.state.locals().values.contains_key(name) =>
             {
-                match execution.core.state.locals().get(name) {
+                match execution.core.state.locals().get_native(name).as_deref() {
                     Some(CValue::Parameter(term)) => Some((**term).clone()),
                     _ => None,
                 }

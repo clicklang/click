@@ -80,7 +80,8 @@ fn execute_c_lvalue_assignment_paths_with_source(
 
         let value_assumptions =
             assumptions_with_path_context(assumptions, &target_facts, &target_obligations);
-        for value_path in evaluate_c_expression_paths(state, value, &value_assumptions, budget)? {
+        for value_path in evaluate_expression_value_paths(state, value, &value_assumptions, budget)?
+        {
             let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                 &target_facts,
                 &target_obligations,
@@ -92,16 +93,19 @@ fn execute_c_lvalue_assignment_paths_with_source(
             };
 
             match value_path.outcome {
-                CExpressionOutcome::Value(value) => paths.extend(write_c_lvalue_paths(
-                    state,
-                    target_lvalue.clone(),
-                    value,
-                    facts,
-                    obligations,
-                    assumptions,
-                    budget,
-                    store_source.clone(),
-                )?),
+                CExpressionOutcome::Value(value) => {
+                    paths.extend(write_c_lvalue_paths_for_initialization(
+                        state,
+                        target_lvalue.clone(),
+                        value,
+                        facts,
+                        obligations,
+                        assumptions,
+                        budget,
+                        false,
+                        store_source.clone(),
+                    )?)
+                }
                 CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
                     paths.push(CStatementExecutionPath::new(
                         CStatementOutcome::UndefinedBehavior(undefined_behavior),
@@ -448,7 +452,7 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
     write_c_lvalue_paths_for_initialization(
         state,
         lvalue,
-        value,
+        value.into(),
         facts,
         obligations,
         assumptions,
@@ -461,7 +465,7 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
 fn write_c_lvalue_paths_for_initialization(
     state: &CState,
     lvalue: CLValue,
-    value: CValue,
+    value: ExecutionValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -471,7 +475,9 @@ fn write_c_lvalue_paths_for_initialization(
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     // Local copies preserve the lease. Addressable pointer slots and aggregate
     // transport require a separate reference-storage protocol.
-    if matches!(&value, CValue::Pointer(pointer) if pointer.local_reference().is_some())
+    if value
+        .pointer()
+        .is_some_and(|pointer| pointer.local_reference().is_some())
         && !matches!(&lvalue.storage, CLValueStorage::Local { name }
             if state.locals.slot(name).is_none_or(|pointer|
                 crate::kernel::block_is_never_address_taken_local(&pointer.block)))
@@ -552,7 +558,7 @@ fn write_c_lvalue_paths_for_initialization(
 fn write_c_lvalue_paths_without_local_reference(
     state: &CState,
     lvalue: CLValue,
-    value: CValue,
+    value: ExecutionValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -602,13 +608,14 @@ fn write_c_lvalue_paths_without_local_reference(
     let value_type = lvalue.value_type;
     let pointee_volatile = lvalue.pointee_is_volatile();
     let pointee_constant = lvalue.pointee_is_constant();
-    let value = value.with_pointer_pointee_volatile(pointee_volatile);
+
     let volatile_pointer = is_volatile.then(|| lvalue.pointer(state)).flatten();
     // Storing a freed pointer moves it without using it, but an implicit
     // conversion to `_Bool` (or any non-pointer type) tests its value; see
     // `freed_pointer_use`.
     if !lvalue.value_type.is_pointer()
-        && let Some(undefined_behavior) = freed_pointer_use(state, &value, assumptions)
+        && let Some(undefined_behavior) =
+            retained_expression::freed_expression_value_pointer_use(state, &value, assumptions)
     {
         return Ok(vec![CStatementExecutionPath::new(
             CStatementOutcome::UndefinedBehavior(undefined_behavior),
@@ -616,18 +623,37 @@ fn write_c_lvalue_paths_without_local_reference(
             obligations,
         )]);
     }
-    let Some(value) = crate::kernel::functions::coerce_c_value_with_pointee_constant(
-        value,
-        lvalue.value_type,
-        pointee_constant,
-        &mut obligations,
-        &effective_assumptions,
-    ) else {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
-            facts,
-            obligations,
-        )]);
+    let value = if value.shared().is_some()
+        && value.c_type() == lvalue.value_type
+        && matches!(
+            value.c_type(),
+            CType::Int8
+                | CType::UInt8
+                | CType::Int16
+                | CType::UInt16
+                | CType::Int32
+                | CType::UInt32
+                | CType::Int64
+                | CType::UInt64
+        ) {
+        value
+    } else {
+        let Some(value) = crate::kernel::functions::coerce_c_value_with_pointee_constant(
+            value
+                .into_native()
+                .with_pointer_pointee_volatile(pointee_volatile),
+            lvalue.value_type,
+            pointee_constant,
+            &mut obligations,
+            &effective_assumptions,
+        ) else {
+            return Ok(vec![CStatementExecutionPath::new(
+                CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                facts,
+                obligations,
+            )]);
+        };
+        value.into()
     };
 
     let lvalue_access_designation = lvalue.designation.as_deref().map(|root| {
@@ -648,7 +674,9 @@ fn write_c_lvalue_paths_without_local_reference(
         // object has no addressable bytes to store to.
         CLValueStorage::Local { name } if matches!(lvalue_value_type, CType::Parameter(_)) => {
             let mut state = state.clone();
-            state.locals.set_typed(name, value, lvalue_value_type);
+            state
+                .locals
+                .set_typed(name, value.into_native(), lvalue_value_type);
             Ok(vec![CStatementExecutionPath::new(
                 CStatementOutcome::Normal(Box::new(state)),
                 facts,
@@ -695,7 +723,7 @@ fn write_c_lvalue_paths_without_local_reference(
                     .designated_memory_write_range(
                         pointer,
                         lvalue_access_designation,
-                        value.byte_width(),
+                        value.c_type().byte_width(),
                         &effective_assumptions,
                     )
                     .is_none()
@@ -707,7 +735,7 @@ fn write_c_lvalue_paths_without_local_reference(
                                 pointer.clone(),
                                 0u32.into(),
                                 1u32.into(),
-                                value.byte_width(),
+                                value.c_type().byte_width(),
                             ),
                         )),
                     }),
@@ -719,7 +747,7 @@ fn write_c_lvalue_paths_without_local_reference(
                 && let Some(outcome) = memory_write_permission_outcome_for_local(
                     state,
                     &pointer,
-                    value.byte_width(),
+                    value.c_type().byte_width(),
                     &effective_assumptions,
                     crate::kernel::block_is_never_address_taken_local(&pointer.block),
                 )
@@ -731,17 +759,17 @@ fn write_c_lvalue_paths_without_local_reference(
                 )]);
             }
             let mut state = state.clone();
-            sync_stack_local(&mut state, &name, &value);
+            sync_retained_stack_local(&mut state, &name, &value);
             if let Some(pointer) = volatile_pointer {
                 facts.push(volatile_access_fact(
                     budget,
                     true,
                     pointer,
                     value_type,
-                    value.clone(),
+                    value.clone().into_native(),
                 )?);
             }
-            state.locals.set_typed_with_all_qualifiers(
+            state.locals.set_retained_typed_with_all_qualifiers(
                 name,
                 value,
                 value_type,
@@ -757,6 +785,8 @@ fn write_c_lvalue_paths_without_local_reference(
             )])
         }
         CLValueStorage::Memory { pointer } => {
+            // Memory cells retain their explicit native storage boundary.
+            let value = value.into_native();
             // The loan obligation names the evaluated source lvalue. Keep its
             // address before storage chooses an equivalent owner's coordinates.
             let source_pointer = pointer.clone();
@@ -1558,14 +1588,10 @@ fn heap_allocation_element_width(state: &CState, base: &Pointer) -> u32 {
         .bindings
         .values()
         .find_map(|binding| {
-            let CLocalBinding::Object {
-                value: CValue::Pointer(pointer),
-                c_type,
-                ..
-            } = binding
-            else {
+            let CLocalBinding::Object { value, c_type, .. } = binding else {
                 return None;
             };
+            let pointer = value.pointer()?;
             (pointer.pointer() == base)
                 .then(|| c_type.pointee_type().map(CType::byte_width))
                 .flatten()
@@ -2884,17 +2910,19 @@ pub(crate) fn resolve_pending_heap_allocations(
                 .iter()
                 .filter_map(|(name, binding)| {
                     let mut binding = binding.clone();
-                    let CLocalBinding::Object {
-                        value: CValue::Pointer(pointer),
-                        ..
-                    } = &mut binding
-                    else {
+                    let CLocalBinding::Object { value, .. } = &mut binding else {
                         return None;
                     };
-                    if pointer.pointer() != &base {
+                    if value.pointer()?.pointer() != &base {
                         return None;
                     }
-                    *pointer = rebase_resolved_allocation(pointer, &base, &resolved_base);
+                    let native = value.native();
+                    let CValue::Pointer(pointer) = native.as_ref() else {
+                        unreachable!()
+                    };
+                    *value =
+                        CValue::Pointer(rebase_resolved_allocation(pointer, &base, &resolved_base))
+                            .into();
                     Some((name.clone(), binding))
                 })
                 .collect::<Vec<_>>();
@@ -2947,17 +2975,19 @@ pub(crate) fn resolve_pending_heap_allocations(
             .iter()
             .filter_map(|(name, binding)| {
                 let mut binding = binding.clone();
-                let CLocalBinding::Object {
-                    value: CValue::Pointer(pointer),
-                    ..
-                } = &mut binding
-                else {
+                let CLocalBinding::Object { value, .. } = &mut binding else {
                     return None;
                 };
-                if pointer.pointer() != &base {
+                if value.pointer()?.pointer() != &base {
                     return None;
                 }
-                *pointer = rebase_resolved_allocation(pointer, &base, &resolved_base);
+                let native = value.native();
+                let CValue::Pointer(pointer) = native.as_ref() else {
+                    unreachable!()
+                };
+                *value =
+                    CValue::Pointer(rebase_resolved_allocation(pointer, &base, &resolved_base))
+                        .into();
                 Some((name.clone(), binding))
             })
             .collect::<Vec<_>>();
@@ -3695,7 +3725,7 @@ fn execute_c_statement_leaf_paths(
                             next.pending_thread_create = Some(pending.with_delta(
                                 super::super::threads::PendingThreadMemoryDelta::Store {
                                     pointer: slot.clone(),
-                                    value: value.clone(),
+                                    value: value.clone().into_native(),
                                 },
                             ));
                         } else {
@@ -3929,7 +3959,8 @@ fn execute_c_statement_leaf_paths(
                     )]);
                 }
                 let mut paths = Vec::new();
-                for path in evaluate_c_expression_paths(declared, expression, assumptions, budget)?
+                for path in
+                    evaluate_expression_value_paths(declared, expression, assumptions, budget)?
                 {
                     match path.outcome {
                         CExpressionOutcome::Value(value) => {
@@ -5728,6 +5759,25 @@ pub(in crate::kernel) fn sync_stack_local(state: &mut CState, name: &str, value:
     };
     if state.memory.has_block(&pointer.block) {
         state.set_memory(state.memory.clone().store(pointer, value.clone()));
+    }
+}
+
+/// Retain logical locals; memory-resident slots cross the current native cell boundary.
+pub(in crate::kernel) fn sync_retained_stack_local(
+    state: &mut CState,
+    name: &str,
+    value: &ExecutionValue,
+) {
+    let Some(pointer) = state.locals.slot(name).cloned() else {
+        return;
+    };
+    if state.memory.has_block(&pointer.block) {
+        state.set_memory(
+            state
+                .memory
+                .clone()
+                .store(pointer, value.clone().into_native()),
+        );
     }
 }
 

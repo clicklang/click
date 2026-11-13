@@ -170,7 +170,8 @@ fn scalar_lease_local_copies_and_identity_casts_remain_expired_after_recovery() 
         "copy".to_owned(),
     ]));
     let copied = normal(statement(&active, c_assign("copy", c_variable("child"))));
-    let CValue::Pointer(copy) = copied.locals.get("copy").unwrap() else {
+    let local_native_output_173 = copied.locals.get_native("copy");
+    let CValue::Pointer(copy) = local_native_output_173.as_deref().unwrap() else {
         panic!("pointer copy");
     };
     assert_eq!(child, *copy);

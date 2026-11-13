@@ -114,3 +114,47 @@ fn rust_expression_handoffs_retain_growing_narrow_and_shift_results() {
         );
     }
 }
+
+#[test]
+fn retained_local_assignment_and_readback_scale_without_prefix_exports() {
+    let mut work = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut state = CState::new().with_local(
+            "held",
+            CValue::UInt32(MachineTerm::Variable(Variable(998321))),
+        );
+        let assignment = CStatement::Assign {
+            name: "held".into(),
+            expression: CExpression::Multiply(
+                Box::new(CExpression::Variable("held".into())),
+                Box::new(CExpression::Value(CValue::UInt32(
+                    MachineTerm::uint32_constant(3),
+                ))),
+            ),
+            source: Default::default(),
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                let outcome = super::super::super::statements::execute_c_statement(
+                    &state,
+                    &assignment,
+                    &PureFactContext::new(),
+                )
+                .unwrap();
+                let CStatementOutcome::Normal(after) = outcome else {
+                    panic!("local assignment");
+                };
+                state = *after;
+            }
+        });
+        assert!(state.locals.get("held").unwrap().shared().is_some());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        work.push(measured);
+    }
+    assert!(
+        work[0] > 0 && work[1] <= 5 * work[0] && work[2] <= 5 * work[1],
+        "{work:?}"
+    );
+}

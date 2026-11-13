@@ -1392,7 +1392,8 @@ impl CLocalEnvironment {
                 storage_declared,
                 value: value
                     .with_pointer_pointee_volatile(pointee_volatile)
-                    .with_pointer_pointee_constant(pointee_constant),
+                    .with_pointer_pointee_constant(pointee_constant)
+                    .into(),
                 c_type,
                 slot,
                 volatile,
@@ -1504,7 +1505,61 @@ impl CLocalEnvironment {
         );
     }
 
-    pub fn get(&self, name: &str) -> Option<&CValue> {
+    pub(in crate::kernel) fn set_retained_typed_with_all_qualifiers(
+        &mut self,
+        name: impl Into<String>,
+        value: impl Into<LocalExecutionValue>,
+        c_type: CType,
+        volatile: bool,
+        pointee_volatile: bool,
+        constant: bool,
+        pointee_constant: bool,
+    ) {
+        let value = value.into();
+        if value.shared().is_none() || value.c_type().is_pointer() {
+            self.set_typed_with_all_qualifiers(
+                name,
+                value.into_native(),
+                c_type,
+                volatile,
+                pointee_volatile,
+                constant,
+                pointee_constant,
+            );
+            return;
+        }
+        let name = name.into();
+        let old = self.bindings.get(&name);
+        let slot = old
+            .map(CLocalBinding::slot)
+            .cloned()
+            .unwrap_or_else(|| CMemory::local_pointer(&name));
+        let storage_declared = old.is_some_and(|binding| {
+            matches!(
+                binding,
+                CLocalBinding::Object {
+                    storage_declared: true,
+                    ..
+                } | CLocalBinding::UninitializedObject { .. }
+            )
+        });
+        self.insert_binding(
+            name,
+            CLocalBinding::Object {
+                storage_declared,
+                value,
+                c_type,
+                slot,
+                volatile,
+                pointee_volatile,
+                constant,
+                pointee_constant,
+            },
+        );
+    }
+
+    /// Borrow the exact retained value. Use `get_native` only at a native output boundary.
+    pub fn get(&self, name: &str) -> Option<&LocalExecutionValue> {
         match self.bindings.get(name) {
             Some(CLocalBinding::Object { value, .. }) => Some(value),
             Some(CLocalBinding::UninitializedObject { .. })
@@ -1513,6 +1568,11 @@ impl CLocalEnvironment {
             | Some(CLocalBinding::AggregateObject { .. })
             | None => None,
         }
+    }
+
+    /// Explicit legacy output: reconstruct one selected native value, without caching it.
+    pub fn get_native(&self, name: &str) -> Option<std::borrow::Cow<'_, CValue>> {
+        self.get(name).map(|value| value.native())
     }
 
     /// Read one automatic array's metadata by name without scanning the frame.
@@ -1552,7 +1612,8 @@ impl CLocalEnvironment {
         )
     }
 
-    pub fn object_values(&self) -> impl Iterator<Item = (&str, &CValue)> {
+    /// Iterate values without expanding shared expression payloads.
+    pub fn object_values(&self) -> impl Iterator<Item = (&str, &LocalExecutionValue)> {
         self.bindings
             .iter()
             .filter_map(|(name, binding)| match binding {
@@ -1784,13 +1845,10 @@ impl CLocalBinding {
 }
 
 fn held_pointer_block(binding: &CLocalBinding) -> Option<&PointerBlock> {
-    match binding {
-        CLocalBinding::Object {
-            value: CValue::Pointer(pointer),
-            ..
-        } => Some(&pointer.block),
-        _ => None,
-    }
+    let CLocalBinding::Object { value, .. } = binding else {
+        return None;
+    };
+    Some(&value.pointer()?.pointer().block)
 }
 
 /// The numeric value of a scalar of integer or truth type.
@@ -1798,7 +1856,7 @@ fn held_integer_term(binding: &CLocalBinding) -> Option<&MachineTerm> {
     let CLocalBinding::Object { value, .. } = binding else {
         return None;
     };
-    match value.numeric_value() {
+    match value.native_payload()?.numeric_value() {
         CValue::Bool(term)
         | CValue::Int8(term)
         | CValue::Int16(term)
@@ -1820,7 +1878,7 @@ fn held_algebraic_value(binding: &CLocalBinding) -> Option<&AlgebraicTerm> {
     let CLocalBinding::Object { value, .. } = binding else {
         return None;
     };
-    match value.numeric_value() {
+    match value.native_payload()?.numeric_value() {
         CValue::Parameter(term) if matches!(term.node, AlgebraicTermNode::Variable(_)) => {
             Some(term)
         }
@@ -1842,6 +1900,11 @@ fn held_algebraic_fingerprint(term: &AlgebraicTerm) -> Option<u64> {
 /// The index key of what a binding holds: an integer term's fingerprint or
 /// a named specification value's. A lookup compares what it finds.
 fn held_fingerprint(binding: &CLocalBinding) -> Option<u64> {
+    if let CLocalBinding::Object { value, .. } = binding
+        && let Some(root) = value.shared()
+    {
+        return held_kernel_term_fingerprint(root);
+    }
     held_integer_term(binding)
         .map(held_term_fingerprint)
         .or_else(|| held_algebraic_value(binding).and_then(held_algebraic_fingerprint))
@@ -1923,6 +1986,15 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
             N::IntegerToMachine { destination, .. } => MachineTerm::IntegerToMachine {
                 destination: *destination,
                 value: IntegerTerm::constant_i64(0).into(),
+            },
+            N::Call { .. } => MachineTerm::ClickFunctionApplication {
+                name: String::new(),
+                arguments: Vec::new(),
+            },
+            N::MachineIf { .. } => MachineTerm::If {
+                condition: Box::new(ConditionTerm::Constant(false)),
+                then_term: zero(),
+                else_term: zero(),
             },
             N::MemoryLoad { .. } => {
                 held_term_atom(term.machine_read_leaf()?, hash);
@@ -2049,7 +2121,7 @@ impl CLocalEnvironment {
             .into_iter()
             .flat_map(|names| names.iter())
             .map(|(name, ())| {
-                let Some(CValue::Pointer(pointer)) = self.get(name) else {
+                let Some(pointer) = self.get(name).and_then(|value| value.pointer()) else {
                     unreachable!("pointer object index follows its binding")
                 };
                 (name.as_str(), pointer)
@@ -2064,7 +2136,17 @@ impl CLocalEnvironment {
         term: &'t MachineTerm,
     ) -> impl Iterator<Item = &'a str> + use<'a, 't> {
         self.names_holding_integer_matching(Some(held_term_fingerprint(term)), move |held| {
-            held == term
+            if let Some(root) = held.shared() {
+                held.machine().is_some_and(|(format, _)| {
+                    KernelTermImport::default().machine(format, term) == *root
+                })
+            } else {
+                held.native_payload()
+                    .is_some_and(|value| match value.numeric_value() {
+                        CValue::Bool(bits) | integer_c_value!(bits) => bits == term,
+                        _ => false,
+                    })
+            }
         })
     }
 
@@ -2081,11 +2163,21 @@ impl CLocalEnvironment {
             let Some(format) = MachineIntegerType::from_c_type(*ty) else {
                 return false;
             };
-            KernelTermImport::default().machine(format, held) == *term
+            if let Some(root) = held.shared() {
+                root.with_machine_observation_type(format) == *term
+            } else {
+                held.native_payload()
+                    .is_some_and(|value| match value.numeric_value() {
+                        CValue::Bool(bits) | integer_c_value!(bits) => {
+                            KernelTermImport::default().machine(format, bits) == *term
+                        }
+                        _ => false,
+                    })
+            }
         })
     }
 
-    fn names_holding_integer_matching<'a, 't, F: FnMut(&MachineTerm) -> bool + 't>(
+    fn names_holding_integer_matching<'a, 't, F: FnMut(&LocalExecutionValue) -> bool + 't>(
         &'a self,
         fingerprint: Option<u64>,
         mut matches: F,
@@ -2118,7 +2210,10 @@ impl CLocalEnvironment {
                 if self
                     .bindings
                     .get(name)
-                    .and_then(held_integer_term)
+                    .and_then(|binding| match binding {
+                        CLocalBinding::Object { value, .. } => Some(value),
+                        _ => None,
+                    })
                     .is_some_and(&mut matches)
                 {
                     return Some(name.as_str());
@@ -9454,7 +9549,7 @@ impl CState {
             } => self
                 .memory
                 .known_value(slot)
-                .or_else(|| Some(value.clone())),
+                .or_else(|| Some(value.clone().into_native())),
             CLocalBinding::Object { slot, .. } => self.memory.known_value(slot),
             _ => None,
         }
@@ -10493,14 +10588,17 @@ mod local_variable_spelling_tests {
             for block in &blocks {
                 let scanned = locals
                     .object_values()
-                    .filter_map(|(name, value)| match value {
-                        CValue::Pointer(p) if &p.block == block => Some((name, p)),
-                        _ => None,
+                    .filter_map(|(name, value)| {
+                        let pointer = value.pointer()?.pointer();
+                        (&pointer.block == block).then(|| (name, pointer.clone()))
                     })
                     .collect::<Vec<_>>();
                 for indexed in [&locals, &saved, &rebuilt] {
                     assert_eq!(
-                        indexed.pointer_objects_in_block(block).collect::<Vec<_>>(),
+                        indexed
+                            .pointer_objects_in_block(block)
+                            .map(|(name, pointer)| (name, pointer.pointer().clone()))
+                            .collect::<Vec<_>>(),
                         scanned
                     );
                 }
@@ -10560,8 +10658,8 @@ mod local_variable_spelling_tests {
         }
     }
 
-    fn held_integer_term_of(value: &CValue) -> Option<&MachineTerm> {
-        match value.numeric_value() {
+    fn held_integer_term_of(value: &LocalExecutionValue) -> Option<&MachineTerm> {
+        match value.native_payload()?.numeric_value() {
             crate::kernel::integer_c_value!(term) | CValue::Bool(term) => Some(term),
             _ => None,
         }

@@ -2401,6 +2401,11 @@ fn verify_contract_refinement_theorem(
             _ => surfaces.record_lowering(surface, kernel)?,
         }
     }
+    // FixedStateFrame still has an explicit native result presentation boundary.
+    let result = obligations
+        .post()
+        .locals()
+        .get_native(crate::kernel::C_CONTRACT_RESULT_NAME);
     let root = Proof::for_contract_refinement_goal(
         claim_label,
         proof_goal,
@@ -2408,6 +2413,7 @@ fn verify_contract_refinement_theorem(
         ParameterBinding::new(&parameters, &arguments),
         obligations.entry(),
         obligations.post(),
+        result.as_deref(),
         &snapshots,
         &surfaces,
         spec_definitions,

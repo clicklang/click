@@ -1206,7 +1206,12 @@ pub(super) fn check_quantity_exchange_at_return(
     let Some(values) = interface
         .parameters()
         .iter()
-        .map(|parameter| entry.locals().get(parameter.name()).cloned())
+        .map(|parameter| {
+            entry
+                .locals()
+                .get(parameter.name())
+                .map(|value| value.clone().into_native())
+        })
         .collect::<Option<Vec<_>>>()
     else {
         return Ok(Err(CRuntimeError::FunctionContract(

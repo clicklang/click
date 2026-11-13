@@ -14555,8 +14555,14 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     operator: CComparisonOperator::Equal,
                     right: SpecExpression::CExpression(CExpression::Variable(right)),
                 } => {
-                    matches!(evaluation.locals.get(left), Some(CValue::Pointer(_)))
-                        && matches!(evaluation.locals.get(right), Some(CValue::Pointer(_)))
+                    evaluation
+                        .locals
+                        .get(left)
+                        .is_some_and(|value| value.pointer().is_some())
+                        && evaluation
+                            .locals
+                            .get(right)
+                            .is_some_and(|value| value.pointer().is_some())
                 }
                 _ => false,
             })

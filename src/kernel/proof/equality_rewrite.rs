@@ -29,7 +29,7 @@ pub(in crate::kernel) use shared::normalize_node as rebuild_normalized_machine_n
 pub(in crate::kernel) use shared::transport_node as rebuild_transported_machine_node;
 
 use super::fact_reasoning::exactly_available_fact;
-use super::{ProofFacts, PropositionObligation, PropositionSource};
+use super::{ProofFacts, PropositionObligation};
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineTerm;
 use crate::kernel::binary_node;
@@ -297,15 +297,11 @@ pub(crate) fn rewrite_proposition_by_exact_equality(
     equality: &Proposition,
     available: &[Proposition],
 ) -> Result<Proposition, String> {
-    let bridging_assumptions = std::cell::OnceCell::new();
+    // Planning uses only the selected premises, in either orientation.
+    // Discovering another equality through load chains or memory history is
+    // a separate proof step, not part of applying this selected rewrite.
     let is_available = |fact: &Proposition| {
-        available.contains(fact)
-            || exactly_available_fact(fact, available).is_some()
-            || super::fact_reasoning::premise_bridged_by_load_variable_chain_with_origins(
-                fact,
-                available,
-                bridging_assumptions.get_or_init(|| available.pure_context()),
-            )
+        available.contains(fact) || exactly_available_fact(fact, available).is_some()
     };
     if !equality_is_vacuous(equality)
         && !is_available(equality)

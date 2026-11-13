@@ -20,6 +20,22 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ExecutionValuePath>> {
+    if let CExpression::Variable(name) = expression
+        && !state.locals.is_array_object(name)
+        && !state.locals.is_aggregate_object(name)
+        && !matches!(
+            state.locals.object_type(name),
+            Some(CType::Int128 | CType::UInt128)
+        )
+    {
+        budget.consume_expression_step()?;
+        return super::expression::read_retained_lvalue_expression_paths(
+            state,
+            expression,
+            assumptions,
+            budget,
+        );
+    }
     if let CExpression::Conditional {
         condition,
         then_branch,
@@ -385,6 +401,16 @@ fn conditional_paths(
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+pub(super) fn freed_expression_value_pointer_use(
+    state: &CState,
+    value: &ExecutionValue,
+    assumptions: &PureFactContext,
+) -> Option<CUndefinedBehavior> {
+    value
+        .native_payload()
+        .and_then(|native| freed_pointer_use(state, native, assumptions))
 }
 
 fn refuse_freed_pointer(
@@ -845,6 +871,171 @@ mod tests {
             roots.push(paths[0].outcome.clone());
         }
         assert!(roots.windows(2).all(|pair| pair[0] == pair[1]));
+    }
+
+    #[test]
+    fn retained_local_reads_restore_roots_and_preserve_const_refusal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt32;
+        let root = KernelTerm::machine_binary_shared(
+            format,
+            Op::Multiply,
+            [
+                KernelTerm::variable(KernelType::C(CType::UInt32), Variable(998322)),
+                KernelTerm::retained_native_machine_operand(
+                    format,
+                    &MachineTerm::uint32_constant(3),
+                ),
+            ],
+        );
+        let mut state = CState::new();
+        let exports = KernelTermExport::machine_export_count();
+        state.locals.set_retained_typed_with_all_qualifiers(
+            "source",
+            ExecutionValue::from(root.clone()),
+            CType::UInt32,
+            false,
+            false,
+            false,
+            false,
+        );
+        let saved = state.locals.binding("source").unwrap().clone();
+        state
+            .locals
+            .set("source", CValue::UInt32(MachineTerm::uint32_constant(7)));
+        state.locals.restore_binding("source", saved);
+        let paths = evaluate_expression_value_paths(
+            &state,
+            &CExpression::Variable("source".into()),
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let CExpressionOutcome::Value(value) = &paths[0].outcome else {
+            panic!("local read");
+        };
+        assert_eq!(value.shared(), Some(&root));
+        assert_eq!(
+            state
+                .locals
+                .names_holding_kernel_integer(&root)
+                .collect::<Vec<_>>(),
+            vec!["source"]
+        );
+        state.locals.set_typed_with_all_qualifiers(
+            "target",
+            CValue::UInt32(MachineTerm::uint32_constant(0)),
+            CType::UInt32,
+            false,
+            false,
+            true,
+            false,
+        );
+        let assignment = CStatement::Assign {
+            name: "target".into(),
+            expression: CExpression::Variable("source".into()),
+            source: Default::default(),
+        };
+        let outcome = super::super::statements::execute_c_statement(
+            &state,
+            &assignment,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+        assert!(matches!(
+            outcome,
+            CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
+        ));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn retained_local_call_and_conditional_names_use_the_existing_index() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt32;
+        let value = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(998323));
+        let call = KernelTerm::checked_call(
+            KernelType::C(CType::UInt32),
+            "held_call".into(),
+            vec![value.clone()],
+        );
+        let conditional = KernelTerm::machine_if_shared(
+            format,
+            [
+                KernelTerm::variable(KernelType::Bool, Variable(998324)),
+                call.clone(),
+                value,
+            ],
+        );
+        let mut state = CState::new();
+        let exports = KernelTermExport::machine_export_count();
+        for (name, root) in [("call", call), ("conditional", conditional)] {
+            state.locals.set_retained_typed_with_all_qualifiers(
+                name,
+                ExecutionValue::from(root.clone()),
+                CType::UInt32,
+                false,
+                false,
+                false,
+                false,
+            );
+            assert_eq!(
+                state
+                    .locals
+                    .names_holding_kernel_integer(&root)
+                    .collect::<Vec<_>>(),
+                vec![name]
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn retained_local_bool_cast_keeps_its_original_range_facts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+        ] {
+            let term = MachineTerm::bool_cast(format, ConditionTerm::Variable(Variable(998325)));
+            let expected =
+                crate::kernel::c_bool_cast_range_facts(&format.value_from_term(term.clone()))
+                    .unwrap();
+            let root = KernelTermImport::default().machine(format, &term);
+            let mut state = CState::new();
+            state.locals.set_retained_typed_with_all_qualifiers(
+                "flag",
+                ExecutionValue::from(root),
+                format.c_type(),
+                false,
+                false,
+                false,
+                false,
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let paths = evaluate_expression_value_paths(
+                &state,
+                &CExpression::Variable("flag".into()),
+                &PureFactContext::new(),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            let actual = paths[0]
+                .facts
+                .iter()
+                .map(|fact| {
+                    crate::kernel::proof::proposition_identity_key(fact.proposition()).unwrap()
+                })
+                .collect::<Vec<_>>();
+            let expected = expected
+                .iter()
+                .map(|fact| crate::kernel::proof::proposition_identity_key(fact).unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(actual, expected);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
     }
 
     mod scaling_tests {
