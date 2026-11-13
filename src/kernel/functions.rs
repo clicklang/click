@@ -13644,6 +13644,8 @@ pub(crate) struct ResourceInstanceRewriteResult {
     /// The body guard case checked by this rewrite. Unknown guards refuse the rewrite.
     pub(crate) body_active: bool,
     pub(crate) state: CState,
+    /// Justified consequences to admit; unfolding may return facts the caller
+    /// already holds. Ordinary fact insertion handles those duplicates.
     pub(crate) semantic_facts: Vec<Proposition>,
     pub(crate) body_clauses: Vec<ResourceBodyClauseRecord>,
     /// The checked opening delta used to choose the body's pointer spellings.
@@ -14985,11 +14987,13 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     }
     let mut seen = BTreeSet::new();
     let semantic_facts = if unfold {
+        // These are consequences of the held instance, already justified by
+        // this exchange. Deduplicate only the produced batch; ordinary fact
+        // admission handles facts already held by the caller. Asking whether
+        // they are stated here would force unrelated deferred fact indexes.
         facts
             .into_iter()
-            .filter(|fact| {
-                !entry_assumptions.states_required_goal(fact) && seen.insert(fact.clone())
-            })
+            .filter(|fact| seen.insert(fact.clone()))
             .collect()
     } else {
         // Folding checked each pure body clause in the current snapshot.

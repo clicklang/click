@@ -333,7 +333,15 @@ fn prepare_functions(
                             )
                         })
                 })
-                .transpose()?;
+                .transpose()?
+                // A standard function the Click library states is an
+                // instance of the library's template method.
+                .or_else(|| {
+                    source
+                        .axiom
+                        .as_ref()
+                        .and_then(super::standard_library::library_generic)
+                });
             Ok(function_interface(source, kernel, layouts)?
                 .with_generic_instance(generic)
                 .with_trait_interface(interface)

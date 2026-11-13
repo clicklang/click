@@ -194,8 +194,9 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
             record_spellings.insert(spelling.clone(), name.clone());
             spelling_sources.insert(spelling, source);
         }
-        // Each library contract is one `extern` declaration; two sources
-        // reaching the same library function supply the same one.
+        // Each library contract is one `extern` declaration or library
+        // template; two sources reaching the same library function supply
+        // the same one.
         for block in contract_blocks_of(&execution.library_contracts) {
             crate::instrumentation::record_deterministic_work(1);
             if contract_blocks.insert(block.to_string()) {
@@ -213,13 +214,15 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
     })
 }
 
-/// The `extern` declarations of a library contract text, each with its own
-/// lines: every declaration starts a line with `extern `.
+/// The declarations of a library contract text, each with its own lines:
+/// every declaration starts a line, with `extern ` or, for a library
+/// template, `template<`.
 fn contract_blocks_of(text: &str) -> Vec<&str> {
-    let mut starts = text
-        .match_indices("extern ")
-        .map(|(index, _)| index)
-        .filter(|index| *index == 0 || text.as_bytes()[index - 1] == b'\n')
+    let mut starts = std::iter::once(0)
+        .chain(text.match_indices('\n').map(|(index, _)| index + 1))
+        .filter(|index| {
+            text[*index..].starts_with("extern ") || text[*index..].starts_with("template<")
+        })
         .collect::<Vec<_>>();
     if starts.first() != Some(&0) {
         starts.insert(0, 0);

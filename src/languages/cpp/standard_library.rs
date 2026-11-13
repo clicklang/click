@@ -187,103 +187,64 @@ const SPAN_ELEMENTS: &[SpanElement] = &[
 /// for "to the end".
 const DYNAMIC_EXTENT: &str = "18446744073709551615u64";
 
-// `std::span<T>` with dynamic extent: a view of `[data, data + size)`. The
-// element accessors require an index inside the view, which the standard
-// makes a precondition; they form an address and read nothing. The
-// subview operations require the subview to lie inside the view, as the
-// standard does, and keep the backing storage.
-const SPAN_CATALOG: &[CatalogEntry] = &[
-    CatalogEntry {
-        qualified_name: "std::span<{T}>::size",
-        signature: "unsigned long (void) const noexcept",
-        contract: "extern uint64 {name}(const struct {record}* this) {
-    views std_span_size(this);
-    ensures result == std_span_size(this);
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::span<{T}>::size_bytes",
-        signature: "unsigned long (void) const noexcept",
-        contract: "extern uint64 {name}(const struct {record}* this) {
-    views std_span_size(this);
-    ensures result == std_span_size(this) * {bytes}u64;
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::span<{T}>::data",
-        signature: "{T_signature} *(void) const noexcept",
-        contract: "extern {element}* {name}(const struct {record}* this) {
-    views std_span_data(this);
-    ensures result == std_span_data(this);
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::span<{T}>::front",
-        signature: "{T_signature} &(void) const noexcept",
-        contract: "extern {element}& {name}(const struct {record}* this) {
-    views std_span_data(this);
-    views std_span_size(this);
-    requires 1u64 <= std_span_size(this);
-    ensures &result == std_span_data(this);
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::span<{T}>::back",
-        signature: "{T_signature} &(void) const noexcept",
-        contract: "extern {element}& {name}(const struct {record}* this) {
-    views std_span_data(this);
-    views std_span_size(this);
-    requires 1u64 <= std_span_size(this);
-    ensures &result == std_span_data(this) + (std_span_size(this) - 1u64);
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::span<{T}>::operator[]",
-        signature: "{T_signature} &(unsigned long) const noexcept",
-        contract: "extern {element}& {name}(const struct {record}* this, uint64 {p1}) {
-    views std_span_data(this);
-    views std_span_size(this);
-    requires {p1} < std_span_size(this);
-    ensures &result == std_span_data(this) + {p1};
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::span<{T}>::first",
-        signature: "class std::span<{T_signature}> (unsigned long) const noexcept",
-        contract: "extern struct {record} {name}(const struct {record}* this, uint64 {p1}) {
-    views std_span_data(this);
-    views std_span_size(this);
-    requires {p1} <= std_span_size(this);
-    ensures std_span_data(result) == std_span_data(this);
-    ensures std_span_size(result) == {p1};
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::span<{T}>::last",
-        signature: "class std::span<{T_signature}> (unsigned long) const noexcept",
-        contract: "extern struct {record} {name}(const struct {record}* this, uint64 {p1}) {
-    views std_span_data(this);
-    views std_span_size(this);
-    requires {p1} <= std_span_size(this);
-    ensures std_span_data(result) == std_span_data(this) + (std_span_size(this) - {p1});
-    ensures std_span_size(result) == {p1};
-}",
-    },
-    CatalogEntry {
-        qualified_name: "std::span<{T}>::subspan",
-        signature: "class std::span<{T_signature}> (unsigned long, unsigned long) const noexcept",
-        contract:
-            "extern struct {record} {name}(const struct {record}* this, uint64 {p1}, uint64 {p2}) {
-    views std_span_data(this);
-    views std_span_size(this);
-    requires {p1} <= std_span_size(this);
-    requires {p2} != {dynamic_extent} implies {p2} <= std_span_size(this) - {p1};
-    ensures std_span_data(result) == std_span_data(this) + {p1};
-    ensures {p2} == {dynamic_extent} implies std_span_size(result) == std_span_size(this) - {p1};
-    ensures {p2} != {dynamic_extent} implies std_span_size(result) == {p2};
-}",
-    },
+/// The Click library file that states the dynamic-extent `std::span<T>`
+/// contracts, as `template<class T>` methods a sidecar writes.
+pub(crate) const SPAN_LIBRARY: &str = include_str!("../../../library/cpp/span.click");
+
+/// The methods of dynamic-extent `std::span<T>` that [`SPAN_LIBRARY`]
+/// states, each with its canonical signature as Clang spells it, `{T}` the
+/// element there. An axiom matching one is an instance of the library's
+/// method `std::span<T>::name`, written out at its element.
+const SPAN_METHODS: &[(&str, &str)] = &[
+    ("size", "unsigned long (void) const noexcept"),
+    ("size_bytes", "unsigned long (void) const noexcept"),
+    ("data", "{T} *(void) const noexcept"),
+    ("front", "{T} &(void) const noexcept"),
+    ("back", "{T} &(void) const noexcept"),
+    ("operator[]", "{T} &(unsigned long) const noexcept"),
+    (
+        "first",
+        "class std::span<{T}> (unsigned long) const noexcept",
+    ),
+    (
+        "last",
+        "class std::span<{T}> (unsigned long) const noexcept",
+    ),
+    (
+        "subspan",
+        "class std::span<{T}> (unsigned long, unsigned long) const noexcept",
+    ),
 ];
+
+/// The library method an axiom is an instance of, by importer name, when
+/// the Click library states it for the axiom's type arguments: for
+/// `std::span<unsigned int>::size`, `std::span<T>::size`. An element
+/// outside [`SPAN_ELEMENTS`], or a signature the library does not state,
+/// is no instance, so a call is refused by name.
+pub(super) fn library_generic(axiom: &super::schema::CppAxiom) -> Option<String> {
+    let (element, method) = axiom
+        .qualified_name
+        .strip_prefix("std::span<")?
+        .rsplit_once(">::")?;
+    let element = SPAN_ELEMENTS
+        .iter()
+        .find(|candidate| candidate.name == element)?;
+    SPAN_METHODS
+        .iter()
+        .find(|(name, signature)| {
+            *name == method && signature.replace("{T}", element.signature) == axiom.signature
+        })
+        .map(|(name, _)| super::names::path_name(&["std", "span<T>", name]))
+}
+
+/// Whether `generic`, a method's importer name, is a Click library
+/// template's method: such a template has no generic method in the import,
+/// only the instances its axioms are.
+pub(crate) fn is_library_generic(generic: &str) -> bool {
+    SPAN_METHODS
+        .iter()
+        .any(|(name, _)| super::names::path_name(&["std", "span<T>", name]) == generic)
+}
 
 // `std::span<T, N>` with static extent `N`: a view of `[data, data + N)`. The
 // extent is the template argument, not state, so the contracts state it as
@@ -498,12 +459,11 @@ fn catalog_contract(axiom: &super::schema::CppAxiom) -> Option<String> {
             .replace("{T}", element.name)
             .replace("{N}", &extent_text)
     };
-    let family = if array {
-        ARRAY_CATALOG
-    } else if extent.is_some() {
-        STATIC_SPAN_CATALOG
-    } else {
-        SPAN_CATALOG
+    // A dynamic-extent span's methods are the library's templates.
+    let family = match (array, extent) {
+        (true, _) => ARRAY_CATALOG,
+        (false, Some(_)) => STATIC_SPAN_CATALOG,
+        (false, None) => return None,
     };
     let entry = family.iter().find(|entry| {
         instantiate(entry.qualified_name) == axiom.qualified_name
@@ -524,20 +484,27 @@ fn catalog_contract(axiom: &super::schema::CppAxiom) -> Option<String> {
     Some(contract)
 }
 
-/// The Click contracts for the axioms an import reaches, as `extern`
-/// declarations. An axiom without a catalog entry gets none, so a caller
-/// is refused unless the sidecar states one itself. Returns the text and
-/// the name of each function it declares.
+/// The Click contracts for the axioms an import reaches: the library's
+/// templates, whose instances the axioms are, then the catalog's `extern`
+/// declarations. An axiom with neither gets none, so a caller is refused
+/// unless the sidecar states one itself. Returns the text and the name of
+/// each function it declares.
 pub(super) fn contracts(
     export: &super::CppExport,
     names: &super::names::ResolvedNames,
 ) -> Result<(String, BTreeSet<String>), String> {
     let mut source = String::new();
     let mut models = BTreeSet::new();
+    let mut library = false;
     for function in &export.reachable_functions {
         let Some(axiom) = &function.axiom else {
             continue;
         };
+        if library_generic(axiom).is_some() {
+            models.insert(names.require(&function.declaration_id)?.to_string());
+            library = true;
+            continue;
+        }
         let Some(contract) = catalog_contract(axiom) else {
             continue;
         };
@@ -565,6 +532,9 @@ pub(super) fn contracts(
         }
         source.push_str(&contract);
         source.push('\n');
+    }
+    if library {
+        source.insert_str(0, SPAN_LIBRARY);
     }
     Ok((source, models))
 }
@@ -661,35 +631,47 @@ mod tests {
     }
 
     #[test]
-    fn span_entries_are_generic_over_supported_elements_only() {
+    fn span_methods_are_library_instances_over_supported_elements_only() {
         let axiom = |qualified_name: &str, signature: &str| super::super::schema::CppAxiom {
             qualified_name: qualified_name.into(),
             signature: signature.into(),
         };
-        let bytes = catalog_contract(&axiom(
+        let generic = library_generic(&axiom(
             "std::span<std::byte>::size_bytes",
             "unsigned long (void) const noexcept",
         ))
         .unwrap();
-        assert!(bytes.contains("std_span_size(this) * 1u64"), "{bytes}");
-        let data = catalog_contract(&axiom(
-            "std::span<unsigned int>::data",
-            "unsigned int *(void) const noexcept",
-        ))
-        .unwrap();
-        assert!(data.starts_with("extern uint32* "), "{data}");
+        assert!(is_library_generic(&generic));
+        assert_eq!(
+            crate::languages::cpp::names::cpp_display_name(&generic).unwrap(),
+            "std::span<T>::size_bytes"
+        );
+        assert!(
+            library_generic(&axiom(
+                "std::span<unsigned int>::data",
+                "unsigned int *(void) const noexcept"
+            ))
+            .is_some()
+        );
         // The signature must spell the same element as the name.
         assert!(
-            catalog_contract(&axiom(
+            library_generic(&axiom(
                 "std::span<unsigned int>::data",
                 "int *(void) const noexcept"
             ))
             .is_none()
         );
-        // An element the catalog cannot state has no entry.
+        // An element the library cannot state, or a static extent, has none.
         assert!(
-            catalog_contract(&axiom(
+            library_generic(&axiom(
                 "std::span<long>::size",
+                "unsigned long (void) const noexcept"
+            ))
+            .is_none()
+        );
+        assert!(
+            library_generic(&axiom(
+                "std::span<int, 4>::size",
                 "unsigned long (void) const noexcept"
             ))
             .is_none()

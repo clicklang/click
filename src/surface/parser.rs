@@ -241,9 +241,11 @@ pub(in crate::surface) struct ProgramLayouts {
     /// method's.
     pub(in crate::surface) virtual_dispatches: Vec<(String, String)>,
     /// Each instance of a generic Rust function the import declares, with
-    /// the generic function and the instance's parameter and result types:
-    /// it has the generic function's contract at those types.
-    pub(in crate::surface) rust_generic_instances: Vec<(String, String, Vec<C0Type>, C0Type)>,
+    /// the generic function, the instance's parameter and result types, and
+    /// its parameters' names as a head writes them: it has the generic
+    /// function's contract at those types.
+    pub(in crate::surface) rust_generic_instances:
+        Vec<(String, String, Vec<C0Type>, C0Type, Vec<String>)>,
     /// The instances of each generic crate trait the import declares an
     /// interface of, by the trait's importer name.
     pub(in crate::surface) rust_trait_instances: BTreeMap<String, BTreeSet<Vec<String>>>,
@@ -911,13 +913,14 @@ struct Parser {
     rust_abstract_type_parameters: BTreeSet<String>,
     /// The generic Rust function instances the import declares, as the
     /// layouts give them.
-    rust_generic_instances: Vec<(String, String, Vec<C0Type>, C0Type)>,
+    rust_generic_instances: Vec<(String, String, Vec<C0Type>, C0Type, Vec<String>)>,
     /// The index of each `fn` token of a generic function's instance the
     /// parser wrote out: only these may name an instance.
     rust_written_instances: BTreeSet<usize>,
     /// The methods of generic C++ class templates' instances, which the
-    /// sidecar does not write: each is written out from its generic method.
-    cpp_generic_instances: BTreeSet<String>,
+    /// sidecar does not write, each with its generic method: each is
+    /// written out from its generic method.
+    cpp_generic_instances: BTreeMap<String, String>,
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
@@ -1363,7 +1366,7 @@ impl Parser {
         // A generic function's instances are written out at their types.
         let mut function_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
         let mut impl_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
-        for (instance, generic, _, _) in &parser.rust_generic_instances {
+        for (instance, generic, _, _, _) in &parser.rust_generic_instances {
             if let Some(arguments) =
                 crate::languages::rust::names::instance_type_arguments(instance, generic)
             {
@@ -1450,19 +1453,27 @@ impl Parser {
             parser.language = SourceLanguage::Cpp;
             // A generic class template's method is written out at each of
             // its instances the import declares.
-            let mut method_instances = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
-            for (instance, generic, _, _) in &parser.rust_generic_instances {
+            let mut method_instances =
+                BTreeMap::<String, BTreeMap<Vec<String>, Vec<String>>>::new();
+            for (instance, generic, _, _, parameters) in &parser.rust_generic_instances {
                 let arguments =
                     cpp_generic_templates::instance_arguments(instance).ok_or_else(|| {
                         ClickError::new(format!(
                             "the C++ generic instance `{instance}` names no class template instance"
                         ))
                     })?;
+                // The receiver is implicit in a head.
+                let parameters = match parameters.split_first() {
+                    Some((receiver, rest)) if receiver == "this" => rest,
+                    _ => parameters,
+                };
                 method_instances
                     .entry(generic.clone())
                     .or_default()
-                    .insert(arguments);
-                parser.cpp_generic_instances.insert(instance.clone());
+                    .insert(arguments, parameters.to_vec());
+                parser
+                    .cpp_generic_instances
+                    .insert(instance.clone(), generic.clone());
             }
             let (tokens, positions, written) = cpp_generic_templates::expand_generic_methods(
                 std::mem::take(&mut parser.tokens),
@@ -1606,7 +1617,7 @@ impl Parser {
             rust_abstract_type_parameters: BTreeSet::new(),
             rust_generic_instances: Vec::new(),
             rust_written_instances: BTreeSet::new(),
-            cpp_generic_instances: BTreeSet::new(),
+            cpp_generic_instances: BTreeMap::new(),
             rust_trait_implementations: Vec::new(),
             cpp_dispatches: Vec::new(),
             cpp_receiver_calls: BTreeMap::new(),
@@ -2163,7 +2174,7 @@ impl Parser {
         }
         // A generic function's instance the sidecar does not state has the
         // generic function's contract at its types.
-        for (instance, generic, parameter_types, return_type) in
+        for (instance, generic, parameter_types, return_type, _) in
             std::mem::take(&mut self.rust_generic_instances)
         {
             if function_blocks
@@ -4484,8 +4495,16 @@ impl Parser {
         };
         if self.verifies_cpp()
             && !written_instance
-            && self.cpp_generic_instances.contains(signature.name())
+            && let Some(generic) = self.cpp_generic_instances.get(signature.name())
         {
+            // A sidecar states neither a library model nor an instance of it.
+            if crate::languages::cpp::standard_library::is_library_generic(generic) {
+                return Err(self.error(format!(
+                    "`{}` has the Click library's contract (`library/cpp/`); a sidecar does \
+                     not restate a library model",
+                    crate::languages::display_source_names(signature.name())
+                )));
+            }
             return Err(self.error(format!(
                 "`{}` is an instance of a generic class template's method, whose contract \
                  it has at its types; write the contract once, on the method in \
@@ -5872,15 +5891,24 @@ impl Parser {
                 reference: false,
             });
         }
+        // C++'s `std::byte` is a byte, Click's `uint8`.
+        let std_byte = self.verifies_cpp()
+            && self.peek_ident() == Some("std")
+            && self.tokens.get(self.position + 1) == Some(&Token::ColonColon)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(word)) if word == "byte");
         // C++ names a record by its own name or path, `std::span<int>`; C
         // writes `struct name`.
-        let qualified_record = if self.verifies_cpp() {
+        let qualified_record = if self.verifies_cpp() && !std_byte {
             self.parse_cpp_record_type()
         } else {
             None
         };
         let spelling = match &qualified_record {
             Some(record) => record.clone(),
+            None if std_byte => {
+                self.position += 3;
+                "uint8".to_string()
+            }
             None => self.expect_ident("type")?,
         };
         let cpp_record = qualified_record.is_some()

@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "byte.cpp": {
+              "compilation_database_sha256": "2202bc0d9c1fc4b4be120e9fad2801e668d738112fb8ef0b9d134434d2dd49b8",
+              "dependencies": {},
+              "logical_source_sha256": "bcc635605e538ce55165d4130671186f69fa1e9ce0f843f69e6a093d795164a2",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "byte.cpp",
+                  "-o",
+                  "byte.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "byte.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "bcc635605e538ce55165d4130671186f69fa1e9ce0f843f69e6a093d795164a2"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "629ea2dfbd854ea512d70909608a5272cd685b6afefd4cd0c4b947da3736cf2e",
+          "name": "clang"
+        },
+        "sources": {
+          "byte.cpp": {
+            "artifact": {
+              "bytes": 2830,
+              "path": ".click/fixture/byte.cpp.click-cpp.json",
+              "sha256": "a19e686ea34995cb5a6c2e8c86aff2388c3499b603c29d40b9cd6a3944445778"
+            },
+            "identity": "9935742eb49ec60ba28be00aac81d1180efb917d3bb4b7bf0be2fa16f02e5796",
+            "inputs": {
+              "$unit/byte.cpp": "bcc635605e538ce55165d4130671186f69fa1e9ce0f843f69e6a093d795164a2"
+            }
+          }
+        },
+        "unit": "97712fc57493ca55e53929a5c23ae737342d376e588e9c1244f3118c4cefa7ac"
+      }
+    }
+  }
+}
