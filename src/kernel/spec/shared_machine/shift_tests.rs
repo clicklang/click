@@ -61,6 +61,15 @@ fn native_domain(value: &Proposition) -> Proposition {
 
 #[test]
 fn c_shifts_match_native_terms_and_independently_typed_count_domains() {
+    check_shift_parity(false);
+}
+
+#[test]
+fn rust_shifts_match_native_terms_and_original_width_count_domains() {
+    check_shift_parity(true);
+}
+
+fn check_shift_parity(rust: bool) {
     let _session = VerificationSession::enter();
     let mut execution = ExecutionBudget::new();
     let budget = SpecEvaluation::logical(&mut execution);
@@ -94,14 +103,24 @@ fn c_shifts_match_native_terms_and_independently_typed_count_domains() {
             for op in OPS {
                 for left in &operands {
                     for right in &counts {
-                        let mut expected = crate::kernel::eval::apply_spec_machine_arithmetic(
-                            op,
-                            SpecDivision::Total,
-                            &a.value_from_term(left.clone()),
-                            &b.value_from_term(right.clone()),
-                            &ExecutionFacts::default(),
-                            &[],
-                        )
+                        let mut expected = if rust {
+                            crate::kernel::eval::apply_spec_rust_shift(
+                                op,
+                                &a.value_from_term(left.clone()),
+                                &b.value_from_term(right.clone()),
+                                &ExecutionFacts::default(),
+                                &[],
+                            )
+                        } else {
+                            crate::kernel::eval::apply_spec_machine_arithmetic(
+                                op,
+                                SpecDivision::Total,
+                                &a.value_from_term(left.clone()),
+                                &b.value_from_term(right.clone()),
+                                &ExecutionFacts::default(),
+                                &[],
+                            )
+                        }
                         .unwrap();
                         for o in &mut expected.obligations {
                             o.proposition = native_domain(o.proposition());
@@ -113,8 +132,12 @@ fn c_shifts_match_native_terms_and_independently_typed_count_domains() {
                             let left = input(a, left, l);
                             let right = input(b, right, r);
                             let exports = KernelTermExport::machine_export_count();
-                            let mut result =
-                                apply_values(Some(op), &left, &right, &budget).unwrap();
+                            let mut result = if rust {
+                                shifts::rust(op, &left, &right)
+                            } else {
+                                apply_values(Some(op), &left, &right, &budget)
+                            }
+                            .unwrap();
                             assert_eq!(KernelTermExport::machine_export_count(), exports);
                             let (crate::kernel::integer_c_value!(expected_word)) = &expected_value
                             else {
@@ -192,6 +215,63 @@ fn c_shift_evaluator_retains_wide_count_refusals() {
                 .any(|o| !PureFactContext::new().proves_exact(o.proposition()))
         );
     }
+}
+
+#[test]
+fn rust_shift_evaluator_retains_narrow_result_and_count_refusals() {
+    for format in FORMATS {
+        for op in OPS {
+            let leaf = SpecExpression::Value(
+                format.value_from_term(MachineTerm::Variable(Variable(995490))),
+            );
+            let count = || {
+                Box::new(SpecExpression::Value(CValue::UInt64(
+                    MachineTerm::uint64_constant(1),
+                )))
+            };
+            let shift = |value| {
+                if op == MachineBinaryOp::ShiftLeft {
+                    SpecExpression::RustShiftLeft(Box::new(value), count())
+                } else {
+                    SpecExpression::RustShiftRight(Box::new(value), count())
+                }
+            };
+            let expression = shift(shift(leaf));
+            let _session = VerificationSession::enter();
+            let mut execution = ExecutionBudget::new();
+            let exports = KernelTermExport::machine_export_count();
+            let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                SpecScope::unbound(&CState::new(), None),
+                &expression,
+                &PureFactContext::new(),
+                &mut SpecEvaluation::logical(&mut execution),
+            )
+            .unwrap();
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(paths.len(), 1);
+            assert!(matches!(paths[0].value, SpecValue::Shared(_)));
+            assert_eq!(paths[0].value.c_type(), format.c_type());
+            assert_eq!(native_results(paths), evaluate(&expression, true));
+            let value = format
+                .value_from_term(MachineTerm::Variable(Variable(995491)))
+                .into();
+            let count = CValue::UInt64(MachineTerm::uint64_constant(u64::from(
+                format.format().bits(),
+            )))
+            .into();
+            let result = shifts::rust(op, &value, &count).unwrap();
+            assert!(
+                result
+                    .obligations
+                    .iter()
+                    .any(|o| !PureFactContext::new().proves_exact(o.proposition()))
+            );
+        }
+    }
+    let wide = CValue::Int128(MachineTerm::Variable(Variable(995492))).into();
+    let word = CValue::Int32(MachineTerm::constant(1)).into();
+    assert!(shifts::rust(MachineBinaryOp::ShiftLeft, &wide, &word).is_none());
+    assert!(shifts::rust(MachineBinaryOp::ShiftLeft, &word, &wide).is_none());
 }
 
 mod scaling_tests {

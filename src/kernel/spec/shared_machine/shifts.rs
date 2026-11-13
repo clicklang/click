@@ -1,4 +1,4 @@
-//! C shifts promote value and count independently; count bounds precede low-word conversion.
+//! Retained C and Rust shifts share count handling and preserve language-specific result rules.
 use super::*;
 
 fn convert(
@@ -15,8 +15,51 @@ fn convert(
 
 pub(super) fn apply(
     op: MachineBinaryOp,
+    left: (MachineIntegerType, MachineOperandView<'_>),
+    right: (MachineIntegerType, MachineOperandView<'_>),
+) -> Option<PreparedExpression> {
+    with_count_width(op, left, right, None)
+}
+
+pub(super) fn rust(
+    op: MachineBinaryOp,
+    left: &SpecValue,
+    right: &SpecValue,
+) -> Option<PreparedExpression> {
+    let (format, view) = left.machine()?;
+    let bits = format.format().bits();
+    if bits > 64 {
+        return None;
+    }
+    let operand_format = if op == MachineBinaryOp::ShiftLeft {
+        if bits == 64 {
+            MachineIntegerType::UInt64
+        } else {
+            MachineIntegerType::UInt32
+        }
+    } else {
+        format
+    };
+    let operand = convert(format, retained_operand(format, view), operand_format)?;
+    let mut result = with_count_width(
+        op,
+        (operand_format, MachineOperandView::Shared(&operand)),
+        right.machine()?,
+        Some(bits),
+    )?;
+    let KernelType::C(result_type) = result.value.ty() else {
+        unreachable!()
+    };
+    let result_format = MachineIntegerType::from_c_type(*result_type)?;
+    result.value = convert(result_format, result.value, format)?;
+    Some(result)
+}
+
+fn with_count_width(
+    op: MachineBinaryOp,
     (left_format, left): (MachineIntegerType, MachineOperandView<'_>),
     (right_format, right): (MachineIntegerType, MachineOperandView<'_>),
+    count_width: Option<u32>,
 ) -> Option<PreparedExpression> {
     use crate::kernel::machine_integer::conversion::usual_arithmetic_format;
     let format = usual_arithmetic_format(left_format, left_format)?;
@@ -62,7 +105,7 @@ pub(super) fn apply(
         count_format,
         &count,
         CompareRelation::GreaterEqual,
-        format.format().bits(),
+        count_width.unwrap_or(format.format().bits()),
     ));
     // Keep the wide count in its bounds; only the operation reads its low word.
     if !wide && count_format.format().bits() == 64 {

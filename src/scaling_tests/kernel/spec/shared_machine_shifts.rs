@@ -93,3 +93,36 @@ fn retained_int64_order_uses_root_width_bounds_without_walking_prefixes() {
         previous = Some(work);
     }
 }
+
+#[test]
+fn rust_shift_chains_keep_original_formats_without_exports() {
+    for format in FORMATS {
+        for op in OPS {
+            let mut previous = None;
+            for size in [16, 64, 256] {
+                let _session = VerificationSession::enter();
+                let mut root = input(format, &MachineTerm::Variable(Variable(995493)), true);
+                let count = input(
+                    MachineIntegerType::UInt64,
+                    &MachineTerm::Variable(Variable(995494)),
+                    true,
+                );
+                let exports = KernelTermExport::machine_export_count();
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    for _ in 0..size {
+                        root = shifts::rust(op, &root, &count).unwrap().value.into();
+                    }
+                });
+                assert_eq!(root.c_type(), format.c_type());
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                if let Some(before) = previous {
+                    assert!(
+                        work <= before * 5 + 8,
+                        "{format:?} {op:?}: {size}: {work} vs {before}"
+                    );
+                }
+                previous = Some(work);
+            }
+        }
+    }
+}
