@@ -426,14 +426,20 @@ pub(super) fn template_arguments_at(
                 printed.push_str(word);
                 word_before = true;
             }
-            Token::Number(number) => {
+            // A number, such as a static extent, of any width.
+            token => {
+                let number = match token {
+                    Token::Number(number) => number.to_string(),
+                    Token::UnsuffixedInt64(number) => number.to_string(),
+                    Token::UnsuffixedUInt64(number) => number.to_string(),
+                    _ => return None,
+                };
                 if word_before {
                     printed.push(' ');
                 }
-                printed.push_str(&number.to_string());
+                printed.push_str(&number);
                 word_before = true;
             }
-            _ => return None,
         }
     }
     None

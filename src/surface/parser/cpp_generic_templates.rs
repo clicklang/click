@@ -14,6 +14,10 @@
 //! them there: a standard library names `std::span<int>::first`'s count
 //! `__count`, which the template need not spell.
 //!
+//! A non-type parameter, `template<class T, std::size_t N>`, is an extent:
+//! an instance writes its argument as a `uint64` literal, `4u64`, and as
+//! Clang prints it, `4`, in a template argument list, `std::span<int, 4>`.
+//!
 //! The Click library's templates (`library/cpp/`) state standard methods
 //! whose generic method no import has: only their instances are written,
 //! and the template itself is dropped.
@@ -33,8 +37,8 @@ struct Block {
     head_start: usize,
     /// The index of its clause block's closing brace.
     clauses_end: usize,
-    /// Its type parameters' names.
-    names: Vec<String>,
+    /// Its template parameters.
+    names: Vec<TemplateParameter>,
     /// Its method's parameters' names, by position, `None` for one the head
     /// does not name.
     parameters: Vec<Option<String>>,
@@ -76,7 +80,7 @@ pub(super) fn expand_generic_methods(
                     return Err(error_at(
                         &source[index].1,
                         format!(
-                            "the generic method takes {} type arguments and its instance {}",
+                            "the generic method takes {} template arguments and its instance {}",
                             block.names.len(),
                             arguments.len()
                         ),
@@ -117,7 +121,8 @@ fn block_at(
     let names = template_parameters(source, open, close).ok_or_else(|| {
         error_at(
             position,
-            "a generic method's template parameters are types, `template<class T>`",
+            "a generic method's template parameters are types, `class T`, or extents, \
+             `std::size_t N`",
         )
     })?;
     // A generic method's named contract is stated once for every type, and
@@ -215,27 +220,48 @@ fn parameter_names(source: &[Spanned], open: usize, close: usize) -> Vec<Option<
     names
 }
 
-/// The names of the type parameters between `<` at `open` and `>` at
-/// `close`, each `class T` or `typename T`.
+/// A template parameter: a type, or a `uint64` value.
+pub(super) struct TemplateParameter {
+    pub(super) name: String,
+    pub(super) value: bool,
+}
+
+/// The template parameters between `<` at `open` and `>` at `close`, each
+/// `class T` or `typename T`, or a value `std::size_t N`, `size_t N` or
+/// `unsigned long N`.
 pub(super) fn template_parameters(
     source: &[Spanned],
     open: usize,
     close: usize,
-) -> Option<Vec<String>> {
-    let mut names = Vec::new();
+) -> Option<Vec<TemplateParameter>> {
+    let mut parameters = Vec::<TemplateParameter>::new();
     let mut at = open + 1;
     while at < close {
-        if !is_ident(source.get(at), "class") && !is_ident(source.get(at), "typename") {
-            return None;
-        }
-        let Some((Token::Ident(name), _)) = source.get(at + 1) else {
+        let word = |offset: usize, word: &str| is_ident(source.get(at + offset), word);
+        let (value, kind) = if word(0, "class") || word(0, "typename") || word(0, "size_t") {
+            (word(0, "size_t"), 1)
+        } else if word(0, "unsigned") && word(1, "long") {
+            (true, 2)
+        } else if word(0, "std")
+            && source.get(at + 1).map(|(token, _)| token) == Some(&Token::ColonColon)
+            && word(2, "size_t")
+        {
+            (true, 3)
+        } else {
             return None;
         };
-        if names.contains(name) {
+        at += kind;
+        let Some((Token::Ident(name), _)) = source.get(at) else {
+            return None;
+        };
+        if parameters.iter().any(|parameter| &parameter.name == name) {
             return None;
         }
-        names.push(name.clone());
-        at += 2;
+        parameters.push(TemplateParameter {
+            name: name.clone(),
+            value,
+        });
+        at += 1;
         if at < close {
             if source[at].0 != Token::Comma {
                 return None;
@@ -243,13 +269,14 @@ pub(super) fn template_parameters(
             at += 1;
         }
     }
-    (!names.is_empty()).then_some(names)
+    (!parameters.is_empty()).then_some(parameters)
 }
 
 /// The instance block of the generic method block at `start` at
 /// `arguments`: `extern` and its head and clauses with each type parameter
 /// spelled as its argument, `unsigned long` as two words and `std::byte`
-/// as a path, and each parameter renamed to the instance's `parameters`.
+/// as a path, each value parameter as its `uint64` literal, and each
+/// parameter renamed to the instance's `parameters`.
 fn instance(
     source: &[Spanned],
     start: usize,
@@ -258,11 +285,44 @@ fn instance(
     parameters: &[String],
 ) -> Result<Vec<Spanned>, ClickError> {
     let position = source[start].1.clone();
-    let substitution = block
-        .names
+    let mut substitution = BTreeMap::new();
+    let mut values = BTreeMap::new();
+    for (parameter, argument) in block.names.iter().zip(arguments) {
+        if !parameter.value {
+            substitution.insert(&parameter.name, argument);
+            continue;
+        }
+        let value = argument.parse::<u64>().map_err(|_| {
+            error_at(
+                &position,
+                format!(
+                    "the instance's argument `{argument}` for `{}` is not an extent",
+                    parameter.name
+                ),
+            )
+        })?;
+        // Clang prints an extent in a template argument list as a number.
+        let (printed, _) = tokenizer::tokenize(argument, None)?;
+        values.insert(parameter.name.as_str(), (value, printed));
+    }
+    // The indices inside a template argument list, `Buf<T, N>`, where a
+    // value is written as Clang prints it.
+    let plain = source[..=block.clauses_end]
         .iter()
-        .zip(arguments)
-        .collect::<BTreeMap<_, _>>();
+        .map(|(token, _)| token.clone())
+        .collect::<Vec<_>>();
+    let mut in_arguments = BTreeSet::new();
+    if !values.is_empty() {
+        for at in block.head_start..block.clauses_end {
+            if matches!(plain[at], Token::Ident(_))
+                && plain[at + 1] == Token::LessThan
+                && let Some((_, end)) =
+                    super::cpp_syntax::template_arguments_at(&plain, at + 1, true)
+            {
+                in_arguments.extend(at + 2..end);
+            }
+        }
+    }
     // A head restates its declaration's parameter names, which an instance
     // may name otherwise; a count that differs is the signature check's.
     let renaming = if block.parameters.len() == parameters.len() {
@@ -297,6 +357,18 @@ fn instance(
             Some(Token::Dot | Token::Arrow | Token::ColonColon)
         );
         match token {
+            Token::Ident(word) if !member && values.contains_key(word.as_str()) => {
+                let (value, printed) = &values[word.as_str()];
+                if in_arguments.contains(&at) {
+                    tokens.extend(
+                        printed
+                            .iter()
+                            .map(|token| (token.clone(), position.clone())),
+                    );
+                } else {
+                    tokens.push((Token::UInt64Number(*value), position.clone()));
+                }
+            }
             Token::Ident(word) if substitution.contains_key(word) => {
                 for (index, part) in substitution[word].split("::").enumerate() {
                     if index > 0 {
@@ -348,9 +420,9 @@ pub(super) fn instance_arguments(instance: &str) -> Option<Vec<String>> {
 mod tests {
     use super::*;
 
-    fn expand(source: &str, arguments: &[&str], parameters: &[&str]) -> String {
+    fn expand(source: &str, generic: &[&str], arguments: &[&str], parameters: &[&str]) -> String {
         let (tokens, positions) = tokenizer::tokenize(source, None).unwrap();
-        let generic_name = crate::languages::cpp::names::path_name(&["Cell<T>", "set"]);
+        let generic_name = crate::languages::cpp::names::path_name(generic);
         let instances = BTreeMap::from([(
             generic_name,
             BTreeMap::from([(
@@ -377,6 +449,7 @@ mod tests {
     fn an_instance_takes_its_parameter_names_and_spells_its_arguments() {
         let written = expand(
             "template<class T> void Cell<T>::set(T v) { ensures this->v == v; }",
+            &["Cell<T>", "set"],
             &["std::byte"],
             &["__value"],
         );
@@ -384,6 +457,25 @@ mod tests {
             written,
             "extern void Cell `<` std `::` byte `>` `::` set `(` std `::` byte __value `)` `{` \
              ensures this `->` v `==` __value `;` `}`"
+        );
+    }
+
+    // A value parameter is an extent: a `uint64` literal in the contract,
+    // and a number as Clang prints it in the instance's path.
+    #[test]
+    fn an_instance_writes_an_extent_as_a_literal() {
+        let written = expand(
+            "template<class T, unsigned long N> unsigned long Buf<T, N>::get(unsigned long i) \
+             const { requires i < N; ensures result == N * sizeof(T); }",
+            &["Buf<T, N>", "get"],
+            &["int", "4"],
+            &["i"],
+        );
+        assert_eq!(
+            written,
+            "extern unsigned long Buf `<` int `,` number `4` `>` `::` get `(` unsigned long i \
+             `)` const `{` requires i `<` uint64 number `4u64` `;` ensures result `==` \
+             uint64 number `4u64` `*` sizeof `(` int `)` `;` `}`"
         );
     }
 }

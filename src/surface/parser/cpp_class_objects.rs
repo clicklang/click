@@ -200,7 +200,10 @@ fn template_prefix(source: &[Spanned], start: usize) -> Option<(Vec<String>, usi
         return None;
     }
     let close = matching(source, start + 1)?;
-    let names = super::cpp_generic_templates::template_parameters(source, start + 1, close)?;
+    let names = super::cpp_generic_templates::template_parameters(source, start + 1, close)?
+        .into_iter()
+        .map(|parameter| parameter.name)
+        .collect();
     Some((names, close + 1))
 }
 
