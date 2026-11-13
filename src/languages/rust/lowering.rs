@@ -103,9 +103,11 @@ impl EnumTypes {
                                 // The library's `Option` of a shared
                                 // reference, which a slice iterator's
                                 // `next()` returns, holds that reference.
-                                let reference_payload = declared.generic.as_deref()
-                                    == Some("Option")
-                                    && matches!(field, Type::Reference { mutable: false, .. });
+                                // So does the library's `Slice`, a shared
+                                // slice's data and length.
+                                let reference_payload =
+                                    matches!(declared.generic.as_deref(), Some("Option" | "Slice"))
+                                        && matches!(field, Type::Reference { mutable: false, .. });
                                 if c_type == C0Type::Void
                                     || (c_type.is_pointer() && !reference_payload)
                                 {
@@ -240,6 +242,7 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             Type::SharedArrayIterator { element } => {
                 Ok(C0Type::ParameterPointer(slice_iter_type(element)?))
             }
+            Type::ChunkIterator => Ok(C0Type::ParameterPointer(chunks_exact_type())),
             Type::Array { element, .. } => match element.as_ref() {
                 Type::I32 => Ok(C0Type::Int32Pointer),
                 Type::U8 => Ok(C0Type::UInt8Pointer),
@@ -512,6 +515,7 @@ fn lower_function(
         || f.core_method.as_deref().is_some_and(|method| {
             method.starts_with(super::standard_library::CHUNKS_EXACT)
                 || method.starts_with(super::standard_library::SLICE_ITER)
+                || method.starts_with(super::standard_library::SLICE_VALUE)
         }))
     {
         return Err("Rust reference/aggregate returns are not supported".into());
@@ -711,6 +715,7 @@ fn lower_function(
         library_slice_iterators: BTreeMap::new(),
         library_slice_options: BTreeMap::new(),
         library_next_options: BTreeMap::new(),
+        library_chunk_built: BTreeSet::new(),
         ranges: BTreeMap::new(),
         enumerated: BTreeSet::new(),
         shared_array_options: BTreeMap::new(),
@@ -788,6 +793,9 @@ struct Context<'a> {
     library_slice_options: BTreeMap<String, Type>,
     /// Each library slice iterator's `next()` result local.
     library_next_options: BTreeMap<String, String>,
+    /// The library `chunks_exact` iterators built in place, whose
+    /// `remainder(&it)` is read where they are built.
+    library_chunk_built: BTreeSet<String>,
     /// The range locals, with their element type.
     ranges: BTreeMap<String, (Type, bool)>,
     /// The enumerated slice iterators and their `Option` locals.
@@ -2066,6 +2074,12 @@ impl Context<'_> {
             E::ChunkOptionTag { option } => {
                 if !self.chunk_options.contains(option) {
                     return Err("unknown chunk Option".into());
+                }
+                if library_iterators() {
+                    return Ok(CExpression::EnumIs {
+                        value: Box::new(c_variable(option)),
+                        variant: "Some".into(),
+                    });
                 }
                 Ok(c_variable(format!("{option}_some")))
             }

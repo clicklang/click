@@ -71,7 +71,6 @@ fn nested(bytes: &[u8]) -> usize {
             have to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
         }
         preserve by {
-            step(); step(); step(); step();
             if 0u64 < iter.len() {
                 have chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).len() == bytes.len() / 4u64 by {
                     apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
@@ -136,7 +135,6 @@ fn nested(bytes: &[u8]) -> usize {
                         have to_integer(iter.len()) + iterations == to_integer(chunk_len / 2u64);
                     }
                     preserve by {
-                        step(); step(); step(); step();
                         if 0u64 < iter.len() {
                             have chunks_exact::chunks_exact(Slice<u8>::Slice(chunk, chunk_len), 2u64).len() == chunk_len / 2u64 by {
                                 apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(chunk, chunk_len), 2u64));
@@ -198,8 +196,9 @@ fn nested(bytes: &[u8]) -> usize {
                                     }
                                 }
                             }
+                            have to_integer(iter.len()) + iterations == to_integer(chunk_len / 2u64);
                             mark took;
-                            step_until(read(0));
+                            step_until(read(2));
                             have part == bytes + ((1u64 - loop(0).iter.len()) * 2u64 + (2u64 - at(took, iter.len()))) * 2u64;
                             have part_len == 2u64;
                             step_until(loop(1).back_edge());
@@ -207,8 +206,17 @@ fn nested(bytes: &[u8]) -> usize {
                             have iter.len() == at(took, iter.len()) - 1u64;
                             have 0u64 < at(took, iter.len());
                             have iter.len() < at(took, iter.len());
+                            have to_integer(iter.len()) == to_integer(at(took, iter.len())) - 1;
+                            have to_integer(at(took, iter.len())) + iterations == to_integer(chunk_len / 2u64);
+                            have to_integer(iter.len()) + (iterations + 1) == to_integer(chunk_len / 2u64) by {
+                                solve() using {
+                                    to_integer(iter.len()) == to_integer(at(took, iter.len())) - 1;
+                                    to_integer(at(took, iter.len())) + iterations == to_integer(chunk_len / 2u64);
+                                };
+                            }
                         } else {
-                            step();
+                            have iter.len() == 0u64;
+                            step(); step(); step();
                         }
                     }
                 }
@@ -218,7 +226,8 @@ fn nested(bytes: &[u8]) -> usize {
                 have 0u64 < at(taken, iter.len());
                 have iter.len() < at(taken, iter.len());
             } else {
-                step();
+                have iter.len() == 0u64;
+                step(); step(); step();
             }
         }
     }

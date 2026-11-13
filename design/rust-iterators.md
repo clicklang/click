@@ -5,8 +5,11 @@ iterator is imported through its Rust interface (`next(&mut it)` returning
 an `Option`), not as importer-made operations; see "Importing an iterator
 through its Rust interface". Slice iterators under `"iterators": "library"`
 are imported this way (`design/charon-trial/slice-iter`,
-`examples/rust-iterators`, `examples/rust-iter-references`); `chunks_exact`
-moves next, then the remaining fixtures. A Rust unit with
+`examples/rust-iterators`, `examples/rust-iter-references`), and so are
+`chunks_exact` iterators: `next` returns `Option<&[u8]>`, the slice a
+library `Slice<u8>`, and `remainder()` is Rust's own call
+(`examples/rust-chunks-exact` and the `chunks_exact` fixtures under
+`design/charon-trial`). The remaining fixtures move next. A Rust unit with
 `"iterators": "library"` imports its slice iterators as values of the
 library's `SliceIter` (`library/rust/slice_iter.click`,
 `design/charon-trial/slice-iter`); the switch is temporary and goes when

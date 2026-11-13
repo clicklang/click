@@ -49,7 +49,11 @@ pub(super) fn lower(
     // the test reading it names.
     if super::library_iterators() {
         for statement in mir.blocks.iter().flat_map(|block| &block.statements) {
-            if let S::SharedArrayNext { iterator, option } = statement
+            if let S::ChunkInitialize { target, .. } = statement {
+                cx.library_chunk_built.insert(target.clone());
+            }
+            if let S::SharedArrayNext { iterator, option } | S::ChunkNext { iterator, option } =
+                statement
                 && cx
                     .library_next_options
                     .insert(iterator.clone(), option.clone())
@@ -1216,6 +1220,9 @@ fn region(
             // A library iterator's test reads a value the iterator's own
             // function returns, so the read is a statement of the header.
             let library_test = match &condition {
+                E::ChunkHasNext { iterator } if super::library_iterators() => {
+                    Some(cx.library_chunk_next_call(iterator)?)
+                }
                 E::ChunkHasNext { iterator } => Some(cx.chunk_read_left(iterator)),
                 E::SharedArrayHasNext { iterator } => cx.library_slice_next_call(iterator),
                 _ => None,
@@ -1352,7 +1359,12 @@ fn region(
                         c_if(cx.condition(condition)?, yes, no)
                     };
                 if let E::ChunkHasNext { iterator } = condition {
-                    result = c_seq(result, cx.chunk_read_left(iterator));
+                    let read = if super::library_iterators() {
+                        cx.library_chunk_next_call(iterator)?
+                    } else {
+                        cx.chunk_read_left(iterator)
+                    };
+                    result = c_seq(result, read);
                 }
                 if let E::SharedArrayHasNext { iterator } = condition
                     && let Some(read) = cx.library_slice_next_call(iterator)
@@ -1702,6 +1714,7 @@ mod tests {
                 library_slice_iterators: BTreeMap::new(),
                 library_slice_options: BTreeMap::new(),
                 library_next_options: BTreeMap::new(),
+                library_chunk_built: BTreeSet::new(),
                 ranges: BTreeMap::new(),
                 enumerated: BTreeSet::new(),
                 shared_array_options: BTreeMap::new(),

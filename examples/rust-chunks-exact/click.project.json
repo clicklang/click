@@ -2,6 +2,7 @@
   "units": {
     "chunks": {
       "language": "rust",
+      "iterators": "library",
       "sources": {
         "chunks.rs": {}
       }

@@ -15867,10 +15867,23 @@ impl Parser {
     }
 
     /// `&u8` as a type argument in a Rust sidecar: the pointer type of a
-    /// shared reference to a scalar. Nothing is consumed otherwise.
-    fn take_rust_reference_type_argument(&mut self) -> Option<C0Type> {
+    /// shared reference to a scalar. `&[u8]`, a shared slice, is the
+    /// library's `Slice<u8>`. Nothing is consumed otherwise.
+    fn take_rust_reference_type_argument(&mut self) -> Option<ClickType> {
         if !self.verifies_rust() || self.peek() != Some(&Token::Amp) {
             return None;
+        }
+        if self.peek_next() == Some(&Token::LBracket)
+            && let Some(Token::Ident(element)) = self.tokens.get(self.position + 2)
+            && self.tokens.get(self.position + 3) == Some(&Token::RBracket)
+        {
+            let element = rust_syntax::rust_scalar_type(element)?;
+            self.position += 4;
+            return Some(ClickType::Algebraic(AlgebraicTypeApplication {
+                rigid: false,
+                name: "Slice".into(),
+                arguments: vec![ClickType::C(element)],
+            }));
         }
         let Some(Token::Ident(pointee)) = self.peek_next() else {
             return None;
@@ -15885,7 +15898,7 @@ impl Parser {
             _ => return None,
         };
         self.position += 2;
-        Some(pointer)
+        Some(ClickType::C(pointer))
     }
 
     fn parse_algebraic_type_application_arguments(
@@ -15899,7 +15912,7 @@ impl Parser {
             // reference to a scalar as Rust does, `Option<&u8>`: the item a
             // slice iterator yields. The value is that reference's pointer.
             if let Some(reference) = self.take_rust_reference_type_argument() {
-                arguments.push(ClickType::C(reference));
+                arguments.push(reference);
                 match self.peek() {
                     Some(Token::Comma) => {
                         self.position += 1;

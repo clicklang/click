@@ -9164,6 +9164,26 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
             crate::kernel::AlgebraicValueType::C(crate::kernel::CType::Parameter(name)) => {
                 name.name().to_string()
             }
+            // The library's `Slice<T>` is Rust's shared slice: the chunk of
+            // `Option<&[u8]>`.
+            crate::kernel::AlgebraicValueType::Algebraic { name, arguments }
+                if name == "Slice"
+                    && let [crate::kernel::AlgebraicValueType::C(element)] =
+                        arguments.as_slice() =>
+            {
+                let element = match element {
+                    crate::kernel::CType::Int8 => "i8",
+                    crate::kernel::CType::Int16 => "i16",
+                    crate::kernel::CType::Int32 => "i32",
+                    crate::kernel::CType::Int64 => "i64",
+                    crate::kernel::CType::UInt8 => "u8",
+                    crate::kernel::CType::UInt16 => "u16",
+                    crate::kernel::CType::UInt32 => "u32",
+                    crate::kernel::CType::UInt64 => "usize",
+                    _ => "?",
+                };
+                format!("&[{element}]")
+            }
             // A crate enum payload is spelled by its name.
             crate::kernel::AlgebraicValueType::Algebraic { name, .. } => name.clone(),
             crate::kernel::AlgebraicValueType::C(c_type) => match c_type {
@@ -9209,6 +9229,13 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
         return name;
     }
     match algebraic_type.arguments.as_slice() {
+        // The library's `Slice<T>`, which `ChunksExact::remainder` returns,
+        // is named `Slice<u8>`.
+        [element] if algebraic_type.name == "Slice" => {
+            let mut name = "Slice".to_string();
+            crate::languages::rust::names::push_type_argument(&mut name, &spelling(element));
+            name
+        }
         [argument] if algebraic_type.name == "Option" => {
             crate::languages::rust::names::option_type_name(&spelling(argument))
         }

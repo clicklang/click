@@ -1477,9 +1477,28 @@ views.
 
 `bytes.chunks_exact(size)` is a call whose contract requires
 `size != 0` and gives `chunks_exact::chunks_exact(Slice<u8>::Slice(bytes,
-bytes.len()), size)`. A test for another chunk reads `it.len()`, and
-`next()` on an iterator that has one yields `it.nth(0u64)` and leaves
-`it.after_next()`. The proof cites the module's axioms: what `chunks_exact`
+bytes.len()), size)`. Without `"iterators": "library"`, a test for another
+chunk reads `it.len()`, and `next()` on an iterator that has one yields
+`it.nth(0u64)` and leaves `it.after_next()`.
+
+A unit with `"iterators": "library"` imports the iterator through Rust's own
+interface instead, as it does a slice iterator. Each pass of a `for` loop
+calls `ChunksExact::next(&mut iter)`, which returns `Option<&[u8]>`, and
+matches on it. The `&[u8]` is a value of the library's `Slice<u8>`.
+`next`'s contract says:
+
+- with `iter.len() == 0` it returns `None` and leaves the iterator;
+- otherwise it returns `Some(iter.nth(0u64))` and leaves
+  `iter.after_next()`.
+
+`chunks.remainder()` is a call to `ChunksExact::remainder(&chunks)`, which
+returns `chunks_exact::remainder(chunks)`. A returned slice reaches the body
+as its data and length through Rust's own `<[u8]>::as_ptr` and
+`<[u8]>::len`, so a chunk is still `chunk` and `chunk_len`, and the
+remainder `tail` and `tail_len`. Outside a loop the iterator local is read
+with the library's functions, `chunks_exact::len(chunks)`.
+
+The proof cites the module's axioms: what `chunks_exact`
 builds (`len_chunks_exact`, `nth_chunks_exact`, `remainder_chunks_exact`,
 applied to the slice, `Slice<u8>::Slice(bytes, bytes.len())`) and what one
 `next()` leaves
@@ -1504,10 +1523,14 @@ loop {
 }
 ```
 
-The loop is imported as a `while (1)` whose header reads `iter.len()` and
-leaves by `break` when it is zero, so a `preserve` script that needs
-`0u64 < iter.len()` splits on it with a proof `if` after the header's steps;
-the empty arm takes the `break` with one `step()`.
+Without the switch, the loop is imported as a `while (1)` whose header reads
+`iter.len()` and leaves by `break` when it is zero, so a `preserve` script
+that needs `0u64 < iter.len()` splits on it with a proof `if` after the
+header's steps; the empty arm takes the `break` with one `step()`. With
+`"iterators": "library"` the header calls `next`, so the script splits on
+`0u64 < iter.len()` before any step, and the empty arm states
+`have iter.len() == 0u64;` before stepping through the call and the test
+([proof](https://github.com/clicklang/click/blob/master/examples/rust-chunks-exact/chunks.click)).
 
 The chunk a pass binds is `iter.nth(0u64)`: its data pointer is
 `bytes + k * size` by `nth_after` and `nth_chunks_exact`, and its length is
