@@ -2814,6 +2814,29 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
     }
 }
 
+#[test]
+fn fold_reports_the_selected_missing_body_resource() {
+    let source = r#"
+        verifying "f.c";
+        resource cell(p: int32*) { field value: int32; owns *p; }
+        void f(int32* p) { views *p; } by {
+            let c = fold(cell(p), { value: 0 });
+        }
+    "#;
+    let files = [("f.c", "void f(int *p) {}")];
+    let error = verify_c0_sources(source, &files).unwrap_err();
+    assert!(error.missing_resource().is_some());
+    let report = error.concise_report();
+    assert!(report.contains("goal: owns "), "{report}");
+    assert!(report.contains("p["), "{report}");
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &files).unwrap_err();
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("goal: owns "), "{trace}");
+        assert!(trace.contains("p["), "{trace}");
+    });
+}
+
 /// Unnamed addresses still identify the exact blocking store, using the goal's
 /// label map. A history-only diagnostic must not claim missing proof facts.
 #[test]

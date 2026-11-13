@@ -12,6 +12,7 @@ enum Shape {
     Atom(KernelTerm),
     If(ConditionTerm, [usize; 2]),
     Native(MachineTerm),
+    Application(SharedPureApplication),
     Binary(MachineIntegerType, MachineBinaryOp, [usize; 2]),
     Unary(MachineIntegerType, MachineUnaryOp, usize),
     Cast(
@@ -121,11 +122,19 @@ impl<'a> MachineSourceMatcher<'a> {
                     destination,
                     operand,
                 } => Shape::Cast(*encoding, *source, *destination, self.nodes[&operand.id()]),
-                KernelTermNode::Legacy(_) => Shape::Native(
-                    term.machine_conversion_leaf()
-                        .expect("retained native machine leaf")
-                        .clone(),
-                ),
+                KernelTermNode::Legacy(_) | KernelTermNode::Call { .. } => {
+                    let value = term
+                        .machine_conversion_leaf()
+                        .expect("retained native machine leaf");
+                    if let MachineTerm::ClickFunctionApplication { name, arguments } = value {
+                        Shape::Application(SharedPureApplication::intern(
+                            name.clone(),
+                            arguments.clone(),
+                        ))
+                    } else {
+                        Shape::Native(value.clone())
+                    }
+                }
                 _ => Shape::Atom(term.clone()),
             };
             let next = self.keys.len();

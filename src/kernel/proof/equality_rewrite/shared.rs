@@ -25,11 +25,7 @@ fn rewrite_retained_leaf(
 ) -> Option<KernelTerm> {
     let original = leaf(term)?;
     let rewritten = rewrite(&original);
-    if matches!(term.node(), KernelTermNode::Legacy(_)) && rewritten == original {
-        Some(term.clone())
-    } else {
-        Some(retained(format(term), &rewritten))
-    }
+    Some(term.rewritten_machine_leaf(format(term), &original, &rewritten))
 }
 fn constant(format: T, bits: u64) -> KernelTerm {
     imported(
@@ -820,6 +816,37 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn common_call_exact_rewriting_preserves_common_results_and_noops() {
+        use crate::kernel::{CValue, PureFunctionArgument, SharedPureApplication};
+        let _session = VerificationSession::enter();
+        let from = MachineTerm::Variable(Variable(995880));
+        let to = MachineTerm::Variable(Variable(995881));
+        let missing = MachineTerm::Variable(Variable(995882));
+        for format in crate::kernel::machine_integer::FORMATS {
+            let application = SharedPureApplication::intern(
+                "exact_call".into(),
+                vec![PureFunctionArgument::Value(CValue::Int32(from.clone()))],
+            );
+            let root = KernelTermImport::default().machine_call(format, &application);
+            let native = KernelTermExport::machine(&root).unwrap();
+            let expected = super::super::rewrite_term(&native, &from, &to);
+            let exports = KernelTermExport::machine_export_count();
+            let result = rewrite(&root, &from, &to, |leaf| {
+                super::super::rewrite_term(leaf, &from, &to)
+            })
+            .unwrap();
+            assert!(matches!(result.node(), KernelTermNode::Call { .. }));
+            let noop = rewrite(&root, &missing, &to, |leaf| {
+                super::super::rewrite_term(leaf, &missing, &to)
+            })
+            .unwrap();
+            assert_eq!(noop, root);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(KernelTermExport::machine(&result).unwrap(), expected);
+        }
+    }
 
     #[test]
     fn opaque_replacements_and_retained_leaves_match_native_without_export() {

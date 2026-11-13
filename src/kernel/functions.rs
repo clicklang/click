@@ -13518,6 +13518,7 @@ fn witness_origin_word<'a>(fact: &'a SpecProposition, witness: &str) -> Option<&
 pub enum ResourceRewriteRefusal {
     Message(&'static str),
     OwnedMessage(String),
+    BodyResourceMissing(Box<CResourceFact>),
     ChildArgumentNotEstablished {
         child: String,
         index: usize,
@@ -13548,6 +13549,9 @@ impl ResourceRewriteRefusal {
         match self {
             ResourceRewriteRefusal::Message(message) => (*message).to_string(),
             ResourceRewriteRefusal::OwnedMessage(message) => message.clone(),
+            ResourceRewriteRefusal::BodyResourceMissing(_) => {
+                "fold requires ownership of the complete instance body".into()
+            }
             ResourceRewriteRefusal::ChildArgumentNotEstablished { child, index, .. } => format!(
                 "child `{child}` is not proven to have the arguments the parent body gives it: argument {} equality is not established",
                 index + 1
@@ -13601,6 +13605,9 @@ impl From<ResourceRewriteRefusal> for &'static str {
         match refusal {
             ResourceRewriteRefusal::Message(message) => message,
             ResourceRewriteRefusal::OwnedMessage(_) => "resource rewrite refused",
+            ResourceRewriteRefusal::BodyResourceMissing(_) => {
+                "fold requires ownership of the complete instance body"
+            }
             ResourceRewriteRefusal::ChildArgumentNotEstablished { .. } => {
                 "resource child argument equality is not established"
             }
@@ -14662,7 +14669,9 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             next.resources = next
                 .resources
                 .without_fact_incrementally(fact, assumptions)
-                .ok_or("fold requires ownership of the complete instance body")?;
+                .ok_or_else(|| {
+                    ResourceRewriteRefusal::BodyResourceMissing(Box::new(fact.clone()))
+                })?;
         }
     }
     let mut child_evaluation = evaluation.clone();
@@ -14856,12 +14865,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     if unfold {
         next.resources = next
             .resources
-            .without_fact_delaying_normalization(&folded, assumptions)
-            .ok_or("instance ownership is missing")?
-            .try_compose_into_valid_context_delaying_normalization(
-                body.facts().iter().cloned(),
-                assumptions,
-            )
+            .unfold_instance_body(instance, body.facts().iter().cloned(), assumptions)
             .map_err(|error| {
                 ResourceRewriteRefusal::OwnedMessage(format!(
                     "instance body overlaps existing ownership: {}",
@@ -14869,7 +14873,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                         &resource_context_runtime_error(error)
                     )
                 ))
-            })?;
+            })?
+            .ok_or("instance ownership is missing")?;
     } else {
         // The immediate body was consumed before evaluating child arguments;
         // only the selected children remain to be consumed.
@@ -14880,7 +14885,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     &CResourceFact::own(CResource::Instance(child.clone())),
                     assumptions,
                 )
-                .ok_or("fold requires ownership of the complete instance body")?;
+                .ok_or_else(|| {
+                    ResourceRewriteRefusal::BodyResourceMissing(Box::new(CResourceFact::own(
+                        CResource::Instance(child.clone()),
+                    )))
+                })?;
         }
         next.resources = next
             .resources

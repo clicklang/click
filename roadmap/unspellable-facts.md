@@ -129,8 +129,17 @@ commit was verified on upstream.
 without replacing their exact producer roots. Comparison sources retain their
 written premises, polarity and branch authority. The existing observation memo
 walks selected children once; repeated queries do not scan accumulated facts.
-The actual call evaluator remains native until 3f; transport and Surface
-integration remain the following slices.
+[PR #2691](https://github.com/clicklang/click/pull/2691) merged and both pushed
+commits were verified on upstream. It also admits common calls to the existing
+typed congruence registration. The final fixture audit passed with zero differences.
+
+3d retains common call roots through checked substitutions, exact rewrites and
+pointer-index transport. Unchanged leaves keep exact payload identity; changed
+calls rebuild common arguments. Native/shared selected-source matching uses the
+existing typed application identity. Pure-call arguments retain their original
+snapshots under transport, following the native rule. No new search or index is
+introduced. The actual call evaluator remains native until 3f; Surface integration
+is the next slice.
 
 ## Chunk 4: one producer boundary per PR
 

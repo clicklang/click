@@ -471,6 +471,11 @@ impl SharedMachineIntegerTerm {
 
     pub(crate) fn operand_view(&self) -> MachineOperandView<'_> {
         match &self.0.operand {
+            MachineIntegerOperand::Shared { term, .. }
+                if matches!(term.node(), KernelTermNode::Call { .. }) =>
+            {
+                MachineOperandView::Shared(term)
+            }
             MachineIntegerOperand::Shared { term, .. } => term
                 .machine_conversion_leaf()
                 .map(MachineOperandView::Legacy)

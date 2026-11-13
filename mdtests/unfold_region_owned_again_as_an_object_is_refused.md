@@ -1,9 +1,10 @@
-# Unfolding a region whose descriptor is also owned flat is refused
+# Contradictory region ownership is still refused by raw contract validation
 
-The negative of `unfold_region_then_write_a_descriptor_of_its_type.md`: the
-"other" descriptor is the region's own. The contract owns `*s` both inside
-`pool_slot(s)` and beside it, so unfolding the region would own the
-descriptor twice, and the unfold is refused.
+The contract owns `*s` both inside `pool_slot(s)` and beside it. Instance
+unfold now exposes the already-held body without searching the frame for
+overlap. The later raw contract-ownership validation still rejects the duplicated
+flat descriptor. Keep this refusal distinct from the framed unfold rule; the
+positive control is `unfold_region_then_write_a_descriptor_of_its_type.md`.
 
 ```c filename=unfold_region_owned_again_as_an_object_is_refused.c
 struct pool {
@@ -61,5 +62,5 @@ int32 peek(struct slot* s) {
 ```
 
 ```expect
-fail: instance body overlaps existing ownership
+fail: overlapping owned memory resource facts
 ```

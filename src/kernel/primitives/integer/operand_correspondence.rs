@@ -91,7 +91,24 @@ fn shared_operand_leaf_pairs_with_policy(
                 left.machine_conversion_leaf(),
                 right.machine_conversion_leaf(),
             ) {
-                pairs.insert(key, (a == b).then(Pairs::default));
+                let equal = a == b
+                    || match (a, b) {
+                        (
+                            MachineTerm::ClickFunctionApplication {
+                                name: an,
+                                arguments: aa,
+                            },
+                            MachineTerm::ClickFunctionApplication {
+                                name: bn,
+                                arguments: ba,
+                            },
+                        ) if an == bn => {
+                            SharedPureApplication::intern(an.clone(), aa.clone())
+                                == SharedPureApplication::intern(bn.clone(), ba.clone())
+                        }
+                        _ => false,
+                    };
+                pairs.insert(key, equal.then(Pairs::default));
                 continue;
             }
             let (a, b) = (V(left), V(right));

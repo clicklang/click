@@ -519,8 +519,8 @@ fn stored_child_arguments_require_owned_memory() {
             guard: None,
         }));
     rewrite(&concrete_state, &concrete_definition, &assumptions, true).unwrap();
-    // The parent's concrete memory may not also be owned by the surrounding
-    // frame: unfolding must reject overlapping ownership.
+    // This unchecked fixture assumes contradictory ownership. Unfold exposes
+    // the held body; it does not search the frame to rediscover the conflict.
     let mut overlap = state.clone();
     overlap.resources = overlap.resources.unchecked_with_facts(
         open.resources()
@@ -529,7 +529,7 @@ fn stored_child_arguments_require_owned_memory() {
             .filter(|fact| fact.memory_range().is_some())
             .cloned(),
     );
-    assert!(rewrite(&overlap, &definition, &assumptions, true).is_err());
+    assert!(rewrite(&overlap, &definition, &assumptions, true).is_ok());
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
         let mut framed = open.clone();
@@ -4806,4 +4806,119 @@ fn symbolic_ownership_query_scales_with_selected_pieces() {
             .all(|(big, small)| big.0 <= small.0 * 96 + 256 && big.1 <= small.1 * 192 + 1024),
         "{samples:?}"
     );
+}
+
+/// Measure the selected exchange separately from the still-unmigrated raw
+/// insertion and the rest of the complete kernel unfold.
+fn instance_unfold_alias_work() -> Vec<[(usize, usize, usize); 3]> {
+    let mut curves = Vec::new();
+    for overlap in [false, true] {
+        let samples = [4_u64, 16, 64].map(|size| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (instance, definition, state) = instance_memory_fixture();
+            let pointer = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100)), 4),
+            };
+            let neighbor = Pointer::symbolic(Variable(9_810_000));
+            let mut assumptions = PureFactContext::new();
+            for index in 0..size {
+                assumptions = assumptions.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        pointer.clone(),
+                        Pointer::symbolic(Variable(9_810_000 + index)),
+                    ),
+                    true,
+                );
+            }
+            let start = if overlap { 0u32 } else { 1u32 };
+            let retained = CResourceFact::own_memory(CMemoryRange::new(
+                neighbor,
+                start.into(),
+                (start + 1).into(),
+            ));
+            let resources = state
+                .resources()
+                .clone()
+                .unchecked_with_fact(retained.clone());
+            resources.synchronize_memory_equalities(&assumptions);
+            let state = state.with_resource_context(resources);
+            let introduced = CResourceFact::own_memory(CMemoryRange::new(
+                pointer.clone(),
+                0u32.into(),
+                1u32.into(),
+            ));
+            let (replacement, replacement_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    state.resources().clone().unfold_instance_body(
+                        &instance,
+                        [introduced.clone()],
+                        &assumptions,
+                    )
+                });
+            let replacement = replacement
+                .expect("exclusive identities are distinct")
+                .expect("the selected parent is owned");
+            assert!(replacement.owned_instance(instance.identity()).is_none());
+            assert!(replacement.contains_exact_representation(&introduced));
+            assert!(replacement.contains_exact_representation(&retained));
+            let (result, unfold_work) = crate::instrumentation::measure_deterministic_work(|| {
+                rewrite_resource_instance(&state, &instance, &definition, &assumptions, true)
+            });
+            assert!(result.is_ok(), "size={size}, overlap={overlap}: {result:?}");
+            assert_eq!(
+                state.resources().facts().len(),
+                2,
+                "persistent parent is unchanged"
+            );
+
+            // Raw ownership admission still searches candidates. Measure that
+            // separate operation as a control, not as part of unfold.
+            let context =
+                ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(retained);
+            context.synchronize_memory_equalities(&assumptions);
+            let introduced =
+                CResourceFact::own_memory(CMemoryRange::new(pointer, 0u32.into(), 1u32.into()));
+            let (result, insertion_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    context
+                        .clone()
+                        .try_compose_into_valid_context_delaying_normalization(
+                            [introduced],
+                            &assumptions,
+                        )
+                });
+            assert_eq!(result.is_ok(), !overlap);
+            assert_eq!(context.facts().len(), 1);
+            (unfold_work, insertion_work, replacement_work)
+        });
+        eprintln!(
+            "overlap={overlap}, aliases=[4,16,64], (unfold,raw insertion,replacement)={samples:?}"
+        );
+        curves.push(samples);
+    }
+    curves
+}
+
+#[test]
+fn instance_unfold_frame_replacement_ignores_ambient_pointer_aliases() {
+    for samples in instance_unfold_alias_work() {
+        assert!(
+            samples.iter().all(|sample| sample.2 <= samples[0].2 + 16),
+            "selected parent/body replacement walks aliases: {samples:?}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "red diagnostic: full unfold publication and raw ownership admission still grow"]
+fn unfolding_one_cell_must_not_search_ambient_pointer_aliases() {
+    for samples in instance_unfold_alias_work() {
+        assert!(
+            samples
+                .iter()
+                .all(|sample| sample.0 <= samples[0].0 + 64 && sample.1 <= samples[0].1 + 32),
+            "remaining full-unfold/raw-admission work: {samples:?}"
+        );
+    }
 }

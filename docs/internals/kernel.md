@@ -1313,9 +1313,13 @@ call out of the expression that holds it into a local:
   (`is_call_result_temporary` and its callers in `source_layout`,
   `execution_planning/context`, `cursor_execution` and `surface_synthesis`).
 
-The target is the model above: a call is a node of the expression that holds
-it, its result is named by its site, and no compiler temporary becomes a
-program variable a proof can see.
+These temporaries are defects to remove, not a design to extend. A proof
+should never see `__click_call_result<N>`, `__rust_mir_<N>` or any other name
+a front end or compiler invented, and the name-based hiding above is a
+workaround for them. Do not add a temporary, a name check, or a special case
+that depends on one; where existing code needs one, remove it by moving toward
+the model: a call is a node of the expression that holds it, its result is
+named by its site, and no compiler temporary becomes a program variable.
 
 ### Paths and outcomes
 

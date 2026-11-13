@@ -6215,7 +6215,9 @@ impl<'a> TermRewrite<'a> {
                     }
                     pending.push((value, operand));
                 }
-                KernelTermNode::IntegerToMachine { .. } | KernelTermNode::Legacy(_) => {
+                KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::Legacy(_)
+                | KernelTermNode::Call { .. } => {
                     if !shared
                         .machine_conversion_leaf()
                         .is_some_and(|leaf| same_payload(self, leaf, native))

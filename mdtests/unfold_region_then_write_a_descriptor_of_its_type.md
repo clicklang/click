@@ -3,8 +3,9 @@
 The region is unfolded while the second `struct slot` still holds its
 materialized cells, then the C writes that descriptor's `at` and `pool`
 fields. The descriptor `*s` and `*other` are then two owned
-members of the frame, so the writes leave `s->pool` in place and the fold
-finds the range the unfold produced.
+members of the frame, so the writes leave `s->pool` in place. The proof
+explicitly preserves the backing `data` pointer across each store, allowing
+the fold to consume the range the unfold produced.
 
 ```c filename=unfold_region_then_write_a_descriptor_of_its_type.c
 struct pool {
@@ -60,6 +61,25 @@ int32 peek(struct slot* s, struct slot* other) {
     step();
     step();
     step_until(function.exit);
+    have s->pool == old(s->pool) by { solve(); }
+    have at(statement(1).entry, s->pool->data) == old(s->pool->data) by { solve(); }
+    have separate(memory(*other), memory(s->pool->data)) by { assumption(); }
+    have separate(memory(other->at), memory(s->pool->data)) by { solve(); }
+    have separate(statement(1).footprint, memory(s->pool->data)) by {
+        normalize() using { separate(memory(other->at), memory(s->pool->data)); };
+    }
+    have at(statement(1).exit, s->pool->data) == at(statement(1).entry, s->pool->data) by {
+        preserve(separate(statement(1).footprint, memory(s->pool->data)));
+    }
+    have separate(memory(other->pool), memory(s->pool->data)) by { solve(); }
+    have separate(statement(2).footprint, memory(s->pool->data)) by {
+        normalize() using { separate(memory(other->pool), memory(s->pool->data)); };
+    }
+    have at(statement(2).exit, s->pool->data) == at(statement(2).entry, s->pool->data) by {
+        preserve(separate(statement(2).footprint, memory(s->pool->data)));
+    }
+    have s->pool->data == at(statement(2).exit, s->pool->data) by { solve(); }
+    have s->pool->data == old(s->pool->data) by { solve(); }
     let r = fold(pool_slot(s), { at: a, end: e });
     let st = fold(pool_state(s->pool), { live: n });
     solve();

@@ -771,7 +771,14 @@ impl<'a> Proof<'a> {
                     .iter()
                     .all(|(name, _)| name.contains('.')))
             .then(|| Arc::new(instance.clone()));
-            self.step_error_with_proposed_record(summary, comparison, requirement, proposed)
+            let error =
+                self.step_error_with_proposed_record(summary, comparison, requirement, proposed);
+            match &refusal {
+                crate::kernel::ResourceRewriteRefusal::BodyResourceMissing(resource) => {
+                    error.with_missing_resource(resource)
+                }
+                _ => error,
+            }
         })?;
         if collecting {
             // Explicit constructors already provide the source of their
