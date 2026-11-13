@@ -154,7 +154,17 @@ checks growing shared prefixes without exports. The existing listed-equality
 rewrite strategy also recognizes retained machine observations, preserving the
 `snprintf` length proof without changing its source or proof. Expansion/replay,
 missing-premise and constant-work admission controls cover that representation
-boundary. Subchunks 4e–4j remain open.
+boundary. [PR #2679](https://github.com/clicklang/click/pull/2679) merged; both
+pushed commits were verified on upstream. All 1,513 scaling tests and all 5,274
+regular fixtures passed, with zero fact-stability differences.
+
+Subchunk 4e retains ordinary arithmetic operands through the existing integer
+promotions and usual arithmetic conversions for 8/16/32/64-bit formats. Deferred
+addition, subtraction, multiplication, division and remainder reuse the shared
+cast constructors and retain their result and definedness obligations. Shifts
+keep their separate boundary. Exact native result/domain parity covers all 64
+format pairs, mixed native/shared operands, constants and opaque leaves; growing
+prefixes check deterministic work and zero exports. Subchunks 4f–4j remain open.
 
 For each PR:
 
