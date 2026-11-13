@@ -600,7 +600,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             Ok(attempted) => attempted,
             Err(error) => {
                 let error = describe_invariant_closure_error(error);
-                let detail = ranking_member_diagnostic(&bundle.ranking_measures);
+                let detail = ranking_member_diagnostic(bundle);
                 let error = if detail.is_empty() {
                     error
                 } else {
@@ -634,7 +634,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             };
             let error = root.step_error(format!(
                 "closure body did not prove every invariant obligation{open_member}{}{rejoined}{branch_join}",
-                ranking_member_diagnostic(&bundle.ranking_measures)
+                ranking_member_diagnostic(bundle)
             ));
             return Err(error.with_search_failures(search.finish()));
         };
