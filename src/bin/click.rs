@@ -104,12 +104,11 @@ mod tests {
         assert!(error.contains("unknown command `unknown`"));
     }
 
-    /// The command-line front end verifies under the shipped stable-view
-    /// semantics: a `views` of a file-scope cell is a borrow for the call, so
-    /// a store into it is refused as a conflict with that loan rather than as
-    /// a store outside the owned footprint.
+    /// A view of a global cell borrows it for the call. A store into that
+    /// cell must report the unproved separation from the loaned range and
+    /// locate the original C store.
     #[test]
-    fn verify_refuses_a_store_into_a_viewed_global_with_the_loan_message() {
+    fn verify_refuses_a_store_into_a_viewed_global_with_the_separation_goal() {
         let directory =
             std::env::temp_dir().join(format!("click-viewed-global-store-{}", std::process::id()));
         if directory.exists() {
@@ -129,7 +128,13 @@ mod tests {
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
-            error.contains("stable-view memory access conflicts with an active loan"),
+            error.contains("`step()` requires an explicit prerequisite proof"),
+            "{error}"
+        );
+        assert!(error.contains("\ngoal: separate("), "{error}");
+        assert!(error.contains("words[1..2]"), "{error}");
+        assert!(
+            error.contains("C statement at viewed_global.c:2:21\n  `words[1] = 7;`"),
             "{error}"
         );
         assert!(!error.contains("outside the owned footprint"), "{error}");
