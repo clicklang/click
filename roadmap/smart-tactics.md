@@ -307,14 +307,11 @@ frame is retained directly without constructing `ProofSearch`. The selected
 instance-count regression guards that route against discovery.
 
 The instance-removal experiment remains unlanded. Its explicit arena repair
-reaches `arena_free(second)`, where the simple step exhausts 750,000 work units
-inside `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`
-(`general distinctness: explicit range` / `explicit range: exact-fact candidates`).
-Isolate the selected pointer query and its call-checking caller, add the scoped
-scaling reproduction, then replace that discovery with explicit evidence or an
-ordinary obligation. Do not restore automatic instance opening or raise the
-simple-step budget. The prerequisite physical-range separation lookup fixes
-are tracked by PR #2671.
+reaches `arena_free(second)`, where the simple step exhausts 750,000 work units.
+The prerequisite physical-range separation lookup fixes merged in PR #2671;
+the experiment is reconciled onto that merge. The remaining blocker is
+statement-exit fact transport, not ownership validation (diagnosis below).
+Do not restore automatic instance opening or raise the simple-step budget.
 
 Owned composite families still use the legacy framing search; bodies without
 the argument-direct property are opened. Skipping members of one direct family
@@ -325,6 +322,62 @@ composites, then distinct direct families. Measure call preparation, execution
 and completion together; include memory/condition/witness-dependent bodies and
 refusals. Coordinate with [Scaling](scaling.md), cause 3, without duplicating its
 implementation work or changing its priority here.
+
+### Statement-exit fact transport — diagnosed simple-step search
+
+The `arena_free(second)` failure on the instance-removal experiment reaches:
+
+```text
+certified_transitions_from_execution
+  -> direct_transport_with_frame_premises
+  -> prove_c_condition_fact_direct_transport
+  -> c_memory_load_is_directly_unchanged
+  -> memories_directly_match_for_pointer_load
+  -> pointers_proven_distinct_for_memory_resolution
+  -> pointers_proven_disjoint_by_explicit_range_for_memory_resolution
+  -> composition_separated_members / separated_owned_members
+```
+
+The adapter tries to restate facts produced by the statement at its final
+snapshot; it is not solving a required ownership obligation. It already keeps
+the original snapshot-bearing fact when transport misses. In the captured
+failure, the changed-cell pointer is `ExternalArgument + 4*x + 8`
+(`x` is shared Int32 term 3222 in that session); the read pointer is
+`LoadedPointer(474537953375) + 16`. These are diagnostic session identities,
+not proposed source syntax. The query asks whether their addresses differ,
+so a read in the produced fact can be preserved at statement exit. The
+byte-gap check alone is conditional on distinct addresses, so deleting the
+distinctness requirement would be unsound.
+
+The exhausted query enumerates owned members of held compositions during the
+range search's exact-fact phase. This is a reachable search in simple `step`,
+even though its helper is named "direct" and does not require `ProofSearch`.
+The reduced tests call the same direct-condition-transport entry with one
+fixed read, one changed cell, and 4/16/64 unrelated owned members; setup is
+outside measurement. They simplify the read pointer to a symbolic pointer.
+The missing-evidence case is an explicitly ignored red regression; the exact
+pointer-disequality case is its normal positive control. Both live in
+`src/scaling_tests/kernel/tests/memory_scaling_tests.rs` under
+`statement_exit_transport_*`. Measured cold work is 212/236/332 for the
+miss and 322/322/322 with the exact disequality. The miss costs `204 + 2*N`
+in this reduced fixture; the arena has more expensive member checks and
+repeated transports. This is a scoped production-path curve, not a claim that
+the complete statement costs only that amount. Debug cross-checks are uncharged.
+
+After building with `scripts/fast-gate-build.sh`, reproduce only the selected
+red test and its control with nextest's `--run-ignored all` and
+`-E 'test(statement_exit_transport_)'`. The red test fails its growth assertion;
+the positive control passes. Normal tests leave the red test ignored until
+its proposed behavior change is agreed and implemented.
+
+Next design discussion: restrict automatic statement-exit restatement to
+bounded evidence, keeping original facts on a miss; use explicit preservation
+for genuinely needed later facts. Before implementation, distinguish necessary
+internal call-result assignment handling from optional historical retiming.
+No replacement, new obligation, or axiom has been implemented by this diagnosis.
+The surrounding cell-map enumeration, effect-fact searches, and transport
+re-validation remain separate source candidates; this test does not certify
+the whole adapter or all memory comparisons.
 
 ### M1: reads, caches and history — coverage gaps
 

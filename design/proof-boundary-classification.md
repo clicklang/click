@@ -68,6 +68,21 @@ Two separate limits remain:
   a complete-operation cost violation before treating bounded repeated lowering
   as a bad-scaling defect.
 
+## Additional reachable search: statement-exit fact transport
+
+The local retained-instance removal reproduces a simple-step budget failure
+at `arena_free(second)`. A captured backtrace identifies
+`certified_transitions_from_execution -> direct_transport_with_frame_premises`
+as the caller: automatic restatement of statement-produced facts invokes the
+kernel's direct-condition transport, snapshot comparison, and general pointer
+range search. The exhausted phase enumerates held composition members.
+This is not driver-owned implicit solve or ownership validation, and the
+"direct" helper does not require a `ProofSearch` capability. The frozen edge
+inventory therefore does not by itself prohibit this discovery. See the
+[scoped diagnosis](../roadmap/smart-tactics.md#statement-exit-fact-transport--diagnosed-simple-step-search)
+for the red test and proposed discussion boundary. No runtime boundary or
+behavior change accompanies this classification.
+
 ## Findings
 
 The old categories describe code placement, not the reason search runs. Most
