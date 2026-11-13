@@ -74,18 +74,28 @@ pub(super) fn set_function_result(
     function: &CFunction,
     value: impl Into<StoredExecutionValue>,
 ) {
-    set_contract_result(
-        state,
-        function.contract_interface(),
-        value.into().into_native(),
-    );
+    set_contract_result(state, function.contract_interface(), value);
 }
 
 pub(super) fn set_contract_result(
     state: &mut CState,
     interface: &CFunctionContractInterface,
-    value: CValue,
+    value: impl Into<StoredExecutionValue>,
 ) {
+    let value = value.into();
+    if value.shared().is_some() {
+        state.locals.set_retained_typed_with_all_qualifiers(
+            C_CONTRACT_RESULT_NAME,
+            value,
+            interface.return_type(),
+            false,
+            false,
+            false,
+            interface.return_pointee_is_constant(),
+        );
+        return;
+    }
+    let value = value.into_native();
     if let Some(layout) = interface.return_aggregate_layout()
         && let CValue::Pointer(pointer) = &value
     {
@@ -1072,4 +1082,9 @@ pub(super) fn coerce_c_contract_arguments(
         }
     }
     Some((coerced, obligations))
+}
+
+#[cfg(test)]
+mod retained_result_scaling_tests {
+    include!("../../scaling_tests/kernel/functions/call_arguments/tests.rs");
 }

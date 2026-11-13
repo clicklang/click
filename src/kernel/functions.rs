@@ -15939,7 +15939,7 @@ pub(super) fn function_return_resources_definitionally_established(
     else {
         return false;
     };
-    let exit_memory = function_exit_memory(caller_state, return_state, &value.native(), function);
+    let exit_memory = function_exit_memory(caller_state, return_state, value, function);
     let mut claim_return_state = return_state.clone();
     claim_return_state.set_memory(exit_memory.clone());
     let definitions = function.composite_resource_definitions();
@@ -19922,14 +19922,14 @@ fn block_is_frame_scoped_automatic_object(block: &PointerBlock) -> bool {
 pub(in crate::kernel) fn function_exit_memory(
     caller_state: &CState,
     callee_state: &CState,
-    value: &CValue,
+    value: &ExecutionValue,
     function: &CFunction,
 ) -> CMemory {
     if function.return_aggregate_layout().is_some() {
         return callee_state.memory.clone();
     }
-    match value {
-        CValue::Pointer(pointer)
+    match value.pointer() {
+        Some(pointer)
             if pointer.pointer().block.is_local_block()
                 && !caller_state.memory.has_block(&pointer.pointer().block) =>
         {

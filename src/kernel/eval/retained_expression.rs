@@ -873,6 +873,94 @@ mod tests {
         assert!(roots.windows(2).all(|pair| pair[0] == pair[1]));
     }
 
+    fn complete_machine_handoff_program(
+        rust: bool,
+        size: usize,
+        declared: bool,
+    ) -> (CExecutionEnvironment, CStatement) {
+        let format = if rust {
+            MachineIntegerType::UInt8
+        } else {
+            MachineIntegerType::UInt32
+        };
+        let c_type = format.c_type();
+        let three = if rust {
+            MachineTerm::narrow_constant(format, 3)
+        } else {
+            MachineTerm::uint32_constant(3)
+        };
+        let multiply = CExpression::Multiply(
+            Box::new(c_variable("held")),
+            Box::new(CExpression::Value(format.value_from_term(three))),
+        );
+        let expression = if rust {
+            narrow_expression(multiply, c_type)
+        } else {
+            multiply
+        };
+        let mut body = c_return(c_variable("held"));
+        for _ in 0..size {
+            body = c_seq(c_assign("held", expression.clone()), body);
+        }
+        if declared {
+            body = c_seq(
+                c_declare("held", c_type),
+                c_seq(c_assign("held", c_variable("x")), body),
+            );
+        }
+        let helper = c_function(
+            c_type,
+            "machine_handoff",
+            vec![c_parameter(if declared { "x" } else { "held" }, c_type)],
+            body,
+        );
+        let environment = CExecutionEnvironment::new().with_function(helper);
+        let statement = c_seq(
+            c_call_assign(
+                "received",
+                "machine_handoff",
+                vec![CExpression::Value(
+                    format.value_from_term(MachineTerm::Variable(Variable(998341))),
+                )],
+            ),
+            c_return(c_variable("received")),
+        );
+        (environment, statement)
+    }
+
+    #[test]
+    fn complete_machine_handoffs_keep_roots_across_native_memory_cells() {
+        for rust in [false, true] {
+            for size in [16, 64, 256] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let (environment, statement) = complete_machine_handoff_program(rust, size, true);
+                let exports = KernelTermExport::machine_export_count();
+                let paths = super::super::statements::execute_c_statement_paths(
+                    &CState::new(),
+                    &statement,
+                    &PureFactContext::new(),
+                    CExecutionContext::execute_bodies(&environment),
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap();
+                let [path] = paths.as_slice() else {
+                    panic!("one complete declared-local path");
+                };
+                let CStatementOutcome::Return { value, state } = &path.outcome else {
+                    panic!("return: {:?}", path.outcome);
+                };
+                assert!(path.obligations.is_empty());
+                assert!(value.shared().is_some());
+                assert_eq!(
+                    value.shared(),
+                    state.locals.get("received").unwrap().shared()
+                );
+                // Declared slots still synchronize through the native memory-cell boundary.
+                assert!(KernelTermExport::machine_export_count() > exports);
+            }
+        }
+    }
+
     #[test]
     fn retained_execution_return_and_function_handoff_keep_the_root() {
         let _session = crate::kernel::VerificationSession::enter();
