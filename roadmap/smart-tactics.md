@@ -96,8 +96,10 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
   that document, not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
 - **Operation guards:** theorem application, scope completion, prepared-step
   publication, have opening and contract-claim opening have test-build discovery guards.
-  Statement preparation retains two reproduced operation/entry
-  pairs through two existing bridge entries; see the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
+  Statement preparation has two first-failure reproductions through existing
+  bridges. Removing the optional call-partition inference also exposes
+  `call_frame` through `call_kept_ownership`; first guard failures mask later
+  crossings. See the [reproductions](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
   Statement preparation remains unguarded; no exception exempts its search.
 - **Enforcement gap:** lexical dependency freezing and selected work counters
   do not prohibit every search call during expanded replay or detect arbitrary
@@ -217,6 +219,19 @@ and contract comparisons retain their validating path. The restoration guard and
 `call_borrow_restoration_ignores_ambient_aliases_and_frame` cover this selected
 join, with unrelated aliases, unrelated owners, and repeated forks; they do not
 certify all call preparation or output-description lowering.
+
+Call preparation no longer rebuilds an optional population partition with
+`retained_population_call_partition`. The five affected `memset` proofs use
+explicit separation and single-footprint preservation for both values and
+read definedness. `preserve` requires the exact old definedness fact; it does
+not reconstruct history or infer initialization from ownership. The guarded
+proof expands and replays without implicit solve or legacy transport.
+This removes optional composition inference, not ownership validation.
+
+A source partial-borrow probe still grows with unrelated aliases after the
+removal; deleting this inference cuts a fixed amount of work in that probe,
+not its remaining growth. Keep the complete-call cost separate from the scoped
+composition-retention guard.
 
 `owned_validity_candidates` and incremental validity checking still have
 symbolic-bound and multiple-coordinate-origin paths. Single-block count and

@@ -1420,3 +1420,51 @@ fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
         );
     }
 }
+
+#[test]
+#[ignore = "nightly: call composition retention at three alias counts and two borrow shapes"]
+fn retaining_call_compositions_ignores_unused_aliases() {
+    for borrowed in [2, 4] {
+        let mut samples = Vec::new();
+        for count in [4, 16, 64] {
+            let params = (0..count)
+                .map(|i| format!("int32* q{i}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let requires = lines(count, |i| format!("requires q{i} == data;"));
+            let c = format!("void caller(int32* data, int32* other, {params}) {{ touch(data); }}");
+            let click = format!(
+                r#"
+                verifying "hunt.c";
+                extern void touch(int32* data) {{ owns data[0..{borrowed}]; }}
+                void caller(int32* data, int32* other, {params}) {{
+                    owns data[0..4]; owns *other;
+                    {requires}
+                }} by {{ step(); step(); }}
+            "#
+            );
+            let (result, events) = crate::instrumentation::collect(|| {
+                verify_c0_sources(&click, &[("hunt.c", c.as_str())])
+            });
+            result.unwrap();
+            let work = events
+                .iter()
+                .filter_map(|event| match event {
+                    crate::instrumentation::VerificationEvent::OperationFinished {
+                        name,
+                        work,
+                        ..
+                    } if name == "call entry composition retention" => Some(*work),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(!work.is_empty(), "the call exercised composition retention");
+            samples.push((count, *work.iter().max().unwrap()));
+        }
+        eprintln!("borrow {borrowed} composition-retention work: {samples:?}");
+        assert!(
+            samples.iter().all(|(_, work)| *work == samples[0].1),
+            "{samples:?}"
+        );
+    }
+}

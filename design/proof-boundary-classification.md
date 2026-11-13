@@ -246,6 +246,13 @@ These reuse two existing bridge entries; they are not two new independent
 walks. A first guard failure can mask a later dependency. No guard escape was
 added, and the existing source dependency records remain frozen.
 
+With optional call-partition inference removed, the same 64-bit window fixture
+gets past `ownership_validity_candidates` and reaches `call_frame` through
+`call_kept_ownership`. The local signedness fixture still reaches `loan_access`
+through `memory_write_permission_outcome_for_local`. These probe results do not
+justify a whole-preparation guard or a new exception. The temporary probe is
+not retained in the source.
+
 Call entry-borrow restoration has a separate discovery guard. It restores
 retained entry identities to their residual frame without validating that
 partition again. Only call application with entry-state borrowed outputs creates
