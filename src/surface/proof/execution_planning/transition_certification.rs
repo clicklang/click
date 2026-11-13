@@ -1004,7 +1004,9 @@ fn certified_transitions_from_execution(
                 // responsible only for facts that predated the statement.
                 let mut transported_facts = Vec::new();
                 let mut certified_transport_sources = Vec::new();
-                if normalize_statement_facts_to_exit {
+                // Experiment: retain producer facts at their original snapshots.
+                // Do not discover bonus current-state facts during a simple step.
+                if false && normalize_statement_facts_to_exit {
                     let mut normalization_sources = statement_facts.into_iter().collect::<Vec<_>>();
                     for execution_fact in &execution_facts {
                         if execution_fact.is_certified()
