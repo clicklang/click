@@ -5687,6 +5687,14 @@ impl parser::ProgramLayouts {
                         .map(|parameter| parameter.c_type())
                         .collect(),
                     function.return_type(),
+                    function
+                        .parameters()
+                        .iter()
+                        .map(|parameter| {
+                            written_parameter_name(parameter.name(), parameter.is_reference())
+                                .to_string()
+                        })
+                        .collect(),
                 ));
             }
             if let Some((trait_name, arguments)) =

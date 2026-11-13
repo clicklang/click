@@ -20,6 +20,7 @@ imports with `import click::...;`, and the modules those import:
 | `integer.click` | `import click::integer;` | `integer::` order, increment and definedness lemmas over native integer widths, `to_integer` bridges for native arithmetic, unsigned wrapping operations, and `Integer` division laws |
 | `format.click` | `import click::format;`; the C front end's `snprintf` contracts name it by path | `format::decimal_length`, `format::decimal_digit` and the other decimal rendering functions `printf` writes, with evaluation theorems |
 | `rust/i8.click` ... `rust/usize.click` | `import click::rust::u32;`; the Rust importer's core-method contracts name them by path | One module per Rust integer type: `u32::min`, `u32::checked_add` and the other core methods the importer specifies, and the Rust names of the lemmas a Rust proof applies (`u32::multiply_to_integer`) |
+| `cpp/span.click` | appended to a C++ sidecar when an import calls one of its methods | Dynamic-extent `std::span<T>` contracts, as `template<class T>` methods written out at each called element type |
 | `rust/vec.click` | `import click::rust::vec;` | The primitive type `Vec<T>`, its bodyless operations and their trusted axioms |
 | `rust/slice.click` | `import click::rust::slice;` | `Slice<T>`, a Rust slice as its data pointer and length |
 
@@ -32,10 +33,10 @@ Each declaration is in one layer, which sets its trust:
   `primitive.` inventory IDs.
 - **Language library models** are assumed `extern` contracts for the C, C++ or
   Rust library the verified code calls, listed in
-  [trust](../docs/concepts/trust.md#the-click-library). `c/string.click` is the
-  one written here; the allocator family and `snprintf` contracts are built into
-  the C front end, and the C++ catalog and Rust core-method contracts are
-  generated per use.
+  [trust](../docs/concepts/trust.md#the-click-library). `c/string.click` and
+  `cpp/span.click` are written here; the allocator family and `snprintf`
+  contracts are built into the C front end, and the rest of the C++ catalog
+  and the Rust core-method contracts are generated per use.
 - **The specification library** is every other module: checked types, pure
   functions, predicates and theorems, plus the trusted `rust/vec.click` axioms.
 
