@@ -50,10 +50,12 @@ how far it is trusted:
 | [`click::cstr`](#clickcstr) | `import click::cstr;`, or with `click::c::string` | specification |
 | [`click::format`](#clickformat) | `import click::format;`; named by path in `snprintf` contracts | specification |
 | [`click::c::string`](#clickcstring) | when the C declares or calls one of its functions | C library model |
+| [C++ standard library models](#c-standard-library-models), `library/cpp/` (not a module) | when a C++ import calls one of its functions | C++ library model |
 | [`click::rust::i8` ... `click::rust::usize`](#clickrusti8-through-clickrustusize) | `import click::rust::u32;`; named by path in Rust core-method contracts | specification |
 | [`click::rust::vec`](#clickrustvec) | `import click::rust::vec;` | specification, with trusted axioms |
 | [`click::rust::slice`](#clickrustslice) | `import click::rust::slice;` | specification |
 | [`click::rust::chunks_exact`](#clickrustchunks_exact) | `import click::rust::chunks_exact;` | specification, with trusted axioms |
+| [Rust core models](#rust-core-models), `library/rust/core.click` (not a module) | when a Rust import calls one of its methods | Rust library model |
 | [`click::separation`](#clickseparation) | `import click::separation;` | specification |
 
 `click::primitives` and `click::c::builtins` are implicit too; they hold the
@@ -67,6 +69,9 @@ Every declaration below is copied exactly from the library and checked by the
 documentation gate. The same gate compares declaration names bidirectionally,
 so adding, removing, or changing a public symbol requires a matching reference
 update.
+A C++ or Rust library model is named by the path it models,
+`std::span<T>::size` or `Vec::push`, and the gate checks that the tests its
+**Verified use** cites call it.
 
 A proof inside the library sees only the library theorems declared above
 it, in module order. Built-in tactics apply library theorems by name without
@@ -4885,6 +4890,210 @@ names the string a call assembles; and
 [`mdtests/cstr_dynamic_indexed_read_requires_permission.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_dynamic_indexed_read_requires_permission.md)
 refuses a caller that holds only `cstr::readable`.
 
+## C++ standard library models
+
+Source: `library/cpp/span.click`, `library/cpp/array.click` and
+`library/cpp/as_writable_bytes.click`. These files are not modules: the C++
+importer appends the ones an import calls to its sidecar and writes each
+`template<...> extern` block out at each element type and extent a call
+names, `std::span<int>::size`. Its name table,
+`src/languages/cpp/standard_library.rs`, lists the functions and element
+types it maps to them. The model accessors `std_span_data`,
+`std_span_size` and `std_array_data` name a span's or array's state.
+
+### `std::span<T>`
+
+```click
+template<class T> extern unsigned long std::span<T>::size() const {
+    views std_span_size(this);
+    ensures result == std_span_size(this);
+}
+template<class T> extern unsigned long std::span<T>::size_bytes() const {
+    views std_span_size(this);
+    ensures result == std_span_size(this) * sizeof(T);
+}
+template<class T> extern T* std::span<T>::data() const {
+    views std_span_data(this);
+    ensures result == std_span_data(this);
+}
+template<class T> extern T& std::span<T>::front() const {
+    views std_span_data(this);
+    views std_span_size(this);
+    requires 1u64 <= std_span_size(this);
+    ensures &result == std_span_data(this);
+}
+template<class T> extern T& std::span<T>::back() const {
+    views std_span_data(this);
+    views std_span_size(this);
+    requires 1u64 <= std_span_size(this);
+    ensures &result == std_span_data(this) + (std_span_size(this) - 1u64);
+}
+template<class T> extern T& std::span<T>::operator[](unsigned long index) const {
+    views std_span_data(this);
+    views std_span_size(this);
+    requires index < std_span_size(this);
+    ensures &result == std_span_data(this) + index;
+}
+template<class T> extern std::span<T> std::span<T>::first(unsigned long count) const {
+    views std_span_data(this);
+    views std_span_size(this);
+    requires count <= std_span_size(this);
+    ensures std_span_data(result) == std_span_data(this);
+    ensures std_span_size(result) == count;
+}
+template<class T> extern std::span<T> std::span<T>::last(unsigned long count) const {
+    views std_span_data(this);
+    views std_span_size(this);
+    requires count <= std_span_size(this);
+    ensures std_span_data(result) == std_span_data(this) + (std_span_size(this) - count);
+    ensures std_span_size(result) == count;
+}
+template<class T> extern std::span<T> std::span<T>::subspan(unsigned long offset, unsigned long count) const {
+    views std_span_data(this);
+    views std_span_size(this);
+    requires offset <= std_span_size(this);
+    requires count != 18446744073709551615u64 implies count <= std_span_size(this) - offset;
+    ensures std_span_data(result) == std_span_data(this) + offset;
+    ensures count == 18446744073709551615u64 implies std_span_size(result) == std_span_size(this) - offset;
+    ensures count != 18446744073709551615u64 implies std_span_size(result) == count;
+}
+```
+
+**Meaning:** A dynamic-extent span is a view of `[data, data + size)`. The
+element accessors require an index inside the view and form an address
+without reading it; the subviews require the subview to lie inside the view
+and keep the backing storage. `subspan`'s count `std::dynamic_extent`,
+`18446744073709551615u64`, means "to the end".
+
+**Kind:** C++ standard library model. Each declaration is an explicit verification assumption, reported as `C++ std`.
+
+**Verified use:** [`tests/bitcoin_core_money_range.rs`](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs) calls each through `axiomatic_span_*` probes, and refuses each requirement it drops (nightly).
+
+### `std::span<T, N>`
+
+```click
+template<class T, std::size_t N> extern unsigned long std::span<T, N>::size() const {
+    ensures result == N;
+}
+template<class T, std::size_t N> extern unsigned long std::span<T, N>::size_bytes() const {
+    ensures result == N * sizeof(T);
+}
+template<class T, std::size_t N> extern T* std::span<T, N>::data() const {
+    views std_span_data(this);
+    ensures result == std_span_data(this);
+}
+template<class T, std::size_t N> extern T& std::span<T, N>::front() const {
+    views std_span_data(this);
+    requires 1u64 <= N;
+    ensures &result == std_span_data(this);
+}
+template<class T, std::size_t N> extern T& std::span<T, N>::back() const {
+    views std_span_data(this);
+    requires 1u64 <= N;
+    ensures &result == std_span_data(this) + (N - 1u64);
+}
+template<class T, std::size_t N> extern T& std::span<T, N>::operator[](unsigned long index) const {
+    views std_span_data(this);
+    requires index < N;
+    ensures &result == std_span_data(this) + index;
+}
+template<class T, std::size_t N> extern std::span<T> std::span<T, N>::first(unsigned long count) const {
+    views std_span_data(this);
+    requires count <= N;
+    ensures std_span_data(result) == std_span_data(this);
+    ensures std_span_size(result) == count;
+}
+template<class T, std::size_t N> extern std::span<T> std::span<T, N>::last(unsigned long count) const {
+    views std_span_data(this);
+    requires count <= N;
+    ensures std_span_data(result) == std_span_data(this) + (N - count);
+    ensures std_span_size(result) == count;
+}
+template<class T, std::size_t N> extern std::span<T> std::span<T, N>::subspan(unsigned long offset, unsigned long count) const {
+    views std_span_data(this);
+    requires offset <= N;
+    requires count != 18446744073709551615u64 implies count <= N - offset;
+    ensures std_span_data(result) == std_span_data(this) + offset;
+    ensures count == 18446744073709551615u64 implies std_span_size(result) == N - offset;
+    ensures count != 18446744073709551615u64 implies std_span_size(result) == count;
+}
+```
+
+**Meaning:** A static-extent span is a view of `[data, data + N)`. `N` is
+the template argument, written at an instance as a literal, `4u64`; only the
+data pointer is state. The subviews taking a runtime count are
+dynamic-extent spans.
+
+**Kind:** C++ standard library model. Each declaration is an explicit verification assumption, reported as `C++ std`.
+
+**Verified use:** [`tests/bitcoin_core_money_range.rs`](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs) reads, measures and subviews `std::span<int, 4>` and `std::span<const unsigned char, 32>` in `axiomatic_static_extent_*` (nightly).
+
+### `std::array<T, N>`
+
+```click
+template<class T, std::size_t N> extern unsigned long std::array<T, N>::size() const {
+    ensures result == N;
+}
+template<class T, std::size_t N> extern T* std::array<T, N>::data() {
+    ensures result == &std_array_data(this)[0];
+}
+template<class T, std::size_t N> extern const T* std::array<T, N>::data() const {
+    ensures result == &std_array_data(this)[0];
+}
+template<class T, std::size_t N> extern T& std::array<T, N>::operator[](unsigned long index) {
+    requires index < N;
+    ensures &result == &std_array_data(this)[index];
+}
+template<class T, std::size_t N> extern const T& std::array<T, N>::operator[](unsigned long index) const {
+    requires index < N;
+    ensures &result == &std_array_data(this)[index];
+}
+template<class T, std::size_t N> extern T& std::array<T, N>::front() {
+    requires 1u64 <= N;
+    ensures &result == &std_array_data(this)[0];
+}
+template<class T, std::size_t N> extern const T& std::array<T, N>::front() const {
+    requires 1u64 <= N;
+    ensures &result == &std_array_data(this)[0];
+}
+template<class T, std::size_t N> extern T& std::array<T, N>::back() {
+    requires 1u64 <= N;
+    ensures &result == &std_array_data(this)[N - 1u64];
+}
+template<class T, std::size_t N> extern const T& std::array<T, N>::back() const {
+    requires 1u64 <= N;
+    ensures &result == &std_array_data(this)[N - 1u64];
+}
+```
+
+**Meaning:** A `std::array<T, N>` holds `N` elements in the object, named by
+`std_array_data(a)`. Each accessor has a `const` and a mutable overload,
+written as its own template; an instance is written from the overload whose
+receiver constness it has. The element accessors require an index inside
+the array and form an address without reading it.
+
+**Kind:** C++ standard library model. Each declaration is an explicit verification assumption, reported as `C++ std`.
+
+**Verified use:** [`tests/bitcoin_core_money_range.rs`](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs) reads and writes elements in `axiomatic_std_array_reference_element_resources_verify`, and calls `size`, `data` and `back` in the nightly `axiomatic_std_array_*` tests.
+
+### `std::as_writable_bytes<T, N>`
+
+```click
+template<class T, std::size_t N> extern std::span<std::byte> std::as_writable_bytes<T, N>(std::span<T> s) {
+    ensures std_span_data(result) == old(std_span_data(s) as (uint8 *));
+    ensures std_span_size(result) == old(std_span_size(s)) * sizeof(T);
+}
+```
+
+**Meaning:** The same storage as a span of bytes: the backing address as
+`uint8 *` and `sizeof(T)` bytes per element. It reads and grants nothing.
+The argument is a span passed by value, so the result is stated from it as
+it was on entry.
+
+**Kind:** C++ standard library model. Each declaration is an explicit verification assumption, reported as `C++ std`.
+
+**Verified use:** [`tests/bitcoin_core_money_range.rs`](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs) views an `std::span<int>` as bytes in `pinned_writable_byte_span_*` (nightly).
+
 ## `click::rust::i8` through `click::rust::usize`
 
 Source: `library/rust/i8.click` through `library/rust/usize.click`, one module per Rust integer type, imported as `import click::rust::u32;`. The Rust importer's core-method contracts name them by path.
@@ -6438,6 +6647,74 @@ axiom len_as_slice<T>(it: SliceIter<T>) {
 ```
 
 **Axiom:** trusted, not proved. The count is the length of what is left.
+
+## Rust core models
+
+Source: `library/rust/core.click`. This file is not a module: the Rust
+importer appends it to a sidecar when an import calls one of its methods,
+and writes each generic `extern fn` block out at each element type a call
+names, `Vec::push<u32>`. A block no call names is dropped. The other Rust
+core-method contracts are written by `src/languages/rust/standard_library.rs`
+([core library methods](../rust.md#core-library-methods)).
+
+### `Vec<T>` methods
+
+```click
+extern fn Vec::new<T>() -> Vec<T> {
+    ensures click::rust::vec::len(result) == 0u64;
+}
+extern fn Vec::with_capacity<T>(capacity: usize) -> Vec<T> {
+    ensures click::rust::vec::len(result) == 0u64;
+}
+extern fn Vec::push<T>(v: &mut Vec<T>, x: T) {
+    owns *v;
+    requires click::rust::vec::len(*v) < 18446744073709551615u64;
+    ensures *v == click::rust::vec::push(old(*v), x);
+    ensures click::rust::vec::len(*v) == click::rust::vec::len(old(*v)) + 1;
+    ensures click::rust::vec::get(*v, click::rust::vec::len(old(*v))) == x;
+    ensures forall (k: usize) { k < click::rust::vec::len(old(*v)) implies click::rust::vec::get(*v, k) == click::rust::vec::get(old(*v), k) };
+}
+extern fn Vec::len<T>(v: &Vec<T>) -> usize {
+    views *v;
+    ensures result == click::rust::vec::len(old(*v));
+}
+extern fn Vec::index<T>(v: &Vec<T>, i: usize) -> T {
+    views *v;
+    requires i < click::rust::vec::len(*v);
+    ensures result == click::rust::vec::get(old(*v), i);
+}
+```
+
+**Meaning:** Each call's effect on the library's `Vec<T>` value
+([`click::rust::vec`](#clickrustvec)). The capacity is outside the model.
+`v[i]` requires `i` in bounds, as Rust panics otherwise. A vector holds at
+most `u64::MAX` elements, and `push` requires room below it; Rust's own
+allocation limit is smaller and aborts rather than returns.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import.rs) verifies [`design/charon-trial/vec-values/vecs.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/vec-values/vecs.rs) in `charon_vec_values_read_as_the_library_vec`, and refuses each claim mutated false and an index not shown in bounds.
+
+### `slice::swap<T>`
+
+```click
+extern fn slice::swap<T>(s: &mut [T], a: usize, b: usize) {
+    owns *s;
+    requires a < s.len();
+    requires b < s.len();
+    ensures s[a] == old(s[b]);
+    ensures s[b] == old(s[a]);
+    ensures forall (k: usize) { k < s.len() and k != a and k != b implies s[k] == old(s[k]) };
+}
+```
+
+**Meaning:** `<[T]>::swap(s, a, b)` owns the slice, requires both indices in
+bounds, as Rust panics otherwise, and exchanges the two elements, leaving
+every other element unchanged.
+
+**Kind:** Rust core model. Each declaration is an explicit verification assumption, reported as `Rust core`.
+
+**Verified use:** [`tests/rust_import/core_methods.rs`](https://github.com/clicklang/click/blob/master/tests/rust_import/core_methods.rs) verifies `exchange`, `swap_bytes` and `reverse_three` in [`design/charon-trial/core-methods/methods.rs`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.rs), and refuses a `swap` index not shown in bounds.
 
 ## `click::separation`
 

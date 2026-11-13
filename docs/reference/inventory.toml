@@ -2371,6 +2371,126 @@ id = "library.extern.strlen"
 path = "reference/library/index.md#strlen"
 
 [[item]]
+id = "library.cpp.std::array<T, N>::back"
+path = "reference/library/index.md#stdarrayt-n"
+
+[[item]]
+id = "library.cpp.std::array<T, N>::data"
+path = "reference/library/index.md#stdarrayt-n"
+
+[[item]]
+id = "library.cpp.std::array<T, N>::front"
+path = "reference/library/index.md#stdarrayt-n"
+
+[[item]]
+id = "library.cpp.std::array<T, N>::operator[]"
+path = "reference/library/index.md#stdarrayt-n"
+
+[[item]]
+id = "library.cpp.std::array<T, N>::size"
+path = "reference/library/index.md#stdarrayt-n"
+
+[[item]]
+id = "library.cpp.std::as_writable_bytes<T, N>"
+path = "reference/library/index.md#stdas_writable_bytest-n"
+
+[[item]]
+id = "library.cpp.std::span<T, N>::back"
+path = "reference/library/index.md#stdspant-n"
+
+[[item]]
+id = "library.cpp.std::span<T, N>::data"
+path = "reference/library/index.md#stdspant-n"
+
+[[item]]
+id = "library.cpp.std::span<T, N>::first"
+path = "reference/library/index.md#stdspant-n"
+
+[[item]]
+id = "library.cpp.std::span<T, N>::front"
+path = "reference/library/index.md#stdspant-n"
+
+[[item]]
+id = "library.cpp.std::span<T, N>::last"
+path = "reference/library/index.md#stdspant-n"
+
+[[item]]
+id = "library.cpp.std::span<T, N>::operator[]"
+path = "reference/library/index.md#stdspant-n"
+
+[[item]]
+id = "library.cpp.std::span<T, N>::size"
+path = "reference/library/index.md#stdspant-n"
+
+[[item]]
+id = "library.cpp.std::span<T, N>::size_bytes"
+path = "reference/library/index.md#stdspant-n"
+
+[[item]]
+id = "library.cpp.std::span<T, N>::subspan"
+path = "reference/library/index.md#stdspant-n"
+
+[[item]]
+id = "library.cpp.std::span<T>::back"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.cpp.std::span<T>::data"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.cpp.std::span<T>::first"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.cpp.std::span<T>::front"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.cpp.std::span<T>::last"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.cpp.std::span<T>::operator[]"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.cpp.std::span<T>::size"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.cpp.std::span<T>::size_bytes"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.cpp.std::span<T>::subspan"
+path = "reference/library/index.md#stdspant"
+
+[[item]]
+id = "library.rust.Vec::index"
+path = "reference/library/index.md#vect-methods"
+
+[[item]]
+id = "library.rust.Vec::len"
+path = "reference/library/index.md#vect-methods"
+
+[[item]]
+id = "library.rust.Vec::new"
+path = "reference/library/index.md#vect-methods"
+
+[[item]]
+id = "library.rust.Vec::push"
+path = "reference/library/index.md#vect-methods"
+
+[[item]]
+id = "library.rust.Vec::with_capacity"
+path = "reference/library/index.md#vect-methods"
+
+[[item]]
+id = "library.rust.slice::swap"
+path = "reference/library/index.md#sliceswapt"
+
+[[item]]
 id = "glossary.alias"
 path = "reference/glossary.md#alias"
 

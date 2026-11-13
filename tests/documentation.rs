@@ -871,41 +871,65 @@ fn markdown_links(source: &str) -> Vec<String> {
 /// `primitive.` inventory IDs rather than in the library reference.
 const PRIMITIVE_MODULES: &[&str] = &["library/primitives.click", "library/c/builtins.click"];
 
-/// The Click library files an importer appends to a sidecar, which are not
-/// modules: their `extern` templates are written out at the import's calls
-/// and reported as the `C++ std` and `Rust core` model families.
-const SIDECAR_LIBRARY_FILES: &[&str] = &["library/cpp/", "library/rust/core.click"];
+/// The Click library files an importer appends to a sidecar, with the
+/// inventory kind of their contracts. They are not modules, so no import or
+/// module path names them: each `extern` template is named by the C++ or Rust
+/// path it models, `library.cpp.std::span<T>::size` or `library.rust.Vec::push`,
+/// and its verified use is in the tests its reference entry cites. They are
+/// otherwise under the same gates as the modules.
+const SIDECAR_LIBRARY_FILES: &[(&str, &str)] =
+    &[("library/cpp/", "cpp"), ("library/rust/core.click", "rust")];
 
-/// The Click library modules under `library/`.
-fn library_modules() -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    files_with_extension(&root().join("library"), "click", &mut files);
-    files.retain(|path| {
-        let identity = path
-            .strip_prefix(root())
-            .expect("library file under the root")
-            .to_string_lossy()
-            .replace('\\', "/");
-        !SIDECAR_LIBRARY_FILES
-            .iter()
-            .any(|file| identity.starts_with(file))
-    });
-    files
+fn library_identity(path: &Path) -> String {
+    path.strip_prefix(root())
+        .expect("library file under the root")
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn sidecar_library_kind(path: &Path) -> Option<&'static str> {
+    let identity = library_identity(path);
+    SIDECAR_LIBRARY_FILES
+        .iter()
+        .find(|(file, _)| identity.starts_with(file))
+        .map(|(_, kind)| *kind)
 }
 
 fn is_primitive_module(path: &Path) -> bool {
-    let identity = path
-        .strip_prefix(root())
-        .expect("library module under the root")
-        .to_string_lossy()
-        .replace('\\', "/");
-    PRIMITIVE_MODULES.contains(&identity.as_str())
+    PRIMITIVE_MODULES.contains(&library_identity(path).as_str())
 }
 
-/// The Click library modules under `library/`, primitive modules or the
+/// The path a sidecar library contract models, from its head: C++
+/// `template<...> extern <ret> <path>(...)`, `std::span<T, N>::size`, or Rust
+/// `extern fn <path><T>(...)`, `Vec::push`.
+fn sidecar_contract_path(line: &str) -> Option<String> {
+    if let Some(rest) = line.strip_prefix("extern fn ") {
+        return rest.split(['<', '(']).next().map(str::to_string);
+    }
+    let head = line.strip_prefix("template<")?.split_once(" extern ")?.1;
+    let head = head.split_once('(')?.0;
+    // The path is the last word at angle depth 0: `std::span<T, N>::size`.
+    let mut depth = 0i32;
+    let start = head
+        .char_indices()
+        .rev()
+        .find(|&(_, ch)| {
+            match ch {
+                '>' => depth += 1,
+                '<' => depth -= 1,
+                _ => {}
+            }
+            ch == ' ' && depth == 0
+        })
+        .map_or(0, |(index, _)| index + 1);
+    Some(head[start..].to_string())
+}
+
+/// The Click library files under `library/`, primitive modules or the
 /// others, concatenated in path order.
 fn library_source(primitives: bool) -> String {
-    let mut files = library_modules();
+    let mut files = Vec::new();
+    files_with_extension(&root().join("library"), "click", &mut files);
     files.retain(|path| is_primitive_module(path) == primitives);
     files.sort();
     assert!(!files.is_empty(), "no Click library modules");
@@ -933,21 +957,26 @@ fn standard_library_inventory_is_bidirectional() {
         .step_by(2)
         .map(str::to_string)
         .collect::<BTreeSet<_>>();
-    let files = library_modules();
+    let mut files = Vec::new();
+    files_with_extension(&root().join("library"), "click", &mut files);
     let mut declarations = BTreeSet::new();
     let mut primitives = BTreeSet::new();
     for path in files {
+        if let Some(kind) = sidecar_library_kind(&path) {
+            let source = fs::read_to_string(&path).expect("read library file");
+            for line in source.lines() {
+                if let Some(contract) = sidecar_contract_path(line) {
+                    declarations.insert(format!("{kind}.{contract}"));
+                }
+            }
+            continue;
+        }
         if is_primitive_module(&path) {
             let source = fs::read_to_string(&path).expect("read library module");
             declare_library_inventory(&source, None, &mut primitives);
             continue;
         }
-        let identity = path
-            .strip_prefix(root())
-            .expect("library module under the root")
-            .to_string_lossy()
-            .replace('\\', "/");
-        let module = qualified.contains(&identity).then(|| {
+        let module = qualified.contains(&library_identity(&path)).then(|| {
             path.file_stem()
                 .expect("library module name")
                 .to_string_lossy()
@@ -1122,7 +1151,8 @@ fn for_each_library_declaration(source: &str, mut check: impl FnMut(&str)) {
             || line.starts_with("predicate ")
             || line.starts_with("resource ")
             || line.starts_with("abstract resource ")
-            || line.starts_with("extern ");
+            || line.starts_with("extern ")
+            || line.starts_with("template<");
         if declaration.is_empty() && !starts {
             continue;
         }
@@ -1151,6 +1181,12 @@ fn every_standard_library_symbol_has_a_verified_use() {
         .into_iter()
         .chain(inventory_ids("primitive."))
     {
+        if SIDECAR_LIBRARY_FILES
+            .iter()
+            .any(|(_, kind)| id.starts_with(&format!("{kind}.")))
+        {
+            continue;
+        }
         let name = id
             .split_once('.')
             .map(|(_, name)| name)
@@ -1162,9 +1198,81 @@ fn every_standard_library_symbol_has_a_verified_use() {
     }
 }
 
+/// A C++ or Rust library model is used by the import tests that exercise its
+/// family, not by `mdtests/stdlib_every_symbol.md`: the **Verified use** of
+/// its reference entry links a Rust test file, and the files it links call
+/// the modeled function, `.subspan(` or `push(`, or subscript for
+/// `operator[]` and `Vec::index`.
+#[test]
+fn every_sidecar_library_contract_has_a_cited_use() {
+    let reference = fs::read_to_string(root().join("docs/reference/library/index.md"))
+        .expect("read library reference");
+    let mut sections = BTreeMap::<String, String>::new();
+    let mut current = None;
+    for line in reference.lines() {
+        if line.starts_with('#') {
+            current = Some(slug(line.trim_start_matches('#')));
+        } else if let Some(anchor) = &current {
+            sections
+                .entry(anchor.clone())
+                .or_default()
+                .push_str(&format!("{line}\n"));
+        }
+    }
+    let prefix = "https://github.com/clicklang/click/blob/master/";
+    let mut checked = 0;
+    for item in inventory() {
+        let Some((kind, path)) = item
+            .id
+            .strip_prefix("library.")
+            .and_then(|id| id.split_once('.'))
+        else {
+            continue;
+        };
+        if !SIDECAR_LIBRARY_FILES
+            .iter()
+            .any(|(_, sidecar)| *sidecar == kind)
+        {
+            continue;
+        }
+        let anchor = item.path.split_once('#').expect("inventory anchor").1;
+        let uses = sections
+            .get(anchor)
+            .and_then(|section| section.split_once("**Verified use:**"))
+            .map(|(_, uses)| uses.split("\n\n").next().unwrap_or(uses))
+            .unwrap_or_else(|| panic!("`{}` has no Verified use in #{anchor}", item.id));
+        let files = markdown_links(uses)
+            .into_iter()
+            .filter_map(|link| link.strip_prefix(prefix).map(str::to_string))
+            .map(|file| {
+                fs::read_to_string(root().join(&file))
+                    .unwrap_or_else(|error| panic!("`{}` cites {file}: {error}", item.id))
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            files.iter().any(|file| file.contains("#[test]")),
+            "`{}`'s Verified use links no Rust test file",
+            item.id
+        );
+        let method = path.rsplit("::").next().expect("contract name");
+        let call = match method.split('<').next().expect("contract name") {
+            "operator[]" | "index" => "[".to_string(),
+            name => format!("{name}("),
+        };
+        assert!(
+            files.iter().any(|file| file.contains(&call)),
+            "`{}`'s Verified use files never call `{call}`",
+            item.id
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no sidecar library contracts in the inventory");
+}
+
 /// `docs/concepts/trust.md` lists every library model family the
-/// `click verify` assumption report prints, the thread runtime included, and
-/// names every `extern` model the C library declares.
+/// `click verify` assumption report prints, the thread runtime included,
+/// names every `extern` model the C library declares, and names each C++ and
+/// Rust library model file in its family's row.
 #[test]
 fn every_library_model_family_is_a_listed_assumption() {
     let trust = fs::read_to_string(root().join("docs/concepts/trust.md")).expect("read trust");
@@ -1189,6 +1297,26 @@ fn every_library_model_family_is_a_listed_assumption() {
         assert!(
             models.contains(&format!("`{id}`")),
             "library model `{id}` is not listed in trust.md's Library models"
+        );
+    }
+    // A sidecar library file is named in its family's row, which states
+    // what it models; its contracts are listed in the library reference.
+    let mut files = Vec::new();
+    files_with_extension(&root().join("library"), "click", &mut files);
+    for path in files {
+        let Some(kind) = sidecar_library_kind(&path) else {
+            continue;
+        };
+        let family = match kind {
+            "cpp" => "| `C++ std` |",
+            _ => "| `Rust core` |",
+        };
+        let file = library_identity(&path);
+        assert!(
+            models
+                .lines()
+                .any(|row| row.contains(family) && row.contains(&format!("`{file}`"))),
+            "library model file `{file}` is not named in trust.md's `{family}` row"
         );
     }
 }
