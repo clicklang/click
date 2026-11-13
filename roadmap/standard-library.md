@@ -30,9 +30,10 @@ kernel standard theorems.
 Open:
 
 - One convention for the language library models: where the C library,
-  allocator, `snprintf`, C++ catalog and Rust core contracts are stated
+  allocator, `snprintf` and Rust core contracts are stated
   ([Layers](#layers)). Their reporting is done (2026-11-13): one
-  `assumptions:` report and the trust-listing gate test.
+  `assumptions:` report and the trust-listing gate test. The C++ catalog
+  is done: it is Click text in `library/cpp/` and a name table.
 - The fact-dependent integer lowerings
   ([below](#fact-dependent-integer-lowerings)).
 - The follow-ups from the Integer-default flip
@@ -58,9 +59,9 @@ trust:
   assumed `extern` contracts in the prelude. The allocator family
   (`malloc`, `calloc`, `realloc`, `free`) is instead built into the C front
   end (`src/languages/c/syntax.rs`, `src/surface/verification.rs`). The C++
-  catalog for `std::span` and `std::as_writable_bytes` is generated from
-  `src/languages/cpp/standard_library.rs`. So library models live in three
-  places, and each place has its own conventions.
+  catalog for `std::span` and `std::as_writable_bytes` was generated from
+  `src/languages/cpp/standard_library.rs` (now `library/cpp/`). So library
+  models lived in three places, and each place had its own conventions.
 - **Mathematical library.** `Nat`, `List<T>` and their theorems are generic
   and reasonably organized.
 - **Machine-integer bridges.** At filing, 110 of the 162 theorems were
@@ -351,8 +352,8 @@ Each step is a separate PR that leaves every example verifying:
     text in `library/cpp/` and `library/rust/`, and every gap closed for the
     library improves the C++ front end for users too. No new library
     contract is written as a Rust string template.
-  - **C++ catalog (in progress).** The catalog templates in
-    `src/languages/cpp/standard_library.rs` move to `library/cpp/` through
+  - **C++ catalog (done, 2026-11-13).** The catalog templates in
+    `src/languages/cpp/standard_library.rs` moved to `library/cpp/` through
     the C++ sidecar generic-template expansion
     (`src/surface/parser/cpp_generic_templates.rs`), in four PRs:
     1. Done: imported axioms instantiate library templates (an axiom the
@@ -377,8 +378,14 @@ Each step is a separate PR that leaves every example verifying:
        from the template method whose head has its receiver's constness.
        The name table keeps the catalog's guards: a static extent, no
        `const` element and no extent whose byte size overflows.
-    4. `std::as_writable_bytes` as a plain library `extern`, deleting the
-       remaining Rust templates (`CATALOG` and `catalog_contract`).
+    4. Done: `std::as_writable_bytes` is the function template
+       `std::as_writable_bytes<T, N>` in
+       `library/cpp/as_writable_bytes.click`, its instance written out at
+       the arguments its own segment names (for a user's function template
+       outside a class too), so it takes its declaration's parameter name
+       as a method instance does. The remaining Rust contract templates
+       (`CATALOG`, `catalog_contract`) are deleted; the importer keeps only
+       the name table.
   - **Rust core (open), after the C++ steps.** The `Vec`, slice, iterator
     and `Option`/`Result` builders in `src/languages/rust/standard_library.rs`
     become generic `extern fn` blocks in `library/rust/`, instantiated

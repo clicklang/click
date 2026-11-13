@@ -18,9 +18,13 @@
 //! an instance writes its argument as a `uint64` literal, `4u64`, and as
 //! Clang prints it, `4`, in a template argument list, `std::span<int, 4>`.
 //!
+//! A function template outside a class names its template parameters in
+//! its own segment, `template<class T, std::size_t N> ... f<T, N>(...)`, and
+//! its instance is the function at the arguments there, `f<int, 4>`.
+//!
 //! The Click library's templates (`library/cpp/`) state standard methods
-//! whose generic method no import has: only their instances are written,
-//! and the template itself is dropped.
+//! and functions whose generic no import has: only their instances are
+//! written, and the template itself is dropped.
 //!
 //! Every other token is kept, with its position.
 
@@ -426,16 +430,37 @@ fn instance(
     Ok(tokens)
 }
 
-/// The type arguments of the class template instance whose method
-/// `instance` is, `["int"]` for `Cell<int>::set`, as Clang prints them.
+/// The template arguments of a generic instance, as Clang prints them: of
+/// the class template instance whose method `instance` is, `["int"]` for
+/// `Cell<int>::set`, or of a function template instance outside a class,
+/// `["int", "18446744073709551615"]` for
+/// `std::as_writable_bytes<int, 18446744073709551615>`.
 pub(super) fn instance_arguments(instance: &str) -> Option<Vec<String>> {
     let display = crate::languages::cpp::names::cpp_display_name(instance)?;
-    let (record, _) = display.rsplit_once("::")?;
-    let open = record.find('<')?;
-    let inner = record.get(open + 1..record.len().checked_sub(1)?)?;
-    record
-        .ends_with('>')
-        .then(|| inner.split(", ").map(str::to_string).collect::<Vec<_>>())
+    // The last `::` outside a template argument list separates the
+    // function's segment from its qualifier.
+    let mut depth = 0i32;
+    let mut split = None;
+    for (at, character) in display.char_indices() {
+        match character {
+            '<' => depth += 1,
+            '>' => depth -= 1,
+            ':' if depth == 0 && display[at..].starts_with("::") => split = Some(at),
+            _ => {}
+        }
+    }
+    let (qualifier, function) = match split {
+        Some(at) => (&display[..at], &display[at + 2..]),
+        None => ("", display.as_str()),
+    };
+    let arguments = |spelled: &str| {
+        let open = spelled.find('<')?;
+        let inner = spelled.get(open + 1..spelled.len().checked_sub(1)?)?;
+        spelled
+            .ends_with('>')
+            .then(|| inner.split(", ").map(str::to_string).collect::<Vec<_>>())
+    };
+    arguments(qualifier).or_else(|| arguments(function))
 }
 
 #[cfg(test)]
@@ -525,5 +550,24 @@ mod tests {
             "extern const int `&` Box `<` int `>` `::` get `(` `)` const `{` ensures `&` result \
              `==` `&` this `->` v `;` `}`"
         );
+    }
+
+    // A function template outside a class is instantiated at the arguments
+    // its own segment names, a class template's method at its class's.
+    #[test]
+    fn instance_arguments_are_the_class_or_else_the_function_template_arguments() {
+        let name = |path: &[&str]| crate::languages::cpp::names::path_name(path);
+        assert_eq!(
+            instance_arguments(&name(&["std", "span<std::byte>", "size"])),
+            Some(vec!["std::byte".to_string()])
+        );
+        assert_eq!(
+            instance_arguments(&name(&[
+                "std",
+                "as_writable_bytes<int, 18446744073709551615>"
+            ])),
+            Some(vec!["int".to_string(), "18446744073709551615".to_string()])
+        );
+        assert_eq!(instance_arguments(&name(&["std", "swap"])), None);
     }
 }
