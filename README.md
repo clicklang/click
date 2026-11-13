@@ -128,11 +128,23 @@ The `clicklang` crate is not published to crates.io.
 
 Click keeps its launcher and installed versions under `~/.click`. The launcher
 uses the nearest `.click-version` file for a project, then the global default.
-Use `click install 0.1.0` to add a version, `click use 0.1.0` to pin the
-current directory for the project, and `click default 0.1.0` to change the
-global fallback. Without either, Click runs the launcher version. `click versions`
-lists installed versions. A project can commit `.click-version` to share its
-pin with collaborators.
+`click upgrade` installs the latest release and makes it the global default.
+Use `click version add 0.1.0` to add a specific version, `click version use 0.1.0`
+to pin the current directory for the project, and `click version default 0.1.0`
+to change the global fallback. Without either, Click runs the launcher version.
+`click version list` lists installed versions, and `click version remove 0.1.0`
+removes one.
+
+C is built in. `click add cpp` and `click add rust` add the C++ and Rust front
+ends, which prepare compiler imports (Linux x86-64 for now), to the version that
+runs; `click languages` lists them. A new version from `click upgrade` or
+`click version add` gets the same languages. To add them while installing, set
+`CLICK_LANGUAGES`:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/clicklang/click/master/install.sh | CLICK_LANGUAGES=cpp sh
+``` A project can commit `.click-version` to share its pin with
+collaborators.
 
 Set `CLICK_HOME` to choose a different install directory. Set
 `CLICK_RELEASE_REPOSITORY=owner/name` to install from another GitHub repository.

@@ -58,7 +58,7 @@ Audit of the current path, from a user's point of view:
    `.github/workflows/cpp-frontend.yml` packages that bundle for each
    release tag as `click-cpp-frontend-x86_64-unknown-linux-gnu.tar.gz`,
    tests it with `tests/cpp_release_install.rs`, and attaches it, and
-   `click install VERSION --cpp` installs it. `install.sh` and
+   `click add cpp` installs it. `install.sh` and
    `install.ps1` still install only `click`, and macOS and Windows have no
    bundle: there the development build (LLVM 19.1.7 development tools,
    `libclang-cpp` linked with an rpath into the host's LLVM `libdir`, not
@@ -68,7 +68,7 @@ Audit of the current path, from a user's point of view:
    `$CLICK_HOME/versions/<version>/frontends/cpp/click-cpp-exporter`, else
    reports where it expected one (`src/languages/cpp/runtime.rs`), for
    project locking and C++ mdtests alike. Configs name no exporter and no
-   build-machine path is compiled in. `click install VERSION --cpp`
+   build-machine path is compiled in. `click add cpp`
    installs there on Linux x86-64.
 3. **The version handshake and release identities are in place.** The
    exporter reports its version, artifact schema and Clang version for
@@ -90,7 +90,7 @@ Audit of the current path, from a user's point of view:
    instantiates, and the full-checkout `MoneyRange` workflow still assumes
    Homebrew Clang 19.1.7, CMake, and the extracted packages.
 5. **Setup errors name causes.** A missing exporter reports the expected
-   installed path and `click install VERSION --cpp`; an exporter with another
+   installed path and `click add cpp`; an exporter with another
    identity is refused before it runs an export
    (`an_installed_cpp_front_end_is_required_and_checked`). Diagnostics for
    unsupported constructs keep their source location and construct.
@@ -184,8 +184,8 @@ format for all three languages.
 
 - **Install layout and versioning.** Each Click version pins exactly one
   version of each front end. Front ends install beside that version of
-  `click` in the `CLICK_HOME` layout that `click install`, `click use` and
-  `click default` manage, so that switching versions switches front ends.
+  `click` in the `CLICK_HOME` layout that `click upgrade` and `click version`
+  manage, so that switching versions switches front ends.
   The user can list which front ends are installed, with their versions.
 - **Location.** A front end is resolved in a single documented order:
   1. an explicit per-front-end override, for development only, named the

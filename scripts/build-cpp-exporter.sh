@@ -4,7 +4,7 @@
 # `--check` only checks that the pinned toolchain is installed, without
 # building: it exits 0 when it is, and otherwise names what is missing.
 #
-# `--release` builds the self-contained front end that `click install --cpp`
+# `--release` builds the self-contained front end that `click add cpp`
 # installs (Linux x86-64 only): Clang, LLVM and the C++ runtime are linked
 # statically, and the pinned Clang's builtin headers are copied beside the
 # exporter as `clang-resource/`, which it finds relative to itself. The

@@ -67,6 +67,13 @@ sh "$installer_file"
 
 launcher=$click_home/bin/click
 [ -x "$launcher" ] || fail "the release installer did not place click at $launcher"
-CLICK_HOME=$click_home "$launcher" install "$version"
-CLICK_HOME=$click_home "$launcher" default "$version"
+CLICK_HOME=$click_home "$launcher" version add "$version"
+CLICK_HOME=$click_home "$launcher" version default "$version"
+
+# CLICK_LANGUAGES=cpp,rust adds those language front ends to the version just
+# installed. They run from CLICK_HOME so a project pin in the current
+# directory does not select another version.
+for language in $(printf '%s' "${CLICK_LANGUAGES:-}" | tr ',' ' '); do
+    (cd "$click_home" && CLICK_HOME=$click_home "$launcher" add "$language")
+done
 printf 'Click %s is ready. Restart your shell if click is not on PATH yet.\n' "$version"

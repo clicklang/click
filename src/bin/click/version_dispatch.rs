@@ -106,7 +106,7 @@ pub fn normalize_version(value: &str) -> Result<String, String> {
     Ok(version.to_string())
 }
 
-fn selected_version(binary: &str) -> Result<Option<String>, String> {
+pub fn selected_version(binary: &str) -> Result<Option<String>, String> {
     let home = click_home()?;
     let version = if let Some(value) = project_pin()? {
         Some(normalize_version(&value)?)
@@ -128,7 +128,7 @@ fn selected_version(binary: &str) -> Result<Option<String>, String> {
         let executable = version_binary(&home, version, binary);
         if !executable.is_file() {
             return Err(format!(
-                "Click {version} is selected but {} is not installed; run `click install {version}`",
+                "Click {version} is selected but {} is not installed; run `click version add {version}`",
                 binary_filename(binary)
             ));
         }
@@ -151,7 +151,10 @@ fn is_development_binary() -> bool {
 }
 
 fn is_manager_command(command: &str) -> bool {
-    matches!(command, "install" | "use" | "default" | "versions")
+    matches!(
+        command,
+        "version" | "upgrade" | "add" | "remove" | "languages"
+    )
 }
 
 #[cfg(test)]

@@ -72,9 +72,9 @@ if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
 }
 $env:CLICK_HOME = $clickHome
 try {
-    & $launcher install $version
+    & $launcher version add $version
     if ($LASTEXITCODE -ne 0) { Stop-ClickInstall "could not install Click $version into the version manager" }
-    & $launcher default $version
+    & $launcher version default $version
     if ($LASTEXITCODE -ne 0) { Stop-ClickInstall "could not set Click $version as the default" }
 }
 finally {

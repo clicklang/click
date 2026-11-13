@@ -19375,7 +19375,7 @@ fn default_construction_reads_constant_member_initializers_only() {
 }
 
 /// A Click home with the C++ front end installed beside this version, as
-/// `click install VERSION --cpp` places it, holding `exporter`.
+/// `click add cpp` places it, holding `exporter`.
 #[cfg(not(feature = "fast-gate"))]
 fn installed_cpp_home(name: &str, exporter: &Path) -> PathBuf {
     let home = scratch_copy(name);
@@ -19431,7 +19431,7 @@ fn an_installed_cpp_front_end_is_required_and_checked() {
     assert!(
         stderr.contains(&format!(
             "the C++ front end is not installed for Click {version}"
-        )) && stderr.contains(&format!("click install {version} --cpp")),
+        )) && stderr.contains("click add cpp"),
         "{stderr}"
     );
 

@@ -71,9 +71,25 @@ fn cpp_release_archive_installs_and_locks() {
     let launcher = home.join("bin/click");
     fs::copy(env!("CARGO_BIN_EXE_click"), &launcher).unwrap();
     let version = env!("CARGO_PKG_VERSION");
+    // The installer adds the launcher's own version, then `click add cpp`
+    // downloads the front end.
     success(
         Command::new(&launcher)
-            .args(["install", version, "--cpp"])
+            .args(["version", "add", version])
+            .current_dir(t.path())
+            .env("CLICK_HOME", &home)
+            .env("HOME", home.join("empty-home"))
+            .env("PATH", &transport)
+            .env("CLICK_RELEASE_REPOSITORY", "clicklang/click")
+            .env("FIXTURE_ASSETS", &assets)
+            .env("FIXTURE_REQUESTS", &requests)
+            .env_remove("CLICK_CPP_EXPORTER")
+            .output()
+            .unwrap(),
+    );
+    success(
+        Command::new(&launcher)
+            .args(["add", "cpp"])
             .current_dir(t.path())
             .env("CLICK_HOME", &home)
             .env("HOME", home.join("empty-home"))
@@ -97,17 +113,12 @@ fn cpp_release_archive_installs_and_locks() {
     fs::remove_dir_all(transport).unwrap();
     let installed = relocated.join("versions").join(version);
     let binary = installed.join("bin/click");
-    let listed = success(cli(&binary, &relocated, t.path(), &["versions"]));
+    let listed = success(cli(&binary, &relocated, t.path(), &["version", "list"]));
     assert!(
         String::from_utf8_lossy(&listed.stdout).contains("C++ frontend: exporter"),
         "{listed:?}"
     );
-    success(cli(
-        &binary,
-        &relocated,
-        t.path(),
-        &["install", version, "--cpp"],
-    ));
+    success(cli(&binary, &relocated, t.path(), &["add", "cpp"]));
 
     // Locking the committed example with the installed exporter reproduces
     // its committed lock and artifacts byte for byte: they record the pinned

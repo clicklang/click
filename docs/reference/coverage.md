@@ -9,8 +9,8 @@ the single summary, and other pages link here instead of repeating it.
 
 C is Click's primary language. C++ and Rust support is experimental and covers
 a small subset. C++ and Rust each have a pinned frontend bundle for the
-Linux x86-64 GNU host, installed with `click install VERSION --cpp` (the Clang
-exporter) or `--rust` (Charon and its compiler); on other hosts C++ extraction
+Linux x86-64 GNU host, installed with `click add cpp` (the Clang
+exporter) or `click add rust` (Charon and its compiler); on other hosts C++ extraction
 needs an exporter built from a repository checkout, and Rust extraction is
 not packaged yet. Committed C++ and Rust locks verify without the frontend.
 
