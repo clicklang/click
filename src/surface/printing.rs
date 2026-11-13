@@ -2623,6 +2623,41 @@ mod tests {
     }
 
     #[test]
+    fn a_read_through_a_checked_object_address_spells_the_original_place() {
+        let address =
+            CExpression::CheckedObjectAddress(Box::new(CExpression::Variable("value".into())));
+        let zero = CExpression::Value(CValue::Int32(MachineTerm::constant(0)));
+        // Call substitution retains a Surface index; lowered C expressions
+        // can also carry the read. Both must print the original lvalue.
+        for read in [
+            ContractExpression::Index(
+                Box::new(ContractExpression::CFragment(address.clone())),
+                Box::new(ContractExpression::CFragment(zero.clone())),
+            ),
+            ContractExpression::CFragment(CExpression::Index(Box::new(address), Box::new(zero))),
+        ] {
+            let proposition = ClickProposition::Comparison {
+                left: read,
+                operator: ComparisonOperator::LessEqual,
+                right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+                    MachineTerm::constant(10),
+                ))),
+            };
+            let source = source_click_proposition(&proposition);
+            assert_eq!(source, "value <= 10");
+            let parsed = parser::parse(&format!(
+                "void f(int32 value) {{ requires {source}; ensures true; }}"
+            ))
+            .unwrap();
+            let Requirement::Proposition(proposition) = &parsed.function_blocks()[0].requires()[0]
+            else {
+                panic!("expected the read comparison requirement");
+            };
+            assert_eq!(source_click_proposition(proposition), source);
+        }
+    }
+
+    #[test]
     fn array_field_read_through_an_erased_pointer_keeps_its_element_type() {
         let read = ContractExpression::Index(
             Box::new(ContractExpression::Field {

@@ -149,12 +149,35 @@ impl KernelLegacyTerm {
     }
 }
 
+/// A produced call already owns its native argument descriptors. Borrow that
+/// payload through its application handle instead of constructing a second
+/// native call tree when an unmigrated consumer requests the root reading.
+#[derive(Default)]
+struct MachineLeafCache(std::sync::OnceLock<MachineLeaf>);
+enum MachineLeaf {
+    Native(MachineTerm),
+    Application(SharedPureApplication),
+}
+impl MachineLeafCache {
+    fn get_or_init(&self, build: impl FnOnce() -> MachineTerm) -> &MachineTerm {
+        match self.0.get_or_init(|| MachineLeaf::Native(build())) {
+            MachineLeaf::Native(value) => value,
+            MachineLeaf::Application(application) => application.native_call(),
+        }
+    }
+    fn retain_application(&self, application: &SharedPureApplication) {
+        crate::instrumentation::record_deterministic_work(1);
+        self.0
+            .get_or_init(|| MachineLeaf::Application(application.clone()));
+    }
+}
+
 struct TermData {
     id: u64,
     key: NodeKey,
     // Temporary reverse bridge. Weak because the old node caches this term.
     integer: Mutex<WeakIntegerTerm>,
-    machine_leaf: std::sync::OnceLock<MachineTerm>,
+    machine_leaf: MachineLeafCache,
 }
 
 struct NodeKeyData {

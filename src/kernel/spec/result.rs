@@ -96,6 +96,21 @@ impl SpecValue {
         match self {
             Self::Native(value) => value,
             Self::Shared(term) => {
+                if matches!(term.node(), KernelTermNode::Call { .. }) {
+                    let KernelType::C(ty) = term.ty() else {
+                        unreachable!()
+                    };
+                    let format =
+                        MachineIntegerType::from_c_type(*ty).expect("machine call result type");
+                    // The native result carrier needs only this call root.
+                    // Keep numeric argument DAGs shared across the handoff;
+                    // explicit KernelTermExport remains the structural export.
+                    return format.value_from_term(
+                        term.machine_conversion_leaf()
+                            .expect("machine call root")
+                            .clone(),
+                    );
+                }
                 let PureFunctionArgument::Value(value) = KernelTermExport::default()
                     .argument(&term)
                     .expect("machine expression result")

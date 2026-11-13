@@ -95,6 +95,12 @@ fn machine_call_roots_preserve_opaque_producer_payloads() {
         "distinct exact producer payloads"
     );
     let second_root = KernelTermImport::default().machine_call(format, &second);
+    for (call, producer) in [(&root, &application), (&second_root, &second)] {
+        assert!(std::ptr::eq(
+            call.machine_conversion_leaf().unwrap(),
+            producer.native_call(),
+        ));
+    }
     for (call, expected) in [(&root, None), (&second_root, Some(class))] {
         let MachineTerm::ClickFunctionApplication { arguments, .. } =
             KernelTermExport::machine(call).unwrap()
@@ -184,5 +190,47 @@ fn common_call_numeric_identity_matches_native_without_changing_payloads() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(matches!(root.node(), KernelTermNode::Call { .. }));
         assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
+    }
+}
+
+#[test]
+fn native_call_import_before_shared_production_keeps_argument_handles() {
+    for warm in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let argument = crate::kernel::binary_node!(
+            Int32,
+            Add,
+            Box::new(MachineTerm::Variable(Variable(995942))),
+            Box::new(MachineTerm::constant(1))
+        );
+        let application = SharedPureApplication::intern(
+            "native_then_shared".into(),
+            vec![PureFunctionArgument::Value(CValue::Int32(argument))],
+        );
+        let imported = KernelTermImport::default().machine_call(format, &application);
+        if warm {
+            imported.machine_conversion_leaf().unwrap();
+        }
+        let child = imported.children()[0].clone();
+        let retained = SharedPureApplication::intern(
+            application.name().into(),
+            vec![PureFunctionArgument::SharedMachine(
+                SharedMachineIntegerTerm::from_shared(format, child.clone()).unwrap(),
+            )],
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let produced = KernelTermImport::default().machine_call(format, &retained);
+        assert_eq!(imported, produced);
+        let MachineTerm::ClickFunctionApplication { arguments, .. } =
+            produced.machine_conversion_leaf().unwrap()
+        else {
+            panic!()
+        };
+        let [PureFunctionArgument::SharedMachine(argument)] = arguments.as_slice() else {
+            panic!("an earlier native input must not materialize a retained prefix");
+        };
+        assert_eq!(argument.shared_operand(), Some(&child));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

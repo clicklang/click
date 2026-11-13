@@ -13,7 +13,48 @@ pub(super) fn conditions_equal(left: &ConditionTerm, right: &ConditionTerm) -> b
     Comparison::default().condition(left, right)
 }
 
+pub(super) fn algebraic_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
+    Comparison::default().algebraic(left, right)
+}
+
 impl Comparison {
+    fn algebraic(&mut self, left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
+        use crate::kernel::AlgebraicTermNode as T;
+        crate::instrumentation::record_deterministic_work(1);
+        if left.algebraic_type != right.algebraic_type {
+            return false;
+        }
+        match (&left.node, &right.node) {
+            (T::Variable(a), T::Variable(b)) => a == b,
+            (
+                T::PureFunctionApplication {
+                    name: an,
+                    arguments: aa,
+                },
+                T::PureFunctionApplication {
+                    name: bn,
+                    arguments: ba,
+                },
+            ) => {
+                an == bn
+                    && aa.len() == ba.len()
+                    && aa.iter().zip(ba).all(|(a, b)| self.argument(a, b))
+            }
+            (
+                T::MemoryLoad {
+                    memory: am,
+                    pointer: ap,
+                },
+                T::MemoryLoad {
+                    memory: bm,
+                    pointer: bp,
+                },
+            ) => am.arena_id() == bm.arena_id() && self.pointer(ap, bp),
+            // Match/conditional/constructor payloads keep their existing
+            // certification route. This boundary admits only call syntax.
+            _ => false,
+        }
+    }
     fn condition(&mut self, left: &ConditionTerm, right: &ConditionTerm) -> bool {
         use ConditionTerm as C;
         crate::instrumentation::record_deterministic_work(1);
@@ -320,8 +361,9 @@ impl Comparison {
                         == crate::kernel::intern_c_memory_ref(bm).arena_id()
                     && self.argument(&A::Value(ap.clone()), &A::Value(bp.clone()))
             }
-            // Unsupported algebraic/Integer payloads are left to existing
-            // alpha certification, rather than collapsed to numeric keys.
+            (A::Algebraic(a), A::Algebraic(b)) => self.algebraic(a, b),
+            // Unsupported Integer payloads retain the existing alpha route;
+            // written syntax is never collapsed to numeric observation keys.
             _ => false,
         }
     }
@@ -358,6 +400,76 @@ mod tests {
             }),
         }
     }
+    fn algebraic_call(argument: AlgebraicTerm, name: &str) -> AlgebraicTerm {
+        let application = crate::kernel::SharedPureApplication::intern(
+            "retained_length".into(),
+            vec![A::Algebraic(argument.clone())],
+        );
+        let root = crate::kernel::KernelTermImport::default()
+            .machine_call(MachineIntegerType::UInt64, &application);
+        AlgebraicTerm {
+            algebraic_type: argument.algebraic_type.clone(),
+            node: crate::kernel::AlgebraicTermNode::PureFunctionApplication {
+                name: name.into(),
+                arguments: vec![
+                    A::Algebraic(argument),
+                    A::SharedMachine(
+                        SharedMachineIntegerTerm::from_shared(MachineIntegerType::UInt64, root)
+                            .unwrap(),
+                    ),
+                ],
+            },
+        }
+    }
+
+    #[test]
+    fn algebraic_call_certification_ignores_allocation_but_keeps_written_inputs() {
+        use crate::kernel::{AlgebraicTermNode, AlgebraicType, CMemory, Pointer, Variable};
+        let _session = VerificationSession::enter();
+        let ty = AlgebraicType::parameter("T".into());
+        let variable = AlgebraicTerm {
+            algebraic_type: ty.clone(),
+            node: AlgebraicTermNode::Variable(Variable(995950)),
+        };
+        let left = algebraic_call(variable.clone(), "wrap");
+        let right = algebraic_call(variable.clone(), "wrap");
+        assert_ne!(left, right);
+        let claim = |value: AlgebraicTerm| {
+            Proposition::Equal(Term::Algebraic(value), Term::Algebraic(variable.clone()))
+        };
+        let exports = KernelTermExport::machine_export_count();
+        assert!(algebraic_equal(&left, &right));
+        assert!(propositions_alpha_equivalent(
+            &claim(left.clone()),
+            &claim(right)
+        ));
+        assert!(!algebraic_equal(
+            &left,
+            &algebraic_call(variable.clone(), "other")
+        ));
+        let changed = AlgebraicTerm {
+            algebraic_type: ty.clone(),
+            node: AlgebraicTermNode::Variable(Variable(995951)),
+        };
+        assert!(!algebraic_equal(&left, &algebraic_call(changed, "wrap")));
+        let memory = CMemory::new();
+        let other = memory
+            .clone()
+            .store(Pointer::null(), CValue::Int32(1u32.into()));
+        let read = |memory: &CMemory| AlgebraicTerm {
+            algebraic_type: ty.clone(),
+            node: AlgebraicTermNode::MemoryLoad {
+                memory: crate::kernel::intern_c_memory_ref(memory),
+                pointer: Box::new(Pointer::null()),
+            },
+        };
+        assert!(!algebraic_equal(
+            &algebraic_call(read(&memory), "wrap"),
+            &algebraic_call(read(&other), "wrap")
+        ));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
     #[test]
     fn fresh_retained_payloads_have_one_written_certification_syntax() {
         let _session = VerificationSession::enter();

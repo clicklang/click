@@ -1,6 +1,22 @@
 //! Discovery over Surface proof presentations; semantic state remains in ProofObject.
 use super::*;
 
+// The existing rewrite history tracks goals, not producer allocations. Use
+// the same snapshot-aware identity as fact lookup so a fresh shared call
+// argument does not restart a branch already visited through a native reading.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(super) enum RewriteGoalKey {
+    Identity(crate::kernel::proof::PropositionIdentityKey),
+    Exact(Proposition),
+}
+impl RewriteGoalKey {
+    pub(super) fn new(goal: &Proposition) -> Self {
+        crate::kernel::proof::proposition_identity_key(goal)
+            .map(Self::Identity)
+            .unwrap_or_else(|| Self::Exact(goal.clone()))
+    }
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     fn establish_carried_arithmetic(
         proof: &Proof<'a>,
@@ -801,7 +817,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if candidates.is_empty() {
             return Ok(None);
         }
-        let mut seen = std::collections::BTreeMap::from([(goal.clone(), REWRITE_DEPTH)]);
+        let mut seen =
+            std::collections::BTreeMap::from([(RewriteGoalKey::new(goal), REWRITE_DEPTH)]);
         let mut budget = RewriteBudget {
             attempts: REWRITE_ATTEMPTS,
             solve_closures: REWRITE_SOLVE_CLOSURES,
@@ -841,7 +858,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if candidates.is_empty() {
             return Ok(None);
         }
-        let mut seen = std::collections::BTreeMap::from([(goal.clone(), candidates.len())]);
+        let mut seen =
+            std::collections::BTreeMap::from([(RewriteGoalKey::new(goal), candidates.len())]);
         let mut budget = RewriteBudget {
             attempts: REWRITE_ATTEMPTS,
             solve_closures: REWRITE_SOLVE_CLOSURES,
@@ -1479,7 +1497,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         candidates: &[Vec<(Proposition, ClickProposition)>],
         used: &mut Vec<bool>,
         depth: usize,
-        seen: &mut std::collections::BTreeMap<Proposition, usize>,
+        seen: &mut std::collections::BTreeMap<RewriteGoalKey, usize>,
         budget: &mut RewriteBudget,
         closers: RewriteClosers<'_>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
@@ -1513,6 +1531,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     continue;
                 };
                 let left = depth - 1;
+                let goal = RewriteGoalKey::new(&goal);
                 match seen.get(&goal) {
                     Some(&reached) if reached >= left => continue,
                     Some(_) => {}

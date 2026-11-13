@@ -755,11 +755,16 @@ fn pure_function_application_is_not_eagerly_evaluated() {
 
     assert_eq!(paths.len(), 1);
     assert_eq!(
-        paths[0].value.clone().into_native(),
-        CValue::Int32(MachineTerm::ClickFunctionApplication {
+        KernelTermExport::default()
+            .argument(match &paths[0].value {
+                SpecValue::Shared(root) => root,
+                _ => panic!("common integer call result"),
+            })
+            .unwrap(),
+        PureFunctionArgument::Value(CValue::Int32(MachineTerm::ClickFunctionApplication {
             name: "increment".to_string(),
             arguments: vec![PureFunctionArgument::Value(int32(41))],
-        })
+        }))
     );
 }
 
