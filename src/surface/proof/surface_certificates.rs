@@ -838,19 +838,10 @@ fn preservation_read(
 /// Expand a written list of footprint separations into independent preservation
 /// equalities. Endpoint connectivity is ordinary equality reasoning; this reads
 /// no execution history and discovers no missing footprint or premise.
-pub(super) fn multiple_statement_preservation_steps(
+pub(super) fn statement_preservation_steps(
     source: &ClickProposition,
     target: &ClickProposition,
     premises: &[ClickProposition],
-) -> Option<Vec<ProofStep>> {
-    statement_preservation_steps(source, target, premises, 2)
-}
-
-fn statement_preservation_steps(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
-    minimum_links: usize,
 ) -> Option<Vec<ProofStep>> {
     let (start, read) = preservation_read(source, target)?;
     let mut steps = Vec::new();
@@ -889,7 +880,7 @@ fn statement_preservation_steps(
             ),
         });
     }
-    if !includes_start || steps.len() < minimum_links {
+    if !includes_start {
         return None;
     }
     steps.push(ProofStep::Assumption);
@@ -1038,7 +1029,7 @@ fn read_preservation_steps(
             operator: ComparisonOperator::Equal,
             right: historical,
         };
-        let equality_steps = statement_preservation_steps(&reflexive, &bridge, &separations, 1)?;
+        let equality_steps = statement_preservation_steps(&reflexive, &bridge, &separations)?;
         steps.push(have(bridge.clone(), equality_steps));
         equalities.push(bridge);
     }
