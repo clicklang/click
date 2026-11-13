@@ -369,10 +369,15 @@ Each step is a separate PR that leaves every example verifying:
        have a const and a mutable overload under one qualified name, which
        instance matching by name cannot tell apart yet.
     4. `std::as_writable_bytes` as a plain library `extern`, deleting the
-       Rust templates; then the Rust core builders.
-  - **Rust core (open).** The `Vec`, slice, iterator and `Option`/`Result`
-    builders in `src/languages/rust/standard_library.rs` move to
-    `library/rust/` through `rust_generic_functions.rs`.
+       Rust templates.
+  - **Rust core (open), after the C++ steps.** The `Vec`, slice, iterator
+    and `Option`/`Result` builders in `src/languages/rust/standard_library.rs`
+    become generic `extern fn` blocks in `library/rust/`, instantiated
+    through `rust_generic_functions.rs` as a sidecar's generic functions
+    are; a short spike first finds which C++ gaps (instances from imported
+    calls, dropping uninstantiated library generics) recur there. Integer
+    methods (`u32::min`) need no contract text: each is the library
+    function of the same path, so the Rust side keeps only that table.
   - **Allocator (open).** `malloc`, `calloc`, `realloc` and `free` become
     `extern` contracts over the `allocation` primitive in
     `library/c/stdlib.click`, if the kernel's allocation model is
