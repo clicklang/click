@@ -16,7 +16,7 @@ This issue also tracks Integer-default specification arithmetic
 library lemmas survive. That work adds kernel rules; each one carries its
 own soundness argument and regressions.
 
-## Status (2026-11-12)
+## Status (2026-11-13)
 
 Done: delivery steps 1 to 4, the qualified-name steps of step 5 except
 generic width-free names, step 6, and the generic `permutation::count` and
@@ -27,19 +27,18 @@ applies; the product-identity, `<=`-and-`!=` and round-trip width gaps
 proof check runs in the gate. Of the library's 147 theorems, 111 have checked proofs and 36 are
 kernel standard theorems.
 
+Also done (2026-11-13): one convention for the language library models
+([Layers](#layers)). Every model is reported in one `assumptions:` report
+and listed in trust; the C, C++ and Rust contracts are Click text in
+`library/` attached through per-language name tables; the allocator stays a
+built-in primitive (maintainer). The fact-dependent integer lowerings are
+all done ([below](#fact-dependent-integer-lowerings)).
+
 Open:
 
-- One convention for the language library models: where the C library,
-  allocator, `snprintf` and Rust core contracts are stated
-  ([Layers](#layers)). Their reporting is done (2026-11-13): one
-  `assumptions:` report and the trust-listing gate test. The C++ catalog
-  is done: it is Click text in `library/cpp/` and a name table. The Rust
-  `Vec` methods and `<[T]>::swap` are too (`library/rust/core.click`); the
-  other Rust core contracts are steps 2 and 3 of the Rust core entry.
-- The fact-dependent integer lowerings
-  ([below](#fact-dependent-integer-lowerings)).
-- The follow-ups from the Integer-default flip
-  ([below](#integer-default-specification-arithmetic)).
+- One follow-up from the Integer-default flip
+  ([below](#integer-default-specification-arithmetic)): the
+  `jsonc-refcount` cost of Integer postconditions.
 
 ## Motivation
 
@@ -319,7 +318,8 @@ Each step is a separate PR that leaves every example verifying:
 ### Layers
 
 - **Primitives.** These are the abstract resources and builtins that the
-  kernel or a front end interprets. They belong to the language, not the
+  kernel or a front end interprets, including the C allocator family
+  (below). They belong to the language, not the
   library. Document them in the language reference with their kernel
   meaning, and keep them available without an import. Whether they remain
   written in Click syntax is an implementation choice. Either way, the
@@ -432,10 +432,18 @@ Each step is a separate PR that leaves every example verifying:
     With step 3, every library model is Click text attached through a name
     table, except the allocator below and the `snprintf` contract of each
     format, which depends on the program.
-  - **Allocator (open).** `malloc`, `calloc`, `realloc` and `free` become
-    `extern` contracts over the `allocation` primitive in
-    `library/c/stdlib.click`, if the kernel's allocation model is
-    expressible there; otherwise they stay built in and documented as such.
+  - **Allocator (decided, maintainer 2026-11-13): a built-in primitive.**
+    `malloc`, `calloc`, `realloc` and `free` stay built into the C front end
+    and the kernel, documented in
+    [heap allocation](../docs/reference/language/c.md#heap-allocation) and
+    reported under the `allocator` tag. The kernel interprets them: the
+    assignment target types the block, the size is read as
+    `count * sizeof(T)`, the result is a pending null-or-success outcome,
+    `calloc` zeroes typed cells, and `realloc` keeps the initialized prefix
+    and moves the authority. Stating that as a `void *` contract would need
+    new contract features for no gain in what is trusted or reported.
+    Contracts for user allocator wrappers with the same precision would be
+    a separate feature.
   - **pthread runtime.** It stays a runtime selected by the sidecar, with
     its trusted specification, but is reported in the same list.
 - **Specification library.** These are the checked types, pure functions,
@@ -765,8 +773,9 @@ an unsigned-only law at a signed one, where each is false.
   Every declaration is in exactly one layer, and primitives are documented
   in the language reference.
 - C library and C++ catalog models follow one documented convention and
-  are listed in [trust](../docs/concepts/trust.md). Listing and one report
-  are done (2026-11-13); the convention for where they are stated is open.
+  are listed in [trust](../docs/concepts/trust.md). Done (2026-11-13): one
+  report, the trust listing, and Click text in `library/` behind name
+  tables; the allocator is a built-in primitive.
 - The library is split into `library/` modules. `Nat`, `List` and the
   primitives are implicit; every other specification module is imported with
   `import click::...;`, so a sidecar's imports show which modules it uses.

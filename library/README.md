@@ -38,8 +38,9 @@ Each declaration is in one layer, which sets its trust:
 - **Language library models** are assumed `extern` contracts for the C, C++ or
   Rust library the verified code calls, listed in
   [trust](../docs/concepts/trust.md#the-click-library). `c/string.click`
-  and the `cpp/` files are written here; the allocator family and
-  `snprintf` contracts are built into the C front end. The Rust core-method
+  and the `cpp/` files are written here; the allocator family is a
+  built-in primitive of the C front end and the kernel, and the `snprintf`
+  contracts are written by the C front end per format. The Rust core-method
   contracts are written in `rust/core.click` and, for the integer methods,
   `rust/integers.click`; the importer keeps only a name table.
 - **The specification library** is every other module: checked types, pure
