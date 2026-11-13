@@ -158,10 +158,17 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
         &root,
         &import,
         &sidecar,
-        &[(
-            sidecar.replace("    requires 2u64 <= std_span_size(s);\n", ""),
-            "::operator[]",
-        )],
+        &[
+            (
+                sidecar.replace("    requires 2u64 <= std_span_size(s);\n", ""),
+                "::operator[]",
+            ),
+            // A sidecar does not restate a library model.
+            (
+                format!("extern int& {SPAN}::operator[](unsigned long i) const {{\n}}\n{sidecar}"),
+                "has the Click library's contract",
+            ),
+        ],
     );
     // `click verify` reports the catalog contract the read relies on.
     let source = format!("verifying \"span-probe.cpp\";\n{sidecar}\n");

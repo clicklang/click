@@ -343,15 +343,41 @@ Each step is a separate PR that leaves every example verifying:
     `library_contract_module_named` attaches `library/c/string.click` today.
     A contract is generated only where it depends on the program: the
     `snprintf` contract of each format.
-  - **C++ catalog (open).** The catalog templates in
+  - **Library models use the user contract mechanism (maintainer,
+    2026-11-13).** A library model is stated with the same contract
+    mechanism a user's sidecar uses; the Rust side keeps only a name table
+    (which qualified names and signatures are instances of which library
+    declaration, at which type arguments). Library contracts grow as Click
+    text in `library/cpp/` and `library/rust/`, and every gap closed for the
+    library improves the C++ front end for users too. No new library
+    contract is written as a Rust string template.
+  - **C++ catalog (in progress).** The catalog templates in
     `src/languages/cpp/standard_library.rs` move to `library/cpp/` through
-    the existing C++ sidecar generic-template expansion
-    (`src/surface/parser/cpp_generic_templates.rs`), which first needs
-    non-type template parameters for a static extent `N`
-    (`std::span<T, N>`, `std::array<T, N>`).
-  - **Rust core (open).** The `Vec`, slice, iterator and `Option`/`Result`
-    builders in `src/languages/rust/standard_library.rs` move to
-    `library/rust/` through `rust_generic_functions.rs`.
+    the C++ sidecar generic-template expansion
+    (`src/surface/parser/cpp_generic_templates.rs`), in four PRs:
+    1. Done: imported axioms instantiate library templates (an axiom the
+       name table maps is an instance of the library method), library
+       templates nothing instantiates are dropped, an instance takes its
+       declaration's parameter names by position (for user templates
+       too), a C++ sidecar spells `std::byte` as `uint8`, and the linker
+       splits template blocks. Dynamic-extent `std::span<T>` is
+       `library/cpp/span.click`.
+    2. Non-type template parameters, for a static extent `N`, and
+       static-extent `std::span<T, N>`.
+    3. Const and non-const overload matching, and `std::array<T, N>`.
+       Blocker: `std::array`'s `data`, `front`, `back` and `operator[]`
+       have a const and a mutable overload under one qualified name, which
+       instance matching by name cannot tell apart yet.
+    4. `std::as_writable_bytes` as a plain library `extern`, deleting the
+       Rust templates.
+  - **Rust core (open), after the C++ steps.** The `Vec`, slice, iterator
+    and `Option`/`Result` builders in `src/languages/rust/standard_library.rs`
+    become generic `extern fn` blocks in `library/rust/`, instantiated
+    through `rust_generic_functions.rs` as a sidecar's generic functions
+    are; a short spike first finds which C++ gaps (instances from imported
+    calls, dropping uninstantiated library generics) recur there. Integer
+    methods (`u32::min`) need no contract text: each is the library
+    function of the same path, so the Rust side keeps only that table.
   - **Allocator (open).** `malloc`, `calloc`, `realloc` and `free` become
     `extern` contracts over the `allocation` primitive in
     `library/c/stdlib.click`, if the kernel's allocation model is

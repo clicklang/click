@@ -9,7 +9,14 @@
 //! instance block is the generic block's head and clauses with each type
 //! parameter spelled as its argument, `extern void Cell<int>::set(int v) {
 //! ... }`, and no proof. Writing it out gives each instance its own record
-//! layouts: `Cell<int>` is laid out as Clang lays it out.
+//! layouts: `Cell<int>` is laid out as Clang lays it out. An instance's
+//! parameters take the instance's own names, by position, as Clang names
+//! them there: a standard library names `std::span<int>::first`'s count
+//! `__count`, which the template need not spell.
+//!
+//! The Click library's templates (`library/cpp/`) state standard methods
+//! whose generic method no import has: only their instances are written,
+//! and the template itself is dropped.
 //!
 //! Every other token is kept, with its position.
 
@@ -28,7 +35,14 @@ struct Block {
     clauses_end: usize,
     /// Its type parameters' names.
     names: Vec<String>,
+    /// Its method's parameters' names, by position, `None` for one the head
+    /// does not name.
+    parameters: Vec<Option<String>>,
 }
+
+/// An instance's type arguments, with its parameters' names after its
+/// receiver.
+pub(super) type Instances = BTreeMap<Vec<String>, Vec<String>>;
 
 /// Writes out each instance of the sidecar's generic methods, by the
 /// generic method's importer name, at the type arguments the import
@@ -38,7 +52,7 @@ struct Block {
 pub(super) fn expand_generic_methods(
     tokens: Vec<Token>,
     positions: Vec<SourcePosition>,
-    instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
+    instances: &BTreeMap<String, Instances>,
 ) -> Result<(Vec<Token>, Vec<SourcePosition>, BTreeSet<usize>), ClickError> {
     let mut written = BTreeSet::new();
     let source: Vec<Spanned> = tokens.into_iter().zip(positions).collect();
@@ -54,8 +68,10 @@ pub(super) fn expand_generic_methods(
             && is_ident(source.get(index), "template")
             && let Some((name, block)) = block_at(&source, &plain, index)?
         {
-            output.extend(source[index..block.end].iter().cloned());
-            for arguments in instances.get(&name).into_iter().flatten() {
+            if !crate::languages::cpp::standard_library::is_library_generic(&name) {
+                output.extend(source[index..block.end].iter().cloned());
+            }
+            for (arguments, parameters) in instances.get(&name).into_iter().flatten() {
                 if arguments.len() != block.names.len() {
                     return Err(error_at(
                         &source[index].1,
@@ -67,7 +83,7 @@ pub(super) fn expand_generic_methods(
                     ));
                 }
                 written.insert(output.len());
-                output.extend(instance(&source, index, &block, arguments));
+                output.extend(instance(&source, index, &block, arguments, parameters)?);
             }
             index = block.end;
             continue;
@@ -137,7 +153,9 @@ fn block_at(
         ));
     };
     let unterminated = || error_at(position, "unterminated generic method block");
-    let mut clauses_open = matching(source, parameters_open).ok_or_else(unterminated)?;
+    let parameters_close = matching(source, parameters_open).ok_or_else(unterminated)?;
+    let parameters = parameter_names(source, parameters_open, parameters_close);
+    let mut clauses_open = parameters_close;
     while source
         .get(clauses_open)
         .is_some_and(|(token, _)| *token != Token::LBrace && *token != Token::Semicolon)
@@ -161,8 +179,40 @@ fn block_at(
             head_start,
             clauses_end,
             names,
+            parameters,
         },
     )))
+}
+
+/// The name each parameter between `(` at `open` and `)` at `close`
+/// declares: the word ending it, `None` for one ending otherwise.
+fn parameter_names(source: &[Spanned], open: usize, close: usize) -> Vec<Option<String>> {
+    let mut names = Vec::new();
+    let mut depth = 0i32;
+    let mut last = None;
+    let mut empty = true;
+    for (token, _) in &source[open + 1..close] {
+        match token {
+            Token::Comma if depth == 0 => {
+                names.push(last.take());
+                empty = true;
+                continue;
+            }
+            Token::LParen | Token::LBracket | Token::LessThan => depth += 1,
+            Token::RParen | Token::RBracket | Token::GreaterThan => depth -= 1,
+            _ => {}
+        }
+        empty = false;
+        last = match token {
+            Token::Ident(word) if depth == 0 => Some(word.clone()),
+            _ => None,
+        };
+    }
+    // `()` and `(void)` declare no parameter.
+    if !empty && !(names.is_empty() && last.as_deref() == Some("void")) {
+        names.push(last);
+    }
+    names
 }
 
 /// The names of the type parameters between `<` at `open` and `>` at
@@ -198,29 +248,88 @@ pub(super) fn template_parameters(
 
 /// The instance block of the generic method block at `start` at
 /// `arguments`: `extern` and its head and clauses with each type parameter
-/// spelled as its argument, `unsigned long` as two words.
-fn instance(source: &[Spanned], start: usize, block: &Block, arguments: &[String]) -> Vec<Spanned> {
+/// spelled as its argument, `unsigned long` as two words and `std::byte`
+/// as a path, and each parameter renamed to the instance's `parameters`.
+fn instance(
+    source: &[Spanned],
+    start: usize,
+    block: &Block,
+    arguments: &[String],
+    parameters: &[String],
+) -> Result<Vec<Spanned>, ClickError> {
     let position = source[start].1.clone();
     let substitution = block
         .names
         .iter()
         .zip(arguments)
         .collect::<BTreeMap<_, _>>();
-    let mut tokens = vec![(Token::Ident("extern".into()), position)];
+    // A head restates its declaration's parameter names, which an instance
+    // may name otherwise; a count that differs is the signature check's.
+    let renaming = if block.parameters.len() == parameters.len() {
+        block
+            .parameters
+            .iter()
+            .zip(parameters)
+            .filter_map(|(generic, instance)| {
+                generic
+                    .as_ref()
+                    .filter(|generic| *generic != instance)
+                    .map(|generic| (generic.as_str(), instance.as_str()))
+            })
+            .collect::<BTreeMap<_, _>>()
+    } else {
+        BTreeMap::new()
+    };
+    let mut tokens = vec![(Token::Ident("extern".into()), position.clone())];
     // A pure virtual method's generic block is already `extern`.
     let head_start =
         block.head_start + usize::from(is_ident(source.get(block.head_start), "extern"));
-    for (token, position) in &source[head_start..=block.clauses_end] {
+    for (at, (token, position)) in source
+        .iter()
+        .enumerate()
+        .take(block.clauses_end + 1)
+        .skip(head_start)
+    {
+        // A member or path segment of a parameter's spelling is not the
+        // parameter.
+        let member = matches!(
+            source.get(at.wrapping_sub(1)).map(|(token, _)| token),
+            Some(Token::Dot | Token::Arrow | Token::ColonColon)
+        );
         match token {
             Token::Ident(word) if substitution.contains_key(word) => {
-                for part in substitution[word].split_whitespace() {
-                    tokens.push((Token::Ident(part.to_string()), position.clone()));
+                for (index, part) in substitution[word].split("::").enumerate() {
+                    if index > 0 {
+                        tokens.push((Token::ColonColon, position.clone()));
+                    }
+                    for word in part.split_whitespace() {
+                        tokens.push((Token::Ident(word.to_string()), position.clone()));
+                    }
                 }
+            }
+            Token::Ident(word) if !member && renaming.contains_key(word.as_str()) => {
+                tokens.push((
+                    Token::Ident(renaming[word.as_str()].into()),
+                    position.clone(),
+                ));
+            }
+            Token::Ident(word)
+                if !member
+                    && renaming.values().any(|name| name == word)
+                    && !renaming.contains_key(word.as_str()) =>
+            {
+                return Err(error_at(
+                    position,
+                    format!(
+                        "the instance names a parameter `{word}`, which the generic method's \
+                         contract already uses; rename that parameter in the contract"
+                    ),
+                ));
             }
             token => tokens.push((token.clone(), position.clone())),
         }
     }
-    tokens
+    Ok(tokens)
 }
 
 /// The type arguments of the class template instance whose method
@@ -233,4 +342,48 @@ pub(super) fn instance_arguments(instance: &str) -> Option<Vec<String>> {
     record
         .ends_with('>')
         .then(|| inner.split(", ").map(str::to_string).collect::<Vec<_>>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn expand(source: &str, arguments: &[&str], parameters: &[&str]) -> String {
+        let (tokens, positions) = tokenizer::tokenize(source, None).unwrap();
+        let generic_name = crate::languages::cpp::names::path_name(&["Cell<T>", "set"]);
+        let instances = BTreeMap::from([(
+            generic_name,
+            BTreeMap::from([(
+                arguments.iter().map(|a| a.to_string()).collect::<Vec<_>>(),
+                parameters.iter().map(|p| p.to_string()).collect::<Vec<_>>(),
+            )]),
+        )]);
+        let (tokens, _, written) = expand_generic_methods(tokens, positions, &instances).unwrap();
+        let start = *written.iter().next().unwrap();
+        tokens[start..]
+            .iter()
+            .map(|token| match token {
+                Token::Ident(word) => word.clone(),
+                token => token.describe(),
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    // An instance's parameters take its own names by position, and a
+    // member of the same spelling keeps its name; `std::byte` is written
+    // as a path.
+    #[test]
+    fn an_instance_takes_its_parameter_names_and_spells_its_arguments() {
+        let written = expand(
+            "template<class T> void Cell<T>::set(T v) { ensures this->v == v; }",
+            &["std::byte"],
+            &["__value"],
+        );
+        assert_eq!(
+            written,
+            "extern void Cell `<` std `::` byte `>` `::` set `(` std `::` byte __value `)` `{` \
+             ensures this `->` v `==` __value `;` `}`"
+        );
+    }
 }

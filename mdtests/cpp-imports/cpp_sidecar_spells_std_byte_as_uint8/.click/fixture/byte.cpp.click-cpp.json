@@ -1,0 +1,121 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "cleanups": [],
+          "kind": "return",
+          "span": {
+            "end_column": 46,
+            "end_line": 1,
+            "file": "byte.cpp",
+            "start_column": 38,
+            "start_line": 1
+          },
+          "value": {
+            "kind": "integral_cast",
+            "span": {
+              "end_column": 46,
+              "end_line": 1,
+              "file": "byte.cpp",
+              "start_column": 45,
+              "start_line": 1
+            },
+            "value": {
+              "kind": "integer_literal",
+              "span": {
+                "end_column": 46,
+                "end_line": 1,
+                "file": "byte.cpp",
+                "start_column": 45,
+                "start_line": 1
+              },
+              "value": "1",
+              "value_type": {
+                "bits": 32,
+                "is_const": false,
+                "kind": "integer",
+                "signed": true,
+                "source_aliases": []
+              }
+            },
+            "value_type": {
+              "bits": 64,
+              "is_const": false,
+              "kind": "integer",
+              "signed": false,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@byte_size#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "byte_size",
+      "parameters": [],
+      "path": [
+        "byte_size"
+      ],
+      "return_type": {
+        "bits": 64,
+        "is_const": false,
+        "kind": "integer",
+        "signed": false,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 49,
+        "end_line": 1,
+        "file": "byte.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "byte.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/byte.cpp",
+      "canonical_path": "$unit/byte.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "byte.cpp",
+      "-o",
+      "byte.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "byte.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "clang version 19.1.7",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [],
+  "records": [],
+  "schema": 60
+}
