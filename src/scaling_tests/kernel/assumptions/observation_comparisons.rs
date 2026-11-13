@@ -91,3 +91,101 @@ fn native_order_sources_do_not_add_native_query_work() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn common_call_sources_preserve_identity_polarity_and_branch_authority() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{
+        KernelTermExport, KernelTermImport, MachineOperandView as V, SharedPureApplication,
+    };
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let application = SharedPureApplication::intern("fact_call".into(), vec![]);
+        let root = KernelTermImport::default().machine_call(format, &application);
+        let native = MachineTerm::ClickFunctionApplication {
+            name: "fact_call".into(),
+            arguments: vec![],
+        };
+        let bound =
+            crate::kernel::machine_integer::range::constant_word(format, &7.into()).unwrap();
+        for relation in [CompareRelation::Equal, CompareRelation::LessThan] {
+            let written =
+                ConditionTerm::machine_compare(format, relation, native.clone(), bound.clone());
+            let shared = condition_for_operand_views(
+                format,
+                relation,
+                [V::Shared(&root), V::Legacy(&bound)],
+            );
+            for (source, query) in [(&written, &shared), (&shared, &written)] {
+                for truth in [false, true] {
+                    let parent = PureFactContext::new();
+                    let child = parent.clone().assume_condition(source.clone(), truth);
+                    let exports = KernelTermExport::machine_export_count();
+                    assert_eq!(
+                        child.selected_comparison_source(query, truth),
+                        Some(&Proposition::ConditionIs(source.clone(), truth))
+                    );
+                    assert!(child.selected_comparison_source(query, !truth).is_none());
+                    assert!(parent.selected_comparison_source(query, truth).is_none());
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn common_call_fact_queries_do_not_scan_growing_source_buckets() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{
+        KernelTermExport, KernelTermImport, MachineOperandView as V, SharedPureApplication,
+    };
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let application = SharedPureApplication::intern("indexed_call".into(), vec![]);
+        let root = KernelTermImport::default().machine_call(format, &application);
+        let native = MachineTerm::ClickFunctionApplication {
+            name: "indexed_call".into(),
+            arguments: vec![],
+        };
+        let mut context = PureFactContext::new();
+        for n in 1..=size {
+            context = context.assume_condition(
+                ConditionTerm::signed_less_than(native.clone(), MachineTerm::constant(n)),
+                true,
+            );
+            context = context.assume_condition(
+                ConditionTerm::signed_less_than(
+                    MachineTerm::Variable(Variable(995840 + n as u64)),
+                    MachineTerm::constant(n),
+                ),
+                true,
+            );
+        }
+        let bound = MachineTerm::constant(1);
+        let query = condition_for_operand_views(
+            format,
+            CompareRelation::LessThan,
+            [V::Shared(&root), V::Legacy(&bound)],
+        );
+        assert!(context.selected_comparison_source(&query, true).is_some());
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(context.selected_comparison_source(&query, true).is_some());
+            assert!(context.selected_comparison_source(&query, false).is_none());
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 16),
+        "{samples:?}"
+    );
+}
