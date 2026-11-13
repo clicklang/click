@@ -306,12 +306,11 @@ open their bodies or gather their memory/facts. With no owned composites, the
 frame is retained directly without constructing `ProofSearch`. The selected
 instance-count regression guards that route against discovery.
 
-The instance-removal experiment remains unlanded and is reconciled onto the
-physical-range separation fixes merged in PR #2671. Disabling automatic
-statement-exit fact transport makes its explicit arena repair pass, together
-with the normal markdown/example corpora. Clean up the experimental switch
-and add an operation-level guard before publishing; see the diagnosis below.
-Do not restore automatic instance opening or raise the simple-step budget.
+The retained-instance route is covered by a discovery guard and the fixed-call
+instance-count scaling regression. The arena proof uses explicit separation
+and preservation for its selected retained headers and cells. Automatic
+statement-exit fact restatement is removed; calls publish producer facts at
+their original snapshots rather than searching for extra current-state facts.
 
 Owned composite families still use the legacy framing search; bodies without
 the argument-direct property are opened. Skipping members of one direct family
@@ -323,23 +322,20 @@ and completion together; include memory/condition/witness-dependent bodies and
 refusals. Coordinate with [Scaling](scaling.md), cause 3, without duplicating its
 implementation work or changing its priority here.
 
-### Statement-exit fact transport — diagnosed simple-step search
+### Statement-exit fact transport — boundary and remaining coverage
 
-The local experiment disables automatic restatement of statement-produced
-facts in `certified_transitions_from_execution`. Producer facts retain their
-original snapshots; this adds no obligations or replacement search. All normal
-markdown fixtures and example projects pass, including the previously blocked
-arena proof, with no additional C, contract, or proof changes. Thirteen focused
-transition/call-result controls also pass. Nightly was not run.
+Statement result publication now has a test-build discovery guard. Condition
+fact transport is registered as discovery, including its formerly unregistered
+"direct" route. Call-result/postcondition integration coverage and an adversarial
+guard test prevent that helper from silently returning to publication. The
+removed adapter's lower-level red diagnostic is retired: it measured a helper
+that publication no longer calls, not the cost of the operation after removal.
 
-This is a local experimental switch, not a published removal. Next: delete the
-disabled restatement loop and its unused context/metadata plumbing, then guard
-the complete statement operation against reintroducing this bonus discovery.
-The existing ignored `statement_exit_transport_miss_ignores_unrelated_owned_members`
-test measures the lower-level helper, which still searches when called directly;
-it is not a regression for the now-disabled adapter call. Its exact-disequality
-control remains green. Other cell-map/effect searches and transport
-re-validation are separate candidates, not certified fast by this experiment.
+This does not guard all statement preparation. Other cell-map/effect searches,
+transport re-validation, ownership validation, loan access, and composite
+framing remain separately scoped candidates. Keep ordinary obligation solving
+on the driver and optional fact discovery in expandable search; a missing
+bonus fact is not a new mandatory obligation.
 
 ### M1: reads, caches and history — coverage gaps
 

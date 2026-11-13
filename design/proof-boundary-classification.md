@@ -68,22 +68,19 @@ Two separate limits remain:
   a complete-operation cost violation before treating bounded repeated lowering
   as a bad-scaling defect.
 
-## Statement-exit fact transport: local removal experiment
+## Statement-exit fact transport: removed operation discovery
 
-Automatic restatement in `certified_transitions_from_execution` called
-`direct_transport_with_frame_premises`, then kernel snapshot comparison and
-pointer range search over held composition members. It was bonus fact
-discovery during a simple step, not driver-owned implicit solve. Its "direct"
-helper required no `ProofSearch`, exposing a gap in the frozen edge inventory.
+Statement publication retains producer facts at their original snapshots.
+It no longer calls condition transport to discover bonus final-snapshot facts,
+builds no extra transport context, and adds no replacement obligations.
+Existing producer-issued transport metadata is still published.
 
-The local experiment disables that adapter loop and retains original producer
-facts. Normal markdown fixtures, all normal examples (including arena), and
-13 focused transition/call-result controls pass without proof repairs. No new
-obligations or replacement search were added. The disabled code and its unused
-plumbing still need removal, with an operation-level regression before
-publication. The direct helper's ignored red test is a diagnostic of that
-helper, not of the disabled call. See the
-[remaining work](../roadmap/smart-tactics.md#statement-exit-fact-transport--diagnosed-simple-step-search).
+A test-build `FastOperationScope` guards result publication; condition fact
+transport is registered as discovery even though the helper does not construct
+`ProofSearch`. The adversarial guard test rejects that crossing, and an ordinary
+call-assignment proof checks that the result and postcondition remain available.
+This closes this call site, not every search reachable during step preparation.
+See [remaining coverage](../roadmap/smart-tactics.md#statement-exit-fact-transport--boundary-and-remaining-coverage).
 
 ## Findings
 

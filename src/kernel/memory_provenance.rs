@@ -4590,6 +4590,7 @@ pub(crate) fn prove_c_condition_fact_transport(
     prove_c_condition_fact_transport_with_assumptions(fact, after, Some((assumptions, false)))
 }
 
+#[cfg(test)]
 pub(crate) fn prove_c_condition_fact_direct_transport(
     fact: &Proposition,
     after: &CMemory,
@@ -4659,6 +4660,8 @@ fn prove_c_condition_fact_transport_with_assumptions(
     after: &CMemory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<Theorem> {
+    #[cfg(test)]
+    crate::kernel::search::record_discovery("condition fact transport");
     // Per-arm returns, no shared conclusion local: this function sits in
     // transport recursion, and a by-value `Proposition` local overflows the
     // expansion stack.
