@@ -931,7 +931,7 @@ impl<'a> Proof<'a> {
                                 (
                                     name,
                                     ContractExpression::CFragment(CExpression::Value(
-                                        value.clone(),
+                                        value.clone().into_native(),
                                     )),
                                 )
                             })

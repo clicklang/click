@@ -463,7 +463,7 @@ pub(super) fn selected_instance_resource_load_values(
                     if !arm.bindings.contains(name) {
                         return None;
                     }
-                    let value = evaluation.locals.get(name)?.clone();
+                    let value = evaluation.locals.get(name)?.clone().into_native();
                     if !value_type.accepts(&value) {
                         return None;
                     }

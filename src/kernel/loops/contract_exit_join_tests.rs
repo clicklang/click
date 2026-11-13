@@ -171,14 +171,14 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
     assert!(
         exits
             .iter()
-            .all(|state| state.locals.get("temporary").is_none())
+            .all(|state| state.locals.get_native("temporary").as_deref().is_none())
     );
     assert!(loop_exit_state_difference(&exits[0], &exits[1], &PureFactContext::new()).is_none());
 
     let mut exits = [empty.clone(), value.clone()];
     discard_loop_exit_partial_value_bindings(&value, &body, &mut exits);
     assert!(
-        exits[1].locals.get("temporary").is_some(),
+        exits[1].locals.get_native("temporary").as_deref().is_some(),
         "entry bindings must remain checked"
     );
 
@@ -198,7 +198,7 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
     let mut exits = [empty.clone(), declared];
     discard_loop_exit_partial_value_bindings(&empty, &body, &mut exits);
     assert!(
-        exits[1].locals.get("temporary").is_some(),
+        exits[1].locals.get_native("temporary").as_deref().is_some(),
         "declared storage must remain checked"
     );
     assert!(loop_exit_state_difference(&exits[0], &exits[1], &PureFactContext::new()).is_some());

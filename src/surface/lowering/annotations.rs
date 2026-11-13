@@ -5246,7 +5246,12 @@ impl AnnotationLowerer<'_> {
             .get(name)
             .copied()
             .or_else(|| self.entry_values.get(name).map(CValue::c_type))
-            .or_else(|| self.entry_state.locals().get(name).map(CValue::c_type))
+            .or_else(|| {
+                self.entry_state
+                    .locals()
+                    .get(name)
+                    .map(|value| value.c_type())
+            })
             .or_else(|| {
                 self.local_type_state
                     .and_then(|state| state.local_object_type(name))
@@ -6974,11 +6979,12 @@ impl AnnotationLowerer<'_> {
             self.c_parameter_types.get(name).copied().or_else(|| {
                 self.entry_values
                     .get(name)
+                    .map(CValue::c_type)
                     .or_else(|| {
                         self.local_type_state
                             .and_then(|state| state.locals().get(name))
+                            .map(|value| value.c_type())
                     })
-                    .map(CValue::c_type)
                     // A name bound to a value in this context: a fixed state's
                     // local, including one that keeps an enum in memory.
                     .or_else(|| match environment.values.get(name)? {
@@ -8056,19 +8062,19 @@ impl AnnotationLowerer<'_> {
                 if let Some(value) = state
                     .locals()
                     .get(name)
-                    .cloned()
+                    .map(|value| value.clone().into_native())
                     .or_else(|| state.held_local_value(name))
                 {
                     values.insert(name.clone(), SpecExpression::Value(value));
                 }
             }
         } else {
-            values.extend(
-                state
-                    .locals()
-                    .object_values()
-                    .map(|(name, value)| (name.to_string(), SpecExpression::Value(value.clone()))),
-            );
+            values.extend(state.locals().object_values().map(|(name, value)| {
+                (
+                    name.to_string(),
+                    SpecExpression::Value(value.clone().into_native()),
+                )
+            }));
             // A local that keeps its value in memory is named by the read of
             // its object in the snapshot's memory.
             values.extend(

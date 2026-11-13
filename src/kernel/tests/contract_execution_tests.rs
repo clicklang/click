@@ -1784,7 +1784,8 @@ fn opaque_pointer_result_can_alias_its_argument() {
     else {
         panic!("opaque pointer call should return normally")
     };
-    let Some(CValue::Pointer(result)) = state.locals().get("result") else {
+    let local_native_output_1801 = state.locals().get_native("result");
+    let Some(CValue::Pointer(result)) = local_native_output_1801.as_deref() else {
         panic!("call result should be a pointer")
     };
 
@@ -1862,8 +1863,10 @@ fn verified_immutable_calls_allocate_distinct_results() {
         panic!("calls should return normally")
     };
 
-    let first = state.locals().get("first").expect("first result");
-    let second = state.locals().get("second").expect("second result");
+    let local_native_output_1879 = state.locals().get_native("first");
+    let first = local_native_output_1879.as_deref().expect("first result");
+    let local_native_output_1880 = state.locals().get_native("second");
+    let second = local_native_output_1880.as_deref().expect("second result");
     assert_ne!(first, second);
     assert_eq!(value, second);
 }
@@ -1920,7 +1923,8 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
     else {
         panic!("first call should return normally")
     };
-    let first_value = first_state.locals().get("first").expect("first result");
+    let local_native_output_1937 = first_state.locals().get_native("first");
+    let first_value = local_native_output_1937.as_deref().expect("first result");
 
     let (second_execution, _) =
         prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
@@ -1943,7 +1947,8 @@ fn separate_statement_verification_calls_preserve_fresh_identity_progress() {
     else {
         panic!("second call should return normally")
     };
-    let second_value = second_state.locals().get("second").expect("second result");
+    let local_native_output_1960 = second_state.locals().get_native("second");
+    let second_value = local_native_output_1960.as_deref().expect("second result");
 
     assert!(first_next > 0);
     assert!(budget.next_kernel_variable() > first_next);
@@ -2319,7 +2324,10 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 ..
             } => {
                 saw_return = true;
-                assert_eq!(state.locals().get("after"), Some(&int32(1)));
+                assert_eq!(
+                    state.locals().get_native("after").as_deref(),
+                    Some(&int32(1))
+                );
                 let CValue::Int32(value) = value else {
                     panic!("normal result should be int32")
                 };
@@ -2353,7 +2361,10 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 ..
             } => {
                 saw_throw = true;
-                assert_eq!(state.locals().get("after"), Some(&int32(0)));
+                assert_eq!(
+                    state.locals().get_native("after").as_deref(),
+                    Some(&int32(0))
+                );
                 assert!(state.locals().get("call_result").is_none());
                 let CValue::Int32(value) = value else {
                     panic!("exceptional payload should be int32")
@@ -2469,7 +2480,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
             continue;
         }
         saw_caught = true;
-        assert_eq!(state.locals().get("caught"), Some(value));
+        assert_eq!(state.locals().get_native("caught").as_deref(), Some(value));
         let CValue::Int32(value) = value else {
             panic!("caught payload should be int32");
         };

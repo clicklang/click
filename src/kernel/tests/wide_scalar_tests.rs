@@ -93,7 +93,7 @@ fn wide_scalar_locals_declare_assign_and_return_without_word_truncation() {
             panic!("{outcome:?}");
         };
         assert_eq!(value, &expected);
-        assert_eq!(state.locals.get("wide"), Some(&expected));
+        assert_eq!(state.locals.get_native("wide").as_deref(), Some(&expected));
     }
 }
 

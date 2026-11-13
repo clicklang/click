@@ -2689,7 +2689,7 @@ fn c_ranking_measure_term_unfolded(
             RankingMachineTerm::from_value(value).ok_or_else(|| RANKING_MEASURE_TYPE_MESSAGE.into())
         }
         Variable(name) => match state.locals().get(name) {
-            Some(value) => RankingMachineTerm::from_value(value).ok_or_else(|| {
+            Some(value) => RankingMachineTerm::from_value(&value.native()).ok_or_else(|| {
                 format!(
                     "termination measure variable `{name}` does not hold an int32, int64 or \
                      unsigned integer value"

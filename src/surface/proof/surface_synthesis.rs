@@ -305,7 +305,11 @@ fn struct_owners(parameter_binding: ParameterBinding<'_>, state: &CState) -> Vec
         });
     }
     for (name, value) in state.locals().object_values() {
-        if let (Some(layout), CValue::Pointer(base)) = (owners.locals.get(name), value) {
+        if value.pointer().is_none() {
+            continue;
+        }
+        let native = value.native();
+        if let (Some(layout), CValue::Pointer(base)) = (owners.locals.get(name), native.as_ref()) {
             found.push(StructOwner {
                 base: CExpression::Variable(surface_local_name(name).to_string()),
                 pointer: base.clone(),
@@ -732,10 +736,9 @@ fn synthesize_snapshot_local(term: &MachineTerm) -> Option<ContractExpression> {
         let slot = slot.borrow();
         let (state, selector) = slot.as_ref()?;
         let name = state.locals().names_holding_integer(term).find(|name| {
-            matches!(
-                state.locals().get(name),
-                Some(crate::kernel::integer_c_value!(local)) if local == term
-            )
+            state.locals().get(name).is_some_and(|value| {
+                crate::kernel::MachineIntegerType::from_c_type(value.c_type()).is_some()
+            })
         })?;
         if let Some(result) = call_result_expression(name) {
             return Some(result);
@@ -1493,8 +1496,8 @@ fn synthesized_surface_matches_proposition(
         .iter()
         .map(|argument| match argument {
             CExpression::Variable(name) => match state.locals().get(name) {
-                Some(CValue::Pointer(pointer)) => {
-                    CExpression::Value(CValue::Pointer(pointer.clone()))
+                Some(value) if value.pointer().is_some() => {
+                    CExpression::Value(value.clone().into_native())
                 }
                 _ => argument.clone(),
             },
@@ -1748,10 +1751,7 @@ fn synthesize_exact_external_zero_based_byte_range(
             }
             let pointer = match argument {
                 CExpression::Value(CValue::Pointer(pointer)) => pointer,
-                CExpression::Variable(name) => match state.locals().get(name) {
-                    Some(CValue::Pointer(pointer)) => pointer,
-                    _ => return None,
-                },
+                CExpression::Variable(name) => state.locals().get(name)?.pointer()?,
                 _ => return None,
             };
             (pointer.pointer() == base && pointer.c_type().pointee_type()?.byte_width() == 1)
@@ -1951,10 +1951,7 @@ fn synthesize_external_symbolic_element_range(
                 // caller's exact variable expression instead. Resolve only
                 // that selected name through the current state's indexed
                 // local binding; do not infer a pointer from ambient facts.
-                CExpression::Variable(name) => match state.locals().get(name) {
-                    Some(CValue::Pointer(pointer)) => pointer,
-                    _ => return None,
-                },
+                CExpression::Variable(name) => state.locals().get(name)?.pointer()?,
                 _ => return None,
             };
             if parameter
@@ -1964,21 +1961,25 @@ fn synthesize_external_symbolic_element_range(
                 .byte_width()
                 != 1
                 || named_base.c_type().pointee_type()?.byte_width() != 1
-                || named_base.block != PointerBlock::ExternalArgument
+                || named_base.pointer().block != PointerBlock::ExternalArgument
                 || base.block != PointerBlock::ExternalArgument
             {
                 return None;
             }
             let index = match &base.offset {
-                PointerOffsetTerm::Add(left, right) if left.as_ref() == &named_base.offset => {
+                PointerOffsetTerm::Add(left, right)
+                    if left.as_ref() == &named_base.pointer().offset =>
+                {
                     int32_scaled_value(right, 1)?
                 }
-                PointerOffsetTerm::Add(left, right) if right.as_ref() == &named_base.offset => {
+                PointerOffsetTerm::Add(left, right)
+                    if right.as_ref() == &named_base.pointer().offset =>
+                {
                     int32_scaled_value(left, 1)?
                 }
                 // `bytes` itself can be at offset zero, in which case the
                 // canonical pointer offset drops the zero-valued add.
-                _ if named_base.offset == PointerOffsetTerm::Constant(0) => {
+                _ if named_base.pointer().offset == PointerOffsetTerm::Constant(0) => {
                     int32_scaled_value(&base.offset, 1)?
                 }
                 _ => return None,
@@ -2092,7 +2093,9 @@ fn named_pointer_bases<'a>(
         })
         .chain(state.into_iter().flat_map(|state| {
             state.locals().object_values().filter_map(|(name, value)| {
-                let CValue::Pointer(base) = value else {
+                value.pointer()?;
+                let native = value.native();
+                let CValue::Pointer(base) = native.as_ref() else {
                     return None;
                 };
                 let width = base.c_type().pointee_type()?.byte_width();
@@ -2263,9 +2266,10 @@ fn synthesize_surface_bool(
 fn names_bool_local(expression: &ContractExpression, state: &CState) -> bool {
     match expression {
         ContractExpression::CFragment(CExpression::Variable(name))
-        | ContractExpression::CBinding(name) => {
-            matches!(state.locals().get(name), Some(CValue::Bool(_)))
-        }
+        | ContractExpression::CBinding(name) => state
+            .locals()
+            .get(name)
+            .is_some_and(|value| value.c_type() == CType::Bool),
         ContractExpression::At { expression, .. } => names_bool_local(expression, state),
         _ => false,
     }
@@ -3421,13 +3425,18 @@ fn synthesize_unsigned_comparison(
         ))),
         None => state
             .locals()
-            .object_values()
-            .find(|(name, value)| {
+            .names_holding_integer(term)
+            .find(|name| {
                 *name != "result"
                     && *name != crate::kernel::C_CONTRACT_RESULT_NAME
-                    && matches!(value, CValue::UInt32(value) if value == term)
+                    && state.locals().get(name).is_some_and(|value| {
+                        value.c_type() == crate::kernel::CType::UInt32
+                            && value
+                                .native_payload()
+                                .is_none_or(|native| matches!(native, CValue::UInt32(_)))
+                    })
             })
-            .map(|(name, _)| {
+            .map(|name| {
                 ContractExpression::CFragment(CExpression::Variable(
                     surface_local_name(name).to_string(),
                 ))
@@ -3665,7 +3674,7 @@ fn parameter_names_its_argument(name: &str, argument: &CExpression, state: &CSta
     state
         .locals()
         .get(name)
-        .is_none_or(|current| current == passed)
+        .is_none_or(|current| current.matches_native(passed))
 }
 
 pub(super) fn synthesize_surface_pointer_offset(
@@ -3916,7 +3925,10 @@ fn bitvector_spells_uint32(
         return false;
     }
     if let Some(name) = state.locals().names_holding_integer(term).next() {
-        return matches!(state.locals().get(name), Some(CValue::UInt32(_)));
+        return state
+            .locals()
+            .get(name)
+            .is_some_and(|value| value.c_type() == CType::UInt32);
     }
     if let Some(name) = describe_parameter_bitvector(term, parameter_binding) {
         return parameter_binding
@@ -5164,9 +5176,8 @@ fn synthesize_local_indexed_load(
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("local-index")?;
     state.locals().object_values().find_map(|(name, value)| {
-        let CValue::Pointer(base) = value else {
-            return None;
-        };
+        let view = value.pointer()?;
+        let base = view.pointer();
         // `local[index]` is the C spelling only when the local is the base
         // the address was formed from: the address is the local's own offset
         // plus an index. Two unrelated pointers into one symbolic block (a
@@ -5181,7 +5192,7 @@ fn synthesize_local_indexed_load(
         {
             return None;
         }
-        let element_type = base.c_type().pointee_type()?;
+        let element_type = view.c_type().pointee_type()?;
         if crate::kernel::LoadKind::of_type(element_type) != Some(kind) {
             return None;
         }

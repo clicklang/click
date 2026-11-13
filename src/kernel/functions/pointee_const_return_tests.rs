@@ -41,11 +41,14 @@ fn pointee_const_return_symbolic_result_and_binding_preserve_qualifier() {
     let parameter = int32(7);
     let mut state = CState::new().with_local("result", parameter.clone());
     set_function_result(&mut state, &function, value);
-    assert_eq!(state.locals().get("result"), Some(&parameter));
+    assert_eq!(
+        state.locals().get_native("result").as_deref(),
+        Some(&parameter)
+    );
     assert!(
         matches!(state.locals.binding(C_CONTRACT_RESULT_NAME), Some(CLocalBinding::Object {
-            value: CValue::Pointer(pointer), pointee_constant: true, ..
-        }) if pointer.pointee_constant())
+            value, pointee_constant: true, ..
+        }) if value.pointer().is_some_and(|pointer| pointer.pointee_constant()))
     );
 }
 

@@ -1,4 +1,3 @@
-use super::ExecutionFacts;
 use super::api::{
     int8, int16, int32, normalize_exact_memory_loads_in_pointer_offset, uint8, uint16, uint32,
 };
@@ -8,6 +7,7 @@ use super::reasoning::{
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
     signed_bitvector_constant, signed_i64_bitvector_constant,
 };
+use super::{ExecutionFacts, LocalExecutionValue};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -8115,7 +8115,7 @@ pub(super) enum CLocalBinding {
         /// True only for an allocated scalar binding, not a logical parameter
         /// whose compatibility pseudo-slot happens to have the same name.
         storage_declared: bool,
-        value: CValue,
+        value: LocalExecutionValue,
         c_type: CType,
         slot: Pointer,
         volatile: bool,

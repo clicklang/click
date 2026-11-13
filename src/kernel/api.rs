@@ -1786,7 +1786,9 @@ fn abstract_c_state_for_join_across_with_policy(
             continue;
         };
         let stable = match join_locals {
-            JoinLocals::Stable(stable_entry_locals) => stable_entry_locals.get(name) == Some(value),
+            JoinLocals::Stable(stable_entry_locals) => stable_entry_locals
+                .get(name)
+                .is_some_and(|held| value.matches_native(held)),
             JoinLocals::ArmsAgree => sibling_states
                 .iter()
                 .all(|sibling| sibling.locals.get(name) == Some(value)),
@@ -1866,6 +1868,7 @@ fn abstract_c_state_for_join_across_with_policy(
                     *c_type,
                 ),
             }
+            .into()
         };
         preserved_blocks.insert(slot.block.clone());
         abstract_objects.push((name.clone(), abstract_value, *c_type));
@@ -1931,8 +1934,12 @@ fn abstract_c_state_for_join_across_with_policy(
         }
     }
     for (name, value, c_type) in abstract_objects {
-        sync_stack_local(&mut abstract_state, &name, &value);
-        abstract_state.locals.set_typed(name, value, c_type);
+        sync_retained_stack_local(&mut abstract_state, &name, &value);
+        abstract_state
+            .locals
+            .set_retained_typed_with_all_qualifiers(
+                name, value, c_type, false, false, false, false,
+            );
     }
     for (name, c_type, slot, volatile, pointee_volatile, constant, pointee_constant) in
         left_uninitialized
