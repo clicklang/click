@@ -33,8 +33,21 @@ permissions:
   contents: write
 
 jobs:
-  linux-gnu:
-    runs-on: ubuntu-24.04
+  frontend:
+    name: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            host: x86_64-unknown-linux-gnu
+            llvm: /usr/lib/llvm-19
+          # GitHub's arm64 macOS runner, as the main release uses for
+          # aarch64-apple-darwin.
+          - runner: macos-14
+            host: aarch64-apple-darwin
+            llvm: /opt/LLVM-19.1.7-macOS-ARM64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -54,25 +67,33 @@ jobs:
           PY
       # The official LLVM release, checked against its pinned SHA-256, has the
       # static Clang libraries and the lld that links them.
-      - name: Install pinned LLVM
+      - name: Install pinned LLVM (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libstdc++-14-dev zlib1g-dev libzstd-dev xz-utils
           sudo scripts/install-llvm-release.sh
+      - name: Install pinned LLVM (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew list zstd >/dev/null 2>&1 || brew install zstd
+          sudo scripts/install-llvm-release.sh
+          # The release's Clang finds the macOS SDK through SDKROOT.
+          echo "SDKROOT=$(xcrun --show-sdk-path)" >> "$GITHUB_ENV"
       - name: Build the self-contained exporter
-        run: LLVM_CONFIG=/usr/lib/llvm-19/bin/llvm-config scripts/build-cpp-exporter.sh --release
+        run: LLVM_CONFIG=${{ matrix.llvm }}/bin/llvm-config scripts/build-cpp-exporter.sh --release
       - name: Package the frontend
         run: |
           scripts/package-cpp-frontend-archive.sh target/cpp-release \
-            target/cpp-exporter-release /usr/lib/llvm-19/include/llvm/Support/LICENSE.TXT
+            target/cpp-exporter-release ${{ matrix.llvm }}/include/llvm/Support/LICENSE.TXT
       - name: Install the release archive and lock the basic C++ example
         env:
-          CLICK_CPP_FRONTEND_ARCHIVE: ${{ github.workspace }}/target/cpp-release/click-cpp-frontend-x86_64-unknown-linux-gnu.tar.gz
+          CLICK_CPP_FRONTEND_ARCHIVE: ${{ github.workspace }}/target/cpp-release/click-cpp-frontend-${{ matrix.host }}.tar.gz
           RUST_MIN_STACK: '8388608'
         run: cargo test --test cpp_release_install cpp_release_archive_installs_and_locks -- --ignored
       - uses: actions/upload-artifact@v4
         with:
-          name: cpp-frontend-x86_64-unknown-linux-gnu
+          name: cpp-frontend-${{ matrix.host }}
           path: target/cpp-release/*.tar.gz*
       - name: Attach to the Click release
         if: github.event_name != 'pull_request'

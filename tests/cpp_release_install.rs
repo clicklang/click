@@ -1,9 +1,15 @@
 //! Dedicated release packaging check; intentionally outside the normal gate.
-#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[cfg(any(
+    all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+    all(target_os = "macos", target_arch = "aarch64")
+))]
 #[path = "support/release_assets.rs"]
 mod release_assets;
 
-#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[cfg(any(
+    all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+    all(target_os = "macos", target_arch = "aarch64")
+))]
 #[test]
 #[ignore = "release packaging: requires CLICK_CPP_FRONTEND_ARCHIVE from a release exporter build"]
 fn cpp_release_archive_installs_and_locks() {
@@ -52,7 +58,13 @@ fn cpp_release_archive_installs_and_locks() {
         ),
     ))
     .unwrap();
-    let name = "click-cpp-frontend-x86_64-unknown-linux-gnu.tar.gz";
+    let host = if cfg!(target_os = "macos") {
+        "aarch64-apple-darwin"
+    } else {
+        "x86_64-unknown-linux-gnu"
+    };
+    let name = format!("click-cpp-frontend-{host}.tar.gz");
+    let name = name.as_str();
     assert_eq!(archive.file_name().unwrap(), name);
     let checksum = archive.with_file_name(format!("{name}.sha256"));
     assert!(

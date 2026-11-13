@@ -50,7 +50,7 @@ frontend and compiler runtime to the Click version that runs, and
 `click languages` lists what is installed.
 Rust extraction needs its frontend, while verification of an existing valid
 Rust lock does not. C++ extraction uses the pinned exporter that
-`click add cpp` adds on Linux x86-64; other hosts build it with
+`click add cpp` adds on Linux x86-64 and macOS arm64; other hosts build it with
 `scripts/build-cpp-exporter.sh` and set `CLICK_CPP_EXPORTER`. See
 [installation and version selection](reference/cli/versions.md),
 [Rust setup](reference/rust.md#installed-rust-frontend), and

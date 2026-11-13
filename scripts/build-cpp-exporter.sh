@@ -23,8 +23,9 @@ elif [[ -n "${1:-}" ]]; then
     echo "usage: scripts/build-cpp-exporter.sh [--check | --release]" >&2
     exit 2
 fi
-if [[ -n "$release" && "$(uname -s)/$(uname -m)" != Linux/x86_64 ]]; then
-    echo "error: the release C++ front end is built on Linux x86-64 only" >&2
+host="$(uname -s)/$(uname -m)"
+if [[ -n "$release" && "$host" != Linux/x86_64 && "$host" != Darwin/arm64 ]]; then
+    echo "error: the release C++ front end is built on Linux x86-64 and macOS arm64 only" >&2
     exit 1
 fi
 
@@ -93,8 +94,10 @@ if [[ -n "$release" ]]; then
         clang_cpp+=("$llvm_libdir/libclang$library.a")
     done
     # The libraries may hold LLVM bitcode, which only the pinned lld links.
-    if [[ ! -x "$llvm_bindir/ld.lld" ]]; then
-        echo "error: the pinned lld was not found at $llvm_bindir/ld.lld" >&2
+    lld="$llvm_bindir/ld.lld"
+    [[ "$host" == Darwin/arm64 ]] && lld="$llvm_bindir/ld64.lld"
+    if [[ ! -x "$lld" ]]; then
+        echo "error: the pinned lld was not found at $lld" >&2
         exit 1
     fi
 else
@@ -159,17 +162,50 @@ if [[ -n "$release" ]]; then
     default_build_directory=target/cpp-exporter-release
     # Relative to the exporter's own directory.
     compiled_resource_dir=clang-resource
-    # Only the system C library stays dynamic. LLVM's optional libxml2 is
-    # left out: nothing the exporter links uses it.
-    link_flags=(
-        -fuse-ld=lld
-        -Wl,--gc-sections
-        -Wl,--start-group "${clang_cpp[@]}" -Wl,--end-group
-        "${llvm_libs[@]}"
-        -Wl,-Bstatic -lz -lzstd -Wl,-Bdynamic
-        -lrt -ldl -lm -lpthread
-        -static-libstdc++ -static-libgcc
-    )
+    # Only the system's own libraries stay dynamic. LLVM's optional libxml2
+    # is left out: nothing the exporter links uses it.
+    if [[ "$host" == Darwin/arm64 ]]; then
+        # macOS ships libz, libc++ and libSystem; zstd, when LLVM needs it, is
+        # linked from a static archive.
+        darwin_system_libs=()
+        for library in "${llvm_system_libs[@]}"; do
+            case "$library" in
+                -lxml2) ;;
+                -lzstd)
+                    zstd_archive=
+                    for prefix in "${ZSTD_PREFIX:-}" /opt/homebrew/opt/zstd /usr/local/opt/zstd; do
+                        if [[ -n "$prefix" && -f "$prefix/lib/libzstd.a" ]]; then
+                            zstd_archive="$prefix/lib/libzstd.a"
+                            break
+                        fi
+                    done
+                    if [[ -z "$zstd_archive" ]]; then
+                        echo "error: LLVM needs zstd; install it (brew install zstd) or set ZSTD_PREFIX to a prefix with lib/libzstd.a" >&2
+                        exit 1
+                    fi
+                    darwin_system_libs+=("$zstd_archive")
+                    ;;
+                *) darwin_system_libs+=("$library") ;;
+            esac
+        done
+        link_flags=(
+            -fuse-ld=lld
+            -Wl,-dead_strip
+            "${clang_cpp[@]}"
+            "${llvm_libs[@]}"
+            "${darwin_system_libs[@]}"
+        )
+    else
+        link_flags=(
+            -fuse-ld=lld
+            -Wl,--gc-sections
+            -Wl,--start-group "${clang_cpp[@]}" -Wl,--end-group
+            "${llvm_libs[@]}"
+            -Wl,-Bstatic -lz -lzstd -Wl,-Bdynamic
+            -lrt -ldl -lm -lpthread
+            -static-libstdc++ -static-libgcc
+        )
+    fi
 else
     default_build_directory=target/cpp-exporter
     compiled_resource_dir="$resource_dir"
@@ -222,6 +258,19 @@ trap 'rm -f "$temporary"' EXIT
     "${link_flags[@]}" \
     -o "$temporary"
 if [[ -n "$release" ]]; then
+    # Self-contained: every library the exporter loads is the system's own.
+    if [[ "$host" == Darwin/arm64 ]]; then
+        foreign="$(otool -L "$temporary" | tail -n +2 | awk '{print $1}' \
+            | grep -vE '^(/usr/lib/|/System/Library/)' || true)"
+    else
+        foreign="$(ldd "$temporary" | awk '{print $1}' \
+            | grep -vE '^(linux-vdso\.so|/lib64/ld-linux|libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so)' || true)"
+    fi
+    if [[ -n "$foreign" ]]; then
+        echo "error: the release exporter depends on libraries outside the system:" >&2
+        printf '  %s\n' $foreign >&2
+        exit 1
+    fi
     rm -rf "$build_directory/clang-resource"
     mkdir -p "$build_directory/clang-resource"
     cp -R "$resource_dir/include" "$build_directory/clang-resource/include"

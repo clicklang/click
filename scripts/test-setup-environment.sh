@@ -231,7 +231,9 @@ if [[ "$platform" == Linux ]]; then
     fi
     [[ -z "$(ls -A "$llvm_root/opt")" && ! -e "$llvm_root/usr/lib/llvm-19" ]]
 
-    printf '#!/usr/bin/env bash\ncat > /dev/null\nexit 0\n' > "$directory/llvm-bin/sha256sum"
+    # The fake archive now reports the pinned digest.
+    printf '#!/usr/bin/env bash\necho "4a5ec53951a584ed36f80240f6fbf8fdd46b4cf6c7ee87cc2d5018dc37caf679  $1"\n' \
+        > "$directory/llvm-bin/sha256sum"
     chmod +x "$directory/llvm-bin/sha256sum"
     PATH="$llvm_path" "$repository/scripts/install-llvm-release.sh" "$llvm_root"
     [[ "$("$llvm_root/usr/lib/llvm-19/bin/llvm-config" --version)" == 19.1.7 ]]

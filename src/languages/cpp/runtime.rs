@@ -26,10 +26,13 @@ pub(crate) fn resolve_exporter() -> Result<PathBuf, String> {
 /// Whether releases ship a prebuilt C++ front end for the host Click runs
 /// on, which `click add cpp` installs. Other hosts build the
 /// exporter from a Click checkout.
-const PREBUILT_HOST: bool = cfg!(all(
-    target_os = "linux",
-    target_arch = "x86_64",
-    target_env = "gnu"
+const PREBUILT_HOST: bool = cfg!(any(
+    all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        target_env = "gnu"
+    ),
+    all(target_os = "macos", target_arch = "aarch64"),
 ));
 
 /// The host, as a diagnostic names it.

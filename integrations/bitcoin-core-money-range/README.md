@@ -54,7 +54,7 @@ click expand --claim MoneyRange.contract MoneyRange.click
 ```
 
 Every sidecar here verifies the same way. To refresh the lock, install the
-pinned C++ front end (`click add cpp`, Linux x86-64; in a
+pinned C++ front end (`click add cpp`, Linux x86-64 or macOS arm64; in a
 checkout, or on another host,
 `CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"` instead) and lock the
 project; any pinned exporter writes the committed lock and artifacts:

@@ -111,8 +111,9 @@ global default, then the launcher's own version.
 
 Each downloads the archive and its `.sha256`, verifies the checksum, checks the
 manifest, and stages the bundle before making it visible. An existing valid
-bundle is kept. Bundles exist for `x86_64-unknown-linux-gnu` only; other hosts
-get an unavailable-platform diagnostic. The version must be installed first.
+bundle is kept. The C++ bundle exists for `x86_64-unknown-linux-gnu` and
+`aarch64-apple-darwin`, the Rust bundle for `x86_64-unknown-linux-gnu`; other
+hosts get an unavailable-platform diagnostic. The version must be installed first.
 `click add c` reports that C is built in.
 
 `click remove cpp` or `click remove rust` deletes that front end from the

@@ -52,7 +52,7 @@ the exporter installed for its own version,
 `$CLICK_HOME/versions/<version>/frontends/cpp/click-cpp-exporter`, which
 `click add cpp` installs, and otherwise reports that the C++ front end is not installed and where it was
 expected. On a host releases ship no C++ front end for (any but Linux
-x86-64), it reports that instead and says to build the exporter from a
+x86-64 and macOS arm64), it reports that instead and says to build the exporter from a
 checkout. A path that is not a file is refused. The test harnesses read it
 too. Verification never reads it.
 
