@@ -89,6 +89,30 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 9 | Unified raising/lowering and certificate boundaries | Open |
 | 10 | Duplicate storage removal and final closure | Open |
 
+## Chunk 3: machine-valued pure-function results
+
+Finish the remaining machine-valued call-result boundaries in six sequential
+PRs, preparing consumers before switching the evaluator. Pointer, algebraic and
+Boolean result families remain in their own packages. Preserve existing call
+semantics, exact producer metadata, proof/refusal behavior and fact stability;
+do not introduce search strategies, indexes or larger budgets to compensate for
+representation changes.
+
+| Subchunk | Boundary | Completion criterion |
+| --- | --- | --- |
+| 3a | Common result roots | Typed common calls preserve the function, ordered arguments, result type and exact opaque producer payloads; native/shared numeric inputs agree. |
+| 3b | Numeric consumers | Observations, casts and arithmetic retain common machine call operands without prefix exports. |
+| 3c | Comparison and fact matching | Existing comparison/equality keys preserve native/shared rules, source premises and refusals. |
+| 3d | Rewriting and transport | Substitution, rewriting, dependencies and snapshot handling retain common call roots and their arguments. |
+| 3e | Surface boundary | Calls round-trip through raising, lowering and certificate paths with exact term identity. |
+| 3f | Producer switch and closure | Actual call evaluation returns common machine roots; nested calls and result handoffs retain them, and obsolete adapters for this boundary are removed. |
+
+3a adds the explicit common-root constructor and machine export route without
+switching the evaluator or admitting calls into the shared machine operand
+fragment. Opaque argument descriptors use the retained application's exact
+payload identity, separately from semantic application equality. Consumers are
+prepared in the following slices before producer activation.
+
 ## Chunk 4: one producer boundary per PR
 
 Chunk 4 migrates existing numeric producers to retain `KernelTerm` operands and
