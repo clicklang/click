@@ -62,3 +62,55 @@ template<class T> extern std::span<T> std::span<T>::subspan(unsigned long offset
     ensures count == 18446744073709551615u64 implies std_span_size(result) == std_span_size(this) - offset;
     ensures count != 18446744073709551615u64 implies std_span_size(result) == count;
 }
+
+// `std::span<T, N>` with static extent `N`: a view of `[data, data + N)`.
+// The extent is the template argument, not state, so an instance states it
+// as a literal, `4u64`; only the data pointer is a model accessor. The
+// subviews taking a runtime count are dynamic-extent spans. An extent is
+// written out only when its byte size fits a `uint64`, and never as
+// `std::dynamic_extent`.
+template<class T, std::size_t N> extern unsigned long std::span<T, N>::size() const {
+    ensures result == N;
+}
+template<class T, std::size_t N> extern unsigned long std::span<T, N>::size_bytes() const {
+    ensures result == N * sizeof(T);
+}
+template<class T, std::size_t N> extern T* std::span<T, N>::data() const {
+    views std_span_data(this);
+    ensures result == std_span_data(this);
+}
+template<class T, std::size_t N> extern T& std::span<T, N>::front() const {
+    views std_span_data(this);
+    requires 1u64 <= N;
+    ensures &result == std_span_data(this);
+}
+template<class T, std::size_t N> extern T& std::span<T, N>::back() const {
+    views std_span_data(this);
+    requires 1u64 <= N;
+    ensures &result == std_span_data(this) + (N - 1u64);
+}
+template<class T, std::size_t N> extern T& std::span<T, N>::operator[](unsigned long index) const {
+    views std_span_data(this);
+    requires index < N;
+    ensures &result == std_span_data(this) + index;
+}
+template<class T, std::size_t N> extern std::span<T> std::span<T, N>::first(unsigned long count) const {
+    views std_span_data(this);
+    requires count <= N;
+    ensures std_span_data(result) == std_span_data(this);
+    ensures std_span_size(result) == count;
+}
+template<class T, std::size_t N> extern std::span<T> std::span<T, N>::last(unsigned long count) const {
+    views std_span_data(this);
+    requires count <= N;
+    ensures std_span_data(result) == std_span_data(this) + (N - count);
+    ensures std_span_size(result) == count;
+}
+template<class T, std::size_t N> extern std::span<T> std::span<T, N>::subspan(unsigned long offset, unsigned long count) const {
+    views std_span_data(this);
+    requires offset <= N;
+    requires count != 18446744073709551615u64 implies count <= N - offset;
+    ensures std_span_data(result) == std_span_data(this) + offset;
+    ensures count == 18446744073709551615u64 implies std_span_size(result) == N - offset;
+    ensures count != 18446744073709551615u64 implies std_span_size(result) == count;
+}

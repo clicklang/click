@@ -1,8 +1,8 @@
 # A failed repeated retain preserves the observation of the grown count
 
 An entry count of 7 satisfies the caller but grows to 8 after the first
-call. The second call must fail, and its diagnostic must observe the
-machine sum rather than print an exact Integer addition.
+call. The second call must fail, and its diagnostic must name the current
+population count at that call.
 
 ```c filename=retain.c
 struct child {
@@ -74,5 +74,5 @@ void retain_many(struct child* obj) {
 ```
 
 ```expect
-fail: to_integer(old(count(child_ref(obj))) + 1) < 8
+fail: unproved obligation: `to_integer(count(child_ref(obj))) < 8`
 ```

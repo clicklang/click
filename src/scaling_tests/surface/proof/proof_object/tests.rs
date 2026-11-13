@@ -972,7 +972,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
     ));
     let arguments = vec![
         CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(60_002)))),
-        CExpression::Value(CValue::pointer(pointer)),
+        CExpression::Value(CValue::pointer(pointer.clone())),
     ];
     let function_environment = CExecutionEnvironment::new();
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -1025,6 +1025,18 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
         let joined = advanced
             .join_focused_execution_terminal(&record)
             .expect("scaling load arms should join");
+        // Reads remain structural values; joining must preserve the actual
+        // returned loads without inventing generated source bindings.
+        let terminal = joined
+            .finalization_view()
+            .expect("joined outcomes should remain");
+        let paths = terminal.frontier.execution().unwrap().paths();
+        assert!(!paths.is_empty());
+        for path in paths {
+            assert!(matches!(path.outcome(),
+                CFunctionOutcome::Return { value: CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)), .. }
+                    if **at == pointer));
+        }
         let execution = joined.execution().expect("joined execution should remain");
         (
             execution.presentation.generated_load_bindings.len(),
@@ -1045,7 +1057,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
         );
         assert_eq!(
             first,
-            (1, 1),
+            (0, 0),
             "load metadata output must stay constant at size {size}"
         );
         samples.push((size, first_work));

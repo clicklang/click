@@ -252,6 +252,16 @@ Unfold publishes its justified consequences without querying the caller's
 stated-fact index. Exact duplicates within the output batch are removed locally;
 normal fact admission handles facts the caller already holds. This avoids
 forcing deferred keys for unrelated facts merely to suppress an output.
+Fold body-clause publication and returned-instance body-fact publication now
+follow the same rule. `resource_publication_ignores_unrelated_stated_facts`
+checks a fixed matched body whose pure clause is already held, with 4/16/64
+unrelated pointer equalities. Returned-instance publication keeps the stated
+index cold; fold prepares it because its separate prerequisite check still
+queries that index. The regression measures each producer and admission of its
+output twice, checking idempotence and flat work. The ignored red diagnostic
+`cold_fold_requirements_ignore_unrelated_stated_facts` retains the complete cold
+fold cost (82 / 154 / 442 units). Removing publication filters does not remove
+that prerequisite-query cost.
 
 `instance_unfold_ignores_ambient_pointer_aliases` measures complete kernel unfold,
 the selected replacement, and publication/reinsertion of its facts at 4/16/64
