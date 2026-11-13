@@ -199,7 +199,19 @@ left-shift conversion, signed right-shift promotion and conversion back to the
 original type. The count bound uses that original 8/16/32/64-bit width while
 sharing 4g's independent count handling. Native term/domain and shared-root
 identity parity, nested evaluator/refusal controls and growing chains cover the
-Rust boundary. Subchunks 4i–4j remain open.
+Rust boundary. [PR #2683](https://github.com/clicklang/click/pull/2683) merged
+and its pushed commit was verified on upstream. All 1,518 scaling tests and all
+5,275 regular fixtures passed, with zero fact-stability differences.
+
+Subchunk 4i retains ordinary numeric AND, OR, XOR and NOT through 64 bits,
+including their usual promotions, and annotated narrow bitwise operations.
+Native mask folding, XOR component ordering/cancellation and double-NOT rules
+are preserved. Tag-clearing equalities remain separate side facts; pointer
+provenance records retain their explicit compatibility boundary. Alignment
+recognition, its bounded certificate reader and the planner accept the retained
+mask equality; existing equality keys normalize signed/unsigned 64-bit literals
+by their bits. Subchunk 4j
+remains open.
 
 For each PR:
 

@@ -3,6 +3,7 @@
 //! Deferred paths use the same constructor after evaluating both operands.
 //! Ordinary arithmetic retains the existing integer promotions through 64 bits.
 use super::*;
+mod bitwise;
 mod casts;
 mod narrow;
 mod shifts;
@@ -22,6 +23,9 @@ pub(super) fn operator(expression: &SpecExpression) -> Option<MachineBinaryOp> {
         SpecExpression::Multiply(..) => MachineBinaryOp::Multiply,
         SpecExpression::Divide(..) => MachineBinaryOp::Divide,
         SpecExpression::Remainder(..) => MachineBinaryOp::Remainder,
+        SpecExpression::BitwiseAnd(..) => MachineBinaryOp::BitwiseAnd,
+        SpecExpression::BitwiseOr(..) => MachineBinaryOp::BitwiseOr,
+        SpecExpression::BitwiseXor(..) => MachineBinaryOp::BitwiseXor,
         SpecExpression::ShiftLeft(..) => MachineBinaryOp::ShiftLeft,
         SpecExpression::ShiftRight(..) => MachineBinaryOp::ShiftRight,
         _ => return None,
@@ -51,7 +55,8 @@ pub(super) fn apply_expression_values(
         return shifts::rust(op, left, right);
     }
     if let SpecExpression::NarrowArithmetic(operation, format) = expression {
-        return narrow::apply(*format, operator(operation)?, left, right);
+        return narrow::apply(*format, operator(operation)?, left, right)
+            .or_else(|| apply_values(operator(operation), left, right, budget));
     }
     apply_values(operator(expression), left, right, budget)
 }
@@ -68,6 +73,12 @@ pub(super) fn apply_values(
         return None;
     }
     let operator = operator?;
+    if matches!(
+        operator,
+        MachineBinaryOp::BitwiseAnd | MachineBinaryOp::BitwiseOr | MachineBinaryOp::BitwiseXor
+    ) {
+        return bitwise::apply(operator, left, right);
+    }
     let (a, left) = left.machine()?;
     let (b, right) = right.machine()?;
     if matches!(
@@ -92,6 +103,36 @@ pub(super) fn apply_values(
         promote(b, right)?,
         budget,
     ))
+}
+
+pub(super) fn result_facts(
+    expression: &SpecExpression,
+    value: &KernelTerm,
+    mut facts: ExecutionFacts,
+    assumptions: &PureFactContext,
+) -> ExecutionFacts {
+    let expression = if let SpecExpression::NarrowArithmetic(inner, _) = expression {
+        inner
+    } else {
+        expression
+    };
+    if matches!(expression, SpecExpression::BitwiseAnd(..))
+        && let Some(equation) = bitwise::tag_equation(value, assumptions)
+    {
+        facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+            equation, true,
+        )));
+    }
+    facts
+}
+
+pub(super) fn bitwise_not(
+    value: &SpecValue,
+    narrow: Option<MachineIntegerType>,
+) -> Option<KernelTerm> {
+    narrow
+        .and_then(|format| narrow::not(format, value))
+        .or_else(|| bitwise::not(value))
 }
 
 fn retained_operand(format: MachineIntegerType, value: MachineOperandView<'_>) -> KernelTerm {
@@ -334,6 +375,9 @@ fn wrap(format: MachineIntegerType, value: MachineTerm) -> CValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    mod bitwise_tests {
+        include!("shared_machine/bitwise_tests.rs");
+    }
     mod shift_tests {
         include!("shared_machine/shift_tests.rs");
     }

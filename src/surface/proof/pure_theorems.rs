@@ -2983,7 +2983,13 @@ fn verify_kernel_standard_theorem_axiom(
             proposition,
         ))
     };
-    if comparable(axiom.proposition()) != comparable(&expected) {
+    // Native and retained mask/shift comparisons denote the same stated
+    // fact. Use the existing exact identity (including types and snapshots),
+    // not equality of their temporary carrier representations.
+    if !crate::kernel::proof::propositions_are_alpha_equal(
+        &comparable(axiom.proposition()),
+        &comparable(&expected),
+    ) {
         return Err(ClickError::new(format!(
             "`{claim_label}` declaration does not match its kernel axiom",
         )));

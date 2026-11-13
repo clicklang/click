@@ -11,11 +11,11 @@ use super::super::{
     CComparisonOperator, CFloatClassification, CFloatCondition, CPointerValue, ConditionTerm,
     MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, Proposition, SignedDefinedWidth,
 };
-use crate::kernel::MachineIntegerType;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{IntegerTerm, MachineIntegerType};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
@@ -548,18 +548,28 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
 /// uses the convenience `uint64_as_const` recognizer, whose implementation is
 /// recursive for constant expressions; keeping it behind this bounded walk
 /// makes attacker-controlled depth fail before that helper is reached.
-fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&Pointer, u64)> {
-    let ConditionTerm::Compare {
-        format: MachineIntegerType::Int64,
-        relation: CompareRelation::Equal,
-        left,
-        right,
-    } = condition
-    else {
-        return None;
-    };
-    if !charge_bitvector(left) || !charge_bitvector(right) {
-        return None;
+pub(crate) fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&Pointer, u64)> {
+    match condition {
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int64,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } => {
+            if !charge_bitvector(left) || !charge_bitvector(right) {
+                return None;
+            }
+        }
+        ConditionTerm::IntegerEqual(left, right) => {
+            for side in [left, right] {
+                match side.as_ref() {
+                    IntegerTerm::Machine(word) if word_view::charge(Word(word.operand_view())) => {}
+                    IntegerTerm::Constant(_) => {}
+                    _ => return None,
+                }
+            }
+        }
+        _ => return None,
     }
     condition.as_pointer_alignment()
 }

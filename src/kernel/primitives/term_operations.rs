@@ -3261,41 +3261,63 @@ impl ConditionTerm {
     /// Recognizes the alignment shape in either operand order and with any
     /// constant spelling of the mask and the zero.
     pub(crate) fn as_pointer_alignment(&self) -> Option<(&Pointer, u64)> {
-        let Self::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } = self
-        else {
-            return None;
-        };
-        let masked = if right.uint64_as_const() == Some(0) {
-            left
-        } else if left.uint64_as_const() == Some(0) {
-            right
-        } else {
-            return None;
-        };
-        let MachineTerm::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::BitwiseAnd,
-            left,
-            right,
-        } = masked.as_ref()
-        else {
-            return None;
-        };
-        let (pointer, mask) = match (left.as_ref(), right.as_ref()) {
-            (MachineTerm::PointerAddress(pointer, _), mask)
-            | (mask, MachineTerm::PointerAddress(pointer, _)) => (pointer, mask),
+        use crate::kernel::MachineOperandView as V;
+        let masked = match self {
+            Self::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } => {
+                if right.bitvector64_as_const() == Some(0) {
+                    V::Legacy(left)
+                } else if left.bitvector64_as_const() == Some(0) {
+                    V::Legacy(right)
+                } else {
+                    return None;
+                }
+            }
+            Self::IntegerEqual(left, right) => {
+                let word = if right.as_const().is_some_and(|n| n == &0.into()) {
+                    left
+                } else if left.as_const().is_some_and(|n| n == &0.into()) {
+                    right
+                } else {
+                    return None;
+                };
+                let IntegerTerm::Machine(word) = word.as_ref() else {
+                    return None;
+                };
+                if word.ty().format().bits() != 64 {
+                    return None;
+                }
+                word.operand_view()
+            }
             _ => return None,
         };
-        let mask = mask.uint64_as_const()?;
-        let alignment = mask.checked_add(1)?;
-        alignment
-            .is_power_of_two()
-            .then_some((pointer.as_ref(), alignment))
+        let (MachineIntegerType::UInt64, MachineBinaryOp::BitwiseAnd, [left, right]) =
+            masked.binary()?
+        else {
+            return None;
+        };
+        fn address(word: V<'_>) -> Option<&Pointer> {
+            let native = match word {
+                V::Legacy(native) => Some(native),
+                V::Shared(root) => root.machine_conversion_leaf(),
+            }?;
+            if let MachineTerm::PointerAddress(pointer, _) = native {
+                Some(pointer.as_ref())
+            } else {
+                None
+            }
+        }
+        let (pointer, mask) = if let Some(pointer) = address(left) {
+            (pointer, right)
+        } else {
+            (address(right)?, left)
+        };
+        let alignment = mask.uint64_constant()?.checked_add(1)?;
+        alignment.is_power_of_two().then_some((pointer, alignment))
     }
 
     pub(crate) fn int64_equal(left: MachineTerm, right: MachineTerm) -> Self {

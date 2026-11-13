@@ -1068,50 +1068,8 @@ fn bounded_term_equal_count(left: &MachineTerm, right: &MachineTerm, count: &mut
     true
 }
 
-fn bounded_u64_constant(term: &MachineTerm) -> Option<u64> {
-    match term {
-        uint64_constant!(value) => Some(constant_u64(*value)),
-        bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
-        int64_constant!(value) if constant_i64(*value) >= 0 => Some(constant_i64(*value) as u64),
-        _ => None,
-    }
-}
-
 fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Pointer, u64)> {
-    let ConditionTerm::Compare {
-        format: MachineIntegerType::Int64,
-        relation: CompareRelation::Equal,
-        left,
-        right,
-    } = condition
-    else {
-        return None;
-    };
-    let masked = if bounded_u64_constant(right) == Some(0) {
-        left.as_ref()
-    } else if bounded_u64_constant(left) == Some(0) {
-        right.as_ref()
-    } else {
-        return None;
-    };
-    let MachineTerm::Binary {
-        format: MachineIntegerType::UInt64,
-        op: MachineBinaryOp::BitwiseAnd,
-        left,
-        right,
-    } = masked
-    else {
-        return None;
-    };
-    let (pointer, mask) = match (left.as_ref(), right.as_ref()) {
-        (MachineTerm::PointerAddress(pointer, _), mask)
-        | (mask, MachineTerm::PointerAddress(pointer, _)) => (pointer, bounded_u64_constant(mask)?),
-        _ => return None,
-    };
-    let alignment = mask.checked_add(1)?;
-    alignment
-        .is_power_of_two()
-        .then_some((pointer.as_ref(), alignment))
+    crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
 }
 
 #[cfg(test)]
