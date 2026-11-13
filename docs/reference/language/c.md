@@ -2843,7 +2843,6 @@ The 64-bit extent design is `design/heap-extents.md`.
 - loop verification conditions using a frontier-local
   `loop { invariant ... }` proof tactic
 
-The first `for` slice is sugar for existing `while` semantics:
 `for (i = init; condition; step) { body }` lowers to `i = init; while
 (condition) { body; step; }`. The initializer may be a scalar assignment or a
 scalar declaration initializer such as `int32 i = 0`, or it may be omitted.
@@ -2860,6 +2859,12 @@ As in C, an `if`, `else`,
 declaration in that position is rejected because declarations require a
 compound statement. An `else if` is parsed as an `else` arm containing another
 `if`.
+
+A `while`, `for` or `do ... while` condition that calls a function is
+checked again on every pass, `continue` included. The call's result goes to a
+`__click_call_result<N>` temporary and the loop becomes `while (1)` with an
+`if` on it, so a proof steps the call and then that `if`; see
+[where stepping departs from its model](../../internals/kernel.md#where-the-implementation-departs-from-this).
 
 Symbolic pointer-writing loops should use invariants and explicit loop effects.
 Do not expect unconstrained symbolic loops to be unrolled automatically.
@@ -2907,9 +2912,7 @@ These are not general C features yet:
   rejected; arbitrary constant expressions and nested switch labels remain
   unsupported. The narrow direct forward-`goto` and natural-cycle slices
   documented above do not extend switch lowering
-- calls in `while`, `for`, and `do ... while` conditions are lowered into
-  iteration guards that preserve reevaluation and `continue`; calls in
-  conditional-expression branches are lowered through a lazy statement-level
+- calls in conditional-expression branches are lowered through a lazy statement-level
   `if`; multiple calls, or a call combined with a potentially aliased mutable
   read other than the named static-storage reads checked in both orders
   above, in one unsequenced expression are rejected rather than choosing a C
