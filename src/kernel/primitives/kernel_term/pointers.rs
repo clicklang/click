@@ -2,6 +2,8 @@
 //! proof/access metadata is retained without affecting numeric address identity.
 use super::addresses::SharedPointerAddress;
 use super::*;
+mod rewrite;
+pub(crate) use rewrite::{PointerRewrite, PointerRewriteError};
 
 #[derive(Clone, Debug)]
 pub(crate) struct KernelSubobjectExtent {
