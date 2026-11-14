@@ -14810,21 +14810,30 @@ fn source_expander_derives_separation_from_call_postconditions() {
         .expect("bounded call ranges should verify before expansion");
     let expanded = expand_c0_tactic_source_at(click_source, &c_sources, line, column)
         .expect("call postconditions should expand into an explicit separation derivation");
-    // Reuse the separation fact at the call snapshot instead of requiring
-    // the expander to rediscover it through individual field rewrites.
-    let separation = "separate(memory(*right), memory(left->data[0..left->len]))";
-    let anchored = format!("at(region(2).entry, {separation})");
-    let compact = expanded.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        compact.contains(&format!(
-            "transport({anchored}, {separation}) using {{ {anchored}; }};"
-        )),
-        "the separation transport must cite its call-snapshot premise: {expanded}"
-    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("rewrite("), "{expanded}");
     assert!(!expanded.contains("load_int32_pointer"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &c_sources)
         .expect("the expanded separation derivation should check");
+    let fully_expanded = expand_function_proof_source(click_source, &c_sources, "pipeline")
+        .expect("the complete call-separation proof should expand");
+    assert!(!fully_expanded.contains("transport("), "{fully_expanded}");
+    without_implicit_solve_for_claim("pipeline.contract", || {
+        verify_c0_sources(&fully_expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("the ordinary separation proof should replay without implicit solving");
+    for missing in [
+        "ensures owner->data == data;",
+        "ensures owner->len == length;",
+    ] {
+        let without_postcondition = expanded.replace(missing, "");
+        assert_ne!(without_postcondition, expanded);
+        assert!(
+            verify_c0_sources(&without_postcondition, &c_sources).is_err(),
+            "the generated rewrite must require {missing}"
+        );
+    }
 }
 
 #[test]

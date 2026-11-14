@@ -1450,6 +1450,61 @@ fn transport_separation_subject(subject: &ResourceSubject) -> Option<TransportRe
     }
 }
 
+/// Equalities of the bases and endpoints written in two memory descriptors.
+/// The planner proposes them; ordinary rewrite checks each equality. No
+/// semantic descriptor normalization or ambient fact search happens here.
+pub(super) fn resource_descriptor_rewrite_steps(
+    target: &ClickProposition,
+    source: &ClickProposition,
+) -> Option<Vec<ProofStep>> {
+    let (
+        ClickProposition::Separate { left, right },
+        ClickProposition::Separate {
+            left: source_left,
+            right: source_right,
+        },
+    ) = (target, source)
+    else {
+        return None;
+    };
+    let parts = |resource: &ResourceSubject| match resource {
+        ResourceSubject::Memory(ContractSegment {
+            surface:
+                ContractSegmentSurface::Range { base, start, end }
+                | ContractSegmentSurface::StructRange {
+                    base, start, end, ..
+                },
+            ..
+        }) => Some([base.clone(), start.clone(), end.clone()]),
+        _ => None,
+    };
+    let mut steps = Vec::new();
+    for (target, source) in [(left, source_left), (right, source_right)] {
+        if target == source {
+            continue;
+        }
+        for (left, right) in parts(target)?.into_iter().zip(parts(source)?) {
+            if left == right
+                || contract_expression_as_c_fragment(&left)
+                    .zip(contract_expression_as_c_fragment(&right))
+                    .is_some_and(|(a, b)| a == b)
+            {
+                continue;
+            }
+            steps.push(ProofStep::Rewrite(ClickProposition::Comparison {
+                left,
+                operator: ComparisonOperator::Equal,
+                right,
+            }));
+        }
+    }
+    if steps.is_empty() {
+        return None;
+    }
+    steps.push(ProofStep::Assumption);
+    Some(steps)
+}
+
 fn viewability_resource(proposition: &ClickProposition) -> Option<ResourceSubject> {
     match proposition {
         ClickProposition::Loadable { segment }

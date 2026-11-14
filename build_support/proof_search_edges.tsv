@@ -641,3 +641,6 @@ src/surface/proof/wide_arithmetic/search.rs	search	ProofSearch::wide_arithmetic_
 src/surface/proof/wide_arithmetic/search.rs	search	ProofSearch::wide_arithmetic_with	try_direct_logical_closure	1
 src/surface/validation/definition_validation.rs	operation	::symbolic_segment_covers_index	proves	2
 src/surface/validation/definition_validation.rs	operation	::symbolic_segment_covers_range	proves	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_descriptor_rewrite_closure	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_resource_descriptor_rewrite_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_descriptor_rewrite_closure	requirement_kernel_atoms_for_search	1

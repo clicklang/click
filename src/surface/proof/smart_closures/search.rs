@@ -2644,6 +2644,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(proof));
         }
+        // Prefer ordinary equalities between resource descriptors to a
+        // historical transport of the whole separation proposition.
+        if let Some(proof) = Self::try_resource_descriptor_rewrite_closure(search_input)? {
+            return Ok(Some(proof));
+        }
         // Plain solve and recursive logical closure share the same memory
         // strategies. A structural child must not lose read-over-write or
         // explicit frame transport merely because it was reached by `both`.
@@ -5284,6 +5289,56 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 &available_surfaces,
             );
         }
+    }
+
+    /// Compare the written descriptors with recorded separation facts. Each
+    /// proposed equality is applied by ordinary rewrite; there is no call to
+    /// solve or transport inside the candidate proof. The tactic work budget
+    /// bounds selection, and at most sixteen separation facts are attempted.
+    pub(in crate::surface::proof) fn try_resource_descriptor_rewrite_closure(
+        search_input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_resource_descriptor_rewrite_closure");
+        let Some(target @ ClickProposition::Separate { .. }) = search_input.surface_goal() else {
+            return Ok(None);
+        };
+        let Some(surfaces) = search_input.premise_surface_facts() else {
+            return Ok(None);
+        };
+        let mut attempts = 0;
+        for kernel in surfaces.requirement_kernel_atoms_for_search() {
+            check_verification_deadline()?;
+            if !matches!(kernel, Proposition::CResourceSeparate { .. }) {
+                continue;
+            }
+            if attempts == 16 {
+                break;
+            }
+            attempts += 1;
+            let mut source = surfaces
+                .recorded_requirement_surface(kernel)
+                .expect("requirement atoms retain their enclosing source clause");
+            while let ClickProposition::At { proposition, .. } = source {
+                source = proposition;
+            }
+            let Some(steps) = resource_descriptor_rewrite_steps(target, source) else {
+                continue;
+            };
+            let mut candidate = Some(search_input.clone());
+            for step in steps {
+                let Some(proof) = candidate.take() else {
+                    break;
+                };
+                candidate = attempt::candidate_outcome(proof.driver().apply_step(step))?;
+            }
+            if let Some(proof) = candidate
+                && (proof.focused_discharged() || proof.is_complete())
+            {
+                return Ok(Some(proof));
+            }
+        }
+        Ok(None)
     }
 
     /// Search chooses enclosing separated regions; replay cites containment
