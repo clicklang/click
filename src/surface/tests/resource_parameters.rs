@@ -412,3 +412,25 @@ fn rebased_intervals_apply_and_replay_without_search() {
     let enlarged = source.replace("0..hi-lo]", "0..hi-lo+1]");
     assert!(without_implicit_solve(|| verify_click_theorems(&enlarged)).is_err());
 }
+
+#[test]
+fn adjacent_ranges_apply_and_replay_without_search() {
+    let (source, _) = mdtest_sources("mdtests/separation_adjacent_ranges.md");
+    without_implicit_solve(|| verify_click_theorems(&source)).unwrap();
+    for label in ["narrow.ensures_0", "wide.ensures_0", "empty.ensures_0"] {
+        let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+        without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    }
+    for premise in ["lo <= mid;", "mid <= hi;"] {
+        let missing = source.replace(
+            "using { lo <= mid; mid <= hi; }",
+            &format!(
+                "using {{ {} }}",
+                "lo <= mid; mid <= hi;".replace(premise, "")
+            ),
+        );
+        assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+    }
+    let overlap = source.replace("memory(p[mid..hi])", "memory(p[lo..hi])");
+    assert!(without_implicit_solve(|| verify_click_theorems(&overlap)).is_err());
+}

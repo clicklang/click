@@ -7293,3 +7293,22 @@ To add a public symbol:
 4. Add general prover or kernel support only when the definition exposes a
    reusable reasoning gap. Don't hard-code a domain-specific library name into
    the kernel merely because it is useful.
+
+### `separation::separate_adjacent_ranges`
+
+```click
+theorem separate_adjacent_ranges<T, I>(p: T*, lo: I, mid: I, hi: I) {
+    requires lo <= mid;
+    requires mid <= hi;
+    ensures separate(memory(p[lo..mid]), memory(p[mid..hi]));
+}
+```
+
+**Meaning:** Ordered adjacent half-open intervals of one typed array are separate.
+Either interval may be empty. The bounds share one index type (`int32` or
+`uint64`); descriptors use exact element coordinates, without endpoint
+subtraction or modular byte arithmetic. The law grants no ownership or access
+permission. Application requires both explicit ordering premises and does not
+inspect memory history or search for ranges.
+
+**Verified use:** [`mdtests/separation_adjacent_ranges.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_adjacent_ranges.md).

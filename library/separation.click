@@ -66,3 +66,10 @@ theorem contains_rebase<T, I>(p: T*, lo: I, hi: I) {
     requires lo <= hi;
     ensures contains(memory(p[lo..hi]), memory((p + lo)[0..hi-lo]));
 }
+
+// Adjacent half-open intervals share no elements, including at empty endpoints.
+theorem separate_adjacent_ranges<T, I>(p: T*, lo: I, mid: I, hi: I) {
+    requires lo <= mid;
+    requires mid <= hi;
+    ensures separate(memory(p[lo..mid]), memory(p[mid..hi]));
+}

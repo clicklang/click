@@ -22357,6 +22357,10 @@ fn instantiated_indexed_read_expands_without_transport() {
 #[ignore = "nightly: explicit fold preservation expands and cold replays"]
 fn explicit_fold_preservation_expands_without_legacy_transport() {
     for (fixture, function) in [
+        (
+            "fold_read_transport_across_a_call_with_a_checked_write_set",
+            "caller",
+        ),
         ("fold_read_transport_below_a_nonzero_start", "mark_below"),
         ("fold_read_transport_empty_fold_when_checked", "mark_any"),
         ("fold_read_transport_historical_endpoint", "mark_at"),

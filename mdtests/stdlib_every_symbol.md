@@ -24,6 +24,9 @@ explicitly and through `solve`.
 The generic range law `separation::contains_subrange` is verified in
 [`generic_pointer_theorem_parameters.md`](generic_pointer_theorem_parameters.md),
 including nested generic applications and several element widths.
+The adjacent-range law `separation::separate_adjacent_ranges` is verified in
+[`separation_adjacent_ranges.md`](separation_adjacent_ranges.md).
+
 The rebasing law `separation::contains_rebase` is verified in
 [`separation_rebase.md`](separation_rebase.md), with signed and unsigned bounds.
 The selected-cell law `separation::contains_element` is verified in
