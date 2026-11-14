@@ -494,7 +494,7 @@ impl<'a> Proof<'a> {
         let message = match refusal {
             Refusal::Claim(key) => {
                 let claim = match key {
-                            CFunctionContractClaimKey::Ensure(index) => match context.function_block.ensures().get(index) { Some(clause) => FunctionClaimRef::Ensure(index, clause), None => return self.step_error(format!("contract closing for `{label}` path {index}: unproved generated returned-storage obligation")) },
+                            CFunctionContractClaimKey::Ensure(clause_index) => match context.function_block.ensures().get(clause_index) { Some(clause) => FunctionClaimRef::Ensure(clause_index, clause), None => return self.step_error(format!("contract closing for `{label}` path {index}: unproved generated returned-storage obligation")) },
                             _ => return self.step_error(format!("contract closing for `{label}` path {index}: unproved boundary claim {key:?}")),
                         };
                 let clause = match claim.clause().ensure() {
@@ -514,9 +514,9 @@ impl<'a> Proof<'a> {
                 "contract closing for `{label}` path {index}: unproved {} obligation; prove it explicitly with `assumption()` or supply the facts and resources needed by the implicit solver",
                 kind.description()
             ),
-            Refusal::Resource(reason) => format!(
-                "contract closing for `{label}` path {index}: resource/lifetime obligation: {reason}"
-            ),
+            Refusal::Resource(reason) => {
+                format!("contract closing for `{label}` path {index}: {reason}")
+            }
             Refusal::Runtime(error) => format!(
                 "`{label}` path {index}: C operation could not be verified: {}{}",
                 describe_runtime_error(&error, binding),

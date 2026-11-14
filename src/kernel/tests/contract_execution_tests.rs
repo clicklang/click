@@ -5925,17 +5925,25 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             };
             let owned = crate::kernel::CheckedPathSpecification::new(&forward, path)
                 .expect("forwarded path specification");
-            let (_, completion) = closing
-                .open(path_index, &core)
-                .close(
-                    &artifact,
-                    path,
-                    &owned,
-                    &core,
-                    &OutcomeClaimGoals::open([], false),
-                    &ProofFacts::from_ordered(&facts),
-                )
-                .expect("forwarded resource and effect obligations");
+            let closing_facts = ProofFacts::from_ordered(&facts);
+            let claim_goals = OutcomeClaimGoals::open([], false);
+            let mut goals = closing.open(path_index, &core);
+            while let Some(kind) = goals.first_open_goal() {
+                goals = goals
+                    .prove_goal(
+                        kind,
+                        &artifact,
+                        path,
+                        &owned,
+                        &core,
+                        &claim_goals,
+                        &closing_facts,
+                    )
+                    .expect("forwarded resource and effect obligation");
+            }
+            let completion = goals
+                .completion(path)
+                .expect("all forwarding goals are closed");
             exit_completions.push(completion);
             for index in 0..2 {
                 let goals = c_function_ensure_goals(

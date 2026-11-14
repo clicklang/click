@@ -405,7 +405,11 @@ Expansion records one `assumption()` per completed goal, so rechecking requires
 no implicit proof of these obligations. A checked resource transition retains
 resource/lifetime evidence without silently closing either goal. Explicit
 resource changes reopen the affected goals. Packaging an exit completion reads
-only the closed-goal state; it performs no additional resource or effect check.
+only the closed-goal state and packages the checked path; it performs no
+additional resource or effect check. With implicit solving disabled, an omitted closing step leaves its goal
+open. Diagnostics name that goal and distinguish a written tactic refusal from
+an implicit solver failure; a proposition-only closer names the actual closing
+goal instead of claiming there is no goal.
 
 A clause-specific proof closes the joint resource prefix through
 its last selected resource clause; it cannot certify later clauses whose
