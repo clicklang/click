@@ -26,7 +26,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     step();
     step_until(function.exit);
     have separate(memory(a[i]), memory(a[m])) by {
-        apply(click::separation::elements(a, i, m)) using { m != i; };
+        apply(click::separation::separate_elements(a, i, m)) using { m != i; };
     }
     have separate(statement(0).footprint, memory(a[m])) by {
         normalize() using { separate(memory(a[i]), memory(a[m])); };

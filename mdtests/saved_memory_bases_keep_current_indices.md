@@ -27,15 +27,15 @@ void advance(int32 *p, int32 *q, int32 i) {
     have i == 1;
     have i != 0;
     have separate(memory(old(p)[i]), memory(old(p)[0])) by {
-        apply(separation::elements(old(p), i, 0)) using { i != 0; };
+        apply(separation::separate_elements(old(p), i, 0)) using { i != 0; };
     }
     have separate(memory(at(before, p)[i]), memory(at(before, p)[0])) by {
-        apply(separation::elements(at(before, p), i, 0)) using { i != 0; };
+        apply(separation::separate_elements(at(before, p), i, 0)) using { i != 0; };
     }
     have 0 <= i;
     have i <= 2;
     have contains(memory(old(p)[0..2]), memory(old(p)[i..2])) by {
-        apply(separation::subrange(old(p), 0, 2, i, 2)) using { 0 <= i; i <= 2; 2 <= 2; };
+        apply(separation::contains_subrange(old(p), 0, 2, i, 2)) using { 0 <= i; i <= 2; 2 <= 2; };
     }
     step();
 }

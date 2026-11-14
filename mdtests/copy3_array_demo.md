@@ -65,7 +65,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 apply(click::separation::contains_refl(memory(src[0..3])));
             }
             have separate(memory(dst[i]), memory(src[0..3])) by {
-                apply(click::separation::restrict(memory(dst[0..3]), memory(src[0..3]), memory(dst[i]), memory(src[0..3]))) using {
+                apply(click::separation::separate_restrict(memory(dst[0..3]), memory(src[0..3]), memory(dst[i]), memory(src[0..3]))) using {
                     separate(memory(dst[0..3]), memory(src[0..3]));
                     contains(memory(dst[0..3]), memory(dst[i]));
                     contains(memory(src[0..3]), memory(src[0..3]));

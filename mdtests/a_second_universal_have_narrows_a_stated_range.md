@@ -34,7 +34,7 @@ void walk(int32 *a, int32 *b, int32 n) {
         apply(click::separation::contains_refl(memory(a[0..n])));
     }
     have separate(memory(b[0]), memory(a[0..n])) by {
-        apply(click::separation::restrict(memory(b[0..n]), memory(a[0..n]), memory(b[0]), memory(a[0..n]))) using {
+        apply(click::separation::separate_restrict(memory(b[0..n]), memory(a[0..n]), memory(b[0]), memory(a[0..n]))) using {
             separate(memory(b[0..n]), memory(a[0..n]));
             contains(memory(b[0..n]), memory(b[0]));
             contains(memory(a[0..n]), memory(a[0..n]));

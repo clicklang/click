@@ -31,7 +31,7 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
     ensures result >= 0;
 } by {
     have contains(memory(visited[0..n]), memory(visited[cur..cur + 1])) by {
-        apply(separation::subrange(visited, 0, n, cur, cur + 1));
+        apply(separation::contains_subrange(visited, 0, n, cur, cur + 1));
     }
     have contains(memory(visited[cur..cur + 1]), memory((visited + cur)[0..1])) by { normalize(); }
     have contains(memory(visited[0..n]), memory((visited + cur)[0..1])) by {

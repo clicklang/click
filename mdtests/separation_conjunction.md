@@ -11,7 +11,7 @@ theorem frame(A: Resource, B: Resource, C: Resource, E: Resource) {
             separate(A, C); separate(B, C);
         };
         apply(separation::contains_refl(C)) using {};
-        apply(separation::restrict(A * B, C, E, C)) using {
+        apply(separation::separate_restrict(A * B, C, E, C)) using {
             separate(A * B, C); contains(A * B, E); contains(C, C);
         };
     }

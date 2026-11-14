@@ -16,7 +16,7 @@ int32 first(int32* p, int32 n, int32 a, int32 b) {
     ensures result == p[0];
 } by {
     have contains(memory(p[0..n]), memory(p[a..b])) by {
-        apply(separation::subrange(p, 0, n, a, b)) using {
+        apply(separation::contains_subrange(p, 0, n, a, b)) using {
             0 <= a;
             a <= b;
             b <= n;

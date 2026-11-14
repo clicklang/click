@@ -31,19 +31,19 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
         have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < len; }; }
         have ((i + 1) as int32) <= len by { solve() using { 0 <= i; i < len; }; }
         have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
-            apply(separation::subrange(p, 0, len, i, i + 1)) using {
+            apply(separation::contains_subrange(p, 0, len, i, i + 1)) using {
                 defined(i + 1); 0 <= i; i <= ((i + 1) as int32); ((i + 1) as int32) <= len;
             };
         }
         have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1]))) using {
+            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1]))) using {
                 defined(i + 1); separate(whole, memory(p[0..len])); contains(whole, kept);
                 contains(memory(p[0..len]), memory(p[i..i + 1]));
             };
         }
         have contains(kept, kept) by { normalize(); }
         have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
+        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
             defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
             contains(memory(p[i..i + 1]), memory(p[i]));
         };

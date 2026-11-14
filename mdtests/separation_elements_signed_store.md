@@ -13,7 +13,7 @@ void keep(uint8* bytes, int32 i, int32 k) {
 } by {
     have separate(memory(*(bytes + i)), memory(*(bytes + k))) by {
         have i != k by { solve() using { k < i; }; }
-        apply(separation::elements(bytes, i, k)) using { i != k; };
+        apply(separation::separate_elements(bytes, i, k)) using { i != k; };
     }
     mark before;
     step();

@@ -175,14 +175,14 @@ pub(in crate::surface) fn kernel_law_index_types(
     name: &str,
 ) -> Option<(&'static str, Vec<InterfaceType>)> {
     let formats = match name {
-        "click::separation::elements" | "click::separation::distinct_elements" => vec![
+        "click::separation::separate_elements" | "click::separation::distinct_elements" => vec![
             InterfaceType::Int32,
             InterfaceType::Int64(crate::languages::c::syntax::LongRank::Long),
             InterfaceType::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
-        "click::separation::subrange"
+        "click::separation::contains_subrange"
         | "click::separation::contains_element"
-        | "click::separation::rebase" => vec![
+        | "click::separation::contains_rebase" => vec![
             InterfaceType::Int32,
             InterfaceType::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
@@ -2699,14 +2699,14 @@ fn resource_law_shape(name: &str) -> Option<(usize, usize)> {
 pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
     resource_law_shape(name).is_some()
         || name == "click::integer::uint32_from_le_bytes"
-        || name == "click::separation::restrict"
+        || name == "click::separation::separate_restrict"
         || matches!(
             name.split("::<").next(),
             Some(
-                "click::separation::subrange"
+                "click::separation::contains_subrange"
                     | "click::separation::contains_element"
-                    | "click::separation::rebase"
-                    | "click::separation::elements"
+                    | "click::separation::contains_rebase"
+                    | "click::separation::separate_elements"
                     | "click::separation::distinct_elements"
             )
         )
@@ -2742,13 +2742,13 @@ fn verify_kernel_standard_theorem_axiom(
     let (parameter_count, requirement_count) = match theorem.name() {
         name if resource_law_shape(name).is_some() => resource_law_shape(name).unwrap(),
         "click::integer::uint32_from_le_bytes" => (1, 3),
-        "click::separation::restrict" => (4, 3),
-        name if name.split("::<").next() == Some("click::separation::subrange") => (5, 3),
+        "click::separation::separate_restrict" => (4, 3),
+        name if name.split("::<").next() == Some("click::separation::contains_subrange") => (5, 3),
         name if name.split("::<").next() == Some("click::separation::contains_element") => (4, 2),
-        name if name.split("::<").next() == Some("click::separation::rebase") => (3, 2),
+        name if name.split("::<").next() == Some("click::separation::contains_rebase") => (3, 2),
         name if matches!(
             name.split("::<").next(),
-            Some("click::separation::elements" | "click::separation::distinct_elements")
+            Some("click::separation::separate_elements" | "click::separation::distinct_elements")
         ) =>
         {
             (3, 1)
@@ -2797,7 +2797,7 @@ fn verify_kernel_standard_theorem_axiom(
         };
         crate::kernel::prove_uint32_from_le_bytes(pointer.clone()).map_err(ClickError::new)?
     } else if let Some(
-        law @ ("click::separation::elements" | "click::separation::distinct_elements"),
+        law @ ("click::separation::separate_elements" | "click::separation::distinct_elements"),
     ) = theorem.name().split("::<").next()
     {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
@@ -2825,7 +2825,7 @@ fn verify_kernel_standard_theorem_axiom(
         if format != other_format {
             return Err(ClickError::new("elements indices must have the same type"));
         }
-        if law == "click::separation::elements" {
+        if law == "click::separation::separate_elements" {
             crate::kernel::prove_separation_elements(pointer.clone(), width, format, i, j)
         } else {
             crate::kernel::prove_separation_distinct_elements(pointer.clone(), width, format, i, j)
@@ -2833,9 +2833,9 @@ fn verify_kernel_standard_theorem_axiom(
     } else if matches!(
         theorem.name().split("::<").next(),
         Some(
-            "click::separation::subrange"
+            "click::separation::contains_subrange"
                 | "click::separation::contains_element"
-                | "click::separation::rebase"
+                | "click::separation::contains_rebase"
         )
     ) {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
@@ -2868,7 +2868,7 @@ fn verify_kernel_standard_theorem_axiom(
                 "interval law bounds must have the same type",
             ));
         }
-        if theorem.name().split("::<").next() == Some("click::separation::rebase") {
+        if theorem.name().split("::<").next() == Some("click::separation::contains_rebase") {
             crate::kernel::prove_separation_rebase(
                 pointer.clone(),
                 width,
@@ -2920,14 +2920,14 @@ fn verify_kernel_standard_theorem_axiom(
             crate::kernel::prove_resource_law(theorem.name(), &args)
                 .expect("registered resource law")
         }
-    } else if theorem.name() == "click::separation::restrict" {
+    } else if theorem.name() == "click::separation::separate_restrict" {
         if theorem
             .parameters()
             .iter()
             .any(|p| p.click_type() != &ClickType::Resource)
         {
             return Err(ClickError::new(
-                "separation::restrict parameters must be Resource",
+                "separation::separate_restrict parameters must be Resource",
             ));
         }
         crate::kernel::prove_separation_restrict(
@@ -4349,11 +4349,11 @@ mod tests {
 
     #[test]
     fn generic_element_separation_law_is_checked_at_each_admitted_index_type() {
-        let source = "theorem click::separation::elements<T, I>(p: T*, i: I, j: I) { requires i != j; ensures separate(memory(p[i]), memory(p[j])); }";
+        let source = "theorem click::separation::separate_elements<T, I>(p: T*, i: I, j: I) { requires i != j; ensures separate(memory(p[i]), memory(p[j])); }";
         let verified = verify_standard_declarations(source).expect("element separation law");
         assert_eq!(verified.len(), 3);
         assert!(verified.iter().all(|result| {
-            result.theorem_definition.name() == "click::separation::elements"
+            result.theorem_definition.name() == "click::separation::separate_elements"
                 && result.ensure_index == 0
         }));
         for invalid in [

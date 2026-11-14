@@ -11,19 +11,19 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
         have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < len; }; }
         have ((i + 1) as int32) <= len by { solve() using { 0 <= i; i < len; }; }
         have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
-            apply(separation::subrange(p, 0, len, i, i + 1)) using {
+            apply(separation::contains_subrange(p, 0, len, i, i + 1)) using {
                 defined(i + 1); 0 <= i; i <= ((i + 1) as int32); ((i + 1) as int32) <= len;
             };
         }
         have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1]))) using {
+            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1]))) using {
                 defined(i + 1); separate(whole, memory(p[0..len])); contains(whole, kept);
                 contains(memory(p[0..len]), memory(p[i..i + 1]));
             };
         }
         have contains(kept, kept) by { normalize(); }
         have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
+        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
             defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
             contains(memory(p[i..i + 1]), memory(p[i]));
         };
@@ -5057,7 +5057,7 @@ int32 arena_pipeline(
     have contains(at(a2, s0) * memory(*second), statement(9).footprint) by { assumption(); }
     have contains(memory(*first), memory(first->arena)) by { normalize(); }
     have separate(statement(9).footprint, memory(first->arena)) by {
-        apply(separation::restrict(at(a2, s0) * memory(*second), memory(*first), statement(9).footprint, memory(first->arena))) using {
+        apply(separation::separate_restrict(at(a2, s0) * memory(*second), memory(*first), statement(9).footprint, memory(first->arena))) using {
             separate(at(a2, s0) * memory(*second), memory(*first));
             contains(at(a2, s0) * memory(*second), statement(9).footprint);
             contains(memory(*first), memory(first->arena));
@@ -5420,7 +5420,7 @@ int32 arena_pipeline(
     have contains(at(w1, r1) * at(w1, s0), statement(11).footprint) by { assumption(); }
     have contains(memory(*second), memory(second->arena)) by { normalize(); }
     have separate(statement(11).footprint, memory(second->arena)) by {
-        apply(separation::restrict(at(w1, r1) * at(w1, s0), memory(*second), statement(11).footprint, memory(second->arena))) using {
+        apply(separation::separate_restrict(at(w1, r1) * at(w1, s0), memory(*second), statement(11).footprint, memory(second->arena))) using {
             separate(at(w1, r1) * at(w1, s0), memory(*second));
             contains(at(w1, r1) * at(w1, s0), statement(11).footprint);
             contains(memory(*second), memory(second->arena));
@@ -5602,7 +5602,7 @@ int32 arena_pipeline(
     }
     have contains(r2 * s0, r2 * s0) by { apply(separation::contains_refl(r2 * s0)); }
     have separate(r2 * s0, memory(at(w2_open, arena->data)[first->start + 0])) by {
-        apply(separation::restrict(r2 * s0, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]), r2 * s0, memory(at(w2_open, arena->data)[first->start + 0]))) using {
+        apply(separation::separate_restrict(r2 * s0, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]), r2 * s0, memory(at(w2_open, arena->data)[first->start + 0]))) using {
             separate(r2 * s0, memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]));
             contains(r2 * s0, r2 * s0);
             contains(memory(at(w2_open, arena->data)[(w2_start as int32)..(w2_end as int32)]), memory(at(w2_open, arena->data)[first->start + 0]));
@@ -5635,7 +5635,7 @@ int32 arena_pipeline(
     have contains(at(w2, r2) * at(w2, s0), statement(12).footprint) by { assumption(); }
     have contains(memory(*first), memory(first->arena)) by { normalize(); }
     have separate(statement(12).footprint, memory(first->arena)) by {
-        apply(separation::restrict(at(w2, r2) * at(w2, s0), memory(*first), statement(12).footprint, memory(first->arena))) using {
+        apply(separation::separate_restrict(at(w2, r2) * at(w2, s0), memory(*first), statement(12).footprint, memory(first->arena))) using {
             separate(at(w2, r2) * at(w2, s0), memory(*first));
             contains(at(w2, r2) * at(w2, s0), statement(12).footprint);
             contains(memory(*first), memory(first->arena));
@@ -5841,7 +5841,7 @@ int32 arena_pipeline(
     }
     have contains(memory(at(w2_open, arena->data)[at(w2, first->start) + 0]), memory(at(w2_open, arena->data)[at(w2, first->start) + 0])) by { apply(separation::contains_refl(memory(at(w2_open, arena->data)[at(w2, first->start) + 0]))); }
     have separate(statement(12).footprint, memory(at(w2_open, arena->data)[at(w2, first->start) + 0])) by {
-        apply(separation::restrict(at(w2, r2) * at(w2, s0), memory(at(w2_open, arena->data)[at(w2, first->start) + 0]), statement(12).footprint, memory(at(w2_open, arena->data)[at(w2, first->start) + 0]))) using {
+        apply(separation::separate_restrict(at(w2, r2) * at(w2, s0), memory(at(w2_open, arena->data)[at(w2, first->start) + 0]), statement(12).footprint, memory(at(w2_open, arena->data)[at(w2, first->start) + 0]))) using {
             at(w2, separate(r2 * s0, memory(at(w2_open, arena->data)[first->start + 0])));
             contains(at(w2, r2) * at(w2, s0), statement(12).footprint);
             contains(memory(at(w2_open, arena->data)[at(w2, first->start) + 0]), memory(at(w2_open, arena->data)[at(w2, first->start) + 0]));
@@ -6098,7 +6098,7 @@ int32 arena_pipeline(
     have contains(at(m4, r2) * at(m4, s0), statement(14).footprint) by { assumption(); }
     have contains(memory(*first), memory(first->arena)) by { normalize(); }
     have separate(statement(14).footprint, memory(first->arena)) by {
-        apply(separation::restrict(at(m4, r2) * at(m4, s0), memory(*first), statement(14).footprint, memory(first->arena))) using {
+        apply(separation::separate_restrict(at(m4, r2) * at(m4, s0), memory(*first), statement(14).footprint, memory(first->arena))) using {
             separate(at(m4, r2) * at(m4, s0), memory(*first));
             contains(at(m4, r2) * at(m4, s0), statement(14).footprint);
             contains(memory(*first), memory(first->arena));
@@ -6305,7 +6305,7 @@ int32 arena_pipeline(
     have contains(at(f2, r2) * at(f2, s0), statement(16).footprint) by { assumption(); }
     have contains(memory(*first), memory(first->arena)) by { normalize(); }
     have separate(statement(16).footprint, memory(first->arena)) by {
-        apply(separation::restrict(at(f2, r2) * at(f2, s0), memory(*first), statement(16).footprint, memory(first->arena))) using {
+        apply(separation::separate_restrict(at(f2, r2) * at(f2, s0), memory(*first), statement(16).footprint, memory(first->arena))) using {
             separate(at(f2, r2) * at(f2, s0), memory(*first));
             contains(at(f2, r2) * at(f2, s0), statement(16).footprint);
             contains(memory(*first), memory(first->arena));

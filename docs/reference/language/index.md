@@ -1255,7 +1255,7 @@ in the imported C layout. The generic declaration does not require a concrete
 layout. This permits `p: T*` with `T = struct Foo`; it does not introduce a
 struct-by-value logical parameter `x: T`. Instantiation supplies the declared
 stride, not original-object provenance or permission to access memory.
-See [`separation::subrange`](../library/index.md#separationsubrange).
+See [`separation::contains_subrange`](../library/index.md#separationcontains_subrange).
 
 `Resource` is a theorem-parameter type for resource descriptors. For example,
 `theorem transport(A: Resource, B: Resource) { requires separate(A, B);
@@ -1264,7 +1264,7 @@ application, or another resource parameter as an argument. A descriptor carries
 no ownership. Arguments are evaluated in the caller before substitution, so
 callee parameter names cannot capture names inside them. This type is currently
 limited to theorem parameters; it is not a C type or an ownership clause.
-See [`separation::restrict`](../library/index.md#separationrestrict) for an
+See [`separation::separate_restrict`](../library/index.md#separationseparate_restrict) for an
 explicit separation axiom and its checked field-separation example.
 
 Resource expressions also include separating conjunction `A * B` and the empty

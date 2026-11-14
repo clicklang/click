@@ -12,7 +12,7 @@ import click::separation;
 verifying "saved_max_index.c";
 void keep(int32 *p) { ensures true; } by {
     have separate(memory(old(p)[2147483647]), memory(old(p)[0])) by {
-        apply(separation::elements(old(p), 2147483647, 0)) using {};
+        apply(separation::separate_elements(old(p), 2147483647, 0)) using {};
     }
     step();
 }

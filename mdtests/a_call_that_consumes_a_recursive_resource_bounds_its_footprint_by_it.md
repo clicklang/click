@@ -1,6 +1,6 @@
 # A call that consumes a recursive resource bounds its footprint by it
 
-A resource-derived call writes only memory the caller hands it. When it consumes a recursive resource and produces another, the call still publishes `contains(input, footprint)`, so a cell the caller kept is carried across the call through `separation::restrict` and `preserve`.
+A resource-derived call writes only memory the caller hands it. When it consumes a recursive resource and produces another, the call still publishes `contains(input, footprint)`, so a cell the caller kept is carried across the call through `separation::separate_restrict` and `preserve`.
 
 ```c filename=consuming.c
 struct node { struct node *next; };
@@ -20,7 +20,7 @@ void caller(struct node* child, int32* slot) { consumes list(child); owns *slot;
     step();
     have contains(list(child), statement(0).footprint) by { assumption(); }
     apply(separation::contains_refl(memory(*slot))) using {};
-    apply(separation::restrict(list(child), memory(*slot), statement(0).footprint, memory(*slot))) using {
+    apply(separation::separate_restrict(list(child), memory(*slot), statement(0).footprint, memory(*slot))) using {
         separate(list(child), memory(*slot));
         contains(list(child), statement(0).footprint);
         contains(memory(*slot), memory(*slot));

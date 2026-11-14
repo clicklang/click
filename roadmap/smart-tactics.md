@@ -205,9 +205,9 @@ The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 - `fold_read_transport_across_a_call_with_a_checked_write_set.md`: the
   pointwise preservation proof needs separation of `v[0..i]` and `v[i..n]`.
   The current element and containment axioms do not directly construct this
-  symbolic adjacent-range fact. A direct `separation::adjacent_ranges` law is
+  symbolic adjacent-range fact. A direct `separation::separate_adjacent_ranges` law is
   awaiting design approval; the call's recorded footprint containment can then
-  feed ordinary `restrict` and `preserve`.
+  feed ordinary `separate_restrict` and `preserve`.
 - The unchanged `rbtree/rbtree-insert` example fails while re-folding its initial
   node, before its legacy transport calls. An explicit `node == identity`
   lookup moves the failure to the packed parent-pointer equality. Repair and
@@ -393,7 +393,7 @@ resource descriptor of active loan backing. Loan opens/closes update a persisten
 fixed-width identity trie; generating the obligation clones its root. The driver
 runs ordinary `solve`, whose conjunction case emits the existing `separate_star`
 and `separate_symm` applications. Restricting a larger separation emits
-containment proofs and `separation::restrict`; candidate selection belongs only
+containment proofs and `separation::separate_restrict`; candidate selection belongs only
 to `ProofSearch`. The store adds no e-graph facts; the separate
 `contains_element` library axiom supplies explicit interval-to-cell containment.
 `one_write_with_a_loan_does_not_walk_unrelated_aliases` measures the complete

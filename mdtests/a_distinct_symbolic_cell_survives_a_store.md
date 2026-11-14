@@ -1,6 +1,6 @@
 # A store preserves a cell with a distinct index
 
-The companion of `store_does_not_preserve_a_symbolic_cell.md`: `elements`
+The companion of `store_does_not_preserve_a_symbolic_cell.md`: `separate_elements`
 turns `m != i` into cell separation, and `preserve` carries the selected
 read across the write. Without the index inequality, this chain cannot close.
 
@@ -25,7 +25,7 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     mark entry;
     step();
     have separate(memory(a[i]), memory(a[m])) by {
-        apply(click::separation::elements(a, i, m)) using { m != i; };
+        apply(click::separation::separate_elements(a, i, m)) using { m != i; };
     }
     have separate(statement(0).footprint, memory(a[m])) by {
         normalize() using { separate(memory(a[i]), memory(a[m])); };

@@ -53,7 +53,7 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                         solve() using { k < at(before, i); };
                     }
                     have at(before, separate(memory(bytes[i]), memory(bytes[k]))) by {
-                        apply(separation::elements(bytes, at(before, i), k)) using {
+                        apply(separation::separate_elements(bytes, at(before, i), k)) using {
                             at(before, i) != k;
                         };
                     }

@@ -43,7 +43,7 @@ public kernel function that returns a `Theorem` is an axiom in Click's sense,
 even when its Rust name is `prove_*`: about 90 such operations, some of which
 are parameterized families (see [Kernel](../internals/kernel.md#trusted-shape)
 and the glossary entry for axiom). Some of them are also exposed as the kernel
-standard library theorems below. `separation::restrict` is likewise a named
+standard library theorems below. `separation::separate_restrict` is likewise a named
 trusted axiom, implemented in `src/kernel/separation_laws.rs`: separate parents
 and explicit containment premises imply separate parts. Its `Resource`
 parameters describe resources without granting ownership.
@@ -145,7 +145,7 @@ checks each one, in one of two ways; the gate runs it
   (`int32_remainder_to_integer`; the `uint32` and `uint64` divide and
   remainder laws; 16-bit packing; and the
   `uint32_from_le_bytes` byte layout), 5 Integer truncation laws, 6 `Nat`
-  conversion laws and 12 separation laws. `separation::elements` and
+  conversion laws and 12 separation laws. `separation::separate_elements` and
   `separation::distinct_elements` are generic over their index type, which
   has no rigid C form, so each is checked at each index type its builder
   admits: `int32`, `int64` and `uint64`. `distinct_elements` concludes

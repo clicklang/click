@@ -1659,7 +1659,7 @@ pub(super) fn viewability_restriction_steps(
             proof: Box::new(
                 ProofCertificate::from_steps(vec![ProofStep::ApplyTheoremUsing {
                     application: TheoremApplication {
-                        name: "click::separation::subrange".into(),
+                        name: "click::separation::contains_subrange".into(),
                         arguments: [base, lo, hi, inner_lo, inner_hi]
                             .into_iter()
                             .cloned()
@@ -1807,7 +1807,7 @@ pub(super) fn rebased_viewability_restriction_steps(
             &parent,
             &tail,
             apply(
-                "subrange",
+                "contains_subrange",
                 vec![
                     base.clone(),
                     lo.clone(),
@@ -1822,7 +1822,7 @@ pub(super) fn rebased_viewability_restriction_steps(
             &tail,
             &rebased,
             apply(
-                "rebase",
+                "contains_rebase",
                 vec![base.clone(), offset, hi.clone()],
                 cited.clone(),
             ),
@@ -1831,7 +1831,7 @@ pub(super) fn rebased_viewability_restriction_steps(
             &rebased,
             &child,
             apply(
-                "subrange",
+                "contains_subrange",
                 vec![
                     child_base.clone(),
                     zero.clone(),
@@ -2018,7 +2018,7 @@ pub(super) fn computed_viewability_restriction_steps(
         containment.clone(),
         vec![ProofStep::ApplyTheoremUsing {
             application: TheoremApplication {
-                name: "click::separation::subrange".into(),
+                name: "click::separation::contains_subrange".into(),
                 arguments: [base, lo, hi, inner_lo, inner_hi]
                     .into_iter()
                     .cloned()

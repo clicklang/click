@@ -81,7 +81,7 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
             have 0 <= k by { solve(); }
             have j != k by { solve(); }
             have separate(memory(v[j]), memory(v[k])) by {
-                apply(click::separation::elements(v, j, k)) using { j != k; };
+                apply(click::separation::separate_elements(v, j, k)) using { j != k; };
             }
             have separate(statement(0).footprint, memory(v[k])) by {
                 normalize() using { separate(memory(v[j]), memory(v[k])); };

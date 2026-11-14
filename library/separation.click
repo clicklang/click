@@ -1,5 +1,5 @@
 // Resource descriptors name logical regions; these parameters carry no ownership.
-theorem restrict(A: Resource, B: Resource, a: Resource, b: Resource) {
+theorem separate_restrict(A: Resource, B: Resource, a: Resource, b: Resource) {
     requires separate(A, B);
     requires contains(A, a);
     requires contains(B, b);
@@ -7,7 +7,7 @@ theorem restrict(A: Resource, B: Resource, a: Resource, b: Resource) {
 }
 
 // Unequal indices describe disjoint complete elements, including padding.
-theorem elements<T, I>(p: T*, i: I, j: I) {
+theorem separate_elements<T, I>(p: T*, i: I, j: I) {
     requires i != j;
     ensures separate(memory(p[i]), memory(p[j]));
 }
@@ -19,7 +19,7 @@ theorem distinct_elements<T, I>(p: T*, i: I, j: I) {
 }
 
 // Bounds are in elements of T, not bytes. Descriptors grant no ownership.
-theorem subrange<T, I>(p: T*, lo: I, hi: I, inner_lo: I, inner_hi: I) {
+theorem contains_subrange<T, I>(p: T*, lo: I, hi: I, inner_lo: I, inner_hi: I) {
     requires lo <= inner_lo;
     requires inner_lo <= inner_hi;
     requires inner_hi <= hi;
@@ -61,7 +61,7 @@ theorem viewable_restrict(A: Resource, B: Resource) {
 }
 
 // Rebase one nonnegative element interval without inspecting its contents.
-theorem rebase<T, I>(p: T*, lo: I, hi: I) {
+theorem contains_rebase<T, I>(p: T*, lo: I, hi: I) {
     requires 0 <= to_integer(lo);
     requires lo <= hi;
     ensures contains(memory(p[lo..hi]), memory((p + lo)[0..hi-lo]));

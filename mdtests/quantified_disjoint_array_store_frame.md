@@ -33,7 +33,7 @@ void mark(int32 *next, int32 *visited, int32 n, int32 j) {
         apply(click::separation::contains_refl(memory(next[0..n])));
     }
     have separate(memory(visited[j]), memory(next[0..n])) by {
-        apply(click::separation::restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[j]), memory(next[0..n]))) using {
+        apply(click::separation::separate_restrict(memory(visited[0..n]), memory(next[0..n]), memory(visited[j]), memory(next[0..n]))) using {
             separate(memory(visited[0..n]), memory(next[0..n]));
             contains(memory(visited[0..n]), memory(visited[j]));
             contains(memory(next[0..n]), memory(next[0..n]));
