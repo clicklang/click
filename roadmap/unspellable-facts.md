@@ -269,7 +269,8 @@ full scaling plus fold/variable/rewrite selection passes all 1,870 tests.
 Opaque endpoints reuse their existing numeric observation identity. The full
 non-nightly proof corpus passes with zero fact-stability differences.
 
-6g activates machine fold roots in native import and specification evaluation.
+6g ([PR #2742](https://github.com/clicklang/click/pull/2742), merged) activates
+machine fold roots in native import and specification evaluation.
 Symbolic results retain all four common children; concrete evaluation retains
 accumulator values between iterations. Scoped collectors, substitution,
 checking, alpha identity and numeric observations consume common fold operands.
@@ -280,7 +281,20 @@ Native `MachineTerm` and `CValue` callers remain explicit compatibility consumer
 this does not remove those carriers or introduce a general lambda representation.
 Validation: the full scaling and related fold, scope, rewrite, identity and
 equality-graph selection passes all 2,113 tests. The full non-nightly proof
-corpus passes with zero fact-stability differences.
+corpus passes with zero fact-stability differences. The final correction keeps
+ordinary atom selection unchanged outside folds; all 1,849 scaling, fold and
+Rust import checks pass.
+
+6h prepares `KernelMatch`, ordered `KernelMatchArm` and `KernelConstructor`
+payloads. Scrutinees, typed binding descriptors, arm bodies and constructor
+fields are common handles. Scrutinees and bodies occupy a flat child slice;
+binding declarations remain in the corresponding arm scope. Explicit native conversions preserve all three
+result families and written binding names. Construction checks representation
+sorts only; it does not select a constructor, consult facts or validate proof
+evidence. Algebraic children retain the named legacy boundary until activation
+in 6m. These payloads are not live evaluator roots until scoped readers and
+Surface support are ready. The three focused payload tests and the full
+scaling selection (1,566 tests) pass.
 
 ## Chunk 5: execution value handoffs
 
