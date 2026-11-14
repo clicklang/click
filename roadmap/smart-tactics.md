@@ -186,10 +186,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 80 | 137 |
+| `mdtests/` | 75 | 129 |
 | `examples/` | 30 | 371 |
 | `library/` | 0 | 0 |
-| Total | 110 | 508 |
+| Total | 105 | 500 |
 
 The 18 mdtests with failure expectations still require migration while retaining
 their semantic refusals. Sixteen positive fixtures also supply exact input text
@@ -202,13 +202,15 @@ The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
 
 ### Migration blockers to resolve
 
-- `transport_computed_byte_read.md`: `contains_element` and `viewable_restrict`
-  establish the selected cell's viewability, but do not establish initialized
-  read definedness. The input `views` contract guarantees initialization; an
-  exact pure fact exposing that guarantee is absent, even after executing the
-  read. Publishing a quantified entry fact for initialized typed input ranges
-  is awaiting design approval. Do not infer initialization from viewability
-  alone or from ordinary ownership of potentially uninitialized storage.
+- `separate_adjacent_ranges` fails the standard-library declaration check: a
+  stated separation includes both ranges' byte-extent bounds, but its ordering
+  premises alone do not establish them. Resolve the validity premise before
+  merging the adjacent-range law; do not weaken the declaration check.
+- `transport_wide_viewable_range_to_element_definedness.md` has only a pure
+  `viewable` premise, not an initialized input memory clause. The new entry
+  initialization facts do not justify inferring initialized contents from
+  liveness alone. Reduce the legacy rule's initialization assumptions before
+  choosing its explicit replacement.
 - The unchanged `rbtree/rbtree-insert` example fails while re-folding its initial
   node, before its legacy transport calls. An explicit `node == identity`
   lookup moves the failure to the packed parent-pointer equality. Repair and

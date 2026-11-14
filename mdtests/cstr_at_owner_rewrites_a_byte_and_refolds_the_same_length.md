@@ -32,10 +32,17 @@ void poke(uint8* s, uint64 n) {
             instantiate(forall (k: uint64) { 0u64 <= k and k < n implies old(s[k]) != '\0' }, k) using {
                 0u64 <= k and k < n;
             };
-            transport(old(s[k]) != '\0', s[k] != '\0') using {
-                old(s[k]) != '\0';
-                k != 0u64;
-            };
+            have separate(memory(s[k]), memory(s[0u64])) by {
+                apply(click::separation::separate_elements(s, k, 0u64)) using { k != 0u64; };
+            }
+            have separate(statement(0).footprint, memory(s[k])) by {
+                normalize() using { separate(memory(s[k]), memory(s[0u64])); };
+            }
+            have s[k] == old(s[k]) by {
+                preserve(separate(statement(0).footprint, memory(s[k])));
+            }
+            rewrite(s[k] == old(s[k]));
+            assumption();
         }
     }
     have s[n] == '\0' by {
@@ -51,10 +58,13 @@ void poke(uint8* s, uint64 n) {
             instantiate(forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(n + 1u64) implies defined(old(s[k])) }, k) using {
                 0u64 <= k and to_integer(k) < to_integer(n + 1u64);
             };
-            transport(defined(old(s[k])), defined(s[k])) using {
-                defined(old(s[k]));
-                k != 0u64;
-            };
+            have separate(memory(s[k]), memory(s[0u64])) by {
+                apply(click::separation::separate_elements(s, k, 0u64)) using { k != 0u64; };
+            }
+            have separate(statement(0).footprint, memory(s[k])) by {
+                normalize() using { separate(memory(s[k]), memory(s[0u64])); };
+            }
+            preserve(separate(statement(0).footprint, memory(s[k])));
         }
     }
     fold(cstr_at(s, n));

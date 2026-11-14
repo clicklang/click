@@ -226,6 +226,20 @@ too; a member nothing wrote is still a read of uninitialized storage. A
 successful `realloc` keeps the old block's initialized bytes initialized up
 to the new size, and the bytes it grows by start uninitialized.
 
+For a directly admitted initialized input range of complete scalar or pointer
+cells, the entry also publishes a pure fact of the form
+`forall (k: int32) { lo <= k and k < hi implies defined(p[k]) }`
+(or `uint64` for a wide range). The binder ranges over the clause's element
+coordinates. Use ordinary `instantiate` with the two bounds to select a read.
+Publication constructs one quantified fact per admitted clause; it does not
+visit the cells or inspect memory history. The fact describes the entry
+snapshot, not every later state. Inactive guarded clauses, `uninitialized(...)`
+inputs, and constructor destination storage do not supply it. Aggregate ranges
+with padding or multiple cell types do not supply a scalar-array fact.
+See [`initialized_input_ranges_publish_definedness.md`](https://github.com/clicklang/click/blob/master/mdtests/initialized_input_ranges_publish_definedness.md),
+[`uninitialized_input_does_not_publish_definedness.md`](https://github.com/clicklang/click/blob/master/mdtests/uninitialized_input_does_not_publish_definedness.md),
+and [`initialized_input_fact_does_not_survive_free.md`](https://github.com/clicklang/click/blob/master/mdtests/initialized_input_fact_does_not_survive_free.md).
+
 A checked call retains input propositions independently established by the
 incoming context's indexed facts and scalar condition checker. Retention does
 not repeat memory or ownership derivations, and a pending call obligation
