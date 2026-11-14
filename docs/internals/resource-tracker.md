@@ -234,7 +234,7 @@ established.
 | `LocalLifetimeEnded` | separate under the extended-bridging gate, on general distinctness | separate when the retired object is proven distinct | separate when the retired object is proven distinct from the object every range is in |
 | `HeapFreed` | separate on two separation ladders, both inside the extended-bridging gate | separate when the released allocation's object is proven distinct | separate when the released bytes miss every range |
 | `CallHavoc` | separate on range disjointness, or when a range the caller kept owning holds the cell | separate when every declared range's object is proven distinct | separate when every declared range misses every range |
-| `LoopHavoc(Some)` | separate under the extended-bridging and explicit-check gates, and never on the naming path | separate when every declared range's object is proven distinct | separate when every declared range misses every range |
+| `LoopHavoc(Some)` | separate when every declared range's object is proven distinct; otherwise only under the extended-bridging and explicit-check gates, and never on the naming path | separate when every declared range's object is proven distinct | separate when every declared range misses every range |
 | `LoopHavoc(None)` | never separate | never separate | never separate |
 | `BranchJoin` | separate when checked paths from every incoming arm preserve the full byte range back to their common history | stops conservatively | stops conservatively |
 

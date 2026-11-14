@@ -1496,3 +1496,38 @@ fn structural_read_dependencies_keep_the_observed_point_and_exact_width() {
     assert_eq!(reads[0].point, ProgramPoint::at(&origin));
     assert_eq!(crate::kernel::eval::load_variable_registry_len(), 0);
 }
+
+/// A read's version point does not depend on which point was asked first.
+/// A loop that writes only `g` leaves `h` alone, as the block rule says; a
+/// cell of `h` crosses it too, so a read of `h[0]` after a store to `h[1]`
+/// and one right after the loop name the same point in either order.
+#[test]
+fn a_cell_version_point_is_the_same_whichever_point_is_asked_first() {
+    let entry = entry_memory();
+    let ranges = vec![MemoryRange::new(
+        at(block("global:g"), 0),
+        MachineTerm::constant(0),
+        MachineTerm::constant(4),
+    )];
+    let after_loop = entry.clone().with_loop_memory_havoc_preserving_loans(
+        Variable(904),
+        &std::collections::BTreeSet::new(),
+        Some(&ranges),
+        None,
+    );
+    let after_store = after_loop.clone().store(at(block("global:h"), 4), one());
+    let cell = at(block("global:h"), 0);
+    let ask = |memory: &Memory| cell_last_same_point(&intern_memory(memory.clone()), &cell, 4);
+    clear_version_memos();
+    let store_first = (ask(&after_store), ask(&after_loop));
+    clear_version_memos();
+    let after_loop_answer = ask(&after_loop);
+    let loop_first = (ask(&after_store), after_loop_answer);
+    assert_eq!(store_first, loop_first);
+    assert_eq!(store_first.0, store_first.1);
+    assert_ne!(
+        store_first.0,
+        Some(intern_memory(after_loop.clone())),
+        "a loop that writes only `g` is crossed by a read of `h`"
+    );
+}
