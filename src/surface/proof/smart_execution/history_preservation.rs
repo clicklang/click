@@ -121,6 +121,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(crate::kernel::Resource::Memory(changed)) = footprint.members.front() else {
                 continue;
             };
+            let point = |kind| {
+                SnapshotSelector::ProgramPoint(ProgramPointRef {
+                    region: region.clone(),
+                    kind,
+                })
+            };
+            let equality = ClickProposition::Comparison {
+                left: at(&point(ProgramPointKind::Exit), read.clone()),
+                operator: ComparisonOperator::Equal,
+                right: at(&point(ProgramPointKind::Entry), read.clone()),
+            };
+            // Declarations and local bookkeeping can already leave this read
+            // unchanged. State that equality directly before planning a write proof.
+            if let Some(unchanged) = attempt::candidate_outcome(have(
+                &proof,
+                equality.clone(),
+                vec![ProofStep::Assumption],
+            ))? {
+                proof = unchanged;
+                continue;
+            }
             let footprint_separation = ClickProposition::Separate {
                 left: ResourceSubject::Footprint(region.clone()),
                 right: cell.clone(),
@@ -133,7 +154,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &BTreeMap::new(),
                 )
                 .ok_or_else(|| {
-                    proof.step_error("recorded write resource has no Surface spelling")
+                    proof.step_error(format!(
+                        "recorded write resource has no Surface spelling: {region:?}: {changed:?}"
+                    ))
                 })?;
             let direct_separation = ClickProposition::At {
                 selector: selector.clone(),
@@ -142,13 +165,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     right: cell.clone(),
                 }),
             };
-            let mut candidate = have(
-                &proof,
-                direct_separation.clone(),
-                vec![ProofStep::Assumption],
-            )
-            .ok()
-            .map(|p| (p, direct_separation));
+            let mut candidate = if let Some(scope) =
+                attempt::candidate_outcome(proof.driver().open_have(direct_separation.clone()))?
+                && let Some(closed) = scope.driver().try_solve_closure()?
+            {
+                Some((closed.join()?, direct_separation))
+            } else {
+                None
+            };
             if candidate.is_none() && changed.base().block == base_pointer.block {
                 let delta = if base_pointer.offset == PointerOffsetTerm::Constant(0) {
                     Some(&changed.base().offset)
@@ -224,22 +248,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            let point = |kind| {
-                SnapshotSelector::ProgramPoint(ProgramPointRef {
-                    region: region.clone(),
-                    kind,
-                })
-            };
-            let equality = ClickProposition::Comparison {
-                left: at(&point(ProgramPointKind::Exit), read.clone()),
-                operator: ComparisonOperator::Equal,
-                right: at(&point(ProgramPointKind::Entry), read.clone()),
-            };
-            if let Some(preserved) = attempt::candidate_outcome(have(
+            let result = have(
                 &separated,
                 equality,
                 vec![ProofStep::Preserve(footprint_separation)],
-            ))? {
+            );
+            #[cfg(test)]
+            if let Err(ref error) = result {
+                eprintln!("INDEXED PRESERVE {region:?}: {}", error.report());
+            }
+            if let Some(preserved) = attempt::candidate_outcome(result)? {
                 proof = preserved;
             }
         }

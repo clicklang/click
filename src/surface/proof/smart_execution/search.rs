@@ -422,7 +422,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("fact_transport_candidate_search");
-        if let Some(proof) = Self::try_history_indexed_preservation(search_input, source, target)? {
+        let indexed = Self::try_history_indexed_preservation(search_input, source, target);
+        #[cfg(test)]
+        if let Err(ref error) = indexed {
+            eprintln!("INDEXED SEARCH: {}", error.report());
+        }
+        if let Some(proof) = indexed? {
             return Ok(Ok(proof));
         }
         let apply = |premises: Vec<ClickProposition>| {

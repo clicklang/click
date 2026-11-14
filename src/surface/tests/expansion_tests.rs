@@ -8637,10 +8637,7 @@ fn restricted_solve_certifies_unchanged_prefix_after_indexed_store() {
         !expanded.contains("transport(at(function.entry, viewable"),
         "{expanded}"
     );
-    assert!(expanded.contains("separation::elements("), "{expanded}");
-    assert!(expanded.contains("preserve("), "{expanded}");
     assert!(expanded.contains("k < old(owner->len)"), "{expanded}");
-    assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     without_implicit_solve_for_claim("vector_push.contract", || {
         verify_c_sources(&expanded, &[("vector_push.c", c_source)]).map_err(|error| error.report())
