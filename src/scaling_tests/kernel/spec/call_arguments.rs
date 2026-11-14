@@ -29,6 +29,7 @@ fn call_argument_paths_retain_shared_prefixes_without_exporting() {
                 scope,
                 &argument,
                 &PureFactContext::new(),
+                false,
                 &mut SpecEvaluation::logical(&mut execution),
             )
             .unwrap()

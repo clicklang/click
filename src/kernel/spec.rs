@@ -4210,6 +4210,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         scope,
                         argument,
                         &path_assumptions,
+                        false,
                         budget,
                     )?;
                     let mut argument_paths = argument_paths.into_iter().peekable();
@@ -5447,6 +5448,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
                 scope,
                 argument,
                 &path_assumptions,
+                false,
                 budget,
             )?;
             let domain = argument_paths
@@ -7734,6 +7736,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 scope,
                 argument,
                 &path_assumptions,
+                result_type.is_pointer(),
                 budget,
             )?;
             let mut argument_paths = argument_paths.into_iter().peekable();
@@ -8055,6 +8058,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
     scope: SpecScope<'_>,
     argument: &SpecPureFunctionArgument,
     assumptions: &PureFactContext,
+    retain_pointers: bool,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPureFunctionArgumentPath>> {
     let state = scope.state;
@@ -8068,6 +8072,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 scope,
                 argument,
                 assumptions,
+                retain_pointers,
                 budget,
             )?;
             Ok(paths
@@ -8151,7 +8156,13 @@ fn evaluate_spec_pure_function_argument_paths_in(
             Ok(paths
                 .into_iter()
                 .map(|path| SpecPureFunctionArgumentPath {
-                    value: SpecCallArgument::from_value(path.value),
+                    value: if !retain_pointers && path.value.program_type().is_pointer() {
+                        SpecCallArgument::Native(PureFunctionArgument::Value(
+                            path.value.into_native(),
+                        ))
+                    } else {
+                        SpecCallArgument::from_value(path.value)
+                    },
                     facts: path.facts,
                     obligations: path.obligations,
                 })
@@ -8200,7 +8211,8 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 // Preserve the existing selected snapshot; retain the pointer
                 // expression separately from its native descriptor reading.
                 let memory = array_ref_argument_memory(memory, &path.value.native());
-                let value = if budget.machine_result_production_disabled
+                let value = if !retain_pointers
+                    || budget.machine_result_production_disabled
                     || !path.value.program_type().is_pointer()
                 {
                     SpecCallArgument::Native(PureFunctionArgument::ArrayRef {
