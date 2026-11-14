@@ -83,7 +83,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 3 | Pure-function arguments and results | In progress. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. The integer machine call-result sequence 3a–3f below completes common result production and its consumers; pointer, algebraic, Boolean and floating-point result families remain separate work. |
 | 4 | Mixed-width arithmetic and casts | Implemented as subchunks 4a–4j below, one PR per subchunk. Numeric producers retain shared operands and results within the existing supported profile. General call and nonnumeric compatibility boundaries belong to the remaining packages; the previous combined branch stays unmerged reference material. |
 | 5 | C/Rust execution result carriers | Supported machine handoffs implemented in 5a–5g below: expression paths, local bindings, returns and caller receipt retain common roots. Native memory-cell, specification and presentation boundaries remain explicit. |
-| 6 | Folds, binders and algebraic matches | Open |
+| 6 | Folds, binders and algebraic matches | In progress |
 | 7 | Complete pointers and read addresses | Open |
 | 8 | Remaining Boolean and opaque expression payloads | Open |
 | 9 | Unified raising/lowering and certificate boundaries | Open |
@@ -207,12 +207,24 @@ and constructor reduction rules. No new search, indexes or larger budgets.
 | 6m | Algebraic match producers | Algebraic result matches retain common structure; other producers have named compatibility boundaries. |
 | 6n | Closure | Remove superseded adapters and validate nested folds/matches/calls, fact stability, exact round trips and scaling. |
 
-6a prepares the typed `KernelFold` payload without registering a live
+6a ([PR #2731](https://github.com/clicklang/click/pull/2731), merged)
+prepares the typed `KernelFold` payload without registering a live
 `KernelTermNode` variant or switching evaluator production. This deliberately
 keeps new roots unavailable until their scoped readers and Surface support are
 ready. Integer results preserve Int32, UInt64 and Integer range kinds; the
 existing symbolic machine fold retains its Int32 range and result profile.
 This is preparation, not closure of the fold boundary.
+
+6b prepares common-child readers for Integer-free, expression-free, C-capture
+and typed binder variables, plus current-memory read dependencies. Variable
+summaries use the existing persistent set representation and a traversal-local
+memo keyed by common node identity; filtering body binders never changes the
+summary of the same root used as an initial value. Native opaque leaves keep
+their existing registry, snapshot and call-connection rules. Dependency queries
+retain selected widths and recheck the current snapshot on each call. These
+readers remain staged until common fold roots are activated. Validation: nine
+focused parity/scaling cases and the full scaling plus related-reader selection
+(1,574 tests) pass.
 
 ## Chunk 5: execution value handoffs
 

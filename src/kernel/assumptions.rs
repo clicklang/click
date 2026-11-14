@@ -1,3 +1,6 @@
+// Staged common fold dependency reader; activated with fold producers.
+#[allow(dead_code)]
+mod retained_folds;
 use super::execution_facts::ContextFactKey;
 use super::prelude::*;
 #[cfg(test)]
