@@ -18,6 +18,8 @@ pub(crate) use matches::KernelMatchArm;
 mod reads;
 // Prepared pointer payloads; producer activation follows scoped consumers and spelling.
 #[allow(dead_code)]
+mod addresses;
+#[allow(dead_code)]
 mod offsets;
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
