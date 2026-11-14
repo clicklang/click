@@ -2037,10 +2037,13 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
     }
     // A tactic's proof is checked with a fixed ending on every live path: one
     // step over the empty procedure's `return`, then an `assumption` per
-    // claim. That ending is supplied by the checker and cannot be written in
+    // claim, followed by the ordinary contract-closing proofs. The ending is
+    // supplied by the checker and cannot be written in
     // a tactic's proof, which runs no code, so the expansion leaves it out.
     let mut tactics = certificate.to_proof_tactics();
-    let ending = 1 + theorem.function_block.ensures().len();
+    let ending = 1
+        + theorem.function_block.ensures().len()
+        + crate::kernel::proof::ContractClosingGoal::COUNT;
     remove_tactic_procedure_ending(&mut tactics, ending).map_err(|()| {
         ClickError::new(format!(
             "the expanded proof of tactic `{}` does not end in the step and {} closing assumption(s) its check supplies",

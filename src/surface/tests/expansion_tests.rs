@@ -313,7 +313,7 @@ fn signed_division_ordinary_domains_expand_without_implicit_solving() {
 fn loop_guard_call_results_expand_with_source_region_names() {
     let c = "int poll(int x) { return x; } int spin(int x) { while (poll(x) == 0) { } return 1; }";
     let source = r#"verifying "poll.c";
-        int32 poll(int32 x) { ensures result == x; } by { step(); solve(); }
+        int32 poll(int32 x) { ensures result == x; } by { step(); solve(); assumption(); assumption(); assumption(); }
         int32 spin(int32 x) diverges { ensures result == 1; } by {
             loop diverges { }
             step();
@@ -19068,19 +19068,18 @@ int32 caller(int32 a, int32 b) {
         .expect("the second entry's body closes");
     let mut without_second = expanded.clone();
     without_second.replace_range(second..second_end, "");
-    let error = crate::surface::proof::without_implicit_solve(|| {
-        verify_c0_sources(&without_second, &c_sources)
+    let error = without_implicit_solve_for_claim("caller.ensures_0", || {
+        verify_c0_sources(&without_second, &c_sources).map_err(|error| error.report())
     })
     .expect_err("with the implicit `solve` off, deleting an entry leaves its obligation unproved");
     // Compare without grouping parentheses, which the diagnostic renderer may
     // or may not print around each disjunct.
     assert!(
         error
-            .message()
             .replace(['(', ')'], "")
             .contains("is_positiveb == 1 or is_positivea == 1"),
         "the refusal should name the unproved obligation: {}",
-        error.message()
+        error
     );
 }
 
@@ -20208,7 +20207,10 @@ fn disjunctive_loop_entry_keeps_one_preservation_certificate() {
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_c0_claim_source_by_label(&source, &sources, "either.contract").unwrap();
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve_for_claim("either.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]
@@ -20971,8 +20973,10 @@ fn loop_owned_view_call_expands_and_replays() {
     let verified =
         verify_c0_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
     let expanded = expand_checked_grouped_claim(&source, &verified, "caller").unwrap();
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
-        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]

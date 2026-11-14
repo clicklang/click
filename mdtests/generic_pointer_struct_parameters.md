@@ -45,6 +45,8 @@ void inspect(struct item *p, struct other *q, struct item **pp) {
         apply(nested(p as (int32 *), 0, 4, 1, 3)) using {};
     }
     step_until(function.exit);
+    normalize();
+    assumption(); assumption(); assumption();
 }
 ```
 

@@ -29,6 +29,8 @@ void keep(uint8* bytes, int32 i, int32 k) {
         }
     }
     step_until(function.exit);
+    assumption();
+    assumption(); assumption(); assumption();
 }
 ```
 

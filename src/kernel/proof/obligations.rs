@@ -336,6 +336,8 @@ impl ContractClosingGoal {
         Self::WriteFootprint,
     ];
 
+    pub(crate) const COUNT: usize = Self::ORDER.len();
+
     pub(crate) fn description(self) -> &'static str {
         match self {
             Self::ReturnedResources => "joint returned resources",
@@ -364,7 +366,7 @@ impl ContractClosingGoals {
         crate::instrumentation::record_deterministic_work(1);
         ContractClosingGoal::ORDER
             .into_iter()
-            .find(|goal| self.open & goal.bit() != 0)
+            .find(|goal| !self.is_closed(*goal))
     }
 
     pub(crate) fn is_closed(self, goal: ContractClosingGoal) -> bool {
@@ -904,6 +906,24 @@ mod outcome_claim_goal_tests {
                     state: Box::new(crate::kernel::CState::new()),
                 },
                 &crate::kernel::PureFactContext::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            transitioned.first_open_goal(),
+            Some(ContractClosingGoal::ReturnedResources)
+        );
+        let path = &execution.paths()[0];
+        let specification =
+            crate::kernel::CheckedPathSpecification::new(execution.function(), path).unwrap();
+        let transitioned = transitioned
+            .prove_goal(
+                ContractClosingGoal::ReturnedResources,
+                &execution,
+                path,
+                &specification,
+                &core,
+                goal.claims.as_ref().unwrap(),
+                &super::super::ProofFacts::from_ordered(&[]),
             )
             .unwrap();
         goal.closing = Some(transitioned.clone());

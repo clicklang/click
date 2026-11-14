@@ -125,6 +125,7 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
                     }}
                 }}
                 step();
+                assumption(); assumption(); assumption(); assumption();
             }}
         "#
         );
@@ -315,6 +316,7 @@ fn transport_certificate_resource_descriptors_follow_call_bindings() {
         } by {
             step() { requires separate(memory(*p), other) by assumption(); }
             step();
+            assumption(); assumption(); assumption(); assumption(); assumption();
         }
     "#
     );

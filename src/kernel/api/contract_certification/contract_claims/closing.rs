@@ -88,6 +88,8 @@ impl CContractClosingContext {
             path_index,
             outcome: outcome.identity.clone(),
             goals: ContractClosingGoals::open(),
+            checked_transition: None,
+            effects: None,
         }
     }
 
@@ -139,14 +141,25 @@ impl CContractClosingContext {
 }
 
 /// The contract closer opens these goals before post-execution tactics.
-/// A returned resource transition discharges its resource goal, while
-/// allocation lifetime and write footprints retain their own obligations.
+/// Checked resource transitions retain evidence; ordinary proof operations
+/// discharge returned resources, allocation lifetime, and write footprints.
 #[derive(Clone)]
 pub(crate) struct CContractExitObligations {
     context: Arc<CContractClosingContext>,
     path_index: usize,
     outcome: OutcomeIdentity,
     goals: ContractClosingGoals,
+    checked_transition: Option<CheckedResourceTransition>,
+    effects: Option<Arc<PreparedEffectGoals>>,
+}
+
+/// Evidence supplied by the checked resource producer, not a closed goal.
+#[derive(Clone, Copy)]
+struct CheckedResourceTransition;
+
+struct PreparedEffectGoals {
+    base: ProofFacts,
+    paths: Vec<CertifiedFunctionClaimPath>,
 }
 
 /// Evidence consumed by registration, never a request to check a path again.
@@ -206,6 +219,7 @@ pub(crate) enum CContractClosingRefusal {
     Write(Pointer),
     Range(CMemoryRange),
     Storage(Vec<crate::kernel::functions::StorageWriteOutsideFootprint>),
+    Pending(ContractClosingGoal),
 }
 
 impl CContractExitObligations {
@@ -227,12 +241,15 @@ impl CContractExitObligations {
                 .goals
                 .reopen(ContractClosingGoal::ReturnedResources)
                 .reopen(ContractClosingGoal::AllocationLifetime),
+            checked_transition: None,
+            effects: None,
             ..self.clone()
         }
     }
 
-    /// Apply the returned resource transition. Lifetime and boundary goals
-    /// remain open: this operation does not prove either of them.
+    /// Retain the checked producer's resource/lifetime evidence. Ordinary
+    /// closing operations still discharge the corresponding goals, including
+    /// any retained boundary refusal the resource producer does not cover.
     pub(crate) fn apply_resource_transition(
         &self,
         caller: &CState,
@@ -251,15 +268,151 @@ impl CContractExitObligations {
         }
         Ok((
             Self {
-                goals: self.goals.close(ContractClosingGoal::ReturnedResources),
+                checked_transition: Some(CheckedResourceTransition),
                 ..self.clone()
             },
             outcome,
         ))
     }
 
-    /// Discharge the remaining ordinary closing goals, using the checked
-    /// outcome and the claim completions retained on this exact proof branch.
+    /// One primitive proof of the currently selected closing obligation.
+    pub(crate) fn prove_goal(
+        &self,
+        kind: ContractClosingGoal,
+        execution: &CCheckedFunctionExecution,
+        path: &SymbolicCExecutionPath,
+        specification: &CheckedPathSpecification,
+        outcome: &OutcomeProofCore,
+        claims: &OutcomeClaimGoals,
+        facts: &ProofFacts,
+    ) -> Result<Self, CContractClosingRefusal> {
+        if !self.outcome.same_as(&outcome.identity) {
+            return Err(CContractClosingRefusal::Resource(
+                "closing obligations belong to another outcome".into(),
+            ));
+        }
+        if self.first_open_goal() != Some(kind) {
+            return Err(CContractClosingRefusal::Resource(
+                "the selected closing goal is not open".into(),
+            ));
+        }
+        let input_units = match kind {
+            ContractClosingGoal::ReturnedResources => {
+                self.context.resource_claims.len() + path.obligations().len() + 1
+            }
+            ContractClosingGoal::AllocationLifetime => self.context.resource_claims.len() + 1,
+            ContractClosingGoal::WriteFootprint => {
+                path.effect_facts.len() + self.context.effect_claims.len() + 1
+            }
+        };
+        let _checking =
+            crate::instrumentation::CheckingWorkScope::new("contract closing", input_units);
+        let mut proved = self.clone();
+        match kind {
+            ContractClosingGoal::ReturnedResources => {
+                if !outcome.is_exceptional {
+                    if let CFunctionOutcome::RuntimeError(error) =
+                        specification.specification().outcome()
+                    {
+                        if (self.context.complete_boundary && self.checked_transition.is_none())
+                            || !crate::kernel::functions::is_deferred_conditional_resource_effect_error(error)
+                        { return Err(CContractClosingRefusal::Runtime(error.clone())); }
+                    }
+                }
+                let receipts_closed = !self.context.complete_boundary
+                    || !execution
+                        .deferred_contract_exits
+                        .get(self.path_index)
+                        .copied()
+                        .unwrap_or(false);
+                let resources_closed = self.checked_transition.is_some()
+                    || receipts_closed
+                        && matches!(
+                            specification.specification().outcome(),
+                            CFunctionOutcome::Return { .. }
+                        )
+                        && self.resource_receipts_jointly_available(
+                            outcome,
+                            claims,
+                            facts.assumptions(),
+                        );
+                let paths = self.prove_resource_goals(
+                    execution,
+                    path,
+                    outcome,
+                    claims,
+                    facts,
+                    !outcome.is_exceptional && !resources_closed,
+                )?;
+                if !self.context.effect_claims.is_empty() {
+                    proved.effects = Some(Arc::new(PreparedEffectGoals {
+                        base: facts.clone(),
+                        paths,
+                    }));
+                }
+            }
+            ContractClosingGoal::AllocationLifetime => {
+                if !outcome.is_exceptional
+                    && self.context.complete_boundary
+                    && self.checked_transition.is_none()
+                {
+                    self.prove_allocation_lifetime(outcome, claims, facts)?;
+                }
+            }
+            ContractClosingGoal::WriteFootprint => {
+                if !self.context.effect_claims.is_empty() {
+                    let effects = self.effects.as_ref().ok_or_else(|| {
+                        CContractClosingRefusal::Resource(
+                            "the resource goal has not prepared the effect input".into(),
+                        )
+                    })?;
+                    let delta = facts.introduced_since(&effects.base).ok_or_else(|| {
+                        CContractClosingRefusal::Resource(
+                            "the effect goal belongs to another proof context".into(),
+                        )
+                    })?;
+                    let no_propositions = CheckedPropositionIndex::default();
+                    for prepared in &effects.paths {
+                        let assumptions =
+                            assumptions_with_propositions(&prepared.assumptions, &delta);
+                        for claim in &self.context.effect_claims {
+                            if !function_claim_holds_on_prepared_path(
+                                &self.context.function,
+                                claim,
+                                prepared,
+                                &no_propositions,
+                                None,
+                                Some(&assumptions),
+                            ) {
+                                return Err(CContractClosingRefusal::Claim(claim.key().clone()));
+                            }
+                        }
+                    }
+                }
+                self.prove_footprint(path, facts.assumptions())?;
+            }
+        }
+        proved.goals = proved.goals.close(kind);
+        Ok(proved)
+    }
+
+    /// Consume completed goal evidence; no semantic checker runs here.
+    pub(crate) fn completion(
+        &self,
+        path: &SymbolicCExecutionPath,
+    ) -> Result<CClosedContractExit, CContractClosingRefusal> {
+        if let Some(goal) = self.first_open_goal() {
+            return Err(CContractClosingRefusal::Pending(goal));
+        }
+        Ok(CClosedContractExit {
+            path_index: self.path_index,
+            origin: path.theorem.clone(),
+            resources: self.context.resource_keys.clone(),
+            complete_boundary: self.context.complete_boundary,
+        })
+    }
+
+    #[cfg(test)]
     pub(crate) fn close(
         &self,
         execution: &CCheckedFunctionExecution,
@@ -269,84 +422,13 @@ impl CContractExitObligations {
         claims: &OutcomeClaimGoals,
         facts: &ProofFacts,
     ) -> Result<(Self, CClosedContractExit), CContractClosingRefusal> {
-        if !self.outcome.same_as(&outcome.identity) {
-            return Err(CContractClosingRefusal::Resource(
-                "closing obligations belong to another outcome".into(),
-            ));
+        let mut current = self.clone();
+        while let Some(kind) = current.first_open_goal() {
+            current =
+                current.prove_goal(kind, execution, path, specification, outcome, claims, facts)?;
         }
-        let mut closed = self.clone();
-        if !outcome.is_exceptional {
-            if let CFunctionOutcome::RuntimeError(error) = specification.specification().outcome() {
-                if (closed.context.complete_boundary
-                    && !closed
-                        .goals
-                        .is_closed(ContractClosingGoal::ReturnedResources))
-                    || !crate::kernel::functions::is_deferred_conditional_resource_effect_error(
-                        error,
-                    )
-                {
-                    return Err(CContractClosingRefusal::Runtime(error.clone()));
-                }
-            }
-            // A checked returned-resource transition discharges only the
-            // resource goal. It does not discharge lifetime or effects.
-            let receipt_resources_closed = !closed
-                .goals
-                .is_closed(ContractClosingGoal::ReturnedResources)
-                && (!closed.context.complete_boundary
-                    || !execution
-                        .deferred_contract_exits
-                        .get(self.path_index)
-                        .copied()
-                        .unwrap_or(false))
-                && matches!(
-                    specification.specification().outcome(),
-                    CFunctionOutcome::Return { .. }
-                )
-                && closed.resource_receipts_jointly_available(outcome, claims, facts.assumptions());
-            closed.prove_resource_goals(
-                execution,
-                path,
-                outcome,
-                claims,
-                facts,
-                !closed
-                    .goals
-                    .is_closed(ContractClosingGoal::ReturnedResources)
-                    && !receipt_resources_closed,
-            )?;
-            closed.goals = closed.goals.close(ContractClosingGoal::ReturnedResources);
-            if !closed
-                .goals
-                .is_closed(ContractClosingGoal::AllocationLifetime)
-            {
-                if closed.context.complete_boundary {
-                    closed.prove_allocation_lifetime(outcome, claims, facts)?;
-                }
-                closed.goals = closed.goals.close(ContractClosingGoal::AllocationLifetime);
-            }
-        } else {
-            // Normal resource ensures are vacuous on a throw; explicit
-            // effect claims and actual writes still require their proofs.
-            closed.prove_resource_goals(execution, path, outcome, claims, facts, false)?;
-            closed.goals = closed
-                .goals
-                .close(ContractClosingGoal::ReturnedResources)
-                .close(ContractClosingGoal::AllocationLifetime);
-        }
-        if !closed.goals.is_closed(ContractClosingGoal::WriteFootprint) {
-            closed.prove_footprint(path, facts.assumptions())?;
-            closed.goals = closed.goals.close(ContractClosingGoal::WriteFootprint);
-        }
-        Ok((
-            closed,
-            CClosedContractExit {
-                path_index: self.path_index,
-                origin: path.theorem.clone(),
-                resources: self.context.resource_keys.clone(),
-                complete_boundary: self.context.complete_boundary,
-            },
-        ))
+        let completed = current.completion(path)?;
+        Ok((current, completed))
     }
 
     /// Clause receipts prove individual ownership. Consume their explicit
@@ -386,13 +468,13 @@ impl CContractExitObligations {
         claims: &OutcomeClaimGoals,
         facts: &ProofFacts,
         check_resources: bool,
-    ) -> Result<(), CContractClosingRefusal> {
+    ) -> Result<Vec<CertifiedFunctionClaimPath>, CContractClosingRefusal> {
         let context = &self.context;
         // A successful checked transition has resolved this boundary. The
         // original execution's deferred marker predates post-return folds;
         // replaying it would discard the transition's established custody.
         let deferred = self.context.complete_boundary
-            && !self.goals.is_closed(ContractClosingGoal::ReturnedResources)
+            && self.checked_transition.is_none()
             && execution
                 .deferred_contract_exits
                 .get(self.path_index)
@@ -402,7 +484,7 @@ impl CContractExitObligations {
             && context.effect_claims.is_empty()
             && !deferred
         {
-            return Ok(());
+            return Ok(Vec::new());
         }
         let cases = if deferred {
             contract_resource_condition_cases(
@@ -443,6 +525,7 @@ impl CContractExitObligations {
                 }
             }
         }
+        let mut effect_paths = Vec::new();
         for case in cases {
             let mut path = path.clone();
             path.assumptions = assumptions_with_propositions(&path.assumptions, &case);
@@ -481,24 +564,23 @@ impl CContractExitObligations {
                 _ => {}
             }
             let no_propositions = CheckedPropositionIndex::default();
-            for claim in context
-                .resource_claims
-                .iter()
-                .filter(|_| check_resources)
-                .chain(&context.effect_claims)
-            {
+            for claim in context.resource_claims.iter().filter(|_| check_resources) {
                 if !function_claim_holds_on_prepared_path(
                     &context.function,
                     claim,
                     &prepared,
                     &no_propositions,
                     None,
+                    None,
                 ) {
                     return Err(CContractClosingRefusal::Claim(claim.key().clone()));
                 }
             }
+            if !context.effect_claims.is_empty() {
+                effect_paths.push(prepared);
+            }
         }
-        Ok(())
+        Ok(effect_paths)
     }
 
     fn prove_allocation_lifetime(
