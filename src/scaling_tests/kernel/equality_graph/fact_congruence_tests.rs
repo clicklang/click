@@ -255,8 +255,8 @@ fn simplified_pointer_read_retention_work(count: u64, unrelated: u64) -> usize {
             let address = Pointer::symbolic(Variable(92000 + index));
             let read = Pointer::loaded_value(&memory, &address);
             let named = Pointer::symbolic(Variable(93000 + index));
-            let value =
-                CPointerValue::new(read.clone(), CType::Int32Pointer).with_address(named.clone());
+            let value = PointerValue::new(read.clone(), ProgramType::Int32Pointer)
+                .with_address(named.clone());
             let fact = crate::kernel::ExecutionPureFact::logical_read_equation(value, read.clone());
             (fact, named, read)
         })
@@ -302,8 +302,8 @@ fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
         offset: PointerOffsetTerm::Constant(0),
     };
     let mut memory =
-        intern_c_memory(CMemory::new().store(other.clone(), CValue::UInt32(0u32.into())));
-    let name = |memory: &SharedCMemory, cell: &Pointer| {
+        intern_c_memory(CMemory::new().store(other.clone(), ProgramValue::UInt32(0u32.into())));
+    let name = |memory: &SharedMemory, cell: &Pointer| {
         Pointer::loaded_value(
             &crate::kernel::memory_provenance::canonical_value_load_memory(memory, cell, 8),
             cell,
@@ -322,7 +322,7 @@ fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
                 memory
                     .memory()
                     .clone()
-                    .store(other.clone(), CValue::UInt32(index.into())),
+                    .store(other.clone(), ProgramValue::UInt32(index.into())),
             );
             assert_eq!(named, name(&memory, &cell));
             assert!(context.pointers_known_equal(&named, &Pointer::loaded_value(&memory, &cell)));
@@ -367,17 +367,19 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
             );
         }
         let slot = Pointer::symbolic(Variable(988_001));
-        let mut value =
-            CPointerValue::new(Pointer::symbolic(Variable(988_002)), CType::Int32Pointer);
+        let mut value = PointerValue::new(
+            Pointer::symbolic(Variable(988_002)),
+            ProgramType::Int32Pointer,
+        );
         let mut memory = CMemory::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..steps {
                 memory = memory
                     .clone()
-                    .store(slot.clone(), CValue::Pointer(value.clone()));
-                let next = CPointerValue::new(
+                    .store(slot.clone(), ProgramValue::Pointer(value.clone()));
+                let next = PointerValue::new(
                     Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 );
                 assert!(facts.equality_graph.knows_condition(
                     &ConditionTerm::PointerValueEqual(Box::new(next.clone()), Box::new(value)),
@@ -417,7 +419,7 @@ fn pointer_domain_queries_scale_with_selected_read_definitions() {
             for _ in 0..steps {
                 memory = memory.clone().store(
                     slot.clone(),
-                    CValue::typed_pointer(previous.clone(), CType::Int32Pointer),
+                    ProgramValue::typed_pointer(previous.clone(), ProgramType::Int32Pointer),
                 );
                 let read = Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot);
                 assert!(graph.designations_equal(&read, &target));

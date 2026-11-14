@@ -645,7 +645,7 @@ struct EqualityGraphState {
     /// Definitions consumed for this selected read. New observations may
     /// name an existing version; seeing the value once does not freeze them.
     logical_pointer_sources:
-        crate::persistent::PersistentMap<Pointer, [Option<crate::kernel::SharedCMemory>; 3]>,
+        crate::persistent::PersistentMap<Pointer, [Option<crate::kernel::SharedMemory>; 3]>,
     /// Compound query dependencies already registered at this metadata
     /// generation. Later producer definitions invalidate a miss lazily.
     logical_query_dependencies: crate::persistent::PersistentMap<Pointer, u64>,
@@ -703,7 +703,7 @@ impl EqualityGraph {
     pub(in crate::kernel) fn register_pointer_read_definition(
         &self,
         value: &Pointer,
-        memory: &crate::kernel::SharedCMemory,
+        memory: &crate::kernel::SharedMemory,
         address: &Pointer,
     ) {
         // A loaded-pointer identity is its own definition.
@@ -775,8 +775,8 @@ impl EqualityGraph {
     /// The equality and its memo invalidation stay local to this branch.
     pub(in crate::kernel) fn add_checked_pointer_value_equality(
         &self,
-        left: &CPointerValue,
-        right: &CPointerValue,
+        left: &PointerValue,
+        right: &PointerValue,
     ) {
         self.add_checked_read_equality(left.pointer(), right.pointer());
         let mut state = self.state.lock().expect("equality graph");
@@ -969,7 +969,7 @@ impl EqualityGraph {
         for (read, stored) in stored_values {
             state
                 .terms
-                .add_pointer_value_equality(&CPointerValue::new(read, stored.c_type()), &stored);
+                .add_pointer_value_equality(&PointerValue::new(read, stored.c_type()), &stored);
         }
         state.close(definitions);
     }
@@ -1541,14 +1541,14 @@ impl EqualityGraph {
 
     /// Ask whether two pointer-typed reads in the same defining snapshot
     /// must have the same value. The application nodes are query terms: this
-    /// does not change the representation of either loaded `CValue`.
+    /// does not change the representation of either loaded `ProgramValue`.
     /// Callers must supply the addresses and snapshot of actual pointer reads;
     /// decoding a storage-relative pointer value as a load is ambiguous with
     /// ordinary indexed pointer arithmetic.
     #[allow(dead_code, reason = "live comparisons use filed graph bridges")]
     pub(in crate::kernel) fn are_pointer_loads_equal(
         &self,
-        memory: &crate::kernel::SharedCMemory,
+        memory: &crate::kernel::SharedMemory,
         left_address: &Pointer,
         right_address: &Pointer,
     ) -> bool {
@@ -1621,8 +1621,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn pointer_value_representative(
         &self,
-        value: &CPointerValue,
-    ) -> CPointerValue {
+        value: &PointerValue,
+    ) -> PointerValue {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, value.pointers());
         state.register_blocks(value.pointers().map(|p| p.block.clone()));
@@ -1632,8 +1632,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn add_pointer_value_equality(
         &mut self,
-        left: &CPointerValue,
-        right: &CPointerValue,
+        left: &PointerValue,
+        right: &PointerValue,
     ) {
         self.add_equality(left.pointer(), right.pointer());
         if left.pointer().block == right.pointer().block {
@@ -1790,7 +1790,7 @@ impl EqualityGraph {
             Machine(&'a MachineTerm),
             Algebraic(&'a AlgebraicTerm),
             Integer(&'a crate::kernel::IntegerTerm),
-            Value(&'a CValue),
+            Value(&'a ProgramValue),
             Argument(&'a PureFunctionArgument),
         }
         let mut pending: Vec<_> = machine.into_iter().map(Work::Machine).collect();
@@ -1870,19 +1870,19 @@ impl EqualityGraph {
                     PureFunctionArgument::Integer(term) => pending.push(Work::Integer(term)),
                 },
                 Work::Value(value) => match value {
-                    CValue::Pointer(pointer) => pointers.push(pointer.pointer().clone()),
-                    CValue::Bool(t)
-                    | CValue::Int8(t)
-                    | CValue::UInt8(t)
-                    | CValue::Int16(t)
-                    | CValue::UInt16(t)
-                    | CValue::Int32(t)
-                    | CValue::UInt32(t)
-                    | CValue::Int64(t)
-                    | CValue::UInt64(t)
-                    | CValue::Int128(t)
-                    | CValue::UInt128(t) => pending.push(Work::Machine(t)),
-                    CValue::Parameter(term) => pending.push(Work::Algebraic(term)),
+                    ProgramValue::Pointer(pointer) => pointers.push(pointer.pointer().clone()),
+                    ProgramValue::Bool(t)
+                    | ProgramValue::Int8(t)
+                    | ProgramValue::UInt8(t)
+                    | ProgramValue::Int16(t)
+                    | ProgramValue::UInt16(t)
+                    | ProgramValue::Int32(t)
+                    | ProgramValue::UInt32(t)
+                    | ProgramValue::Int64(t)
+                    | ProgramValue::UInt64(t)
+                    | ProgramValue::Int128(t)
+                    | ProgramValue::UInt128(t) => pending.push(Work::Machine(t)),
+                    ProgramValue::Parameter(term) => pending.push(Work::Algebraic(term)),
                     _ => {}
                 },
                 Work::SharedMachine(term) => {
@@ -3351,9 +3351,9 @@ mod tests {
 
     #[test]
     fn pointer_fact_search_uses_admission_order_across_allocations_and_rebuilds() {
-        let domain = crate::kernel::CPointerValue::new(
+        let domain = crate::kernel::PointerValue::new(
             Pointer::symbolic(Variable(985_000)),
-            crate::kernel::CType::Int32Pointer,
+            crate::kernel::ProgramType::Int32Pointer,
         );
         let origin = domain
             .opaque_extent()
@@ -3893,7 +3893,7 @@ mod tests {
             memory
                 .memory()
                 .clone()
-                .store(p.clone(), CValue::Int32(MachineTerm::constant(7))),
+                .store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
         );
         let from_p = Pointer::loaded_value(&memory, &p);
         let from_p_again = Pointer::loaded_value(&memory, &p);
@@ -3909,8 +3909,8 @@ mod tests {
         );
         assert_eq!(definition.defining_address, p);
         assert_eq!(definition.defining_memory.arena_id(), memory.arena_id());
-        let byte_view =
-            CPointerValue::new(from_p.clone(), CType::Int32Pointer).with_type(CType::UInt8Pointer);
+        let byte_view = PointerValue::new(from_p.clone(), ProgramType::Int32Pointer)
+            .with_type(ProgramType::UInt8Pointer);
         assert_eq!(byte_view.pointer(), &from_p);
         let displaced = from_p.offset_by_bytes(8);
         assert_eq!(
@@ -3934,9 +3934,9 @@ mod tests {
         assert!(scalar_indexed_address.as_loaded_value().is_none());
         assert_ne!(scalar_indexed_address, named_read);
         assert_ne!(scalar_indexed_address, from_p);
-        let CValue::Pointer(execution_value) = memory
+        let ProgramValue::Pointer(execution_value) = memory
             .memory()
-            .symbolic_pointer_load(&p, CType::Int64Pointer)
+            .symbolic_pointer_load(&p, ProgramType::Int64Pointer)
         else {
             panic!("pointer-typed load must produce a pointer value");
         };
@@ -4028,7 +4028,7 @@ mod tests {
                 memory
                     .memory()
                     .clone()
-                    .store(p.clone(), CValue::Int32(MachineTerm::constant(7))),
+                    .store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
             );
             assert!(!graph.are_equal(&left, &Pointer::loaded_value(&changed, &q)));
         }
@@ -4040,13 +4040,11 @@ mod tests {
             crate::kernel::CMemory::new().with_block(symbolic(51), 16),
         );
         // A later snapshot where the cell `p` addresses was written.
-        let other_memory = crate::kernel::intern_c_memory(
-            memory
-                .memory()
-                .clone()
-                .store(at(symbolic(41), 0), CValue::Int32(MachineTerm::constant(7))),
-        );
-        let name = |memory: &crate::kernel::SharedCMemory, address: Pointer| {
+        let other_memory = crate::kernel::intern_c_memory(memory.memory().clone().store(
+            at(symbolic(41), 0),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ));
+        let name = |memory: &crate::kernel::SharedMemory, address: Pointer| {
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &address,
@@ -4118,7 +4116,7 @@ mod tests {
         let before = crate::kernel::CMemory::new().with_block(PointerBlock::Heap(95_001), 16);
         let after = before
             .clone()
-            .store(other.clone(), CValue::Int32(MachineTerm::constant(3)));
+            .store(other.clone(), ProgramValue::Int32(MachineTerm::constant(3)));
         let name = |memory: &crate::kernel::CMemory| {
             let memory = crate::kernel::intern_c_memory(memory.clone());
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
@@ -4173,7 +4171,7 @@ mod tests {
         assert!(!trunk.are_equal(&at(symbolic(1), 0), &at(symbolic(3), 0)));
     }
 
-    fn named_load(memory: &SharedCMemory, address: &Pointer) -> Pointer {
+    fn named_load(memory: &SharedMemory, address: &Pointer) -> Pointer {
         at(
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
@@ -4335,9 +4333,9 @@ mod tests {
         let base = Pointer::symbolic(Variable(51_401));
         let address = base.offset_by_bytes(8);
         let memory = crate::kernel::intern_c_memory(CMemory::new());
-        let CValue::Pointer(raw) = memory
+        let ProgramValue::Pointer(raw) = memory
             .memory()
-            .symbolic_pointer_load(&address, CType::Int32Pointer)
+            .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
@@ -4377,11 +4375,11 @@ mod tests {
         ));
         let later = crate::kernel::intern_c_memory(memory.memory().clone().store(
             address.clone(),
-            CValue::UInt64(MachineTerm::int64_constant(9)),
+            ProgramValue::UInt64(MachineTerm::int64_constant(9)),
         ));
-        let CValue::Pointer(changed) = later
+        let ProgramValue::Pointer(changed) = later
             .memory()
-            .symbolic_pointer_load(&address, CType::Int32Pointer)
+            .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
@@ -4395,9 +4393,9 @@ mod tests {
     fn scalar_read_congruence_imports_shifted_raw_pointer_dependencies() {
         let address = Pointer::symbolic(Variable(51_411)).offset_by_bytes(8);
         let memory = crate::kernel::intern_c_memory(CMemory::new());
-        let CValue::Pointer(raw) = memory
+        let ProgramValue::Pointer(raw) = memory
             .memory()
-            .symbolic_pointer_load(&address, CType::Int32Pointer)
+            .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };

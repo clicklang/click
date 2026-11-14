@@ -1,6 +1,6 @@
 use super::*;
 
-fn free_once(state: &CState, name: &str, facts: &PureFactContext) -> CStatementOutcome {
+fn free_once(state: &ExecutionState, name: &str, facts: &PureFactContext) -> CStatementOutcome {
     let mut paths = execute_c_statement_paths(
         state,
         &c_heap_free(c_variable(name)),
@@ -33,8 +33,8 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
     let alias = Pointer::symbolic(Variable(973_001));
     let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            CPointerValue::new(alias.clone(), CType::Int32Pointer),
-            CPointerValue::new(base.clone(), CType::Int32Pointer),
+            PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
+            PointerValue::new(base.clone(), ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -45,11 +45,11 @@ fn free_uses_the_owned_base_and_retires_every_proven_alias() {
                 .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
                 .unwrap();
         }
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(owned_base(&base))
-            .with_local("q", CValue::pointer(alias.clone()))
-            .with_local("p", CValue::pointer(base.clone()));
+            .with_local("q", ProgramValue::pointer(alias.clone()))
+            .with_local("p", ProgramValue::pointer(base.clone()));
         let CStatementOutcome::Normal(after) = free_once(&state, "q", &facts) else {
             panic!("a proven base alias must free (registered={registered})");
         };
@@ -80,9 +80,9 @@ fn free_does_not_treat_an_unproved_or_interior_alias_as_a_base() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let alias = Pointer::symbolic(Variable(973_011));
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_resource_context(owned_base(&base))
-        .with_local("q", CValue::pointer(alias.clone()));
+        .with_local("q", ProgramValue::pointer(alias.clone()));
     let none = PureFactContext::new();
     let interior = none.clone().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_equal(alias.clone(), base.offset_by_bytes(2)),
@@ -116,8 +116,8 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
     let pending = Pointer::symbolic(Variable(973_022));
     let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::pointer_value_equal(
-            CPointerValue::new(alias.clone(), CType::Int32Pointer),
-            CPointerValue::new(base.clone(), CType::Int32Pointer),
+            PointerValue::new(alias.clone(), ProgramType::Int32Pointer),
+            PointerValue::new(base.clone(), ProgramType::Int32Pointer),
         ),
         true,
     ));
@@ -132,10 +132,10 @@ fn free_alias_cannot_bypass_an_unresolved_reallocation() {
             vec![],
             vec![],
         );
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(owned_base(&base))
-        .with_local("q", CValue::pointer(alias));
+        .with_local("q", ProgramValue::pointer(alias));
     assert!(matches!(
         free_once(&state, "q", &facts),
         CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)

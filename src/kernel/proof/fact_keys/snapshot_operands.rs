@@ -446,7 +446,7 @@ mod tests {
             &memory,
         );
         let loaded = crate::kernel::eval::capture_load_variable_registry();
-        let shared = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+        let shared = KernelTerm::variable(KernelType::C(ProgramType::Int32), variable);
         let key = operand(V::Shared(&shared));
         assert!(key.requires_checked_match());
         assert_eq!(

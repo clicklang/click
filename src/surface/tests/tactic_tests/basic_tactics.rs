@@ -291,9 +291,9 @@ fn parses_composite_resource_definition() {
             ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("flag".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                base: ProgramExpression::Variable("flag".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
                     base: current_var("flag"),
                     start: current_int(0),
@@ -440,9 +440,9 @@ fn parses_resource_verb_function_clauses() {
             Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
-                base: CExpression::Variable("flag".to_string()),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                base: ProgramExpression::Variable("flag".to_string()),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
                     base: current_var("flag"),
                     start: current_int(0),
@@ -480,9 +480,9 @@ fn parses_resource_verb_function_clauses() {
                 ensure: Ensure::Resource(ResourceClause::OwnMemory(ContractSegment {
                     uninitialized: false,
                     state: ContractSegmentState::Current,
-                    base: CExpression::Variable("flag".to_string()),
-                    start: CExpression::Value(int32(0)),
-                    end: CExpression::Value(int32(1)),
+                    base: ProgramExpression::Variable("flag".to_string()),
+                    start: ProgramExpression::Value(int32(0)),
+                    end: ProgramExpression::Value(int32(1)),
                     surface: ContractSegmentSurface::Range {
                         base: current_var("flag"),
                         start: current_int(0),

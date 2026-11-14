@@ -134,7 +134,7 @@ fn guard_holds_for(
 /// separately requires ownership of the guard range. A logical value fact
 /// never establishes that a subsequent C load is initialized.
 fn guard_cell_value(
-    state: &CState,
+    state: &ExecutionState,
     iterated: &CIteratedMemory,
     index: &MachineTerm,
     assumptions: &PureFactContext,
@@ -142,7 +142,7 @@ fn guard_cell_value(
     // A guard cell holding a value is that value (the read-over-write
     // authority); only an unknown cell is read as a named load.
     let cell = iterated.guard_cell(index);
-    if let Some(CValue::Int32(value)) = state
+    if let Some(ProgramValue::Int32(value)) = state
         .memory()
         .known_value(&cell)
         .and_then(|stored| iterated.guard().cell_type.read_cell(&stored))
@@ -160,7 +160,7 @@ fn guard_cell_value(
     match paths.as_slice() {
         [
             CExpressionPath {
-                outcome: CExpressionOutcome::Value(CValue::Int32(value)),
+                outcome: CExpressionOutcome::Value(ProgramValue::Int32(value)),
                 facts,
                 obligations,
             },
@@ -179,7 +179,7 @@ fn guard_cell_value(
 /// context proves it holds, `Some(false)` when it proves it fails, and
 /// `None` when neither is established.
 pub(crate) fn iterated_guard_at(
-    state: &CState,
+    state: &ExecutionState,
     iterated: &CIteratedMemory,
     index: &MachineTerm,
     assumptions: &PureFactContext,
@@ -194,7 +194,7 @@ pub(crate) fn iterated_guard_at(
 /// ("may hold") otherwise. This is the containment and separation question
 /// for one element, answered from one guard cell and the holes.
 pub(crate) fn iterated_holds_element(
-    state: &CState,
+    state: &ExecutionState,
     iterated: &CIteratedMemory,
     index: &MachineTerm,
     assumptions: &PureFactContext,
@@ -364,10 +364,10 @@ fn replace_iterated(
 /// the one fact it names, one guard cell, the fact's holes, and the element
 /// it moves; the index range is never enumerated.
 pub(crate) fn apply_iterated_step(
-    state: &CState,
+    state: &ExecutionState,
     step: &IteratedStep,
     assumptions: &PureFactContext,
-) -> Result<CState, String> {
+) -> Result<ExecutionState, String> {
     match step {
         IteratedStep::Take { element } => {
             let (current, iterated) =
@@ -557,7 +557,7 @@ const ITERATED_GUARD_INDEX: Variable = Variable(u64::MAX - 0x6974_6572);
 /// instantiated once and decided under the range hypotheses. One decision,
 /// independent of the range's size.
 fn every_guard(
-    state: &CState,
+    state: &ExecutionState,
     iterated: &CIteratedMemory,
     assumptions: &PureFactContext,
 ) -> Result<Option<bool>, String> {
@@ -611,9 +611,9 @@ fn instantiate_guard(
 /// nobody checked. Dropping the fact is the sound answer: the elements are
 /// lost to this frame, never claimed twice.
 pub(crate) fn frame_out_iterated_facts_written_by_loop(
-    state: CState,
+    state: ExecutionState,
     written: Option<&[CMemoryRange]>,
-) -> CState {
+) -> ExecutionState {
     if !state.resources().has_iterated_facts() {
         return state;
     }
@@ -701,9 +701,9 @@ impl IteratedStorePlan {
 /// until `give` returns the element. A store at an index whose element the
 /// fact may still hold is refused: it would silently change the fact.
 pub(crate) fn plan_iterated_guard_store(
-    state: &CState,
+    state: &ExecutionState,
     pointer: &Pointer,
-    value: &CValue,
+    value: &ProgramValue,
     assumptions: &PureFactContext,
 ) -> Result<IteratedStorePlan, String> {
     let resources = state.resources();
@@ -750,7 +750,7 @@ pub(crate) fn plan_iterated_guard_store(
         if value.byte_width() != iterated.guard().cell_width {
             return Err(refusal("the store does not write one whole guard cell"));
         }
-        let CValue::Int32(stored) = value else {
+        let ProgramValue::Int32(stored) = value else {
             return Err(refusal("the stored value is not an `int32`"));
         };
         let out_of_range = index_out_of_range(assumptions, iterated, &index);
@@ -817,7 +817,7 @@ mod wide_range_reader_tests {
             4u32.into(),
             CIteratedGuard {
                 base: base.clone(),
-                cell_type: CType::Int32,
+                cell_type: ProgramType::Int32,
                 cell_width: 4,
                 holds_when_equal: true,
                 value: 1u32.into(),

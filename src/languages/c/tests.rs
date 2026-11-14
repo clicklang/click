@@ -28,7 +28,7 @@ fn struct_pointer_arrays_keep_element_types_layout_and_incomplete_tags() {
     assert!(matches!(
         layout.field("values").unwrap().c_type(),
         syntax::C0Type::PointerArray(
-            crate::kernel::CPointerArrayElement::Int32,
+            crate::kernel::PointerArrayElement::Int32,
             syntax::LongRank::Long,
             2
         )
@@ -79,9 +79,11 @@ fn global_and_static_pointer_arrays_preserve_address_initializers() {
         function.static_arrays()[0].initial_values().dense_values(),
     ] {
         assert!(
-            matches!(&values[0], crate::kernel::CValue::Pointer(pointer) if !pointer.is_null())
+            matches!(&values[0], crate::kernel::ProgramValue::Pointer(pointer) if !pointer.is_null())
         );
-        assert!(matches!(&values[1], crate::kernel::CValue::Pointer(pointer) if pointer.is_null()));
+        assert!(
+            matches!(&values[1], crate::kernel::ProgramValue::Pointer(pointer) if pointer.is_null())
+        );
     }
 }
 
@@ -266,11 +268,11 @@ fn direct_forward_goto_lowers_to_an_indexed_kernel_target() {
             .unwrap();
     let kernel = function.to_kernel_function();
     fn goto_target(
-        statement: &crate::kernel::CStatement,
+        statement: &crate::kernel::ProgramStatement,
     ) -> Option<crate::kernel::CControlTargetId> {
         match statement {
-            crate::kernel::CStatement::Goto { target } => Some(*target),
-            crate::kernel::CStatement::Seq(statements) => statements
+            crate::kernel::ProgramStatement::Goto { target } => Some(*target),
+            crate::kernel::ProgramStatement::Seq(statements) => statements
                 .iter()
                 .find_map(|statement| goto_target(statement)),
             _ => None,
@@ -282,7 +284,7 @@ fn direct_forward_goto_lowers_to_an_indexed_kernel_target() {
         .expect("goto target should be indexed");
     assert!(matches!(
         target.remaining.as_ref(),
-        crate::kernel::CStatement::Return(_)
+        crate::kernel::ProgramStatement::Return(_)
     ));
 }
 
@@ -294,14 +296,14 @@ fn conditional_forward_goto_uses_the_preorder_source_target_index() {
     .unwrap();
     let kernel = function.to_kernel_function();
     fn goto_target(
-        statement: &crate::kernel::CStatement,
+        statement: &crate::kernel::ProgramStatement,
     ) -> Option<crate::kernel::CControlTargetId> {
         match statement {
-            crate::kernel::CStatement::Goto { target } => Some(*target),
-            crate::kernel::CStatement::Seq(statements) => statements
+            crate::kernel::ProgramStatement::Goto { target } => Some(*target),
+            crate::kernel::ProgramStatement::Seq(statements) => statements
                 .iter()
                 .find_map(|statement| goto_target(statement)),
-            crate::kernel::CStatement::If {
+            crate::kernel::ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -317,7 +319,7 @@ fn conditional_forward_goto_uses_the_preorder_source_target_index() {
     assert_eq!(target.statement_index, 5);
     assert!(matches!(
         target.remaining.as_ref(),
-        crate::kernel::CStatement::Return(_)
+        crate::kernel::ProgramStatement::Return(_)
     ));
 }
 
@@ -396,8 +398,8 @@ fn a_goto_past_loops_targets_the_preorder_index_of_a_labeled_if() {
         .expect("labeled if is a target");
     assert!(matches!(
         out.remaining.as_ref(),
-        crate::kernel::CStatement::Seq(statements)
-            if matches!(statements.first().as_ref(), crate::kernel::CStatement::If { .. })
+        crate::kernel::ProgramStatement::Seq(statements)
+            if matches!(statements.first().as_ref(), crate::kernel::ProgramStatement::If { .. })
     ));
 }
 
@@ -612,7 +614,7 @@ int32 run(int32 value) {
     let kernel_rendered = format!("{:?}", functions[0].body_kernel_statement());
     assert!(kernel_rendered.contains("volatile: true"));
     let execution = crate::kernel::prove_symbolic_c_function_execution_paths(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         functions[0].to_kernel_function(),
         vec![crate::kernel::c_int32_literal(1)],
         crate::kernel::PureFactContext::new(),
@@ -682,7 +684,7 @@ fn c0_sequential_profile_rejects_concurrency_builtins() {
 
 #[test]
 fn c0_wide_static_initializers_use_checked_wide_values() {
-    use crate::kernel::{CValue, MachineTerm};
+    use crate::kernel::{MachineTerm, ProgramValue};
     let unit = syntax::parse_translation_unit_for_source(
         r#"
         static long low = -9223372036854775807L - 1;
@@ -700,33 +702,42 @@ fn c0_wide_static_initializers_use_checked_wide_values() {
     )
     .unwrap();
     for (name, expected) in [
-        ("low", CValue::Int64(MachineTerm::int64_constant(i64::MIN))),
+        (
+            "low",
+            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+        ),
         (
             "high",
-            CValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "wrapped",
-            CValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
         ),
-        ("mixed", CValue::UInt32(MachineTerm::uint32_constant(0))),
+        (
+            "mixed",
+            ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
+        ),
         (
             "conditional",
-            CValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
+            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
         ),
         (
             "shifted",
-            CValue::UInt32(MachineTerm::uint32_constant(u32::MAX - 1)),
+            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX - 1)),
         ),
-        ("zero", CValue::UInt64(MachineTerm::uint64_constant(0))),
+        (
+            "zero",
+            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+        ),
         (
             "promoted",
-            CValue::Int64(MachineTerm::int64_constant(i64::from(u32::MAX))),
+            ProgramValue::Int64(MachineTerm::int64_constant(i64::from(u32::MAX))),
         ),
         // GCC converts an out-of-range constant modulo 2^64.
         (
             "converted",
-            CValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
         ),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
@@ -787,11 +798,11 @@ fn c0_plain_char_retains_source_types_and_unsigned_byte_lowering() {
     );
     assert_eq!(
         C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned).to_kernel_type(),
-        crate::kernel::CType::UInt8
+        crate::kernel::ProgramType::UInt8
     );
     assert_eq!(
         C0Type::CharArray(crate::languages::c::syntax::PlainChar::Unsigned, 2).to_kernel_type(),
-        crate::kernel::CType::UInt8Array(2)
+        crate::kernel::ProgramType::UInt8Array(2)
     );
     assert_ne!(
         C0Type::CharPointer(crate::languages::c::syntax::PlainChar::Unsigned),
@@ -1145,7 +1156,7 @@ fn c0_small_volatile_model_preserves_metadata_and_access_facts() {
             .collect::<Vec<_>>()
     };
     let execution = crate::kernel::prove_symbolic_c_function_execution_paths(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         kernel,
         vec![crate::kernel::c_int32_literal(7)],
         crate::kernel::PureFactContext::new(),
@@ -1156,7 +1167,7 @@ fn c0_small_volatile_model_preserves_metadata_and_access_facts() {
     assert_ne!(accesses[0], accesses[1]);
 
     let global_execution = crate::kernel::prove_symbolic_c_function_execution_paths(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         functions[1].to_kernel_function(),
         Vec::new(),
         crate::kernel::PureFactContext::new(),
@@ -1177,7 +1188,7 @@ fn c0_small_volatile_model_preserves_metadata_and_access_facts() {
     );
     assert!(static_function.to_kernel_function().static_variables()[0].is_volatile());
     let static_execution = crate::kernel::prove_symbolic_c_function_execution_paths(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         static_function.to_kernel_function(),
         Vec::new(),
         crate::kernel::PureFactContext::new(),
@@ -1263,7 +1274,7 @@ fn c0_pointer_volatile_accesses_preserve_pointee_metadata_and_order() {
     assert!(kernel_parameter.pointee_is_volatile());
 
     let execution = crate::kernel::prove_symbolic_c_function_execution_paths(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         functions[0].to_kernel_function(),
         Vec::new(),
         crate::kernel::PureFactContext::new(),
@@ -1320,14 +1331,14 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
         block: crate::kernel::PointerBlock::ExternalArgument,
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let node = crate::kernel::CValue::typed_pointer(
+    let node = crate::kernel::ProgramValue::typed_pointer(
         node_pointer.clone(),
-        crate::kernel::CType::Int32Pointer,
+        crate::kernel::ProgramType::Int32Pointer,
     );
     let direct_execution = crate::kernel::prove_symbolic_c_function_execution_paths(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         functions[0].to_kernel_function(),
-        vec![crate::kernel::CExpression::Value(
+        vec![crate::kernel::ProgramExpression::Value(
             node.clone().with_pointer_object_class(
                 functions[0].to_kernel_function().parameters()[0].pointee_class(),
             ),
@@ -1349,9 +1360,9 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
     assert_eq!(direct_accesses, 2);
 
     let indirect_execution = crate::kernel::prove_symbolic_c_function_execution_paths(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         functions[1].to_kernel_function(),
-        vec![crate::kernel::CExpression::Value(node)],
+        vec![crate::kernel::ProgramExpression::Value(node)],
         crate::kernel::PureFactContext::new(),
     );
     assert_eq!(indirect_execution.paths().len(), 1);
@@ -1389,14 +1400,14 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
     else {
         panic!("pointer-valued volatile accesses should preserve the return pointer")
     };
-    let crate::kernel::CValue::Pointer(pointer) = retained_result
+    let crate::kernel::ProgramValue::Pointer(pointer) = retained_result
         .native_payload()
         .expect("native Pointer payload")
     else {
         panic!("expected Pointer result");
     };
     assert_eq!(pointer.pointer(), &node_pointer);
-    assert_eq!(pointer.c_type(), crate::kernel::CType::Int32Pointer);
+    assert_eq!(pointer.c_type(), crate::kernel::ProgramType::Int32Pointer);
 }
 
 #[test]
@@ -1518,11 +1529,14 @@ fn c0_lowers_static_address_initializers_with_pointer_provenance() {
         .find(|global| global.name() == "alias")
         .expect("kernel global address initializer");
     let global_value = global.initial_value();
-    let crate::kernel::CValue::Pointer(global_pointer) = global_value else {
+    let crate::kernel::ProgramValue::Pointer(global_pointer) = global_value else {
         panic!("global address initializer should lower to a pointer value");
     };
     assert_eq!(global_pointer.pointer(), &expected_pointer);
-    assert_eq!(global_pointer.c_type(), crate::kernel::CType::Int32Pointer);
+    assert_eq!(
+        global_pointer.c_type(),
+        crate::kernel::ProgramType::Int32Pointer
+    );
     assert!(global_pointer.pointee_constant());
 
     let private_target = &function.globals()["private_target"];
@@ -1531,14 +1545,18 @@ fn c0_lowers_static_address_initializers_with_pointer_provenance() {
         .iter()
         .find(|global| global.name() == "private_alias")
         .expect("kernel file-static pointer initializer");
-    let crate::kernel::CValue::Pointer(private_pointer) = private_alias.initial_value() else {
+    let crate::kernel::ProgramValue::Pointer(private_pointer) = private_alias.initial_value()
+    else {
         panic!("file-static address initializer should lower to a pointer value");
     };
     assert_eq!(
         private_pointer.pointer(),
         &crate::kernel::CMemory::global_pointer(private_target.kernel_name())
     );
-    assert_eq!(private_pointer.c_type(), crate::kernel::CType::Int32Pointer);
+    assert_eq!(
+        private_pointer.c_type(),
+        crate::kernel::ProgramType::Int32Pointer
+    );
     assert!(!private_pointer.pointee_constant());
 
     let static_local = kernel
@@ -1547,11 +1565,14 @@ fn c0_lowers_static_address_initializers_with_pointer_provenance() {
         .find(|static_local| static_local.source_name() == "local_alias")
         .expect("kernel static address initializer");
     let static_value = static_local.initial_value();
-    let crate::kernel::CValue::Pointer(static_pointer) = static_value else {
+    let crate::kernel::ProgramValue::Pointer(static_pointer) = static_value else {
         panic!("static address initializer should lower to a pointer value");
     };
     assert_eq!(static_pointer.pointer(), &expected_pointer);
-    assert_eq!(static_pointer.c_type(), crate::kernel::CType::Int32Pointer);
+    assert_eq!(
+        static_pointer.c_type(),
+        crate::kernel::ProgramType::Int32Pointer
+    );
     assert!(static_pointer.pointee_constant());
 }
 
@@ -1586,7 +1607,7 @@ fn c0_links_static_address_dependencies_after_later_definitions() {
         .iter()
         .find(|global| global.name() == "alias")
         .expect("linked alias definition");
-    let crate::kernel::CValue::Pointer(alias_pointer) = alias.initial_value() else {
+    let crate::kernel::ProgramValue::Pointer(alias_pointer) = alias.initial_value() else {
         panic!("alias should have an address initializer");
     };
     assert_eq!(
@@ -1599,7 +1620,7 @@ fn c0_links_static_address_dependencies_after_later_definitions() {
         .iter()
         .find(|global| global.name() == "alias_ref")
         .expect("linked alias_ref definition");
-    let crate::kernel::CValue::Pointer(alias_ref_pointer) = alias_ref.initial_value() else {
+    let crate::kernel::ProgramValue::Pointer(alias_ref_pointer) = alias_ref.initial_value() else {
         panic!("alias_ref should have an address initializer");
     };
     assert_eq!(
@@ -1664,7 +1685,8 @@ fn c0_lowers_static_subobject_address_initializers_with_byte_offsets() {
         .iter()
         .find(|global| global.name() == "table_middle")
         .expect("array-element address initializer");
-    let crate::kernel::CValue::Pointer(table_middle_pointer) = table_middle.initial_value() else {
+    let crate::kernel::ProgramValue::Pointer(table_middle_pointer) = table_middle.initial_value()
+    else {
         panic!("array-element address initializer should lower to a pointer value");
     };
     assert_eq!(
@@ -1690,7 +1712,7 @@ fn c0_lowers_static_subobject_address_initializers_with_byte_offsets() {
             .iter()
             .find(|global| global.name() == name)
             .expect("struct-field address initializer");
-        let crate::kernel::CValue::Pointer(pointer) = global.initial_value() else {
+        let crate::kernel::ProgramValue::Pointer(pointer) = global.initial_value() else {
             panic!("struct-field address initializer should lower to a pointer value");
         };
         assert_eq!(
@@ -1704,7 +1726,7 @@ fn c0_lowers_static_subobject_address_initializers_with_byte_offsets() {
         .iter()
         .find(|static_local| static_local.source_name() == "local_value")
         .expect("static struct-field address initializer");
-    let crate::kernel::CValue::Pointer(pointer) = local_value.initial_value() else {
+    let crate::kernel::ProgramValue::Pointer(pointer) = local_value.initial_value() else {
         panic!("static struct-field address initializer should lower to a pointer value");
     };
     assert_eq!(
@@ -1798,7 +1820,10 @@ fn c0_collects_file_scope_scalar_arrays() {
         .find(|array| array.name() == "table")
         .expect("kernel table metadata");
     assert_eq!(kernel_table.name(), "table");
-    assert_eq!(kernel_table.element_type(), crate::kernel::CType::Int32);
+    assert_eq!(
+        kernel_table.element_type(),
+        crate::kernel::ProgramType::Int32
+    );
     assert_eq!(kernel_table.length(), 3);
     assert_eq!(
         kernel_table.initial_values().dense_values(),
@@ -3546,7 +3571,7 @@ fn c0_array_parameter_syntax_lowers_to_pointer_parameter() {
     );
     assert_eq!(
         function.to_kernel_function().parameters()[0].c_type(),
-        crate::kernel::CType::Int32Pointer
+        crate::kernel::ProgramType::Int32Pointer
     );
 }
 
@@ -3643,7 +3668,7 @@ fn c0_void_functions_accept_return_and_fallthrough() {
     assert_eq!(fallthrough.return_type(), syntax::C0Type::Void);
     assert_eq!(
         explicit.to_kernel_function().return_type(),
-        crate::kernel::CType::Void
+        crate::kernel::ProgramType::Void
     );
 }
 
@@ -5191,7 +5216,7 @@ fn c0_syntax_models_missing_else_and_empty_statements_as_skip() {
 
 #[test]
 fn kernel_skip_preserves_state_without_facts_or_obligations() {
-    let state = crate::kernel::CState::new();
+    let state = crate::kernel::ExecutionState::new();
     let theorem = crate::kernel::prove_symbolic_c_execution(
         state.clone(),
         crate::kernel::c_skip(),
@@ -5411,7 +5436,7 @@ fn c0_unary_minus_preserves_signed_overflow_semantics() {
         "#,
     )
     .expect("unary minus function should parse");
-    let state = crate::kernel::CState::new().with_local(
+    let state = crate::kernel::ExecutionState::new().with_local(
         "value",
         crate::kernel::int32(crate::kernel::MachineTerm::constant(0x8000_0000)),
     );
@@ -5579,14 +5604,14 @@ fn c0_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 4);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(crate::kernel::CMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             8,
         ))
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
@@ -5953,14 +5978,15 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
             )
     ));
 
-    let crate::kernel::CStatement::Return(crate::kernel::CExpression::AddressOf(target)) =
-        address_number.body_kernel_statement()
+    let crate::kernel::ProgramStatement::Return(crate::kernel::ProgramExpression::AddressOf(
+        target,
+    )) = address_number.body_kernel_statement()
     else {
         panic!("scalar union member address should lower to kernel address-of")
     };
-    let crate::kernel::CExpression::TypedLoad {
+    let crate::kernel::ProgramExpression::TypedLoad {
         pointer,
-        value_type: crate::kernel::CType::Int32,
+        value_type: crate::kernel::ProgramType::Int32,
         ..
     } = target.as_ref()
     else {
@@ -5968,7 +5994,7 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
     };
     assert!(matches!(
         pointer.as_ref(),
-        crate::kernel::CExpression::PointerOffsetBytes { bytes, .. } if *bytes == payload_offset
+        crate::kernel::ProgramExpression::PointerOffsetBytes { bytes, .. } if *bytes == payload_offset
     ));
 
     let address_pointer = functions
@@ -5981,11 +6007,13 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
-        crate::kernel::CState::new().with_memory(crate::kernel::CMemory::new().with_classed_block(
-            "packet".into(),
-            address_number.to_kernel_function().parameters()[0].pointee_class(),
-            16,
-        )),
+        crate::kernel::ExecutionState::new().with_memory(
+            crate::kernel::CMemory::new().with_classed_block(
+                "packet".into(),
+                address_number.to_kernel_function().parameters()[0].pointee_class(),
+                16,
+            ),
+        ),
         address_pointer,
         vec![crate::kernel::c_pointer_value(packet)],
         Default::default(),
@@ -5998,7 +6026,10 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
     else {
         panic!("pointer union member address should return a typed pointer")
     };
-    assert_eq!(value.c_type(), crate::kernel::CType::Int32PointerPointer);
+    assert_eq!(
+        value.c_type(),
+        crate::kernel::ProgramType::Int32PointerPointer
+    );
 }
 
 #[test]
@@ -6173,7 +6204,7 @@ fn c0_enum_field_comparison_lowers_named_constant() {
         block: "packet".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
@@ -6569,7 +6600,7 @@ fn c0_syntax_accepts_sizeof_for_scalar_and_pointer_types() {
                 ),
                 crate::kernel::c_uint64_literal(8),
             ),
-            crate::kernel::CType::Int32,
+            crate::kernel::ProgramType::Int32,
         ))
     );
 }
@@ -6618,7 +6649,10 @@ fn c0_chained_field_load_executes_through_typed_pointer_memory() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let memory = crate::kernel::CMemory::new()
-        .store(root.clone(), crate::kernel::CValue::pointer(leaf.clone()))
+        .store(
+            root.clone(),
+            crate::kernel::ProgramValue::pointer(leaf.clone()),
+        )
         .store(leaf.clone(), crate::kernel::int32(9));
     let resources = crate::kernel::ResourceContext::new()
         .unchecked_with_fact(crate::kernel::CResourceFact::view_memory(memory_range(
@@ -6629,8 +6663,8 @@ fn c0_chained_field_load_executes_through_typed_pointer_memory() {
         .unchecked_with_fact(crate::kernel::CResourceFact::view_memory(memory_range(
             leaf, 0, 1,
         )));
-    let state = crate::kernel::CState::new()
-        .with_local("root", crate::kernel::CValue::pointer(root))
+    let state = crate::kernel::ExecutionState::new()
+        .with_local("root", crate::kernel::ProgramValue::pointer(root))
         .with_memory(memory)
         .with_resource_context(resources);
     let theorem = crate::kernel::prove_symbolic_c_execution(
@@ -6651,7 +6685,7 @@ fn c0_chained_field_load_executes_through_typed_pointer_memory() {
                 ..
             },
             ..
-        } if matches!(value.native().as_ref(), crate::kernel::CValue::Int32(
+        } if matches!(value.native().as_ref(), crate::kernel::ProgramValue::Int32(
                     int32_constant!(9)
                 ))
     ));
@@ -6783,7 +6817,7 @@ fn c0_syntax_targets_kernel_max_function_call() {
 
     assert_eq!(function, crate::kernel::c_max_function());
 
-    let state = crate::kernel::CState::new();
+    let state = crate::kernel::ExecutionState::new();
     let arguments = vec![
         crate::kernel::c_int32_literal(0),
         crate::kernel::c_int32_literal(1),
@@ -6822,8 +6856,8 @@ fn c0_syntax_targets_kernel_assignment_and_sequence() {
     )
     .expect("assignment function should parse");
     let statement = function.body_kernel_statement();
-    let initial = crate::kernel::CState::new().with_local("x", crate::kernel::int32(1));
-    let final_state = crate::kernel::CState::new().with_local("x", crate::kernel::int32(2));
+    let initial = crate::kernel::ExecutionState::new().with_local("x", crate::kernel::int32(1));
+    let final_state = crate::kernel::ExecutionState::new().with_local("x", crate::kernel::int32(2));
     let theorem = crate::kernel::prove_symbolic_c_execution(
         initial.clone(),
         statement.clone(),
@@ -6856,7 +6890,7 @@ fn c0_syntax_targets_kernel_assignment_function_call() {
     )
     .expect("assignment function should parse");
     let function = function.to_kernel_function();
-    let state = crate::kernel::CState::new().with_local("caller", crate::kernel::int32(5));
+    let state = crate::kernel::ExecutionState::new().with_local("caller", crate::kernel::int32(5));
     let arguments = vec![crate::kernel::c_int32_literal(1)];
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
         state.clone(),
@@ -6903,11 +6937,11 @@ fn c0_syntax_targets_kernel_store_and_load() {
     };
     let statement = function.body_kernel_statement();
     let resources = own_memory_context(pointer.clone(), 0, 1);
-    let initial = crate::kernel::CState::new()
-        .with_local("p", crate::kernel::CValue::pointer(pointer.clone()))
+    let initial = crate::kernel::ExecutionState::new()
+        .with_local("p", crate::kernel::ProgramValue::pointer(pointer.clone()))
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
-        .with_local("p", crate::kernel::CValue::pointer(pointer.clone()))
+    let final_state = crate::kernel::ExecutionState::new()
+        .with_local("p", crate::kernel::ProgramValue::pointer(pointer.clone()))
         .with_memory(crate::kernel::CMemory::new().store(pointer.clone(), crate::kernel::int32(9)))
         .with_resource_context(resources);
     let theorem = crate::kernel::prove_symbolic_c_execution(
@@ -6959,8 +6993,8 @@ fn c0_syntax_targets_kernel_struct_field_load() {
     let memory = crate::kernel::CMemory::new()
         .with_block("object", 4)
         .store(pointer.clone(), crate::kernel::int32(3));
-    let initial = crate::kernel::CState::new()
-        .with_local("obj", crate::kernel::CValue::pointer(pointer.clone()))
+    let initial = crate::kernel::ExecutionState::new()
+        .with_local("obj", crate::kernel::ProgramValue::pointer(pointer.clone()))
         .with_memory(memory)
         .with_resource_context(view_memory_context(pointer, 0, 1));
     let theorem = crate::kernel::prove_symbolic_c_execution(
@@ -7009,8 +7043,8 @@ fn c0_syntax_targets_kernel_float64_struct_field_load() {
     let memory = crate::kernel::CMemory::new()
         .with_block("object", 8)
         .store(pointer.clone(), value.clone());
-    let initial = crate::kernel::CState::new()
-        .with_local("obj", crate::kernel::CValue::pointer(pointer.clone()))
+    let initial = crate::kernel::ExecutionState::new()
+        .with_local("obj", crate::kernel::ProgramValue::pointer(pointer.clone()))
         .with_memory(memory)
         .with_resource_context(view_memory_context(pointer, 0, 2));
     let theorem = crate::kernel::prove_symbolic_c_execution(
@@ -7055,7 +7089,7 @@ fn c0_syntax_targets_kernel_struct_field_store() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(crate::kernel::CMemory::new().with_classed_block(
             "object".into(),
             function.parameters()[0].pointee_class(),
@@ -7066,7 +7100,7 @@ fn c0_syntax_targets_kernel_struct_field_store() {
         crate::kernel::c_pointer_value(pointer.clone()),
         crate::kernel::c_int32_literal(5),
     ];
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block("object".into(), function.parameters()[0].pointee_class(), 4)
@@ -7143,7 +7177,7 @@ fn c0_syntax_targets_kernel_multifield_struct_offset_load() {
     let memory = crate::kernel::CMemory::new()
         .with_classed_block("pair".into(), function.parameters()[0].pointee_class(), 8)
         .store(second, crate::kernel::int32(7));
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(view_memory_context(base.clone(), 1, 2));
     let arguments = vec![crate::kernel::c_pointer_value(base)];
@@ -7207,7 +7241,7 @@ fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
         crate::kernel::CResourceFact::own_memory(memory_range(owner.clone(), 0, 4)),
         crate::kernel::CResourceFact::own_memory(memory_range(data.clone(), 0, 1)),
     ]);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block("owner".into(), function.parameters()[0].pointee_class(), 16)
@@ -7245,7 +7279,9 @@ fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
     );
     assert_eq!(
         final_state.memory().load(&owner_data),
-        crate::kernel::CExpressionOutcome::Value(crate::kernel::CValue::pointer(data.clone()))
+        crate::kernel::CExpressionOutcome::Value(crate::kernel::ProgramValue::pointer(
+            data.clone()
+        ))
     );
     assert_eq!(
         final_state.memory().load(&data),
@@ -7271,11 +7307,11 @@ fn c0_syntax_targets_kernel_store_and_load_function_call() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_local("caller", crate::kernel::int32(7))
         .with_resource_context(resources.clone());
     let arguments = vec![crate::kernel::c_pointer_value(pointer.clone())];
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_local("caller", crate::kernel::int32(7))
         .with_memory(crate::kernel::CMemory::new().store(pointer.clone(), crate::kernel::int32(9)))
         .with_resource_context(resources);
@@ -7325,7 +7361,7 @@ fn c0_syntax_targets_kernel_pointer_addition_load() {
         .with_block("block", 16)
         .store(second.clone(), crate::kernel::int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(memory.clone())
         .with_resource_context(resources);
     let arguments = vec![crate::kernel::c_pointer_value(base)];
@@ -7375,7 +7411,7 @@ fn c0_syntax_targets_kernel_array_index_load() {
         .with_block("block", 16)
         .store(second.clone(), crate::kernel::int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(memory.clone())
         .with_resource_context(resources);
     let arguments = vec![crate::kernel::c_pointer_value(base)];
@@ -7424,10 +7460,10 @@ fn c0_syntax_targets_kernel_array_index_store() {
     };
     let memory = crate::kernel::CMemory::new().with_block("block", 16);
     let resources = own_memory_context(base.clone(), 1, 2);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_block("block", 16)
@@ -7487,16 +7523,19 @@ fn c0_syntax_targets_kernel_address_of_array_index() {
         .with_block("block", 16)
         .store(second.clone(), crate::kernel::int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_block("block", 16)
                 .with_block("local:q", 8)
                 .store(second.clone(), crate::kernel::int32(23))
-                .store(local_q, crate::kernel::CValue::pointer(second.clone())),
+                .store(
+                    local_q,
+                    crate::kernel::ProgramValue::pointer(second.clone()),
+                ),
         )
         .with_resource_context(resources);
     let final_state = final_state.clone().with_memory(
@@ -7548,7 +7587,7 @@ fn c0_syntax_targets_kernel_pointer_null_equality() {
         block: "null".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let state = crate::kernel::CState::new();
+    let state = crate::kernel::ExecutionState::new();
     let arguments = vec![crate::kernel::c_pointer_value(null)];
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
         state.clone(),
@@ -7598,12 +7637,12 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
     };
     let cases = [
         (
-            crate::kernel::CState::new(),
+            crate::kernel::ExecutionState::new(),
             vec![crate::kernel::c_pointer_value(null)],
             crate::kernel::int32(1),
         ),
         (
-            crate::kernel::CState::new()
+            crate::kernel::ExecutionState::new()
                 .with_memory(
                     crate::kernel::CMemory::new()
                         .with_block("block", 4)
@@ -7614,7 +7653,7 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
             crate::kernel::int32(1),
         ),
         (
-            crate::kernel::CState::new()
+            crate::kernel::ExecutionState::new()
                 .with_memory(
                     crate::kernel::CMemory::new()
                         .with_block("block", 4)
@@ -7670,7 +7709,7 @@ fn c0_syntax_targets_kernel_unary_not() {
         block: "block".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let state = crate::kernel::CState::new();
+    let state = crate::kernel::ExecutionState::new();
     let arguments = vec![crate::kernel::c_pointer_value(pointer)];
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
         state.clone(),
@@ -7712,8 +7751,8 @@ fn c0_syntax_targets_kernel_local_address_of() {
         block: "local:x".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let state = crate::kernel::CState::new();
-    let final_state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new();
+    let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("local:x", 4)
             .store(local_pointer, crate::kernel::int32(5)),
@@ -7769,8 +7808,8 @@ fn c0_syntax_targets_kernel_local_array_storage() {
         block: "local:a".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
-    let state = crate::kernel::CState::new();
-    let final_state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new();
+    let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("local:a", 12)
             .store(a0, crate::kernel::int32(5))
@@ -7829,8 +7868,8 @@ fn c0_syntax_lowers_local_array_initializer_stores() {
         block: "local:a".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(8),
     };
-    let state = crate::kernel::CState::new();
-    let final_state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new();
+    let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("local:a", 12)
             .store(a0, crate::kernel::int32(1))
@@ -7888,8 +7927,8 @@ fn c0_syntax_flattens_multidimensional_local_array_indices() {
         block: "local:values".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(20),
     };
-    let state = crate::kernel::CState::new();
-    let final_state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new();
+    let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("local:values", 24)
             .store(first, crate::kernel::int32(1))
@@ -7936,8 +7975,8 @@ fn c0_syntax_lowers_nested_multidimensional_array_initializers() {
     .expect("nested multidimensional array initializers should parse")
     .to_kernel_function();
 
-    let state = crate::kernel::CState::new();
-    let final_state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new();
+    let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("local:values", 24)
             .store(
@@ -8039,8 +8078,8 @@ fn c0_syntax_lowers_local_struct_array_fields_with_abi_stride() {
         block: "local:items".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(12),
     };
-    let state = crate::kernel::CState::new();
-    let final_state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new();
+    let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("local:items", 16)
             .store(tag, crate::kernel::uint8(3))
@@ -8105,8 +8144,8 @@ fn c0_syntax_lowers_local_struct_array_initializers() {
     .expect("local struct array initializers should parse")
     .to_kernel_function();
 
-    let state = crate::kernel::CState::new();
-    let final_state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new();
+    let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("local:items", 40)
             .store(
@@ -8260,7 +8299,7 @@ fn c0_syntax_struct_array_parameter_retains_abi_stride() {
     assert_eq!(parameter.array_element_width(), Some(8));
     assert_eq!(
         parameter.to_kernel_parameter().c_type(),
-        crate::kernel::CType::UInt8Pointer
+        crate::kernel::ProgramType::UInt8Pointer
     );
 }
 
@@ -8298,8 +8337,8 @@ fn c0_syntax_local_array_decays_to_pointer_argument() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let environment = crate::kernel::CExecutionEnvironment::new().with_function(read_first);
-    let state = crate::kernel::CState::new();
-    let final_state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new();
+    let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("local:a", 8)
             .with_block("local:result", 4)
@@ -8525,14 +8564,14 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 8);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(crate::kernel::CMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             32,
         ))
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block(
@@ -8620,7 +8659,10 @@ fn c0_scalar_struct_values_preserve_named_kernel_layout_metadata() {
     assert_eq!(parameter.struct_layout().unwrap().size_bytes(), 8);
 
     let kernel = function.to_kernel_function();
-    assert_eq!(kernel.return_type(), crate::kernel::CType::UInt8Pointer);
+    assert_eq!(
+        kernel.return_type(),
+        crate::kernel::ProgramType::UInt8Pointer
+    );
     let return_layout = kernel
         .return_aggregate_layout()
         .expect("struct return should retain aggregate metadata");
@@ -8629,13 +8671,13 @@ fn c0_scalar_struct_values_preserve_named_kernel_layout_metadata() {
     assert_eq!(return_layout.fields()[0].offset_bytes(), 0);
     assert_eq!(
         return_layout.fields()[0].c_type(),
-        crate::kernel::CType::Int32
+        crate::kernel::ProgramType::Int32
     );
     assert_eq!(return_layout.fields()[1].name(), "tag");
     assert_eq!(return_layout.fields()[1].offset_bytes(), 4);
     assert_eq!(
         return_layout.fields()[1].c_type(),
-        crate::kernel::CType::UInt8
+        crate::kernel::ProgramType::UInt8
     );
 
     let parameter_layout = kernel.parameters()[0]
@@ -8677,11 +8719,11 @@ fn c0_struct_values_preserve_wide_scalar_layout_metadata() {
             .unwrap_or_else(|| panic!("missing aggregate field `{name}`"))
     };
     assert_eq!(field("count").offset_bytes(), 0);
-    assert_eq!(field("count").c_type(), crate::kernel::CType::UInt32);
+    assert_eq!(field("count").c_type(), crate::kernel::ProgramType::UInt32);
     assert_eq!(field("total").offset_bytes(), 8);
-    assert_eq!(field("total").c_type(), crate::kernel::CType::Int64);
+    assert_eq!(field("total").c_type(), crate::kernel::ProgramType::Int64);
     assert_eq!(field("mask").offset_bytes(), 16);
-    assert_eq!(field("mask").c_type(), crate::kernel::CType::UInt64);
+    assert_eq!(field("mask").c_type(), crate::kernel::ProgramType::UInt64);
 
     let return_layout = kernel
         .return_aggregate_layout()
@@ -8754,22 +8796,28 @@ fn c0_struct_values_flatten_embedded_layout_for_recursive_copies() {
             .unwrap_or_else(|| panic!("missing flattened aggregate field `{name}`"))
     };
     assert_eq!(field("tag").offset_bytes(), 0);
-    assert_eq!(field("tag").c_type(), crate::kernel::CType::UInt8);
+    assert_eq!(field("tag").c_type(), crate::kernel::ProgramType::UInt8);
     assert_eq!(
         field("inner.value").offset_bytes() as usize,
         std::mem::offset_of!(HostOuter, inner) + std::mem::offset_of!(HostInner, value)
     );
-    assert_eq!(field("inner.value").c_type(), crate::kernel::CType::Int32);
+    assert_eq!(
+        field("inner.value").c_type(),
+        crate::kernel::ProgramType::Int32
+    );
     assert_eq!(
         field("inner.flag").offset_bytes() as usize,
         std::mem::offset_of!(HostOuter, inner) + std::mem::offset_of!(HostInner, flag)
     );
-    assert_eq!(field("inner.flag").c_type(), crate::kernel::CType::UInt8);
+    assert_eq!(
+        field("inner.flag").c_type(),
+        crate::kernel::ProgramType::UInt8
+    );
     assert_eq!(
         field("tail").offset_bytes() as usize,
         std::mem::offset_of!(HostOuter, tail)
     );
-    assert_eq!(field("tail").c_type(), crate::kernel::CType::Int32);
+    assert_eq!(field("tail").c_type(), crate::kernel::ProgramType::Int32);
     assert_eq!(
         layout.size_bytes() as usize,
         std::mem::size_of::<HostOuter>()
@@ -8842,29 +8890,29 @@ fn c0_struct_values_flatten_embedded_array_layout_for_recursive_copies() {
             .unwrap_or_else(|| panic!("missing flattened aggregate field `{name}`"))
     };
     assert_eq!(field("tag").offset_bytes(), 0);
-    assert_eq!(field("tag").c_type(), crate::kernel::CType::UInt8);
+    assert_eq!(field("tag").c_type(), crate::kernel::ProgramType::UInt8);
     assert_eq!(field("points[0].value").offset_bytes(), 4);
     assert_eq!(
         field("points[0].value").c_type(),
-        crate::kernel::CType::Int32
+        crate::kernel::ProgramType::Int32
     );
     assert_eq!(field("points[0].flag").offset_bytes(), 8);
     assert_eq!(
         field("points[0].flag").c_type(),
-        crate::kernel::CType::UInt8
+        crate::kernel::ProgramType::UInt8
     );
     assert_eq!(field("points[1].value").offset_bytes(), 12);
     assert_eq!(
         field("points[1].value").c_type(),
-        crate::kernel::CType::Int32
+        crate::kernel::ProgramType::Int32
     );
     assert_eq!(field("points[1].flag").offset_bytes(), 16);
     assert_eq!(
         field("points[1].flag").c_type(),
-        crate::kernel::CType::UInt8
+        crate::kernel::ProgramType::UInt8
     );
     assert_eq!(field("tail").offset_bytes(), 20);
-    assert_eq!(field("tail").c_type(), crate::kernel::CType::Int32);
+    assert_eq!(field("tail").c_type(), crate::kernel::ProgramType::Int32);
     assert_eq!(
         layout.size_bytes() as usize,
         std::mem::size_of::<HostOuter>()
@@ -8947,7 +8995,7 @@ fn c0_struct_values_flatten_multidimensional_embedded_array_layout_for_recursive
     assert_eq!(field("points[1][1].value").offset_bytes(), 28);
     assert_eq!(field("points[1][1].flag").offset_bytes(), 32);
     assert_eq!(field("tail").offset_bytes(), 36);
-    assert_eq!(field("tail").c_type(), crate::kernel::CType::Int32);
+    assert_eq!(field("tail").c_type(), crate::kernel::ProgramType::Int32);
     assert_eq!(
         layout.size_bytes() as usize,
         std::mem::size_of::<HostOuter>()
@@ -8997,11 +9045,14 @@ fn c0_struct_values_preserve_pointer_field_layout_metadata() {
     assert_eq!(layout.fields()[0].offset_bytes(), 0);
     assert_eq!(
         layout.fields()[0].c_type(),
-        crate::kernel::CType::Int32Pointer
+        crate::kernel::ProgramType::Int32Pointer
     );
     assert_eq!(layout.fields()[1].name(), "length");
     assert_eq!(layout.fields()[1].offset_bytes(), 8);
-    assert_eq!(layout.fields()[1].c_type(), crate::kernel::CType::Int32);
+    assert_eq!(
+        layout.fields()[1].c_type(),
+        crate::kernel::ProgramType::Int32
+    );
 }
 
 #[test]
@@ -9030,23 +9081,23 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
         block: "data".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("packet", 16)
             .with_block("data", 4)
             .store(data.clone(), crate::kernel::int32(2))
             .store(
                 packet.clone(),
-                crate::kernel::CValue::typed_pointer(
+                crate::kernel::ProgramValue::typed_pointer(
                     data.clone(),
-                    crate::kernel::CType::Int32Pointer,
+                    crate::kernel::ProgramType::Int32Pointer,
                 ),
             )
             .store(packet.offset_by_bytes(8), crate::kernel::int32(4)),
     );
     let arguments = vec![crate::kernel::c_typed_pointer_value(
         packet.clone(),
-        crate::kernel::CType::UInt8Pointer,
+        crate::kernel::ProgramType::UInt8Pointer,
     )];
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
         state,
@@ -9067,7 +9118,7 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
     else {
         panic!("expected a pointer-bearing aggregate return");
     };
-    let crate::kernel::CValue::Pointer(return_pointer) = retained_result
+    let crate::kernel::ProgramValue::Pointer(return_pointer) = retained_result
         .native_payload()
         .expect("native Pointer payload")
     else {
@@ -9076,9 +9127,9 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
     let return_data = return_pointer.pointer().offset_by_bytes(0);
     assert_eq!(
         final_state.memory().load(&return_data),
-        crate::kernel::CExpressionOutcome::Value(crate::kernel::CValue::typed_pointer(
+        crate::kernel::CExpressionOutcome::Value(crate::kernel::ProgramValue::typed_pointer(
             data,
-            crate::kernel::CType::Int32Pointer,
+            crate::kernel::ProgramType::Int32Pointer,
         ))
     );
     assert_eq!(
@@ -9195,14 +9246,14 @@ fn c0_struct_values_preserve_inline_array_layout_metadata() {
         .find(|field| field.name() == "values")
         .expect("values field in kernel layout");
     assert_eq!(values.offset_bytes(), 4);
-    assert_eq!(values.c_type(), crate::kernel::CType::Int32Array(2));
+    assert_eq!(values.c_type(), crate::kernel::ProgramType::Int32Array(2));
     let bytes = layout
         .fields()
         .iter()
         .find(|field| field.name() == "bytes")
         .expect("bytes field in kernel layout");
     assert_eq!(bytes.offset_bytes(), 12);
-    assert_eq!(bytes.c_type(), crate::kernel::CType::UInt8Array(3));
+    assert_eq!(bytes.c_type(), crate::kernel::ProgramType::UInt8Array(3));
 }
 
 #[test]
@@ -9249,7 +9300,7 @@ fn c0_scalar_struct_values_allow_named_enum_fields() {
         .find(|field| field.name() == "state")
         .expect("enum field in kernel layout");
     assert_eq!(state.offset_bytes(), 4);
-    assert_eq!(state.c_type(), crate::kernel::CType::UInt32);
+    assert_eq!(state.c_type(), crate::kernel::ProgramType::UInt32);
 }
 
 #[test]
@@ -9386,14 +9437,14 @@ fn c0_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 4);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(crate::kernel::CMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             16,
         ))
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block(
@@ -9455,14 +9506,14 @@ fn c0_struct_multidimensional_scalar_array_field_flattens_row_major() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(crate::kernel::CMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             28,
         ))
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block(
@@ -9542,30 +9593,31 @@ fn c0_struct_scalar_array_element_address_preserves_row_major_offset() {
                 && matches!(right.as_ref(), syntax::C0Expression::Int32Literal(2))
     ));
 
-    let crate::kernel::CStatement::Return(crate::kernel::CExpression::AddressOf(target)) =
-        function.body_kernel_statement()
+    let crate::kernel::ProgramStatement::Return(crate::kernel::ProgramExpression::AddressOf(
+        target,
+    )) = function.body_kernel_statement()
     else {
         panic!("array element address should lower to kernel address-of")
     };
-    let crate::kernel::CExpression::Index(base, index) = target.as_ref() else {
+    let crate::kernel::ProgramExpression::Index(base, index) = target.as_ref() else {
         panic!("array element address should preserve indexed lvalue lowering")
     };
     assert!(matches!(
         base.as_ref(),
-        crate::kernel::CExpression::TypedLoad {
-            value_type: crate::kernel::CType::Int32Array(6),
+        crate::kernel::ProgramExpression::TypedLoad {
+            value_type: crate::kernel::ProgramType::Int32Array(6),
             ..
         }
     ));
     assert!(matches!(
         index.as_ref(),
-        crate::kernel::CExpression::Add(left, right)
-            if matches!(left.as_ref(), crate::kernel::CExpression::Multiply(multiplier, stride)
-                if matches!(multiplier.as_ref(), crate::kernel::CExpression::Value(value)
+        crate::kernel::ProgramExpression::Add(left, right)
+            if matches!(left.as_ref(), crate::kernel::ProgramExpression::Multiply(multiplier, stride)
+                if matches!(multiplier.as_ref(), crate::kernel::ProgramExpression::Value(value)
                     if value == &crate::kernel::int32(1))
-                    && matches!(stride.as_ref(), crate::kernel::CExpression::Value(value)
+                    && matches!(stride.as_ref(), crate::kernel::ProgramExpression::Value(value)
                         if value == &crate::kernel::int32(3)))
-                && matches!(right.as_ref(), crate::kernel::CExpression::Value(value)
+                && matches!(right.as_ref(), crate::kernel::ProgramExpression::Value(value)
                     if value == &crate::kernel::int32(2))
     ));
 }
@@ -9602,14 +9654,14 @@ fn c0_struct_scalar_array_element_address_executes_at_element_width() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(crate::kernel::CMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             28,
         ))
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_block("local:value_pointer", 8)
@@ -9620,7 +9672,7 @@ fn c0_struct_scalar_array_element_address_executes_at_element_width() {
                 )
                 .store(
                     local_value_pointer,
-                    crate::kernel::CValue::pointer(value.clone()),
+                    crate::kernel::ProgramValue::pointer(value.clone()),
                 )
                 .store(value, crate::kernel::int32(7)),
         )
@@ -9686,23 +9738,23 @@ fn c0_struct_byte_array_element_address_executes_at_byte_width() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 2);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(crate::kernel::CMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             8,
         ))
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_block("local:byte_pointer", 8)
                 .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
                 .store(
                     local_byte_pointer,
-                    crate::kernel::CValue::typed_pointer(
+                    crate::kernel::ProgramValue::typed_pointer(
                         byte.clone(),
-                        crate::kernel::CType::UInt8Pointer,
+                        crate::kernel::ProgramType::UInt8Pointer,
                     ),
                 )
                 .store(byte, crate::kernel::uint8(9)),
@@ -9799,14 +9851,14 @@ fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 6);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(crate::kernel::CMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             24,
         ))
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block(
@@ -9909,14 +9961,14 @@ fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(crate::kernel::CMemory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             40,
         ))
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block(
@@ -10036,20 +10088,20 @@ fn c0_struct_field_lowering_uses_explicit_byte_offsets() {
         pointer.as_ref(),
         syntax::C0Expression::PointerOffsetBytes { bytes: 8, .. }
     ));
-    let crate::kernel::CStatement::Return(crate::kernel::CExpression::TypedLoad {
+    let crate::kernel::ProgramStatement::Return(crate::kernel::ProgramExpression::TypedLoad {
         pointer,
-        value_type: crate::kernel::CType::Int32Pointer,
+        value_type: crate::kernel::ProgramType::Int32Pointer,
         ..
     }) = function.body_kernel_statement()
     else {
         panic!("field load should retain its value type")
     };
-    let crate::kernel::CExpression::Subobject { pointer, width: 8 } = pointer.as_ref() else {
+    let crate::kernel::ProgramExpression::Subobject { pointer, width: 8 } = pointer.as_ref() else {
         panic!("a member access should designate the member")
     };
     assert!(matches!(
         pointer.as_ref(),
-        crate::kernel::CExpression::PointerOffsetBytes { bytes: 8, .. }
+        crate::kernel::ProgramExpression::PointerOffsetBytes { bytes: 8, .. }
     ));
 }
 
@@ -10095,8 +10147,10 @@ fn c0_field_source_id_reaches_the_kernel_typed_load() {
         "owner_len.c",
     )
     .expect("field getter should parse with source identity");
-    let crate::kernel::CStatement::Return(crate::kernel::CExpression::TypedLoad { source, .. }) =
-        functions[0].body_kernel_statement()
+    let crate::kernel::ProgramStatement::Return(crate::kernel::ProgramExpression::TypedLoad {
+        source,
+        ..
+    }) = functions[0].body_kernel_statement()
     else {
         panic!("field getter should lower to a typed load")
     };
@@ -10262,23 +10316,24 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
             if *bytes == std::mem::offset_of!(HostOuter, inner) as u32
     ));
 
-    let crate::kernel::CStatement::Return(crate::kernel::CExpression::AddressOf(target)) =
-        function.body_kernel_statement()
+    let crate::kernel::ProgramStatement::Return(crate::kernel::ProgramExpression::AddressOf(
+        target,
+    )) = function.body_kernel_statement()
     else {
         panic!("nested field address should lower to kernel address-of")
     };
-    let crate::kernel::CExpression::TypedLoad {
+    let crate::kernel::ProgramExpression::TypedLoad {
         pointer,
-        value_type: crate::kernel::CType::Int32,
+        value_type: crate::kernel::ProgramType::Int32,
         ..
     } = target.as_ref()
     else {
         panic!("nested field address should preserve the leaf load type")
     };
-    let crate::kernel::CExpression::Subobject { pointer, .. } = pointer.as_ref() else {
+    let crate::kernel::ProgramExpression::Subobject { pointer, .. } = pointer.as_ref() else {
         panic!("the leaf member address should designate the leaf member")
     };
-    let crate::kernel::CExpression::PointerOffsetBytes {
+    let crate::kernel::ProgramExpression::PointerOffsetBytes {
         pointer: inner_pointer,
         bytes: inner_offset,
     } = pointer.as_ref()
@@ -10286,7 +10341,7 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
         panic!("nested field address should include the inner field offset")
     };
     assert_eq!(*inner_offset, std::mem::offset_of!(HostInner, value) as u32);
-    let crate::kernel::CExpression::Subobject {
+    let crate::kernel::ProgramExpression::Subobject {
         pointer: inner_pointer,
         ..
     } = inner_pointer.as_ref()
@@ -10295,7 +10350,7 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
     };
     assert!(matches!(
         inner_pointer.as_ref(),
-        crate::kernel::CExpression::PointerOffsetBytes { bytes, .. }
+        crate::kernel::ProgramExpression::PointerOffsetBytes { bytes, .. }
             if *bytes == std::mem::offset_of!(HostOuter, inner) as u32
     ));
 }
@@ -10315,7 +10370,7 @@ fn c0_address_of_int16_preserves_pointer_type() {
     .to_kernel_function();
 
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         function.clone(),
         Vec::new(),
         Default::default(),
@@ -10328,7 +10383,7 @@ fn c0_address_of_int16_preserves_pointer_type() {
     else {
         panic!("an int16 address should return a typed pointer")
     };
-    assert_eq!(value.c_type(), crate::kernel::CType::Int16Pointer);
+    assert_eq!(value.c_type(), crate::kernel::ProgramType::Int16Pointer);
 }
 
 #[test]
@@ -10349,7 +10404,7 @@ fn c0_syntax_rejects_assignment_to_local_array_object() {
         block: "block".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let state = crate::kernel::CState::new();
+    let state = crate::kernel::ExecutionState::new();
     let arguments = vec![crate::kernel::c_pointer_value(pointer)];
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
         state.clone(),
@@ -10392,7 +10447,7 @@ fn c0_syntax_targets_kernel_int32_subtraction_and_comparisons() {
     .expect("int32 operator function should parse")
     .to_kernel_function();
 
-    let state = crate::kernel::CState::new();
+    let state = crate::kernel::ExecutionState::new();
     let arguments = vec![crate::kernel::c_int32_literal(4)];
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
         state.clone(),
@@ -10432,7 +10487,7 @@ fn c0_if_condition_uses_c_int32_truthiness() {
     .expect("truthiness function should parse")
     .to_kernel_function();
 
-    let state = crate::kernel::CState::new();
+    let state = crate::kernel::ExecutionState::new();
     let arguments = vec![crate::kernel::c_int32_literal(7)];
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
         state.clone(),
@@ -10505,9 +10560,9 @@ fn c0_clamp_demo_proves_symbolic_branch_specifications() {
     let lo_bits = crate::kernel::MachineTerm::Variable(lo);
     let hi_bits = crate::kernel::MachineTerm::Variable(hi);
     let arguments = vec![
-        crate::kernel::CExpression::Value(crate::kernel::int32(x_bits.clone())),
-        crate::kernel::CExpression::Value(crate::kernel::int32(lo_bits.clone())),
-        crate::kernel::CExpression::Value(crate::kernel::int32(hi_bits.clone())),
+        crate::kernel::ProgramExpression::Value(crate::kernel::int32(x_bits.clone())),
+        crate::kernel::ProgramExpression::Value(crate::kernel::int32(lo_bits.clone())),
+        crate::kernel::ProgramExpression::Value(crate::kernel::int32(hi_bits.clone())),
     ];
     let below_lo = crate::kernel::ConditionTerm::Compare {
         format: crate::kernel::MachineIntegerType::Int32,
@@ -10547,12 +10602,12 @@ fn c0_clamp_demo_proves_symbolic_branch_specifications() {
 
     for (requires, value) in cases {
         let specification = crate::kernel::c_function_specification(
-            crate::kernel::CState::new(),
+            crate::kernel::ExecutionState::new(),
             arguments.clone(),
             requires.clone(),
             crate::kernel::CFunctionOutcome::Return {
                 value: value.into(),
-                state: Box::new(crate::kernel::CState::new()),
+                state: Box::new(crate::kernel::ExecutionState::new()),
             },
         );
         let theorem = crate::kernel::prove_c_function_satisfies_specification(
@@ -10777,8 +10832,8 @@ fn c0_syntax_targets_kernel_known_function_call_assignment() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let environment = crate::kernel::CExecutionEnvironment::new().with_function(increment);
-    let state = crate::kernel::CState::new();
-    let final_state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new();
+    let final_state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("local:result", 4)
             .store(local_pointer, crate::kernel::int32(42)),
@@ -10837,7 +10892,7 @@ fn c0_syntax_targets_kernel_float_argument_conversion() {
     .to_kernel_function();
 
     let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         caller,
         Vec::new(),
         Default::default(),
@@ -10856,7 +10911,7 @@ fn c0_syntax_targets_kernel_float_argument_conversion() {
     else {
         panic!("integer-to-double call argument should return a double");
     };
-    let crate::kernel::CValue::Float64(value) = retained_result
+    let crate::kernel::ProgramValue::Float64(value) = retained_result
         .native_payload()
         .expect("native Float64 payload")
     else {
@@ -11083,7 +11138,7 @@ fn c0_assignment_expression_result_uses_the_target_type() {
     .to_kernel_function();
 
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         function,
         Vec::new(),
         Default::default(),
@@ -11125,7 +11180,7 @@ fn c0_assignment_expression_short_circuits_a_guard_read() {
     };
 
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         function,
         vec![crate::kernel::c_pointer_value(null)],
         Default::default(),
@@ -11184,7 +11239,7 @@ fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
     let environment = crate::kernel::CExecutionEnvironment::new().with_function(tick);
 
     let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         caller,
         Vec::new(),
         Default::default(),
@@ -11346,7 +11401,7 @@ fn c0_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
         block: "packet".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let state = crate::kernel::CState::new().with_memory(
+    let state = crate::kernel::ExecutionState::new().with_memory(
         crate::kernel::CMemory::new()
             .with_block("packet", 16)
             .store(source.clone(), crate::kernel::int32(1))
@@ -11547,11 +11602,11 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
 
     assert!(matches!(
         apply.parameters()[0].c_type(),
-        crate::kernel::CType::FunctionPointer(_)
+        crate::kernel::ProgramType::FunctionPointer(_)
     ));
 
     let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         caller.clone(),
         Vec::new(),
         Default::default(),
@@ -11564,7 +11619,7 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
     assert_eq!(
         theorem.proposition(),
         &crate::kernel::Proposition::CFunctionExecutes {
-            state: Box::new(crate::kernel::CState::new()),
+            state: Box::new(crate::kernel::ExecutionState::new()),
             function: Box::new(caller),
             arguments: Vec::new(),
             outcome: crate::kernel::CFunctionOutcome::Return {
@@ -11575,7 +11630,7 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
                 // rather than the caller's block; both happen to end at 38,
                 // which is exactly why one block for both went unnoticed.
                 state: Box::new(
-                    crate::kernel::CState::new()
+                    crate::kernel::ExecutionState::new()
                         .with_memory(
                             crate::kernel::CMemory::new()
                                 .with_block("local:result", 4)
@@ -11624,7 +11679,7 @@ fn c0_function_pointers_reject_incompatible_callback_targets() {
     .to_kernel_function();
 
     let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         caller,
         Vec::new(),
         Default::default(),
@@ -11773,11 +11828,11 @@ fn c0_struct_function_pointer_fields_load_and_dispatch_known_targets() {
         block: "table".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let callback = crate::kernel::CValue::typed_pointer(
+    let callback = crate::kernel::ProgramValue::typed_pointer(
         crate::kernel::Pointer::function("compare"),
         compare.function_pointer_type(),
     );
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block("table".into(), apply.parameters()[0].pointee_class(), 8)
@@ -11790,7 +11845,7 @@ fn c0_struct_function_pointer_fields_load_and_dispatch_known_targets() {
         apply,
         vec![crate::kernel::c_typed_pointer_value(
             table,
-            crate::kernel::CType::Int32Pointer,
+            crate::kernel::ProgramType::Int32Pointer,
         )],
         Default::default(),
         crate::kernel::CExecutionEnvironment::new()
@@ -11849,11 +11904,11 @@ fn c0_struct_function_pointer_fields_support_direct_calls() {
         block: "table".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let callback = crate::kernel::CValue::typed_pointer(
+    let callback = crate::kernel::ProgramValue::typed_pointer(
         crate::kernel::Pointer::function("compare"),
         compare.function_pointer_type(),
     );
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block("table".into(), apply.parameters()[0].pointee_class(), 8)
@@ -11865,7 +11920,7 @@ fn c0_struct_function_pointer_fields_support_direct_calls() {
         apply,
         vec![crate::kernel::c_typed_pointer_value(
             table,
-            crate::kernel::CType::Int32Pointer,
+            crate::kernel::ProgramType::Int32Pointer,
         )],
         Default::default(),
         crate::kernel::CExecutionEnvironment::new().with_function(compare),
@@ -12014,12 +12069,16 @@ fn c0_void_pointers_are_opaque_object_views() {
     assert_eq!(syntax::C0Type::VoidPointer.pointee_type(), None);
     assert_eq!(syntax::C0Type::VoidPointer.abi_size_bytes(), 8);
     assert!(
-        crate::kernel::CType::VoidPointer
-            .pointer_types_compatible(crate::kernel::CType::Int32Pointer)
+        crate::kernel::ProgramType::VoidPointer
+            .pointer_types_compatible(crate::kernel::ProgramType::Int32Pointer)
     );
-    assert!(!crate::kernel::CType::VoidPointer.pointer_types_compatible(
-        crate::kernel::CType::FunctionPointer(crate::kernel::CallbackSignature::from_encoded(1))
-    ));
+    assert!(
+        !crate::kernel::ProgramType::VoidPointer.pointer_types_compatible(
+            crate::kernel::ProgramType::FunctionPointer(
+                crate::kernel::CallbackSignature::from_encoded(1)
+            )
+        )
+    );
 }
 
 #[test]
@@ -12037,7 +12096,7 @@ fn c0_syntax_targets_kernel_while_countdown() {
     .expect("while countdown function should parse")
     .to_kernel_function();
 
-    let state = crate::kernel::CState::new();
+    let state = crate::kernel::ExecutionState::new();
     let arguments = vec![crate::kernel::c_int32_literal(3)];
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
         state.clone(),
@@ -12055,7 +12114,7 @@ fn c0_syntax_targets_kernel_while_countdown() {
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
                 value: crate::kernel::int32(0).into(),
-                state: Box::new(crate::kernel::CState::new()),
+                state: Box::new(crate::kernel::ExecutionState::new()),
             },
         }
     );
@@ -12101,7 +12160,7 @@ fn c0_memory_safety_demo_fill_three_ints() {
     };
     let initial_memory = crate::kernel::CMemory::new().with_block("buf", 12);
     let resources = own_memory_context(base.clone(), 0, 3);
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(initial_memory)
         .with_resource_context(resources.clone());
     let final_memory = crate::kernel::CMemory::new()
@@ -12130,7 +12189,7 @@ fn c0_memory_safety_demo_fill_three_ints() {
             outcome: crate::kernel::CFunctionOutcome::Return {
                 value: crate::kernel::int32(2).into(),
                 state: Box::new(
-                    crate::kernel::CState::new()
+                    crate::kernel::ExecutionState::new()
                         .with_memory(final_memory)
                         .with_resource_context(resources)
                 ),
@@ -12161,14 +12220,14 @@ fn c0_floating_point_storage_types_preserve_abi_layout() {
     .expect("floating-point storage declarations should parse");
     let function = parsed.to_kernel_function();
 
-    assert_eq!(function.return_type(), crate::kernel::CType::Float64);
+    assert_eq!(function.return_type(), crate::kernel::ProgramType::Float64);
     assert_eq!(
         function.parameters()[0].c_type(),
-        crate::kernel::CType::Float32
+        crate::kernel::ProgramType::Float32
     );
     assert_eq!(
         function.parameters()[1].c_type(),
-        crate::kernel::CType::Float64
+        crate::kernel::ProgramType::Float64
     );
 
     let layout = parsed.structs().get("packet").expect("packet layout");
@@ -12338,9 +12397,9 @@ fn c0_floating_point_conditions_accept_symbolic_operands() {
     ));
 
     let compare = functions[0].to_kernel_function();
-    assert_eq!(compare.return_type(), crate::kernel::CType::Int32);
+    assert_eq!(compare.return_type(), crate::kernel::ProgramType::Int32);
     let classify = functions[1].to_kernel_function();
-    assert_eq!(classify.return_type(), crate::kernel::CType::Int32);
+    assert_eq!(classify.return_type(), crate::kernel::ProgramType::Int32);
 }
 
 #[test]
@@ -12371,11 +12430,11 @@ fn c0_floating_point_arithmetic_accepts_symbolic_same_width_operands() {
 
     assert_eq!(
         functions[0].to_kernel_function().return_type(),
-        crate::kernel::CType::Float32
+        crate::kernel::ProgramType::Float32
     );
     assert_eq!(
         functions[1].to_kernel_function().return_type(),
-        crate::kernel::CType::Float64
+        crate::kernel::ProgramType::Float64
     );
 }
 
@@ -12422,7 +12481,9 @@ fn c0_floating_point_storage_initializers_cover_static_local_arrays_and_calloc()
     );
     assert_eq!(
         load.to_kernel_function().static_variables()[0].initial_value(),
-        &crate::kernel::CValue::Float32(crate::kernel::MachineTerm::constant(2.5f32.to_bits(),))
+        &crate::kernel::ProgramValue::Float32(crate::kernel::MachineTerm::constant(
+            2.5f32.to_bits(),
+        ))
     );
 
     let allocate = functions
@@ -12432,7 +12493,7 @@ fn c0_floating_point_storage_initializers_cover_static_local_arrays_and_calloc()
     assert_eq!(allocate.return_type(), syntax::C0Type::Float32Pointer);
     assert_eq!(
         allocate.to_kernel_function().return_type(),
-        crate::kernel::CType::Float32Pointer
+        crate::kernel::ProgramType::Float32Pointer
     );
 }
 
@@ -12468,7 +12529,7 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
     let resources = own_memory_context(root.clone(), 2, 3).unchecked_with_fact(
         crate::kernel::CResourceFact::own_memory(memory_range(replacement.clone(), 0, 1)),
     );
-    let state = crate::kernel::CState::new()
+    let state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_classed_block("root".into(), function.parameters()[0].pointee_class(), 24)
@@ -12479,15 +12540,15 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
                 )
                 .store(
                     left.clone(),
-                    crate::kernel::CValue::typed_pointer(
+                    crate::kernel::ProgramValue::typed_pointer(
                         crate::kernel::Pointer::null(),
-                        crate::kernel::CType::Int32Pointer,
+                        crate::kernel::ProgramType::Int32Pointer,
                     ),
                 )
                 .store(replacement.clone(), crate::kernel::int32(42)),
         )
         .with_resource_context(resources.clone());
-    let final_state = crate::kernel::CState::new()
+    let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
             crate::kernel::CMemory::new()
                 .with_block("local:link", 8)
@@ -12502,16 +12563,16 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
                         block: "local:link".into(),
                         offset: crate::kernel::PointerOffsetTerm::Constant(0),
                     },
-                    crate::kernel::CValue::typed_pointer(
+                    crate::kernel::ProgramValue::typed_pointer(
                         root.offset_by_bytes(8),
-                        crate::kernel::CType::Int32PointerPointer,
+                        crate::kernel::ProgramType::Int32PointerPointer,
                     ),
                 )
                 .store(
                     left,
-                    crate::kernel::CValue::typed_pointer(
+                    crate::kernel::ProgramValue::typed_pointer(
                         replacement.clone(),
-                        crate::kernel::CType::Int32Pointer,
+                        crate::kernel::ProgramType::Int32Pointer,
                     ),
                 )
                 .store(replacement.clone(), crate::kernel::int32(42)),
@@ -12638,24 +12699,24 @@ fn c0_struct_pointer_globals_and_returns_retain_struct_identity() {
     assert_eq!(current_slot.struct_name(), Some("node"));
     assert_eq!(
         functions[0].to_kernel_function().global_variables()[0].c_type(),
-        crate::kernel::CType::Int32Pointer
+        crate::kernel::ProgramType::Int32Pointer
     );
     assert_eq!(
         functions[0].to_kernel_function().global_variables()[1].c_type(),
-        crate::kernel::CType::Int32PointerPointer
+        crate::kernel::ProgramType::Int32PointerPointer
     );
 
     let get_current = &functions[0];
     assert_eq!(get_current.return_pointer_struct_name(), Some("node"));
     assert_eq!(
         get_current.to_kernel_function().return_type(),
-        crate::kernel::CType::Int32Pointer
+        crate::kernel::ProgramType::Int32Pointer
     );
     let relay_current = &functions[1];
     assert_eq!(relay_current.return_pointer_struct_name(), Some("node"));
     assert_eq!(
         relay_current.to_kernel_function().return_type(),
-        crate::kernel::CType::Int32Pointer
+        crate::kernel::ProgramType::Int32Pointer
     );
 }
 
@@ -12731,7 +12792,7 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
         .to_kernel_function();
     for (input, expected) in [(0, 0), (7, 1)] {
         let execution = crate::kernel::prove_symbolic_c_function_execution(
-            crate::kernel::CState::new(),
+            crate::kernel::ExecutionState::new(),
             normalize.clone(),
             vec![crate::kernel::c_int32_literal(input)],
             Default::default(),
@@ -12745,7 +12806,7 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
                     ..
                 },
                 ..
-            } if matches!(value.native_payload(), Some(crate::kernel::CValue::Bool(bits)) if bits.bool_constant_value() == Some(expected == 1))
+            } if matches!(value.native_payload(), Some(crate::kernel::ProgramValue::Bool(bits)) if bits.bool_constant_value() == Some(expected == 1))
         ));
     }
 
@@ -12755,7 +12816,7 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
         .expect("read_flag function")
         .to_kernel_function();
     let execution = crate::kernel::prove_symbolic_c_function_execution(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         read_flag,
         Vec::new(),
         Default::default(),
@@ -12769,7 +12830,7 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
                 ..
             },
             ..
-        } if matches!(value.native().as_ref(), crate::kernel::CValue::Int32(
+        } if matches!(value.native().as_ref(), crate::kernel::ProgramValue::Int32(
                     int32_constant!(1)
                 ))
     ));
@@ -12792,7 +12853,7 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
     .expect("pointer-to-bool conversion should parse")
     .to_kernel_function();
     let null = crate::kernel::prove_symbolic_c_function_execution(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         pointer_function.clone(),
         vec![crate::kernel::c_pointer_value(crate::kernel::Pointer {
             block: crate::kernel::PointerBlock::Concrete("null".to_string()),
@@ -12809,12 +12870,12 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
                 ..
             },
             ..
-        } if matches!(value.native().as_ref(), crate::kernel::CValue::Int32(
+        } if matches!(value.native().as_ref(), crate::kernel::ProgramValue::Int32(
                     int32_constant!(0)
                 ))
     ));
     let non_null = crate::kernel::prove_symbolic_c_function_execution(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         pointer_function,
         vec![crate::kernel::c_pointer_value(crate::kernel::Pointer {
             block: crate::kernel::PointerBlock::Concrete("object".to_string()),
@@ -12831,7 +12892,7 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
                 ..
             },
             ..
-        } if matches!(value.native().as_ref(), crate::kernel::CValue::Int32(
+        } if matches!(value.native().as_ref(), crate::kernel::ProgramValue::Int32(
                     int32_constant!(1)
                 ))
     ));
@@ -12950,7 +13011,7 @@ fn c0_body_call_updates_a_local_array_without_rebinding_it_as_a_scalar() {
         .unwrap()
         .to_kernel_function();
     let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
-        crate::kernel::CState::new(),
+        crate::kernel::ExecutionState::new(),
         caller,
         Vec::new(),
         Default::default(),
@@ -13086,7 +13147,7 @@ fn signed_byte_storage_and_pointer_identity() {
 /// automatic initializer, an assignment, a cast, a return, and an argument.
 #[test]
 fn c0_out_of_range_integer_constants_convert_modulo_the_destination_width() {
-    use crate::kernel::{CValue, MachineTerm};
+    use crate::kernel::{MachineTerm, ProgramValue};
     let unit = syntax::parse_translation_unit_for_source(
         "signed char high = 128; signed char low = -129; unsigned char negative = -56;\n\
          unsigned char wide = 300; short big = 40000; int value = (unsigned char) 256;",
@@ -13100,7 +13161,7 @@ fn c0_out_of_range_integer_constants_convert_modulo_the_destination_width() {
         ("negative", crate::kernel::uint8(200)),
         ("wide", crate::kernel::uint8(44)),
         ("big", crate::kernel::int16(-25536i32 as u32)),
-        ("value", CValue::Int32(MachineTerm::constant(0))),
+        ("value", ProgramValue::Int32(MachineTerm::constant(0))),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
         assert_eq!(global.initial_value(), &expected, "{name}");
@@ -13720,7 +13781,7 @@ fn optimizer_promise_classification_without_a_profile_switch() {
 
 #[test]
 fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_admission() {
-    use crate::kernel::{CPointerArrayElement as Element, CType};
+    use crate::kernel::{PointerArrayElement as Element, ProgramType};
     use syntax::C0Type;
     for (scalar, pointer, slot, array, element, kernel_scalar) in [
         (
@@ -13729,7 +13790,7 @@ fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_a
             C0Type::Int128PointerPointer,
             C0Type::Int128Array(3),
             Element::Int128,
-            CType::Int128,
+            ProgramType::Int128,
         ),
         (
             C0Type::UInt128,
@@ -13737,7 +13798,7 @@ fn c0_wide_address_types_preserve_abi_and_exact_kernel_identity_without_source_a
             C0Type::UInt128PointerPointer,
             C0Type::UInt128Array(3),
             Element::UInt128,
-            CType::UInt128,
+            ProgramType::UInt128,
         ),
     ] {
         assert_eq!(scalar.pointer_type(), Some(pointer));
@@ -14227,7 +14288,7 @@ fn c0_long_double_prototypes_are_unusable_and_keep_type_positions() {
 // updates as statements, including full-width unsigned wrap.
 #[test]
 fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
-    use crate::kernel::{CFunctionOutcome, CState, MachineTerm, Proposition};
+    use crate::kernel::{CFunctionOutcome, ExecutionState, MachineTerm, Proposition};
     for (source, expected) in [
         (
             "int32 run() { int32 n = 5; return n++; }",
@@ -14270,7 +14331,7 @@ fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
             .expect(source)
             .to_kernel_function();
         let theorem = crate::kernel::prove_symbolic_c_function_execution(
-            CState::new(),
+            ExecutionState::new(),
             function,
             Vec::new(),
             Default::default(),
@@ -14298,7 +14359,7 @@ fn c0_scalar_updates_keep_const_pointer_reads_and_nominal_stride() {
             .expect(source)
             .to_kernel_function();
         let theorem = crate::kernel::prove_symbolic_c_function_execution(
-            crate::kernel::CState::new(),
+            crate::kernel::ExecutionState::new(),
             function,
             Vec::new(),
             Default::default(),
@@ -14341,7 +14402,7 @@ fn c0_scalar_updates_preserve_signed_overflow_undefined_behavior() {
             .expect(source)
             .to_kernel_function();
         let theorem = crate::kernel::prove_symbolic_c_function_execution(
-            crate::kernel::CState::new(),
+            crate::kernel::ExecutionState::new(),
             function,
             Vec::new(),
             Default::default(),

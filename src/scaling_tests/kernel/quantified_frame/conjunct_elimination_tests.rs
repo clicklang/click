@@ -45,7 +45,7 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
         let defined = |memory: &CMemory| Proposition::CMemoryReadDefined {
             memory: memory.clone(),
             pointer: base.clone(),
-            value_type: CType::UInt8,
+            value_type: ProgramType::UInt8,
         };
         // Built outside the measurement: interning a snapshot is paid by
         // whoever builds it, not by the frame.
@@ -124,7 +124,7 @@ fn load_equality_work(earlier: u32, between: u32, written: bool) -> usize {
     }
     let bi = crate::kernel::intern_c_memory_ref(&before);
     let ai = crate::kernel::intern_c_memory_ref(&after);
-    let load = |m: &SharedCMemory| {
+    let load = |m: &SharedMemory| {
         MachineTerm::MemoryLoad(m.clone(), Box::new(base.clone()), LoadKind::UInt8)
     };
     let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {

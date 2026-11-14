@@ -2066,23 +2066,26 @@ fn claim_expansion_source(theorem: &VerifiedCTheorem) -> Result<String, ClickErr
 /// with the split preserves the scope of the names it introduces. Only an
 /// `if` whose C then-arm returns from the function is moved. A continuing C
 /// arm keeps its nested continuation, as does a post-execution case split.
-fn sequential_early_returns(tactics: Vec<ProofTactic>, function: &CFunction) -> Vec<ProofTactic> {
+fn sequential_early_returns(
+    tactics: Vec<ProofTactic>,
+    function: &ProgramFunction,
+) -> Vec<ProofTactic> {
     sequential_early_return_tactics(tactics, &returning_then_arms(function.body()))
 }
 
-fn returning_then_arms(statement: &CStatement) -> BTreeSet<usize> {
+fn returning_then_arms(statement: &ProgramStatement) -> BTreeSet<usize> {
     // Use the same executable preorder as source statement anchors: sequences
     // add no node; if/while/try visit their bodies; other operations are atomic.
     // Some(false) may fall through; Some(true) returns on every path.
     // None includes a nonlocal transfer, which may bypass a later return.
     fn visit(
-        statement: &CStatement,
+        statement: &ProgramStatement,
         index: &mut usize,
         returns: &mut BTreeSet<usize>,
         catches_exceptions: bool,
     ) -> Option<bool> {
         crate::instrumentation::record_deterministic_work(1);
-        if let CStatement::Seq(statements) = statement {
+        if let ProgramStatement::Seq(statements) = statement {
             let mut flow = Some(false);
             for statement in statements.iter() {
                 let next = visit(statement, index, returns, catches_exceptions);
@@ -2095,7 +2098,7 @@ fn returning_then_arms(statement: &CStatement) -> BTreeSet<usize> {
         let head = *index;
         *index += 1;
         match statement {
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -2107,36 +2110,36 @@ fn returning_then_arms(statement: &CStatement) -> BTreeSet<usize> {
                 }
                 then_returns.zip(else_returns).map(|(a, b)| a && b)
             }
-            CStatement::While { body, .. } => {
+            ProgramStatement::While { body, .. } => {
                 visit(body, index, returns, catches_exceptions);
                 None
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {
                 let body_returns = visit(try_body, index, returns, true);
                 let handler_returns = visit(handler, index, returns, catches_exceptions);
                 body_returns.zip(handler_returns).map(|(a, b)| a && b)
             }
-            CStatement::Return(_) => Some(true),
+            ProgramStatement::Return(_) => Some(true),
             // A throwing call can resume in the enclosing handler before
             // the return this sequence would otherwise reach.
-            CStatement::Call { .. }
-            | CStatement::CallAssign { .. }
-            | CStatement::CallResult { .. }
+            ProgramStatement::Call { .. }
+            | ProgramStatement::CallAssign { .. }
+            | ProgramStatement::CallResult { .. }
                 if catches_exceptions =>
             {
                 None
             }
             // A nonlocal transfer can bypass a later return in a sequence.
             // A throw may enter a surrounding handler instead of exiting.
-            CStatement::Break
-            | CStatement::Continue
-            | CStatement::Goto { .. }
-            | CStatement::Throw(_)
-            | CStatement::Switch { .. }
-            | CStatement::ForStep { .. }
-            | CStatement::ScalarReferenceScope(_) => None,
+            ProgramStatement::Break
+            | ProgramStatement::Continue
+            | ProgramStatement::Goto { .. }
+            | ProgramStatement::Throw(_)
+            | ProgramStatement::Switch { .. }
+            | ProgramStatement::ForStep { .. }
+            | ProgramStatement::ScalarReferenceScope(_) => None,
             _ => Some(false),
         }
     }

@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
     for size in [16usize, 64, 256, 1024] {
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         for index in 0..size {
             state = state.with_local(
                 format!("a_{index:04}"),
@@ -15,7 +15,7 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
             );
         }
         let value = crate::kernel::bool_value(MachineTerm::Variable(Variable(9000)));
-        let CValue::Bool(term) = &value else {
+        let ProgramValue::Bool(term) = &value else {
             unreachable!()
         };
         state = state.with_local("z_bool", value.clone());
@@ -30,7 +30,7 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         let surface = surface.expect("a normalized Boolean local has its source spelling");
         assert_eq!(
             surface,
-            ContractExpression::CFragment(CExpression::Variable("z_bool".into()))
+            ContractExpression::CFragment(ProgramExpression::Variable("z_bool".into()))
         );
         assert!(
             work >= size && work <= size + 64,
@@ -67,14 +67,14 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
                         4,
                     ),
                 };
-                let mut state = CState::new();
+                let mut state = ExecutionState::new();
                 for index in 0..size {
                     state = state.with_local(
                         format!("a_{index:04}"),
-                        CValue::typed_pointer(cyclic.clone(), CType::Int32Pointer),
+                        ProgramValue::typed_pointer(cyclic.clone(), ProgramType::Int32Pointer),
                     );
                 }
-                let synthesize = |state: &CState| {
+                let synthesize = |state: &ExecutionState| {
                     synthesize_surface_pointer(
                         &pointer,
                         ParameterBinding::default(),
@@ -88,12 +88,12 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
                 assert!(work >= size && work <= 4 * size + 64, "{size}: {work}");
                 state = state.with_local(
                     "z_pointer",
-                    CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+                    ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
                 );
                 for _ in 0..2 {
                     let (found, work) =
                         crate::instrumentation::measure_deterministic_work(|| synthesize(&state));
-                    assert_eq!(found, Some(CExpression::Variable("z_pointer".into())));
+                    assert_eq!(found, Some(ProgramExpression::Variable("z_pointer".into())));
                     assert!(work >= size && work <= 4 * size + 64, "{size}: {work}");
                 }
             }
@@ -107,15 +107,15 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
 fn pointer_local_synthesis_skips_unrelated_pointer_blocks() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256, 1024] {
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         for i in 0..size {
             state = state.with_local(
                 format!("a_{i:04}"),
-                CValue::pointer(Pointer::symbolic(Variable(982_000 + i as u64))),
+                ProgramValue::pointer(Pointer::symbolic(Variable(982_000 + i as u64))),
             );
         }
         let base = Pointer::symbolic(Variable(984_000));
-        state = state.with_local("z_base", CValue::pointer(base.clone()));
+        state = state.with_local("z_base", ProgramValue::pointer(base.clone()));
         let selected = base.offset_by_bytes(8);
         let (expression, work) = crate::instrumentation::measure_deterministic_work(|| {
             synthesize_surface_pointer(
@@ -127,9 +127,9 @@ fn pointer_local_synthesis_skips_unrelated_pointer_blocks() {
         });
         assert_eq!(
             expression,
-            Some(CExpression::Add(
-                Box::new(CExpression::Variable("z_base".into())),
-                Box::new(CExpression::Value(int32(2))),
+            Some(ProgramExpression::Add(
+                Box::new(ProgramExpression::Variable("z_base".into())),
+                Box::new(ProgramExpression::Value(int32(2))),
             ))
         );
         samples.push(work);
@@ -145,7 +145,7 @@ fn integer_division_synthesis_work_tracks_the_selected_expression() {
     use crate::kernel::{IntegerTerm, SharedIntegerTerm};
     let variable = Variable(8_410_000);
     let names = BTreeMap::from([(variable, "n".to_string())]);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let samples = [4usize, 8, 16, 32].map(|size| {
         let mut term: SharedIntegerTerm = IntegerTerm::Variable(variable).into();
         for level in 0..size {
@@ -199,7 +199,7 @@ fn integer_division_synthesis_refuses_shared_dag_expansion_within_its_budget() {
     use crate::kernel::{IntegerTerm, SharedIntegerTerm};
     let variable = Variable(8_420_000);
     let names = BTreeMap::from([(variable, "n".to_string())]);
-    let state = CState::new();
+    let state = ExecutionState::new();
     for size in [16usize, 32, 64, 128] {
         let mut term: SharedIntegerTerm = IntegerTerm::Variable(variable).into();
         for _ in 0..size {
@@ -254,9 +254,9 @@ fn allocation_result_names_use_one_index_as_recorded_history_grows() {
                         region: CodeRegionRef::Region(last_region),
                         kind: ProgramPointKind::Exit,
                     },
-                    CState::new().with_local(
+                    ExecutionState::new().with_local(
                         "p",
-                        CValue::typed_pointer(last.clone(), CType::Int32Pointer),
+                        ProgramValue::typed_pointer(last.clone(), ProgramType::Int32Pointer),
                     ),
                 )
             });
@@ -299,9 +299,9 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
         let fact = Proposition::ConditionIs(
             ConditionTerm::bool_application(
                 "choose",
-                vec![crate::kernel::PureFunctionArgument::Value(CValue::of_bool(
-                    flag,
-                ))],
+                vec![crate::kernel::PureFunctionArgument::Value(
+                    ProgramValue::of_bool(flag),
+                )],
             ),
             true,
         );
@@ -309,7 +309,7 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
             synthesize_surface_proposition_with_bound_variable_names(
                 &fact,
                 ParameterBinding::default(),
-                &CState::new(),
+                &ExecutionState::new(),
                 &names,
             )
         });
@@ -331,7 +331,11 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
         }
         let fact = Proposition::ConditionIs(condition, true);
         let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
-            synthesize_surface_proposition(&fact, ParameterBinding::default(), &CState::new())
+            synthesize_surface_proposition(
+                &fact,
+                ParameterBinding::default(),
+                &ExecutionState::new(),
+            )
         });
         assert!(surface.is_some());
         assert!(work >= size && work <= 20 * size + 64, "{size}: {work}");
@@ -410,11 +414,11 @@ fn common_arithmetic_names_ignore_unrelated_locals_without_exports() {
             MachineTerm::constant(1),
         );
         let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
-        let mut state = CState::new().with_local("current", CValue::Int32(native));
+        let mut state = ExecutionState::new().with_local("current", ProgramValue::Int32(native));
         for index in 0..size {
             state = state.with_local(
                 format!("noise_{index}"),
-                CValue::Int32(MachineTerm::Variable(Variable(994000 + index))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(994000 + index))),
             );
         }
         let exports = KernelTermExport::machine_export_count();
@@ -423,7 +427,7 @@ fn common_arithmetic_names_ignore_unrelated_locals_without_exports() {
         });
         assert_eq!(
             surface,
-            Some(SurfaceTerm::CFragment(CExpression::Variable(
+            Some(SurfaceTerm::CFragment(ProgramExpression::Variable(
                 "current".into()
             )))
         );
@@ -477,11 +481,11 @@ fn nested_fold_surface_raising_scales_without_ambient_local_scan() {
         for size in [3, 9, 27] {
             let _session = crate::kernel::VerificationSession::enter();
             let n = MachineTerm::Variable(Variable(720000));
-            let mut state = CState::new().with_local("n", CValue::Int32(n.clone()));
+            let mut state = ExecutionState::new().with_local("n", ProgramValue::Int32(n.clone()));
             for i in 0..unrelated {
                 state = state.with_local(
                     format!("unused_{i}"),
-                    CValue::Int32(MachineTerm::Variable(Variable(730000 + i))),
+                    ProgramValue::Int32(MachineTerm::Variable(Variable(730000 + i))),
                 );
             }
             let mut term = MachineTerm::Variable(Variable(720001));
@@ -523,13 +527,14 @@ fn common_match_surface_work_tracks_selected_body_without_exports() {
     };
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(CType::Int32)]);
+        let scrutinee =
+            KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(ProgramType::Int32)]);
         let AlgebraicTermNode::Variable(id) = scrutinee.node else {
             panic!()
         };
         let mut import = KernelTermImport::default();
         let scrutinee = import.argument(&PureFunctionArgument::Algebraic(scrutinee));
-        let bound = KernelTerm::variable(KernelType::C(CType::Int32), Variable(991950));
+        let bound = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(991950));
         let mut body = bound.clone();
         for _ in 0..size {
             body = KernelTerm::machine_binary_shared(
@@ -539,7 +544,7 @@ fn common_match_surface_work_tracks_selected_body_without_exports() {
             );
         }
         let matched = KernelMatch::new(
-            KernelType::C(CType::Int32),
+            KernelType::C(ProgramType::Int32),
             scrutinee,
             vec![(
                 KernelMatchArm {
@@ -557,7 +562,7 @@ fn common_match_surface_work_tracks_selected_body_without_exports() {
             matches::raise_match(
                 &matched,
                 ParameterBinding::default(),
-                &CState::new(),
+                &ExecutionState::new(),
                 &names,
             )
         });
@@ -578,18 +583,18 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
         for depth in [3, 9, 27] {
             let _session = crate::kernel::VerificationSession::enter();
             let n = MachineTerm::Variable(Variable(992000));
-            let mut state = CState::new().with_local("n", CValue::Int32(n.clone()));
+            let mut state = ExecutionState::new().with_local("n", ProgramValue::Int32(n.clone()));
             for i in 0..unrelated {
                 state = state.with_local(
                     format!("unused_{i}"),
-                    CValue::Int32(MachineTerm::Variable(Variable(993000 + i))),
+                    ProgramValue::Int32(MachineTerm::Variable(Variable(993000 + i))),
                 );
             }
             let mut import = KernelTermImport::default();
             let scrutinee = import.argument(&PureFunctionArgument::Algebraic(
-                KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(CType::Int32)]),
+                KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(ProgramType::Int32)]),
             ));
-            let ty = KernelType::C(CType::Int32);
+            let ty = KernelType::C(ProgramType::Int32);
             let zero = import.machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
             let end = import.machine(MachineIntegerType::Int32, &n);
             let declaration = KernelTerm::variable(ty.clone(), Variable(992003));

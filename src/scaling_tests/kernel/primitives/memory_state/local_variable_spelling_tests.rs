@@ -10,11 +10,11 @@ use crate::kernel::binary_node;
 #[test]
 fn local_variable_spelling_work_does_not_grow_with_declared_slots() {
     for size in [4usize, 16, 64, 256, 1024] {
-        let state = (0..size).fold(CState::new(), |state, index| {
+        let state = (0..size).fold(ExecutionState::new(), |state, index| {
             scalar(
                 state,
                 &format!("noise_{index:04}"),
-                CValue::Int32(MachineTerm::constant(0)),
+                ProgramValue::Int32(MachineTerm::constant(0)),
             )
         });
         let (name, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -40,7 +40,7 @@ fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_r
                 Box::new(term)
             )
         });
-        let state = scalar(CState::new(), "noise", CValue::Int32(nested));
+        let state = scalar(ExecutionState::new(), "noise", ProgramValue::Int32(nested));
         let base = Pointer {
             block: "unrelated-heap".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -48,7 +48,7 @@ fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_r
         let memory = state.memory().clone().with_seeded_cells(
             base,
             4,
-            CType::Int32,
+            ProgramType::Int32,
             0,
             1_000_000,
             CMemory::new().into(),

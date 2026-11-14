@@ -124,8 +124,8 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
     );
     let unequal = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(
-            Box::new(CPointerValue::new(a.clone(), CType::Int32Pointer)),
-            Box::new(CPointerValue::new(b.clone(), CType::Int32Pointer)),
+            Box::new(PointerValue::new(a.clone(), ProgramType::Int32Pointer)),
+            Box::new(PointerValue::new(b.clone(), ProgramType::Int32Pointer)),
         ),
         false,
     );

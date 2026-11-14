@@ -4,7 +4,7 @@
 //! slice follows from `remaining` alone: a proof reads `iter.len()`.
 use super::*;
 /// The cursor's pointer type, as a Rust reference to the element lowers.
-fn pointer_type(element: &Type) -> Result<CType, String> {
+fn pointer_type(element: &Type) -> Result<ProgramType, String> {
     if !element.is_integer() {
         return Err("shared array iterator requires an integer element".into());
     }
@@ -15,7 +15,7 @@ fn pointer_type(element: &Type) -> Result<CType, String> {
     .to_kernel_type())
 }
 /// The element a slice iterator yields next: `base + (length - remaining)`.
-pub(super) fn shared_array_position(iterator: &str) -> CExpression {
+pub(super) fn shared_array_position(iterator: &str) -> ProgramExpression {
     c_add(
         c_variable(format!("{iterator}_base")),
         c_subtract(
@@ -32,8 +32,8 @@ fn slice_iter_call(
     target: String,
     operation: &str,
     element: &Type,
-    arguments: Vec<CExpression>,
-) -> Result<CStatement, String> {
+    arguments: Vec<ProgramExpression>,
+) -> Result<ProgramStatement, String> {
     let element = element
         .scalar_name()
         .ok_or("shared array iterator requires an integer element")?;
@@ -52,14 +52,14 @@ impl Context<'_> {
         &mut self,
         name: &str,
         element: &Type,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         pointer_type(element)?;
         if !self.locals.insert(name.into()) {
             return Err("shared iterator state identity collision".into());
         }
         self.library_slice_iterators
             .insert(name.into(), element.clone());
-        let value_type = CType::Parameter(super::slice_iter_type(element)?);
+        let value_type = ProgramType::Parameter(super::slice_iter_type(element)?);
         // Only the iterator a `next(&mut it)` borrows lives in memory; one
         // that is only built and moved holds its value.
         if !self.library_next_options.contains_key(name) {
@@ -77,7 +77,7 @@ impl Context<'_> {
         &mut self,
         name: &str,
         element: &Type,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let spelling = element
             .scalar_name()
             .ok_or("shared array iterator requires an integer element")?;
@@ -87,13 +87,16 @@ impl Context<'_> {
         self.library_slice_options
             .insert(name.into(), element.clone());
         let option = super::super::standard_library::option_reference_name(spelling);
-        Ok(c_declare(name, CType::Parameter(EnumTypes::get(&option)?)))
+        Ok(c_declare(
+            name,
+            ProgramType::Parameter(EnumTypes::get(&option)?),
+        ))
     }
     /// The `next(&mut it)` call a test of the library iterator `iterator`
     /// makes, assigning the `Option` it returns. The importer places the
     /// call ahead of the test that reads its `Option`, as the compiler's
     /// `match` on `next()` does.
-    pub(super) fn library_slice_next_call(&mut self, iterator: &str) -> Option<CStatement> {
+    pub(super) fn library_slice_next_call(&mut self, iterator: &str) -> Option<ProgramStatement> {
         let element = self.library_slice_iterators.get(iterator)?.clone();
         let option = self.library_next_options.get(iterator)?.clone();
         let address = self
@@ -108,8 +111,8 @@ impl Context<'_> {
     fn store_library_iterator(
         &mut self,
         target: &str,
-        assign: impl FnOnce(String) -> Result<CStatement, String>,
-    ) -> Result<CStatement, String> {
+        assign: impl FnOnce(String) -> Result<ProgramStatement, String>,
+    ) -> Result<ProgramStatement, String> {
         let Some(&value_type) = self.memory_values.get(target) else {
             return assign(target.to_string());
         };
@@ -130,7 +133,7 @@ impl Context<'_> {
         name: &str,
         element: &Type,
         option: bool,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let pointer = pointer_type(element)?;
         let element = scalar_type(element)?.to_kernel_type();
         if !self.locals.insert(name.into()) {
@@ -138,15 +141,18 @@ impl Context<'_> {
         }
         let fields = if option {
             self.shared_array_options.insert(name.into(), element);
-            vec![("some", CType::Int32, false), ("pointer", pointer, true)]
+            vec![
+                ("some", ProgramType::Int32, false),
+                ("pointer", pointer, true),
+            ]
         } else {
             self.shared_array_iterators.insert(name.into(), element);
             vec![
                 ("base", pointer, true),
                 // The lengths are `usize`s.
-                ("length", CType::UInt64, false),
-                ("remaining", CType::UInt64, false),
-                ("live", CType::Int32, false),
+                ("length", ProgramType::UInt64, false),
+                ("remaining", ProgramType::UInt64, false),
+                ("live", ProgramType::Int32, false),
             ]
         };
         let mut result = c_skip();
@@ -169,7 +175,7 @@ impl Context<'_> {
         &mut self,
         target: &str,
         source: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let library = self.library_slice_iterators.get(target).cloned();
         let expected = match &library {
             Some(element) => scalar_type(element)?.to_kernel_type(),
@@ -207,7 +213,7 @@ impl Context<'_> {
                 self.store_library_iterator(target, call)?,
             ));
         }
-        let begin = |length: CExpression| {
+        let begin = |length: ProgramExpression| {
             c_seq(
                 c_assign(format!("{target}_base"), c_variable(&p)),
                 c_seq(
@@ -229,7 +235,7 @@ impl Context<'_> {
             c_seq(p_capture, c_seq(l_capture, begin(c_variable(&l)))),
         ))
     }
-    pub(super) fn shared_array_live(&self, iterator: &str) -> Result<CStatement, String> {
+    pub(super) fn shared_array_live(&self, iterator: &str) -> Result<ProgramStatement, String> {
         if !self.shared_array_iterators.contains_key(iterator) {
             return Err("unknown shared iterator".into());
         }
@@ -238,13 +244,16 @@ impl Context<'_> {
             c_int32_literal(1),
         )))
     }
-    pub(super) fn shared_array_has_next(&self, iterator: &str) -> Result<CExpression, String> {
+    pub(super) fn shared_array_has_next(
+        &self,
+        iterator: &str,
+    ) -> Result<ProgramExpression, String> {
         if self.library_slice_iterators.contains_key(iterator) {
             let option = self
                 .library_next_options
                 .get(iterator)
                 .ok_or("library slice iterator test without its next() call")?;
-            return Ok(CExpression::EnumIs {
+            return Ok(ProgramExpression::EnumIs {
                 value: Box::new(c_variable(option)),
                 variant: "Some".into(),
             });
@@ -261,7 +270,7 @@ impl Context<'_> {
         &mut self,
         target: &str,
         source: &str,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         if let (Some(to), Some(from)) = (
             self.library_slice_iterators.get(target),
             self.library_slice_iterators.get(source),
@@ -320,7 +329,7 @@ impl Context<'_> {
         &self,
         iterator: &str,
         option: &str,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         self.shared_array_next_with(iterator, option, c_skip())
     }
     /// [`Self::shared_array_next`], also running `yielded` when it yields,
@@ -329,8 +338,8 @@ impl Context<'_> {
         &self,
         iterator: &str,
         option: &str,
-        yielded: CStatement,
-    ) -> Result<CStatement, String> {
+        yielded: ProgramStatement,
+    ) -> Result<ProgramStatement, String> {
         if self.library_slice_iterators.contains_key(iterator) {
             // `next(&mut it)` ran ahead of the test that reads its `Option`
             // (`library_slice_next_call`); this edge only continues.

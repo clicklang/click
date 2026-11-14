@@ -40,7 +40,7 @@ fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
     let memory =
         crate::kernel::intern_c_memory(CMemory::new().with_block(base.block.clone(), 128).store(
             Pointer::symbolic(Variable(982_000)),
-            CValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(MachineTerm::constant(9)),
         ));
     let mut samples = Vec::new();
     for size in [8u64, 32, 128, 512] {

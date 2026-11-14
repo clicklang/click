@@ -4082,10 +4082,10 @@ mod tests {
     #[test]
     fn charon_array_storage_starts_keep_layout_and_lowering_compact() {
         let original = loop_array_copy_export();
-        fn shape(s: &crate::kernel::CStatement) -> (usize, usize) {
-            use crate::kernel::CStatement;
+        fn shape(s: &crate::kernel::ProgramStatement) -> (usize, usize) {
+            use crate::kernel::ProgramStatement;
             match s {
-                CStatement::Seq(statements) => {
+                ProgramStatement::Seq(statements) => {
                     let mut total = (statements.len() - 1, 0);
                     for statement in statements.iter() {
                         let part = shape(statement);
@@ -4093,8 +4093,8 @@ mod tests {
                     }
                     total
                 }
-                CStatement::DeclareAggregate { layout, .. } => (1, layout.fields().len()),
-                CStatement::If {
+                ProgramStatement::DeclareAggregate { layout, .. } => (1, layout.fields().len()),
+                ProgramStatement::If {
                     then_branch,
                     else_branch,
                     ..
@@ -4103,7 +4103,7 @@ mod tests {
                     let b = shape(else_branch);
                     (1 + a.0 + b.0, a.1 + b.1)
                 }
-                CStatement::While { body, .. } => {
+                ProgramStatement::While { body, .. } => {
                     let a = shape(body);
                     (1 + a.0, a.1)
                 }
@@ -4825,8 +4825,8 @@ mod tests {
             .find(|f| f.name() == "nested")
             .unwrap()
             .to_kernel_function();
-        fn visit(s: &crate::kernel::CStatement, depth: usize, loops: &mut Vec<usize>) {
-            use crate::kernel::CStatement as C;
+        fn visit(s: &crate::kernel::ProgramStatement, depth: usize, loops: &mut Vec<usize>) {
+            use crate::kernel::ProgramStatement as C;
             match s {
                 C::Seq(statements) => {
                     for statement in statements.iter() {
@@ -5524,8 +5524,8 @@ mod tests {
             .find(|f| f.name() == "guarded_walk")
             .unwrap()
             .to_kernel_function();
-        fn visit(statement: &crate::kernel::CStatement, guards: &mut Vec<String>) {
-            use crate::kernel::CStatement as C;
+        fn visit(statement: &crate::kernel::ProgramStatement, guards: &mut Vec<String>) {
+            use crate::kernel::ProgramStatement as C;
             match statement {
                 C::Seq(statements) => {
                     for statement in statements.iter() {

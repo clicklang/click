@@ -5,7 +5,8 @@ fn shared_selected_atoms_reuse_growing_prefixes_and_cold_dags() {
         for size in [16, 64, 256] {
             let _session = VerificationSession::enter();
             let format = MachineIntegerType::Int32;
-            let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(1005400));
+            let mut root =
+                KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(1005400));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {

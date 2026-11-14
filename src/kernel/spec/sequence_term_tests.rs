@@ -2,7 +2,7 @@ use super::*;
 
 fn singleton(value: u32) -> SequenceTerm {
     SequenceTerm {
-        element_type: Some(CType::Int32),
+        element_type: Some(ProgramType::Int32),
         node: std::sync::Arc::new(SequenceTermNode::Literal(vec![int32(value)].into())),
     }
 }
@@ -15,7 +15,7 @@ fn integer_sequence_equality_has_linear_size_and_logarithmic_depth() {
             left = concatenate_sequence_terms(left, singleton(value as u32));
         }
         let right = SequenceTerm {
-            element_type: Some(CType::Int32),
+            element_type: Some(ProgramType::Int32),
             node: std::sync::Arc::new(SequenceTermNode::Literal(
                 (0..size)
                     .map(|n| int32(n as u32))

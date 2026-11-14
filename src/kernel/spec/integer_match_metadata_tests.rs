@@ -34,7 +34,7 @@ fn integer_match_metadata_rejects_missing_integer_identity() {
 #[test]
 fn integer_match_metadata_rejects_c_identity_and_schema_mismatch() {
     let integer = AlgebraicValueType::Integer;
-    let c = AlgebraicValueType::C(CType::Int32);
+    let c = AlgebraicValueType::C(ProgramType::Int32);
     assert!(!spec_integer_match_arm_is_well_formed(
         &schema(vec![c.clone()]),
         &arm(vec![c.clone()], vec![Some(Variable(1))]),

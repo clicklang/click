@@ -362,8 +362,8 @@ fn int32_widening_spelling(
     let already_cast = matches!(
         &candidate,
         ContractExpression::CUnary {
-            lowered: CExpression::Cast {
-                target_type: crate::kernel::CType::Int32,
+            lowered: ProgramExpression::Cast {
+                target_type: crate::kernel::ProgramType::Int32,
                 ..
             },
             ..
@@ -374,9 +374,9 @@ fn int32_widening_spelling(
     }
     ContractExpression::CUnary {
         operand: Box::new(candidate),
-        lowered: CExpression::Cast {
-            expression: Box::new(CExpression::Value(crate::kernel::int32(0))),
-            target_type: crate::kernel::CType::Int32,
+        lowered: ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
+            target_type: crate::kernel::ProgramType::Int32,
             integer_mode: crate::kernel::CIntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
@@ -1018,7 +1018,7 @@ fn integer_surface_zero_claim(
 fn surface_expression_is_constant(expression: &ContractExpression) -> bool {
     match expression {
         ContractExpression::IntegerLiteral(_) => true,
-        ContractExpression::CFragment(crate::kernel::CExpression::Value(_)) => true,
+        ContractExpression::CFragment(crate::kernel::ProgramExpression::Value(_)) => true,
         ContractExpression::Negate(inner) => surface_expression_is_constant(inner),
         ContractExpression::At { expression, .. } | ContractExpression::Old(expression) => {
             surface_expression_is_constant(expression)
@@ -1163,10 +1163,10 @@ fn with_operation_operands(written: &[ContractExpression]) -> Vec<ContractExpres
             | ContractExpression::ShiftRight(operand, _)
             | ContractExpression::RustShiftRight(operand, _) => operand.as_ref().clone(),
             ContractExpression::CFragment(
-                CExpression::Divide(operand, _)
-                | CExpression::Remainder(operand, _)
-                | CExpression::ShiftRight(operand, _)
-                | CExpression::RustShiftRight(operand, _),
+                ProgramExpression::Divide(operand, _)
+                | ProgramExpression::Remainder(operand, _)
+                | ProgramExpression::ShiftRight(operand, _)
+                | ProgramExpression::RustShiftRight(operand, _),
             ) => ContractExpression::CFragment(operand.as_ref().clone()),
             _ => continue,
         };
@@ -1257,9 +1257,9 @@ fn written_integer_observations<'s>(
                 }
                 ContractExpression::CUnary {
                     operand,
-                    lowered: CExpression::Cast { .. },
+                    lowered: ProgramExpression::Cast { .. },
                 } => vec![operand.as_ref().clone()],
-                ContractExpression::CFragment(CExpression::Cast { expression, .. }) => {
+                ContractExpression::CFragment(ProgramExpression::Cast { expression, .. }) => {
                     vec![ContractExpression::CFragment(expression.as_ref().clone())]
                 }
                 _ => Vec::new(),
@@ -1608,9 +1608,9 @@ fn kernel_upper_bound_split_candidate(
 fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression {
     ContractExpression::CUnary {
         operand: Box::new(operand),
-        lowered: CExpression::Cast {
-            expression: Box::new(CExpression::Value(int32(0))),
-            target_type: crate::kernel::CType::Int32,
+        lowered: ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Value(int32(0))),
+            target_type: crate::kernel::ProgramType::Int32,
             integer_mode: crate::kernel::CIntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
@@ -1625,9 +1625,9 @@ fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression
 fn native_uint32_split_operand(operand: ContractExpression) -> ContractExpression {
     ContractExpression::CUnary {
         operand: Box::new(operand),
-        lowered: CExpression::Cast {
-            expression: Box::new(CExpression::Value(int32(0))),
-            target_type: crate::kernel::CType::UInt32,
+        lowered: ProgramExpression::Cast {
+            expression: Box::new(ProgramExpression::Value(int32(0))),
+            target_type: crate::kernel::ProgramType::UInt32,
             integer_mode: crate::kernel::CIntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
@@ -1659,7 +1659,7 @@ fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option
             left,
             operator: ComparisonOperator::LessThan,
             right: ContractExpression::Add(pivot, one),
-        } if **one == ContractExpression::CFragment(CExpression::Value(int32(1))) => {
+        } if **one == ContractExpression::CFragment(ProgramExpression::Value(int32(1))) => {
             Some(ClickProposition::Comparison {
                 left: left.clone(),
                 operator: ComparisonOperator::LessThan,
@@ -1675,7 +1675,9 @@ fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option
             operator: ComparisonOperator::LessThan,
             right: native_int32_split_operand(ContractExpression::Subtract(
                 Box::new(right.clone()),
-                Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
+                Box::new(ContractExpression::CFragment(ProgramExpression::Value(
+                    int32(1),
+                ))),
             )),
         }),
         _ => None,
@@ -2036,9 +2038,9 @@ impl<'a> Proof<'a> {
                         } if name == "to_integer" && arguments.len() == 1 => arguments.remove(0),
                         operand => operand,
                     }),
-                    lowered: CExpression::Cast {
-                        expression: Box::new(CExpression::Value(crate::kernel::int32(0))),
-                        target_type: crate::kernel::CType::Int32,
+                    lowered: ProgramExpression::Cast {
+                        expression: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
+                        target_type: crate::kernel::ProgramType::Int32,
                         integer_mode: crate::kernel::CIntegerCastMode::CConversion,
                         pointee_struct: None,
                         pointee_volatile: false,
@@ -2964,9 +2966,9 @@ impl<'a> Proof<'a> {
                 );
             let unsigned = machine.ty() == crate::kernel::MachineIntegerType::UInt32;
             let value = if unsigned {
-                CValue::UInt32(machine.value().clone())
+                ProgramValue::UInt32(machine.value().clone())
             } else {
-                CValue::Int32(machine.value().clone())
+                ProgramValue::Int32(machine.value().clone())
             };
             if let Some(value) = crate::surface::proof::surface_synthesis::synthesize_surface_value(
                 &value,
@@ -3968,7 +3970,7 @@ impl<'a> Proof<'a> {
     /// x <= MAX / rhs` under `rhs != 0` is `x <= MAX / rhs`. The step's false
     /// path then carries the negation of what was proved, and is pruned by
     /// the exact conflict check. Each disjunct is one exact lookup.
-    fn asserted_condition_given_context(&self, condition: &CExpression) -> ClickProposition {
+    fn asserted_condition_given_context(&self, condition: &ProgramExpression) -> ClickProposition {
         let surface = asserted_condition_proposition(condition);
         let mut disjuncts = Vec::new();
         let mut pending = vec![surface.clone()];
@@ -4033,41 +4035,46 @@ impl<'a> Proof<'a> {
 
 /// The Surface proposition that a C condition is true: its comparisons and
 /// logical connectives as written, and any other operand as `e != 0`.
-fn asserted_condition_proposition(condition: &CExpression) -> ClickProposition {
-    let comparison =
-        |left: &CExpression, operator, right: &CExpression| ClickProposition::Comparison {
+fn asserted_condition_proposition(condition: &ProgramExpression) -> ClickProposition {
+    let comparison = |left: &ProgramExpression, operator, right: &ProgramExpression| {
+        ClickProposition::Comparison {
             left: ContractExpression::CFragment(left.clone()),
             operator,
             right: ContractExpression::CFragment(right.clone()),
-        };
+        }
+    };
     match condition {
-        CExpression::And(left, right) => ClickProposition::And(
+        ProgramExpression::And(left, right) => ClickProposition::And(
             Box::new(asserted_condition_proposition(left)),
             Box::new(asserted_condition_proposition(right)),
         ),
-        CExpression::Or(left, right) => ClickProposition::Or(
+        ProgramExpression::Or(left, right) => ClickProposition::Or(
             Box::new(asserted_condition_proposition(left)),
             Box::new(asserted_condition_proposition(right)),
         ),
-        CExpression::Not(inner) => {
+        ProgramExpression::Not(inner) => {
             ClickProposition::Not(Box::new(asserted_condition_proposition(inner)))
         }
-        CExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
-        CExpression::NotEqual(left, right) => comparison(left, ComparisonOperator::NotEqual, right),
-        CExpression::LessThan(left, right) => comparison(left, ComparisonOperator::LessThan, right),
-        CExpression::LessEqual(left, right) => {
+        ProgramExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
+        ProgramExpression::NotEqual(left, right) => {
+            comparison(left, ComparisonOperator::NotEqual, right)
+        }
+        ProgramExpression::LessThan(left, right) => {
+            comparison(left, ComparisonOperator::LessThan, right)
+        }
+        ProgramExpression::LessEqual(left, right) => {
             comparison(left, ComparisonOperator::LessEqual, right)
         }
-        CExpression::GreaterThan(left, right) => {
+        ProgramExpression::GreaterThan(left, right) => {
             comparison(left, ComparisonOperator::GreaterThan, right)
         }
-        CExpression::GreaterEqual(left, right) => {
+        ProgramExpression::GreaterEqual(left, right) => {
             comparison(left, ComparisonOperator::GreaterEqual, right)
         }
         other => comparison(
             other,
             ComparisonOperator::NotEqual,
-            &CExpression::Value(int32(0)),
+            &ProgramExpression::Value(int32(0)),
         ),
     }
 }
@@ -4088,9 +4095,9 @@ fn literal_requirement_spelling(
     }
     Some(RequirementSpelling {
         surface: ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(crate::kernel::int32(0))),
+            left: ContractExpression::CFragment(ProgramExpression::Value(crate::kernel::int32(0))),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(crate::kernel::int32(
+            right: ContractExpression::CFragment(ProgramExpression::Value(crate::kernel::int32(
                 u32::from(value != polarity),
             ))),
         },
@@ -4294,7 +4301,7 @@ fn source_backed_refusal(
 /// frontier memory identity all have to agree before a source form is
 /// admitted to the retained-have retry.
 struct SourceBackedCallSurface {
-    arguments: Vec<CExpression>,
+    arguments: Vec<ProgramExpression>,
     source_proposition: ClickProposition,
     proposition: ClickProposition,
 }
@@ -4333,16 +4340,16 @@ fn source_backed_call_requirement_surface(
     )
     .ok()?;
     let (callee, arguments) = match statement {
-        CStatement::Call {
+        ProgramStatement::Call {
             function_name,
             arguments,
         }
-        | CStatement::CallAssign {
+        | ProgramStatement::CallAssign {
             function_name,
             arguments,
             ..
         }
-        | CStatement::CallResult {
+        | ProgramStatement::CallResult {
             function_name,
             arguments,
             ..
@@ -4543,13 +4550,13 @@ fn source_backed_call_requirement_surface(
         let expression = if let Some(written) = written_values.get(name.as_str()) {
             (*written).clone()
         } else if super::resources::is_integer_constant(value) {
-            ContractExpression::CFragment(CExpression::Value(value.clone()))
+            ContractExpression::CFragment(ProgramExpression::Value(value.clone()))
         } else {
             let term = match value {
-                CValue::Int32(term)
-                | CValue::UInt32(term)
-                | CValue::Int64(term)
-                | CValue::UInt64(term) => term,
+                ProgramValue::Int32(term)
+                | ProgramValue::UInt32(term)
+                | ProgramValue::Int64(term)
+                | ProgramValue::UInt64(term) => term,
                 _ => return None,
             };
             let local = execution
@@ -4558,7 +4565,7 @@ fn source_backed_call_requirement_surface(
                 .locals()
                 .names_holding_integer(term)
                 .next()?;
-            ContractExpression::CFragment(CExpression::Variable(
+            ContractExpression::CFragment(ProgramExpression::Variable(
                 crate::kernel::c_local_source_name(local).to_owned(),
             ))
         };
@@ -4575,8 +4582,8 @@ fn source_backed_call_requirement_surface(
                 .iter()
                 .position(|parameter| parameter == name)?;
             match source_parameter_types[slot]? {
-                crate::kernel::CType::Int8Pointer => Some(C0Type::Int8Pointer),
-                crate::kernel::CType::Int8Array(size) => Some(C0Type::Int8Array(size)),
+                crate::kernel::ProgramType::Int8Pointer => Some(C0Type::Int8Pointer),
+                crate::kernel::ProgramType::Int8Array(size) => Some(C0Type::Int8Array(size)),
                 _ => None,
             }
         },
@@ -4666,7 +4673,8 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
         .iter()
         .enumerate()
         .filter_map(|(predicate_argument_slot, argument)| {
-            let ContractExpression::CFragment(CExpression::Variable(callee_name)) = argument else {
+            let ContractExpression::CFragment(ProgramExpression::Variable(callee_name)) = argument
+            else {
                 return None;
             };
             let callee_slot = callee
@@ -4735,7 +4743,7 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
 /// `uint8` bytes, its explicit byte view.
 fn caller_parameter_as_argument(
     parameter: &syntax::C0Parameter,
-    expected: Option<crate::kernel::CType>,
+    expected: Option<crate::kernel::ProgramType>,
 ) -> ContractExpression {
     match expected {
         Some(expected)
@@ -4746,7 +4754,9 @@ fn caller_parameter_as_argument(
         {
             crate::surface::lowering::character_byte_view(parameter.name())
         }
-        _ => ContractExpression::CFragment(CExpression::Variable(parameter.name().to_string())),
+        _ => {
+            ContractExpression::CFragment(ProgramExpression::Variable(parameter.name().to_string()))
+        }
     }
 }
 
@@ -4757,19 +4767,19 @@ fn caller_parameter_as_argument(
 /// read predicate grants no write permission, so a `const` cast is identity
 /// here too.
 fn caller_parameter_through_identity_cast(
-    argument: &CExpression,
+    argument: &ProgramExpression,
     parameters: &[syntax::C0Parameter],
-    state: &crate::kernel::CState,
+    state: &crate::kernel::ExecutionState,
 ) -> Option<usize> {
     let (name, cast_type) = match argument {
-        CExpression::Variable(name) => (name, None),
-        CExpression::Cast {
+        ProgramExpression::Variable(name) => (name, None),
+        ProgramExpression::Cast {
             expression,
             target_type,
             pointee_volatile: false,
             ..
         } => match expression.as_ref() {
-            CExpression::Variable(name) => (name, Some(*target_type)),
+            ProgramExpression::Variable(name) => (name, Some(*target_type)),
             _ => return None,
         },
         _ => return None,
@@ -4872,8 +4882,8 @@ pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
 fn synthesize_surface_with_recorded_snapshot<'a>(
     kernel: &'a Proposition,
     parameter_binding: ParameterBinding<'a>,
-    entry: &'a CState,
-    current: &'a CState,
+    entry: &'a ExecutionState,
+    current: &'a ExecutionState,
     recorded_snapshots: &'a RecordedSnapshots,
     anchor: &ProgramPointRef,
 ) -> impl Iterator<Item = ClickProposition> + 'a {
@@ -5089,12 +5099,10 @@ mod synthesized_literal_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(71_230));
         let before = intern_c_memory(CMemory::new());
-        let after = intern_c_memory(
-            before
-                .memory()
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1))),
-        );
+        let after = intern_c_memory(before.memory().clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        ));
         let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
         let value = read(before.clone(), pointer.clone(), LoadKind::Int32);
         let atom = |term: &MachineTerm| {
@@ -5128,7 +5136,7 @@ mod synthesized_literal_tests {
             before
                 .memory()
                 .clone()
-                .store(pointer.clone(), CValue::Int32(sum.clone())),
+                .store(pointer.clone(), ProgramValue::Int32(sum.clone())),
         );
         let read =
             |memory| MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32);

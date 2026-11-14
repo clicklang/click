@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn rejected_read_prerequisite_uses_the_shared_snapshot_legend() {
-        use crate::kernel::{CMemory, CType, Pointer, Variable};
+        use crate::kernel::{CMemory, Pointer, ProgramType, Variable};
         struct Rejected(Proposition);
         impl ProofDiagnosticState for Rejected {
             fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
@@ -761,7 +761,7 @@ mod tests {
         let state = Rejected(Proposition::CMemoryReadDefined {
             memory: CMemory::new(),
             pointer: Pointer::symbolic(Variable(987_001)),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         });
         let mut labels = render::SnapshotLabels::default();
         let report = render_failed_requirement(&state, &mut labels);
@@ -781,7 +781,7 @@ mod tests {
     #[test]
     fn rejected_resource_fact_uses_one_printer_and_snapshot_legend() {
         let _typed = render::TypedNotationScope::enter();
-        use crate::kernel::{CMemory, CType, Pointer, Variable};
+        use crate::kernel::{CMemory, Pointer, ProgramType, Variable};
         struct Rejected(crate::kernel::proof::RejectedResourceRewriteFact);
         impl ProofDiagnosticState for Rejected {
             fn rejected_resource_fact(
@@ -802,7 +802,7 @@ mod tests {
         let read = |memory| Proposition::CMemoryReadDefined {
             memory,
             pointer: Pointer::symbolic(Variable(987_002)),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         };
         let rejected = read(CMemory::new());
         let allowed = read(CMemory::new().with_block("changed", 4));
@@ -1151,13 +1151,13 @@ mod tests {
 
     #[test]
     fn unspelled_premises_keep_entry_names_after_the_session_unwinds() {
-        use crate::kernel::{CExpression, CMemory, CValue, MachineTerm, Variable};
+        use crate::kernel::{CMemory, MachineTerm, ProgramExpression, ProgramValue, Variable};
         use crate::languages::c::syntax::{C0Parameter, C0Type};
         let variable = Variable(786_901);
         let parameters = [C0Parameter::new(C0Type::Int32, "input".into(), None)];
-        let arguments = [CExpression::Value(CValue::Int32(MachineTerm::Variable(
-            variable,
-        )))];
+        let arguments = [ProgramExpression::Value(ProgramValue::Int32(
+            MachineTerm::Variable(variable),
+        ))];
         render::enter_ambient_naming(
             crate::surface::ParameterBinding::new(&parameters, &arguments),
             &CMemory::new(),

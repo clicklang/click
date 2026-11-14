@@ -107,7 +107,7 @@ fn authority_test_protected(argument: ContractExpression) -> ResourceClause {
 
 #[test]
 fn authority_type_argument_requires_exact_unary_pointer_family() {
-    let pointer = ContractExpression::CFragment(CExpression::Variable("p".to_string()));
+    let pointer = ContractExpression::CFragment(ProgramExpression::Variable("p".to_string()));
     let accepted = expand_resource_type_arguments(
         "authority",
         vec![authority_test_protected(pointer.clone())],
@@ -366,7 +366,7 @@ fn certification_checks_only_the_cited_library_theorem() {
 
 #[test]
 fn authority_field_schema_and_count_admission_are_independent_of_instance_fields() {
-    let pointer = ContractExpression::CFragment(CExpression::Variable("p".into()));
+    let pointer = ContractExpression::CFragment(ProgramExpression::Variable("p".into()));
     let mut scope = authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, true);
     scope.definitions.get_mut("reference").unwrap().fields =
         std::sync::Arc::new(BTreeMap::from([(
@@ -398,7 +398,7 @@ fn authority_field_schema_and_count_admission_are_independent_of_instance_fields
 /// `authorized`, whether or not it declares fields.
 #[test]
 fn authorization_not_field_presence_selects_countability() {
-    let pointer = ContractExpression::CFragment(CExpression::Variable("p".into()));
+    let pointer = ContractExpression::CFragment(ProgramExpression::Variable("p".into()));
     let count = ContractExpression::ResourceCount(Box::new(authority_test_protected(pointer)));
     for has_fields in [false, true] {
         for authorized in [false, true] {

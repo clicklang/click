@@ -23,7 +23,7 @@ pub(super) fn positive(id: u64) -> ConditionTerm {
 pub(super) fn applied(name: &str, id: u64) -> ConditionTerm {
     ConditionTerm::bool_application(
         name,
-        vec![PureFunctionArgument::Value(CValue::Int32(word(id)))],
+        vec![PureFunctionArgument::Value(ProgramValue::Int32(word(id)))],
     )
 }
 

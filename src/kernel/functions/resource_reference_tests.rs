@@ -1,7 +1,11 @@
 use super::*;
 
 fn schema() -> ResourceFieldSchema {
-    ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))]).unwrap()
+    ResourceFieldSchema::new(vec![(
+        "value".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap()
 }
 fn cell(identity: u64, argument: u32) -> ResourceInstance {
     ResourceInstance::new(
@@ -23,7 +27,7 @@ fn definition() -> CCompositeResourceDefinition {
             CResourceAccessMode::Own,
             "cell".into(),
             vec![c_variable("p")],
-            vec![CType::Int32],
+            vec![ProgramType::Int32],
             CResourceTransferRole::Borrow,
             CResourceSnapshot::Current,
         )
@@ -35,7 +39,7 @@ fn definition() -> CCompositeResourceDefinition {
     .with_source_arguments(vec!["p".into()]);
     CCompositeResourceDefinition::new(
         "wrapper",
-        vec![c_parameter("p", CType::Int32)],
+        vec![c_parameter("p", ProgramType::Int32)],
         None,
         false,
         vec![],
@@ -61,7 +65,7 @@ fn reference_only_wrapper_does_not_transfer_referenced_custody() {
     let resource = wrapper(&child);
     let definition = definition();
     let folded = rewrite_resource_instance_selecting_children(
-        &CState::new(),
+        &ExecutionState::new(),
         &resource,
         &definition,
         &[],
@@ -89,7 +93,7 @@ fn reference_only_wrapper_does_not_transfer_referenced_custody() {
 fn reference_type_cannot_be_retargeted_by_wrapper_arguments() {
     let resource = wrapper(&cell(10, 4));
     let error = rewrite_resource_instance_selecting_children(
-        &CState::new(),
+        &ExecutionState::new(),
         &resource,
         &definition(),
         &[],
@@ -106,7 +110,7 @@ fn replacement_reference_cannot_open_an_owned_wrapper() {
     let resource = wrapper(&cell(10, 3));
     let definition = definition();
     let state = rewrite_resource_instance_selecting_children(
-        &CState::new(),
+        &ExecutionState::new(),
         &resource,
         &definition,
         &[],
@@ -136,14 +140,14 @@ fn owning_definition() -> CCompositeResourceDefinition {
         name: "cell".into(),
         resource: "cell".into(),
         binding: Variable(90),
-        arguments: vec![SpecExpression::CExpression(c_variable("p"))],
+        arguments: vec![SpecExpression::ProgramExpression(c_variable("p"))],
         field_bindings: vec![CResourceChildField::Parent(0)],
     }])
 }
 fn child_definition() -> CCompositeResourceDefinition {
     CCompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", CType::Int32)],
+        vec![c_parameter("p", ProgramType::Int32)],
         None,
         false,
         vec![],
@@ -156,7 +160,7 @@ fn owned_reference_uses_checked_child_custody_and_current_model() {
     let child = cell(10, 3);
     let mut resource = wrapper(&child);
     resource.fields = child.fields.clone();
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(child.clone()))),
     );
@@ -191,7 +195,7 @@ fn owned_reference_uses_checked_child_custody_and_current_model() {
     );
     assert!(
         rewrite_resource_instance_selecting_children(
-            &CState::new(),
+            &ExecutionState::new(),
             &resource,
             &definition,
             &definitions,
@@ -208,7 +212,7 @@ fn owned_reference_rejects_substituting_a_different_child_occurrence() {
     let mut resource = wrapper(&child);
     resource.fields = child.fields.clone();
     let other = cell(11, 3);
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(CResourceFact::own(CResource::Instance(other))),
     );
     let definition = owning_definition();
@@ -234,7 +238,7 @@ fn reference_does_not_restore_fields_observed_when_it_was_captured() {
     current.fields = vec![int32(9).into()].into();
     let mut resource = wrapper(&old);
     resource.fields = current.fields.clone();
-    let state = CState::new().with_resource_context(
+    let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
             .unchecked_with_fact(CResourceFact::own(CResource::Instance(current.clone()))),
     );
@@ -272,10 +276,11 @@ fn reference_does_not_restore_fields_observed_when_it_was_captured() {
 fn section_reference_lookup_does_not_duplicate_existing_owned_instances() {
     let child = cell(10, 3);
     let record = wrapper(&child);
-    let state = CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
-        CResourceFact::own(CResource::Instance(child.clone())),
-        CResourceFact::own(CResource::Instance(record.clone())),
-    ]));
+    let state =
+        ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
+            CResourceFact::own(CResource::Instance(child.clone())),
+            CResourceFact::own(CResource::Instance(record.clone())),
+        ]));
     let named_spec = |instance: &ResourceInstance, references: Vec<Variable>| {
         CResourceSpec::instance(
             instance.identity(),
@@ -286,7 +291,7 @@ fn section_reference_lookup_does_not_duplicate_existing_owned_instances() {
                 CResourceAccessMode::Own,
                 instance.name().into(),
                 vec![c_int32_literal(3)],
-                vec![CType::Int32],
+                vec![ProgramType::Int32],
                 CResourceTransferRole::Borrow,
                 CResourceSnapshot::Current,
             )
@@ -314,7 +319,7 @@ fn section_reference_lookup_does_not_duplicate_existing_owned_instances() {
     assert_eq!(result.0.owned_instance(child.identity()), Some(&child));
     assert_eq!(result.0.owned_instance(record.identity()), Some(&record));
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "return_refs",
         vec![],
         c_return(c_int32_literal(0)),

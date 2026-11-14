@@ -91,12 +91,12 @@ fn algebraic_constructor_injectivity_ignores_unrelated_facts() {
         Term::Algebraic(maybe_constructor(
             &algebraic_type,
             "Some",
-            vec![CValue::Int32(left)],
+            vec![ProgramValue::Int32(left)],
         )),
         Term::Algebraic(maybe_constructor(
             &algebraic_type,
             "Some",
-            vec![CValue::Int32(right)],
+            vec![ProgramValue::Int32(right)],
         )),
     );
     let samples = [16, 64, 256]
@@ -130,10 +130,10 @@ fn function_contract_lookup_ignores_unrelated_pointer_facts() {
         Proposition::Predicate {
             name: CFunctionContract::predicate_name_for(name),
             arguments: vec![
-                Term::CState(Box::new(CState::new())),
-                Term::CValue(CValue::typed_pointer(
+                Term::ExecutionState(Box::new(ExecutionState::new())),
+                Term::ProgramValue(ProgramValue::typed_pointer(
                     pointer,
-                    CType::FunctionPointer(CallbackSignature::from_encoded(90_000)),
+                    ProgramType::FunctionPointer(CallbackSignature::from_encoded(90_000)),
                 )),
             ],
         }
@@ -170,18 +170,18 @@ fn function_contract_lookup_ignores_unrelated_pointer_facts() {
 
 #[test]
 fn callback_contract_availability_uses_scoped_pointer_equality() {
-    let c_type = CType::FunctionPointer(CallbackSignature::from_encoded(90_000));
+    let c_type = ProgramType::FunctionPointer(CallbackSignature::from_encoded(90_000));
     let contract = |name: &str, pointer, state, c_type| Proposition::Predicate {
         name: CFunctionContract::predicate_name_for(name),
         arguments: vec![
-            Term::CState(Box::new(state)),
-            Term::CValue(CValue::typed_pointer(pointer, c_type)),
+            Term::ExecutionState(Box::new(state)),
+            Term::ProgramValue(ProgramValue::typed_pointer(pointer, c_type)),
         ],
     };
     let target = Pointer::function("callback-target");
     let callback = Pointer::symbolic_function(Variable(90_011));
-    let source = contract("Invoke", target.clone(), CState::new(), c_type);
-    let required = contract("Invoke", callback.clone(), CState::new(), c_type);
+    let source = contract("Invoke", target.clone(), ExecutionState::new(), c_type);
+    let required = contract("Invoke", callback.clone(), ExecutionState::new(), c_type);
     let alias =
         Proposition::ConditionIs(ConditionTerm::pointer_equal(callback.clone(), target), true);
     let mut samples = Vec::new();
@@ -193,7 +193,7 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
             context = context.assume_proposition(contract(
                 "Invoke",
                 Pointer::symbolic_function(Variable(91_000 + index)),
-                CState::new(),
+                ExecutionState::new(),
                 c_type,
             ));
         }
@@ -205,20 +205,20 @@ fn callback_contract_availability_uses_scoped_pointer_equality() {
         assert!(!context.contains_known(&contract(
             "Other",
             callback.clone(),
-            CState::new(),
+            ExecutionState::new(),
             c_type
         )));
         assert!(!context.contains_known(&contract(
             "Invoke",
             callback.clone(),
-            CState::new().with_local("changed", int32(1)),
+            ExecutionState::new().with_local("changed", int32(1)),
             c_type
         )));
         assert!(!context.contains_known(&contract(
             "Invoke",
             callback.clone(),
-            CState::new(),
-            CType::FunctionPointer(CallbackSignature::from_encoded(90_001))
+            ExecutionState::new(),
+            ProgramType::FunctionPointer(CallbackSignature::from_encoded(90_001))
         )));
         for single in [&source, &alias] {
             let partial = PureFactContext::new().assume_proposition(single.clone());
@@ -763,9 +763,12 @@ fn increment_chain_add_work_does_not_grow_with_earlier_increments() {
             ConditionTerm::signed_less_equal(base.clone(), MachineTerm::constant(1_000_000)),
             true,
         );
-    let state = CState::new();
+    let state = ExecutionState::new();
     let increment = |value: MachineTerm, assumptions: &PureFactContext| {
-        let expression = c_add(CExpression::Value(CValue::Int32(value)), c_int32_literal(1));
+        let expression = c_add(
+            ProgramExpression::Value(ProgramValue::Int32(value)),
+            c_int32_literal(1),
+        );
         crate::instrumentation::measure_deterministic_work(|| {
             evaluate_c_expression_paths(
                 &state,
@@ -783,7 +786,7 @@ fn increment_chain_add_work_does_not_grow_with_earlier_increments() {
         let [path] = paths.as_slice() else {
             panic!("increment {length} of a bounded base should not split: {paths:?}");
         };
-        let CExpressionOutcome::Value(CValue::Int32(next)) = &path.outcome else {
+        let CExpressionOutcome::Value(ProgramValue::Int32(next)) = &path.outcome else {
             panic!(
                 "increment {length} should produce an int32: {:?}",
                 path.outcome
@@ -1718,31 +1721,32 @@ fn finite_forall_requested_prefix_has_constant_work_across_domain_sizes() {
 fn equality_aware_pointer_fact_queries_ignore_unrelated_facts_and_old_snapshots() {
     let target = Pointer::symbolic_function(Variable(122_000));
     let alias = Pointer::symbolic_function(Variable(122_001));
-    let fact = |pointer: Pointer, state: CState| Proposition::Predicate {
+    let fact = |pointer: Pointer, state: ExecutionState| Proposition::Predicate {
         name: CFunctionContract::predicate_name_for("Selected"),
         arguments: vec![
-            Term::CState(Box::new(state)),
-            Term::CValue(CValue::typed_pointer(
+            Term::ExecutionState(Box::new(state)),
+            Term::ProgramValue(ProgramValue::typed_pointer(
                 pointer,
-                CType::FunctionPointer(CallbackSignature::from_encoded(122_000)),
+                ProgramType::FunctionPointer(CallbackSignature::from_encoded(122_000)),
             )),
         ],
     };
-    let goal = fact(alias.clone(), CState::new());
+    let goal = fact(alias.clone(), ExecutionState::new());
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
         let mut context =
-            PureFactContext::new().assume_proposition(fact(target.clone(), CState::new()));
+            PureFactContext::new().assume_proposition(fact(target.clone(), ExecutionState::new()));
         for index in 0..size {
             context = context.assume_proposition(fact(
                 Pointer::symbolic_function(Variable(123_000 + index)),
-                CState::new(),
+                ExecutionState::new(),
             ));
             // Same predicate and pointer, but different memory versions must
             // not turn a selected query into a scan of snapshot history.
             context = context.assume_proposition(fact(
                 target.clone(),
-                CState::new().with_memory(CMemory::new().with_block(format!("epoch-{index}"), 4)),
+                ExecutionState::new()
+                    .with_memory(CMemory::new().with_block(format!("epoch-{index}"), 4)),
             ));
         }
         context = context.assume_condition(
@@ -2049,7 +2053,7 @@ fn integer_match_rewrite_lookup_scales_with_its_selected_sources() {
                         Term::Algebraic(maybe_constructor(
                             &ty,
                             "Some",
-                            vec![CValue::Int32(MachineTerm::Variable(Variable(
+                            vec![ProgramValue::Int32(MachineTerm::Variable(Variable(
                                 100_000 + index,
                             )))],
                         )),
@@ -2069,9 +2073,9 @@ fn integer_match_rewrite_lookup_scales_with_its_selected_sources() {
                     crate::kernel::AlgebraicIntegerMatchArm {
                         binding_names: Default::default(),
                         variant: "Some".into(),
-                        bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-                            Variable(200_000),
-                        )))],
+                        bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                            MachineTerm::Variable(Variable(200_000)),
+                        ))],
                         body: crate::kernel::IntegerTerm::constant_i64(1).into(),
                     },
                 ],

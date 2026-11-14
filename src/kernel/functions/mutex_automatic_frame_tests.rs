@@ -2,9 +2,14 @@ use super::*;
 
 #[test]
 fn mutex_automatic_frame_retirement_requires_destruction() {
-    let function = c_function(CType::Int32, "scope", vec![], c_return(c_int32_literal(0)));
+    let function = c_function(
+        ProgramType::Int32,
+        "scope",
+        vec![],
+        c_return(c_int32_literal(0)),
+    );
     for name in ["holder", "frame:holder", "lifetime:holder"] {
-        let state = CState::new().with_local(name, int32(0));
+        let state = ExecutionState::new().with_local(name, int32(0));
         let address = state.locals.slot(name).unwrap().clone();
         let memory = CMemory::new().with_block(address.block.clone(), 40);
         let initialized =

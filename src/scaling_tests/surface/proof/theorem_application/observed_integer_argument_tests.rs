@@ -18,7 +18,7 @@ fn integer_theorem_argument_capture_scales_with_unused_bindings_and_applications
                 arguments: vec![ContractExpression::Binding("x".into())],
             }],
         };
-        let mut state = CState::new().with_local("x", int32(7u32));
+        let mut state = ExecutionState::new().with_local("x", int32(7u32));
         let mut values = BTreeMap::new();
         values.insert("x".into(), int32(7));
         for i in 0..size {

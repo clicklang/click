@@ -10,12 +10,16 @@ use super::*;
 /// `static char buf[65536]` cost 65,536 cells at every entry.
 #[test]
 fn a_symbolic_global_array_entry_costs_the_same_whatever_its_length() {
-    for element_type in [CType::UInt8, CType::Int32, CType::Int32Pointer] {
+    for element_type in [
+        ProgramType::UInt8,
+        ProgramType::Int32,
+        ProgramType::Int32Pointer,
+    ] {
         let samples = [8u32, 1_000, 1_000_000].map(|length| {
             crate::kernel::eval::clear_load_variable_registry();
             let function = function_with_global_array(element_type, length);
             let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
-                initialize_c_function_globals(&CState::new(), &function)
+                initialize_c_function_globals(&ExecutionState::new(), &function)
             });
             (length, work, entry.memory().cells.representation_len())
         });
@@ -49,7 +53,11 @@ fn a_symbolic_global_array_entry_costs_the_same_whatever_its_length() {
 /// registry before the first statement.
 #[test]
 fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
-    for element_type in [CType::UInt8, CType::Int32, CType::Int32Pointer] {
+    for element_type in [
+        ProgramType::UInt8,
+        ProgramType::Int32,
+        ProgramType::Int32Pointer,
+    ] {
         let width = i64::from(element_type.byte_width());
         let samples = [8u32, 1_000, 1_000_000].map(|length| {
             // Each sample is its own verification, so none reuses another's
@@ -59,7 +67,7 @@ fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
             let registered = crate::kernel::eval::load_variable_registry_len;
             let before_entry = registered();
             let (entry, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
-                let entry = initialize_c_function_globals(&CState::new(), &function);
+                let entry = initialize_c_function_globals(&ExecutionState::new(), &function);
                 let mut variables = std::collections::BTreeSet::new();
                 crate::kernel::reasoning::collect_c_state_bitvector_variables(
                     &entry,
@@ -188,7 +196,7 @@ fn a_constant_array_at_function_entry_costs_the_same_whatever_its_length() {
         let _session = crate::kernel::VerificationSession::enter();
         let function = function_with_initialized_arrays(length, true);
         let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_c_function_globals(&CState::new(), &function)
+            initialize_c_function_globals(&ExecutionState::new(), &function)
         });
         let buf = CMemory::global_pointer("buf");
         assert_eq!(
@@ -247,7 +255,10 @@ fn an_aggregate_array_at_startup_costs_the_same_whatever_its_length() {
             [
                 value(int32(7)),
                 value(int32(0)),
-                value(CValue::typed_pointer(Pointer::null(), CType::Int32Pointer)),
+                value(ProgramValue::typed_pointer(
+                    Pointer::null(),
+                    ProgramType::Int32Pointer
+                )),
                 value(int32(3)),
                 value(int32(0)),
                 value(uint8(255)),
@@ -287,7 +298,7 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
         let function = function_with_aggregate_arrays(length, 0, false);
         let registered = crate::kernel::eval::load_variable_registry_len();
         let (entry, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_c_function_globals(&CState::new(), &function)
+            initialize_c_function_globals(&ExecutionState::new(), &function)
         });
         let pool = CMemory::global_pointer("pool");
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -301,7 +312,7 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
         assert!(
             loads.iter().all(|load| matches!(
                 load,
-                CExpressionOutcome::Value(CValue::Int32(MachineTerm::MemoryLoad(..)))
+                CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::MemoryLoad(..)))
             )),
             "[{length}] a field reads as its load: {loads:?}"
         );
@@ -333,13 +344,13 @@ fn a_symbolic_global_array_declared_from_another_base_costs_the_same_whatever_it
     let samples = [8u32, 1_000, 1_000_000].map(|length| {
         let _session = crate::kernel::VerificationSession::enter();
         let base = CMemory::global_pointer("buf");
-        let other = another_context_base(CType::Int32, length);
+        let other = another_context_base(ProgramType::Int32, length);
         assert!(crate::kernel::eval::declare_symbolic_array_access_widths(
             &other, &base, 4, length, 4
         ));
-        let function = function_with_global_array(CType::Int32, length);
+        let function = function_with_global_array(ProgramType::Int32, length);
         let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_c_function_globals(&CState::new(), &function)
+            initialize_c_function_globals(&ExecutionState::new(), &function)
         });
         (length, work, entry.memory().cells.representation_len())
     });

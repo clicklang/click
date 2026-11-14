@@ -11,17 +11,21 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
         block: "local:frame:0:input".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let layout = CAggregateLayout::new(4, 4, vec![CAggregateField::new("value", 0, CType::Int32)]);
+    let layout = CAggregateLayout::new(
+        4,
+        4,
+        vec![CAggregateField::new("value", 0, ProgramType::Int32)],
+    );
     let projection = SpecExpression::AggregateFieldValue {
         parameter: "input".to_string(),
-        pointer: Box::new(SpecExpression::CExpression(CExpression::Variable(
-            "input".to_string(),
-        ))),
-        value_type: CType::Int32,
+        pointer: Box::new(SpecExpression::ProgramExpression(
+            ProgramExpression::Variable("input".to_string()),
+        )),
+        value_type: ProgramType::Int32,
     };
     let mut samples = Vec::new();
     for size in [8, 32, 128] {
-        let mut entry = CState::new().with_memory(
+        let mut entry = ExecutionState::new().with_memory(
             CMemory::new()
                 .with_block(slot.block.clone(), 4)
                 .store(slot.clone(), int32(7)),
@@ -59,8 +63,8 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
         samples.push(work);
         let ordinary = SpecExpression::MemoryLoad {
             memory: SpecMemory::Current,
-            pointer: Box::new(SpecExpression::Value(CValue::pointer(slot.clone()))),
-            value_type: CType::Int32,
+            pointer: Box::new(SpecExpression::Value(ProgramValue::pointer(slot.clone()))),
+            value_type: ProgramType::Int32,
         };
         let paths = evaluate(&ordinary);
         assert_eq!(paths.len(), 1);
@@ -68,12 +72,12 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
         assert!(!PureFactContext::new().proves_memory_read_defined(
             state.memory(),
             &slot,
-            CType::Int32,
+            ProgramType::Int32,
         ));
         let forged = SpecExpression::AggregateFieldValue {
             parameter: "input".to_string(),
-            pointer: Box::new(SpecExpression::Value(CValue::pointer(slot.clone()))),
-            value_type: CType::Int32,
+            pointer: Box::new(SpecExpression::Value(ProgramValue::pointer(slot.clone()))),
+            value_type: ProgramType::Int32,
         };
         assert!(evaluate(&forged).is_empty());
     }

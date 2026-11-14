@@ -2,8 +2,10 @@ use super::*;
 
 #[test]
 fn missing_argument_read_retains_the_actual_snapshot_and_permission() {
-    let state =
-        CState::new().with_local("p", CValue::pointer(Pointer::symbolic(Variable(985_910))));
+    let state = ExecutionState::new().with_local(
+        "p",
+        ProgramValue::pointer(Pointer::symbolic(Variable(985_910))),
+    );
     let expression = c_load(c_variable("p"));
     let assumptions = PureFactContext::new();
     let mut budget = ExecutionBudget::default();

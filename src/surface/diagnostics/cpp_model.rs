@@ -79,7 +79,7 @@ pub(super) fn describe_model_field_place(base: &str, field: &str) -> Option<Stri
 pub(super) fn describe_model_field_at(
     pointer: &Pointer,
     parameter_binding: ParameterBinding<'_>,
-) -> Option<(String, CType)> {
+) -> Option<(String, ProgramType)> {
     MODEL_ACCESSORS.with(|bound| {
         let bound = bound.borrow();
         let bound = bound.as_ref()?;
@@ -107,7 +107,7 @@ pub(super) fn describe_model_field_at(
             {
                 continue;
             }
-            let CExpression::Value(CValue::Pointer(base)) = argument else {
+            let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument else {
                 continue;
             };
             let Some(layout) = parameter

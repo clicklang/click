@@ -20,7 +20,7 @@ pub(in crate::kernel) fn charge_termination_work(units: usize) {
 /// Charges a walk that visits a sequence's statements in turn for the pair
 /// nodes beyond the first that the pair tree it stands for held, so the walk
 /// costs what it cost on that tree.
-fn charge_seq_spine(statements: &CStatementSequence) {
+fn charge_seq_spine(statements: &ProgramStatementSequence) {
     charge_termination_work(statements.len() - 2);
 }
 
@@ -36,31 +36,31 @@ fn error(message: impl Into<String>) -> CTerminationError {
     }
 }
 
-fn int32_literal(expression: &CExpression) -> Option<i64> {
-    let CExpression::Value(CValue::Int32(value)) = expression else {
+fn int32_literal(expression: &ProgramExpression) -> Option<i64> {
+    let ProgramExpression::Value(ProgramValue::Int32(value)) = expression else {
         return None;
     };
     Some(value.as_const()? as i32 as i64)
 }
 
-fn variable_minus_positive(expression: &CExpression, variable: &str) -> Option<i64> {
-    let CExpression::Subtract(left, right) = expression else {
+fn variable_minus_positive(expression: &ProgramExpression, variable: &str) -> Option<i64> {
+    let ProgramExpression::Subtract(left, right) = expression else {
         return None;
     };
-    if left.as_ref() != &CExpression::Variable(variable.to_string()) {
+    if left.as_ref() != &ProgramExpression::Variable(variable.to_string()) {
         return None;
     }
     int32_literal(right).filter(|step| *step > 0)
 }
 
 fn substitute_c_expression_variables(
-    expression: &CExpression,
-    substitutions: &BTreeMap<String, CExpression>,
-) -> CExpression {
-    use CExpression::*;
+    expression: &ProgramExpression,
+    substitutions: &BTreeMap<String, ProgramExpression>,
+) -> ProgramExpression {
+    use ProgramExpression::*;
     let unary =
-        |body: &CExpression| Box::new(substitute_c_expression_variables(body, substitutions));
-    let binary = |left: &CExpression, right: &CExpression| {
+        |body: &ProgramExpression| Box::new(substitute_c_expression_variables(body, substitutions));
+    let binary = |left: &ProgramExpression, right: &ProgramExpression| {
         (
             Box::new(substitute_c_expression_variables(left, substitutions)),
             Box::new(substitute_c_expression_variables(right, substitutions)),
@@ -250,9 +250,9 @@ fn substitute_c_expression_variables(
 }
 
 fn resolve_c_expression_aliases(
-    expression: &CExpression,
-    aliases: &BTreeMap<String, CExpression>,
-) -> CExpression {
+    expression: &ProgramExpression,
+    aliases: &BTreeMap<String, ProgramExpression>,
+) -> ProgramExpression {
     let mut resolved = expression.clone();
     for _ in 0..=aliases.len() {
         let next = substitute_c_expression_variables(&resolved, aliases);
@@ -266,7 +266,7 @@ fn resolve_c_expression_aliases(
 
 fn instantiate_structural_guard(
     proposition: &SpecProposition,
-    substitutions: &BTreeMap<String, CExpression>,
+    substitutions: &BTreeMap<String, ProgramExpression>,
 ) -> Option<SpecProposition> {
     let SpecProposition::Comparison {
         left,
@@ -278,7 +278,7 @@ fn instantiate_structural_guard(
     };
     let instantiate = |expression: &SpecExpression| match expression {
         SpecExpression::Value(value) => Some(SpecExpression::Value(value.clone())),
-        SpecExpression::CExpression(expression) => Some(SpecExpression::CExpression(
+        SpecExpression::ProgramExpression(expression) => Some(SpecExpression::ProgramExpression(
             substitute_c_expression_variables(expression, substitutions),
         )),
         _ => None,
@@ -292,14 +292,14 @@ fn instantiate_structural_guard(
 
 #[derive(Clone)]
 struct StructuralRecursionPath {
-    aliases: BTreeMap<String, CExpression>,
-    conditions: Vec<(CExpression, bool)>,
+    aliases: BTreeMap<String, ProgramExpression>,
+    conditions: Vec<(ProgramExpression, bool)>,
 }
 
 struct StructuralResourceMeasure {
     /// The measured resource family.
     family: String,
-    arguments: Vec<CExpression>,
+    arguments: Vec<ProgramExpression>,
     /// One entry per body the definition can take. An `if`-guarded body is
     /// the single arm, guarded by the definition's own condition; a
     /// `match model` body contributes one arm per matched variant whose own
@@ -313,11 +313,11 @@ struct StructuralResourceArm {
     /// Any one of these, established on the path, selects this arm. They are
     /// instantiated at the measure's arguments, so they are conditions about
     /// this call's own C expressions.
-    guards: Vec<CExpression>,
+    guards: Vec<ProgramExpression>,
     /// Whether the function's own `requires` already establishes a guard, so
     /// every path into the body starts inside this arm.
     guard_is_precondition: bool,
-    children: Vec<Vec<CExpression>>,
+    children: Vec<Vec<ProgramExpression>>,
     /// Direct recursive children named through a `let` witness of the
     /// definition rather than a C expression of its parameters.
     witness_children: Vec<WitnessChildMeasure>,
@@ -326,10 +326,10 @@ struct StructuralResourceArm {
 struct WitnessChildMeasure {
     definition: CCompositeResourceDefinition,
     /// Each child argument: a witness of `definition`, or a body expression.
-    arguments: Vec<CExpression>,
+    arguments: Vec<ProgramExpression>,
 }
 
-fn structural_guard_expression(proposition: &SpecProposition) -> Option<CExpression> {
+fn structural_guard_expression(proposition: &SpecProposition) -> Option<ProgramExpression> {
     let SpecProposition::Comparison {
         left,
         operator,
@@ -339,35 +339,35 @@ fn structural_guard_expression(proposition: &SpecProposition) -> Option<CExpress
         return None;
     };
     let expression = |expression: &SpecExpression| match expression {
-        SpecExpression::Value(value) => Some(CExpression::Value(value.clone())),
-        SpecExpression::CExpression(expression) => Some(expression.clone()),
+        SpecExpression::Value(value) => Some(ProgramExpression::Value(value.clone())),
+        SpecExpression::ProgramExpression(expression) => Some(expression.clone()),
         _ => None,
     };
     let left = Box::new(expression(left)?);
     let right = Box::new(expression(right)?);
     Some(match operator {
-        CComparisonOperator::Equal => CExpression::Equal(left, right),
-        CComparisonOperator::NotEqual => CExpression::NotEqual(left, right),
-        CComparisonOperator::LessThan => CExpression::LessThan(left, right),
-        CComparisonOperator::LessEqual => CExpression::LessEqual(left, right),
-        CComparisonOperator::GreaterThan => CExpression::GreaterThan(left, right),
-        CComparisonOperator::GreaterEqual => CExpression::GreaterEqual(left, right),
+        CComparisonOperator::Equal => ProgramExpression::Equal(left, right),
+        CComparisonOperator::NotEqual => ProgramExpression::NotEqual(left, right),
+        CComparisonOperator::LessThan => ProgramExpression::LessThan(left, right),
+        CComparisonOperator::LessEqual => ProgramExpression::LessEqual(left, right),
+        CComparisonOperator::GreaterThan => ProgramExpression::GreaterThan(left, right),
+        CComparisonOperator::GreaterEqual => ProgramExpression::GreaterEqual(left, right),
     })
 }
 
 fn branch_establishes_structural_guard(
-    branch_condition: &CExpression,
+    branch_condition: &ProgramExpression,
     branch_value: bool,
-    guard: &CExpression,
+    guard: &ProgramExpression,
 ) -> bool {
     #[derive(Eq, PartialEq)]
     enum ConditionAtom {
-        Equal(CExpression, CExpression),
-        LessThan(CExpression, CExpression),
+        Equal(ProgramExpression, ProgramExpression),
+        LessThan(ProgramExpression, ProgramExpression),
     }
 
-    fn normalized(expression: &CExpression, value: bool) -> (ConditionAtom, bool) {
-        let ordered = |left: &CExpression, right: &CExpression| {
+    fn normalized(expression: &ProgramExpression, value: bool) -> (ConditionAtom, bool) {
+        let ordered = |left: &ProgramExpression, right: &ProgramExpression| {
             if left <= right {
                 (left.clone(), right.clone())
             } else {
@@ -375,35 +375,35 @@ fn branch_establishes_structural_guard(
             }
         };
         match expression {
-            CExpression::Not(body) => normalized(body, !value),
-            CExpression::Equal(left, right) => {
+            ProgramExpression::Not(body) => normalized(body, !value),
+            ProgramExpression::Equal(left, right) => {
                 let (left, right) = ordered(left, right);
                 (ConditionAtom::Equal(left, right), value)
             }
-            CExpression::NotEqual(left, right) => {
+            ProgramExpression::NotEqual(left, right) => {
                 let (left, right) = ordered(left, right);
                 (ConditionAtom::Equal(left, right), !value)
             }
-            CExpression::LessThan(left, right) => (
+            ProgramExpression::LessThan(left, right) => (
                 ConditionAtom::LessThan(left.as_ref().clone(), right.as_ref().clone()),
                 value,
             ),
-            CExpression::GreaterEqual(left, right) => (
+            ProgramExpression::GreaterEqual(left, right) => (
                 ConditionAtom::LessThan(left.as_ref().clone(), right.as_ref().clone()),
                 !value,
             ),
-            CExpression::GreaterThan(left, right) => (
+            ProgramExpression::GreaterThan(left, right) => (
                 ConditionAtom::LessThan(right.as_ref().clone(), left.as_ref().clone()),
                 value,
             ),
-            CExpression::LessEqual(left, right) => (
+            ProgramExpression::LessEqual(left, right) => (
                 ConditionAtom::LessThan(right.as_ref().clone(), left.as_ref().clone()),
                 !value,
             ),
             expression => {
                 let (left, right) = ordered(
                     expression,
-                    &CExpression::Value(CValue::Int32(MachineTerm::constant(0))),
+                    &ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
                 );
                 (ConditionAtom::Equal(left, right), !value)
             }
@@ -412,15 +412,16 @@ fn branch_establishes_structural_guard(
 
     // A subobject narrowing does not change the value a comparison reads, as
     // it does not change which child a call passes.
-    let structural =
-        |expression: &CExpression| substitute_c_expression_variables(expression, &BTreeMap::new());
+    let structural = |expression: &ProgramExpression| {
+        substitute_c_expression_variables(expression, &BTreeMap::new())
+    };
     normalized(&structural(branch_condition), branch_value) == normalized(&structural(guard), true)
 }
 
 fn check_structural_recursive_call(
     function_name: &str,
-    arguments: &[CExpression],
-    function: &CFunction,
+    arguments: &[ProgramExpression],
+    function: &ProgramFunction,
     measure: &StructuralResourceMeasure,
     callees: &BTreeMap<String, StructuralCallee>,
     path: &StructuralRecursionPath,
@@ -479,7 +480,7 @@ fn check_structural_recursive_call(
         .iter()
         .map(|argument| substitute_c_expression_variables(argument, &parameter_substitutions))
         .collect::<Vec<_>>();
-    let structural = |arguments: &[CExpression]| {
+    let structural = |arguments: &[ProgramExpression]| {
         arguments
             .iter()
             .map(|argument| substitute_c_expression_variables(argument, &BTreeMap::new()))
@@ -506,7 +507,7 @@ fn check_structural_recursive_call(
 /// why this shares [`walk_termination_paths`] with the `int32` measure's walk
 /// rather than spelling the control flow a second time.
 struct StructuralMeasureWalk<'a> {
-    function: &'a CFunction,
+    function: &'a ProgramFunction,
     measure: &'a StructuralResourceMeasure,
     callees: &'a BTreeMap<String, StructuralCallee>,
 }
@@ -516,7 +517,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
 
     fn step(
         &self,
-        statement: &CStatement,
+        statement: &ProgramStatement,
         paths: Vec<Self::Path>,
     ) -> Result<Vec<Self::Path>, CTerminationError> {
         let forget = |name: &str, paths: Vec<Self::Path>| {
@@ -529,32 +530,32 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                 .collect()
         };
         match statement {
-            CStatement::EndAutomaticLifetimes { names } => {
+            ProgramStatement::EndAutomaticLifetimes { names } => {
                 Ok(names.iter().fold(paths, |paths, name| forget(name, paths)))
             }
-            CStatement::Skip
-            | CStatement::Continue
-            | CStatement::Goto { .. }
-            | CStatement::Assert { .. }
-            | CStatement::HeapFree { .. }
-            | CStatement::Store { .. }
-            | CStatement::TypedStore { .. }
-            | CStatement::CopyAggregate { .. }
-            | CStatement::InitializeScalarArray { .. }
-            | CStatement::Update { .. } => Ok(paths),
-            CStatement::Declare {
+            ProgramStatement::Skip
+            | ProgramStatement::Continue
+            | ProgramStatement::Goto { .. }
+            | ProgramStatement::Assert { .. }
+            | ProgramStatement::HeapFree { .. }
+            | ProgramStatement::Store { .. }
+            | ProgramStatement::TypedStore { .. }
+            | ProgramStatement::CopyAggregate { .. }
+            | ProgramStatement::InitializeScalarArray { .. }
+            | ProgramStatement::Update { .. } => Ok(paths),
+            ProgramStatement::Declare {
                 name,
                 initializer: None,
                 ..
             }
-            | CStatement::DeclareAggregate { name, .. } => Ok(forget(name, paths)),
-            CStatement::HeapAllocate { target, .. } => Ok(forget(target, paths)),
-            CStatement::Declare {
+            | ProgramStatement::DeclareAggregate { name, .. } => Ok(forget(name, paths)),
+            ProgramStatement::HeapAllocate { target, .. } => Ok(forget(target, paths)),
+            ProgramStatement::Declare {
                 name,
                 initializer: Some(expression),
                 ..
             }
-            | CStatement::Assign {
+            | ProgramStatement::Assign {
                 name, expression, ..
             } => Ok(paths
                 .into_iter()
@@ -564,7 +565,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                     path
                 })
                 .collect()),
-            CStatement::CallAssign {
+            ProgramStatement::CallAssign {
                 target,
                 function_name,
                 arguments,
@@ -581,11 +582,11 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                 }
                 Ok(forget(target, paths))
             }
-            CStatement::Call {
+            ProgramStatement::Call {
                 function_name,
                 arguments,
             }
-            | CStatement::CallResult {
+            | ProgramStatement::CallResult {
                 function_name,
                 arguments,
                 ..
@@ -608,7 +609,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
 
     fn refine(
         &self,
-        condition: &CExpression,
+        condition: &ProgramExpression,
         taken: bool,
         paths: Vec<Self::Path>,
     ) -> Vec<Self::Path> {
@@ -634,8 +635,8 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
 }
 
 fn structural_recursion_paths(
-    statement: &CStatement,
-    function: &CFunction,
+    statement: &ProgramStatement,
+    function: &ProgramFunction,
     measure: &StructuralResourceMeasure,
     callees: &BTreeMap<String, StructuralCallee>,
     paths: Vec<StructuralRecursionPath>,
@@ -652,7 +653,7 @@ fn structural_recursion_paths(
     .continuing)
 }
 
-fn c_expression_mentions_variable(expression: &CExpression, variable: &str) -> bool {
+fn c_expression_mentions_variable(expression: &ProgramExpression, variable: &str) -> bool {
     // Substitution also normalizes subobject wrappers, even when no variable
     // is replaced. Such normalization cannot establish a free occurrence.
     let mut variables = BTreeSet::new();
@@ -697,11 +698,11 @@ fn assume_structural_path(
 }
 
 fn evaluate_structural_c_expression(
-    state: &CState,
-    expression: &CExpression,
+    state: &ExecutionState,
+    expression: &ProgramExpression,
     assumptions: &mut PureFactContext,
     budget: &mut ExecutionBudget,
-) -> Option<CValue> {
+) -> Option<ProgramValue> {
     let paths = evaluate_c_expression_paths(state, expression, assumptions, budget).ok()?;
     let [path] = paths.as_slice() else {
         return None;
@@ -720,10 +721,10 @@ fn evaluate_structural_c_expression(
 /// the pure kernel decides the argument is the witness pointer. Loads are
 /// the same uninterpreted reads the syntactic child comparison relies on.
 fn call_passes_witness_child(
-    function: &CFunction,
+    function: &ProgramFunction,
     measure: &StructuralResourceMeasure,
     arm: &StructuralResourceArm,
-    call_measure_arguments: &[CExpression],
+    call_measure_arguments: &[ProgramExpression],
 ) -> bool {
     const PARAMETER_VARIABLE_BASE: u64 = 4_200_000_000;
     const WITNESS_VARIABLE_BASE: u64 = 4_250_000_000;
@@ -737,11 +738,11 @@ fn call_passes_witness_child(
         // This scope compares symbolic child identities. The ordinary
         // contract execution separately checks the call and its accesses.
         .assume_entry_clause_extents();
-    let mut parameter_state = CState::new();
+    let mut parameter_state = ExecutionState::new();
     for (index, parameter) in function.parameters().iter().enumerate() {
         let variable = Variable(PARAMETER_VARIABLE_BASE + index as u64);
         let value = if parameter.c_type().is_pointer() {
-            CValue::typed_pointer(
+            ProgramValue::typed_pointer(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), 1),
@@ -761,7 +762,7 @@ fn call_passes_witness_child(
             continue;
         }
         let mut assumptions = entry_assumptions.clone();
-        let mut body_state = CState::new();
+        let mut body_state = ExecutionState::new();
         for (parameter, argument) in definition.parameters().iter().zip(&measure.arguments) {
             let Some(value) = evaluate_structural_c_expression(
                 &parameter_state,
@@ -782,7 +783,7 @@ fn call_passes_witness_child(
             let pointer = Pointer::symbolic(Variable(WITNESS_VARIABLE_BASE + index as u64));
             body_state.locals.set_typed(
                 witness.name().to_string(),
-                CValue::typed_pointer(pointer, witness.c_type()),
+                ProgramValue::typed_pointer(pointer, witness.c_type()),
                 witness.c_type(),
             );
         }
@@ -821,7 +822,9 @@ fn call_passes_witness_child(
             ) else {
                 continue 'children;
             };
-            let (CValue::Pointer(expected), CValue::Pointer(actual)) = (expected, actual) else {
+            let (ProgramValue::Pointer(expected), ProgramValue::Pointer(actual)) =
+                (expected, actual)
+            else {
                 continue 'children;
             };
             let expected = expected.pointer();
@@ -854,7 +857,7 @@ fn call_passes_witness_child(
 /// Work is the definition's own clauses: each arm's facts are compared only
 /// with the other arms' facts of this one definition.
 fn structural_resource_children(
-    function: &CFunction,
+    function: &ProgramFunction,
     requirement_index: usize,
 ) -> Result<StructuralResourceMeasure, CTerminationError> {
     let Some(resource) = function.resource_requires().get(requirement_index) else {
@@ -900,20 +903,20 @@ fn structural_resource_children(
         .zip(arguments)
         .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
         .collect::<BTreeMap<_, _>>();
-    let mentions_witness = |expression: &CExpression| {
+    let mentions_witness = |expression: &ProgramExpression| {
         definition
             .witnesses()
             .iter()
             .any(|witness| c_expression_mentions_variable(expression, witness.name()))
     };
-    let mentions_binding = |expression: &CExpression, bound: &BTreeSet<String>| {
+    let mentions_binding = |expression: &ProgramExpression, bound: &BTreeSet<String>| {
         bound
             .iter()
             .any(|binding| c_expression_mentions_variable(expression, binding))
     };
     let structural_children = |contained: &[CResourceSpec],
                                bound: &BTreeSet<String>|
-     -> (Vec<Vec<CExpression>>, Vec<WitnessChildMeasure>) {
+     -> (Vec<Vec<ProgramExpression>>, Vec<WitnessChildMeasure>) {
         let mut children = Vec::new();
         let mut witness_children = Vec::new();
         for spec in contained {
@@ -957,7 +960,7 @@ fn structural_resource_children(
                     continue;
                 }
                 if child.arguments.iter().any(|argument| match argument {
-                    SpecExpression::CExpression(argument) => {
+                    SpecExpression::ProgramExpression(argument) => {
                         mentions_binding(argument, &bound) || mentions_witness(argument)
                     }
                     _ => true,
@@ -969,7 +972,7 @@ fn structural_resource_children(
                         .arguments
                         .iter()
                         .filter_map(|argument| match argument {
-                            SpecExpression::CExpression(argument) => {
+                            SpecExpression::ProgramExpression(argument) => {
                                 Some(substitute_c_expression_variables(argument, &substitutions))
                             }
                             _ => None,
@@ -1071,13 +1074,13 @@ fn structural_resource_children(
 struct StructuralCallee {
     parameters: Vec<String>,
     family: String,
-    arguments: Vec<CExpression>,
+    arguments: Vec<ProgramExpression>,
 }
 
 /// The measured family and arguments of `function`'s structural measure,
 /// without the arm analysis [`structural_resource_children`] performs.
 fn structural_callee(
-    function: &CFunction,
+    function: &ProgramFunction,
     requirement_index: usize,
 ) -> Result<StructuralCallee, CTerminationError> {
     let invalid = || {
@@ -1108,8 +1111,13 @@ fn structural_callee(
     })
 }
 
-fn refined_lower_bound(condition: &CExpression, variable: &str, branch: bool, current: i64) -> i64 {
-    use CExpression::*;
+fn refined_lower_bound(
+    condition: &ProgramExpression,
+    variable: &str,
+    branch: bool,
+    current: i64,
+) -> i64 {
+    use ProgramExpression::*;
     let direct = match condition {
         GreaterThan(left, right) if left.as_ref() == &Variable(variable.to_string()) && branch => {
             int32_literal(right).map(|value| value + 1)
@@ -1154,9 +1162,9 @@ fn refined_lower_bound(condition: &CExpression, variable: &str, branch: bool, cu
 }
 
 /// Whether `expression` takes the address of the local `name`.
-fn expression_address_taken_locals(expression: &CExpression, names: &mut BTreeSet<String>) {
-    use CExpression::*;
-    let mut inner = |body: &CExpression| expression_address_taken_locals(body, names);
+fn expression_address_taken_locals(expression: &ProgramExpression, names: &mut BTreeSet<String>) {
+    use ProgramExpression::*;
+    let mut inner = |body: &ProgramExpression| expression_address_taken_locals(body, names);
     match expression {
         Value(_) | Variable(_) | FunctionAddress(_) | CallResult { .. } => {}
         Cast { expression, .. } => inner(expression),
@@ -1220,8 +1228,8 @@ fn expression_address_taken_locals(expression: &CExpression, names: &mut BTreeSe
     }
 }
 
-fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet<String>) {
-    use CExpression::*;
+fn collect_c_expression_variables(expression: &ProgramExpression, names: &mut BTreeSet<String>) {
+    use ProgramExpression::*;
     match expression {
         Variable(name) => {
             names.insert(name.clone());
@@ -1298,71 +1306,73 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
 /// for "a store or a callee might change this local without assigning it by
 /// name". One walk of the function answers every local the checks below ask
 /// about.
-pub(super) fn address_taken_locals(statement: &CStatement) -> BTreeSet<String> {
+pub(super) fn address_taken_locals(statement: &ProgramStatement) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     collect_address_taken_locals(statement, &mut names);
     names
 }
 
-fn collect_address_taken_locals(statement: &CStatement, names: &mut BTreeSet<String>) {
+fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeSet<String>) {
     charge_termination_work(1);
-    let mut escapes = |expression: &CExpression| expression_address_taken_locals(expression, names);
+    let mut escapes =
+        |expression: &ProgramExpression| expression_address_taken_locals(expression, names);
     match statement {
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare {
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare {
             initializer: None, ..
         }
-        | CStatement::DeclareAggregate { .. } => {}
-        CStatement::ForStep { step, .. } => collect_address_taken_locals(step, names),
-        CStatement::Declare {
+        | ProgramStatement::DeclareAggregate { .. } => {}
+        ProgramStatement::ForStep { step, .. } => collect_address_taken_locals(step, names),
+        ProgramStatement::Declare {
             initializer: Some(expression),
             ..
         }
-        | CStatement::Assign { expression, .. }
-        | CStatement::Return(expression)
-        | CStatement::Throw(expression) => escapes(expression),
-        CStatement::CallAssign { arguments, .. }
-        | CStatement::Call { arguments, .. }
-        | CStatement::CallResult { arguments, .. } => arguments.iter().for_each(escapes),
-        CStatement::HeapAllocate { bytes, .. } => escapes(bytes),
-        CStatement::HeapFree { pointer } => escapes(pointer),
-        CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
+        | ProgramStatement::Assign { expression, .. }
+        | ProgramStatement::Return(expression)
+        | ProgramStatement::Throw(expression) => escapes(expression),
+        ProgramStatement::CallAssign { arguments, .. }
+        | ProgramStatement::Call { arguments, .. }
+        | ProgramStatement::CallResult { arguments, .. } => arguments.iter().for_each(escapes),
+        ProgramStatement::HeapAllocate { bytes, .. } => escapes(bytes),
+        ProgramStatement::HeapFree { pointer } => escapes(pointer),
+        ProgramStatement::Assert { condition, .. } | ProgramStatement::LoopTest { condition } => {
             escapes(condition)
         }
-        CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
+        ProgramStatement::Store { pointer, value }
+        | ProgramStatement::TypedStore { pointer, value, .. } => {
             escapes(pointer);
             escapes(value);
         }
-        CStatement::CopyAggregate { target, source, .. }
-        | CStatement::InitializeScalarArray { target, source, .. } => {
+        ProgramStatement::CopyAggregate { target, source, .. }
+        | ProgramStatement::InitializeScalarArray { target, source, .. } => {
             escapes(target);
             escapes(source);
         }
-        CStatement::Update {
+        ProgramStatement::Update {
             target, operand, ..
         } => {
             escapes(target);
             escapes(operand);
         }
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
             for statement in statements.iter() {
                 collect_address_taken_locals(statement, names);
             }
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             collect_address_taken_locals(try_body, names);
             collect_address_taken_locals(handler, names);
         }
-        CStatement::If {
+        ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -1371,13 +1381,13 @@ fn collect_address_taken_locals(statement: &CStatement, names: &mut BTreeSet<Str
             collect_address_taken_locals(then_branch, names);
             collect_address_taken_locals(else_branch, names);
         }
-        CStatement::While {
+        ProgramStatement::While {
             condition, body, ..
         } => {
             escapes(condition);
             collect_address_taken_locals(body, names);
         }
-        CStatement::Switch { expression, cases } => {
+        ProgramStatement::Switch { expression, cases } => {
             escapes(expression);
             for case in cases {
                 collect_address_taken_locals(&case.body, names);
@@ -1421,7 +1431,7 @@ pub(super) fn c_reject_address_escaped_loop_measures(
 
 fn reject_address_escaped_expression_measure(
     function_name: &str,
-    measure: &CExpression,
+    measure: &ProgramExpression,
     addressed: &BTreeSet<String>,
 ) -> Result<(), CTerminationError> {
     let mut variables = BTreeSet::new();
@@ -1472,7 +1482,7 @@ fn reject_address_escaped_ranking_component(
     addressed: &BTreeSet<String>,
 ) -> Result<(), CTerminationError> {
     let (source, collected) = match component {
-        CRankingComponent::CExpression(expression) => {
+        CRankingComponent::ProgramExpression(expression) => {
             return reject_address_escaped_expression_measure(function_name, expression, addressed);
         }
         CRankingComponent::Pure { source, expression } => {
@@ -1539,7 +1549,7 @@ fn collect_spec_c_variables(
             SpecNode::Expression(expression) => {
                 charge_termination_work(1);
                 match expression {
-                    SpecExpression::CExpression(expression) => {
+                    SpecExpression::ProgramExpression(expression) => {
                         collect_c_expression_variables(expression, &mut reads.variables);
                     }
                     SpecExpression::MemoryLoad { .. } => reads.memory = true,
@@ -1599,7 +1609,7 @@ fn collect_spec_c_variables(
                     | SpecAlgebraicExpressionNode::Constructor { .. }
                     | SpecAlgebraicExpressionNode::Match { .. }
                     | SpecAlgebraicExpressionNode::PureFunctionApplication { .. }
-                    | SpecAlgebraicExpressionNode::CValue(_) => {}
+                    | SpecAlgebraicExpressionNode::ProgramValue(_) => {}
                     SpecAlgebraicExpressionNode::If { .. } => {
                         return Visit::Stop("a conditional `if` expression");
                     }
@@ -1623,13 +1633,13 @@ fn collect_spec_c_variables(
     }
 }
 
-fn statement_calls(statement: &CStatement, calls: &mut BTreeSet<String>) {
+fn statement_calls(statement: &ProgramStatement, calls: &mut BTreeSet<String>) {
     statement_calls_visiting(statement, calls, &mut |_| true);
 }
 
 /// The functions `function`'s body calls by name: the call graph of a body a
 /// typed frontend lowered itself, which has no C syntax to read calls from.
-pub fn c_function_callees(function: &CFunction) -> BTreeSet<String> {
+pub fn c_function_callees(function: &ProgramFunction) -> BTreeSet<String> {
     let mut calls = BTreeSet::new();
     statement_calls(&function.source_body, &mut calls);
     calls
@@ -1639,43 +1649,43 @@ pub fn c_function_callees(function: &CFunction) -> BTreeSet<String> {
 /// checked theorems apply it at different snapshots. The evidence keeps every
 /// node alive for the traversal; no deep structural key is constructed.
 pub(in crate::kernel) fn checked_statement_calls(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     seen: &mut std::collections::HashSet<usize>,
     calls: &mut BTreeSet<String>,
 ) {
     statement_calls_visiting(statement, calls, &mut |node| {
-        seen.insert(node as *const CStatement as usize)
+        seen.insert(node as *const ProgramStatement as usize)
     });
 }
 
 fn statement_calls_visiting(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     calls: &mut BTreeSet<String>,
-    visit: &mut impl FnMut(&CStatement) -> bool,
+    visit: &mut impl FnMut(&ProgramStatement) -> bool,
 ) {
     charge_termination_work(1);
     if !visit(statement) {
         return;
     }
     match statement {
-        CStatement::CallAssign { function_name, .. }
-        | CStatement::Call { function_name, .. }
-        | CStatement::CallResult { function_name, .. } => {
+        ProgramStatement::CallAssign { function_name, .. }
+        | ProgramStatement::Call { function_name, .. }
+        | ProgramStatement::CallResult { function_name, .. } => {
             calls.insert(function_name.clone());
         }
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
             for statement in statements.iter() {
                 statement_calls_visiting(statement, calls, visit);
             }
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             statement_calls_visiting(try_body, calls, visit);
             statement_calls_visiting(handler, calls, visit);
         }
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -1683,8 +1693,8 @@ fn statement_calls_visiting(
             statement_calls_visiting(then_branch, calls, visit);
             statement_calls_visiting(else_branch, calls, visit);
         }
-        CStatement::While { body, .. } => statement_calls_visiting(body, calls, visit),
-        CStatement::Switch {
+        ProgramStatement::While { body, .. } => statement_calls_visiting(body, calls, visit),
+        ProgramStatement::Switch {
             expression: _,
             cases,
         } => {
@@ -1692,49 +1702,49 @@ fn statement_calls_visiting(
                 statement_calls_visiting(&case.body, calls, visit);
             }
         }
-        CStatement::ForStep { step, .. } => statement_calls_visiting(step, calls, visit),
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assign { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::Update { .. } => {}
+        ProgramStatement::ForStep { step, .. } => statement_calls_visiting(step, calls, visit),
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare { .. }
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::Assign { .. }
+        | ProgramStatement::HeapAllocate { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::Update { .. } => {}
     }
 }
 
 /// Collects the names this body declares, so a call through one of them is
 /// not mistaken for a call to a like-named function.
-fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<String>) {
+fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeSet<String>) {
     charge_termination_work(1);
     match statement {
-        CStatement::Declare { name, .. }
-        | CStatement::DeclareAggregate { name, .. }
-        | CStatement::CallAssign { target: name, .. }
-        | CStatement::HeapAllocate { target: name, .. } => {
+        ProgramStatement::Declare { name, .. }
+        | ProgramStatement::DeclareAggregate { name, .. }
+        | ProgramStatement::CallAssign { target: name, .. }
+        | ProgramStatement::HeapAllocate { target: name, .. } => {
             names.insert(name.clone());
         }
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
             for statement in statements.iter() {
                 statement_declared_variables(statement, names);
             }
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body,
             binding,
             handler,
@@ -1744,7 +1754,7 @@ fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<Str
             names.insert(binding.clone());
             statement_declared_variables(handler, names);
         }
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -1752,39 +1762,39 @@ fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<Str
             statement_declared_variables(then_branch, names);
             statement_declared_variables(else_branch, names);
         }
-        CStatement::While { body, .. } => statement_declared_variables(body, names),
-        CStatement::Switch { cases, .. } => {
+        ProgramStatement::While { body, .. } => statement_declared_variables(body, names),
+        ProgramStatement::Switch { cases, .. } => {
             for case in cases {
                 statement_declared_variables(&case.body, names);
             }
         }
-        CStatement::ForStep { step, .. } => statement_declared_variables(step, names),
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Assign { .. }
-        | CStatement::Update { .. }
-        | CStatement::Call { .. }
-        | CStatement::CallResult { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. } => {}
+        ProgramStatement::ForStep { step, .. } => statement_declared_variables(step, names),
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Assign { .. }
+        | ProgramStatement::Update { .. }
+        | ProgramStatement::Call { .. }
+        | ProgramStatement::CallResult { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. } => {}
     }
 }
 
 /// The names `function` binds as objects: its parameters and everything its
 /// body declares.
-fn function_object_names(function: &CFunction) -> BTreeSet<String> {
+fn function_object_names(function: &ProgramFunction) -> BTreeSet<String> {
     let mut names = function
         .parameters()
         .iter()
@@ -1864,7 +1874,7 @@ trait TerminationWalk {
     /// never reach it.
     fn step(
         &self,
-        statement: &CStatement,
+        statement: &ProgramStatement,
         paths: Vec<Self::Path>,
     ) -> Result<Vec<Self::Path>, CTerminationError>;
 
@@ -1872,7 +1882,7 @@ trait TerminationWalk {
     /// condition that selects it.
     fn refine(
         &self,
-        condition: &CExpression,
+        condition: &ProgramExpression,
         taken: bool,
         paths: Vec<Self::Path>,
     ) -> Vec<Self::Path>;
@@ -1895,29 +1905,29 @@ trait TerminationWalk {
 /// the refusals that do not compare against a path and no others.
 fn walk_termination_paths<W: TerminationWalk>(
     walk: &W,
-    statement: &CStatement,
+    statement: &ProgramStatement,
     paths: Vec<W::Path>,
 ) -> Result<WalkPaths<W::Path>, CTerminationError> {
-    let descend = |statement: &CStatement, paths: Vec<W::Path>| {
+    let descend = |statement: &ProgramStatement, paths: Vec<W::Path>| {
         walk_termination_paths(walk, statement, paths)
     };
     match statement {
-        CStatement::ForStep { step, .. } => descend(step, paths),
-        CStatement::Return(_) | CStatement::Throw(_) => Ok(WalkPaths::none()),
+        ProgramStatement::ForStep { step, .. } => descend(step, paths),
+        ProgramStatement::Return(_) | ProgramStatement::Throw(_) => Ok(WalkPaths::none()),
         // A `break` leaves the innermost `switch` or loop and resumes after
         // it, carrying what it holds here. It does not reach the next
         // statement in this body, which is what `continuing` is empty for.
-        CStatement::Break => Ok(WalkPaths {
+        ProgramStatement::Break => Ok(WalkPaths {
             continuing: Vec::new(),
             broken: paths,
         }),
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             let first = descend(statements.first(), paths)?;
             let mut second = descend(&statements.rest(), first.continuing)?;
             second.broken.extend(first.broken);
             Ok(second)
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body,
             binding,
             handler,
@@ -1935,7 +1945,7 @@ fn walk_termination_paths<W: TerminationWalk>(
                 broken: walk.join(broken),
             })
         }
-        CStatement::If {
+        ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -1952,7 +1962,7 @@ fn walk_termination_paths<W: TerminationWalk>(
                 broken: walk.join(broken),
             })
         }
-        CStatement::While {
+        ProgramStatement::While {
             condition, body, ..
         } => {
             // A `break` in the body lands where the loop's own exit lands,
@@ -1961,7 +1971,7 @@ fn walk_termination_paths<W: TerminationWalk>(
             descend(body, walk.refine(condition, true, paths.clone()))?;
             Ok(WalkPaths::continuing(paths))
         }
-        CStatement::Switch { cases, .. } => {
+        ProgramStatement::Switch { cases, .. } => {
             // Every way out of a `switch` continues at the statement after it:
             // a case body that ends normally (falling into the next case, and
             // out of the last one), a `break`, and — when no case matches and
@@ -1999,7 +2009,7 @@ impl Int32MeasureWalk<'_> {
     fn check_recursive_call(
         &self,
         function_name: &str,
-        arguments: &[CExpression],
+        arguments: &[ProgramExpression],
         lower_bounds: &[i64],
     ) -> Result<(), CTerminationError> {
         if !self.component.contains(function_name) {
@@ -2031,12 +2041,12 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
 
     fn step(
         &self,
-        statement: &CStatement,
+        statement: &ProgramStatement,
         lower_bounds: Vec<i64>,
     ) -> Result<Vec<i64>, CTerminationError> {
         let measure = self.measure;
         match statement {
-            CStatement::EndAutomaticLifetimes { names } => {
+            ProgramStatement::EndAutomaticLifetimes { names } => {
                 if names.iter().any(|name| name == measure) {
                     return Err(error(format!(
                         "termination measure `{measure}` leaves its lifetime"
@@ -2044,33 +2054,35 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
                 }
                 Ok(lower_bounds)
             }
-            CStatement::Skip
-            | CStatement::Continue
-            | CStatement::Goto { .. }
-            | CStatement::Declare { .. }
-            | CStatement::DeclareAggregate { .. }
-            | CStatement::Assert { .. }
-            | CStatement::HeapFree { .. }
-            | CStatement::Store { .. }
-            | CStatement::TypedStore { .. }
-            | CStatement::CopyAggregate { .. }
-            | CStatement::InitializeScalarArray { .. } => Ok(lower_bounds),
-            CStatement::Assign { name, .. } if name == measure => Err(error(format!(
+            ProgramStatement::Skip
+            | ProgramStatement::Continue
+            | ProgramStatement::Goto { .. }
+            | ProgramStatement::Declare { .. }
+            | ProgramStatement::DeclareAggregate { .. }
+            | ProgramStatement::Assert { .. }
+            | ProgramStatement::HeapFree { .. }
+            | ProgramStatement::Store { .. }
+            | ProgramStatement::TypedStore { .. }
+            | ProgramStatement::CopyAggregate { .. }
+            | ProgramStatement::InitializeScalarArray { .. } => Ok(lower_bounds),
+            ProgramStatement::Assign { name, .. } if name == measure => Err(error(format!(
                 "termination measure `{measure}` is reassigned; this first implementation requires an unchanged function parameter"
             ))),
-            CStatement::Assign { .. } => Ok(lower_bounds),
-            CStatement::Update {
-                target: CExpression::Variable(name),
+            ProgramStatement::Assign { .. } => Ok(lower_bounds),
+            ProgramStatement::Update {
+                target: ProgramExpression::Variable(name),
                 ..
             } if name == measure => Err(error(format!(
                 "termination measure `{measure}` is updated; this first implementation requires an unchanged function parameter"
             ))),
-            CStatement::Update { .. } => Ok(lower_bounds),
-            CStatement::HeapAllocate { target, .. } if target == measure => Err(error(format!(
-                "recursive termination measure `{measure}` is overwritten by an allocation result"
-            ))),
-            CStatement::HeapAllocate { .. } => Ok(lower_bounds),
-            CStatement::CallAssign {
+            ProgramStatement::Update { .. } => Ok(lower_bounds),
+            ProgramStatement::HeapAllocate { target, .. } if target == measure => {
+                Err(error(format!(
+                    "recursive termination measure `{measure}` is overwritten by an allocation result"
+                )))
+            }
+            ProgramStatement::HeapAllocate { .. } => Ok(lower_bounds),
+            ProgramStatement::CallAssign {
                 target,
                 function_name,
                 arguments,
@@ -2083,11 +2095,11 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
                 self.check_recursive_call(function_name, arguments, &lower_bounds)?;
                 Ok(lower_bounds)
             }
-            CStatement::Call {
+            ProgramStatement::Call {
                 function_name,
                 arguments,
             }
-            | CStatement::CallResult {
+            | ProgramStatement::CallResult {
                 function_name,
                 arguments,
                 ..
@@ -2099,7 +2111,12 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
         }
     }
 
-    fn refine(&self, condition: &CExpression, taken: bool, lower_bounds: Vec<i64>) -> Vec<i64> {
+    fn refine(
+        &self,
+        condition: &ProgramExpression,
+        taken: bool,
+        lower_bounds: Vec<i64>,
+    ) -> Vec<i64> {
         lower_bounds
             .into_iter()
             .map(|bound| refined_lower_bound(condition, self.measure, taken, bound))
@@ -2116,7 +2133,7 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
 }
 
 fn recursion_paths(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     measure: &str,
     component: &BTreeSet<String>,
     parameter_indices: &BTreeMap<String, usize>,
@@ -2135,9 +2152,9 @@ fn recursion_paths(
 /// component's source is built from. It must keep telling different measures
 /// apart, so a form it has no spelling for stays structural. Diagnostics use
 /// [`termination_measure_display`] instead.
-fn termination_measure_key(measure: &CExpression) -> String {
-    use CExpression::*;
-    let binary = |left: &CExpression, right: &CExpression, operator: &str| {
+fn termination_measure_key(measure: &ProgramExpression) -> String {
+    use ProgramExpression::*;
+    let binary = |left: &ProgramExpression, right: &ProgramExpression, operator: &str| {
         format!(
             "{} {operator} {}",
             termination_measure_key(left),
@@ -2146,10 +2163,12 @@ fn termination_measure_key(measure: &CExpression) -> String {
     };
     match measure {
         Variable(name) => name.clone(),
-        Value(CValue::Int32(term)) | Value(CValue::UInt8(term)) => match term.as_const() {
-            Some(value) => format!("{}", value as i32),
-            None => format!("{measure:?}"),
-        },
+        Value(ProgramValue::Int32(term)) | Value(ProgramValue::UInt8(term)) => {
+            match term.as_const() {
+                Some(value) => format!("{}", value as i32),
+                None => format!("{measure:?}"),
+            }
+        }
         Add(left, right) => binary(left, right, "+"),
         Subtract(left, right) => binary(left, right, "-"),
         Multiply(left, right) => binary(left, right, "*"),
@@ -2178,24 +2197,26 @@ fn termination_measure_key(measure: &CExpression) -> String {
 /// a value only the lowering has a name for — reads `…`, never as a kernel
 /// term dump. This is presentation only; declarations are identified by
 /// [`termination_measure_key`].
-fn termination_measure_display(measure: &CExpression) -> String {
-    use CExpression::*;
-    let binary = |left: &CExpression, right: &CExpression, operator: &str| {
+fn termination_measure_display(measure: &ProgramExpression) -> String {
+    use ProgramExpression::*;
+    let binary = |left: &ProgramExpression, right: &ProgramExpression, operator: &str| {
         format!(
             "{} {operator} {}",
             termination_measure_display(left),
             termination_measure_display(right)
         )
     };
-    let unary = |operand: &CExpression, operator: &str| {
+    let unary = |operand: &ProgramExpression, operator: &str| {
         format!("{operator}({})", termination_measure_display(operand))
     };
     match measure {
         Variable(name) => name.clone(),
-        Value(CValue::Int32(term)) | Value(CValue::UInt8(term)) => match term.as_const() {
-            Some(value) => format!("{}", value as i32),
-            None => "…".to_string(),
-        },
+        Value(ProgramValue::Int32(term)) | Value(ProgramValue::UInt8(term)) => {
+            match term.as_const() {
+                Some(value) => format!("{}", value as i32),
+                None => "…".to_string(),
+            }
+        }
         Add(left, right) => binary(left, right, "+"),
         Subtract(left, right) => binary(left, right, "-"),
         Multiply(left, right) => binary(left, right, "*"),
@@ -2285,7 +2306,7 @@ pub(super) struct CRankingMeasureReader<'a> {
 /// observe. A volatile read is refused, since it is not a function of state.
 pub(super) fn c_ranking_measure_term(
     component: &CRankingComponent,
-    state: &CState,
+    state: &ExecutionState,
     reader: &mut CRankingMeasureReader<'_>,
 ) -> Result<CRankingMeasureValue, String> {
     match component {
@@ -2295,7 +2316,7 @@ pub(super) fn c_ranking_measure_term(
         // measure never claims, and makes the member a stable function of the
         // declaration rather than of the assignment order that produced the
         // state.
-        CRankingComponent::CExpression(expression) => {
+        CRankingComponent::ProgramExpression(expression) => {
             c_ranking_measure_term_unfolded(expression, state, reader)
                 .map(RankingMachineTerm::folded_measure_value)
         }
@@ -2429,7 +2450,7 @@ fn mixed_ranking_carrier_message(component: &CRankingComponent) -> String {
 /// paths is refused rather than guessed, exactly as in the machine carrier.
 fn pure_integer_ranking_measure_term(
     expression: &SpecIntegerExpression,
-    state: &CState,
+    state: &ExecutionState,
     reader: &mut CRankingMeasureReader<'_>,
 ) -> Result<IntegerTerm, String> {
     let paths = crate::kernel::spec::evaluate_spec_integer_measure_paths(
@@ -2471,7 +2492,7 @@ fn pure_integer_ranking_measure_term(
 /// rather than guessed.
 fn pure_ranking_measure_term(
     expression: &SpecExpression,
-    state: &CState,
+    state: &ExecutionState,
     reader: &mut CRankingMeasureReader<'_>,
 ) -> Result<CRankingMeasureValue, String> {
     let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_loop_entry(
@@ -2529,19 +2550,19 @@ struct RankingMachineTerm {
 }
 
 impl RankingMachineTerm {
-    fn from_value(value: &CValue) -> Option<Self> {
+    fn from_value(value: &ProgramValue) -> Option<Self> {
         // An 8- or 16-bit value is ranked by its `int32` widening, which
         // keeps its value, and a `Bool` by its cast at `int32` (rule C1).
         let (machine_type, term) = match value.numeric_value() {
-            CValue::PointerInteger(_) => unreachable!("numeric projection"),
-            CValue::Bool(term) => (
+            ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+            ProgramValue::Bool(term) => (
                 RankingMachineType::Int32,
                 MachineTerm::bool_word_as(MachineIntegerType::Int32, term),
             ),
-            narrow @ (CValue::Int8(term)
-            | CValue::Int16(term)
-            | CValue::UInt8(term)
-            | CValue::UInt16(term)) => (
+            narrow @ (ProgramValue::Int8(term)
+            | ProgramValue::Int16(term)
+            | ProgramValue::UInt8(term)
+            | ProgramValue::UInt16(term)) => (
                 RankingMachineType::Int32,
                 MachineTerm::machine_integer_cast(
                     MachineIntegerType::from_c_type(narrow.c_type())?,
@@ -2549,17 +2570,17 @@ impl RankingMachineTerm {
                     term.clone(),
                 ),
             ),
-            CValue::Int32(term) => (RankingMachineType::Int32, term.clone()),
-            CValue::UInt32(term) => (RankingMachineType::UInt32, term.clone()),
-            CValue::Int64(term) => (RankingMachineType::Int64, term.clone()),
-            CValue::UInt64(term) => (RankingMachineType::UInt64, term.clone()),
-            CValue::Int128(_)
-            | CValue::UInt128(_)
-            | CValue::Void
-            | CValue::Float32(_)
-            | CValue::Float64(_)
-            | CValue::Pointer(_)
-            | CValue::Parameter(_) => return None,
+            ProgramValue::Int32(term) => (RankingMachineType::Int32, term.clone()),
+            ProgramValue::UInt32(term) => (RankingMachineType::UInt32, term.clone()),
+            ProgramValue::Int64(term) => (RankingMachineType::Int64, term.clone()),
+            ProgramValue::UInt64(term) => (RankingMachineType::UInt64, term.clone()),
+            ProgramValue::Int128(_)
+            | ProgramValue::UInt128(_)
+            | ProgramValue::Void
+            | ProgramValue::Float32(_)
+            | ProgramValue::Float64(_)
+            | ProgramValue::Pointer(_)
+            | ProgramValue::Parameter(_) => return None,
         };
         Some(Self { machine_type, term })
     }
@@ -2616,11 +2637,14 @@ impl RankingMachineTerm {
 
 /// The value of one memory read inside a measure, at `state`.
 fn c_ranking_measure_read(
-    expression: &CExpression,
-    state: &CState,
+    expression: &ProgramExpression,
+    state: &ExecutionState,
     reader: &mut CRankingMeasureReader<'_>,
 ) -> Result<RankingMachineTerm, String> {
-    if matches!(expression, CExpression::TypedLoad { volatile: true, .. }) {
+    if matches!(
+        expression,
+        ProgramExpression::TypedLoad { volatile: true, .. }
+    ) {
         return Err("a termination measure may not read a volatile object".into());
     }
     let paths = evaluate_c_expression_paths(state, expression, reader.assumptions, reader.budget)
@@ -2650,18 +2674,18 @@ fn c_ranking_measure_read(
 }
 
 fn c_ranking_measure_term_unfolded(
-    expression: &CExpression,
-    state: &CState,
+    expression: &ProgramExpression,
+    state: &ExecutionState,
     reader: &mut CRankingMeasureReader<'_>,
 ) -> Result<RankingMachineTerm, String> {
-    use CExpression::*;
+    use ProgramExpression::*;
     use RankingMachineType::*;
     type Operation = fn(MachineTerm, MachineTerm) -> MachineTerm;
     /// One arithmetic operator, as C applies it at each common type.
     fn binary(
-        left: &CExpression,
-        right: &CExpression,
-        state: &CState,
+        left: &ProgramExpression,
+        right: &ProgramExpression,
+        state: &ExecutionState,
         reader: &mut CRankingMeasureReader<'_>,
         operations: (Operation, Operation, Operation, Operation),
     ) -> Result<RankingMachineTerm, String> {
@@ -2682,9 +2706,9 @@ fn c_ranking_measure_term_unfolded(
     /// A shift has its promoted left operand's type; the count is read as a
     /// 32-bit quantity whatever its own type.
     fn shift(
-        left: &CExpression,
-        right: &CExpression,
-        state: &CState,
+        left: &ProgramExpression,
+        right: &ProgramExpression,
+        state: &ExecutionState,
         reader: &mut CRankingMeasureReader<'_>,
         operations: (Operation, Operation),
     ) -> Result<RankingMachineTerm, String> {
@@ -2722,7 +2746,7 @@ fn c_ranking_measure_term_unfolded(
         // operand's own value, as an int32.
         Cast {
             expression,
-            target_type: CType::Int32 | CType::UInt8,
+            target_type: ProgramType::Int32 | ProgramType::UInt8,
             ..
         } => {
             let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
@@ -2733,12 +2757,12 @@ fn c_ranking_measure_term_unfolded(
         }
         Cast {
             expression,
-            target_type: target @ (CType::UInt32 | CType::UInt64 | CType::Int64),
+            target_type: target @ (ProgramType::UInt32 | ProgramType::UInt64 | ProgramType::Int64),
             ..
         } => {
             let machine_type = match target {
-                CType::UInt32 => UInt32,
-                CType::Int64 => Int64,
+                ProgramType::UInt32 => UInt32,
+                ProgramType::Int64 => Int64,
                 _ => UInt64,
             };
             let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
@@ -2937,11 +2961,11 @@ fn c_ranking_measure_term_unfolded(
 }
 
 fn c_ranking_measure_condition_term(
-    expression: &CExpression,
-    state: &CState,
+    expression: &ProgramExpression,
+    state: &ExecutionState,
     reader: &mut CRankingMeasureReader<'_>,
 ) -> Result<(ConditionTerm, bool), String> {
-    use CExpression::*;
+    use ProgramExpression::*;
     use RankingMachineType::*;
     /// The relation `left < right` (or `<=`, or `==`) at the operands' common
     /// type, so an unsigned pair compares as C compares it.
@@ -2954,9 +2978,9 @@ fn c_ranking_measure_condition_term(
         Equal,
     }
     fn compare(
-        left: &CExpression,
-        right: &CExpression,
-        state: &CState,
+        left: &ProgramExpression,
+        right: &ProgramExpression,
+        state: &ExecutionState,
         reader: &mut CRankingMeasureReader<'_>,
         relation: Relation,
     ) -> Result<ConditionTerm, String> {
@@ -3040,8 +3064,8 @@ fn c_ranking_measure_condition_term(
 /// Work is the declared measure, and the evaluation it needs; nothing
 /// ambient is scanned.
 pub(super) fn c_function_recursion_anchor(
-    function: &CFunction,
-    entry_state: &CState,
+    function: &ProgramFunction,
+    entry_state: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> Result<Option<CRecursionAnchor>, String> {
@@ -3140,7 +3164,7 @@ pub(super) fn collect_recursion_descent_obligations(
     anchor: &CRecursionAnchor,
     callee: &str,
     components: &[CRankingComponent],
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> Result<Vec<ProofObligation>, String> {
@@ -3254,7 +3278,7 @@ pub(super) fn ranking_lexicographic_decrease_proposition(
 /// The display form of one `decreases` component, for bundle member contexts.
 pub(super) fn c_ranking_measure_display(measure: &CRankingComponent) -> String {
     match measure {
-        CRankingComponent::CExpression(expression) => termination_measure_display(expression),
+        CRankingComponent::ProgramExpression(expression) => termination_measure_display(expression),
         // A pure component is shown as it was declared: its lowered form is a
         // specification tree with no source spelling of its own.
         CRankingComponent::Pure { source, .. } | CRankingComponent::PureInteger { source, .. } => {
@@ -3273,7 +3297,7 @@ pub(super) fn c_ranking_measures_display(measures: &[CRankingComponent]) -> Stri
 /// [`termination_measure_key`]).
 pub(super) fn c_ranking_measure_key(measure: &CRankingComponent) -> String {
     match measure {
-        CRankingComponent::CExpression(expression) => termination_measure_key(expression),
+        CRankingComponent::ProgramExpression(expression) => termination_measure_key(expression),
         CRankingComponent::Pure { source, .. } | CRankingComponent::PureInteger { source, .. } => {
             source.clone()
         }
@@ -3302,7 +3326,7 @@ fn loop_measures_name_same_declaration(
                     match (certified, planned) {
                         (
                             CRankingMeasureKey::Pure(source),
-                            CRankingMeasureKey::CExpression(written),
+                            CRankingMeasureKey::ProgramExpression(written),
                         ) => *source == termination_measure_key(written),
                         (certified, planned) => certified == planned,
                     }
@@ -3317,7 +3341,7 @@ fn loop_termination_measure_display(measure: &CLoopTerminationMeasure) -> String
     match measure {
         CLoopTerminationMeasure::Ranking(measures) => {
             join_measure_components(measures.iter().map(|measure| match measure {
-                CRankingMeasureKey::CExpression(expression) => {
+                CRankingMeasureKey::ProgramExpression(expression) => {
                     termination_measure_display(expression)
                 }
                 CRankingMeasureKey::Pure(source) => source.clone(),
@@ -3339,26 +3363,29 @@ fn join_measure_components(components: impl Iterator<Item = String>) -> String {
 /// The function's loops in the order `check_loops` numbers them: a loop
 /// before the loops in its body, then the rest in source order. One walk,
 /// so looking up every verified loop rule costs the function once.
-fn loops_in_order(statement: &CStatement) -> Vec<&CStatement> {
+fn loops_in_order(statement: &ProgramStatement) -> Vec<&ProgramStatement> {
     let mut loops = Vec::new();
     collect_loops_in_order(statement, &mut loops);
     loops
 }
 
-fn collect_loops_in_order<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>) {
+fn collect_loops_in_order<'a>(
+    statement: &'a ProgramStatement,
+    loops: &mut Vec<&'a ProgramStatement>,
+) {
     charge_termination_work(1);
     match statement {
-        CStatement::While { body, .. } => {
+        ProgramStatement::While { body, .. } => {
             loops.push(statement);
             collect_loops_in_order(body, loops);
         }
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
             for statement in statements.iter() {
                 collect_loops_in_order(statement, loops);
             }
         }
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -3366,45 +3393,45 @@ fn collect_loops_in_order<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CSt
             collect_loops_in_order(then_branch, loops);
             collect_loops_in_order(else_branch, loops);
         }
-        CStatement::Switch { cases, .. } => {
+        ProgramStatement::Switch { cases, .. } => {
             for case in cases {
                 collect_loops_in_order(&case.body, loops);
             }
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             collect_loops_in_order(try_body, loops);
             collect_loops_in_order(handler, loops);
         }
-        CStatement::ForStep { step, .. } => collect_loops_in_order(step, loops),
+        ProgramStatement::ForStep { step, .. } => collect_loops_in_order(step, loops),
         // Spelled out, as in `check_loops`: the two walks number the same
         // loops only while they descend into the same statements, so a new
         // statement kind must be placed in both.
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assign { .. }
-        | CStatement::CallAssign { .. }
-        | CStatement::Call { .. }
-        | CStatement::CallResult { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::Update { .. } => {}
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare { .. }
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::Assign { .. }
+        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::Call { .. }
+        | ProgramStatement::CallResult { .. }
+        | ProgramStatement::HeapAllocate { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::Update { .. } => {}
     }
 }
 
@@ -3412,19 +3439,19 @@ fn collect_loops_in_order<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CSt
 /// frontier rule may carry nested invariant checks that the partial function
 /// used for contract certification intentionally omits; its executable shape
 /// must still be the exact loop shape from the source body.
-fn same_statement_shape(left: &CStatement, right: &CStatement) -> bool {
+fn same_statement_shape(left: &ProgramStatement, right: &ProgramStatement) -> bool {
     match (left, right) {
-        (CStatement::Seq(left), CStatement::Seq(right)) => {
+        (ProgramStatement::Seq(left), ProgramStatement::Seq(right)) => {
             same_statement_shape(left.first(), right.first())
                 && same_statement_shape(&left.rest(), &right.rest())
         }
         (
-            CStatement::If {
+            ProgramStatement::If {
                 condition: left_condition,
                 then_branch: left_then,
                 else_branch: left_else,
             },
-            CStatement::If {
+            ProgramStatement::If {
                 condition: right_condition,
                 then_branch: right_then,
                 else_branch: right_else,
@@ -3435,13 +3462,13 @@ fn same_statement_shape(left: &CStatement, right: &CStatement) -> bool {
                 && same_statement_shape(left_else, right_else)
         }
         (
-            CStatement::While {
+            ProgramStatement::While {
                 condition: left_condition,
                 do_while: left_do_while,
                 body: left_body,
                 ..
             },
-            CStatement::While {
+            ProgramStatement::While {
                 condition: right_condition,
                 do_while: right_do_while,
                 body: right_body,
@@ -3453,11 +3480,11 @@ fn same_statement_shape(left: &CStatement, right: &CStatement) -> bool {
                 && same_statement_shape(left_body, right_body)
         }
         (
-            CStatement::Switch {
+            ProgramStatement::Switch {
                 expression: left_expression,
                 cases: left_cases,
             },
-            CStatement::Switch {
+            ProgramStatement::Switch {
                 expression: right_expression,
                 cases: right_cases,
             },
@@ -3469,12 +3496,12 @@ fn same_statement_shape(left: &CStatement, right: &CStatement) -> bool {
                 })
         }
         (
-            CStatement::ForStep {
+            ProgramStatement::ForStep {
                 step: left_step,
                 exited_locals: left_locals,
                 continue_after: left_continue,
             },
-            CStatement::ForStep {
+            ProgramStatement::ForStep {
                 step: right_step,
                 exited_locals: right_locals,
                 continue_after: right_continue,
@@ -3495,7 +3522,7 @@ fn same_statement_shape(left: &CStatement, right: &CStatement) -> bool {
 /// is what binds that certification to this function's loop.
 fn verified_loop_ranking_measures(
     function_name: &str,
-    source_body: &CStatement,
+    source_body: &ProgramStatement,
     rules: &[CVerifiedLoopRule],
 ) -> Result<(BTreeMap<usize, CLoopTerminationMeasure>, BTreeSet<usize>), CTerminationError> {
     let mut certified: BTreeMap<usize, CLoopTerminationMeasure> = BTreeMap::new();
@@ -3516,7 +3543,7 @@ fn verified_loop_ranking_measures(
                 "verified loop rule for `{function_name}` does not match loop {index}'s source shape"
             )));
         }
-        let CStatement::While {
+        let ProgramStatement::While {
             ranking_measures,
             structural_measure,
             ..
@@ -3663,20 +3690,20 @@ fn canonical_ranking_term(term: &MachineTerm) -> MachineTerm {
 }
 
 /// Every loop of `statement`, in the order `check_loops` numbers them.
-fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>) {
+fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a ProgramStatement>) {
     charge_termination_work(1);
     match statement {
-        CStatement::While { body, .. } => {
+        ProgramStatement::While { body, .. } => {
             loops.push(statement);
             collect_loops(body, loops);
         }
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
             for statement in statements.iter() {
                 collect_loops(statement, loops);
             }
         }
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -3684,42 +3711,42 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
             collect_loops(then_branch, loops);
             collect_loops(else_branch, loops);
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             collect_loops(try_body, loops);
             collect_loops(handler, loops);
         }
-        CStatement::Switch { cases, .. } => {
+        ProgramStatement::Switch { cases, .. } => {
             for case in cases {
                 collect_loops(&case.body, loops);
             }
         }
-        CStatement::ForStep { step, .. } => collect_loops(step, loops),
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assign { .. }
-        | CStatement::CallAssign { .. }
-        | CStatement::Call { .. }
-        | CStatement::CallResult { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::Update { .. } => {}
+        ProgramStatement::ForStep { step, .. } => collect_loops(step, loops),
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare { .. }
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::Assign { .. }
+        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::Call { .. }
+        | ProgramStatement::CallResult { .. }
+        | ProgramStatement::HeapAllocate { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::Update { .. } => {}
     }
 }
 
@@ -3744,7 +3771,7 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
 /// granted either unless the certified body's loops are the source body's
 /// loops, shape for shape, since the indices name source loops.
 fn loops_executed_to_exit(
-    function: &CFunction,
+    function: &ProgramFunction,
     loop_semantics: CLoopSemantics,
     ruled_loops: &BTreeSet<usize>,
 ) -> BTreeSet<usize> {
@@ -3772,7 +3799,7 @@ fn loops_executed_to_exit(
             if ruled_loops.contains(index) {
                 return false;
             }
-            let CStatement::While {
+            let ProgramStatement::While {
                 invariant,
                 invariant_checks,
                 effect_checks,
@@ -3804,29 +3831,29 @@ fn loops_executed_to_exit(
         .collect()
 }
 
-fn contains_natural_control_loop(statement: &CStatement) -> bool {
+fn contains_natural_control_loop(statement: &ProgramStatement) -> bool {
     match statement {
-        CStatement::While {
+        ProgramStatement::While {
             backedge_target: Some(_),
             ..
         } => true,
-        CStatement::Seq(statements) => statements
+        ProgramStatement::Seq(statements) => statements
             .iter()
             .any(|statement| contains_natural_control_loop(statement)),
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
         } => {
             contains_natural_control_loop(then_branch) || contains_natural_control_loop(else_branch)
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => contains_natural_control_loop(try_body) || contains_natural_control_loop(handler),
-        CStatement::Switch { cases, .. } => cases
+        ProgramStatement::Switch { cases, .. } => cases
             .iter()
             .any(|case| contains_natural_control_loop(&case.body)),
-        CStatement::ForStep { step, .. } => contains_natural_control_loop(step),
+        ProgramStatement::ForStep { step, .. } => contains_natural_control_loop(step),
         _ => false,
     }
 }
@@ -3842,7 +3869,7 @@ fn contains_natural_control_loop(statement: &CStatement) -> bool {
 /// declared measure on its loop head, so matching it against the plan is the
 /// whole of the check here.
 fn check_loops(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     supplied: &BTreeMap<usize, CLoopTerminationMeasure>,
     certified: &BTreeMap<usize, CLoopTerminationMeasure>,
     function_name: &str,
@@ -3851,7 +3878,7 @@ fn check_loops(
 ) -> Result<(), CTerminationError> {
     charge_termination_work(1);
     match statement {
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             check_loops(
                 statements.first(),
                 supplied,
@@ -3869,7 +3896,7 @@ fn check_loops(
                 unranked,
             )
         }
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -3891,7 +3918,7 @@ fn check_loops(
                 unranked,
             )
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             check_loops(
@@ -3911,7 +3938,7 @@ fn check_loops(
                 unranked,
             )
         }
-        CStatement::While { body, .. } => {
+        ProgramStatement::While { body, .. } => {
             let index = *next_index;
             *next_index += 1;
             check_loops(
@@ -3948,7 +3975,7 @@ fn check_loops(
                 ))),
             }
         }
-        CStatement::Switch { cases, .. } => {
+        ProgramStatement::Switch { cases, .. } => {
             for case in cases {
                 check_loops(
                     &case.body,
@@ -3961,7 +3988,7 @@ fn check_loops(
             }
             Ok(())
         }
-        CStatement::ForStep { step, .. } => check_loops(
+        ProgramStatement::ForStep { step, .. } => check_loops(
             step,
             supplied,
             certified,
@@ -3969,30 +3996,30 @@ fn check_loops(
             next_index,
             unranked,
         ),
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assign { .. }
-        | CStatement::CallAssign { .. }
-        | CStatement::Call { .. }
-        | CStatement::CallResult { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::Update { .. } => Ok(()),
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare { .. }
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::Assign { .. }
+        | ProgramStatement::CallAssign { .. }
+        | ProgramStatement::Call { .. }
+        | ProgramStatement::CallResult { .. }
+        | ProgramStatement::HeapAllocate { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::Update { .. } => Ok(()),
     }
 }
 
@@ -4028,14 +4055,14 @@ pub(in crate::kernel) fn merge_checked_callees<'a>(
 /// parameter or local, so such a call goes through that object. Resolving it
 /// to the function would hand the call that function's ranking proof, so it is
 /// left unranked, which is the treatment every indirect call gets.
-fn termination_callees(function: &CFunction) -> BTreeSet<String> {
+fn termination_callees(function: &ProgramFunction) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     statement_calls(&function.source_body, &mut found);
     classify_termination_callees(function, found.into_iter())
 }
 
 fn classify_termination_callees(
-    function: &CFunction,
+    function: &ProgramFunction,
     found: impl Iterator<Item = String>,
 ) -> BTreeSet<String> {
     let objects = function_object_names(function);
@@ -4060,7 +4087,7 @@ fn classify_termination_callees(
 /// such a contract is this function's own admission that a pointer call of
 /// its may not return, read from its own clauses with work linear in them.
 fn diverging_contract_objects(
-    function: &CFunction,
+    function: &ProgramFunction,
     diverging_contracts: &BTreeSet<String>,
 ) -> BTreeMap<String, String> {
     fn collect(
@@ -4086,8 +4113,8 @@ fn diverging_contract_objects(
                 // The function value comes first; any values after it fix
                 // the contract's value parameters.
                 let [
-                    SpecPredicateArgument::Value(SpecExpression::CExpression(
-                        CExpression::Variable(object),
+                    SpecPredicateArgument::Value(SpecExpression::ProgramExpression(
+                        ProgramExpression::Variable(object),
                     )),
                     ..,
                 ] = arguments.as_slice()
@@ -4111,8 +4138,8 @@ fn diverging_contract_objects(
 }
 
 /// The function a pointer value names, if it names one.
-fn value_function_address(value: &CValue) -> Option<&str> {
-    let CValue::Pointer(pointer) = value else {
+fn value_function_address(value: &ProgramValue) -> Option<&str> {
+    let ProgramValue::Pointer(pointer) = value else {
         return None;
     };
     match &pointer.pointer().block {
@@ -4121,8 +4148,8 @@ fn value_function_address(value: &CValue) -> Option<&str> {
     }
 }
 
-fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<String>) {
-    use CExpression::*;
+fn expression_function_addresses(expression: &ProgramExpression, taken: &mut BTreeSet<String>) {
+    use ProgramExpression::*;
     match expression {
         FunctionAddress(name) => {
             taken.insert(name.clone());
@@ -4200,67 +4227,69 @@ fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<
     }
 }
 
-fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<String>) {
+fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeSet<String>) {
     charge_termination_work(1);
-    let mut visit = |expression: &CExpression| expression_function_addresses(expression, taken);
+    let mut visit =
+        |expression: &ProgramExpression| expression_function_addresses(expression, taken);
     match statement {
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare {
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare {
             initializer: None, ..
         }
-        | CStatement::DeclareAggregate { .. } => {}
-        CStatement::Declare {
+        | ProgramStatement::DeclareAggregate { .. } => {}
+        ProgramStatement::Declare {
             initializer: Some(expression),
             ..
         }
-        | CStatement::Assign { expression, .. }
-        | CStatement::Return(expression)
-        | CStatement::Throw(expression) => visit(expression),
-        CStatement::CallAssign { arguments, .. }
-        | CStatement::Call { arguments, .. }
-        | CStatement::CallResult { arguments, .. } => {
+        | ProgramStatement::Assign { expression, .. }
+        | ProgramStatement::Return(expression)
+        | ProgramStatement::Throw(expression) => visit(expression),
+        ProgramStatement::CallAssign { arguments, .. }
+        | ProgramStatement::Call { arguments, .. }
+        | ProgramStatement::CallResult { arguments, .. } => {
             arguments.iter().for_each(visit);
         }
-        CStatement::HeapAllocate { bytes, .. } => visit(bytes),
-        CStatement::HeapFree { pointer } => visit(pointer),
-        CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
+        ProgramStatement::HeapAllocate { bytes, .. } => visit(bytes),
+        ProgramStatement::HeapFree { pointer } => visit(pointer),
+        ProgramStatement::Assert { condition, .. } | ProgramStatement::LoopTest { condition } => {
             visit(condition)
         }
-        CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
+        ProgramStatement::Store { pointer, value }
+        | ProgramStatement::TypedStore { pointer, value, .. } => {
             visit(pointer);
             visit(value);
         }
-        CStatement::CopyAggregate { target, source, .. }
-        | CStatement::InitializeScalarArray { target, source, .. } => {
+        ProgramStatement::CopyAggregate { target, source, .. }
+        | ProgramStatement::InitializeScalarArray { target, source, .. } => {
             visit(target);
             visit(source);
         }
-        CStatement::Update {
+        ProgramStatement::Update {
             target, operand, ..
         } => {
             visit(target);
             visit(operand);
         }
-        CStatement::ForStep { step, .. } => statement_function_addresses(step, taken),
-        CStatement::Seq(statements) => {
+        ProgramStatement::ForStep { step, .. } => statement_function_addresses(step, taken),
+        ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
             for statement in statements.iter() {
                 statement_function_addresses(statement, taken);
             }
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             statement_function_addresses(try_body, taken);
             statement_function_addresses(handler, taken);
         }
-        CStatement::If {
+        ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -4269,13 +4298,13 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
             statement_function_addresses(then_branch, taken);
             statement_function_addresses(else_branch, taken);
         }
-        CStatement::While {
+        ProgramStatement::While {
             condition, body, ..
         } => {
             visit(condition);
             statement_function_addresses(body, taken);
         }
-        CStatement::Switch { expression, cases } => {
+        ProgramStatement::Switch { expression, cases } => {
             visit(expression);
             for case in cases {
                 statement_function_addresses(&case.body, taken);
@@ -4288,7 +4317,7 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
 /// initial values of the static storage it links, which is where a `const`
 /// callback table names its entries. These are all the ways a function in
 /// the verified set becomes the target of a function pointer.
-fn function_address_taken(function: &CFunction, taken: &mut BTreeSet<String>) {
+fn function_address_taken(function: &ProgramFunction, taken: &mut BTreeSet<String>) {
     statement_function_addresses(&function.source_body, taken);
     let scalars = function
         .global_variables()
@@ -4350,13 +4379,13 @@ fn function_address_taken(function: &CFunction, taken: &mut BTreeSet<String>) {
 /// verified rule and stays that node; only the contract-less ones are added,
 /// only the ones the verified bodies actually reach, and each is read once.
 type TerminationCallGraph<'a> = (
-    BTreeMap<String, &'a CFunction>,
+    BTreeMap<String, &'a ProgramFunction>,
     BTreeMap<String, BTreeSet<String>>,
 );
 
 fn termination_call_graph<'a>(
     partial_rules: &'a [CVerifiedFunctionRule],
-    inline_bodies: &[&'a CFunction],
+    inline_bodies: &[&'a ProgramFunction],
 ) -> TerminationCallGraph<'a> {
     let mut functions = partial_rules
         .iter()
@@ -4448,7 +4477,7 @@ fn termination_call_graph<'a>(
 /// * the certified function's own contract interface carries the measure.
 ///   The plan is untrusted and names only a spelling; the interface is what
 ///   [`crate::kernel::c_execution_environment_with_recursion_anchor`] reads
-///   to build the anchor, and the certified [`CFunction`] here is the one the
+///   to build the anchor, and the certified [`ProgramFunction`] here is the one the
 ///   rule was issued for, so a measure present here is a measure that was
 ///   anchored. A plan claiming a measure the interface does not carry is a
 ///   plan for obligations nobody emitted, and it is refused.
@@ -4475,7 +4504,7 @@ fn termination_call_graph<'a>(
 fn check_expression_measure_recursion(
     name: &str,
     source: &str,
-    function: &CFunction,
+    function: &ProgramFunction,
     recursive_callees: &BTreeSet<String>,
     plans: &BTreeMap<String, &CFunctionTerminationPlan>,
     loop_rules: &[CVerifiedLoopRule],
@@ -4575,50 +4604,50 @@ fn check_expression_measure_recursion(
 /// Whether `statement` contains a call to `callee`, at any depth.
 ///
 /// Work is the statement tree handed in; nothing outside it is read.
-pub(super) fn statement_calls_function(statement: &CStatement, callee: &str) -> bool {
+pub(super) fn statement_calls_function(statement: &ProgramStatement, callee: &str) -> bool {
     charge_termination_work(1);
-    let both = |left: &CStatement, right: &CStatement| {
+    let both = |left: &ProgramStatement, right: &ProgramStatement| {
         statement_calls_function(left, callee) || statement_calls_function(right, callee)
     };
     match statement {
-        CStatement::Call { function_name, .. }
-        | CStatement::CallResult { function_name, .. }
-        | CStatement::CallAssign { function_name, .. } => function_name == callee,
-        CStatement::While { body, .. } => statement_calls_function(body, callee),
-        CStatement::Seq(statements) => both(statements.first(), &statements.rest()),
-        CStatement::If {
+        ProgramStatement::Call { function_name, .. }
+        | ProgramStatement::CallResult { function_name, .. }
+        | ProgramStatement::CallAssign { function_name, .. } => function_name == callee,
+        ProgramStatement::While { body, .. } => statement_calls_function(body, callee),
+        ProgramStatement::Seq(statements) => both(statements.first(), &statements.rest()),
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
         } => both(then_branch, else_branch),
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => both(try_body, handler),
-        CStatement::Switch { cases, .. } => cases
+        ProgramStatement::Switch { cases, .. } => cases
             .iter()
             .any(|case| statement_calls_function(&case.body, callee)),
-        CStatement::ForStep { step, .. } => statement_calls_function(step, callee),
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assign { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::Update { .. } => false,
+        ProgramStatement::ForStep { step, .. } => statement_calls_function(step, callee),
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare { .. }
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::Assign { .. }
+        | ProgramStatement::HeapAllocate { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::Update { .. } => false,
     }
 }
 
@@ -4633,38 +4662,38 @@ pub(super) fn statement_calls_function(statement: &CStatement, callee: &str) -> 
 /// Work is the statement tree, which is this function's own body; nothing
 /// outside it is read.
 fn self_call_loop_indices(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     callee: &BTreeSet<String>,
     next_index: &mut usize,
     enclosing: &mut Vec<usize>,
     found: &mut BTreeSet<usize>,
 ) {
     charge_termination_work(1);
-    let mut descend = |statement: &CStatement, next_index: &mut usize| {
+    let mut descend = |statement: &ProgramStatement, next_index: &mut usize| {
         self_call_loop_indices(statement, callee, next_index, enclosing, found);
     };
     match statement {
-        CStatement::Call { function_name, .. }
-        | CStatement::CallResult { function_name, .. }
-        | CStatement::CallAssign { function_name, .. } => {
+        ProgramStatement::Call { function_name, .. }
+        | ProgramStatement::CallResult { function_name, .. }
+        | ProgramStatement::CallAssign { function_name, .. } => {
             if callee.contains(function_name) {
                 found.extend(enclosing.iter().copied());
             }
         }
-        CStatement::While { body, .. } => {
+        ProgramStatement::While { body, .. } => {
             let index = *next_index;
             *next_index += 1;
             enclosing.push(index);
             self_call_loop_indices(body, callee, next_index, enclosing, found);
             enclosing.pop();
         }
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
             for statement in statements.iter() {
                 descend(statement, next_index);
             }
         }
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -4672,42 +4701,42 @@ fn self_call_loop_indices(
             descend(then_branch, next_index);
             descend(else_branch, next_index);
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             descend(try_body, next_index);
             descend(handler, next_index);
         }
-        CStatement::Switch { cases, .. } => {
+        ProgramStatement::Switch { cases, .. } => {
             for case in cases {
                 descend(&case.body, next_index);
             }
         }
-        CStatement::ForStep { step, .. } => descend(step, next_index),
+        ProgramStatement::ForStep { step, .. } => descend(step, next_index),
         // Spelled out, as in `loop_at_index` and `check_loops`: these walks
         // number the same loops only while they descend into the same
         // statements, so a new statement kind must be placed in all of them.
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareAggregate { .. }
-        | CStatement::Assign { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Assert { .. }
-        | CStatement::LoopTest { .. }
-        | CStatement::Throw(_)
-        | CStatement::Return(_)
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. }
-        | CStatement::InitializeScalarArray { .. }
-        | CStatement::Update { .. } => {}
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare { .. }
+        | ProgramStatement::DeclareAggregate { .. }
+        | ProgramStatement::Assign { .. }
+        | ProgramStatement::HeapAllocate { .. }
+        | ProgramStatement::HeapFree { .. }
+        | ProgramStatement::Assert { .. }
+        | ProgramStatement::LoopTest { .. }
+        | ProgramStatement::Throw(_)
+        | ProgramStatement::Return(_)
+        | ProgramStatement::Store { .. }
+        | ProgramStatement::TypedStore { .. }
+        | ProgramStatement::CopyAggregate { .. }
+        | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::Update { .. } => {}
     }
 }
 
@@ -4725,7 +4754,7 @@ fn self_call_loop_indices(
 /// and not machine stack. Work is linear in the nodes and their call edges.
 pub fn c_termination_height_plan(
     partial_rules: &[CVerifiedFunctionRule],
-    inline_bodies: &[&CFunction],
+    inline_bodies: &[&ProgramFunction],
 ) -> BTreeMap<String, usize> {
     let (functions, calls) = termination_call_graph(partial_rules, inline_bodies);
     let names = functions.keys().collect::<Vec<_>>();
@@ -4922,7 +4951,7 @@ pub fn c_verified_function_termination_rules(
     partial_rules: &[CVerifiedFunctionRule],
     plan_entries: &[CFunctionTerminationPlan],
     verified_loop_rules: &BTreeMap<String, Vec<CVerifiedLoopRule>>,
-    inline_bodies: &[&CFunction],
+    inline_bodies: &[&ProgramFunction],
     heights: &BTreeMap<String, usize>,
     assumed_terminating: &BTreeSet<String>,
     declared_diverging: &BTreeSet<String>,
@@ -4953,7 +4982,7 @@ fn termination_rules_recording_function<'a>(
     partial_rules: &'a [CVerifiedFunctionRule],
     plan_entries: &[CFunctionTerminationPlan],
     verified_loop_rules: &BTreeMap<String, Vec<CVerifiedLoopRule>>,
-    inline_bodies: &[&'a CFunction],
+    inline_bodies: &[&'a ProgramFunction],
     heights: &BTreeMap<String, usize>,
     assumed_terminating: &BTreeSet<String>,
     declared_diverging: &BTreeSet<String>,
@@ -5175,7 +5204,7 @@ fn termination_rules_recording_function<'a>(
                                     "termination parameter index is invalid for `{member}`"
                                 ))
                             })?;
-                        if parameter.c_type != CType::Int32 {
+                        if parameter.c_type != ProgramType::Int32 {
                             return Err(error(format!(
                                 "termination parameter `{}` in `{member}` must have type int32",
                                 parameter.name
@@ -5197,7 +5226,7 @@ fn termination_rules_recording_function<'a>(
                         // expression, and so its escape check, lives on the
                         // certified loop head that
                         // `verified_loop_ranking_measures` reads below.
-                        let CRankingMeasureKey::CExpression(measure) = measure else {
+                        let CRankingMeasureKey::ProgramExpression(measure) = measure else {
                             continue;
                         };
                         reject_address_escaped_expression_measure(
@@ -5412,15 +5441,15 @@ mod address_escape_tests {
 
     #[test]
     fn subobject_child_mentions_only_its_actual_source_variables() {
-        let child = CExpression::TypedLoad {
-            pointer: Box::new(CExpression::Subobject {
-                pointer: Box::new(CExpression::PointerOffsetBytes {
-                    pointer: Box::new(CExpression::Variable("p".into())),
+        let child = ProgramExpression::TypedLoad {
+            pointer: Box::new(ProgramExpression::Subobject {
+                pointer: Box::new(ProgramExpression::PointerOffsetBytes {
+                    pointer: Box::new(ProgramExpression::Variable("p".into())),
                     bytes: 8,
                 }),
                 width: 8,
             }),
-            value_type: CType::Int32Pointer,
+            value_type: ProgramType::Int32Pointer,
             volatile: false,
             pointee_constant: false,
             access_class: None,
@@ -5434,27 +5463,27 @@ mod address_escape_tests {
 
     use std::sync::Arc;
 
-    fn variable(name: &str) -> CExpression {
-        CExpression::Variable(name.to_string())
+    fn variable(name: &str) -> ProgramExpression {
+        ProgramExpression::Variable(name.to_string())
     }
 
-    fn address_of(name: &str) -> CExpression {
-        CExpression::AddressOf(Box::new(variable(name)))
+    fn address_of(name: &str) -> ProgramExpression {
+        ProgramExpression::AddressOf(Box::new(variable(name)))
     }
 
     #[test]
     fn store_through_escaped_address_is_detected() {
         // p = &i; *p = q;
-        let escape = CStatement::Assign {
+        let escape = ProgramStatement::Assign {
             source: Default::default(),
             name: "p".to_string(),
             expression: address_of("i"),
         };
-        let store = CStatement::Store {
+        let store = ProgramStatement::Store {
             pointer: variable("p"),
             value: variable("q"),
         };
-        let body = CStatement::seq(Arc::new(escape), Arc::new(store));
+        let body = ProgramStatement::seq(Arc::new(escape), Arc::new(store));
         assert!(address_taken_locals(&body).contains("i"));
         assert!(!address_taken_locals(&body).contains("q"));
         assert!(reject_address_escaped_measure("spin", "i", &address_taken_locals(&body)).is_err());
@@ -5463,7 +5492,7 @@ mod address_escape_tests {
 
     #[test]
     fn helper_call_receiving_the_address_is_detected() {
-        let call = CStatement::Call {
+        let call = ProgramStatement::Call {
             function_name: "reset".to_string(),
             arguments: vec![address_of("n")],
         };
@@ -5473,17 +5502,17 @@ mod address_escape_tests {
 
     #[test]
     fn escape_inside_a_loop_or_branch_body_is_detected() {
-        let escape = CStatement::Assign {
+        let escape = ProgramStatement::Assign {
             source: Default::default(),
             name: "p".to_string(),
-            expression: CExpression::Add(Box::new(address_of("n")), Box::new(variable("k"))),
+            expression: ProgramExpression::Add(Box::new(address_of("n")), Box::new(variable("k"))),
         };
-        let branch = CStatement::If {
+        let branch = ProgramStatement::If {
             condition: variable("c"),
-            then_branch: Box::new(CStatement::Skip),
+            then_branch: Box::new(ProgramStatement::Skip),
             else_branch: Box::new(escape),
         };
-        let body = CStatement::While {
+        let body = ProgramStatement::While {
             ranking_measures: Vec::new(),
             structural_measure: None,
             condition: variable("c"),
@@ -5505,13 +5534,13 @@ mod address_escape_tests {
 mod ranking_member_tests {
     use super::*;
 
-    fn scalar_state(bindings: &[(&str, MachineTerm)]) -> CState {
-        let mut state = CState::new();
+    fn scalar_state(bindings: &[(&str, MachineTerm)]) -> ExecutionState {
+        let mut state = ExecutionState::new();
         for (name, value) in bindings {
             state.locals.set_typed(
                 (*name).to_string(),
-                CValue::Int32(value.clone()),
-                CType::Int32,
+                ProgramValue::Int32(value.clone()),
+                ProgramType::Int32,
             );
         }
         state
@@ -5527,18 +5556,20 @@ mod ranking_member_tests {
     #[test]
     fn a_measure_may_not_read_a_volatile_object() {
         let state = scalar_state(&[("i", MachineTerm::Variable(Variable(1)))]);
-        let volatile_read = CExpression::TypedLoad {
-            pointer: Box::new(CExpression::Variable("device".to_string())),
-            value_type: CType::Int32,
+        let volatile_read = ProgramExpression::TypedLoad {
+            pointer: Box::new(ProgramExpression::Variable("device".to_string())),
+            value_type: ProgramType::Int32,
             volatile: true,
             pointee_constant: false,
             access_class: None,
             source: CExpressionLoadSource::none(),
         };
-        let measures = vec![CRankingComponent::CExpression(CExpression::Subtract(
-            Box::new(volatile_read),
-            Box::new(CExpression::Variable("i".to_string())),
-        ))];
+        let measures = vec![CRankingComponent::ProgramExpression(
+            ProgramExpression::Subtract(
+                Box::new(volatile_read),
+                Box::new(ProgramExpression::Variable("i".to_string())),
+            ),
+        )];
         let error = collect_loop_ranking_obligations(
             &state,
             &state,
@@ -5560,8 +5591,8 @@ mod ranking_member_tests {
         let post_inner = MachineTerm::add(inner.clone(), MachineTerm::constant(1));
         let back_edge = scalar_state(&[("i", post_outer.clone()), ("j", post_inner.clone())]);
         let measures = vec![
-            CRankingComponent::CExpression(CExpression::Variable("i".to_string())),
-            CRankingComponent::CExpression(CExpression::Variable("j".to_string())),
+            CRankingComponent::ProgramExpression(ProgramExpression::Variable("i".to_string())),
+            CRankingComponent::ProgramExpression(ProgramExpression::Variable("j".to_string())),
         ];
         let obligations = collect_loop_ranking_obligations(
             &back_edge,
@@ -5622,9 +5653,9 @@ mod ranking_member_tests {
         let entry = scalar_state(&[("n", value.clone())]);
         let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
         let back_edge = scalar_state(&[("n", post.clone())]);
-        let measures = vec![CRankingComponent::CExpression(CExpression::Variable(
-            "n".to_string(),
-        ))];
+        let measures = vec![CRankingComponent::ProgramExpression(
+            ProgramExpression::Variable("n".to_string()),
+        )];
         let obligations = collect_loop_ranking_obligations(
             &back_edge,
             &entry,
@@ -5653,11 +5684,10 @@ mod ranking_member_tests {
     fn current_load(cell: &Pointer) -> SpecExpression {
         SpecExpression::MemoryLoad {
             memory: SpecMemory::Current,
-            pointer: Box::new(SpecExpression::Value(CValue::Pointer(CPointerValue::new(
-                cell.clone(),
-                CType::Int32Pointer,
-            )))),
-            value_type: CType::Int32,
+            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+                PointerValue::new(cell.clone(), ProgramType::Int32Pointer),
+            ))),
+            value_type: ProgramType::Int32,
         }
     }
 
@@ -5670,10 +5700,10 @@ mod ranking_member_tests {
         let cell = int32_cell("counter");
         let value = MachineTerm::Variable(Variable(11));
         let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
-        let mut entry = CState::new();
-        entry.memory = CMemory::new().store(cell.clone(), CValue::Int32(value.clone()));
-        let mut back_edge = CState::new();
-        back_edge.memory = CMemory::new().store(cell.clone(), CValue::Int32(post.clone()));
+        let mut entry = ExecutionState::new();
+        entry.memory = CMemory::new().store(cell.clone(), ProgramValue::Int32(value.clone()));
+        let mut back_edge = ExecutionState::new();
+        back_edge.memory = CMemory::new().store(cell.clone(), ProgramValue::Int32(post.clone()));
         let measures = vec![CRankingComponent::Pure {
             source: "count(counter)".to_string(),
             expression: current_load(&cell),
@@ -5720,8 +5750,8 @@ mod ranking_member_tests {
     }
 
     fn current_integer_local(name: &str) -> SpecIntegerExpression {
-        SpecIntegerExpression::FromMachine(Box::new(SpecExpression::CExpression(
-            CExpression::Variable(name.to_string()),
+        SpecIntegerExpression::FromMachine(Box::new(SpecExpression::ProgramExpression(
+            ProgramExpression::Variable(name.to_string()),
         )))
     }
 
@@ -5804,7 +5834,7 @@ mod ranking_member_tests {
         let entry = scalar_state(&[("i", outer.clone()), ("n", inner.clone())]);
         let back_edge = scalar_state(&[("i", post_outer.clone()), ("n", post_inner.clone())]);
         let measures = vec![
-            CRankingComponent::CExpression(CExpression::Variable("i".to_string())),
+            CRankingComponent::ProgramExpression(ProgramExpression::Variable("i".to_string())),
             CRankingComponent::PureInteger {
                 source: "level(n)".to_string(),
                 expression: current_integer_local("n"),
@@ -5864,8 +5894,8 @@ mod ranking_member_tests {
     #[test]
     fn a_pure_component_does_not_publish_read_validity() {
         let cell = int32_cell("counter");
-        let entry = CState::new();
-        let back_edge = CState::new();
+        let entry = ExecutionState::new();
+        let back_edge = ExecutionState::new();
         let measures = vec![CRankingComponent::Pure {
             source: "count(counter)".to_string(),
             expression: current_load(&cell),
@@ -5898,22 +5928,22 @@ mod ranking_member_tests {
         );
     }
 
-    fn typed_state(name: &str, value: CValue, c_type: CType) -> CState {
-        let mut state = CState::new();
+    fn typed_state(name: &str, value: ProgramValue, c_type: ProgramType) -> ExecutionState {
+        let mut state = ExecutionState::new();
         state.locals.set_typed(name.to_string(), value, c_type);
         state
     }
 
     fn ranking_members(
-        back_edge: &CState,
-        entry: &CState,
-        measure: CExpression,
+        back_edge: &ExecutionState,
+        entry: &ExecutionState,
+        measure: ProgramExpression,
     ) -> Result<Vec<Proposition>, String> {
         collect_loop_ranking_obligations(
             back_edge,
             entry,
             None,
-            &[CRankingComponent::CExpression(measure)],
+            &[CRankingComponent::ProgramExpression(measure)],
             &PureFactContext::default(),
             &mut ExecutionBudget::default(),
         )
@@ -5925,14 +5955,16 @@ mod ranking_member_tests {
         })
     }
 
-    fn uint32_state(value: MachineTerm) -> CState {
-        typed_state("x", CValue::UInt32(value), CType::UInt32)
+    fn uint32_state(value: MachineTerm) -> ExecutionState {
+        typed_state("x", ProgramValue::UInt32(value), ProgramType::UInt32)
     }
 
-    fn four_minus_x() -> CExpression {
-        CExpression::Subtract(
-            Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(4)))),
-            Box::new(CExpression::Variable("x".to_string())),
+    fn four_minus_x() -> ProgramExpression {
+        ProgramExpression::Subtract(
+            Box::new(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(4),
+            ))),
+            Box::new(ProgramExpression::Variable("x".to_string())),
         )
     }
 
@@ -6002,11 +6034,11 @@ mod ranking_member_tests {
         let state = |value: u64| {
             typed_state(
                 "x",
-                CValue::UInt64(MachineTerm::uint64_constant(value)),
-                CType::UInt64,
+                ProgramValue::UInt64(MachineTerm::uint64_constant(value)),
+                ProgramType::UInt64,
             )
         };
-        let x = || CExpression::Variable("x".to_string());
+        let x = || ProgramExpression::Variable("x".to_string());
         let down = ranking_members(&state(4), &state(5), x()).expect("uint64 measure");
         assert_eq!(
             down,
@@ -6028,8 +6060,8 @@ mod ranking_member_tests {
     #[test]
     fn a_narrow_unsigned_component_is_promoted_to_int32() {
         let value = MachineTerm::Variable(Variable(22));
-        let state = typed_state("x", CValue::UInt8(value.clone()), CType::UInt8);
-        let members = ranking_members(&state, &state, CExpression::Variable("x".to_string()))
+        let state = typed_state("x", ProgramValue::UInt8(value.clone()), ProgramType::UInt8);
+        let members = ranking_members(&state, &state, ProgramExpression::Variable("x".to_string()))
             .expect("a uint8 measure reads at both ends");
         assert_eq!(
             members[0],
@@ -6053,14 +6085,14 @@ mod ranking_member_tests {
     #[test]
     fn a_pure_uint32_component_ranks_by_unsigned_order() {
         let value = MachineTerm::Variable(Variable(23));
-        let state = CState::new();
+        let state = ExecutionState::new();
         let obligations = collect_loop_ranking_obligations(
             &state,
             &state,
             None,
             &[CRankingComponent::Pure {
                 source: "x".to_string(),
-                expression: SpecExpression::Value(CValue::UInt32(value.clone())),
+                expression: SpecExpression::Value(ProgramValue::UInt32(value.clone())),
             }],
             &PureFactContext::default(),
             &mut ExecutionBudget::default(),
@@ -6087,11 +6119,11 @@ mod ranking_member_tests {
         let state = |value: i64| {
             typed_state(
                 "x",
-                CValue::Int64(MachineTerm::int64_constant(value)),
-                CType::Int64,
+                ProgramValue::Int64(MachineTerm::int64_constant(value)),
+                ProgramType::Int64,
             )
         };
-        let x = || CExpression::Variable("x".to_string());
+        let x = || ProgramExpression::Variable("x".to_string());
         let holds = |value| Proposition::ConditionIs(ConditionTerm::Constant(value), true);
         let down = ranking_members(&state(4), &state(5), x()).expect("int64 measure");
         assert_eq!(down, vec![holds(true), holds(true)]);
@@ -6158,33 +6190,33 @@ mod local_descent_tests {
 
     /// A loop the proof summarized: it carries an invariant, so execution
     /// never ran it to its exit and only a measure can rank it.
-    fn summarized_loop(condition: u32) -> CStatement {
+    fn summarized_loop(condition: u32) -> ProgramStatement {
         crate::kernel::c_while(
             crate::kernel::c_int32_literal(condition),
             vec![Proposition::ConditionIs(
                 ConditionTerm::Constant(true),
                 true,
             )],
-            CStatement::Skip,
+            ProgramStatement::Skip,
         )
     }
 
     /// A verified rule whose body calls `callees` in order and then holds the
     /// given loops, which is all the termination check reads of a function.
     fn rule(name: &str, callees: &[&str], loops: usize) -> CVerifiedFunctionRule {
-        let mut body = CStatement::Skip;
+        let mut body = ProgramStatement::Skip;
         for callee in callees {
-            body = CStatement::seq(
+            body = ProgramStatement::seq(
                 Arc::new(body),
                 Arc::new(crate::kernel::c_call(*callee, Vec::new())),
             );
         }
         for _ in 0..loops {
-            body = CStatement::seq(Arc::new(body), Arc::new(summarized_loop(1)));
+            body = ProgramStatement::seq(Arc::new(body), Arc::new(summarized_loop(1)));
         }
         CVerifiedFunctionRule {
             pointer_result: None,
-            function: CFunction::new(CType::Void, name, Vec::new(), body),
+            function: ProgramFunction::new(ProgramType::Void, name, Vec::new(), body),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6371,20 +6403,20 @@ mod local_descent_tests {
                         crate::kernel::c_int32_literal(1),
                     )],
                 ),
-                CStatement::Skip,
+                ProgramStatement::Skip,
             );
             for _ in 0..loops {
-                body = CStatement::seq(Arc::new(body), Arc::new(summarized_loop(1)));
+                body = ProgramStatement::seq(Arc::new(body), Arc::new(summarized_loop(1)));
             }
             CVerifiedFunctionRule {
                 pointer_result: None,
                 loop_semantics: CLoopSemantics::ApplyVerifiedRules,
                 checked_callees: None,
                 applied_tactics: Default::default(),
-                function: CFunction::new(
-                    CType::Void,
+                function: ProgramFunction::new(
+                    ProgramType::Void,
                     name,
-                    vec![crate::kernel::c_parameter("n", CType::Int32)],
+                    vec![crate::kernel::c_parameter("n", ProgramType::Int32)],
                     body,
                 ),
             }
@@ -6419,11 +6451,11 @@ mod local_descent_tests {
         let source_loop = crate::kernel::c_while(
             crate::kernel::c_int32_literal(1),
             Vec::new(),
-            CStatement::Skip,
+            ProgramStatement::Skip,
         );
-        let body = CStatement::seq(Arc::new(source_loop.clone()), Arc::new(source_loop));
+        let body = ProgramStatement::seq(Arc::new(source_loop.clone()), Arc::new(source_loop));
         let ranking = |value| {
-            CLoopTerminationMeasure::Ranking(vec![CRankingMeasureKey::CExpression(
+            CLoopTerminationMeasure::Ranking(vec![CRankingMeasureKey::ProgramExpression(
                 crate::kernel::c_int32_literal(value),
             )])
         };
@@ -6456,11 +6488,11 @@ mod local_descent_tests {
             crate::kernel::c_while(
                 crate::kernel::c_int32_literal(condition),
                 Vec::new(),
-                CStatement::Skip,
+                ProgramStatement::Skip,
             )
         };
-        let body = CStatement::seq(
-            Arc::new(CStatement::TryCatchInt32 {
+        let body = ProgramStatement::seq(
+            Arc::new(ProgramStatement::TryCatchInt32 {
                 try_body: Box::new(spin(1)),
                 binding: "code".to_string(),
                 handler: Box::new(spin(2)),
@@ -6503,17 +6535,17 @@ mod local_descent_tests {
         through: Option<&str>,
         takes: &[&str],
     ) -> CVerifiedFunctionRule {
-        let mut body = CStatement::Skip;
+        let mut body = ProgramStatement::Skip;
         for callee in callees {
-            body = CStatement::seq(
+            body = ProgramStatement::seq(
                 Arc::new(body),
                 Arc::new(crate::kernel::c_call(*callee, Vec::new())),
             );
         }
         for taken in takes {
-            body = CStatement::seq(
+            body = ProgramStatement::seq(
                 Arc::new(body),
-                Arc::new(CStatement::Assign {
+                Arc::new(ProgramStatement::Assign {
                     source: Default::default(),
                     name: "slot".to_string(),
                     expression: crate::kernel::c_function_address(*taken),
@@ -6522,20 +6554,20 @@ mod local_descent_tests {
         }
         let parameters = match through {
             Some(object) => {
-                body = CStatement::seq(
+                body = ProgramStatement::seq(
                     Arc::new(body),
                     Arc::new(crate::kernel::c_call(object, Vec::new())),
                 );
                 vec![crate::kernel::c_parameter(
                     object,
-                    CType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+                    ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
                 )]
             }
             None => Vec::new(),
         };
         CVerifiedFunctionRule {
             pointer_result: None,
-            function: CFunction::new(CType::Void, name, parameters, body),
+            function: ProgramFunction::new(ProgramType::Void, name, parameters, body),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -6651,9 +6683,11 @@ mod local_descent_tests {
             .push(SpecProposition::Predicate {
                 resource_state_dependent: true,
                 name: CFunctionContract::predicate_name_for("Spinner"),
-                arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
-                    CExpression::Variable("callback".to_string()),
-                ))],
+                arguments: vec![SpecPredicateArgument::Value(
+                    SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                        "callback".to_string(),
+                    )),
+                )],
             });
         let rules = [pointer_rule("caller", &["applies"], None, &[]), applies];
         let plan = c_termination_height_plan(&rules, &[]);
@@ -6728,14 +6762,14 @@ mod local_descent_tests {
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
-            function: CFunction::new(
-                CType::Void,
+            function: ProgramFunction::new(
+                ProgramType::Void,
                 name,
                 Vec::new(),
                 crate::kernel::c_while(
                     crate::kernel::c_int32_literal(0),
                     Vec::new(),
-                    CStatement::Skip,
+                    ProgramStatement::Skip,
                 ),
             ),
         };
@@ -6787,9 +6821,9 @@ mod local_descent_tests {
                 CLoopEffectOrigin::InheritedResourceDerived,
                 None,
             )],
-            CStatement::Skip,
+            ProgramStatement::Skip,
         );
-        let function = CFunction::new(CType::Void, "f", Vec::new(), framed);
+        let function = ProgramFunction::new(ProgramType::Void, "f", Vec::new(), framed);
         let none = BTreeSet::new();
         assert_eq!(
             loops_executed_to_exit(&function, CLoopSemantics::ApplyVerifiedRules, &none),
@@ -6814,9 +6848,9 @@ mod local_descent_tests {
                 CLoopEffectOrigin::Explicit,
                 None,
             )],
-            CStatement::Skip,
+            ProgramStatement::Skip,
         );
-        let function = CFunction::new(CType::Void, "f", Vec::new(), explicit);
+        let function = ProgramFunction::new(ProgramType::Void, "f", Vec::new(), explicit);
         assert!(
             loops_executed_to_exit(&function, CLoopSemantics::ApplyVerifiedRules, &none).is_empty()
         );
@@ -6830,21 +6864,22 @@ mod local_descent_tests {
             crate::kernel::c_while(
                 crate::kernel::c_int32_literal(condition),
                 Vec::new(),
-                CStatement::Skip,
+                ProgramStatement::Skip,
             )
         };
-        let agrees = CFunction::new(CType::Void, "f", Vec::new(), spin(0));
+        let agrees = ProgramFunction::new(ProgramType::Void, "f", Vec::new(), spin(0));
         assert_eq!(
             loops_executed_to_exit(&agrees, CLoopSemantics::Verify, &BTreeSet::new()),
             BTreeSet::from([0])
         );
-        let differs =
-            CFunction::new(CType::Void, "f", Vec::new(), spin(0)).with_source_body(spin(1));
+        let differs = ProgramFunction::new(ProgramType::Void, "f", Vec::new(), spin(0))
+            .with_source_body(spin(1));
         assert!(
             loops_executed_to_exit(&differs, CLoopSemantics::Verify, &BTreeSet::new()).is_empty()
         );
-        let summarized = CFunction::new(CType::Void, "f", Vec::new(), summarized_loop(0))
-            .with_source_body(spin(0));
+        let summarized =
+            ProgramFunction::new(ProgramType::Void, "f", Vec::new(), summarized_loop(0))
+                .with_source_body(spin(0));
         assert!(
             loops_executed_to_exit(&summarized, CLoopSemantics::Verify, &BTreeSet::new())
                 .is_empty()
@@ -6858,9 +6893,9 @@ mod local_descent_tests {
         let body = crate::kernel::c_while(
             crate::kernel::c_int32_literal(1),
             Vec::new(),
-            CStatement::Skip,
+            ProgramStatement::Skip,
         );
-        let function = CFunction::new(CType::Void, "spin", Vec::new(), body);
+        let function = ProgramFunction::new(ProgramType::Void, "spin", Vec::new(), body);
         for semantics in [CLoopSemantics::Verify, CLoopSemantics::ApplyVerifiedRules] {
             assert!(loops_executed_to_exit(&function, semantics, &BTreeSet::from([0])).is_empty());
         }
@@ -6897,8 +6932,8 @@ mod local_descent_tests {
         };
         ranks_second.extend_loop_measures([(
             1,
-            CLoopTerminationMeasure::Ranking(vec![CRankingMeasureKey::CExpression(
-                CExpression::Variable("n".to_string()),
+            CLoopTerminationMeasure::Ranking(vec![CRankingMeasureKey::ProgramExpression(
+                ProgramExpression::Variable("n".to_string()),
             )]),
         )]);
         let error = check(&rules, &[ranks_second], &plan, &[])
@@ -6943,7 +6978,7 @@ mod local_descent_tests {
         inline: bool,
         in_loop: bool,
     ) -> CVerifiedFunctionRule {
-        let mut body = CStatement::Skip;
+        let mut body = ProgramStatement::Skip;
         for callee in std::iter::once(&name).chain(callees) {
             let call = crate::kernel::c_call(*callee, Vec::new());
             let call = if in_loop {
@@ -6951,13 +6986,15 @@ mod local_descent_tests {
             } else {
                 call
             };
-            body = CStatement::seq(Arc::new(body), Arc::new(call));
+            body = ProgramStatement::seq(Arc::new(body), Arc::new(call));
         }
-        let mut function = CFunction::new(CType::Void, name, Vec::new(), body);
+        let mut function = ProgramFunction::new(ProgramType::Void, name, Vec::new(), body);
         if measure {
             function = function.with_recursion_measure(vec![CRankingComponent::Pure {
                 source: "level(n)".to_string(),
-                expression: SpecExpression::CExpression(CExpression::Variable("n".to_string())),
+                expression: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                    "n".to_string(),
+                )),
             }]);
         }
         if inline {
@@ -6985,16 +7022,18 @@ mod local_descent_tests {
     /// A tactic rule: a procedure whose body runs no code, recursing only
     /// through the applications its certified proof recorded.
     fn tactic_rule(name: &str, measure: bool) -> CVerifiedFunctionRule {
-        let mut function = CFunction::new(
-            CType::Void,
+        let mut function = ProgramFunction::new(
+            ProgramType::Void,
             name,
             Vec::new(),
-            CStatement::Return(CExpression::Value(CValue::Void)),
+            ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
         );
         if measure {
             function = function.with_recursion_measure(vec![CRankingComponent::Pure {
                 source: "level(n)".to_string(),
-                expression: SpecExpression::CExpression(CExpression::Variable("n".to_string())),
+                expression: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                    "n".to_string(),
+                )),
             }]);
         }
         CVerifiedFunctionRule {
@@ -7154,7 +7193,9 @@ mod local_descent_tests {
     fn declared_component() -> CRankingComponent {
         CRankingComponent::Pure {
             source: "level(n)".to_string(),
-            expression: SpecExpression::CExpression(CExpression::Variable("n".to_string())),
+            expression: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                "n".to_string(),
+            )),
         }
     }
 
@@ -7162,9 +7203,9 @@ mod local_descent_tests {
     /// ranked by the same component. `loop_measures` is the plan side of that
     /// ranking, so the two agree and the loop is not refused as unranked.
     fn self_call_in_loop_rule(name: &str) -> CVerifiedFunctionRule {
-        let body = CStatement::seq(
-            Arc::new(CStatement::Skip),
-            Arc::new(CStatement::While {
+        let body = ProgramStatement::seq(
+            Arc::new(ProgramStatement::Skip),
+            Arc::new(ProgramStatement::While {
                 condition: crate::kernel::c_int32_literal(1),
                 invariant: vec![Proposition::ConditionIs(
                     ConditionTerm::Constant(true),
@@ -7183,7 +7224,7 @@ mod local_descent_tests {
         );
         CVerifiedFunctionRule {
             pointer_result: None,
-            function: CFunction::new(CType::Void, name, Vec::new(), body)
+            function: ProgramFunction::new(ProgramType::Void, name, Vec::new(), body)
                 .with_recursion_measure(vec![declared_component()]),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
@@ -7208,12 +7249,15 @@ mod local_descent_tests {
     /// Only the kernel writes `recursion_anchor`, from the environment the
     /// paths were produced in; the struct is assembled directly here because
     /// this test is inside the kernel.
-    fn loop_rule_for(function: &CFunction, anchor: Option<CRecursionAnchor>) -> CVerifiedLoopRule {
-        let CStatement::Seq(statements) = &function.source_body else {
+    fn loop_rule_for(
+        function: &ProgramFunction,
+        anchor: Option<CRecursionAnchor>,
+    ) -> CVerifiedLoopRule {
+        let ProgramStatement::Seq(statements) = &function.source_body else {
             unreachable!("`self_call_in_loop_rule` builds a sequence");
         };
         CVerifiedLoopRule {
-            symbolic_entry_state: CState::default(),
+            symbolic_entry_state: ExecutionState::default(),
             loop_statement: statements.rest().as_ref().clone(),
             loop_index: Some(0),
             required_assumptions: PureFactContext::new(),
@@ -7378,13 +7422,13 @@ mod termination_scaling_tests {
     /// sites; only its nesting depth changes. The termination walks are
     /// recursive, so a 4,000-call fan-out root built as a spine would measure
     /// the host's stack rather than the checker's work.
-    fn calls_body(callees: &[String]) -> CStatement {
+    fn calls_body(callees: &[String]) -> ProgramStatement {
         match callees {
-            [] => CStatement::Skip,
+            [] => ProgramStatement::Skip,
             [only] => crate::kernel::c_call(only.clone(), Vec::new()),
             _ => {
                 let (left, right) = callees.split_at(callees.len() / 2);
-                CStatement::seq(Arc::new(calls_body(left)), Arc::new(calls_body(right)))
+                ProgramStatement::seq(Arc::new(calls_body(left)), Arc::new(calls_body(right)))
             }
         }
     }
@@ -7395,7 +7439,12 @@ mod termination_scaling_tests {
     fn rule(name: &str, callees: &[String]) -> CVerifiedFunctionRule {
         CVerifiedFunctionRule {
             pointer_result: None,
-            function: CFunction::new(CType::Void, name, Vec::new(), calls_body(callees)),
+            function: ProgramFunction::new(
+                ProgramType::Void,
+                name,
+                Vec::new(),
+                calls_body(callees),
+            ),
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
@@ -7494,8 +7543,8 @@ mod checked_callee_certification_tests {
     fn checked_callee_graph_distinguishes_missing_and_empty_evidence() {
         let rule = |checked_callees| CVerifiedFunctionRule {
             pointer_result: None,
-            function: CFunction::new(
-                CType::Void,
+            function: ProgramFunction::new(
+                ProgramType::Void,
                 "caller",
                 vec![],
                 crate::kernel::c_call("callee", vec![]),

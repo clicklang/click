@@ -22,7 +22,7 @@ fn republished_arm_view_keeps_support_at_growing_context_sizes() {
             }));
         }
         let before = resources.facts().len();
-        let state = CState::new().with_resource_context(resources);
+        let state = ExecutionState::new().with_resource_context(resources);
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
             with_arm_views_preserving_support(&state, vec![view.clone()])
         });

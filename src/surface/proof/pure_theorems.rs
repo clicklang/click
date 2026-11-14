@@ -236,7 +236,7 @@ pub(super) struct PureTheoremContext {
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
     pub(super) memory: CMemory,
-    pub(super) values: BTreeMap<String, CValue>,
+    pub(super) values: BTreeMap<String, ProgramValue>,
     pub(super) integer_values:
         crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
     pub(super) array_refs: ClickArrayRefs,
@@ -260,7 +260,7 @@ impl PureTheoremContext {
             if let Some(value) = self.values.get(&name) {
                 substitutions.insert(
                     name.clone(),
-                    ContractExpression::CFragment(CExpression::Value(value.clone())),
+                    ContractExpression::CFragment(ProgramExpression::Value(value.clone())),
                 );
             } else if let Some(value) = self.integer_values.get(&name) {
                 // This spelling cannot be written by a source-level binder.
@@ -297,7 +297,7 @@ impl PureTheoremContext {
                         // Conversion-backed and function-backed aliases also
                         // need shared terms. Inlining their source expressions
                         // would double a binary alias chain at every binding.
-                        let state = CState::new().with_memory(context.memory.clone());
+                        let state = ExecutionState::new().with_memory(context.memory.clone());
                         let integer_values = contract_expression_referenced_names(&promoted)
                             .into_iter()
                             .filter_map(|name| {
@@ -350,7 +350,7 @@ impl PureTheoremContext {
                     name: name.clone(),
                     click_type: click_type.clone(),
                     value: Box::new(value),
-                    body: Box::new(ContractExpression::CFragment(CExpression::Variable(
+                    body: Box::new(ContractExpression::CFragment(ProgramExpression::Variable(
                         name.clone(),
                     ))),
                 }
@@ -403,7 +403,7 @@ pub(super) fn induction_argument_name(argument: &ContractExpression) -> Option<&
     match argument {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::CFragment(CExpression::Variable(name)) => Some(name),
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => Some(name),
         _ => None,
     }
 }
@@ -534,8 +534,8 @@ pub(super) fn pure_induction_hypothesis(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, ClickError> {
     let (current_variable, unsigned) = match context.values.get(&setup.parameter) {
-        Some(CValue::Int32(MachineTerm::Variable(variable))) => (variable, false),
-        Some(CValue::UInt64(MachineTerm::Variable(variable))) => (variable, true),
+        Some(ProgramValue::Int32(MachineTerm::Variable(variable))) => (variable, false),
+        Some(ProgramValue::UInt64(MachineTerm::Variable(variable))) => (variable, true),
         _ => return Err(ClickError::new("invalid scalar induction parameter")),
     };
     // Lower the hypothesis in its own requirement scope. These premises
@@ -951,7 +951,7 @@ fn check_pure_structural_induction(
             parameter_type.name
         )));
     }
-    let state = CState::new().with_memory(context.memory.clone());
+    let state = ExecutionState::new().with_memory(context.memory.clone());
     let parameter_value = capture_fixed_state_algebraic_expression(
         &parameter_expression,
         ContractEnvironment::new(&context.values, &context.array_refs),
@@ -1043,19 +1043,19 @@ fn check_pure_structural_induction(
                 AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
                     if matches!(
                         c_type,
-                        CType::Void
-                            | CType::Int8Array(_)
-                            | CType::Int16Array(_)
-                            | CType::UInt16Array(_)
-                            | CType::Int32Array(_)
-                            | CType::UInt8Array(_)
-                            | CType::UInt32Array(_)
-                            | CType::Int128Array(_)
-                            | CType::Int64Array(_)
-                            | CType::UInt128Array(_)
-                            | CType::UInt64Array(_)
-                            | CType::Float32Array(_)
-                            | CType::Float64Array(_)
+                        ProgramType::Void
+                            | ProgramType::Int8Array(_)
+                            | ProgramType::Int16Array(_)
+                            | ProgramType::UInt16Array(_)
+                            | ProgramType::Int32Array(_)
+                            | ProgramType::UInt8Array(_)
+                            | ProgramType::UInt32Array(_)
+                            | ProgramType::Int128Array(_)
+                            | ProgramType::Int64Array(_)
+                            | ProgramType::UInt128Array(_)
+                            | ProgramType::UInt64Array(_)
+                            | ProgramType::Float32Array(_)
+                            | ProgramType::Float64Array(_)
                     ) {
                         return Err(ClickError::new(
                             "structural induction does not support void or array-valued constructor fields",
@@ -1469,7 +1469,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
             .parameters()
             .iter()
             .map(|parameter| match context.values.get(parameter.name()) {
-                Some(CValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
+                Some(ProgramValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()
@@ -1545,38 +1545,42 @@ fn pure_theorem_parameter_integer_values(
 
 pub(in crate::surface) fn pure_theorem_parameter_values(
     parameters: &[FunctionParameter],
-) -> BTreeMap<String, CValue> {
+) -> BTreeMap<String, ProgramValue> {
     pure_theorem_parameter_values_with_generic_pointers(parameters, &BTreeSet::new())
 }
 
 fn pure_theorem_parameter_values_with_generic_pointers(
     parameters: &[FunctionParameter],
     generic_pointers: &BTreeSet<String>,
-) -> BTreeMap<String, CValue> {
+) -> BTreeMap<String, ProgramValue> {
     parameters
         .iter()
         .enumerate()
         .filter_map(|(index, parameter)| {
             let c_type = parameter.click_type().c_type()?;
             let value = match c_type {
-                C0Type::Int128 => CValue::Int128(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::UInt128 => CValue::UInt128(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::Int128 => {
+                    ProgramValue::Int128(MachineTerm::Variable(Variable(index as u64)))
+                }
+                C0Type::UInt128 => {
+                    ProgramValue::UInt128(MachineTerm::Variable(Variable(index as u64)))
+                }
                 C0Type::Parameter(name) => crate::kernel::symbolic_call_result(
-                    CType::Parameter(name),
+                    ProgramType::Parameter(name),
                     Variable(index as u64),
                 ),
                 C0Type::ParameterPointer(name) => crate::kernel::symbolic_call_result(
-                    CType::ParameterPointer(name),
+                    ProgramType::ParameterPointer(name),
                     Variable(index as u64),
                 ),
                 C0Type::Void => unreachable!("pure theorem parameters cannot be void"),
                 // A `Bool` parameter is a binder of the kernel sort (Stage 5),
                 // carried as its cast to `uint8` (rule C1).
-                C0Type::Bool => CValue::Bool(MachineTerm::bool_cast(
+                C0Type::Bool => ProgramValue::Bool(MachineTerm::bool_cast(
                     crate::kernel::MachineIntegerType::UInt8,
                     crate::kernel::ConditionTerm::Variable(Variable(index as u64)),
                 )),
-                C0Type::VoidPointer | C0Type::VoidPointerPointer => CValue::typed_pointer(
+                C0Type::VoidPointer | C0Type::VoidPointerPointer => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1588,23 +1592,35 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     },
                     c_type.to_kernel_type(),
                 ),
-                C0Type::Int8 => CValue::Int8(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Int16 => CValue::Int16(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Int32 => CValue::Int32(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::UInt32 => CValue::UInt32(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::Int8 => ProgramValue::Int8(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::Int16 => ProgramValue::Int16(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::Int32 => ProgramValue::Int32(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::UInt32 => {
+                    ProgramValue::UInt32(MachineTerm::Variable(Variable(index as u64)))
+                }
                 C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned) => {
-                    CValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
                 }
                 C0Type::Char(crate::languages::c::syntax::PlainChar::Signed) => {
-                    CValue::Int8(MachineTerm::Variable(Variable(index as u64)))
+                    ProgramValue::Int8(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::UInt8 => CValue::UInt8(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::UInt16 => CValue::UInt16(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Int64(_) => CValue::Int64(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::UInt64(_) => CValue::UInt64(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Float32 => CValue::Float32(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Float64 => CValue::Float64(MachineTerm::Variable(Variable(index as u64))),
-                C0Type::Int8Pointer | C0Type::Int8Array(_) => CValue::typed_pointer(
+                C0Type::UInt8 => ProgramValue::UInt8(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::UInt16 => {
+                    ProgramValue::UInt16(MachineTerm::Variable(Variable(index as u64)))
+                }
+                C0Type::Int64(_) => {
+                    ProgramValue::Int64(MachineTerm::Variable(Variable(index as u64)))
+                }
+                C0Type::UInt64(_) => {
+                    ProgramValue::UInt64(MachineTerm::Variable(Variable(index as u64)))
+                }
+                C0Type::Float32 => {
+                    ProgramValue::Float32(MachineTerm::Variable(Variable(index as u64)))
+                }
+                C0Type::Float64 => {
+                    ProgramValue::Float64(MachineTerm::Variable(Variable(index as u64)))
+                }
+                C0Type::Int8Pointer | C0Type::Int8Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1614,9 +1630,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             1,
                         ),
                     },
-                    CType::Int8Pointer,
+                    ProgramType::Int8Pointer,
                 ),
-                C0Type::Int16Pointer | C0Type::Int16Array(_) => CValue::typed_pointer(
+                C0Type::Int16Pointer | C0Type::Int16Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1626,9 +1642,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             2,
                         ),
                     },
-                    CType::Int16Pointer,
+                    ProgramType::Int16Pointer,
                 ),
-                C0Type::UInt16Pointer | C0Type::UInt16Array(_) => CValue::typed_pointer(
+                C0Type::UInt16Pointer | C0Type::UInt16Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1638,9 +1654,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             2,
                         ),
                     },
-                    CType::UInt16Pointer,
+                    ProgramType::UInt16Pointer,
                 ),
-                C0Type::Int32Pointer | C0Type::Int32Array(_) => CValue::typed_pointer(
+                C0Type::Int32Pointer | C0Type::Int32Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1650,12 +1666,12 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             4,
                         ),
                     },
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 ),
                 C0Type::CharPointer(_)
                 | C0Type::CharArray(_, _)
                 | C0Type::UInt8Pointer
-                | C0Type::UInt8Array(_) => CValue::typed_pointer(
+                | C0Type::UInt8Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1665,9 +1681,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             1,
                         ),
                     },
-                    CType::UInt8Pointer,
+                    ProgramType::UInt8Pointer,
                 ),
-                C0Type::UInt32Pointer | C0Type::UInt32Array(_) => CValue::typed_pointer(
+                C0Type::UInt32Pointer | C0Type::UInt32Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1677,9 +1693,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             4,
                         ),
                     },
-                    CType::UInt32Pointer,
+                    ProgramType::UInt32Pointer,
                 ),
-                C0Type::Int64Pointer(_) | C0Type::Int64Array(_, _) => CValue::typed_pointer(
+                C0Type::Int64Pointer(_) | C0Type::Int64Array(_, _) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1689,9 +1705,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             8,
                         ),
                     },
-                    CType::Int64Pointer,
+                    ProgramType::Int64Pointer,
                 ),
-                C0Type::Int128Pointer | C0Type::Int128Array(_) => CValue::typed_pointer(
+                C0Type::Int128Pointer | C0Type::Int128Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1701,21 +1717,23 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             16,
                         ),
                     },
-                    CType::Int128Pointer,
+                    ProgramType::Int128Pointer,
                 ),
-                C0Type::UInt64Pointer(_) | C0Type::UInt64Array(_, _) => CValue::typed_pointer(
-                    Pointer {
-                        block: PointerBlock::ExternalArgument,
-                        offset: scale_int32_offset(
-                            MachineTerm::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
-                            8,
-                        ),
-                    },
-                    CType::UInt64Pointer,
-                ),
-                C0Type::UInt128Pointer | C0Type::UInt128Array(_) => CValue::typed_pointer(
+                C0Type::UInt64Pointer(_) | C0Type::UInt64Array(_, _) => {
+                    ProgramValue::typed_pointer(
+                        Pointer {
+                            block: PointerBlock::ExternalArgument,
+                            offset: scale_int32_offset(
+                                MachineTerm::Variable(Variable(
+                                    POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
+                                )),
+                                8,
+                            ),
+                        },
+                        ProgramType::UInt64Pointer,
+                    )
+                }
+                C0Type::UInt128Pointer | C0Type::UInt128Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1725,9 +1743,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             16,
                         ),
                     },
-                    CType::UInt128Pointer,
+                    ProgramType::UInt128Pointer,
                 ),
-                C0Type::Float32Pointer | C0Type::Float32Array(_) => CValue::typed_pointer(
+                C0Type::Float32Pointer | C0Type::Float32Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1737,9 +1755,9 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             4,
                         ),
                     },
-                    CType::Float32Pointer,
+                    ProgramType::Float32Pointer,
                 ),
-                C0Type::Float64Pointer | C0Type::Float64Array(_) => CValue::typed_pointer(
+                C0Type::Float64Pointer | C0Type::Float64Array(_) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1749,7 +1767,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                             8,
                         ),
                     },
-                    CType::Float64Pointer,
+                    ProgramType::Float64Pointer,
                 ),
                 C0Type::Int8PointerPointer => {
                     let element_width = c_type
@@ -1757,7 +1775,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         .expect("pointer-to-pointer parameter has a pointee")
                         .to_kernel_type()
                         .byte_width();
-                    CValue::typed_pointer(
+                    ProgramValue::typed_pointer(
                         Pointer {
                             block: PointerBlock::ExternalArgument,
                             offset: scale_int32_offset(
@@ -1787,7 +1805,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         .expect("pointer-to-pointer parameter has a pointee")
                         .to_kernel_type()
                         .byte_width();
-                    CValue::typed_pointer(
+                    ProgramValue::typed_pointer(
                         Pointer {
                             block: PointerBlock::ExternalArgument,
                             offset: scale_int32_offset(
@@ -1800,11 +1818,11 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         c_type.to_kernel_type(),
                     )
                 }
-                C0Type::FunctionPointer(_) => CValue::typed_pointer(
+                C0Type::FunctionPointer(_) => ProgramValue::typed_pointer(
                     Pointer::symbolic_function(Variable(index as u64)),
                     c_type.to_kernel_type(),
                 ),
-                C0Type::PointerArray(_, _, _) => CValue::typed_pointer(
+                C0Type::PointerArray(_, _, _) => ProgramValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
@@ -1819,7 +1837,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
             };
             let value = if generic_pointers.contains(parameter.name()) {
                 match value {
-                    CValue::Pointer(pointer) => CValue::Pointer(
+                    ProgramValue::Pointer(pointer) => ProgramValue::Pointer(
                         pointer.with_declared_object_class(parameter.pointer_object_class()),
                     ),
                     value => value,
@@ -1834,7 +1852,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
 
 pub(in crate::surface) fn pure_theorem_array_refs(
     parameters: &[FunctionParameter],
-    values: &BTreeMap<String, CValue>,
+    values: &BTreeMap<String, ProgramValue>,
     memory: &CMemory,
 ) -> ClickArrayRefs {
     parameters
@@ -1842,7 +1860,7 @@ pub(in crate::surface) fn pure_theorem_array_refs(
         .filter_map(|parameter| {
             let c_type = parameter.click_type().c_type()?;
             let element_type = click_array_element_type(c_type)?;
-            let Some(CValue::Pointer(pointer)) = values.get(parameter.name()) else {
+            let Some(ProgramValue::Pointer(pointer)) = values.get(parameter.name()) else {
                 return None;
             };
             Some((
@@ -1897,7 +1915,7 @@ fn verify_theorem_ensure(
         return Ok(verified);
     }
     let lowering_assumptions = assumptions_from_propositions(&context.requires);
-    let state = CState::new().with_memory(context.memory.clone());
+    let state = ExecutionState::new().with_memory(context.memory.clone());
     let (goal, goal_introductions, _, obligations) =
         lower_fixed_state_proposition_retaining_requirements(
             surface_goal,
@@ -2074,7 +2092,7 @@ fn verify_theorem_ensure(
         .parameters()
         .iter()
         .map(|parameter| match context.values.get(parameter.name()) {
-            Some(CValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
+            Some(ProgramValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
             _ => None,
         })
         .collect::<Option<Vec<_>>>();
@@ -2180,7 +2198,7 @@ fn verify_contract_refinement_theorem(
     let concrete_target = contract_expression_function_address(argument);
     let symbolic_binding = match argument {
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) => Some(name.as_str()),
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => Some(name.as_str()),
         _ => None,
     };
     if concrete_target.is_none() && symbolic_binding.is_none() {
@@ -2362,7 +2380,7 @@ fn verify_contract_refinement_theorem(
     let arguments = argument_values
         .iter()
         .cloned()
-        .map(CExpression::Value)
+        .map(ProgramExpression::Value)
         .collect::<Vec<_>>();
     let parameters = contract_parameters
         .iter()
@@ -2473,7 +2491,7 @@ fn verify_contract_refinement_theorem(
 /// The values a lowered contract fact fixes its contract's value parameters
 /// to, after its function pointer. `None` for any other proposition, or a
 /// value that is not a C value.
-fn contract_fact_values(fact: &Proposition) -> Option<Vec<CValue>> {
+fn contract_fact_values(fact: &Proposition) -> Option<Vec<ProgramValue>> {
     let Proposition::Predicate { arguments, .. } = fact else {
         return None;
     };
@@ -2481,7 +2499,7 @@ fn contract_fact_values(fact: &Proposition) -> Option<Vec<CValue>> {
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::CValue(value) => Some(value.clone()),
+            Term::ProgramValue(value) => Some(value.clone()),
             _ => None,
         })
         .collect()
@@ -2730,7 +2748,8 @@ fn verify_kernel_standard_theorem_axiom(
         )));
     }
     let axiom = if theorem.name() == "click::integer::uint32_from_le_bytes" {
-        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        let Some(ProgramValue::Pointer(pointer)) =
+            context.values.get(theorem.parameters()[0].name())
         else {
             return Err(ClickError::new(
                 "uint32_from_le_bytes requires a uint32 pointer",
@@ -2743,14 +2762,15 @@ fn verify_kernel_standard_theorem_axiom(
     {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
-            Some(CValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
-            Some(CValue::Int64(value)) => Ok((MachineIntegerType::Int64, value.clone())),
-            Some(CValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
+            Some(ProgramValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
+            Some(ProgramValue::Int64(value)) => Ok((MachineIntegerType::Int64, value.clone())),
+            Some(ProgramValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
             _ => Err(ClickError::new(
                 "elements indices must be int32, int64, or uint64",
             )),
         };
-        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        let Some(ProgramValue::Pointer(pointer)) =
+            context.values.get(theorem.parameters()[0].name())
         else {
             return Err(ClickError::new("elements base must be a typed pointer"));
         };
@@ -2776,13 +2796,14 @@ fn verify_kernel_standard_theorem_axiom(
     ) {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
-            Some(CValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
-            Some(CValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
+            Some(ProgramValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
+            Some(ProgramValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
             _ => Err(ClickError::new(
                 "interval law bounds must be int32 or uint64",
             )),
         };
-        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        let Some(ProgramValue::Pointer(pointer)) =
+            context.values.get(theorem.parameters()[0].name())
         else {
             return Err(ClickError::new("interval law base must be a typed pointer"));
         };
@@ -2897,7 +2918,7 @@ fn verify_kernel_standard_theorem_axiom(
         let parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
             match context.values.get(parameter.name()) {
-                Some(CValue::UInt64(value)) => Ok(value.clone()),
+                Some(ProgramValue::UInt64(value)) => Ok(value.clone()),
                 _ => Err(ClickError::new(format!(
                     "`{claim_label}` kernel parameter `{}` must be uint64",
                     parameter.name()
@@ -2915,7 +2936,7 @@ fn verify_kernel_standard_theorem_axiom(
         let uint32_parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
             match context.values.get(parameter.name()) {
-                Some(CValue::UInt32(term)) => Ok(term.clone()),
+                Some(ProgramValue::UInt32(term)) => Ok(term.clone()),
                 _ => Err(ClickError::new(format!(
                     "`{claim_label}` kernel parameter `{}` must be uint32",
                     parameter.name()
@@ -2958,7 +2979,7 @@ fn verify_kernel_standard_theorem_axiom(
         let int32_parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
             match context.values.get(parameter.name()) {
-                Some(CValue::Int32(term)) => Ok(term.clone()),
+                Some(ProgramValue::Int32(term)) => Ok(term.clone()),
                 _ => Err(ClickError::new(format!(
                     "`{claim_label}` kernel parameter `{}` must be int32",
                     parameter.name()
@@ -3314,8 +3335,9 @@ pub(super) fn induction_application_surface_premises(
     setup: &PureInductionSetup,
     argument: &ContractExpression,
 ) -> Result<Vec<ClickProposition>, ClickError> {
-    let zero = ContractExpression::CFragment(CExpression::Value(int32(0)));
-    let current = ContractExpression::CFragment(CExpression::Variable(setup.parameter.clone()));
+    let zero = ContractExpression::CFragment(ProgramExpression::Value(int32(0)));
+    let current =
+        ContractExpression::CFragment(ProgramExpression::Variable(setup.parameter.clone()));
     let mut premises = vec![
         ClickProposition::Comparison {
             left: zero,
@@ -3414,7 +3436,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     memory: &CMemory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
-    let state = CState::new().with_memory(memory.clone());
+    let state = ExecutionState::new().with_memory(memory.clone());
     lower_fixed_state_proposition_through_kernel_with_introductions(
         proposition,
         &PureFactContext::new(),
@@ -3461,7 +3483,7 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
 ) -> Result<Proposition, String> {
-    let state = CState::new().with_memory(memory.clone());
+    let state = ExecutionState::new().with_memory(memory.clone());
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         &PureFactContext::new(),
@@ -3489,7 +3511,7 @@ fn lower_pure_theorem_proposition_opaque(
         .keys()
         .cloned()
         .collect::<BTreeSet<_>>();
-    let state = CState::new().with_memory(context.memory.clone());
+    let state = ExecutionState::new().with_memory(context.memory.clone());
     lower_fixed_state_proposition_through_kernel_with(
         proposition,
         assumptions,

@@ -7,9 +7,10 @@ fn common_fold_read_dependencies_visit_shared_bodies_once_and_recheck_snapshots(
         let _session = crate::kernel::VerificationSession::enter();
         let current = CMemory::new();
         let pointer = Pointer::symbolic(Variable(972000));
-        let later = current
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1)));
+        let later = current.clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
         let read = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
@@ -69,7 +70,7 @@ fn nested_machine_fold_dependencies_share_initial_and_body_subgraphs() {
             format,
             MachineOperandView::Legacy(&MachineTerm::constant(0)),
         );
-        let bound = KernelTerm::variable(KernelType::C(CType::Int32), Variable(972011));
+        let bound = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(972011));
         let mut last = None;
         for _ in 0..size {
             let initial = KernelTerm::machine_binary_shared(

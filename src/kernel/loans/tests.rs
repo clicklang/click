@@ -37,9 +37,9 @@ fn participants() -> (LoanLedger, LoanParticipantId, LoanParticipantId) {
 }
 
 fn opaque_memory_borrow_fixture() -> (CResourceFact, CCheckedResourceFact) {
-    let pointer = crate::kernel::CPointerValue::new(
+    let pointer = crate::kernel::PointerValue::new(
         Pointer::symbolic(Variable(9_819_001)),
-        crate::kernel::CType::Int32Pointer,
+        crate::kernel::ProgramType::Int32Pointer,
     );
     let owner =
         crate::kernel::CMemoryRange::from_pointer_value(&pointer, 0u32.into(), 4u32.into(), 4);

@@ -66,14 +66,14 @@ use super::resource_tracker::{Resource, step_effect};
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct CFoldReadDefinition {
     name: String,
-    parameters: Vec<(String, CType)>,
+    parameters: Vec<(String, ProgramType)>,
     body: SpecIntegerExpression,
 }
 
 impl CFoldReadDefinition {
     pub fn new(
         name: impl Into<String>,
-        parameters: Vec<(String, CType)>,
+        parameters: Vec<(String, ProgramType)>,
         body: SpecIntegerExpression,
     ) -> Self {
         Self {
@@ -115,7 +115,7 @@ enum FoldEndpointTemplate {
 pub struct CheckedFoldReadSummary {
     name: String,
     fingerprint: u64,
-    parameter_types: Vec<CType>,
+    parameter_types: Vec<ProgramType>,
     array_parameter: usize,
     element_width: u32,
     start: FoldEndpointTemplate,
@@ -193,9 +193,9 @@ enum Scope {
 }
 
 struct BodyChecker<'a> {
-    parameters: &'a [(String, CType)],
+    parameters: &'a [(String, ProgramType)],
     array_name: &'a str,
-    element_type: CType,
+    element_type: ProgramType,
     accumulator: Variable,
     item: Variable,
 }
@@ -210,14 +210,14 @@ impl CheckedFoldReadSummary {
         for (index, (name, c_type)) in parameters.iter().enumerate() {
             crate::instrumentation::record_deterministic_work(1);
             match c_type {
-                CType::Int32Pointer | CType::UInt8Pointer => {
+                ProgramType::Int32Pointer | ProgramType::UInt8Pointer => {
                     if array_parameter.replace(index).is_some() {
                         return Err(FoldReadDecline::UnsupportedParameters(format!(
                             "a second array parameter `{name}`"
                         )));
                     }
                 }
-                CType::Int32 => {}
+                ProgramType::Int32 => {}
                 other => {
                     return Err(FoldReadDecline::UnsupportedParameters(format!(
                         "`{name}` has type {other:?}"
@@ -250,10 +250,10 @@ impl CheckedFoldReadSummary {
             array_name: &parameters[array_parameter].0,
             accumulator: *accumulator,
             item: *item,
-            element_type: if parameters[array_parameter].1 == CType::UInt8Pointer {
-                CType::UInt8
+            element_type: if parameters[array_parameter].1 == ProgramType::UInt8Pointer {
+                ProgramType::UInt8
             } else {
-                CType::Int32
+                ProgramType::Int32
             },
         };
         let start = checker.endpoint(start)?;
@@ -317,15 +317,15 @@ impl CheckedFoldReadSummary {
                     position == self.array_parameter
                         && element_type.byte_width() == self.element_width
                         && self.parameter_types[position].pointee_type() == Some(*element_type)
-                        && matches!(pointer, CValue::Pointer(_))
+                        && matches!(pointer, ProgramValue::Pointer(_))
                 }
                 PureFunctionArgument::SharedMachine(value) => {
                     position != self.array_parameter
-                        && *c_type == CType::Int32
+                        && *c_type == ProgramType::Int32
                         && value.ty() == MachineIntegerType::Int32
                 }
-                PureFunctionArgument::Value(CValue::Int32(_)) => {
-                    position != self.array_parameter && *c_type == CType::Int32
+                PureFunctionArgument::Value(ProgramValue::Int32(_)) => {
+                    position != self.array_parameter && *c_type == ProgramType::Int32
                 }
                 _ => false,
             };
@@ -335,7 +335,7 @@ impl CheckedFoldReadSummary {
         }
         let PureFunctionArgument::ArrayRef {
             memory,
-            pointer: CValue::Pointer(pointer),
+            pointer: ProgramValue::Pointer(pointer),
             ..
         } = &arguments[self.array_parameter]
         else {
@@ -352,7 +352,7 @@ impl CheckedFoldReadSummary {
                 {
                     Some(value.clone())
                 }
-                PureFunctionArgument::Value(CValue::Int32(value)) => Some(
+                PureFunctionArgument::Value(ProgramValue::Int32(value)) => Some(
                     SharedMachineIntegerTerm::index(MachineIntegerType::Int32, value.clone()),
                 ),
                 _ => None,
@@ -372,17 +372,17 @@ impl BodyChecker<'_> {
     fn scalar_parameter(&self, name: &str) -> Option<usize> {
         self.parameters
             .iter()
-            .position(|(parameter, c_type)| parameter == name && *c_type == CType::Int32)
+            .position(|(parameter, c_type)| parameter == name && *c_type == ProgramType::Int32)
     }
 
     fn endpoint(&self, endpoint: &SpecExpression) -> Result<FoldEndpointTemplate, FoldReadDecline> {
         crate::instrumentation::record_deterministic_work(1);
         match endpoint {
-            SpecExpression::CExpression(CExpression::Variable(name)) => self
+            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => self
                 .scalar_parameter(name)
                 .map(FoldEndpointTemplate::Parameter)
                 .ok_or(FoldReadDecline::UnsupportedEndpoint),
-            SpecExpression::Value(CValue::Int32(bits32_constant!(value))) => {
+            SpecExpression::Value(ProgramValue::Int32(bits32_constant!(value))) => {
                 Ok(FoldEndpointTemplate::Literal(constant_u32(*value)))
             }
             _ => Err(FoldReadDecline::UnsupportedEndpoint),
@@ -505,11 +505,11 @@ impl BodyChecker<'_> {
         *byte_width == self.element_type.byte_width()
             && matches!(
                 pointer.as_ref(),
-                SpecExpression::CExpression(CExpression::Variable(name)) if name == self.array_name
+                SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == self.array_name
             )
             && matches!(
                 elements.as_ref(),
-                SpecExpression::Value(CValue::Int32(MachineTerm::Variable(variable)))
+                SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(variable)))
                     if *variable == self.item
             )
     }
@@ -517,11 +517,11 @@ impl BodyChecker<'_> {
     fn machine(&self, expression: &SpecExpression, scope: Scope) -> Result<(), FoldReadDecline> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
-            SpecExpression::Value(CValue::Int32(term) | CValue::Bool(term)) => {
+            SpecExpression::Value(ProgramValue::Int32(term) | ProgramValue::Bool(term)) => {
                 self.bitvector(term, scope)
             }
             SpecExpression::Value(_) => Err(Self::unsupported("a non-int32 value")),
-            SpecExpression::CExpression(CExpression::Variable(name)) => {
+            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 if self.scalar_parameter(name).is_some() {
                     Ok(())
                 } else if name == self.array_name {
@@ -530,7 +530,9 @@ impl BodyChecker<'_> {
                     Err(Self::unsupported("a name that is not an int32 parameter"))
                 }
             }
-            SpecExpression::CExpression(_) => Err(Self::unsupported("an unlowered C expression")),
+            SpecExpression::ProgramExpression(_) => {
+                Err(Self::unsupported("an unlowered C expression"))
+            }
             SpecExpression::MemoryLoad {
                 memory,
                 pointer,
@@ -547,7 +549,9 @@ impl BodyChecker<'_> {
                 }
                 Ok(())
             }
-            SpecExpression::Cast(inner, CType::Int32) if self.element_type == CType::UInt8 => {
+            SpecExpression::Cast(inner, ProgramType::Int32)
+                if self.element_type == ProgramType::UInt8 =>
+            {
                 self.machine(inner, scope)
             }
             SpecExpression::Add(left, right)
@@ -965,7 +969,7 @@ pub(crate) fn frame_fold_applications(
     Ok(crossed)
 }
 
-fn later_than(left: &SharedCMemory, right: &SharedCMemory) -> bool {
+fn later_than(left: &SharedMemory, right: &SharedMemory) -> bool {
     let (left_arena, left_id) = left.arena_id();
     let (right_arena, right_id) = right.arena_id();
     left_arena == right_arena && left_id > right_id
@@ -974,7 +978,7 @@ fn later_than(left: &SharedCMemory, right: &SharedCMemory) -> bool {
 /// Whether one recorded step leaves every cell of the interval unchanged.
 fn step_misses_interval(
     step: &CMemoryDerivation,
-    produced: &SharedCMemory,
+    produced: &SharedMemory,
     interval: &FoldReadInterval,
     empty: bool,
     assumptions: &PureFactContext,

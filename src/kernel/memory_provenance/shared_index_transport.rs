@@ -265,10 +265,10 @@ mod tests {
         let after = before
             .memory()
             .clone()
-            .store(address.clone(), CValue::Int32(7u32.into()));
+            .store(address.clone(), ProgramValue::Int32(7u32.into()));
         let application = SharedPureApplication::intern(
             "snapshot_call".into(),
-            vec![PureFunctionArgument::Value(CValue::Int32(
+            vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::MemoryLoad(before.clone(), address.into(), LoadKind::Int32),
             ))],
         );
@@ -558,9 +558,10 @@ mod tests {
             block: "transport-index".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new()
-            .with_block("transport-index", 16)
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
+        let before = CMemory::new().with_block("transport-index", 16).store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(before.clone()),
             Box::new(pointer.clone()),
@@ -572,11 +573,12 @@ mod tests {
             before.clone(),
             before.clone().store(
                 pointer.offset_by_bytes(8),
-                CValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(MachineTerm::constant(9)),
             ),
-            before
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9))),
+            before.clone().store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(9)),
+            ),
             before.clone().with_loop_memory_havoc_preserving_loans(
                 Variable(1018911),
                 &BTreeSet::new(),
@@ -618,7 +620,7 @@ mod tests {
         );
         let after = before.clone().store(
             pointer.offset_by_bytes(8),
-            CValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(MachineTerm::constant(9)),
         );
         let facts = PureFactContext::new();
         parity(
@@ -830,20 +832,22 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = CMemory::global_pointer("exact-index");
         let initial = CMemory::new().with_block("exact-index", 16);
-        let stored = initial
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
+        let stored = initial.clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
         let empty = PureFactContext::new();
         for memory in [
             initial.clone(),
             stored.clone(),
             stored.clone().store(
                 pointer.offset_by_bytes(8),
-                CValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(MachineTerm::constant(9)),
             ),
-            stored
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9))),
+            stored.clone().store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(9)),
+            ),
             stored.with_loop_memory_havoc_preserving_loans(
                 Variable(1018950),
                 &BTreeSet::new(),
@@ -881,7 +885,7 @@ mod tests {
         };
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(
-                initial.store(pointer, CValue::Int32(MachineTerm::constant(5))),
+                initial.store(pointer, ProgramValue::Int32(MachineTerm::constant(5))),
             ),
             Box::new(query),
             LoadKind::Int32,

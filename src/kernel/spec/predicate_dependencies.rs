@@ -43,7 +43,7 @@ mod tests {
     use super::*;
 
     fn literal() -> SpecExpression {
-        SpecExpression::Value(CValue::Int32(MachineTerm::constant(0)))
+        SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0)))
     }
 
     fn count() -> SpecExpression {
@@ -88,7 +88,7 @@ mod tests {
             let body = SpecProposition::Defined(SpecExpression::PureFunctionApplication {
                 name: "identity".into(),
                 arguments: vec![SpecPureFunctionArgument::Value(argument)],
-                result_type: CType::Int32,
+                result_type: ProgramType::Int32,
                 pointer_result: None,
                 result_object_class: None,
                 projection: None,

@@ -13,7 +13,7 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let visible = MachineTerm::Variable(Variable(8_179_800));
-    let state = CState::new().with_local("visible", CValue::Int32(visible.clone()));
+    let state = ExecutionState::new().with_local("visible", ProgramValue::Int32(visible.clone()));
     let equal_zero = |term| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -135,10 +135,10 @@ fn same_block_offset_rewrite_work(
         ),
     };
     let cursor = Pointer::symbolic(Variable(8_179_099));
-    let state = CState::new()
-        .with_local("cursor", CValue::pointer(cursor.clone()))
-        .with_local("base", CValue::pointer(base.clone()))
-        .with_local("k", CValue::UInt64(remaining));
+    let state = ExecutionState::new()
+        .with_local("cursor", ProgramValue::pointer(cursor.clone()))
+        .with_local("base", ProgramValue::pointer(base.clone()))
+        .with_local("k", ProgramValue::UInt64(remaining));
     let mut facts = (0..pointer_history)
         .flat_map(|i| {
             let old = MachineTerm::legacy_cast(
@@ -207,15 +207,16 @@ fn same_block_offset_rewrite_work(
     assert_eq!(lowered, bound);
     let entry = state.clone().with_local(
         "k",
-        CValue::UInt64(MachineTerm::Variable(Variable(8_179_098))),
+        ProgramValue::UInt64(MachineTerm::Variable(Variable(8_179_098))),
     );
     if from_cursor {
         let local_native_output_213 = state.locals().get_native("cursor");
-        let CValue::Pointer(cursor_value) = local_native_output_213.as_deref().unwrap() else {
+        let ProgramValue::Pointer(cursor_value) = local_native_output_213.as_deref().unwrap()
+        else {
             unreachable!()
         };
         let local_native_output_216 = state.locals().get_native("base");
-        let CValue::Pointer(base_value) = local_native_output_216.as_deref().unwrap() else {
+        let ProgramValue::Pointer(base_value) = local_native_output_216.as_deref().unwrap() else {
             unreachable!()
         };
         let mut shifted_value = base_value.clone();
@@ -399,9 +400,9 @@ fn both_and_scopes_are_isolated_check_provenance_and_scale() {
 #[ignore = "nightly: 5.7s in the parallel gate"]
 fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
     let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
-    let state = CState::new();
+    let state = ExecutionState::new();
     let result = int32(0);
-    let arguments = vec![CExpression::Value(result.clone())];
+    let arguments = vec![ProgramExpression::Value(result.clone())];
     let snapshots = RecordedSnapshots::new();
     let surfaces = SurfacePropositionMap::default();
     let predicates = PredicateEnvironment::new(&[]);
@@ -411,9 +412,9 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
     // tables do not spell. The producer's kernel judgment is authoritative;
     // its source proposition is a presentation, not a replacement judgment.
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".into())),
+        left: ContractExpression::CFragment(ProgramExpression::Variable("x".into())),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
     };
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_less_than(
@@ -515,8 +516,8 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
     let theorems = TheoremEnvironment::new(&[]);
     let resources = ResourceEnvironment::new(&[]);
     let execution_environment = CExecutionEnvironment::new();
-    let state = CState::new();
-    let arguments = vec![CExpression::Value(int32(7))];
+    let state = ExecutionState::new();
+    let arguments = vec![ProgramExpression::Value(int32(7))];
 
     fn balanced_and(mut leaves: Vec<Proposition>) -> Proposition {
         while leaves.len() > 1 {
@@ -690,8 +691,8 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
     let theorems = TheoremEnvironment::new(file.theorem_definitions());
     let resources = ResourceEnvironment::new(file.resource_definitions());
     let environment = CExecutionEnvironment::new();
-    let arguments = vec![CExpression::Value(int32(7))];
-    let value = ContractExpression::CFragment(CExpression::Value(int32(7)));
+    let arguments = vec![ProgramExpression::Value(int32(7))];
+    let value = ContractExpression::CFragment(ProgramExpression::Value(int32(7)));
     let surface = ClickProposition::PredicateCall {
         name: "selected".into(),
         arguments: vec![value.clone()],
@@ -719,9 +720,9 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
         ),
     ];
     let legacy_surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(7))),
+        left: ContractExpression::CFragment(ProgramExpression::Value(int32(7))),
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::CFragment(CExpression::Value(int32(8))),
+        right: ContractExpression::CFragment(ProgramExpression::Value(int32(8))),
     };
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
@@ -734,7 +735,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
             "checked loop have",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 frontier,
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -795,10 +796,10 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
         let prepared = joined
             .driver()
             .prepare_loop_invariant_bundle(
-                &CState::new(),
-                &CState::new(),
+                &ExecutionState::new(),
+                &ExecutionState::new(),
                 &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
-                &CExpression::Value(int32(1)),
+                &ProgramExpression::Value(int32(1)),
                 &checks,
                 &[],
                 None,
@@ -839,7 +840,7 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
     let function = parsed.to_kernel_function();
     let functions = CExecutionEnvironment::new();
     let resources = ResourceEnvironment::new(&[]);
-    let arguments = [CExpression::Value(int32(7))];
+    let arguments = [ProgramExpression::Value(int32(7))];
     let checks = vec![crate::kernel::CLoopInvariantCheck::new(
         crate::kernel::SpecProposition::Comparison {
             left: crate::kernel::SpecExpression::Value(int32(0)),
@@ -854,7 +855,7 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
             "explicit invariant body",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 ExecutionFrontier {
                     region: ExecutionRegionKind::LoopBody,
                     position: FrontierPosition::RegionBoundary,
@@ -965,16 +966,16 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
-        CResourceFact::own_memory(CMemoryRange::new(
+    let state = ExecutionState::new().with_resource_context(
+        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
-        )),
-    ));
+        ))),
+    );
     let arguments = vec![
-        CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(60_002)))),
-        CExpression::Value(CValue::pointer(pointer.clone())),
+        ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(60_002)))),
+        ProgramExpression::Value(ProgramValue::pointer(pointer.clone())),
     ];
     let function_environment = CExecutionEnvironment::new();
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -1037,7 +1038,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
         for path in paths {
             assert!(matches!(path.outcome(),
                 CFunctionOutcome::Return { value, .. }
-                    if matches!(value.native().as_ref(), CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
+                    if matches!(value.native().as_ref(), ProgramValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
         }
         let execution = joined.execution().expect("joined execution should remain");
         (
@@ -1173,7 +1174,7 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
 fn snapshot_premise_synthesis_seeks_near_anchor_without_scanning_history() {
     let parameters = syntax::parse_function("int32 noop(int32 x) { return x; }").unwrap();
     let value = MachineTerm::Variable(Variable(8_178_901));
-    let arguments = vec![CExpression::Value(CValue::Int32(value.clone()))];
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(value.clone()))];
     let parameter_binding = ParameterBinding::new(parameters.parameters(), &arguments);
     let kernel = Proposition::ConditionIs(
         ConditionTerm::Compare {
@@ -1196,7 +1197,7 @@ fn snapshot_premise_synthesis_seeks_near_anchor_without_scanning_history() {
                     region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
-                CState::new(),
+                ExecutionState::new(),
             );
         }
         let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1210,7 +1211,7 @@ fn snapshot_premise_synthesis_seeks_near_anchor_without_scanning_history() {
         });
         let surface = surface.expect("the nearest snapshot should name the parameter");
         assert!(proposition_contains_at_expression(&surface));
-        let state = CState::new();
+        let state = ExecutionState::new();
         let lowered = lower_fixed_state_proposition_with_assumptions(
             &surface,
             &PureFactContext::new(),
@@ -1269,7 +1270,7 @@ fn missing_snapshot_premise_spelling_has_bounded_history_search() {
                     region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
-                CState::new(),
+                ExecutionState::new(),
             );
         }
         let anchor = ProgramPointRef {
@@ -1302,7 +1303,7 @@ fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
     use crate::instrumentation::{TacticEvent, TacticWorkLimits, VerificationEvent};
     let parameters = syntax::parse_function("int32 noop(int32 x) { return x; }").unwrap();
     let value = MachineTerm::Variable(Variable(8_178_902));
-    let arguments = vec![CExpression::Value(CValue::Int32(value.clone()))];
+    let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(value.clone()))];
     let kernel = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -1324,7 +1325,7 @@ fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
                     region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
-                CState::new(),
+                ExecutionState::new(),
             );
         }
         // Exhaust before the independent snapshot-candidate search cap. A
@@ -1417,7 +1418,8 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         },
         true,
     );
-    let expression = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
+    let expression =
+        |name: &str| ContractExpression::CFragment(ProgramExpression::Variable(name.into()));
     let equality_surface = ClickProposition::Comparison {
         left: expression("x"),
         operator: ComparisonOperator::Equal,
@@ -1426,7 +1428,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
     let goal_surface = ClickProposition::Comparison {
         left: expression("x"),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(bound))),
+        right: ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt64(bound))),
     };
     let mut costs = Vec::new();
     for ambient in [0, 16, 64, 256, 1024] {
@@ -1452,8 +1454,8 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
             integer_values: crate::persistent::PersistentMap::default(),
             memory: CMemory::new(),
             values: BTreeMap::from([
-                ("x".into(), CValue::UInt64(x.clone())),
-                ("y".into(), CValue::UInt64(y.clone())),
+                ("x".into(), ProgramValue::UInt64(x.clone())),
+                ("y".into(), ProgramValue::UInt64(y.clone())),
             ]),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
@@ -1512,13 +1514,13 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
         true,
     );
     let obligation = crate::kernel::ProofObligation::new(goal.clone());
-    let base = CExpression::Variable("buf".into());
-    let start = CExpression::Value(CValue::UInt64(MachineTerm::uint64_constant(0)));
-    let end = CExpression::Add(
-        Box::new(CExpression::Value(CValue::UInt64(
+    let base = ProgramExpression::Variable("buf".into());
+    let start = ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(0)));
+    let end = ProgramExpression::Add(
+        Box::new(ProgramExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(16),
         ))),
-        Box::new(CExpression::Variable("len".into())),
+        Box::new(ProgramExpression::Variable("len".into())),
     );
     let surface = ClickProposition::Loadable {
         segment: ContractSegment {
@@ -1535,15 +1537,18 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
         },
     };
     let arguments = vec![
-        CExpression::Value(CValue::typed_pointer(pointer.clone(), CType::UInt8Pointer)),
-        CExpression::Value(CValue::UInt64(original.clone())),
+        ProgramExpression::Value(ProgramValue::typed_pointer(
+            pointer.clone(),
+            ProgramType::UInt8Pointer,
+        )),
+        ProgramExpression::Value(ProgramValue::UInt64(original.clone())),
     ];
-    let entry = CState::new()
+    let entry = ExecutionState::new()
         .with_local(
             "buf",
-            CValue::typed_pointer(pointer.clone(), CType::UInt8Pointer),
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
         )
-        .with_local("len", CValue::UInt64(original));
+        .with_local("len", ProgramValue::UInt64(original));
     let snapshots = RecordedSnapshots::new();
     let surfaces = SurfacePropositionMap::default();
     let predicates = PredicateEnvironment::new(&[]);
@@ -1553,7 +1558,7 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
     for size in [16, 64, 256, 1024] {
         let mut state = entry
             .clone()
-            .with_local("len", CValue::UInt64(remaining.clone()));
+            .with_local("len", ProgramValue::UInt64(remaining.clone()));
         for index in 0..size {
             state = state.with_local(format!("unused_{index}"), int32(index));
         }
@@ -1605,11 +1610,11 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
     let old_goal = bound(entry_len.clone());
     let current_goal = bound(current_len.clone());
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("len".into())),
+        left: ContractExpression::CFragment(ProgramExpression::Variable("len".into())),
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(limit))),
+        right: ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::UInt64(limit))),
     };
-    let entry = CState::new().with_local("len", CValue::UInt64(entry_len));
+    let entry = ExecutionState::new().with_local("len", ProgramValue::UInt64(entry_len));
     let snapshots = RecordedSnapshots::new();
     let mut surfaces = SurfacePropositionMap::default();
     surfaces.record_lowering(&surface, &old_goal).unwrap();
@@ -1617,7 +1622,7 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
     for size in [0, 16, 64, 256, 1024] {
         let mut state = entry
             .clone()
-            .with_local("len", CValue::UInt64(current_len.clone()));
+            .with_local("len", ProgramValue::UInt64(current_len.clone()));
         for index in 0..size {
             state = state.with_local(format!("unused_{index}"), int32(index));
         }
@@ -1721,10 +1726,10 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
             facts.push(fact);
             reads.push(MachineTerm::Variable(variable));
         }
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory.memory().clone())
-            .with_local("first", CValue::Int32(reads[0].clone()))
-            .with_local("second", CValue::Int32(reads[1].clone()));
+            .with_local("first", ProgramValue::Int32(reads[0].clone()))
+            .with_local("second", ProgramValue::Int32(reads[1].clone()));
         let mut snapshots = RecordedSnapshots::new();
         for index in 0..8 {
             snapshots.insert(
@@ -1732,7 +1737,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
                     region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
-                CState::new(),
+                ExecutionState::new(),
             );
         }
         let anchor = ProgramPointRef {
@@ -1844,8 +1849,8 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_snapshots() {
     let theorems = TheoremEnvironment::new(&[]);
     let before = MachineTerm::Variable(Variable(8_179_500));
     let now = MachineTerm::Variable(Variable(8_179_501));
-    let entry = CState::new().with_local("value", CValue::Int32(before.clone()));
-    let state = CState::new().with_local("value", CValue::Int32(now.clone()));
+    let entry = ExecutionState::new().with_local("value", ProgramValue::Int32(before.clone()));
+    let state = ExecutionState::new().with_local("value", ProgramValue::Int32(now.clone()));
     let equal_zero = |value| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -1943,15 +1948,15 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_snapshots() {
         block: crate::kernel::PointerBlock::Concrete("mixed-premise".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let entry = CState::new()
+    let entry = ExecutionState::new()
         .with_memory(CMemory::new().with_block("mixed-premise", 4))
         .with_local(
             "p",
-            CValue::typed_pointer(pointer.clone(), CType::UInt32Pointer),
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt32Pointer),
         )
         .with_local(
             "now",
-            CValue::UInt32(MachineTerm::Variable(Variable(8_179_510))),
+            ProgramValue::UInt32(MachineTerm::Variable(Variable(8_179_510))),
         );
     let state = entry
         .clone()
@@ -1959,11 +1964,11 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_snapshots() {
             entry
                 .memory()
                 .clone()
-                .store(pointer, CValue::UInt32(MachineTerm::constant(5))),
+                .store(pointer, ProgramValue::UInt32(MachineTerm::constant(5))),
         )
         .with_local(
             "now",
-            CValue::UInt32(MachineTerm::Variable(Variable(8_179_511))),
+            ProgramValue::UInt32(MachineTerm::Variable(Variable(8_179_511))),
         );
     let fixture = crate::surface::parse("theorem mixed(p: uint32*, now: uint32) { requires now == old(p[0]) % 7u32; ensures true; }").unwrap();
     let surface = fixture.theorem_definitions()[0].requires[0]
@@ -2063,7 +2068,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 Box::new(MachineTerm::Variable(Variable(8_179_600 + index as u64,))),
                 Box::new(MachineTerm::constant(7)),
             );
-            memory = memory.store(pointer.clone(), CValue::UInt32(stored.clone()));
+            memory = memory.store(pointer.clone(), ProgramValue::UInt32(stored.clone()));
             let load = MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(&memory),
                 Box::new(pointer),
@@ -2146,10 +2151,10 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             },
             true
         ));
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory.clone())
-            .with_local("first", CValue::Int32(reads[0].clone()))
-            .with_local("second", CValue::Int32(reads[1].clone()));
+            .with_local("first", ProgramValue::Int32(reads[0].clone()))
+            .with_local("second", ProgramValue::Int32(reads[1].clone()));
         let mut snapshots = RecordedSnapshots::new();
         for index in 0..8 {
             snapshots.insert(
@@ -2157,7 +2162,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                     region: CodeRegionRef::Region(index),
                     kind: ProgramPointKind::Entry,
                 },
-                CState::new(),
+                ExecutionState::new(),
             );
         }
         let anchor = ProgramPointRef {
@@ -2252,7 +2257,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         };
         let recorded_state = state
             .clone()
-            .with_local("second", CValue::Int32(stored.as_ref().clone()));
+            .with_local("second", ProgramValue::Int32(stored.as_ref().clone()));
         let mut recorded_surfaces = SurfacePropositionMap::default();
         recorded_surfaces
             .record_lowering(&alias_surface, &facts[0])
@@ -2333,7 +2338,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let scalar = |index: usize| {
-        ContractExpression::CFragment(CExpression::Variable(format!("offset{index}")))
+        ContractExpression::CFragment(ProgramExpression::Variable(format!("offset{index}")))
     };
     let integer = |index| ContractExpression::Call {
         name: "to_integer".into(),
@@ -2414,7 +2419,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
             values: words
                 .iter()
                 .enumerate()
-                .map(|(index, word)| (format!("offset{index}"), CValue::UInt32(word.clone())))
+                .map(|(index, word)| (format!("offset{index}"), ProgramValue::UInt32(word.clone())))
                 .collect(),
             array_refs: BTreeMap::new(),
             requires: facts.clone(),
@@ -2499,7 +2504,7 @@ fn deferred_terminal_tactics_share_ambient_bindings_without_map_work() {
             )
         });
         let mut execution = ExecutionProofState::at_entry(
-            CState::new(),
+            ExecutionState::new(),
             ExecutionFrontier::default(),
             RecordedSnapshots::new(),
             SurfacePropositionMap::default(),
@@ -2547,9 +2552,9 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
     let context = pure_identity_fixture();
     let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
     let surface_truth = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        left: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        right: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
     };
     let samples = [4, 16, 64, 256].map(|size| {
         let facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
@@ -2608,10 +2613,13 @@ fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
     );
     let mut samples = Vec::new();
     for size in [16_u32, 64, 256, 1024] {
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         for index in 0..size {
             state = state
-                .with_local(format!("alias_{index:04}"), CValue::Int32(term.clone()))
+                .with_local(
+                    format!("alias_{index:04}"),
+                    ProgramValue::Int32(term.clone()),
+                )
                 .with_local(format!("unrelated_{index:04}"), int32(index));
         }
         let facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
@@ -2669,7 +2677,7 @@ fn exact_goal_solve_stops_at_assumption_as_related_and_unrelated_facts_grow() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let variable = MachineTerm::Variable(Variable(8_180_000));
-    let state = CState::new().with_local("x", CValue::Int32(variable.clone()));
+    let state = ExecutionState::new().with_local("x", ProgramValue::Int32(variable.clone()));
     let snapshots = RecordedSnapshots::new();
     let surfaces = SurfacePropositionMap::default();
     let bound = |variable: MachineTerm, limit| {
@@ -2685,9 +2693,9 @@ fn exact_goal_solve_stops_at_assumption_as_related_and_unrelated_facts_grow() {
     };
     let goal = bound(variable.clone(), 3);
     let surface = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Variable("x".into())),
+        left: ContractExpression::CFragment(ProgramExpression::Variable("x".into())),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::CFragment(CExpression::Value(int32(3))),
+        right: ContractExpression::CFragment(ProgramExpression::Value(int32(3))),
     };
     for related in [false, true] {
         let mut previous = None;
@@ -2749,9 +2757,9 @@ fn fixed_state_application_proves_premises_and_replays_explicitly() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let definitions = SpecDefinitions::new(&predicates, &functions);
     let theorems = TheoremEnvironment::new(file.theorem_definitions());
-    let value = CValue::Int32(MachineTerm::Variable(Variable(8_900_000)));
-    let state = CState::new().with_local("x", value.clone());
-    let arguments = vec![CExpression::Value(value)];
+    let value = ProgramValue::Int32(MachineTerm::Variable(Variable(8_900_000)));
+    let state = ExecutionState::new().with_local("x", value.clone());
+    let arguments = vec![ProgramExpression::Value(value)];
     let binding = ParameterBinding::new(parsed.parameters(), &arguments);
     let snapshots = RecordedSnapshots::new();
     let premise = ClickProposition::Comparison {
@@ -2880,9 +2888,9 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
         let functions = ClickFunctionEnvironment::new(&[]);
         let definitions = SpecDefinitions::new(&predicates, &functions);
         let theorems = TheoremEnvironment::new(file.theorem_definitions());
-        let value = CValue::Int32(MachineTerm::Variable(Variable(8_900_000)));
-        let state = CState::new().with_local("x", value.clone());
-        let arguments = vec![CExpression::Value(value)];
+        let value = ProgramValue::Int32(MachineTerm::Variable(Variable(8_900_000)));
+        let state = ExecutionState::new().with_local("x", value.clone());
+        let arguments = vec![ProgramExpression::Value(value)];
         let binding = ParameterBinding::new(parsed.parameters(), &arguments);
         let snapshots = RecordedSnapshots::new();
         let premise = ClickProposition::Comparison {
@@ -2956,10 +2964,10 @@ fn retained_conditional_premise_spelling_does_not_search_snapshot_history() {
     };
     let condition = ConditionTerm::IntegerEqual(observe(result.clone()), observe(conditional));
     let fact = Proposition::ConditionIs(condition.clone(), true);
-    let state = CState::new()
-        .with_local("a", CValue::UInt32(a))
-        .with_local("b", CValue::UInt32(b))
-        .with_local("chosen", CValue::UInt32(result));
+    let state = ExecutionState::new()
+        .with_local("a", ProgramValue::UInt32(a))
+        .with_local("b", ProgramValue::UInt32(b))
+        .with_local("chosen", ProgramValue::UInt32(result));
     let entry = state.clone();
     let surfaces = SurfacePropositionMap::default();
     let facts = [fact.clone()];

@@ -154,8 +154,8 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn apply_outcome_contract_resources(
         &self,
-        pre_state: &CState,
-        _function: &CFunction,
+        pre_state: &ExecutionState,
+        _function: &ProgramFunction,
     ) -> Result<Self, ClickError> {
         let ProofContext::Execution(_) = self.context.as_ref() else {
             return Err(self.step_error("contract resource effects require an execution proof"));
@@ -358,7 +358,7 @@ impl<'a> Proof<'a> {
         // state after this goal was derived. Carry that persistent snapshot
         // root forward; otherwise later
         // checked fixed-state operations lower resource counts against the stale
-        // pre-fold state. CState's components are shared immutable roots, so
+        // pre-fold state. ExecutionState's components are shared immutable roots, so
         // this update is constant-size rather than a resource/history
         // materialization.
         data.core.result = Arc::new(value.clone().into_native());
@@ -1118,7 +1118,7 @@ impl<'a> Proof<'a> {
         let Some(execution) = self.execution() else {
             return Ok(false);
         };
-        let Ok((_, _, CStatement::If { condition, .. }, _)) =
+        let Ok((_, _, ProgramStatement::If { condition, .. }, _)) =
             next_top_level_statement_from_frontier_position(
                 execution.view(context),
                 &execution.core.state,
@@ -1132,10 +1132,10 @@ impl<'a> Proof<'a> {
             return Ok(false);
         };
         let mut test = &condition;
-        while let CExpression::Or(left, _) = test {
+        while let ProgramExpression::Or(left, _) = test {
             test = left;
         }
-        Ok(matches!(test, CExpression::EnumIs { .. }))
+        Ok(matches!(test, ProgramExpression::EnumIs { .. }))
     }
 
     /// Whether this frontier has the source shape handled by the explicit
@@ -1170,9 +1170,9 @@ impl<'a> Proof<'a> {
             // like a C `if`'s. A callee whose contract throws nothing has
             // one successor, as the kernel's call has, even inside a `try`:
             // a destructible local's unwind cleanup wraps every call.
-            if let CStatement::Call { function_name, .. }
-            | CStatement::CallAssign { function_name, .. }
-            | CStatement::CallResult { function_name, .. } = &statement
+            if let ProgramStatement::Call { function_name, .. }
+            | ProgramStatement::CallAssign { function_name, .. }
+            | ProgramStatement::CallResult { function_name, .. } = &statement
             {
                 return Ok(context
                     .function_environment
@@ -1181,7 +1181,7 @@ impl<'a> Proof<'a> {
                         !callee.exceptional_signature().is_empty()
                     }));
             }
-            let CStatement::TryCatchInt32 { try_body, .. } = statement else {
+            let ProgramStatement::TryCatchInt32 { try_body, .. } = statement else {
                 return Ok(false);
             };
             let SourceStatementKind::Try {

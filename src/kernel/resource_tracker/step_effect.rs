@@ -160,7 +160,7 @@ pub(in crate::kernel) struct Evidence<'a> {
 /// itself carries.
 pub(in crate::kernel) fn affects(
     step: &CMemoryDerivation,
-    _produced: &SharedCMemory,
+    _produced: &SharedMemory,
     resource: Resource<'_>,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
@@ -614,7 +614,7 @@ fn cell_effect(
 fn store_cell_effect(
     step: &CMemoryDerivation,
     write: &Pointer,
-    value: &CValue,
+    value: &ProgramValue,
     pointer: &Pointer,
     bytes: u32,
     evidence: &Evidence<'_>,
@@ -802,7 +802,7 @@ pub(in crate::kernel) fn write_is_at_read_address(
 pub(in crate::kernel) enum SeededCellEffect {
     /// One of its stores writes the cell: the store's pointer, and the value
     /// the walk reads.
-    Written(Pointer, CValue),
+    Written(Pointer, ProgramValue),
     /// Every store it stands for is separate from the cell, in the order a
     /// walk meets them.
     Separate(Vec<MemoryDagHopJustification>),
@@ -878,7 +878,7 @@ pub(in crate::kernel) fn seeded_loads_preserve_base(step: &CMemoryDerivation) ->
     crate::instrumentation::record_deterministic_work(1);
     matches!(run.value_mode(), RunValueMode::Load)
         && run.source().read_identity() == base.read_identity()
-        && run.element_type() != CType::Bool
+        && run.element_type() != ProgramType::Bool
         && run.element_width() >= run.value_width()
 }
 

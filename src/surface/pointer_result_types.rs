@@ -192,14 +192,19 @@ impl Analysis<'_> {
         result
     }
 
-    fn c_expression(expression: &CExpression, bindings: &BTreeMap<String, Origins>) -> Origins {
+    fn c_expression(
+        expression: &ProgramExpression,
+        bindings: &BTreeMap<String, Origins>,
+    ) -> Origins {
         match expression {
-            CExpression::Variable(name) => bindings.get(name).cloned().flatten(),
-            CExpression::Value(CValue::Pointer(p)) if p.is_null() => Some(null_origins()),
-            CExpression::Value(CValue::Int32(bits)) if bits.as_const() == Some(0) => {
+            ProgramExpression::Variable(name) => bindings.get(name).cloned().flatten(),
+            ProgramExpression::Value(ProgramValue::Pointer(p)) if p.is_null() => {
                 Some(null_origins())
             }
-            CExpression::Cast {
+            ProgramExpression::Value(ProgramValue::Int32(bits)) if bits.as_const() == Some(0) => {
+                Some(null_origins())
+            }
+            ProgramExpression::Cast {
                 expression,
                 target_type,
                 ..
@@ -238,7 +243,7 @@ impl Analysis<'_> {
             ContractExpression::CFragment(expression) => Self::c_expression(expression, bindings),
             ContractExpression::CUnary {
                 operand,
-                lowered: CExpression::Cast { target_type, .. },
+                lowered: ProgramExpression::Cast { target_type, .. },
             } if target_type.is_object_pointer() => self.expression(operand, bindings),
             ContractExpression::If {
                 then_branch,

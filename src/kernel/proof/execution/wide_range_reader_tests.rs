@@ -13,18 +13,18 @@ fn wide_interface_and_memory_effect_readers_preserve_the_range_kind() {
     );
     let resource = CResourceFact::own_memory(wide.clone());
     let segment = CMemorySegment::new(
-        CExpression::Value(CValue::pointer(base.clone())),
+        ProgramExpression::Value(ProgramValue::pointer(base.clone())),
         c_uint64_literal(0),
         c_uint64_literal(1 << 33),
     );
     let spec = CResourceSpec::owned_memory(segment);
     let before = CMemory::new().with_block(base.block.clone(), 4);
-    let state = CState::new().with_memory(before.clone());
+    let state = ExecutionState::new().with_memory(before.clone());
     assert!(matches!(
         interface_resource_intrinsic_fact(&spec, &resource, &state),
         Some(Proposition::CMemoryLoadable { wide: true, .. })
     ));
-    let after = before.clone().store(base, CValue::Int32(7u32.into()));
+    let after = before.clone().store(base, ProgramValue::Int32(7u32.into()));
     assert!(memory_diff_is_covered_by_ranges(
         &before,
         &after,

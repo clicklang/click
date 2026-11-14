@@ -34,7 +34,7 @@ pub(in crate::surface::proof) enum StatedForm<'a> {
     /// A written contract expression: a witness value, a theorem argument.
     Expression(&'a ContractExpression),
     /// A written C fragment: a segment bound, a resource quantity.
-    CFragment(&'a CExpression),
+    CFragment(&'a ProgramExpression),
 }
 
 impl StatedForm<'_> {
@@ -68,23 +68,23 @@ impl StatedForm<'_> {
 /// message; without it the reader sees `v2` and an argument-memory expression.
 pub(in crate::surface::proof) struct StatedSite<'a> {
     form: StatedForm<'a>,
-    state: &'a CState,
-    values: &'a BTreeMap<String, CValue>,
+    state: &'a ExecutionState,
+    values: &'a BTreeMap<String, ProgramValue>,
     /// The `Integer` bindings in scope where the statement is written, which
     /// name a theorem's `Integer` binders.
     integer_values:
         Option<&'a crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>>,
     // Built only when a message is spelled: most lowerings raise nothing,
     // and one per resource clause must not cost every value in scope.
-    naming: std::cell::OnceCell<(Vec<syntax::C0Parameter>, Vec<CExpression>)>,
+    naming: std::cell::OnceCell<(Vec<syntax::C0Parameter>, Vec<ProgramExpression>)>,
 }
 
 impl<'a> StatedSite<'a> {
     /// The site of a lowering whose names come from a value environment.
     pub(in crate::surface::proof) fn new(
         form: StatedForm<'a>,
-        state: &'a CState,
-        values: &'a BTreeMap<String, CValue>,
+        state: &'a ExecutionState,
+        values: &'a BTreeMap<String, ProgramValue>,
     ) -> Self {
         Self {
             form,
@@ -131,7 +131,7 @@ impl<'a> StatedSite<'a> {
         labels
     }
 
-    fn naming(&self) -> &(Vec<syntax::C0Parameter>, Vec<CExpression>) {
+    fn naming(&self) -> &(Vec<syntax::C0Parameter>, Vec<ProgramExpression>) {
         self.naming
             .get_or_init(|| crate::surface::diagnostics::value_naming_tables(self.values))
     }
@@ -293,7 +293,7 @@ fn loadable_cell(surface: Option<&ClickProposition>) -> Option<Cell> {
     };
     let (base, start, _) = segment.surface_range()?;
     if constant_index(start) == Some(0)
-        && let ContractExpression::CFragment(CExpression::Add(pointer, index)) = base
+        && let ContractExpression::CFragment(ProgramExpression::Add(pointer, index)) = base
     {
         return Some(Cell {
             base: spelled_alone(&ContractExpression::CFragment(pointer.as_ref().clone())),
@@ -308,7 +308,9 @@ fn loadable_cell(surface: Option<&ClickProposition>) -> Option<Cell> {
 
 /// The constant an index expression is, when it is one.
 fn constant_index(expression: &ContractExpression) -> Option<u32> {
-    let ContractExpression::CFragment(CExpression::Value(CValue::Int32(term))) = expression else {
+    let ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(term))) =
+        expression
+    else {
         return None;
     };
     term.as_const()

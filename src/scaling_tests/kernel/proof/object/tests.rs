@@ -10,7 +10,8 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
         ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
     };
     use crate::kernel::{
-        CComparisonOperator, CLoopInvariantCheck, CState, CValue, SpecExpression, SpecProposition,
+        CComparisonOperator, CLoopInvariantCheck, ExecutionState, ProgramValue, SpecExpression,
+        SpecProposition,
     };
     type TestProof =
         ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ProofExecutionState<()>>;
@@ -30,15 +31,15 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
     let checks = [0, 1].map(|value| {
         CLoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(MachineTerm::constant(value))),
+                left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value))),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(value))),
+                right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value))),
             },
             None,
             None,
         )
     });
-    let entry = CState::new();
+    let entry = ExecutionState::new();
     let samples = [16, 32, 64, 128].map(|size| {
         let facts = ProofFacts::from_ordered(
             &(0..size)
@@ -49,7 +50,7 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
                 .collect::<Vec<_>>(),
         );
         let core = ExecutionProofCore::at_entry(
-            CState::new(),
+            ExecutionState::new(),
             ExecutionFrontier {
                 region: ExecutionRegionKind::LoopBody,
                 position: FrontierPosition::RegionBoundary,
@@ -107,7 +108,7 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
             let mut changed = core.clone();
             let mut changed_facts = facts.clone();
             match variant {
-                0 => changed.state = CState::new().into(),
+                0 => changed.state = ExecutionState::new().into(),
                 1 => changed.effect_facts = Vec::new().into(),
                 2 => {
                     changed_facts = facts.with_fact(Proposition::Predicate {
@@ -160,13 +161,14 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
     };
     use crate::kernel::{
-        CComparisonOperator, CLoopInvariantCheck, CState, CValue, SpecExpression, SpecProposition,
+        CComparisonOperator, CLoopInvariantCheck, ExecutionState, ProgramValue, SpecExpression,
+        SpecProposition,
     };
     type TestProof =
         ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ProofExecutionState<()>>;
     // One entry state: every snapshot below must be the very same state,
     // creation ledger included.
-    let entry = CState::new().with_population_creation_tracking();
+    let entry = ExecutionState::new().with_population_creation_tracking();
     let root = |facts: ProofFacts, core: ExecutionProofCore| -> TestProof {
         ProofObject::root(
             (),
@@ -183,9 +185,9 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
     let checks = vec![
         CLoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
+                left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
+                right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
             },
             None,
             None,
@@ -212,7 +214,9 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         )
         .with_fact(Proposition::Predicate {
             name: "invariant".into(),
-            arguments: vec![Term::CState(Box::new(entry.resource_state_snapshot()))],
+            arguments: vec![Term::ExecutionState(Box::new(
+                entry.resource_state_snapshot(),
+            ))],
         });
         let core = ExecutionProofCore::at_entry(
             entry.clone(),
@@ -263,9 +267,9 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         );
         let changed_checks = vec![CLoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(MachineTerm::constant(1))),
+                left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(1))),
+                right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
             },
             None,
             None,
@@ -285,7 +289,9 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         );
         let mut stale = core.clone();
         // Even an equal-valued replacement snapshot is not the saved one.
-        stale.state = CState::new().with_population_creation_tracking().into();
+        stale.state = ExecutionState::new()
+            .with_population_creation_tracking()
+            .into();
         assert!(
             root(facts.clone(), stale)
                 .validate_checked_invariant_lowerings(&checks, &[])
@@ -334,7 +340,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
 fn pure_match_value(variants_count: usize) -> crate::kernel::AlgebraicTerm {
     use crate::kernel::{
         AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValueType,
-        AlgebraicVariantType, CType,
+        AlgebraicVariantType, ProgramType,
     };
     let key = AlgebraicValueType::Algebraic {
         name: "PureMatchScaling".into(),
@@ -343,7 +349,7 @@ fn pure_match_value(variants_count: usize) -> crate::kernel::AlgebraicTerm {
     let variants: Arc<[AlgebraicVariantType]> = (0..variants_count)
         .map(|index| AlgebraicVariantType {
             name: format!("Case{index}"),
-            fields: vec![AlgebraicValueType::C(CType::Int32)],
+            fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
         })
         .collect::<Vec<_>>()
         .into();

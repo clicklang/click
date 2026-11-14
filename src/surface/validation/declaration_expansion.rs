@@ -86,7 +86,7 @@ impl DeclaredResourceScope {
             .enumerate()
             .map(|(index, argument)| {
                 let named = match &argument {
-                    ContractExpression::CFragment(CExpression::Variable(name))
+                    ContractExpression::CFragment(ProgramExpression::Variable(name))
                     | ContractExpression::Binding(name)
                     | ContractExpression::CBinding(name) => Some(name.as_str()),
                     _ => None,
@@ -1212,7 +1212,7 @@ fn expand_declared_resources_in_function_block(
         .filter(|parameter| {
             crate::surface::lowering::needs_character_byte_view(
                 parameter.c_type(),
-                crate::kernel::CType::UInt8Pointer,
+                crate::kernel::ProgramType::UInt8Pointer,
             )
         })
         .map(|parameter| parameter.name().to_string())
@@ -2137,7 +2137,9 @@ fn theorem_argument_is_value(argument: &ContractExpression) -> bool {
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::CFragment(CExpression::Value(_) | CExpression::Variable(_)) => true,
+        | ContractExpression::CFragment(
+            ProgramExpression::Value(_) | ProgramExpression::Variable(_),
+        ) => true,
         ContractExpression::AlgebraicConstructor { arguments, .. }
         | ContractExpression::SequenceLiteral(arguments) => {
             arguments.iter().all(theorem_argument_is_value)
@@ -2630,7 +2632,7 @@ fn classify_function_decrease(
         }
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name))
+        | ContractExpression::CFragment(ProgramExpression::Variable(name))
             if declared_binders.contains(name) =>
         {
             Ok(CFunctionDecrease::Binder(name.clone()))

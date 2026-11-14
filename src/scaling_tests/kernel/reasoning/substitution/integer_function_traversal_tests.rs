@@ -45,12 +45,12 @@ fn shared_integer_application_substitution_scales_with_dag_size() {
 #[test]
 fn public_integer_substitution_keeps_array_ref_snapshots_opaque() {
     let source = Variable(840);
-    let pointer = CValue::Pointer(CPointerValue::new(
+    let pointer = ProgramValue::Pointer(PointerValue::new(
         Pointer {
             block: PointerBlock::Symbolic(Variable(841)),
             offset: PointerOffsetTerm::Constant(0),
         },
-        CType::VoidPointer,
+        ProgramType::VoidPointer,
     ));
     let make_memory = |count: u64| {
         let mut memory = CMemory::new().with_block("array", 8);
@@ -69,7 +69,7 @@ fn public_integer_substitution_keeps_array_ref_snapshots_opaque() {
                         PureFunctionArgument::ArrayRef {
                             memory,
                             pointer: pointer.clone(),
-                            element_type: CType::UInt8,
+                            element_type: ProgramType::UInt8,
                         },
                     ],
                 ),

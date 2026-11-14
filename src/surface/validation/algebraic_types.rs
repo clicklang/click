@@ -127,7 +127,7 @@ impl AlgebraicVariables {
             }
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name)) => {
+            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
                 if let Some(nominal) = self.nominal_types.get(name) {
                     return Ok(Some(nominal.clone()));
                 }
@@ -598,7 +598,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 ContractExpression::Binding(variable)
                 | ContractExpression::CBinding(variable)
                 | ContractExpression::AlgebraicVariable { name: variable, .. }
-                | ContractExpression::CFragment(CExpression::Variable(variable)) => {
+                | ContractExpression::CFragment(ProgramExpression::Variable(variable)) => {
                     let (index, _) = constructor_bindings
                         .get(variable.as_str())
                         .filter(|(_, ty)| *ty == field.click_type())
@@ -2872,15 +2872,15 @@ fn validate_algebraic_expression_node(
         // A C name of a Rust enum's type holds that enum's value.
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) => Ok(variables
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => Ok(variables
             .get(name)
             .and_then(|c_type| AlgebraicTypeApplication::of_enum_c_type(*c_type))),
         // So does `*r` for a reference `r` to one.
-        ContractExpression::CFragment(CExpression::Load(pointer))
-            if matches!(pointer.as_ref(), CExpression::Variable(name)
+        ContractExpression::CFragment(ProgramExpression::Load(pointer))
+            if matches!(pointer.as_ref(), ProgramExpression::Variable(name)
                 if matches!(variables.get(name), Some(C0Type::ParameterPointer(_)))) =>
         {
-            let CExpression::Variable(name) = pointer.as_ref() else {
+            let ProgramExpression::Variable(name) = pointer.as_ref() else {
                 unreachable!()
             };
             let Some(C0Type::ParameterPointer(enum_type)) = variables.get(name) else {
@@ -3380,7 +3380,7 @@ fn infer_generic_expression_type(
         }
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) => {
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
             Ok(variables.get(name).cloned())
         }
         ContractExpression::QualifiedC { .. }

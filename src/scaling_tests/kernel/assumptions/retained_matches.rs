@@ -35,7 +35,7 @@ fn match_dependencies_visit_shared_arm_bodies_once() {
                 )
             })
             .collect();
-        let matched = KernelMatch::new(KernelType::C(CType::Int32), scrutinee, arms).unwrap();
+        let matched = KernelMatch::new(KernelType::C(ProgramType::Int32), scrutinee, arms).unwrap();
         let exports = KernelTermExport::machine_export_count();
         let ((result, loads), work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut loads = Vec::new();

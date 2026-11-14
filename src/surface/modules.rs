@@ -397,7 +397,7 @@ fn local_identities(file: &ClickFile) -> Vec<DeclarationIdentity> {
                 .map(|definition| DeclarationIdentity::Contract(definition.name().to_string())),
         )
         .chain(file.function_blocks().iter().map(|definition| {
-            DeclarationIdentity::CFunction(definition.signature().name().to_string())
+            DeclarationIdentity::ProgramFunction(definition.signature().name().to_string())
         }))
         .chain(
             file.tactic_definitions()

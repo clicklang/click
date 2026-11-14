@@ -3,7 +3,7 @@ fn shared_comparison_growing_prefixes_scale_linearly() {
     let measure = |count| {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let variable = |n| KernelTerm::variable(KernelType::C(CType::Int32), Variable(n));
+        let variable = |n| KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(n));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut root = variable(993000);

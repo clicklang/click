@@ -176,10 +176,10 @@ fn check_shift_parity(rust: bool) {
 #[test]
 fn c_shift_evaluator_retains_wide_count_refusals() {
     for op in OPS {
-        let left = Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::Variable(
+        let left = Box::new(SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
             Variable(995475),
         ))));
-        let right = Box::new(SpecExpression::Value(CValue::UInt64(
+        let right = Box::new(SpecExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(1 << 32),
         )));
         let expression = if op == MachineBinaryOp::ShiftLeft {
@@ -203,8 +203,8 @@ fn c_shift_evaluator_retains_wide_count_refusals() {
         let budget = SpecEvaluation::logical(&mut execution);
         let result = apply_values(
             Some(op),
-            &CValue::Int32(MachineTerm::constant(1)).into(),
-            &CValue::UInt64(MachineTerm::uint64_constant(1 << 32)).into(),
+            &ProgramValue::Int32(MachineTerm::constant(1)).into(),
+            &ProgramValue::UInt64(MachineTerm::uint64_constant(1 << 32)).into(),
             &budget,
         )
         .unwrap();
@@ -225,7 +225,7 @@ fn rust_shift_evaluator_retains_narrow_result_and_count_refusals() {
                 format.value_from_term(MachineTerm::Variable(Variable(995490))),
             );
             let count = || {
-                Box::new(SpecExpression::Value(CValue::UInt64(
+                Box::new(SpecExpression::Value(ProgramValue::UInt64(
                     MachineTerm::uint64_constant(1),
                 )))
             };
@@ -241,7 +241,7 @@ fn rust_shift_evaluator_retains_narrow_result_and_count_refusals() {
             let mut execution = ExecutionBudget::new();
             let exports = KernelTermExport::machine_export_count();
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                SpecScope::unbound(&CState::new(), None),
+                SpecScope::unbound(&ExecutionState::new(), None),
                 &expression,
                 &PureFactContext::new(),
                 &mut SpecEvaluation::logical(&mut execution),
@@ -255,7 +255,7 @@ fn rust_shift_evaluator_retains_narrow_result_and_count_refusals() {
             let value = format
                 .value_from_term(MachineTerm::Variable(Variable(995491)))
                 .into();
-            let count = CValue::UInt64(MachineTerm::uint64_constant(u64::from(
+            let count = ProgramValue::UInt64(MachineTerm::uint64_constant(u64::from(
                 format.format().bits(),
             )))
             .into();
@@ -268,8 +268,8 @@ fn rust_shift_evaluator_retains_narrow_result_and_count_refusals() {
             );
         }
     }
-    let wide = CValue::Int128(MachineTerm::Variable(Variable(995492))).into();
-    let word = CValue::Int32(MachineTerm::constant(1)).into();
+    let wide = ProgramValue::Int128(MachineTerm::Variable(Variable(995492))).into();
+    let word = ProgramValue::Int32(MachineTerm::constant(1)).into();
     assert!(shifts::rust(MachineBinaryOp::ShiftLeft, &wide, &word).is_none());
     assert!(shifts::rust(MachineBinaryOp::ShiftLeft, &word, &wide).is_none());
 }

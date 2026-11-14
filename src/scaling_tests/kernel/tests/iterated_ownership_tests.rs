@@ -80,8 +80,8 @@ fn unfolding_the_declaring_resource_is_constant_in_the_range_size() {
         let folded = CResourceFact::own(CResource::Composite {
             name: "cells".into(),
             arguments: vec![
-                CValue::pointer(heap_base(DATA)).into(),
-                CValue::pointer(heap_base(OCCUPIED)).into(),
+                ProgramValue::pointer(heap_base(DATA)).into(),
+                ProgramValue::pointer(heap_base(OCCUPIED)).into(),
                 int32(size).into(),
             ]
             .into(),
@@ -142,7 +142,7 @@ fn giving_one_element_is_constant_in_the_range_size() {
 
 /// `cells_state` beside `unrelated` owned ranges, one per other block: the
 /// ambient holdings a simple step must not scan.
-fn cells_state_beside_unrelated_ranges(capacity: u32, unrelated: u32) -> CState {
+fn cells_state_beside_unrelated_ranges(capacity: u32, unrelated: u32) -> ExecutionState {
     let state = cells_state(capacity, capacity);
     let resources = (0..unrelated).fold(state.resources().clone(), |resources, index| {
         resources.unchecked_with_fact(CResourceFact::own_memory(range(

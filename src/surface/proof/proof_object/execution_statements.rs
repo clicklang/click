@@ -100,7 +100,9 @@ mod ranking_diagnostic_tests {
         let component = crate::kernel::CRankingComponent::PureInteger {
             source: key,
             expression: crate::kernel::SpecIntegerExpression::FromMachine(Box::new(
-                crate::kernel::SpecExpression::CExpression(crate::kernel::c_uint32_literal(1)),
+                crate::kernel::SpecExpression::ProgramExpression(crate::kernel::c_uint32_literal(
+                    1,
+                )),
             )),
         };
         let mut bundle = InvariantBodyContext {
@@ -149,7 +151,7 @@ fn c_branch_condition_at_frontier(
         return Ok(None);
     };
     let Ok((
-        CStatement::If {
+        ProgramStatement::If {
             condition: source, ..
         },
         _,
@@ -387,7 +389,7 @@ impl<'a> Proof<'a> {
         let context = self.execution_context()?;
         let execution = self.execution()?;
         let bundle = context.constants.invariant_body_context.as_deref()?;
-        let synthesize_at = |state: &CState, selector: &SnapshotSelector| {
+        let synthesize_at = |state: &ExecutionState, selector: &SnapshotSelector| {
             let synthesize = || {
                 crate::surface::proof::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_snapshot(
                     goal,
@@ -481,11 +483,11 @@ impl<'a> Proof<'a> {
             "step",
         )?;
         match statement {
-            CStatement::Assign { name, .. } if assignment => Ok(FrontierResult::Local(name)),
-            CStatement::CallAssign { target, .. } if !assignment => {
+            ProgramStatement::Assign { name, .. } if assignment => Ok(FrontierResult::Local(name)),
+            ProgramStatement::CallAssign { target, .. } if !assignment => {
                 Ok(FrontierResult::Local(target))
             }
-            CStatement::CallResult { call, .. } if !assignment => Ok(FrontierResult::Call(call)),
+            ProgramStatement::CallResult { call, .. } if !assignment => Ok(FrontierResult::Call(call)),
             _ if assignment => Err(self.step_error(format!(
                 "`let {{ result: {name} }} = step()` requires a scalar assignment at the frontier"
             ))),
@@ -503,7 +505,7 @@ impl<'a> Proof<'a> {
         context: &ExecutionProofContext<'_>,
         expression: &ContractExpression,
         what: &str,
-    ) -> Result<CValue, ClickError> {
+    ) -> Result<ProgramValue, ClickError> {
         let execution = self
             .execution()
             .ok_or_else(|| self.step_error(format!("{what} needs an execution state")))?;
@@ -847,7 +849,7 @@ impl<'a> Proof<'a> {
                     )?;
                     produced_arguments.push((
                         name.clone(),
-                        ContractExpression::CFragment(CExpression::Value(value)),
+                        ContractExpression::CFragment(ProgramExpression::Value(value)),
                     ));
                 }
             }
@@ -912,7 +914,7 @@ impl<'a> Proof<'a> {
                 })?;
                 Some((
                     name.clone(),
-                    ContractExpression::CFragment(CExpression::Value(value)),
+                    ContractExpression::CFragment(ProgramExpression::Value(value)),
                 ))
             }
             None => None,
@@ -1017,7 +1019,7 @@ impl<'a> Proof<'a> {
             if parameter.c_type().is_pointer()
                 && matches!(&argument, ContractExpression::IntegerLiteral(text) if text == "0")
             {
-                arguments.push(CValue::typed_pointer(
+                arguments.push(ProgramValue::typed_pointer(
                     crate::kernel::Pointer::null(),
                     parameter.c_type(),
                 ));
@@ -1132,23 +1134,23 @@ impl<'a> Proof<'a> {
         let mut operation = remaining;
         loop {
             operation = match operation {
-                Some(CStatement::Seq(statements)) => Some(statements.first()),
-                Some(CStatement::TryCatchInt32 { try_body, .. }) => Some(try_body.as_ref()),
+                Some(ProgramStatement::Seq(statements)) => Some(statements.first()),
+                Some(ProgramStatement::TryCatchInt32 { try_body, .. }) => Some(try_body.as_ref()),
                 _ => break,
             };
             crate::instrumentation::record_deterministic_work(1);
         }
         let call = operation.and_then(|statement| match statement {
-            CStatement::Call {
+            ProgramStatement::Call {
                 function_name,
                 arguments,
             }
-            | CStatement::CallAssign {
+            | ProgramStatement::CallAssign {
                 function_name,
                 arguments,
                 ..
             }
-            | CStatement::CallResult {
+            | ProgramStatement::CallResult {
                 function_name,
                 arguments,
                 ..
@@ -1535,10 +1537,10 @@ impl<'a> Proof<'a> {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::surface::proof) fn check_loop_state_join(
         &self,
-        loop_entry_state: &CState,
-        loop_head_state: &CState,
+        loop_entry_state: &ExecutionState,
+        loop_head_state: &ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        condition: &CExpression,
+        condition: &ProgramExpression,
         invariant_checks: &[CLoopInvariantCheck],
         binders: &[crate::kernel::CLoopBinder],
         structural_measure: Option<&str>,
@@ -2049,7 +2051,7 @@ pub fn without_implicit_solve<R>(operation: impl FnOnce() -> R) -> R {
 /// name and argument expressions.
 struct FrontierCall {
     callee: String,
-    arguments: Vec<CExpression>,
+    arguments: Vec<ProgramExpression>,
 }
 
 /// The descent member of a ranked loop as its `decreases` clause writes it:

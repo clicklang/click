@@ -42,9 +42,9 @@ impl<'a> Proof<'a> {
         goal: Proposition,
         surface_goal: ClickProposition,
         parameter_binding: ParameterBinding<'a>,
-        entry: &'a CState,
-        post: &'a CState,
-        result: Option<&'a CValue>,
+        entry: &'a ExecutionState,
+        post: &'a ExecutionState,
+        result: Option<&'a ProgramValue>,
         snapshots: &'a RecordedSnapshots,
         surfaces: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,
@@ -297,7 +297,7 @@ impl<'a> Proof<'a> {
         structural_induction_setup: Option<PureStructuralInductionBranchSetup>,
     ) -> Self {
         let mut ambient_variables = std::collections::BTreeSet::new();
-        let mut source_state = CState::new().with_memory(theorem_context.memory.clone());
+        let mut source_state = ExecutionState::new().with_memory(theorem_context.memory.clone());
         for (name, value) in &theorem_context.values {
             crate::kernel::collect_c_value_bitvector_variables(value, &mut ambient_variables);
             source_state = source_state.with_local(name.clone(), value.clone());
@@ -358,8 +358,8 @@ impl<'a> Proof<'a> {
         available: &'a [Proposition],
         goal: Proposition,
         parameter_binding: ParameterBinding<'a>,
-        pre_state: &'a CState,
-        state: &'a CState,
+        pre_state: &'a ExecutionState,
+        state: &'a ExecutionState,
         recorded_snapshots: &'a RecordedSnapshots,
         surface_propositions: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,
@@ -394,8 +394,8 @@ impl<'a> Proof<'a> {
         goal: Proposition,
         surface_goal: ClickProposition,
         parameter_binding: ParameterBinding<'a>,
-        pre_state: &'a CState,
-        state: &'a CState,
+        pre_state: &'a ExecutionState,
+        state: &'a ExecutionState,
         recorded_snapshots: &'a RecordedSnapshots,
         surface_propositions: &'a SurfacePropositionMap,
         spec_definitions: SpecDefinitions<'a>,

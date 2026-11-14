@@ -162,13 +162,13 @@ mod tests {
     fn retained_machine_match_readers_preserve_declaration_and_connection_rules() {
         let native = MachineTerm::AlgebraicMatch {
             scrutinee: Box::new(KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(
-                CType::Int32,
+                ProgramType::Int32,
             )])),
             arms: vec![AlgebraicBitvectorMatchArm {
                 variant: "Arm".into(),
-                bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-                    Variable(2),
-                )))],
+                bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                    MachineTerm::Variable(Variable(2)),
+                ))],
                 binding_names: Default::default(),
                 body: MachineTerm::Binary {
                     format: MachineIntegerType::Int32,

@@ -124,7 +124,9 @@ fn shared_scalar_premise_selection_keeps_written_truth() {
 
 #[test]
 fn promoted_call_endpoint_keys_preserve_typed_argument_identity() {
-    use crate::kernel::{CValue, KernelTermExport, PureFunctionArgument, VerificationSession};
+    use crate::kernel::{
+        KernelTermExport, ProgramValue, PureFunctionArgument, VerificationSession,
+    };
     let _session = VerificationSession::enter();
     let argument = MachineTerm::uint64_constant(7);
     let shared = SharedMachineIntegerTerm::intern(MachineIntegerType::UInt64, argument.clone());
@@ -132,7 +134,7 @@ fn promoted_call_endpoint_keys_preserve_typed_argument_identity() {
         name: "promoted_digit".into(),
         arguments: vec![argument],
     };
-    let native = call(PureFunctionArgument::Value(CValue::UInt64(argument)));
+    let native = call(PureFunctionArgument::Value(ProgramValue::UInt64(argument)));
     let retained = call(PureFunctionArgument::SharedMachine(shared));
     let promote = |value| {
         MachineTerm::machine_integer_cast(
@@ -152,18 +154,18 @@ fn promoted_call_endpoint_keys_preserve_typed_argument_identity() {
         ScalarOperandKey::new(MachineOperandView::Shared(&root))
     );
     assert_eq!(KernelTermExport::machine_export_count(), exports);
-    let different = promote(call(PureFunctionArgument::Value(CValue::UInt64(
+    let different = promote(call(PureFunctionArgument::Value(ProgramValue::UInt64(
         MachineTerm::uint64_constant(8),
     ))));
     assert_ne!(key(&native), key(&different));
-    let different_sort = promote(call(PureFunctionArgument::Value(CValue::Int64(
+    let different_sort = promote(call(PureFunctionArgument::Value(ProgramValue::Int64(
         MachineTerm::int64_constant(7),
     ))));
     assert_ne!(key(&native), key(&different_sort));
     let different_cast = MachineTerm::machine_integer_cast(
         MachineIntegerType::Int8,
         MachineIntegerType::Int32,
-        call(PureFunctionArgument::Value(CValue::UInt64(
+        call(PureFunctionArgument::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(7),
         ))),
     );
@@ -172,7 +174,9 @@ fn promoted_call_endpoint_keys_preserve_typed_argument_identity() {
 
 #[test]
 fn arithmetic_call_endpoint_keys_preserve_argument_identity_and_opaque_refusal() {
-    use crate::kernel::{CValue, KernelTermExport, PureFunctionArgument, VerificationSession};
+    use crate::kernel::{
+        KernelTermExport, ProgramValue, PureFunctionArgument, VerificationSession,
+    };
     let _session = VerificationSession::enter();
     let call = |shared| MachineTerm::ClickFunctionApplication {
         name: "arithmetic_digit".into(),
@@ -182,7 +186,7 @@ fn arithmetic_call_endpoint_keys_preserve_argument_identity_and_opaque_refusal()
                 MachineTerm::uint64_constant(7),
             ))
         } else {
-            PureFunctionArgument::Value(CValue::UInt64(MachineTerm::uint64_constant(7)))
+            PureFunctionArgument::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(7)))
         }],
     };
     let promote = |value| {
@@ -245,7 +249,7 @@ fn opaque_call_endpoint_observation_is_linear_cold_and_constant_warm() {
         let _session = crate::kernel::VerificationSession::enter();
         let call = MachineTerm::ClickFunctionApplication {
             name: "shared_endpoint_leaf".into(),
-            arguments: vec![PureFunctionArgument::Value(CValue::Int32(
+            arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::constant(7),
             ))],
         };

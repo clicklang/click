@@ -97,7 +97,7 @@ impl Drop for Binding {
 pub(super) fn raise_fold(
     fold: &KernelFold,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<SurfaceTerm> {
     raise_parts(
@@ -113,7 +113,7 @@ pub(super) fn raise_fold(
 pub(super) fn raise_machine_fold(
     term: &MachineTerm,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<SurfaceTerm> {
     let MachineTerm::RangeFold {

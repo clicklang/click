@@ -1660,7 +1660,7 @@ mod retained_cycle_tests {
     fn shared_cycles_preserve_strictness_polarity_and_finite_range_boundary() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let variable = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995301));
+        let variable = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(995301));
         let root = KernelTerm::machine_binary_shared(
             ty,
             MachineBinaryOp::Multiply,

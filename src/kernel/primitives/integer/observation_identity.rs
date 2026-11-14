@@ -17,16 +17,16 @@ fn machine_payload(term: &KernelTerm) -> Option<&MachineTerm> {
         && let PureFunctionArgument::Value(value) = value.value()
     {
         return match value {
-            CValue::Int8(value)
-            | CValue::UInt8(value)
-            | CValue::Int16(value)
-            | CValue::UInt16(value)
-            | CValue::Int32(value)
-            | CValue::UInt32(value)
-            | CValue::Int64(value)
-            | CValue::UInt64(value)
-            | CValue::Int128(value)
-            | CValue::UInt128(value) => Some(value),
+            ProgramValue::Int8(value)
+            | ProgramValue::UInt8(value)
+            | ProgramValue::Int16(value)
+            | ProgramValue::UInt16(value)
+            | ProgramValue::Int32(value)
+            | ProgramValue::UInt32(value)
+            | ProgramValue::Int64(value)
+            | ProgramValue::UInt64(value)
+            | ProgramValue::Int128(value)
+            | ProgramValue::UInt128(value) => Some(value),
             _ => None,
         };
     }
@@ -263,7 +263,7 @@ mod recursive_call_tests {
             name: "math_guard_length".into(),
             arguments: vec![argument],
         };
-        let native = call(PureFunctionArgument::Value(CValue::UInt64(argument)));
+        let native = call(PureFunctionArgument::Value(ProgramValue::UInt64(argument)));
         let retained = call(PureFunctionArgument::SharedMachine(shared));
         let guard = |call: &MachineTerm| {
             let observation = KernelTerm::intern(
@@ -316,7 +316,7 @@ mod recursive_call_tests {
             KernelTermExport::condition(&shared_guard).unwrap(),
             shared_written
         );
-        let different = guard(&call(PureFunctionArgument::Value(CValue::UInt64(
+        let different = guard(&call(PureFunctionArgument::Value(ProgramValue::UInt64(
             MachineTerm::constant(8),
         ))));
         assert_ne!(normalize(&native_guard), normalize(&different));
@@ -358,7 +358,7 @@ mod recursive_call_tests {
             name: "exact_call_carriers".into(),
             arguments,
         };
-        let native_argument = PureFunctionArgument::Value(CValue::Int32(argument));
+        let native_argument = PureFunctionArgument::Value(ProgramValue::Int32(argument));
         let shared_argument = PureFunctionArgument::SharedMachine(retained);
         let marker = PureFunctionArgument::Integer(IntegerTerm::constant(9.into()).into());
         let native = call(vec![native_argument.clone(), marker.clone()]);
@@ -377,7 +377,7 @@ mod recursive_call_tests {
             SharedMachineIntegerTerm::intern(format, call(vec![marker, shared_argument]))
         );
         let different_argument_sort = call(vec![
-            PureFunctionArgument::Value(CValue::UInt32(MachineTerm::constant(7))),
+            PureFunctionArgument::Value(ProgramValue::UInt32(MachineTerm::constant(7))),
             PureFunctionArgument::Integer(IntegerTerm::constant(9.into()).into()),
         ]);
         assert_ne!(

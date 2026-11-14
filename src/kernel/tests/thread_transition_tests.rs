@@ -15,7 +15,7 @@ fn range(index: usize, start: u32, end: u32) -> CMemoryRange {
     CMemoryRange::new(pointer(index), start.into(), end.into())
 }
 
-fn parent(size: usize) -> CState {
+fn parent(size: usize) -> ExecutionState {
     let mut memory = CMemory::new();
     let mut resources = ResourceContext::new();
     for index in 0..size {
@@ -24,14 +24,14 @@ fn parent(size: usize) -> CState {
             .store(pointer(index), int32(0));
         resources = resources.unchecked_with_fact(CResourceFact::own_memory(range(index, 0, 2)));
     }
-    CState::new()
+    ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(memory)
         .with_resource_context(resources)
 }
 
-fn byte_parent() -> CState {
-    CState::new()
+fn byte_parent() -> ExecutionState {
+    ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
             CMemory::new()
@@ -60,9 +60,9 @@ fn worker() -> (CVerifiedFunctionRule, CVerifiedFunctionTerminationRule) {
         c_int32_literal(2),
     ));
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "thread_worker",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_seq(
             c_store(c_variable("p"), c_int32_literal(77)),
             c_return(c_int32_literal(7)),
@@ -74,8 +74,8 @@ fn worker() -> (CVerifiedFunctionRule, CVerifiedFunctionTerminationRule) {
         vec![SpecProposition::Comparison {
             left: SpecExpression::MemoryLoad {
                 memory: SpecMemory::Current,
-                pointer: Box::new(SpecExpression::CExpression(c_variable("p"))),
-                value_type: CType::Int32,
+                pointer: Box::new(SpecExpression::ProgramExpression(c_variable("p"))),
+                value_type: ProgramType::Int32,
             },
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(77)),
@@ -93,13 +93,13 @@ fn worker() -> (CVerifiedFunctionRule, CVerifiedFunctionTerminationRule) {
 }
 
 fn certify_worker(
-    function: CFunction,
+    function: ProgramFunction,
 ) -> (CVerifiedFunctionRule, CVerifiedFunctionTerminationRule) {
     let argument = if matches!(
         function.parameters()[0].c_type(),
-        CType::UInt8Pointer | CType::VoidPointer
+        ProgramType::UInt8Pointer | ProgramType::VoidPointer
     ) {
-        CExpression::Value(CValue::typed_pointer(
+        ProgramExpression::Value(ProgramValue::typed_pointer(
             pointer(0),
             function.parameters()[0].c_type(),
         ))
@@ -108,7 +108,7 @@ fn certify_worker(
     };
     let certification_parent = if matches!(
         function.parameters()[0].c_type(),
-        CType::UInt8Pointer | CType::VoidPointer
+        ProgramType::UInt8Pointer | ProgramType::VoidPointer
     ) {
         byte_parent()
     } else {
@@ -156,7 +156,7 @@ fn modeled_pthread_calls_cannot_fall_back_to_ordinary_function_rules() {
             crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
         ))
         .with_function(c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "pthread_create",
             vec![],
             c_return(c_int32_literal(0)),
@@ -166,7 +166,7 @@ fn modeled_pthread_calls_cannot_fall_back_to_ordinary_function_rules() {
         c_call("pthread_create", vec![]),
     ] {
         let paths = execute_c_statement_paths(
-            &CState::new(),
+            &ExecutionState::new(),
             &statement,
             &PureFactContext::new(),
             CExecutionContext::execute_bodies(&environment),
@@ -193,7 +193,7 @@ fn spawn(
         .spawn(
             worker,
             Some(termination),
-            CValue::pointer(pointer(index)),
+            ProgramValue::pointer(pointer(index)),
             &PureFactContext::new(),
             &CExecutionEnvironment::new(),
             budget,
@@ -216,7 +216,7 @@ fn completion_right_survives_an_unrelated_c_statement_in_path_state() {
     );
     let paths = execute_c_statement_paths(
         spawned.parent(),
-        &c_declare("unrelated", CType::Int32),
+        &c_declare("unrelated", ProgramType::Int32),
         &PureFactContext::new(),
         CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
@@ -305,7 +305,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
             "status",
             "pthread_join",
             vec![
-                CExpression::Value(handle.c_value()),
+                ProgramExpression::Value(handle.c_value()),
                 c_pointer_value(Pointer::null()),
             ],
         )
@@ -413,17 +413,17 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
             .with_element_width(1),
     );
     let function = c_function(
-        CType::VoidPointer,
+        ProgramType::VoidPointer,
         "byte_worker",
-        vec![c_parameter("p", CType::VoidPointer)],
+        vec![c_parameter("p", ProgramType::VoidPointer)],
         c_seq(
             c_store(
-                c_cast(c_variable("p"), CType::UInt8Pointer),
+                c_cast(c_variable("p"), ProgramType::UInt8Pointer),
                 c_uint8_literal(77),
             ),
-            c_return(CExpression::Value(CValue::typed_pointer(
+            c_return(ProgramExpression::Value(ProgramValue::typed_pointer(
                 Pointer::null(),
-                CType::VoidPointer,
+                ProgramType::VoidPointer,
             ))),
         ),
     )
@@ -461,8 +461,8 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
             .store(pointer(1), int32(0)),
     );
     for declaration in [
-        c_declare("thread", CType::UInt64),
-        c_declare("rc", CType::Int32),
+        c_declare("thread", ProgramType::UInt64),
+        c_declare("rc", ProgramType::Int32),
     ] {
         let paths = execute_c_statement_paths(
             &state,
@@ -496,7 +496,10 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
             c_addr_of("thread"),
             c_pointer_value(Pointer::null()),
             c_function_address("byte_worker"),
-            CExpression::Value(CValue::typed_pointer(pointer(0), CType::VoidPointer)),
+            ProgramExpression::Value(ProgramValue::typed_pointer(
+                pointer(0),
+                ProgramType::VoidPointer,
+            )),
         ],
     );
     let paths = execute_c_statement_paths(
@@ -515,10 +518,13 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     };
     assert!(pending.pending_thread_create.is_some());
     assert!(pending.locals.is_uninitialized_object("thread"));
-    let external_store = |index, value, value_type, pointer_type| CStatement::TypedStore {
+    let external_store = |index, value, value_type, pointer_type| ProgramStatement::TypedStore {
         access_class: None,
-        pointer: CExpression::Value(CValue::typed_pointer(pointer(index), pointer_type)),
-        value: CExpression::Value(value),
+        pointer: ProgramExpression::Value(ProgramValue::typed_pointer(
+            pointer(index),
+            pointer_type,
+        )),
+        value: ProgramExpression::Value(value),
         value_type,
         volatile: false,
         pointee_constant: false,
@@ -528,14 +534,14 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         external_store(
             0,
             crate::kernel::uint8(5),
-            CType::UInt8,
-            CType::UInt8Pointer,
+            ProgramType::UInt8,
+            ProgramType::UInt8Pointer,
         ),
-        CStatement::TypedStore {
+        ProgramStatement::TypedStore {
             access_class: None,
             pointer: c_addr_of("thread"),
             value: c_uint64_literal(123),
-            value_type: CType::UInt64,
+            value_type: ProgramType::UInt64,
             volatile: false,
             pointee_constant: false,
             source: Default::default(),
@@ -553,7 +559,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     }
     let stored = execute_c_statement_paths(
         pending,
-        &external_store(1, int32(7), CType::Int32, CType::Int32Pointer),
+        &external_store(1, int32(7), ProgramType::Int32, ProgramType::Int32Pointer),
         &PureFactContext::new(),
         CExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
@@ -564,9 +570,9 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     };
     assert!(delayed.pending_thread_create.is_some());
     for statement in [
-        c_declare("saved", CType::Int32),
+        c_declare("saved", ProgramType::Int32),
         c_assign("saved", c_variable("rc")),
-        c_declare("unrelated", CType::Int32),
+        c_declare("unrelated", ProgramType::Int32),
         c_assign("unrelated", c_int32_literal(7)),
     ] {
         let paths = execute_c_statement_paths(
@@ -625,7 +631,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     // its own driver, which evaluated the condition before any gate.
     let memory_branch = c_if(
         c_not_equal(
-            c_load(CExpression::Value(CValue::pointer(pointer(1)))),
+            c_load(ProgramExpression::Value(ProgramValue::pointer(pointer(1)))),
             c_int32_literal(0),
         ),
         c_skip(),
@@ -784,8 +790,8 @@ fn modeled_pthread_create_refuses_a_wrong_worker_abi() {
         .with_verified_function_termination_rules([termination]);
     let mut state = parent(1);
     for declaration in [
-        c_declare("thread", CType::UInt64),
-        c_declare("rc", CType::Int32),
+        c_declare("thread", ProgramType::UInt64),
+        c_declare("rc", ProgramType::Int32),
     ] {
         let paths = execute_c_statement_paths(
             &state,
@@ -917,7 +923,7 @@ fn thread_failed_creation_and_rejected_spawn_preserve_parent() {
         .prepare_create(
             &worker,
             Some(&termination),
-            CValue::pointer(pointer(0)),
+            ProgramValue::pointer(pointer(0)),
             &PureFactContext::new(),
             &CExecutionEnvironment::new(),
             &mut budget,
@@ -930,7 +936,7 @@ fn thread_failed_creation_and_rejected_spawn_preserve_parent() {
         .prepare_create(
             &worker,
             Some(&termination),
-            CValue::pointer(pointer(1)),
+            ProgramValue::pointer(pointer(1)),
             &PureFactContext::new(),
             &CExecutionEnvironment::new(),
             &mut budget,
@@ -945,7 +951,7 @@ fn thread_failed_creation_and_rejected_spawn_preserve_parent() {
             .prepare_create(
                 &worker,
                 Some(&termination),
-                CValue::pointer(pointer(0)),
+                ProgramValue::pointer(pointer(0)),
                 &PureFactContext::new(),
                 &CExecutionEnvironment::new(),
                 &mut budget,
@@ -991,7 +997,7 @@ fn thread_spawn_requires_exact_termination_evidence() {
     let parent = ThreadContext::new(parent(1)).unwrap();
     let mut wrong = termination.clone();
     wrong.function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "thread_worker",
         vec![],
         c_return(c_void_value()),
@@ -1002,7 +1008,7 @@ fn thread_spawn_requires_exact_termination_evidence() {
                 .spawn(
                     &worker,
                     evidence,
-                    CValue::pointer(pointer(0)),
+                    ProgramValue::pointer(pointer(0)),
                     &PureFactContext::new(),
                     &CExecutionEnvironment::new(),
                     &mut ExecutionBudget::new(),
@@ -1022,7 +1028,7 @@ fn thread_empty_or_ambiguous_worker_frontier_is_a_refusal() {
     let completion = suspend_verified_worker(
         parent.parent(),
         &worker,
-        CValue::pointer(pointer(0)),
+        ProgramValue::pointer(pointer(0)),
         &PureFactContext::new(),
         &CExecutionEnvironment::new(),
         &mut ExecutionBudget::new(),
@@ -1036,7 +1042,7 @@ fn thread_empty_or_ambiguous_worker_frontier_is_a_refusal() {
             .prepare_create(
                 &worker,
                 None,
-                CValue::pointer(pointer(0)),
+                ProgramValue::pointer(pointer(0)),
                 &PureFactContext::new(),
                 &CExecutionEnvironment::new(),
                 &mut ExecutionBudget::new(),
@@ -1055,7 +1061,7 @@ fn thread_guarantees_are_withheld_until_join() {
         .spawn(
             &worker,
             Some(&termination),
-            CValue::pointer(pointer(0)),
+            ProgramValue::pointer(pointer(0)),
             &PureFactContext::new(),
             &CExecutionEnvironment::new(),
             &mut ExecutionBudget::new(),
@@ -1104,9 +1110,9 @@ fn thread_guarantees_are_withheld_until_join() {
 #[test]
 fn thread_reborrowed_view_stays_pinned_until_child_joins() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "thread_reader",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
@@ -1204,9 +1210,9 @@ fn thread_reborrowed_view_stays_pinned_until_child_joins() {
 #[test]
 fn two_workers_share_one_implicit_local_root_until_both_join() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "thread_reader",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
@@ -1230,7 +1236,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let view = CResourceFact::view_memory(CMemoryRange::new(local.clone(), 0.into(), 1.into()));
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
             CMemory::new()
@@ -1244,7 +1250,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
             .spawn(
                 &reader,
                 Some(&termination),
-                CValue::pointer(local.clone()),
+                ProgramValue::pointer(local.clone()),
                 &PureFactContext::new(),
                 &CExecutionEnvironment::new(),
                 &mut budget,
@@ -1263,7 +1269,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
             .spawn(
                 &reader,
                 Some(&termination),
-                CValue::pointer(local.clone()),
+                ProgramValue::pointer(local.clone()),
                 &PureFactContext::new(),
                 &CExecutionEnvironment::new(),
                 &mut budget,
@@ -1333,9 +1339,9 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
 #[test]
 fn two_workers_recover_one_escrowed_owner_only_after_both_join() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "thread_reader",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
@@ -1363,7 +1369,7 @@ fn two_workers_recover_one_escrowed_owner_only_after_both_join() {
         .prepare_create(
             &reader,
             Some(&termination),
-            CValue::pointer(pointer(0)),
+            ProgramValue::pointer(pointer(0)),
             &PureFactContext::new(),
             &CExecutionEnvironment::new(),
             &mut ExecutionBudget::new(),
@@ -1456,9 +1462,9 @@ fn two_workers_recover_one_escrowed_owner_only_after_both_join() {
 #[test]
 fn shared_reader_completion_right_is_consumed_once_on_its_own_path() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "thread_reader",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
@@ -1560,9 +1566,9 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
         ),
     ] {
         let accessor = c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "parent_access",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![c_parameter("p", ProgramType::Int32Pointer)],
             body,
         );
         for (state, accessible) in [(spawned.parent(), false), (joined.parent(), true)] {
@@ -1600,7 +1606,7 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_population_creation_tracking()
             .with_memory(CMemory::new().with_block(local.block.clone(), 8))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -1612,7 +1618,7 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
                 .spawn(
                     &worker,
                     Some(&termination),
-                    CValue::pointer(local),
+                    ProgramValue::pointer(local),
                     &PureFactContext::new(),
                     &CExecutionEnvironment::new(),
                     &mut ExecutionBudget::new(),
@@ -1626,9 +1632,9 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
 #[test]
 fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     let reader = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "local_job_reader",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
@@ -1648,8 +1654,8 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     );
     let (reader, termination) = certify_worker(reader);
     let mut declaration = crate::kernel::eval::execute_c_statement_paths(
-        &CState::new().with_population_creation_tracking(),
-        &c_declare("job", CType::Int32Array(2)),
+        &ExecutionState::new().with_population_creation_tracking(),
+        &c_declare("job", ProgramType::Int32Array(2)),
         &PureFactContext::new(),
         CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
@@ -1668,7 +1674,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         .spawn(
             &reader,
             Some(&termination),
-            CValue::pointer(local.clone()),
+            ProgramValue::pointer(local.clone()),
             &PureFactContext::new(),
             &CExecutionEnvironment::new(),
             &mut ExecutionBudget::new(),
@@ -1747,9 +1753,9 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         ));
     }
     let writer = c_function(
-        CType::Void,
+        ProgramType::Void,
         "alias_write",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_store(c_variable("p"), c_int32_literal(7)),
     );
     let theorem = prove_symbolic_c_function_execution_with_environment(

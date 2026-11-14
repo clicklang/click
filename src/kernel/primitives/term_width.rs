@@ -8,7 +8,7 @@
 //! 32-bit carrier, and floats ride in the carrier of their bit width.
 //!
 //! This module infers that implied width and reports where a term disagrees
-//! with itself, with its `CValue` tag, or with the comparison it sits in. It
+//! with itself, with its `ProgramValue` tag, or with the comparison it sits in. It
 //! changes no representation: the rulings in `design/typed-indices.md`
 //! explain why the width stays implied and is checked here instead.
 
@@ -63,16 +63,22 @@ impl CarrierWidth {
 
     /// The carrier a value of this tag occupies, or `None` for a value that
     /// is not a machine scalar.
-    pub(crate) fn of_value(value: &CValue) -> Option<Self> {
+    pub(crate) fn of_value(value: &ProgramValue) -> Option<Self> {
         Some(match value.numeric_value() {
-            CValue::PointerInteger(_) => unreachable!("numeric projection"),
+            ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
             // A `Bool` travels as its 8-bit cast `b as uint8` (rule C1).
-            CValue::Bool(_) | CValue::Int8(_) | CValue::UInt8(_) => Self::Bits8,
-            CValue::Int16(_) | CValue::UInt16(_) => Self::Bits16,
-            CValue::Int32(_) | CValue::UInt32(_) | CValue::Float32(_) => Self::Bits32,
-            CValue::Int64(_) | CValue::UInt64(_) | CValue::Float64(_) => Self::Bits64,
-            CValue::Int128(_) | CValue::UInt128(_) => Self::Bits128,
-            CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => return None,
+            ProgramValue::Bool(_) | ProgramValue::Int8(_) | ProgramValue::UInt8(_) => Self::Bits8,
+            ProgramValue::Int16(_) | ProgramValue::UInt16(_) => Self::Bits16,
+            ProgramValue::Int32(_) | ProgramValue::UInt32(_) | ProgramValue::Float32(_) => {
+                Self::Bits32
+            }
+            ProgramValue::Int64(_) | ProgramValue::UInt64(_) | ProgramValue::Float64(_) => {
+                Self::Bits64
+            }
+            ProgramValue::Int128(_) | ProgramValue::UInt128(_) => Self::Bits128,
+            ProgramValue::Void | ProgramValue::Pointer(_) | ProgramValue::Parameter(_) => {
+                return None;
+            }
         })
     }
 }
@@ -433,25 +439,25 @@ pub(crate) fn root_width(term: &MachineTerm) -> Option<CarrierWidth> {
     })
 }
 
-/// Where a `CValue`'s term disagrees with its tag or with itself.
-pub(crate) fn value_width_mismatch(value: &CValue) -> Option<WidthMismatch> {
+/// Where a `ProgramValue`'s term disagrees with its tag or with itself.
+pub(crate) fn value_width_mismatch(value: &ProgramValue) -> Option<WidthMismatch> {
     let expected = CarrierWidth::of_value(value)?;
     let term = match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => return None,
-        CValue::Bool(term)
-        | CValue::Int8(term)
-        | CValue::Int16(term)
-        | CValue::Int32(term)
-        | CValue::UInt8(term)
-        | CValue::UInt16(term)
-        | CValue::UInt32(term)
-        | CValue::Int64(term)
-        | CValue::UInt64(term)
-        | CValue::Int128(term)
-        | CValue::UInt128(term)
-        | CValue::Float32(term)
-        | CValue::Float64(term) => term,
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Void | ProgramValue::Pointer(_) | ProgramValue::Parameter(_) => return None,
+        ProgramValue::Bool(term)
+        | ProgramValue::Int8(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::Int32(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::UInt16(term)
+        | ProgramValue::UInt32(term)
+        | ProgramValue::Int64(term)
+        | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term)
+        | ProgramValue::Float32(term)
+        | ProgramValue::Float64(term) => term,
     };
     expect(value_site(value), expected, term).err()
 }
@@ -459,14 +465,14 @@ pub(crate) fn value_width_mismatch(value: &CValue) -> Option<WidthMismatch> {
 /// A `_Bool` constant outside `0..=1`: a `Bool` rides zero-extended in a
 /// 32-bit carrier. An 8- or 16-bit value is a value of its own format, whose
 /// constant is in range by construction.
-pub(crate) fn narrow_constant_out_of_range(value: &CValue) -> Option<NarrowRangeViolation> {
-    let CValue::Bool(term) = value else {
+pub(crate) fn narrow_constant_out_of_range(value: &ProgramValue) -> Option<NarrowRangeViolation> {
+    let ProgramValue::Bool(term) = value else {
         return None;
     };
     // A `Bool` constant is the `uint8` constant 0 or 1 (rule C1).
     let bits = term.narrow_constant_bits(crate::kernel::MachineIntegerType::UInt8)?;
     (bits > 1).then_some(NarrowRangeViolation {
-        site: "CValue::Bool",
+        site: "ProgramValue::Bool",
         bits: u32::try_from(bits).expect("an 8-bit constant"),
     })
 }
@@ -489,29 +495,31 @@ impl std::fmt::Display for NarrowRangeViolation {
 }
 
 /// Every refusal for a value: its widths, then a `Bool` constant's range.
-pub(crate) fn value_mismatch(value: &CValue) -> Option<String> {
+pub(crate) fn value_mismatch(value: &ProgramValue) -> Option<String> {
     value_width_mismatch(value)
         .map(|mismatch| mismatch.to_string())
         .or_else(|| narrow_constant_out_of_range(value).map(|violation| violation.to_string()))
 }
 
-fn value_site(value: &CValue) -> &'static str {
+fn value_site(value: &ProgramValue) -> &'static str {
     match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Bool(_) => "CValue::Bool",
-        CValue::Int8(_) => "CValue::Int8",
-        CValue::Int16(_) => "CValue::Int16",
-        CValue::Int32(_) => "CValue::Int32",
-        CValue::UInt8(_) => "CValue::UInt8",
-        CValue::UInt16(_) => "CValue::UInt16",
-        CValue::UInt32(_) => "CValue::UInt32",
-        CValue::Int64(_) => "CValue::Int64",
-        CValue::UInt64(_) => "CValue::UInt64",
-        CValue::Int128(_) => "CValue::Int128",
-        CValue::UInt128(_) => "CValue::UInt128",
-        CValue::Float32(_) => "CValue::Float32",
-        CValue::Float64(_) => "CValue::Float64",
-        CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => "CValue",
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Bool(_) => "ProgramValue::Bool",
+        ProgramValue::Int8(_) => "ProgramValue::Int8",
+        ProgramValue::Int16(_) => "ProgramValue::Int16",
+        ProgramValue::Int32(_) => "ProgramValue::Int32",
+        ProgramValue::UInt8(_) => "ProgramValue::UInt8",
+        ProgramValue::UInt16(_) => "ProgramValue::UInt16",
+        ProgramValue::UInt32(_) => "ProgramValue::UInt32",
+        ProgramValue::Int64(_) => "ProgramValue::Int64",
+        ProgramValue::UInt64(_) => "ProgramValue::UInt64",
+        ProgramValue::Int128(_) => "ProgramValue::Int128",
+        ProgramValue::UInt128(_) => "ProgramValue::UInt128",
+        ProgramValue::Float32(_) => "ProgramValue::Float32",
+        ProgramValue::Float64(_) => "ProgramValue::Float64",
+        ProgramValue::Void | ProgramValue::Pointer(_) | ProgramValue::Parameter(_) => {
+            "ProgramValue"
+        }
     }
 }
 

@@ -28,7 +28,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
     let checked_case_context = execution
         .core
         .checked_step_case_context(execution.presentation.case_assumptions.len());
-    let state: &mut CState = &mut execution.core.state;
+    let state: &mut ExecutionState = &mut execution.core.state;
     let assumptions = requirement_pure_facts.assumptions();
     // A bare `step()` executes in the whole proof context: prerequisites
     // are proved from it, and nothing is transported per step because the

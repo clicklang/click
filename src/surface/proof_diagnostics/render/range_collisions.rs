@@ -71,8 +71,9 @@ impl SnapshotLabels {
     fn range_object_identity(&mut self, pointer: &Pointer) -> String {
         if let Some((parameters, arguments)) = self.naming.as_deref() {
             for (parameter, argument) in parameters.iter().zip(arguments).take(128) {
-                if let crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(value)) =
-                    argument
+                if let crate::kernel::ProgramExpression::Value(
+                    crate::kernel::ProgramValue::Pointer(value),
+                ) = argument
                     && value.designation() == pointer
                 {
                     return format!("parameter `{}`", parameter.name());
@@ -133,12 +134,15 @@ impl SnapshotLabels {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{CPointerValue, CType, PointerBlock};
+    use crate::kernel::{PointerBlock, PointerValue, ProgramType};
 
     fn range(origin: u64) -> CMemoryRange {
         let base = Pointer::symbolic(Variable(987_800));
-        let value = CPointerValue::new(Pointer::symbolic(Variable(origin)), CType::Int32Pointer)
-            .with_address(base);
+        let value = PointerValue::new(
+            Pointer::symbolic(Variable(origin)),
+            ProgramType::Int32Pointer,
+        )
+        .with_address(base);
         CMemoryRange::from_pointer_value(&value, 0u32.into(), 1u32.into(), 4)
     }
 
@@ -202,12 +206,12 @@ mod tests {
             assert!(labels.range_collisions.is_none());
         }
         // Keep a concrete object in the metadata coverage too.
-        let value = CPointerValue::new(
+        let value = PointerValue::new(
             Pointer {
                 block: PointerBlock::Concrete("global:table".into()),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         );
         let range = CMemoryRange::from_pointer_value(&value, 0u32.into(), 1u32.into(), 4);
         assert!(range.diagnostic_pointer_metadata().2);

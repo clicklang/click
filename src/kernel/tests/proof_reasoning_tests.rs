@@ -36,7 +36,7 @@ fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
     }
     // Inserting an opposite condition ordinarily replaces its polarity.
     // This witness checks the contradiction without rebuilding case contexts.
-    let goal = Proposition::Equal(Term::CValue(int32(0)), Term::CValue(int32(1)));
+    let goal = Proposition::Equal(Term::ProgramValue(int32(0)), Term::ProgramValue(int32(1)));
     let derivation = crate::kernel::search::ProofSearch::derive_proposition(&(context), &goal)
         .expect("all arms are refuted");
     assert!(derivation.check(&context));
@@ -103,7 +103,7 @@ fn rigid_parameters_are_typed_values_not_empty_datatypes() {
 }
 
 fn maybe_int32_type() -> AlgebraicType {
-    let arguments = vec![AlgebraicValueType::C(CType::Int32)];
+    let arguments = vec![AlgebraicValueType::C(ProgramType::Int32)];
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![
         AlgebraicVariantType {
             name: "None".to_string(),
@@ -111,7 +111,7 @@ fn maybe_int32_type() -> AlgebraicType {
         },
         AlgebraicVariantType {
             name: "Some".to_string(),
-            fields: vec![AlgebraicValueType::C(CType::Int32)],
+            fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
         },
     ]
     .into();
@@ -133,7 +133,7 @@ fn maybe_int32_type() -> AlgebraicType {
 fn maybe_constructor(
     algebraic_type: &AlgebraicType,
     variant: &str,
-    fields: Vec<CValue>,
+    fields: Vec<ProgramValue>,
 ) -> AlgebraicTerm {
     AlgebraicTerm {
         algebraic_type: algebraic_type.clone(),
@@ -155,12 +155,12 @@ fn checked_algebraic_constructor_rules_are_sound() {
         Term::Algebraic(maybe_constructor(
             &algebraic_type,
             "Some",
-            vec![CValue::Int32(left.clone())],
+            vec![ProgramValue::Int32(left.clone())],
         )),
         Term::Algebraic(maybe_constructor(
             &algebraic_type,
             "Some",
-            vec![CValue::Int32(right.clone())],
+            vec![ProgramValue::Int32(right.clone())],
         )),
     );
 
@@ -185,12 +185,12 @@ fn checked_algebraic_constructor_rules_are_sound() {
         Term::Algebraic(maybe_constructor(
             &algebraic_type,
             "Some",
-            vec![CValue::UInt32(left)],
+            vec![ProgramValue::UInt32(left)],
         )),
         Term::Algebraic(maybe_constructor(
             &algebraic_type,
             "Some",
-            vec![CValue::UInt32(right)],
+            vec![ProgramValue::UInt32(right)],
         )),
     );
     assert!(
@@ -344,9 +344,9 @@ fn algebraic_symbolic_reflexivity_checks_well_formed_terms() {
                 AlgebraicResultMatchArm {
                     binding_names: Default::default(),
                     variant: "Some".to_string(),
-                    bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
-                        Variable(89_011),
-                    )))],
+                    bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                        MachineTerm::Variable(Variable(89_011)),
+                    ))],
                     body: call.clone(),
                 },
             ],
@@ -382,7 +382,7 @@ fn algebraic_symbolic_reflexivity_checks_well_formed_terms() {
         *arguments = vec![PureFunctionArgument::Algebraic(maybe_constructor(
             &ty,
             "Some",
-            vec![CValue::UInt32(MachineTerm::constant(0))],
+            vec![ProgramValue::UInt32(MachineTerm::constant(0))],
         ))];
     }
     let mut malformed_match = matched;
@@ -454,7 +454,7 @@ fn algebraic_conditions_decide_from_condition_facts_and_keep_checked_polarity() 
         Box::new(maybe_constructor(
             &ty,
             "Some",
-            vec![CValue::Int32(MachineTerm::constant(0))],
+            vec![ProgramValue::Int32(MachineTerm::constant(0))],
         )),
     );
     // Constructors of different variants differ: `decide` reads the
@@ -471,12 +471,12 @@ fn algebraic_condition_substitution_visits_scalar_fields() {
         Box::new(maybe_constructor(
             &ty,
             "Some",
-            vec![CValue::Int32(MachineTerm::Variable(variable))],
+            vec![ProgramValue::Int32(MachineTerm::Variable(variable))],
         )),
         Box::new(maybe_constructor(
             &ty,
             "Some",
-            vec![CValue::Int32(MachineTerm::constant(0))],
+            vec![ProgramValue::Int32(MachineTerm::constant(0))],
         )),
     );
     let mut variables = BTreeSet::new();
@@ -492,12 +492,12 @@ fn algebraic_condition_substitution_visits_scalar_fields() {
         Box::new(maybe_constructor(
             &ty,
             "Some",
-            vec![CValue::Int32(MachineTerm::constant(0))],
+            vec![ProgramValue::Int32(MachineTerm::constant(0))],
         )),
         Box::new(maybe_constructor(
             &ty,
             "Some",
-            vec![CValue::Int32(MachineTerm::constant(0))],
+            vec![ProgramValue::Int32(MachineTerm::constant(0))],
         )),
     );
     assert_eq!(rewritten, substituted);
@@ -2810,7 +2810,7 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
 
     let stored_memory = CMemory::new().store(
         data.offset_by_int32_elements(MachineTerm::constant(2)),
-        CValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(MachineTerm::constant(9)),
     );
     let stored_goal = Proposition::CMemoryLoadable {
         memory: stored_memory,
@@ -2869,7 +2869,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     );
     let after_len = entry_memory
         .clone()
-        .store(owner.clone(), CValue::Int32(len.clone()));
+        .store(owner.clone(), ProgramValue::Int32(len.clone()));
     let cap = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&after_len),
         Box::new(field(4)),
@@ -2877,7 +2877,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     );
     let after_cap = after_len
         .clone()
-        .store(field(4), CValue::Int32(cap.clone()));
+        .store(field(4), ProgramValue::Int32(cap.clone()));
     let range_data_offset = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&after_cap),
         Box::new(field(8)),
@@ -4512,19 +4512,23 @@ fn forall_integer_instantiation_refuses_after_work_exhaustion() {
 #[test]
 fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
     let binder = Variable(640);
-    let pointer = |variable, c_type| CPointerValue::new(Pointer::symbolic(variable), c_type);
-    let pointer_term =
-        |variable| Term::CValue(CValue::Pointer(pointer(variable, CType::Int32Pointer)));
+    let pointer = |variable, c_type| PointerValue::new(Pointer::symbolic(variable), c_type);
+    let pointer_term = |variable| {
+        Term::ProgramValue(ProgramValue::Pointer(pointer(
+            variable,
+            ProgramType::Int32Pointer,
+        )))
+    };
     let quantified = Proposition::ForAll {
         name: Default::default(),
         var: binder,
-        sort: Sort::CPointer(CType::Int32Pointer),
+        sort: Sort::CPointer(ProgramType::Int32Pointer),
         body: Box::new(Proposition::Equal(
             pointer_term(binder),
             pointer_term(binder),
         )),
     };
-    let argument = InstanceArgument::Pointer(pointer(Variable(641), CType::Int32Pointer));
+    let argument = InstanceArgument::Pointer(pointer(Variable(641), ProgramType::Int32Pointer));
     assert_eq!(
         check_forall_instantiation(&quantified, &argument, &[]).ok(),
         Some(Proposition::Equal(
@@ -4535,7 +4539,7 @@ fn forall_pointer_instantiation_takes_a_pointer_of_the_binder_type() {
     assert!(matches!(
         instantiate_universal(
             &quantified,
-            &InstanceArgument::Pointer(pointer(Variable(641), CType::UInt8Pointer)),
+            &InstanceArgument::Pointer(pointer(Variable(641), ProgramType::UInt8Pointer)),
         ),
         Err(ForallInstantiationError::ArgumentSort)
     ));
@@ -5332,7 +5336,9 @@ fn builtin_obligation_solver_discharges_concrete_invariant() {
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    let state = CState::new().with_local("x", int32(0)).with_memory(memory);
+    let state = ExecutionState::new()
+        .with_local("x", int32(0))
+        .with_memory(memory);
     let statement = c_while(
         c_greater_than(c_variable("x"), c_int32_literal(0)),
         vec![invariant],
@@ -7348,7 +7354,7 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
     let context = PureFactContext::new().assume_proposition(source.clone());
     let written = live
         .clone()
-        .store(base.clone(), CValue::Int32(MachineTerm::constant(7)));
+        .store(base.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
     let goal = fact(written, MachineTerm::uint64_constant(8), true);
     let proof = crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal)
         .expect("writes preserve native liveness");
@@ -7501,7 +7507,7 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
     let context = PureFactContext::new().assume_proposition(range(live.clone(), base.clone(), 8));
     let written = live
         .clone()
-        .store(base.clone(), CValue::Int32(MachineTerm::constant(7)));
+        .store(base.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
     assert!(
         crate::kernel::search::ProofSearch::derive_atomic_proposition(
             &(context),
@@ -8082,12 +8088,21 @@ fn lazy_finite_forall_certificates_require_exact_complete_instance_tables() {
 
 #[test]
 fn pointer_predicate_matching_preserves_types_arguments_snapshots_and_scope() {
-    fn fact(name: &str, state: CState, pointers: &[Pointer], ty: CType, tag: u32) -> Proposition {
-        let mut arguments = vec![Term::CState(Box::new(state)), Term::CValue(int32(tag))];
+    fn fact(
+        name: &str,
+        state: ExecutionState,
+        pointers: &[Pointer],
+        ty: ProgramType,
+        tag: u32,
+    ) -> Proposition {
+        let mut arguments = vec![
+            Term::ExecutionState(Box::new(state)),
+            Term::ProgramValue(int32(tag)),
+        ];
         arguments.extend(
-            pointers
-                .iter()
-                .map(|pointer| Term::CValue(CValue::typed_pointer(pointer.clone(), ty))),
+            pointers.iter().map(|pointer| {
+                Term::ProgramValue(ProgramValue::typed_pointer(pointer.clone(), ty))
+            }),
         );
         Proposition::Predicate {
             name: name.into(),
@@ -8095,21 +8110,21 @@ fn pointer_predicate_matching_preserves_types_arguments_snapshots_and_scope() {
         }
     }
     let [a, b, c, d] = [120_001, 120_002, 120_003, 120_004].map(|v| Pointer::symbolic(Variable(v)));
-    let ty = CType::Int32Pointer;
-    let state = CState::new();
+    let ty = ProgramType::Int32Pointer;
+    let state = ExecutionState::new();
     let source = fact("Selected", state.clone(), &[a.clone(), c.clone()], ty, 7);
     let goal = fact("Selected", state.clone(), &[b.clone(), d.clone()], ty, 7);
     let ab = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(
-            Box::new(CPointerValue::new(a.clone(), ty)),
-            Box::new(CPointerValue::new(b.clone(), ty)),
+            Box::new(PointerValue::new(a.clone(), ty)),
+            Box::new(PointerValue::new(b.clone(), ty)),
         ),
         true,
     );
     let cd = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(
-            Box::new(CPointerValue::new(c.clone(), ty)),
-            Box::new(CPointerValue::new(d.clone(), ty)),
+            Box::new(PointerValue::new(c.clone(), ty)),
+            Box::new(PointerValue::new(d.clone(), ty)),
         ),
         true,
     );
@@ -8144,7 +8159,7 @@ fn pointer_predicate_matching_preserves_types_arguments_snapshots_and_scope() {
             "Selected",
             state.clone(),
             &[b.clone(), d.clone()],
-            CType::UInt32Pointer,
+            ProgramType::UInt32Pointer,
             7,
         ),
         fact(
@@ -8175,19 +8190,19 @@ fn pointer_predicate_matching_preserves_types_arguments_snapshots_and_scope() {
 fn predicate_and_callback_lookup_share_late_pointer_class_merges() {
     let a = Pointer::symbolic_function(Variable(121_001));
     let b = Pointer::symbolic_function(Variable(121_002));
-    let fact = |pointer: Pointer, state: CState| Proposition::Predicate {
+    let fact = |pointer: Pointer, state: ExecutionState| Proposition::Predicate {
         name: CFunctionContract::predicate_name_for("Invoke"),
         arguments: vec![
-            Term::CState(Box::new(state)),
-            Term::CValue(CValue::typed_pointer(
+            Term::ExecutionState(Box::new(state)),
+            Term::ProgramValue(ProgramValue::typed_pointer(
                 pointer,
-                CType::FunctionPointer(CallbackSignature::from_encoded(121_000)),
+                ProgramType::FunctionPointer(CallbackSignature::from_encoded(121_000)),
             )),
         ],
     };
-    let source = fact(a.clone(), CState::new());
-    let sibling_source = fact(a.clone(), CState::new().with_local("tag", int32(1)));
-    let goal = fact(b.clone(), CState::new());
+    let source = fact(a.clone(), ExecutionState::new());
+    let sibling_source = fact(a.clone(), ExecutionState::new().with_local("tag", int32(1)));
+    let goal = fact(b.clone(), ExecutionState::new());
     let alias = Proposition::ConditionIs(
         ConditionTerm::PointerEqual(Box::new(a), Box::new(b.clone())),
         true,
@@ -8229,9 +8244,9 @@ fn pointer_fact_payloads_are_not_revisited_when_fresh_aliases_join_a_large_class
         for index in 0..size {
             context = context.assume_proposition(Proposition::Predicate {
                 name: format!("Witness{index}"),
-                arguments: vec![Term::CValue(CValue::typed_pointer(
+                arguments: vec![Term::ProgramValue(ProgramValue::typed_pointer(
                     target.clone(),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 ))],
             });
         }

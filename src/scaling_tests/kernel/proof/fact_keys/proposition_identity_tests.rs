@@ -51,7 +51,7 @@ fn local_definedness_identity_ignores_unrelated_store_history() {
                     block: format!("local:defined-unrelated-{index}").into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(index.into()),
+                ProgramValue::Int32(index.into()),
             );
         }
         let goal = local_definedness_fact(&memory, 82_001);

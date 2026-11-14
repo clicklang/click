@@ -5,7 +5,7 @@ use crate::kernel::CompareRelation;
 use crate::kernel::ContractPathPreparationFailure;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::proof::BranchId;
-use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, SharedCMemory};
+use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, SharedMemory};
 use crate::source::SourcePosition;
 use crate::surface::proof_diagnostics::ProofDiagnosticState;
 use crate::surface::proof_diagnostics::render::{self, SnapshotLabels};
@@ -172,18 +172,21 @@ pub(super) struct TraceForgottenCell {
 /// entry state supplies the snapshot; the outcome supplies the produced value.
 pub(super) struct TraceLoad {
     pub target: String,
-    pub value: crate::kernel::CValue,
-    pub address: crate::kernel::CValue,
-    pub memory: SharedCMemory,
+    pub value: crate::kernel::ProgramValue,
+    pub address: crate::kernel::ProgramValue,
+    pub memory: SharedMemory,
 }
 
 impl TraceLoad {
     fn append(&self, output: &mut String, labels: &mut SnapshotLabels, indent: &str) {
         let snapshot = labels.snapshot_name(self.memory.memory());
-        let identity = |value: &crate::kernel::CValue, labels: &mut SnapshotLabels| match value {
-            crate::kernel::CValue::Pointer(pointer) => labels.pointer_value_name(pointer.pointer()),
-            _ => render::render_c_value_labeled(value, labels),
-        };
+        let identity =
+            |value: &crate::kernel::ProgramValue, labels: &mut SnapshotLabels| match value {
+                crate::kernel::ProgramValue::Pointer(pointer) => {
+                    labels.pointer_value_name(pointer.pointer())
+                }
+                _ => render::render_c_value_labeled(value, labels),
+            };
         let value = identity(&self.value, labels);
         let address = identity(&self.address, labels);
         output.push_str(&format!(
@@ -212,7 +215,7 @@ pub(super) struct TraceFact {
 #[derive(Clone)]
 pub(super) struct PointerTraceView {
     pub text: String,
-    pub snapshot: Option<(SharedCMemory, Option<String>)>,
+    pub snapshot: Option<(SharedMemory, Option<String>)>,
 }
 
 impl PointerTraceView {
@@ -258,8 +261,8 @@ impl ChildArgumentTrace {
             return None;
         };
         let (
-            Some(crate::kernel::CValue::Pointer(actual)),
-            Some(crate::kernel::CValue::Pointer(required)),
+            Some(crate::kernel::ProgramValue::Pointer(actual)),
+            Some(crate::kernel::ProgramValue::Pointer(required)),
         ) = (actual.as_c_value(), required.as_c_value())
         else {
             return None;
@@ -385,7 +388,7 @@ impl CertificationTraceState {
     }
 }
 
-fn traced_read(term: &MachineTerm) -> Option<(SharedCMemory, Pointer)> {
+fn traced_read(term: &MachineTerm) -> Option<(SharedMemory, Pointer)> {
     match term {
         MachineTerm::MemoryLoad(memory, pointer, _) => {
             Some((memory.clone(), pointer.as_ref().clone()))
@@ -1477,7 +1480,7 @@ mod tests {
         let first = crate::kernel::intern_c_memory(CMemory::new());
         let second = crate::kernel::intern_c_memory(CMemory::new().store(
             address.clone(),
-            crate::kernel::CValue::Int32(MachineTerm::constant(1)),
+            crate::kernel::ProgramValue::Int32(MachineTerm::constant(1)),
         ));
         let a = Pointer::loaded_value(&first, &address);
         let b = Pointer::loaded_value(&second, &address);
@@ -1560,7 +1563,7 @@ mod tests {
 
     #[test]
     fn facts_requirements_and_goals_share_read_identity_display() {
-        use crate::kernel::{CValue, LoadKind, Variable};
+        use crate::kernel::{LoadKind, ProgramValue, Variable};
         use crate::surface::proof_diagnostics::{
             ProofDiagnosticOrigin, ProofFailureDiagnostic, render_terminal_message,
             render_trace_context_labeled,
@@ -1584,7 +1587,7 @@ mod tests {
         let first = CMemory::new();
         let second = first.clone().store(
             pointer.clone(),
-            CValue::UInt64(MachineTerm::uint64_constant(9)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
         );
         let fact = |memory| {
             Proposition::ConditionIs(

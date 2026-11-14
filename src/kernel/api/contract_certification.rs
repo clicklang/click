@@ -20,9 +20,9 @@ pub use contract_claims::*;
 /// `if`. The cases below are generated wholly from the kernel contract and
 /// always include both truth values, so they add no trusted hypothesis.
 pub(crate) fn contract_resource_condition_cases(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
 ) -> Option<Vec<Vec<Proposition>>> {
     let entry_state = c_function_entry_state(caller_state, function, arguments)?;
@@ -55,7 +55,7 @@ pub(crate) fn contract_resource_condition_cases(
         if definition.parameters().len() != resource_arguments.len() {
             return None;
         }
-        let mut condition_state = CState::new()
+        let mut condition_state = ExecutionState::new()
             .with_memory(entry_state.memory().clone())
             .with_resource_context(required_resources.clone());
         for (parameter, value) in definition
@@ -294,7 +294,7 @@ fn split_additive_constant(term: Operand<'_>) -> (SharedMachineIntegerTerm, u32)
 /// the resources permit the read. A load under a premise is judged with the
 /// premise assumed; a quantified load is left to certification.
 pub fn c_state_justifies_loadability_obligation(
-    state: &CState,
+    state: &ExecutionState,
     obligation: &Proposition,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -1164,7 +1164,7 @@ pub struct CContractEntry {
     /// The propositions of `facts`, for membership.
     stated: BTreeSet<Proposition>,
     /// The entry state holding the contract's expanded entry resources.
-    resource_state: CState,
+    resource_state: ExecutionState,
 }
 
 impl CContractEntry {
@@ -1211,9 +1211,9 @@ impl CContractEntry {
 /// Builds the contract entry of `function` called with `arguments` at
 /// `caller_state`, or says why the contract has none.
 pub fn c_function_contract_entry(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
 ) -> Result<CContractEntry, String> {
     let (assumptions, facts, resource_state) =
         c_function_contract_entry_facts(caller_state, function, arguments)?;
@@ -1288,10 +1288,10 @@ pub fn c_function_contract_entry(
 /// with no paths and no reason is a dead end for whoever wrote the contract,
 /// so every exit below names what stopped it.
 fn c_function_contract_entry_facts(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
-) -> Result<(PureFactContext, Vec<CContractEntryFact>, CState), String> {
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
+) -> Result<(PureFactContext, Vec<CContractEntryFact>, ExecutionState), String> {
     let mut assumptions = PureFactContext::new();
     let mut entry_facts = ContractEntryFactLog(Vec::new());
     if let Some(message) =
@@ -1311,7 +1311,7 @@ fn c_function_contract_entry_facts(
         let argument_values = arguments
             .iter()
             .map(|argument| match argument {
-                CExpression::Value(value) => Some(value.clone()),
+                ProgramExpression::Value(value) => Some(value.clone()),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()
@@ -1349,7 +1349,7 @@ fn c_function_contract_entry_facts(
         for (index, parameter) in parameters.iter().enumerate() {
             if let Some(bytes) = parameter.fixed_reference_extent {
                 let pointer_value = entry_state.locals.get_native(parameter.name());
-                let Some(CValue::Pointer(pointer)) = pointer_value.as_deref() else {
+                let Some(ProgramValue::Pointer(pointer)) = pointer_value.as_deref() else {
                     return Err("array reference entry argument is not a pointer value".into());
                 };
                 if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
@@ -1366,12 +1366,13 @@ fn c_function_contract_entry_facts(
                 continue;
             };
             let pointer_value = entry_state.locals.get_native(parameter.name());
-            let Some(CValue::Pointer(pointer)) = pointer_value.as_deref() else {
+            let Some(ProgramValue::Pointer(pointer)) = pointer_value.as_deref() else {
                 return Err("slice entry argument is not a pointer value".into());
             };
             let length_parameter = &parameters[index + length_index];
             let length_value = entry_state.locals.get_native(length_parameter.name());
-            let Some(CValue::UInt64(length)) = length_value.as_deref().map(CValue::numeric_value)
+            let Some(ProgramValue::UInt64(length)) =
+                length_value.as_deref().map(ProgramValue::numeric_value)
             else {
                 return Err("slice entry length is not a native unsigned value".into());
             };
@@ -1405,7 +1406,7 @@ fn c_function_contract_entry_facts(
     // A `bool` parameter's cast holds 0 or 1 (rule C1b). A narrow integer
     // parameter is a value of its own format, whose range is the format's.
     for argument in arguments {
-        if let CExpression::Value(value) = argument
+        if let ProgramExpression::Value(value) = argument
             && let Some(facts) = c_bool_cast_range_facts(value)
         {
             for fact in facts {
@@ -2032,7 +2033,7 @@ fn c_function_contract_entry_facts(
 }
 
 pub(super) fn instantiate_contract_predicate_unfolding(
-    entry_state: &CState,
+    entry_state: &ExecutionState,
     unfolding: &CPredicateUnfolding,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -2056,8 +2057,8 @@ pub(super) fn instantiate_contract_predicate_unfolding(
 /// the function entry an `old(...)` argument refers to when the predicate is
 /// instantiated at a post-state.
 pub(super) fn instantiate_contract_predicate_unfolding_with_obligations(
-    state: &CState,
-    entry_state: Option<&CState>,
+    state: &ExecutionState,
+    entry_state: Option<&ExecutionState>,
     unfolding: &CPredicateUnfolding,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -2093,9 +2094,9 @@ pub(super) fn instantiate_contract_predicate_unfolding_with_obligations(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn prove_symbolic_c_function_verification_paths(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -2189,9 +2190,9 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
 }
 
 pub fn c_function_execution_candidates_from_outcomes(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     paths: Vec<(
         CFunctionOutcome,
         Vec<ExecutionPureFact>,
@@ -2217,9 +2218,9 @@ pub fn c_function_execution_candidates_from_outcomes(
 }
 
 pub(crate) fn c_function_execution_candidates_from_outcomes_with_loan_evidence(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     paths: Vec<(
         CFunctionOutcome,
         ExecutionFacts,
@@ -2250,9 +2251,9 @@ pub(crate) fn c_function_execution_candidates_from_outcomes_with_loan_evidence(
 /// Re-publish immutable untrusted candidates without copying their outcome
 /// states or re-classifying their already partitioned fact streams.
 pub(crate) fn c_function_execution_candidates_from_retained_paths(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     paths: Vec<CFunctionExecutionCandidate>,
 ) -> CFunctionExecutionCandidates {
     #[cfg(test)]
@@ -2277,7 +2278,7 @@ pub(crate) fn c_function_execution_candidates_from_retained_paths(
 /// Retain disjoint, checked arm publications as vector subtrees. This is
 /// still untrusted candidate data; trace completion certifies every outcome.
 pub(crate) fn concat_retained_function_candidates(
-    state: CState,
+    state: ExecutionState,
     arms: [&CFunctionExecutionCandidates; 2],
     common_facts: ExecutionFacts,
 ) -> CFunctionExecutionCandidates {
@@ -2342,7 +2343,7 @@ pub(crate) fn c_function_execution_candidate_with_additional_facts(
 }
 
 pub fn prove_c_function_satisfies_specification_from_symbolic_path(
-    function: CFunction,
+    function: ProgramFunction,
     specification: CFunctionSpecification,
     path: &SymbolicCExecutionPath,
 ) -> Option<Theorem> {
@@ -2404,11 +2405,11 @@ pub fn prove_c_function_satisfies_specification_from_symbolic_path(
 }
 
 fn certified_function_path_parts<'a>(
-    function: &CFunction,
+    function: &ProgramFunction,
     path: &'a SymbolicCExecutionPath,
 ) -> Option<(
-    &'a CState,
-    &'a [CExpression],
+    &'a ExecutionState,
+    &'a [ProgramExpression],
     &'a CFunctionOutcome,
     PureFactContext,
 )> {
@@ -2441,7 +2442,7 @@ fn certified_function_path_parts<'a>(
 }
 
 fn resource_contexts_definitionally_equal(
-    function: &CFunction,
+    function: &ProgramFunction,
     left_memory: &CMemory,
     left: &ResourceContext,
     right_memory: &CMemory,
@@ -2671,7 +2672,7 @@ fn freshen_proposition_bodies(
     let fresh = fresh_alpha_comparison_variable(left_body, right_body, left_binder, right_binder);
     if matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _)) {
         let pointer = match sort {
-            Sort::CPointer(CType::FunctionPointer(_)) => Pointer::symbolic_function(fresh),
+            Sort::CPointer(ProgramType::FunctionPointer(_)) => Pointer::symbolic_function(fresh),
             Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Pointer::symbolic(fresh),
             _ => unreachable!("pointer freshening only handles pointer sorts"),
         };
@@ -2722,7 +2723,9 @@ pub(crate) fn substitute_quantified_body_capture_free(
     Some(
         if matches!(sort, Sort::CPointer(_) | Sort::CObjectPointer(_, _)) {
             let pointer = match sort {
-                Sort::CPointer(CType::FunctionPointer(_)) => Pointer::symbolic_function(target),
+                Sort::CPointer(ProgramType::FunctionPointer(_)) => {
+                    Pointer::symbolic_function(target)
+                }
                 Sort::CPointer(_) | Sort::CObjectPointer(_, _) => Pointer::symbolic(target),
                 _ => unreachable!("pointer substitution only handles pointer sorts"),
             };
@@ -3214,7 +3217,7 @@ pub(super) fn certification_proves_condition_from_verified_pure_implication(
 }
 
 pub(super) fn resources_certify_loadability(
-    state: &CState,
+    state: &ExecutionState,
     resources: &ResourceContext,
     proposition: &Proposition,
     assumptions: &PureFactContext,
@@ -3257,9 +3260,9 @@ pub(super) fn resources_certify_loadability(
 }
 
 fn contract_endpoints_certify_loadability(
-    entry_state: &CState,
+    entry_state: &ExecutionState,
     entry_resources: &ResourceContext,
-    post_state: &CState,
+    post_state: &ExecutionState,
     post_resources: &ResourceContext,
     proposition: &Proposition,
     assumptions: &PureFactContext,
@@ -3287,7 +3290,7 @@ mod shared_contract_operand_tests {
         let before = crate::kernel::CMemory::new().with_block("contract-expression-cell", 4);
         let after = before
             .clone()
-            .store(pointer.clone(), CValue::Int32(written.clone()));
+            .store(pointer.clone(), ProgramValue::Int32(written.clone()));
         let load = |memory| {
             SharedMachineIntegerTerm::index(
                 MachineIntegerType::Int32,
@@ -3332,7 +3335,7 @@ mod shared_contract_operand_tests {
                 .with_block("contract-index", 4)
                 .store(
                     pointer.clone(),
-                    CValue::Int32(MachineTerm::Variable(Variable(id))),
+                    ProgramValue::Int32(MachineTerm::Variable(Variable(id))),
                 );
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),

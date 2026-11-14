@@ -29,7 +29,7 @@ pub(super) fn prepare(
     Some(Prepared { forest, scopes })
 }
 
-pub(super) fn endings(prepared: &Prepared, point: MirPoint) -> CStatement {
+pub(super) fn endings(prepared: &Prepared, point: MirPoint) -> ProgramStatement {
     prepared
         .forest
         .endings
@@ -39,7 +39,7 @@ pub(super) fn endings(prepared: &Prepared, point: MirPoint) -> CStatement {
         .fold(c_skip(), |prefix, key| {
             c_seq(
                 prefix,
-                CStatement::EndScalarReference(crate::kernel::CScalarReferenceEnd::new(
+                ProgramStatement::EndScalarReference(crate::kernel::CScalarReferenceEnd::new(
                     key.clone(),
                 )),
             )
@@ -49,7 +49,7 @@ pub(super) fn endings(prepared: &Prepared, point: MirPoint) -> CStatement {
 pub(super) fn decorate(
     prepared: &Prepared,
     point: MirPoint,
-    statement: &mut CStatement,
+    statement: &mut ProgramStatement,
 ) -> Result<(), String> {
     if let Some(birth) = prepared.forest.births.get(&point) {
         let mut count = 0;
@@ -57,12 +57,12 @@ pub(super) fn decorate(
         while let Some(selected) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match selected {
-                CStatement::Seq(statements) => {
+                ProgramStatement::Seq(statements) => {
                     // The pair nodes beyond the first the tree held.
                     crate::instrumentation::record_deterministic_work(statements.len() - 2);
                     pending.extend(statements.iter_mut().map(std::sync::Arc::make_mut));
                 }
-                CStatement::Assign {
+                ProgramStatement::Assign {
                     name,
                     expression,
                     source,
@@ -219,12 +219,12 @@ mod tests {
             let mut pending = vec![helper.body()];
             while let Some(statement) = pending.pop() {
                 match statement {
-                    CStatement::Seq(statements) => {
+                    ProgramStatement::Seq(statements) => {
                         for statement in statements.iter() {
                             pending.push(statement);
                         }
                     }
-                    CStatement::If {
+                    ProgramStatement::If {
                         then_branch,
                         else_branch,
                         ..
@@ -232,11 +232,11 @@ mod tests {
                         pending.push(then_branch);
                         pending.push(else_branch);
                     }
-                    CStatement::Assign { source, .. } => {
+                    ProgramStatement::Assign { source, .. } => {
                         births += usize::from(*source != CStatementAssignSource::default())
                     }
-                    CStatement::EndScalarReference(_) => endings += 1,
-                    CStatement::TypedStore { source, .. } => {
+                    ProgramStatement::EndScalarReference(_) => endings += 1,
+                    ProgramStatement::TypedStore { source, .. } => {
                         assert_eq!(*source, CStatementStoreSource::default())
                     }
                     _ => {}

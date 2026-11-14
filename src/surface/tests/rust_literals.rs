@@ -198,7 +198,8 @@ fn rust_shift_source_identity_survives_printing_and_resource_arguments() {
             .expect("resource arguments retain the source shift");
         assert!(matches!(
             (argument, left_shift),
-            (CExpression::RustShiftLeft(..), true) | (CExpression::RustShiftRight(..), false)
+            (ProgramExpression::RustShiftLeft(..), true)
+                | (ProgramExpression::RustShiftRight(..), false)
         ));
         let spelled = crate::surface::diagnostics::describe_contract_expression(expression);
         let reparsed = parser::parse(&format!(

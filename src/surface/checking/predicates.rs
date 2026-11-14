@@ -239,7 +239,7 @@ fn instantiate_lowered_predicate_definition(
             Some(parameter.click_type().clone())
         } else {
             let actual = match arguments.get(argument_index) {
-                Some(Term::CValue(value)) => {
+                Some(Term::ProgramValue(value)) => {
                     Some(ClickType::C(generics::c0_type_from_kernel(value.c_type())))
                 }
                 Some(Term::Algebraic(value)) => {
@@ -289,7 +289,14 @@ pub(in crate::surface) fn instantiate_predicate_definition(
 pub(in crate::surface) fn decode_predicate_arguments(
     definition: &PredicateDefinition,
     arguments: &[Term],
-) -> Result<(CState, BTreeMap<String, CValue>, ClickArrayRefs), String> {
+) -> Result<
+    (
+        ExecutionState,
+        BTreeMap<String, ProgramValue>,
+        ClickArrayRefs,
+    ),
+    String,
+> {
     let expanded_len = 1 + definition
         .parameters()
         .iter()
@@ -303,7 +310,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
         .sum::<usize>();
 
     if arguments.len() == expanded_len {
-        let Some(Term::CState(state)) = arguments.first() else {
+        let Some(Term::ExecutionState(state)) = arguments.first() else {
             return Err(format!(
                 "predicate `{}` is missing its resource-state snapshot",
                 definition.name()
@@ -322,7 +329,9 @@ pub(in crate::surface) fn decode_predicate_arguments(
                         parameter.name()
                     ));
                 };
-                let Some(Term::CValue(CValue::Pointer(pointer))) = arguments.get(index + 1) else {
+                let Some(Term::ProgramValue(ProgramValue::Pointer(pointer))) =
+                    arguments.get(index + 1)
+                else {
                     return Err(format!(
                         "predicate `{}` argument `{}` is missing its array-ref pointer",
                         definition.name(),
@@ -340,7 +349,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                     })?;
                 values.insert(
                     parameter.name().to_string(),
-                    CValue::typed_pointer(
+                    ProgramValue::typed_pointer(
                         pointer.pointer().clone(),
                         element_type.pointer_to().unwrap(),
                     ),
@@ -355,7 +364,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                 );
                 index += 2;
             } else {
-                let Some(Term::CValue(value)) = arguments.get(index) else {
+                let Some(Term::ProgramValue(value)) = arguments.get(index) else {
                     return Err(format!(
                         "predicate `{}` argument `{}` did not lower to a C value",
                         definition.name(),

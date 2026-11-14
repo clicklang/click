@@ -4011,7 +4011,7 @@ mod shared_read_equality_rule_tests {
         let before = CMemory::new().with_block("selected-word", 64);
         let after = before.clone().store_with_context(
             written,
-            CValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(MachineTerm::constant(9)),
             &context,
         );
         let read = |memory: CMemory, at: &Pointer| {
@@ -4031,9 +4031,10 @@ mod shared_read_equality_rule_tests {
         };
         let wrong_address = read(after.clone(), &unrelated);
         let wrong_snapshot = read(
-            after
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(31))),
+            after.clone().store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(31)),
+            ),
             &pointer,
         );
         assert!(
@@ -4124,7 +4125,7 @@ mod shared_read_order_bridge_tests {
         let before = CMemory::new().with_block("order-read-bridge", 64);
         let after = before.clone().store_with_context(
             write,
-            CValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(MachineTerm::constant(9)),
             &separated,
         );
         let read = |memory| {

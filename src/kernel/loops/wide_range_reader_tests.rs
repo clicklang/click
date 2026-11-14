@@ -37,7 +37,7 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     ));
     let check = CLoopEffectCheck::new(CLoopEffect::Mutable(vec![]), None)
         .with_validated_ranges(vec![wide.clone()]);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let mut budget = ExecutionBudget::beside_live_state();
     assert!(
         collect_loop_effect_check_obligations(
@@ -60,7 +60,7 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     let run = crate::kernel::primitives::CellRun::new(
         base,
         4,
-        CType::Int32,
+        ProgramType::Int32,
         4,
         state.memory().clone().into(),
         crate::kernel::primitives::IndexIntervals::default(),

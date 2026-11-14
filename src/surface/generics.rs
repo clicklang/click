@@ -447,64 +447,64 @@ pub(super) fn click_type_from_algebraic_value_type(value_type: &AlgebraicValueTy
     }
 }
 
-pub(crate) fn c0_type_from_kernel(c_type: CType) -> C0Type {
+pub(crate) fn c0_type_from_kernel(c_type: ProgramType) -> C0Type {
     match c_type {
-        CType::Parameter(name) => C0Type::Parameter(name),
-        CType::ParameterPointer(name) => C0Type::ParameterPointer(name),
-        CType::Void => C0Type::Void,
-        CType::Bool => C0Type::Bool,
-        CType::VoidPointer => C0Type::VoidPointer,
-        CType::VoidPointerPointer => C0Type::VoidPointerPointer,
-        CType::Int8 => C0Type::Int8,
-        CType::Int16 => C0Type::Int16,
-        CType::Int32 => C0Type::Int32,
-        CType::UInt8 => C0Type::UInt8,
-        CType::UInt16 => C0Type::UInt16,
-        CType::UInt32 => C0Type::UInt32,
-        CType::Int64 => C0Type::Int64(LongRank::Long),
-        CType::UInt64 => C0Type::UInt64(LongRank::Long),
-        CType::Int128 => C0Type::Int128,
-        CType::UInt128 => C0Type::UInt128,
-        CType::Float32 => C0Type::Float32,
-        CType::Float64 => C0Type::Float64,
-        CType::Int8Pointer => C0Type::Int8Pointer,
-        CType::Int16Pointer => C0Type::Int16Pointer,
-        CType::UInt16Pointer => C0Type::UInt16Pointer,
-        CType::Int32Pointer => C0Type::Int32Pointer,
-        CType::UInt8Pointer => C0Type::UInt8Pointer,
-        CType::UInt32Pointer => C0Type::UInt32Pointer,
-        CType::Int64Pointer => C0Type::Int64Pointer(LongRank::Long),
-        CType::Int128Pointer => C0Type::Int128Pointer,
-        CType::UInt64Pointer => C0Type::UInt64Pointer(LongRank::Long),
-        CType::UInt128Pointer => C0Type::UInt128Pointer,
-        CType::Float32Pointer => C0Type::Float32Pointer,
-        CType::Float64Pointer => C0Type::Float64Pointer,
-        CType::Int8PointerPointer => C0Type::Int8PointerPointer,
-        CType::Int16PointerPointer => C0Type::Int16PointerPointer,
-        CType::UInt16PointerPointer => C0Type::UInt16PointerPointer,
-        CType::Int32PointerPointer => C0Type::Int32PointerPointer,
-        CType::UInt8PointerPointer => C0Type::UInt8PointerPointer,
-        CType::UInt32PointerPointer => C0Type::UInt32PointerPointer,
-        CType::Int64PointerPointer => C0Type::Int64PointerPointer(LongRank::Long),
-        CType::Int128PointerPointer => C0Type::Int128PointerPointer,
-        CType::UInt64PointerPointer => C0Type::UInt64PointerPointer(LongRank::Long),
-        CType::UInt128PointerPointer => C0Type::UInt128PointerPointer,
-        CType::Float32PointerPointer => C0Type::Float32PointerPointer,
-        CType::Float64PointerPointer => C0Type::Float64PointerPointer,
-        CType::FunctionPointer(signature) => C0Type::FunctionPointer(signature),
-        CType::Int8Array(length) => C0Type::Int8Array(length),
-        CType::Int16Array(length) => C0Type::Int16Array(length),
-        CType::UInt16Array(length) => C0Type::UInt16Array(length),
-        CType::Int32Array(length) => C0Type::Int32Array(length),
-        CType::UInt8Array(length) => C0Type::UInt8Array(length),
-        CType::UInt32Array(length) => C0Type::UInt32Array(length),
-        CType::Int64Array(length) => C0Type::Int64Array(LongRank::Long, length),
-        CType::Int128Array(length) => C0Type::Int128Array(length),
-        CType::UInt64Array(length) => C0Type::UInt64Array(LongRank::Long, length),
-        CType::UInt128Array(length) => C0Type::UInt128Array(length),
-        CType::Float32Array(length) => C0Type::Float32Array(length),
-        CType::Float64Array(length) => C0Type::Float64Array(length),
-        CType::PointerArray(element, length) => {
+        ProgramType::Parameter(name) => C0Type::Parameter(name),
+        ProgramType::ParameterPointer(name) => C0Type::ParameterPointer(name),
+        ProgramType::Void => C0Type::Void,
+        ProgramType::Bool => C0Type::Bool,
+        ProgramType::VoidPointer => C0Type::VoidPointer,
+        ProgramType::VoidPointerPointer => C0Type::VoidPointerPointer,
+        ProgramType::Int8 => C0Type::Int8,
+        ProgramType::Int16 => C0Type::Int16,
+        ProgramType::Int32 => C0Type::Int32,
+        ProgramType::UInt8 => C0Type::UInt8,
+        ProgramType::UInt16 => C0Type::UInt16,
+        ProgramType::UInt32 => C0Type::UInt32,
+        ProgramType::Int64 => C0Type::Int64(LongRank::Long),
+        ProgramType::UInt64 => C0Type::UInt64(LongRank::Long),
+        ProgramType::Int128 => C0Type::Int128,
+        ProgramType::UInt128 => C0Type::UInt128,
+        ProgramType::Float32 => C0Type::Float32,
+        ProgramType::Float64 => C0Type::Float64,
+        ProgramType::Int8Pointer => C0Type::Int8Pointer,
+        ProgramType::Int16Pointer => C0Type::Int16Pointer,
+        ProgramType::UInt16Pointer => C0Type::UInt16Pointer,
+        ProgramType::Int32Pointer => C0Type::Int32Pointer,
+        ProgramType::UInt8Pointer => C0Type::UInt8Pointer,
+        ProgramType::UInt32Pointer => C0Type::UInt32Pointer,
+        ProgramType::Int64Pointer => C0Type::Int64Pointer(LongRank::Long),
+        ProgramType::Int128Pointer => C0Type::Int128Pointer,
+        ProgramType::UInt64Pointer => C0Type::UInt64Pointer(LongRank::Long),
+        ProgramType::UInt128Pointer => C0Type::UInt128Pointer,
+        ProgramType::Float32Pointer => C0Type::Float32Pointer,
+        ProgramType::Float64Pointer => C0Type::Float64Pointer,
+        ProgramType::Int8PointerPointer => C0Type::Int8PointerPointer,
+        ProgramType::Int16PointerPointer => C0Type::Int16PointerPointer,
+        ProgramType::UInt16PointerPointer => C0Type::UInt16PointerPointer,
+        ProgramType::Int32PointerPointer => C0Type::Int32PointerPointer,
+        ProgramType::UInt8PointerPointer => C0Type::UInt8PointerPointer,
+        ProgramType::UInt32PointerPointer => C0Type::UInt32PointerPointer,
+        ProgramType::Int64PointerPointer => C0Type::Int64PointerPointer(LongRank::Long),
+        ProgramType::Int128PointerPointer => C0Type::Int128PointerPointer,
+        ProgramType::UInt64PointerPointer => C0Type::UInt64PointerPointer(LongRank::Long),
+        ProgramType::UInt128PointerPointer => C0Type::UInt128PointerPointer,
+        ProgramType::Float32PointerPointer => C0Type::Float32PointerPointer,
+        ProgramType::Float64PointerPointer => C0Type::Float64PointerPointer,
+        ProgramType::FunctionPointer(signature) => C0Type::FunctionPointer(signature),
+        ProgramType::Int8Array(length) => C0Type::Int8Array(length),
+        ProgramType::Int16Array(length) => C0Type::Int16Array(length),
+        ProgramType::UInt16Array(length) => C0Type::UInt16Array(length),
+        ProgramType::Int32Array(length) => C0Type::Int32Array(length),
+        ProgramType::UInt8Array(length) => C0Type::UInt8Array(length),
+        ProgramType::UInt32Array(length) => C0Type::UInt32Array(length),
+        ProgramType::Int64Array(length) => C0Type::Int64Array(LongRank::Long, length),
+        ProgramType::Int128Array(length) => C0Type::Int128Array(length),
+        ProgramType::UInt64Array(length) => C0Type::UInt64Array(LongRank::Long, length),
+        ProgramType::UInt128Array(length) => C0Type::UInt128Array(length),
+        ProgramType::Float32Array(length) => C0Type::Float32Array(length),
+        ProgramType::Float64Array(length) => C0Type::Float64Array(length),
+        ProgramType::PointerArray(element, length) => {
             C0Type::PointerArray(element, LongRank::Long, length)
         }
     }
@@ -630,7 +630,7 @@ pub(super) fn explicit_cast_click_type(expression: &ContractExpression) -> Optio
     else {
         return None;
     };
-    let CExpression::Cast {
+    let ProgramExpression::Cast {
         target_type,
         pointee_struct,
         ..
@@ -648,9 +648,9 @@ pub(super) fn explicit_cast_click_type(expression: &ContractExpression) -> Optio
     })
 }
 
-pub(super) fn click_type_from_c_value(value: &CValue) -> ClickType {
+pub(super) fn click_type_from_c_value(value: &ProgramValue) -> ClickType {
     let c_type = c0_type_from_kernel(value.c_type());
-    if let CValue::Pointer(pointer) = value
+    if let ProgramValue::Pointer(pointer) = value
         && let Some(class) = pointer.object_class()
     {
         return ClickType::from_object_pointer_class(c_type, &class);
@@ -659,7 +659,7 @@ pub(super) fn click_type_from_c_value(value: &CValue) -> ClickType {
 }
 
 pub(super) fn default_numeral_click_type(expression: &ContractExpression) -> Option<ClickType> {
-    let CExpression::Value(value) = contract_expression_as_c_fragment(expression)? else {
+    let ProgramExpression::Value(value) = contract_expression_as_c_fragment(expression)? else {
         return None;
     };
     Some(click_type_from_c_value(&value))
@@ -681,11 +681,11 @@ pub(super) fn syntactic_expression_type(
         | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
             Some(ClickType::Algebraic(algebraic_type.clone()))
         }
-        ContractExpression::CFragment(CExpression::Value(value)) => {
+        ContractExpression::CFragment(ProgramExpression::Value(value)) => {
             Some(click_type_from_c_value(value))
         }
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) => {
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
             variables.get(name).cloned()
         }
         ContractExpression::Old(inner)
@@ -698,7 +698,7 @@ pub(super) fn syntactic_expression_type(
 }
 
 pub(super) fn concrete_variable_types(
-    values: &BTreeMap<String, CValue>,
+    values: &BTreeMap<String, ProgramValue>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
 ) -> BTreeMap<String, ClickType> {
     values

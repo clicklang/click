@@ -269,18 +269,22 @@ pub(in crate::surface) fn normalized_terms_equal(left: &Term, right: &Term) -> O
 
 pub(in crate::surface) fn normalize_term(term: &Term) -> Term {
     match term {
-        Term::CValue(value @ CValue::PointerInteger(_)) => {
-            normalize_term(&Term::CValue(value.numeric_value().clone()))
+        Term::ProgramValue(value @ ProgramValue::PointerInteger(_)) => {
+            normalize_term(&Term::ProgramValue(value.numeric_value().clone()))
         }
         Term::Condition(condition) => match normalize_condition_without_assumptions(condition) {
             Some(value) => Term::Condition(ConditionTerm::Constant(value)),
             None => term.clone(),
         },
         Term::Bitvector32(term) => Term::Bitvector32(normalize_bitvector(term)),
-        Term::CValue(CValue::Int32(term)) => Term::CValue(CValue::Int32(normalize_bitvector(term))),
-        Term::CValue(CValue::Int64(term)) => Term::CValue(CValue::Int64(normalize_bitvector(term))),
-        Term::CValue(CValue::UInt64(term)) => {
-            Term::CValue(CValue::UInt64(normalize_bitvector(term)))
+        Term::ProgramValue(ProgramValue::Int32(term)) => {
+            Term::ProgramValue(ProgramValue::Int32(normalize_bitvector(term)))
+        }
+        Term::ProgramValue(ProgramValue::Int64(term)) => {
+            Term::ProgramValue(ProgramValue::Int64(normalize_bitvector(term)))
+        }
+        Term::ProgramValue(ProgramValue::UInt64(term)) => {
+            Term::ProgramValue(ProgramValue::UInt64(normalize_bitvector(term)))
         }
         _ => term.clone(),
     }
@@ -792,8 +796,14 @@ mod tests {
                 identity
                     .memory()
                     .clone()
-                    .store(target.clone(), CValue::Int32(MachineTerm::constant(17)))
-                    .store(target.clone(), CValue::Int32(MachineTerm::constant(stored))),
+                    .store(
+                        target.clone(),
+                        ProgramValue::Int32(MachineTerm::constant(17)),
+                    )
+                    .store(
+                        target.clone(),
+                        ProgramValue::Int32(MachineTerm::constant(stored)),
+                    ),
             );
             let load = crate::kernel::load_variable_for_cell_with_origin(
                 &identity,
@@ -1301,16 +1311,16 @@ mod tests {
             block: PointerBlock::Concrete("rewrite-cell".into()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let first_memory = crate::kernel::intern_c_memory(
-            CMemory::new()
-                .with_block("rewrite-cell", 4)
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(0))),
-        );
-        let second_memory = crate::kernel::intern_c_memory(
-            CMemory::new()
-                .with_block("rewrite-cell", 4)
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7))),
-        );
+        let first_memory =
+            crate::kernel::intern_c_memory(CMemory::new().with_block("rewrite-cell", 4).store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(0)),
+            ));
+        let second_memory =
+            crate::kernel::intern_c_memory(CMemory::new().with_block("rewrite-cell", 4).store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(7)),
+            ));
         assert_ne!(first_memory, second_memory);
         let first_load = MachineTerm::MemoryLoad(
             first_memory,

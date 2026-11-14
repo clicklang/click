@@ -37,7 +37,7 @@ thread_local! {
     /// one could certify a claim at the other. The pre-install state is
     /// compared exactly, once per proof unit; a function whose entry state
     /// changed simply gets a new root.
-    static BORROWED_INPUT_ROOTS: std::cell::RefCell<BTreeMap<String, (CState, CState)>> =
+    static BORROWED_INPUT_ROOTS: std::cell::RefCell<BTreeMap<String, (ExecutionState, ExecutionState)>> =
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
@@ -128,15 +128,15 @@ use contract_certification::{
     resources_certify_loadability,
 };
 
-pub fn int32(bits: impl Into<MachineTerm>) -> CValue {
-    CValue::Int32(bits.into())
+pub fn int32(bits: impl Into<MachineTerm>) -> ProgramValue {
+    ProgramValue::Int32(bits.into())
 }
 
 /// The C `bool` value of a `bool` cell whose byte is the `uint8` term
 /// `byte`: the byte rule (Stage 5), the `Bool` `byte != 0` at `uint8`,
 /// carried as its cast (rule C1).
-pub fn bool_value(byte: impl Into<MachineTerm>) -> CValue {
-    CValue::of_bool(ConditionTerm::truth_of_bool_word(
+pub fn bool_value(byte: impl Into<MachineTerm>) -> ProgramValue {
+    ProgramValue::of_bool(ConditionTerm::truth_of_bool_word(
         &byte.into().in_narrow_format(MachineIntegerType::UInt8),
     ))
 }
@@ -152,9 +152,9 @@ pub fn bool_value(byte: impl Into<MachineTerm>) -> CValue {
 /// format C's promotion and an `int` result read it at; an integer value
 /// that is a cast states its own. `None` for a constant, which has nothing
 /// left to state, and for every other value.
-pub(crate) fn c_bool_cast_range_facts(value: &CValue) -> Option<Vec<Proposition>> {
+pub(crate) fn c_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<Proposition>> {
     let cast = match value.numeric_value() {
-        CValue::Bool(word) => {
+        ProgramValue::Bool(word) => {
             MachineTerm::bool_cast(MachineIntegerType::Int32, word.bool_cast_operand()?.clone())
         }
         crate::kernel::integer64_c_value!(term) if term.bool_cast_operand().is_some() => {
@@ -237,41 +237,41 @@ pub(crate) fn c_bool_cast_range_facts(value: &CValue) -> Option<Vec<Proposition>
 /// The range `[lower, upper]` every value of a narrow C integer type lies
 /// in, with the term holding it: a `uint8` is in `[0, 255]`, an `int16` in
 /// `[-32768, 32767]`. `None` for every other type, whose range is its word.
-pub(crate) fn c_narrow_integer_range(value: &CValue) -> Option<(&MachineTerm, i32, i32)> {
+pub(crate) fn c_narrow_integer_range(value: &ProgramValue) -> Option<(&MachineTerm, i32, i32)> {
     match value {
-        CValue::Int8(term) => Some((term, i32::from(i8::MIN), i32::from(i8::MAX))),
-        CValue::Int16(term) => Some((term, i32::from(i16::MIN), i32::from(i16::MAX))),
-        CValue::UInt8(term) => Some((term, 0, i32::from(u8::MAX))),
-        CValue::UInt16(term) => Some((term, 0, i32::from(u16::MAX))),
+        ProgramValue::Int8(term) => Some((term, i32::from(i8::MIN), i32::from(i8::MAX))),
+        ProgramValue::Int16(term) => Some((term, i32::from(i16::MIN), i32::from(i16::MAX))),
+        ProgramValue::UInt8(term) => Some((term, 0, i32::from(u8::MAX))),
+        ProgramValue::UInt16(term) => Some((term, 0, i32::from(u16::MAX))),
         _ => None,
     }
 }
 
 /// An `int8` value. A 32-bit constant given for it is read as its value's
 /// word (`MachineTerm::in_narrow_format`).
-pub fn int8(bits: impl Into<MachineTerm>) -> CValue {
-    CValue::Int8(bits.into().in_narrow_format(MachineIntegerType::Int8))
+pub fn int8(bits: impl Into<MachineTerm>) -> ProgramValue {
+    ProgramValue::Int8(bits.into().in_narrow_format(MachineIntegerType::Int8))
 }
 
 /// An `int16` value; see [`int8`].
-pub fn int16(bits: impl Into<MachineTerm>) -> CValue {
-    CValue::Int16(bits.into().in_narrow_format(MachineIntegerType::Int16))
+pub fn int16(bits: impl Into<MachineTerm>) -> ProgramValue {
+    ProgramValue::Int16(bits.into().in_narrow_format(MachineIntegerType::Int16))
 }
 
 /// A `uint8` value; see [`int8`].
-pub fn uint8(bits: impl Into<MachineTerm>) -> CValue {
-    CValue::UInt8(bits.into().in_narrow_format(MachineIntegerType::UInt8))
+pub fn uint8(bits: impl Into<MachineTerm>) -> ProgramValue {
+    ProgramValue::UInt8(bits.into().in_narrow_format(MachineIntegerType::UInt8))
 }
 
 /// A `uint16` value; see [`int8`].
-pub fn uint16(bits: impl Into<MachineTerm>) -> CValue {
-    CValue::UInt16(bits.into().in_narrow_format(MachineIntegerType::UInt16))
+pub fn uint16(bits: impl Into<MachineTerm>) -> ProgramValue {
+    ProgramValue::UInt16(bits.into().in_narrow_format(MachineIntegerType::UInt16))
 }
 
 /// A `uint32` value. A root 32-bit constant takes the `uint32` format
 /// (`MachineTerm::in_format32`), so it prints as itself.
 #[track_caller]
-pub fn uint32(bits: impl Into<MachineTerm>) -> CValue {
+pub fn uint32(bits: impl Into<MachineTerm>) -> ProgramValue {
     let bits = bits.into();
     if crate::kernel::machine_integer::format_audit::is_sign_free_word_operator(&bits) {
         crate::kernel::machine_integer::format_audit::record(
@@ -279,32 +279,32 @@ pub fn uint32(bits: impl Into<MachineTerm>) -> CValue {
             std::panic::Location::caller(),
         );
     }
-    CValue::UInt32(bits.in_format32(crate::kernel::MachineIntegerType::UInt32))
+    ProgramValue::UInt32(bits.in_format32(crate::kernel::MachineIntegerType::UInt32))
 }
 
 /// A 64-bit value. A plain 32-bit constant, as `int64(-1)` writes, is widened
 /// to the 64-bit constant it denotes, sign-extended for `int64` and
 /// zero-extended for `uint64`, so the value's term has the value's width.
-pub fn int64(bits: impl Into<MachineTerm>) -> CValue {
-    CValue::Int64(match bits.into() {
+pub fn int64(bits: impl Into<MachineTerm>) -> ProgramValue {
+    ProgramValue::Int64(match bits.into() {
         bits32_constant!(bits) => MachineTerm::int64_constant(i64::from(constant_u32(bits) as i32)),
         term => term,
     })
 }
 
-pub fn uint64(bits: impl Into<MachineTerm>) -> CValue {
-    CValue::UInt64(match bits.into() {
+pub fn uint64(bits: impl Into<MachineTerm>) -> ProgramValue {
+    ProgramValue::UInt64(match bits.into() {
         bits32_constant!(bits) => MachineTerm::uint64_constant(u64::from(constant_u32(bits))),
         term => term,
     })
 }
 
-pub fn float32(bits: impl Into<MachineTerm>) -> CValue {
-    CValue::Float32(bits.into())
+pub fn float32(bits: impl Into<MachineTerm>) -> ProgramValue {
+    ProgramValue::Float32(bits.into())
 }
 
-pub fn float64(bits: impl Into<MachineTerm>) -> CValue {
-    CValue::Float64(bits.into())
+pub fn float64(bits: impl Into<MachineTerm>) -> ProgramValue {
+    ProgramValue::Float64(bits.into())
 }
 
 /// True when `pointer` addresses within a live heap allocation of `memory`,
@@ -444,13 +444,13 @@ pub fn prove_c_condition_fact_target_transport(
 
 #[derive(Clone, Debug)]
 pub struct CLoopPreservationContext {
-    state: CState,
+    state: ExecutionState,
     /// Guard facts for this entry path, retained before publishing the entry join.
     entry_guard: Vec<Proposition>,
     /// Retain the exact frame paired with this persistent body checkpoint.
     /// Rebuilding an equal loop head gives a different mutation history.
     exit_frame: Option<ResourceContext>,
-    loop_entry_state: CState,
+    loop_entry_state: ExecutionState,
     pure_facts: Vec<Proposition>,
     /// One selected semantic proposition per declared invariant, including
     /// clauses already present in the ambient fact context.
@@ -482,7 +482,7 @@ pub struct CLoopPreservationContext {
 /// instead carries its target and is exported at its own state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CLoopFinalExitCandidate {
-    state: CState,
+    state: ExecutionState,
     jump_target: Option<CControlTargetId>,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: std::sync::Arc<[Proposition]>,
@@ -490,7 +490,7 @@ pub(crate) struct CLoopFinalExitCandidate {
 }
 
 impl CLoopFinalExitCandidate {
-    pub(crate) fn new(state: CState, pure_facts: Vec<Proposition>) -> Self {
+    pub(crate) fn new(state: ExecutionState, pure_facts: Vec<Proposition>) -> Self {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
             state,
@@ -517,7 +517,7 @@ impl CLoopFinalExitCandidate {
         self
     }
 
-    pub(crate) fn state(&self) -> &CState {
+    pub(crate) fn state(&self) -> &ExecutionState {
         &self.state
     }
 
@@ -539,7 +539,7 @@ impl CLoopFinalExitCandidate {
 /// enclosing frontier continues from, so no way out of the loop is dropped.
 #[derive(Clone, Debug)]
 pub(crate) struct CLoopBreakExit {
-    state: CState,
+    state: ExecutionState,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: std::sync::Arc<[Proposition]>,
     fact_context: Option<PureFactContext>,
@@ -556,7 +556,7 @@ impl PartialEq for CLoopBreakExit {
 impl Eq for CLoopBreakExit {}
 
 impl CLoopBreakExit {
-    pub(crate) fn new(state: CState, pure_facts: Vec<Proposition>) -> Self {
+    pub(crate) fn new(state: ExecutionState, pure_facts: Vec<Proposition>) -> Self {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
             state,
@@ -568,7 +568,7 @@ impl CLoopBreakExit {
 
     /// Retain the checked context alongside the exact facts it indexed.
     pub(crate) fn from_proof_facts(
-        state: CState,
+        state: ExecutionState,
         facts: &crate::kernel::proof::ProofFacts,
     ) -> Self {
         let mut exit = Self::new(state, facts.to_vec());
@@ -588,7 +588,7 @@ impl CLoopBreakExit {
         self
     }
 
-    pub(crate) fn state(&self) -> &CState {
+    pub(crate) fn state(&self) -> &ExecutionState {
         &self.state
     }
 
@@ -616,7 +616,7 @@ impl CLoopBreakExit {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CLoopReturnExit {
     value: StoredExecutionValue,
-    state: CState,
+    state: ExecutionState,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: std::sync::Arc<[Proposition]>,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
@@ -625,7 +625,7 @@ pub(crate) struct CLoopReturnExit {
 impl CLoopReturnExit {
     pub(crate) fn new(
         value: impl Into<StoredExecutionValue>,
-        state: CState,
+        state: ExecutionState,
         pure_facts: Vec<Proposition>,
     ) -> Self {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
@@ -649,7 +649,7 @@ impl CLoopReturnExit {
         &self.value
     }
 
-    pub(crate) fn state(&self) -> &CState {
+    pub(crate) fn state(&self) -> &ExecutionState {
         &self.state
     }
 
@@ -675,7 +675,7 @@ mod loop_exit_sharing_tests {
             .with_natural_exit_target(exit_target);
         let check = |candidates| {
             prove_symbolic_c_loop_exit_with_proven_phases(
-                CState::new(),
+                ExecutionState::new(),
                 statement.clone(),
                 PureFactContext::new(),
                 CExecutionEnvironment::new(),
@@ -687,7 +687,8 @@ mod loop_exit_sharing_tests {
             )
         };
         let (_, returned) = check(vec![
-            CLoopFinalExitCandidate::new(CState::new(), Vec::new()).with_jump_target(exit_target),
+            CLoopFinalExitCandidate::new(ExecutionState::new(), Vec::new())
+                .with_jump_target(exit_target),
         ]);
         let returned = returned.expect("a checked forward jump must form a loop rule");
         assert_eq!(returned.paths.len(), 1);
@@ -703,7 +704,7 @@ mod loop_exit_sharing_tests {
             CStatementOutcome::VerificationDiverges
         ));
         let (_, invalid) = check(vec![
-            CLoopFinalExitCandidate::new(CState::new(), Vec::new())
+            CLoopFinalExitCandidate::new(ExecutionState::new(), Vec::new())
                 .with_jump_target(CControlTargetId(3)),
         ]);
         assert!(
@@ -721,18 +722,18 @@ mod loop_exit_sharing_tests {
 impl CLoopPreservationContext {
     pub(crate) fn restored_exit(
         &self,
-        state: &CState,
+        state: &ExecutionState,
         facts: &crate::kernel::proof::ProofFacts,
         assumptions: &PureFactContext,
-    ) -> (CState, Vec<Proposition>) {
+    ) -> (ExecutionState, Vec<Proposition>) {
         (self.restored_exit_state(state, assumptions), facts.to_vec())
     }
 
     pub(crate) fn restored_exit_state(
         &self,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
-    ) -> CState {
+    ) -> ExecutionState {
         let rebound = crate::kernel::c_loop_state_with_loop_binders_rebound(
             &self.state,
             state,
@@ -757,10 +758,10 @@ impl CLoopPreservationContext {
     // rebinding them to loop names would invalidate named `produces` results.
     pub(crate) fn restored_return(
         &self,
-        state: &CState,
+        state: &ExecutionState,
         facts: &crate::kernel::proof::ProofFacts,
         assumptions: &PureFactContext,
-    ) -> (CState, Vec<Proposition>) {
+    ) -> (ExecutionState, Vec<Proposition>) {
         let restored = self.exit_frame.as_ref().map_or_else(
             || state.clone(),
             |frame| {
@@ -776,11 +777,11 @@ impl CLoopPreservationContext {
         (restored, facts)
     }
 
-    pub fn state(&self) -> &CState {
+    pub fn state(&self) -> &ExecutionState {
         &self.state
     }
 
-    pub fn loop_entry_state(&self) -> &CState {
+    pub fn loop_entry_state(&self) -> &ExecutionState {
         &self.loop_entry_state
     }
 
@@ -840,11 +841,14 @@ pub enum CLoopHeadRefusal {
         proposition: Proposition,
         context: Option<String>,
         /// The loop-top state the premise is stated over.
-        state: CState,
+        state: ExecutionState,
     },
     /// A resource the loop declares that the enclosing context does not
     /// hold, evaluated over `state`.
-    UnheldResource { fact: CResourceFact, state: CState },
+    UnheldResource {
+        fact: CResourceFact,
+        state: ExecutionState,
+    },
 }
 
 impl From<String> for CLoopHeadRefusal {
@@ -855,13 +859,13 @@ impl From<String> for CLoopHeadRefusal {
 
 #[allow(clippy::too_many_arguments)]
 pub fn c_loop_preservation_contexts(
-    loop_entry_state: &CState,
-    condition: &CExpression,
+    loop_entry_state: &ExecutionState,
+    condition: &ProgramExpression,
     invariant_checks: &[CLoopInvariantCheck],
     effect_checks: &[CLoopEffectCheck],
     resource_specs: &[CResourceSpec],
     definitions: &[CCompositeResourceDefinition],
-    body: &CStatement,
+    body: &ProgramStatement,
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
 ) -> Result<Vec<CLoopPreservationContext>, CLoopHeadRefusal> {
@@ -883,13 +887,13 @@ pub fn c_loop_preservation_contexts(
 /// Unlike a pre-tested `while`, the first body entry cannot assume that the
 /// post-test condition is true; the condition only guards later iterations.
 pub fn c_do_while_preservation_contexts(
-    loop_entry_state: &CState,
-    condition: &CExpression,
+    loop_entry_state: &ExecutionState,
+    condition: &ProgramExpression,
     invariant_checks: &[CLoopInvariantCheck],
     effect_checks: &[CLoopEffectCheck],
     resource_specs: &[CResourceSpec],
     definitions: &[CCompositeResourceDefinition],
-    body: &CStatement,
+    body: &ProgramStatement,
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
 ) -> Result<Vec<CLoopPreservationContext>, CLoopHeadRefusal> {
@@ -909,13 +913,13 @@ pub fn c_do_while_preservation_contexts(
 
 #[allow(clippy::too_many_arguments)]
 fn c_loop_preservation_contexts_with_mode(
-    loop_entry_state: &CState,
-    condition: &CExpression,
+    loop_entry_state: &ExecutionState,
+    condition: &ProgramExpression,
     invariant_checks: &[CLoopInvariantCheck],
     effect_checks: &[CLoopEffectCheck],
     resource_specs: &[CResourceSpec],
     definitions: &[CCompositeResourceDefinition],
-    body: &CStatement,
+    body: &ProgramStatement,
     assumptions: &PureFactContext,
     next_kernel_variable: u64,
     do_while: bool,
@@ -1144,8 +1148,8 @@ fn c_loop_preservation_contexts_with_mode(
 /// one at a time costs one lowering per invariant and only on the failing
 /// path.
 fn loop_head_invariant_failure(
-    top_state: &CState,
-    loop_entry_state: &CState,
+    top_state: &ExecutionState,
+    loop_entry_state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     iterations: &IntegerTerm,
     assumptions: &PureFactContext,
@@ -1179,8 +1183,8 @@ fn loop_head_invariant_failure(
 }
 
 pub fn c_loop_invariant_obligations_at_back_edge(
-    state: &CState,
-    iteration_entry_state: &CState,
+    state: &ExecutionState,
+    iteration_entry_state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     head_iterations: &IntegerTerm,
     assumptions: &PureFactContext,
@@ -1218,7 +1222,7 @@ pub fn c_reject_address_escaped_loop_measures(
 
 /// The locals whose address `body` takes anywhere: the one walk the
 /// address-escape checks read (see the termination module).
-pub fn c_address_taken_locals(body: &CStatement) -> BTreeSet<String> {
+pub fn c_address_taken_locals(body: &ProgramStatement) -> BTreeSet<String> {
     crate::kernel::termination::address_taken_locals(body)
 }
 
@@ -1302,9 +1306,9 @@ pub fn recursive_component_peers(
 /// anchor is part of the environment's identity.
 pub fn c_execution_environment_with_recursion_anchor(
     environment: CExecutionEnvironment,
-    function: &CFunction,
-    caller_state: &CState,
-    arguments: &[CExpression],
+    function: &ProgramFunction,
+    caller_state: &ExecutionState,
+    arguments: &[ProgramExpression],
 ) -> Result<CExecutionEnvironment, String> {
     if !function.contract_interface().has_call_ranked_recursion() {
         return Ok(environment);
@@ -1334,8 +1338,8 @@ pub fn c_execution_environment_with_recursion_anchor(
 /// and `state` at the back edge. The member order is fixed by
 /// `collect_loop_ranking_obligations`; see that function for the shape.
 pub fn c_loop_ranking_obligations_at_back_edge(
-    state: &CState,
-    iteration_entry_state: &CState,
+    state: &ExecutionState,
+    iteration_entry_state: &ExecutionState,
     head_iterations: &IntegerTerm,
     ranking_measures: &[CRankingComponent],
     assumptions: &PureFactContext,
@@ -1367,7 +1371,7 @@ impl CLoopEntryGoals {
 }
 
 pub fn c_loop_entry_goals(
-    state: &CState,
+    state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     assumptions: &PureFactContext,
 ) -> Result<CLoopEntryGoals, String> {
@@ -1389,7 +1393,7 @@ pub fn c_loop_entry_goals(
 }
 
 pub fn c_loop_invariant_obligations_at_entry(
-    state: &CState,
+    state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     assumptions: &PureFactContext,
 ) -> Result<Vec<ProofObligation>, String> {
@@ -1411,7 +1415,7 @@ pub fn c_loop_invariant_obligations_at_entry(
 }
 
 pub fn c_loop_invariants_hold_at_entry(
-    state: &CState,
+    state: &ExecutionState,
     invariant_checks: &[CLoopInvariantCheck],
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
@@ -1455,7 +1459,7 @@ pub fn c_loop_invariants_hold_at_entry(
 /// and every identity this abstraction issued lies below it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CStateJoinAbstraction {
-    pub state: CState,
+    pub state: ExecutionState,
     pub next_kernel_variable: u64,
 }
 
@@ -1466,8 +1470,8 @@ pub struct CStateJoinAbstraction {
 /// memory is forgotten. Exported facts and resources constrain those values at
 /// the abstract frontier.
 pub fn abstract_c_state_for_join(
-    state: &CState,
-    stable_entry_locals: &BTreeMap<String, CValue>,
+    state: &ExecutionState,
+    stable_entry_locals: &BTreeMap<String, ProgramValue>,
     next_kernel_variable: u64,
 ) -> Result<CStateJoinAbstraction, String> {
     abstract_c_state_for_join_across(
@@ -1490,9 +1494,9 @@ pub fn abstract_c_state_for_join(
 /// what makes the result independent of which arm allocated more, and what
 /// keeps the join off identities an arm has already spent.
 pub fn abstract_c_state_for_join_across(
-    state: &CState,
-    sibling_states: &[&CState],
-    stable_entry_locals: &BTreeMap<String, CValue>,
+    state: &ExecutionState,
+    sibling_states: &[&ExecutionState],
+    stable_entry_locals: &BTreeMap<String, ProgramValue>,
     next_kernel_variable: u64,
 ) -> Result<CStateJoinAbstraction, String> {
     abstract_c_state_for_join_across_with_policy(
@@ -1514,8 +1518,8 @@ pub fn abstract_c_state_for_join_across(
 /// arms' frames share, so a join costs the arms' changes rather than every
 /// local and parameter in scope.
 pub fn abstract_c_state_for_interface_join_across(
-    state: &CState,
-    sibling_states: &[&CState],
+    state: &ExecutionState,
+    sibling_states: &[&ExecutionState],
     next_kernel_variable: u64,
 ) -> Result<CStateJoinAbstraction, String> {
     abstract_c_state_for_join_across_with_policy(
@@ -1530,7 +1534,7 @@ pub fn abstract_c_state_for_interface_join_across(
 /// value, or, at an interface join, those every arm holds alike.
 #[derive(Clone, Copy)]
 enum JoinLocals<'a> {
-    Stable(&'a BTreeMap<String, CValue>),
+    Stable(&'a BTreeMap<String, ProgramValue>),
     ArmsAgree,
 }
 
@@ -1561,8 +1565,8 @@ impl crate::kernel::primitives::BlockMembership for InterfacePreservedBlocks<'_>
 }
 
 fn abstract_c_state_for_join_across_with_policy(
-    state: &CState,
-    sibling_states: &[&CState],
+    state: &ExecutionState,
+    sibling_states: &[&ExecutionState],
     join_locals: JoinLocals<'_>,
     next_kernel_variable: u64,
 ) -> Result<CStateJoinAbstraction, String> {
@@ -1797,83 +1801,79 @@ fn abstract_c_state_for_join_across_with_policy(
                 .iter()
                 .all(|sibling| sibling.locals.get(name) == Some(value)),
         };
-        let abstract_value = if stable {
-            value.clone()
-        } else {
-            match c_type {
-                CType::Void => continue,
-                // A `Bool` the arms disagree on is a fresh `Bool` binder.
-                CType::Bool => CValue::of_bool(ConditionTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::Int8 => int8(MachineTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::Int16 => int16(MachineTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::Int32 => int32(MachineTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::Int64 => CValue::Int64(MachineTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::UInt32 => uint32(MachineTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::UInt8 => uint8(MachineTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::UInt16 => uint16(MachineTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::UInt64 => CValue::UInt64(MachineTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::Float32 => CValue::Float32(MachineTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::Float64 => CValue::Float64(MachineTerm::Variable(join_variable(
-                    &mut variables,
-                    &mut budget,
-                )?)),
-                CType::FunctionPointer(_) => CValue::typed_pointer(
-                    Pointer::symbolic_function(join_variable(&mut variables, &mut budget)?),
-                    *c_type,
-                ),
-                CType::Int8Array(_) => {
-                    unreachable!("array objects use CLocalBinding::ArrayObject")
+        let abstract_value =
+            if stable {
+                value.clone()
+            } else {
+                match c_type {
+                    ProgramType::Void => continue,
+                    // A `Bool` the arms disagree on is a fresh `Bool` binder.
+                    ProgramType::Bool => ProgramValue::of_bool(ConditionTerm::Variable(
+                        join_variable(&mut variables, &mut budget)?,
+                    )),
+                    ProgramType::Int8 => int8(MachineTerm::Variable(join_variable(
+                        &mut variables,
+                        &mut budget,
+                    )?)),
+                    ProgramType::Int16 => int16(MachineTerm::Variable(join_variable(
+                        &mut variables,
+                        &mut budget,
+                    )?)),
+                    ProgramType::Int32 => int32(MachineTerm::Variable(join_variable(
+                        &mut variables,
+                        &mut budget,
+                    )?)),
+                    ProgramType::Int64 => ProgramValue::Int64(MachineTerm::Variable(
+                        join_variable(&mut variables, &mut budget)?,
+                    )),
+                    ProgramType::UInt32 => uint32(MachineTerm::Variable(join_variable(
+                        &mut variables,
+                        &mut budget,
+                    )?)),
+                    ProgramType::UInt8 => uint8(MachineTerm::Variable(join_variable(
+                        &mut variables,
+                        &mut budget,
+                    )?)),
+                    ProgramType::UInt16 => uint16(MachineTerm::Variable(join_variable(
+                        &mut variables,
+                        &mut budget,
+                    )?)),
+                    ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::Variable(
+                        join_variable(&mut variables, &mut budget)?,
+                    )),
+                    ProgramType::Float32 => ProgramValue::Float32(MachineTerm::Variable(
+                        join_variable(&mut variables, &mut budget)?,
+                    )),
+                    ProgramType::Float64 => ProgramValue::Float64(MachineTerm::Variable(
+                        join_variable(&mut variables, &mut budget)?,
+                    )),
+                    ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(
+                        Pointer::symbolic_function(join_variable(&mut variables, &mut budget)?),
+                        *c_type,
+                    ),
+                    ProgramType::Int8Array(_) => {
+                        unreachable!("array objects use CLocalBinding::ArrayObject")
+                    }
+                    ProgramType::Int32Array(_)
+                    | ProgramType::UInt8Array(_)
+                    | ProgramType::Int16Array(_)
+                    | ProgramType::UInt16Array(_)
+                    | ProgramType::UInt32Array(_)
+                    | ProgramType::Int128Array(_)
+                    | ProgramType::Int64Array(_)
+                    | ProgramType::UInt128Array(_)
+                    | ProgramType::UInt64Array(_)
+                    | ProgramType::Float32Array(_)
+                    | ProgramType::Float64Array(_) => {
+                        unreachable!("array objects use CLocalBinding::ArrayObject")
+                    }
+                    _ => ProgramValue::typed_pointer(
+                        Pointer::symbolic(join_variable(&mut variables, &mut budget)?),
+                        *c_type,
+                    ),
                 }
-                CType::Int32Array(_)
-                | CType::UInt8Array(_)
-                | CType::Int16Array(_)
-                | CType::UInt16Array(_)
-                | CType::UInt32Array(_)
-                | CType::Int128Array(_)
-                | CType::Int64Array(_)
-                | CType::UInt128Array(_)
-                | CType::UInt64Array(_)
-                | CType::Float32Array(_)
-                | CType::Float64Array(_) => {
-                    unreachable!("array objects use CLocalBinding::ArrayObject")
-                }
-                _ => CValue::typed_pointer(
-                    Pointer::symbolic(join_variable(&mut variables, &mut budget)?),
-                    *c_type,
-                ),
-            }
-            .into()
-        };
+                .into()
+            };
         preserved_blocks.insert(slot.block.clone());
         abstract_objects.push((name.clone(), abstract_value, *c_type));
     }
@@ -2062,31 +2062,39 @@ fn validate_branch_memory_delta_against_loans(
 /// Read only the expression's existing C type metadata; no load or access
 /// check is performed. Surface branch spelling uses this to keep native
 /// address comparisons separate from contract pointer-value equalities.
-pub(crate) fn c_expression_has_pointer_type(state: &CState, expression: &CExpression) -> bool {
+pub(crate) fn c_expression_has_pointer_type(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+) -> bool {
     super::eval::c_expression_pointee_type(state, expression).is_some()
 }
 
 /// Whether `expression` is a C `bool` value this state can type: a `bool`
 /// constant, or a read of a `bool` object. A branch on it is the `Bool`
 /// claim on the value itself (Stage 5), not its comparison with an integer.
-pub(crate) fn c_expression_has_bool_type(state: &CState, expression: &CExpression) -> bool {
+pub(crate) fn c_expression_has_bool_type(
+    state: &ExecutionState,
+    expression: &ProgramExpression,
+) -> bool {
     match expression {
-        CExpression::Value(value) => value.c_type() == CType::Bool,
+        ProgramExpression::Value(value) => value.c_type() == ProgramType::Bool,
         // A variant test is a claim on the enum value, never a number.
-        CExpression::EnumIs { .. } => true,
-        CExpression::CallResult { call, .. } => state
+        ProgramExpression::EnumIs { .. } => true,
+        ProgramExpression::CallResult { call, .. } => state
             .call_result(*call)
-            .is_some_and(|value| value.c_type() == CType::Bool),
-        expression => super::eval::c_expression_lvalue_type(state, expression) == Some(CType::Bool),
+            .is_some_and(|value| value.c_type() == ProgramType::Bool),
+        expression => {
+            super::eval::c_expression_lvalue_type(state, expression) == Some(ProgramType::Bool)
+        }
     }
 }
 
-pub fn c_variable(name: impl Into<String>) -> CExpression {
-    CExpression::Variable(name.into())
+pub fn c_variable(name: impl Into<String>) -> ProgramExpression {
+    ProgramExpression::Variable(name.into())
 }
 
-pub fn c_function_address(name: impl Into<String>) -> CExpression {
-    CExpression::FunctionAddress(name.into())
+pub fn c_function_address(name: impl Into<String>) -> ProgramExpression {
+    ProgramExpression::FunctionAddress(name.into())
 }
 
 /// The values a composite definition binds its existential witnesses to for
@@ -2099,7 +2107,7 @@ pub fn composite_resource_witness_values(
     memory: &CMemory,
     resources: &ResourceContext,
     assumptions: &PureFactContext,
-) -> Option<Vec<CValue>> {
+) -> Option<Vec<ProgramValue>> {
     let CResource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
@@ -2109,7 +2117,7 @@ pub fn composite_resource_witness_values(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
-    let mut state = CState::new().with_memory(memory.clone());
+    let mut state = ExecutionState::new().with_memory(memory.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
         let argument = argument.as_c_value()?;
         state.locals.set_typed(
@@ -2131,24 +2139,24 @@ pub fn composite_resource_witness_values(
     )
 }
 
-pub fn c_cast(expression: CExpression, target_type: CType) -> CExpression {
+pub fn c_cast(expression: ProgramExpression, target_type: ProgramType) -> ProgramExpression {
     c_cast_with_pointee_volatile(expression, target_type, false)
 }
 
 pub fn c_cast_with_pointee_volatile(
-    expression: CExpression,
-    target_type: CType,
+    expression: ProgramExpression,
+    target_type: ProgramType,
     pointee_volatile: bool,
-) -> CExpression {
+) -> ProgramExpression {
     c_cast_with_pointee_qualifiers(expression, target_type, pointee_volatile, false)
 }
 
 pub fn c_cast_with_pointee_qualifiers(
-    expression: CExpression,
-    target_type: CType,
+    expression: ProgramExpression,
+    target_type: ProgramType,
     pointee_volatile: bool,
     pointee_constant: bool,
-) -> CExpression {
+) -> ProgramExpression {
     c_cast_with_pointee_qualifiers_and_struct(
         expression,
         target_type,
@@ -2159,13 +2167,13 @@ pub fn c_cast_with_pointee_qualifiers(
 }
 
 pub fn c_cast_with_pointee_qualifiers_and_struct(
-    expression: CExpression,
-    target_type: CType,
+    expression: ProgramExpression,
+    target_type: ProgramType,
     pointee_volatile: bool,
     pointee_constant: bool,
     pointee_struct: Option<String>,
-) -> CExpression {
-    CExpression::Cast {
+) -> ProgramExpression {
+    ProgramExpression::Cast {
         expression: Box::new(expression),
         target_type,
         integer_mode: crate::kernel::CIntegerCastMode::Standard,
@@ -2180,13 +2188,13 @@ pub fn c_cast_with_pointee_qualifiers_and_struct(
 /// pointee `const` qualification, so unlike the lowering-inserted casts
 /// above it can drop the source pointer's `const`.
 pub fn c_source_cast_with_pointee_qualifiers_and_struct(
-    expression: CExpression,
-    target_type: CType,
+    expression: ProgramExpression,
+    target_type: ProgramType,
     pointee_volatile: bool,
     pointee_constant: bool,
     pointee_struct: Option<String>,
-) -> CExpression {
-    CExpression::Cast {
+) -> ProgramExpression {
+    ProgramExpression::Cast {
         expression: Box::new(expression),
         target_type,
         integer_mode: crate::kernel::CIntegerCastMode::Standard,
@@ -2199,8 +2207,8 @@ pub fn c_source_cast_with_pointee_qualifiers_and_struct(
 
 /// Marks a cast lowered from C source as C's integer conversion
 /// (`CIntegerCastMode::CConversion`). Any other cast is returned unchanged.
-pub fn c_source_integer_conversion(mut expression: CExpression) -> CExpression {
-    if let CExpression::Cast { integer_mode, .. } = &mut expression
+pub fn c_source_integer_conversion(mut expression: ProgramExpression) -> ProgramExpression {
+    if let ProgramExpression::Cast { integer_mode, .. } = &mut expression
         && *integer_mode == CIntegerCastMode::Standard
     {
         *integer_mode = CIntegerCastMode::CConversion;
@@ -2212,9 +2220,12 @@ pub fn c_source_integer_conversion(mut expression: CExpression) -> CExpression {
 /// The evaluator checks both runtime types. This policy is shared by Rust and
 /// C++20; C source conversions use `c_source_integer_conversion`, and a
 /// specification's casts keep `c_cast` and its checked policy.
-pub fn c_integer_cast_modulo(expression: CExpression, target_type: CType) -> CExpression {
+pub fn c_integer_cast_modulo(
+    expression: ProgramExpression,
+    target_type: ProgramType,
+) -> ProgramExpression {
     let mut result = c_cast(expression, target_type);
-    if let CExpression::Cast { integer_mode, .. } = &mut result {
+    if let ProgramExpression::Cast { integer_mode, .. } = &mut result {
         *integer_mode = CIntegerCastMode::Modulo;
     }
     result
@@ -2222,9 +2233,9 @@ pub fn c_integer_cast_modulo(expression: CExpression, target_type: CType) -> CEx
 
 /// The `Bool` value of a Rust comparison, `!` or connective (decision D5):
 /// the condition itself, with no path split.
-pub fn c_bool_value(expression: CExpression) -> CExpression {
-    let mut result = c_cast(expression, CType::Bool);
-    if let CExpression::Cast { integer_mode, .. } = &mut result {
+pub fn c_bool_value(expression: ProgramExpression) -> ProgramExpression {
+    let mut result = c_cast(expression, ProgramType::Bool);
+    if let ProgramExpression::Cast { integer_mode, .. } = &mut result {
         *integer_mode = CIntegerCastMode::BoolValue;
     }
     result
@@ -2233,29 +2244,32 @@ pub fn c_bool_value(expression: CExpression) -> CExpression {
 /// A Rust operator on 8- or 16-bit operands at their type `target_type`
 /// (decision G4): `operation` is the operator over the operands as written,
 /// and its value is the native node of that type, with no promotion.
-pub fn c_narrow_arithmetic(operation: CExpression, target_type: CType) -> CExpression {
+pub fn c_narrow_arithmetic(
+    operation: ProgramExpression,
+    target_type: ProgramType,
+) -> ProgramExpression {
     let mut result = c_cast(operation, target_type);
-    if let CExpression::Cast { integer_mode, .. } = &mut result {
+    if let ProgramExpression::Cast { integer_mode, .. } = &mut result {
         *integer_mode = CIntegerCastMode::NarrowArithmetic;
     }
     result
 }
 
 /// The C++20 uint64-to-int64 rule, distinct from an ordinary C cast.
-pub fn c_uint64_bits_to_int64(expression: CExpression) -> CExpression {
-    let mut result = c_cast(expression, CType::Int64);
-    if let CExpression::Cast { integer_mode, .. } = &mut result {
+pub fn c_uint64_bits_to_int64(expression: ProgramExpression) -> ProgramExpression {
+    let mut result = c_cast(expression, ProgramType::Int64);
+    if let ProgramExpression::Cast { integer_mode, .. } = &mut result {
         *integer_mode = CIntegerCastMode::UInt64BitsToInt64;
     }
     result
 }
 
 pub fn c_conditional(
-    condition: CExpression,
-    then_branch: CExpression,
-    else_branch: CExpression,
-) -> CExpression {
-    CExpression::Conditional {
+    condition: ProgramExpression,
+    then_branch: ProgramExpression,
+    else_branch: ProgramExpression,
+) -> ProgramExpression {
+    ProgramExpression::Conditional {
         condition: Box::new(condition),
         then_branch: Box::new(then_branch),
         else_branch: Box::new(else_branch),
@@ -2263,55 +2277,55 @@ pub fn c_conditional(
 }
 
 pub fn c_float_classification(
-    expression: CExpression,
+    expression: ProgramExpression,
     classification: CFloatClassification,
-) -> CExpression {
-    CExpression::FloatClassification {
+) -> ProgramExpression {
+    ProgramExpression::FloatClassification {
         expression: Box::new(expression),
         classification,
     }
 }
 
-pub fn c_float_negate(expression: CExpression) -> CExpression {
-    CExpression::FloatNegate(Box::new(expression))
+pub fn c_float_negate(expression: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::FloatNegate(Box::new(expression))
 }
 
-pub fn c_addr_of(name: impl Into<String>) -> CExpression {
-    CExpression::AddressOf(Box::new(c_variable(name)))
+pub fn c_addr_of(name: impl Into<String>) -> ProgramExpression {
+    ProgramExpression::AddressOf(Box::new(c_variable(name)))
 }
 
 /// A non-reading check of the storage denoted by an lvalue.
-pub fn c_checked_object_address(lvalue: CExpression) -> CExpression {
-    CExpression::CheckedObjectAddress(Box::new(lvalue))
+pub fn c_checked_object_address(lvalue: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::CheckedObjectAddress(Box::new(lvalue))
 }
 
-pub fn c_pointer_offset_bytes(pointer: CExpression, bytes: u32) -> CExpression {
+pub fn c_pointer_offset_bytes(pointer: ProgramExpression, bytes: u32) -> ProgramExpression {
     if bytes == 0 {
         pointer
     } else {
-        CExpression::PointerOffsetBytes {
+        ProgramExpression::PointerOffsetBytes {
             pointer: Box::new(pointer),
             bytes,
         }
     }
 }
 
-pub fn c_int32_literal(value: u32) -> CExpression {
-    CExpression::Value(int32(MachineTerm::constant(value)))
+pub fn c_int32_literal(value: u32) -> ProgramExpression {
+    ProgramExpression::Value(int32(MachineTerm::constant(value)))
 }
 
-pub fn c_uint8_literal(value: u8) -> CExpression {
-    CExpression::Value(uint8(MachineTerm::constant(u32::from(value))))
+pub fn c_uint8_literal(value: u8) -> ProgramExpression {
+    ProgramExpression::Value(uint8(MachineTerm::constant(u32::from(value))))
 }
 
-pub fn c_uint32_literal(value: u32) -> CExpression {
-    CExpression::Value(uint32(MachineTerm::constant(value)))
+pub fn c_uint32_literal(value: u32) -> ProgramExpression {
+    ProgramExpression::Value(uint32(MachineTerm::constant(value)))
 }
 
 /// Signed wide literal in the common checked machine arena.
-pub fn c_int128_literal(value: i128) -> CExpression {
+pub fn c_int128_literal(value: i128) -> ProgramExpression {
     let ty = MachineIntegerType::Int128;
-    CExpression::Value(
+    ProgramExpression::Value(
         ty.constant_value(
             MachineIntegerConstant::from_signed(ty.format(), value)
                 .expect("i128 fits the signed 128-bit format"),
@@ -2321,9 +2335,9 @@ pub fn c_int128_literal(value: i128) -> CExpression {
 }
 
 /// Unsigned wide literal; the high 64 bits are retained.
-pub fn c_uint128_literal(value: u128) -> CExpression {
+pub fn c_uint128_literal(value: u128) -> ProgramExpression {
     let ty = MachineIntegerType::UInt128;
-    CExpression::Value(
+    ProgramExpression::Value(
         ty.constant_value(
             MachineIntegerConstant::from_unsigned(ty.format(), value)
                 .expect("u128 fits the unsigned 128-bit format"),
@@ -2332,134 +2346,134 @@ pub fn c_uint128_literal(value: u128) -> CExpression {
     )
 }
 
-pub fn c_int64_literal(value: i64) -> CExpression {
-    CExpression::Value(int64(MachineTerm::int64_constant(value)))
+pub fn c_int64_literal(value: i64) -> ProgramExpression {
+    ProgramExpression::Value(int64(MachineTerm::int64_constant(value)))
 }
 
-pub fn c_uint64_literal(value: u64) -> CExpression {
-    CExpression::Value(uint64(MachineTerm::uint64_constant(value)))
+pub fn c_uint64_literal(value: u64) -> ProgramExpression {
+    ProgramExpression::Value(uint64(MachineTerm::uint64_constant(value)))
 }
 
-pub fn c_float32_literal(bits: u32) -> CExpression {
-    CExpression::Value(float32(MachineTerm::constant(bits)))
+pub fn c_float32_literal(bits: u32) -> ProgramExpression {
+    ProgramExpression::Value(float32(MachineTerm::constant(bits)))
 }
 
-pub fn c_float64_literal(bits: u64) -> CExpression {
-    CExpression::Value(float64(MachineTerm::uint64_constant(bits)))
+pub fn c_float64_literal(bits: u64) -> ProgramExpression {
+    ProgramExpression::Value(float64(MachineTerm::uint64_constant(bits)))
 }
 
-pub fn c_pointer_value(pointer: Pointer) -> CExpression {
-    CExpression::Value(CValue::pointer(pointer))
+pub fn c_pointer_value(pointer: Pointer) -> ProgramExpression {
+    ProgramExpression::Value(ProgramValue::pointer(pointer))
 }
 
-pub fn c_typed_pointer_value(pointer: Pointer, c_type: CType) -> CExpression {
-    CExpression::Value(CValue::typed_pointer(pointer, c_type))
+pub fn c_typed_pointer_value(pointer: Pointer, c_type: ProgramType) -> ProgramExpression {
+    ProgramExpression::Value(ProgramValue::typed_pointer(pointer, c_type))
 }
 
-pub fn c_less_than(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::LessThan(Box::new(left), Box::new(right))
+pub fn c_less_than(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::LessThan(Box::new(left), Box::new(right))
 }
 
-pub fn c_less_equal(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::LessEqual(Box::new(left), Box::new(right))
+pub fn c_less_equal(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::LessEqual(Box::new(left), Box::new(right))
 }
 
-pub fn c_greater_than(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::GreaterThan(Box::new(left), Box::new(right))
+pub fn c_greater_than(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::GreaterThan(Box::new(left), Box::new(right))
 }
 
-pub fn c_greater_equal(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::GreaterEqual(Box::new(left), Box::new(right))
+pub fn c_greater_equal(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::GreaterEqual(Box::new(left), Box::new(right))
 }
 
-pub fn c_equal(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::Equal(Box::new(left), Box::new(right))
+pub fn c_equal(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Equal(Box::new(left), Box::new(right))
 }
 
-pub fn c_not_equal(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::NotEqual(Box::new(left), Box::new(right))
+pub fn c_not_equal(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::NotEqual(Box::new(left), Box::new(right))
 }
 
-pub fn c_not(expression: CExpression) -> CExpression {
-    CExpression::Not(Box::new(expression))
+pub fn c_not(expression: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Not(Box::new(expression))
 }
 
-pub fn c_and(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::And(Box::new(left), Box::new(right))
+pub fn c_and(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::And(Box::new(left), Box::new(right))
 }
 
-pub fn c_or(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::Or(Box::new(left), Box::new(right))
+pub fn c_or(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Or(Box::new(left), Box::new(right))
 }
 
-pub fn c_add(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::Add(Box::new(left), Box::new(right))
+pub fn c_add(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Add(Box::new(left), Box::new(right))
 }
 
-pub fn c_subtract(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::Subtract(Box::new(left), Box::new(right))
+pub fn c_subtract(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Subtract(Box::new(left), Box::new(right))
 }
 
-pub fn c_multiply(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::Multiply(Box::new(left), Box::new(right))
+pub fn c_multiply(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Multiply(Box::new(left), Box::new(right))
 }
 
-pub fn c_divide(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::Divide(Box::new(left), Box::new(right))
+pub fn c_divide(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Divide(Box::new(left), Box::new(right))
 }
 
-pub fn c_remainder(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::Remainder(Box::new(left), Box::new(right))
+pub fn c_remainder(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Remainder(Box::new(left), Box::new(right))
 }
 
-pub fn c_shift_left(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::ShiftLeft(Box::new(left), Box::new(right))
+pub fn c_shift_left(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::ShiftLeft(Box::new(left), Box::new(right))
 }
 
-pub fn c_shift_right(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::ShiftRight(Box::new(left), Box::new(right))
+pub fn c_shift_right(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::ShiftRight(Box::new(left), Box::new(right))
 }
 
-pub fn c_bitwise_and(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::BitwiseAnd(Box::new(left), Box::new(right))
+pub fn c_bitwise_and(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::BitwiseAnd(Box::new(left), Box::new(right))
 }
 
-pub fn c_bitwise_or(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::BitwiseOr(Box::new(left), Box::new(right))
+pub fn c_bitwise_or(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::BitwiseOr(Box::new(left), Box::new(right))
 }
 
-pub fn c_bitwise_xor(left: CExpression, right: CExpression) -> CExpression {
-    CExpression::BitwiseXor(Box::new(left), Box::new(right))
+pub fn c_bitwise_xor(left: ProgramExpression, right: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::BitwiseXor(Box::new(left), Box::new(right))
 }
 
-pub fn c_bitwise_not(expression: CExpression) -> CExpression {
-    CExpression::BitwiseNot(Box::new(expression))
+pub fn c_bitwise_not(expression: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::BitwiseNot(Box::new(expression))
 }
 
-pub fn c_load(pointer: CExpression) -> CExpression {
-    CExpression::Load(Box::new(pointer))
+pub fn c_load(pointer: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Load(Box::new(pointer))
 }
 
-pub fn c_typed_load(pointer: CExpression, value_type: CType) -> CExpression {
+pub fn c_typed_load(pointer: ProgramExpression, value_type: ProgramType) -> ProgramExpression {
     c_typed_load_with_source(pointer, value_type, None)
 }
 
 pub(crate) fn c_typed_load_with_source(
-    pointer: CExpression,
-    value_type: CType,
+    pointer: ProgramExpression,
+    value_type: ProgramType,
     source: Option<crate::kernel::LoadSourceId>,
-) -> CExpression {
+) -> ProgramExpression {
     c_qualified_typed_load_with_source(pointer, value_type, false, None, source)
 }
 
 pub(crate) fn c_qualified_typed_load_with_source(
-    pointer: CExpression,
-    value_type: CType,
+    pointer: ProgramExpression,
+    value_type: ProgramType,
     pointee_constant: bool,
     access_class: Option<crate::kernel::effective_type::CAccessClass>,
     source: Option<crate::kernel::LoadSourceId>,
-) -> CExpression {
-    CExpression::TypedLoad {
+) -> ProgramExpression {
+    ProgramExpression::TypedLoad {
         pointer: Box::new(pointer),
         value_type,
         volatile: false,
@@ -2474,11 +2488,11 @@ pub(crate) fn c_qualified_typed_load_with_source(
 /// A load of a `value_type` lvalue whose access class the kernel type cannot
 /// give (`design/effective-types.md`).
 pub(crate) fn c_classed_load(
-    pointer: CExpression,
-    value_type: CType,
+    pointer: ProgramExpression,
+    value_type: ProgramType,
     access_class: Option<crate::kernel::effective_type::CAccessClass>,
-) -> CExpression {
-    CExpression::TypedLoad {
+) -> ProgramExpression {
+    ProgramExpression::TypedLoad {
         pointer: Box::new(pointer),
         value_type,
         volatile: false,
@@ -2489,11 +2503,11 @@ pub(crate) fn c_classed_load(
 }
 
 pub(crate) fn c_qualified_volatile_typed_load(
-    pointer: CExpression,
-    value_type: CType,
+    pointer: ProgramExpression,
+    value_type: ProgramType,
     pointee_constant: bool,
-) -> CExpression {
-    CExpression::TypedLoad {
+) -> ProgramExpression {
+    ProgramExpression::TypedLoad {
         pointer: Box::new(pointer),
         value_type,
         volatile: true,
@@ -2503,12 +2517,12 @@ pub(crate) fn c_qualified_volatile_typed_load(
     }
 }
 
-pub fn c_index(base: CExpression, index: CExpression) -> CExpression {
-    CExpression::Index(Box::new(base), Box::new(index))
+pub fn c_index(base: ProgramExpression, index: ProgramExpression) -> ProgramExpression {
+    ProgramExpression::Index(Box::new(base), Box::new(index))
 }
 
-pub fn c_assign(name: impl Into<String>, expression: CExpression) -> CStatement {
-    CStatement::Assign {
+pub fn c_assign(name: impl Into<String>, expression: ProgramExpression) -> ProgramStatement {
+    ProgramStatement::Assign {
         name: name.into(),
         expression,
         source: Default::default(),
@@ -2518,36 +2532,42 @@ pub fn c_assign(name: impl Into<String>, expression: CExpression) -> CStatement 
 pub fn c_call_assign(
     target: impl Into<String>,
     function_name: impl Into<String>,
-    arguments: Vec<CExpression>,
-) -> CStatement {
-    CStatement::CallAssign {
+    arguments: Vec<ProgramExpression>,
+) -> ProgramStatement {
+    ProgramStatement::CallAssign {
         target: target.into(),
         function_name: function_name.into(),
         arguments,
     }
 }
 
-pub fn c_call(function_name: impl Into<String>, arguments: Vec<CExpression>) -> CStatement {
-    CStatement::Call {
+pub fn c_call(
+    function_name: impl Into<String>,
+    arguments: Vec<ProgramExpression>,
+) -> ProgramStatement {
+    ProgramStatement::Call {
         function_name: function_name.into(),
         arguments,
     }
 }
 
-pub fn c_heap_allocate(target: impl Into<String>, bytes: u32) -> CStatement {
+pub fn c_heap_allocate(target: impl Into<String>, bytes: u32) -> ProgramStatement {
     c_heap_allocate_sized(target, c_int32_literal(bytes))
 }
 
-pub fn c_heap_allocate_sized(target: impl Into<String>, bytes: CExpression) -> CStatement {
+pub fn c_heap_allocate_sized(
+    target: impl Into<String>,
+    bytes: ProgramExpression,
+) -> ProgramStatement {
     c_heap_allocate_sized_with_zeroed(target, bytes, false)
 }
 
 pub fn c_heap_allocate_sized_with_zeroed(
     target: impl Into<String>,
-    bytes: CExpression,
+    bytes: ProgramExpression,
     zeroed: bool,
-) -> CStatement {
-    CStatement::HeapAllocate {
+) -> ProgramStatement {
+    ProgramStatement::HeapAllocate {
         target: target.into(),
         bytes,
         zeroed,
@@ -2556,36 +2576,40 @@ pub fn c_heap_allocate_sized_with_zeroed(
     }
 }
 
-pub fn c_heap_free(pointer: CExpression) -> CStatement {
-    CStatement::HeapFree { pointer }
+pub fn c_heap_free(pointer: ProgramExpression) -> ProgramStatement {
+    ProgramStatement::HeapFree { pointer }
 }
 
-pub fn c_declare(name: impl Into<String>, c_type: CType) -> CStatement {
+pub fn c_declare(name: impl Into<String>, c_type: ProgramType) -> ProgramStatement {
     c_declare_volatile(name, c_type, false)
 }
 
-pub fn c_declare_volatile(name: impl Into<String>, c_type: CType, volatile: bool) -> CStatement {
+pub fn c_declare_volatile(
+    name: impl Into<String>,
+    c_type: ProgramType,
+    volatile: bool,
+) -> ProgramStatement {
     c_declare_qualified(name, c_type, volatile, false)
 }
 
 pub fn c_declare_qualified(
     name: impl Into<String>,
-    c_type: CType,
+    c_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
-) -> CStatement {
+) -> ProgramStatement {
     c_declare_with_all_qualifiers(name, c_type, volatile, pointee_volatile, false, false)
 }
 
 pub fn c_declare_with_all_qualifiers(
     name: impl Into<String>,
-    c_type: CType,
+    c_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
     constant: bool,
     pointee_constant: bool,
-) -> CStatement {
-    CStatement::Declare {
+) -> ProgramStatement {
+    ProgramStatement::Declare {
         name: name.into(),
         c_type,
         volatile,
@@ -2603,14 +2627,14 @@ pub fn c_declare_with_all_qualifiers(
 /// whose written elements follow as ordinary stores ([`CZeroFill`]).
 pub fn c_declare_with_zero_fill(
     name: impl Into<String>,
-    c_type: CType,
+    c_type: ProgramType,
     volatile: bool,
     pointee_volatile: bool,
     constant: bool,
     pointee_constant: bool,
     zero_fill: Option<CZeroFill>,
-) -> CStatement {
-    CStatement::Declare {
+) -> ProgramStatement {
+    ProgramStatement::Declare {
         name: name.into(),
         c_type,
         volatile,
@@ -2627,14 +2651,14 @@ pub fn c_declare_with_zero_fill(
 /// subject to the object's const qualification after this transition.
 pub fn c_declare_initialized(
     name: impl Into<String>,
-    c_type: CType,
-    expression: CExpression,
+    c_type: ProgramType,
+    expression: ProgramExpression,
     volatile: bool,
     pointee_volatile: bool,
     constant: bool,
     pointee_constant: bool,
-) -> CStatement {
-    CStatement::Declare {
+) -> ProgramStatement {
+    ProgramStatement::Declare {
         name: name.into(),
         c_type,
         volatile,
@@ -2647,8 +2671,8 @@ pub fn c_declare_initialized(
     }
 }
 
-pub fn c_declare_aggregate(name: impl Into<String>, layout: CAggregateLayout) -> CStatement {
-    CStatement::DeclareAggregate {
+pub fn c_declare_aggregate(name: impl Into<String>, layout: CAggregateLayout) -> ProgramStatement {
+    ProgramStatement::DeclareAggregate {
         name: name.into(),
         layout,
         kind: CAggregateDeclarationKind::Local,
@@ -2661,8 +2685,8 @@ pub(crate) fn c_declare_classed_aggregate(
     name: impl Into<String>,
     layout: CAggregateLayout,
     declared_class: Option<crate::kernel::effective_type::CAccessClass>,
-) -> CStatement {
-    CStatement::DeclareAggregate {
+) -> ProgramStatement {
+    ProgramStatement::DeclareAggregate {
         name: name.into(),
         layout,
         kind: CAggregateDeclarationKind::Local,
@@ -2673,8 +2697,8 @@ pub(crate) fn c_declare_classed_aggregate(
 pub fn c_begin_aggregate_construction(
     name: impl Into<String>,
     layout: CAggregateLayout,
-) -> CStatement {
-    CStatement::DeclareAggregate {
+) -> ProgramStatement {
+    ProgramStatement::DeclareAggregate {
         name: name.into(),
         layout,
         kind: CAggregateDeclarationKind::Constructor,
@@ -2687,8 +2711,8 @@ pub fn c_begin_aggregate_construction(
 pub fn c_allocate_aggregate_destination(
     name: impl Into<String>,
     layout: CAggregateLayout,
-) -> CStatement {
-    CStatement::DeclareAggregate {
+) -> ProgramStatement {
+    ProgramStatement::DeclareAggregate {
         name: name.into(),
         layout,
         kind: CAggregateDeclarationKind::ConstructionDestination,
@@ -2697,11 +2721,11 @@ pub fn c_allocate_aggregate_destination(
 }
 
 pub fn c_copy_aggregate(
-    target: CExpression,
-    source: CExpression,
+    target: ProgramExpression,
+    source: ProgramExpression,
     layout: CAggregateLayout,
-) -> CStatement {
-    CStatement::CopyAggregate {
+) -> ProgramStatement {
+    ProgramStatement::CopyAggregate {
         target,
         source,
         layout,
@@ -2710,18 +2734,18 @@ pub fn c_copy_aggregate(
 
 /// Retire automatic storage at a source-language lifetime boundary. Frontends
 /// supply the objects whose lifetimes end; this grants no cleanup authority.
-pub fn c_end_automatic_lifetimes(names: Vec<String>) -> CStatement {
-    CStatement::EndAutomaticLifetimes { names }
+pub fn c_end_automatic_lifetimes(names: Vec<String>) -> ProgramStatement {
+    ProgramStatement::EndAutomaticLifetimes { names }
 }
 
 pub fn c_initialize_scalar_array(
-    target: CExpression,
-    source: CExpression,
-    element_type: CType,
+    target: ProgramExpression,
+    source: ProgramExpression,
+    element_type: ProgramType,
     count: u32,
     copy: bool,
-) -> CStatement {
-    CStatement::InitializeScalarArray {
+) -> ProgramStatement {
+    ProgramStatement::InitializeScalarArray {
         target,
         source,
         element_type,
@@ -2734,13 +2758,13 @@ pub fn c_initialize_scalar_array(
 /// Write an embedded scalar-array region without changing adjacent bytes.
 /// This does not grant storage, initialization or memory authority.
 pub fn c_write_scalar_array_region(
-    target: CExpression,
-    source: CExpression,
-    element_type: CType,
+    target: ProgramExpression,
+    source: ProgramExpression,
+    element_type: ProgramType,
     count: u32,
     copy: bool,
-) -> CStatement {
-    CStatement::InitializeScalarArray {
+) -> ProgramStatement {
+    ProgramStatement::InitializeScalarArray {
         target,
         source,
         element_type,
@@ -2750,71 +2774,78 @@ pub fn c_write_scalar_array_region(
     }
 }
 
-pub fn c_assert(condition: CExpression) -> CStatement {
-    CStatement::Assert {
+pub fn c_assert(condition: ProgramExpression) -> ProgramStatement {
+    ProgramStatement::Assert {
         condition,
         label: None,
     }
 }
 
-pub fn c_labeled_assert(condition: CExpression, label: impl Into<String>) -> CStatement {
-    CStatement::Assert {
+pub fn c_labeled_assert(
+    condition: ProgramExpression,
+    label: impl Into<String>,
+) -> ProgramStatement {
+    ProgramStatement::Assert {
         condition,
         label: Some(label.into()),
     }
 }
 
-pub fn c_seq(first: CStatement, second: CStatement) -> CStatement {
-    CStatement::seq(Arc::new(first), Arc::new(second))
+pub fn c_seq(first: ProgramStatement, second: ProgramStatement) -> ProgramStatement {
+    ProgramStatement::seq(Arc::new(first), Arc::new(second))
 }
 
-pub fn c_skip() -> CStatement {
-    CStatement::Skip
+pub fn c_skip() -> ProgramStatement {
+    ProgramStatement::Skip
 }
 
-pub fn c_break() -> CStatement {
-    CStatement::Break
+pub fn c_break() -> ProgramStatement {
+    ProgramStatement::Break
 }
 
-pub fn c_continue() -> CStatement {
-    CStatement::Continue
+pub fn c_continue() -> ProgramStatement {
+    ProgramStatement::Continue
 }
 
-pub(crate) fn c_goto(target: CControlTargetId) -> CStatement {
-    CStatement::Goto { target }
+pub(crate) fn c_goto(target: CControlTargetId) -> ProgramStatement {
+    ProgramStatement::Goto { target }
 }
 
-pub fn c_switch(expression: CExpression, cases: Vec<CSwitchCase>) -> CStatement {
-    CStatement::Switch { expression, cases }
+pub fn c_switch(expression: ProgramExpression, cases: Vec<CSwitchCase>) -> ProgramStatement {
+    ProgramStatement::Switch { expression, cases }
 }
 
-pub fn c_return(expression: CExpression) -> CStatement {
-    CStatement::Return(expression)
+pub fn c_return(expression: ProgramExpression) -> ProgramStatement {
+    ProgramStatement::Return(expression)
 }
 
-pub fn c_void_value() -> CExpression {
-    CExpression::Value(CValue::Void)
+pub fn c_void_value() -> ProgramExpression {
+    ProgramExpression::Value(ProgramValue::Void)
 }
 
-pub fn c_store(pointer: CExpression, value: CExpression) -> CStatement {
-    CStatement::Store { pointer, value }
+pub fn c_store(pointer: ProgramExpression, value: ProgramExpression) -> ProgramStatement {
+    ProgramStatement::Store { pointer, value }
 }
 
-pub fn c_typed_store(pointer: CExpression, value: CExpression, value_type: CType) -> CStatement {
+pub fn c_typed_store(
+    pointer: ProgramExpression,
+    value: ProgramExpression,
+    value_type: ProgramType,
+) -> ProgramStatement {
     c_qualified_typed_store(pointer, value, value_type, None, false, false)
 }
 
 /// A typed store whose lvalue has `access_class` when `value_type` erases
 /// it, as [`c_classed_load`] does for a load.
 pub(crate) fn c_qualified_typed_store(
-    pointer: CExpression,
-    value: CExpression,
-    value_type: CType,
+    pointer: ProgramExpression,
+    value: ProgramExpression,
+    value_type: ProgramType,
     access_class: Option<crate::kernel::effective_type::CAccessClass>,
     pointee_constant: bool,
     volatile: bool,
-) -> CStatement {
-    CStatement::TypedStore {
+) -> ProgramStatement {
+    ProgramStatement::TypedStore {
         pointer,
         value,
         value_type,
@@ -2826,11 +2857,11 @@ pub(crate) fn c_qualified_typed_store(
 }
 
 pub fn c_update(
-    target: CExpression,
+    target: ProgramExpression,
     operator: CUpdateOperator,
-    operand: CExpression,
-) -> CStatement {
-    CStatement::Update {
+    operand: ProgramExpression,
+) -> ProgramStatement {
+    ProgramStatement::Update {
         target,
         operator,
         operand,
@@ -2838,11 +2869,11 @@ pub fn c_update(
 }
 
 pub fn c_if(
-    condition: CExpression,
-    then_branch: CStatement,
-    else_branch: CStatement,
-) -> CStatement {
-    CStatement::If {
+    condition: ProgramExpression,
+    then_branch: ProgramStatement,
+    else_branch: ProgramStatement,
+) -> ProgramStatement {
+    ProgramStatement::If {
         condition,
         then_branch: Box::new(then_branch),
         else_branch: Box::new(else_branch),
@@ -2852,20 +2883,20 @@ pub fn c_if(
 /// Handle a checked int32 exceptional outcome, binding its payload only on
 /// the caught path. Normal and other terminal outcomes bypass the handler.
 pub fn c_try_catch_int32(
-    try_body: CStatement,
+    try_body: ProgramStatement,
     binding: impl Into<String>,
-    handler: CStatement,
-) -> CStatement {
+    handler: ProgramStatement,
+) -> ProgramStatement {
     c_try_catch_int32_with_cleanup(try_body, binding, handler, false)
 }
 
 pub fn c_try_catch_int32_with_cleanup(
-    try_body: CStatement,
+    try_body: ProgramStatement,
     binding: impl Into<String>,
-    handler: CStatement,
+    handler: ProgramStatement,
     cleanup_unwind: bool,
-) -> CStatement {
-    CStatement::TryCatchInt32 {
+) -> ProgramStatement {
+    ProgramStatement::TryCatchInt32 {
         try_body: Box::new(try_body),
         binding: binding.into(),
         handler: Box::new(handler),
@@ -2874,19 +2905,19 @@ pub fn c_try_catch_int32_with_cleanup(
 }
 
 pub fn c_while(
-    condition: CExpression,
+    condition: ProgramExpression,
     invariant: Vec<Proposition>,
-    body: CStatement,
-) -> CStatement {
+    body: ProgramStatement,
+) -> ProgramStatement {
     c_while_with_invariant_and_effect_checks(condition, invariant, Vec::new(), Vec::new(), body)
 }
 
 pub fn c_while_with_invariant_checks(
-    condition: CExpression,
+    condition: ProgramExpression,
     invariant: Vec<Proposition>,
     invariant_checks: Vec<CLoopInvariantCheck>,
-    body: CStatement,
-) -> CStatement {
+    body: ProgramStatement,
+) -> ProgramStatement {
     c_while_with_invariant_and_effect_checks(
         condition,
         invariant,
@@ -2897,13 +2928,13 @@ pub fn c_while_with_invariant_checks(
 }
 
 pub fn c_while_with_invariant_and_effect_checks(
-    condition: CExpression,
+    condition: ProgramExpression,
     invariant: Vec<Proposition>,
     invariant_checks: Vec<CLoopInvariantCheck>,
     effect_checks: Vec<CLoopEffectCheck>,
-    body: CStatement,
-) -> CStatement {
-    CStatement::While {
+    body: ProgramStatement,
+) -> ProgramStatement {
+    ProgramStatement::While {
         condition,
         invariant,
         invariant_checks,
@@ -2918,10 +2949,10 @@ pub fn c_while_with_invariant_and_effect_checks(
     }
 }
 
-impl CStatement {
+impl ProgramStatement {
     /// The pair `Seq(first, second)`: `first`, then `second`.
-    pub fn seq(first: Arc<CStatement>, second: Arc<CStatement>) -> Self {
-        Self::Seq(CStatementSequence::pair(first, second))
+    pub fn seq(first: Arc<ProgramStatement>, second: Arc<ProgramStatement>) -> Self {
+        Self::Seq(ProgramStatementSequence::pair(first, second))
     }
 
     /// Declares the resources a loop holds for itself.
@@ -3004,17 +3035,17 @@ impl CStatement {
     }
 }
 
-pub fn c_do_while(condition: CExpression, body: CStatement) -> CStatement {
+pub fn c_do_while(condition: ProgramExpression, body: ProgramStatement) -> ProgramStatement {
     c_do_while_with_invariant_and_effect_checks(condition, Vec::new(), Vec::new(), body)
 }
 
 pub fn c_do_while_with_invariant_and_effect_checks(
-    condition: CExpression,
+    condition: ProgramExpression,
     invariant_checks: Vec<CLoopInvariantCheck>,
     effect_checks: Vec<CLoopEffectCheck>,
-    body: CStatement,
-) -> CStatement {
-    CStatement::While {
+    body: ProgramStatement,
+) -> ProgramStatement {
+    ProgramStatement::While {
         condition,
         invariant: Vec::new(),
         invariant_checks,
@@ -3034,23 +3065,27 @@ pub fn c_do_while_with_invariant_and_effect_checks(
 /// a `continue` must execute that same step before returning to the loop head.
 /// Nested loops are opaque here because their `continue` statements target
 /// those inner loops instead.
-pub fn c_for_body_with_step(body: CStatement, step: CStatement) -> CStatement {
-    fn rewrite(statement: CStatement, step: &CStatement, scopes: &mut Vec<String>) -> CStatement {
+pub fn c_for_body_with_step(body: ProgramStatement, step: ProgramStatement) -> ProgramStatement {
+    fn rewrite(
+        statement: ProgramStatement,
+        step: &ProgramStatement,
+        scopes: &mut Vec<String>,
+    ) -> ProgramStatement {
         match statement {
-            CStatement::Continue => CStatement::ForStep {
+            ProgramStatement::Continue => ProgramStatement::ForStep {
                 step: Box::new(step.clone()),
                 exited_locals: scopes.clone(),
                 continue_after: true,
             },
-            CStatement::Seq(statements) => CStatement::Seq(
+            ProgramStatement::Seq(statements) => ProgramStatement::Seq(
                 statements.map(|statement| Arc::new(rewrite((**statement).clone(), step, scopes))),
             ),
-            CStatement::If {
+            ProgramStatement::If {
                 condition,
                 then_branch,
                 else_branch,
             } => {
-                let mut arm = |body: CStatement| {
+                let mut arm = |body: ProgramStatement| {
                     let parent_len = scopes.len();
                     scopes.extend(crate::kernel::eval::scope_declared_names(&body));
                     let body = rewrite(body, step, scopes);
@@ -3059,7 +3094,7 @@ pub fn c_for_body_with_step(body: CStatement, step: CStatement) -> CStatement {
                 };
                 c_if(condition, arm(*then_branch), arm(*else_branch))
             }
-            CStatement::Switch { expression, cases } => {
+            ProgramStatement::Switch { expression, cases } => {
                 let parent_len = scopes.len();
                 for case in &cases {
                     scopes.extend(crate::kernel::eval::scope_declared_names(&case.body));
@@ -3077,13 +3112,13 @@ pub fn c_for_body_with_step(body: CStatement, step: CStatement) -> CStatement {
             statement => statement,
         }
     }
-    fn first_step(step: CStatement, names: Vec<String>) -> CStatement {
+    fn first_step(step: ProgramStatement, names: Vec<String>) -> ProgramStatement {
         match step {
-            CStatement::Seq(statements) => CStatement::Seq(statements.with_statement(
+            ProgramStatement::Seq(statements) => ProgramStatement::Seq(statements.with_statement(
                 0,
                 Arc::new(first_step((**statements.first()).clone(), names)),
             )),
-            step => CStatement::ForStep {
+            step => ProgramStatement::ForStep {
                 step: Box::new(step),
                 exited_locals: names,
                 continue_after: false,
@@ -3102,25 +3137,25 @@ pub fn c_for_body_with_step(body: CStatement, step: CStatement) -> CStatement {
     c_seq(rewritten, step)
 }
 
-pub fn c_parameter(name: impl Into<String>, c_type: CType) -> CParameter {
-    CParameter::new(name, c_type)
+pub fn c_parameter(name: impl Into<String>, c_type: ProgramType) -> ProgramParameter {
+    ProgramParameter::new(name, c_type)
 }
 
 pub fn c_parameter_with_aggregate_layout(
     name: impl Into<String>,
-    c_type: CType,
+    c_type: ProgramType,
     layout: CAggregateLayout,
-) -> CParameter {
-    CParameter::new(name, c_type).with_aggregate_layout(layout)
+) -> ProgramParameter {
+    ProgramParameter::new(name, c_type).with_aggregate_layout(layout)
 }
 
 pub fn c_function(
-    return_type: CType,
+    return_type: ProgramType,
     name: impl Into<String>,
-    parameters: Vec<CParameter>,
-    body: CStatement,
-) -> CFunction {
-    CFunction::new(return_type, name, parameters, body)
+    parameters: Vec<ProgramParameter>,
+    body: ProgramStatement,
+) -> ProgramFunction {
+    ProgramFunction::new(return_type, name, parameters, body)
 }
 
 /// Lowers each contract clause of `function` once: its `requires` at
@@ -3130,9 +3165,9 @@ pub fn c_function(
 /// lowering's reason. Nothing is proved: a declaration no body answers for,
 /// a generic trait's interface, is checked this way once for every type.
 pub fn c_check_contract_clauses_lower(
-    function: &CFunction,
-    state: &CState,
-    arguments: &[CValue],
+    function: &ProgramFunction,
+    state: &ExecutionState,
+    arguments: &[ProgramValue],
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
     // The parameters are bound to the arguments as model values, as a call
@@ -3150,7 +3185,7 @@ pub fn c_check_contract_clauses_lower(
         c_lower_spec_proposition_at_state(entry_state, clause, Some(entry_state), assumptions)?;
     }
     let mut exit_state = entry_state.clone();
-    if function.return_type() != CType::Void {
+    if function.return_type() != ProgramType::Void {
         // A variable no argument uses: arguments are numbered from zero.
         let result = crate::kernel::symbolic_call_result(
             function.return_type(),
@@ -3173,9 +3208,9 @@ pub fn c_check_contract_clauses_lower(
 /// they left open (a load the state does not show loadable); `None` when
 /// the lowering fails or splits into several paths.
 pub fn c_lower_spec_proposition_at_state(
-    state: &CState,
+    state: &ExecutionState,
     proposition: &SpecProposition,
-    entry_state: Option<&CState>,
+    entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
 ) -> Result<(Proposition, Vec<Proposition>, Vec<Proposition>), String> {
     let (proposition, facts, obligations, _) = c_lower_spec_proposition_at_state_with_provenance(
@@ -3194,9 +3229,9 @@ pub fn c_lower_spec_proposition_at_state(
 /// introduces the head of this goal reads the record instead of inferring
 /// the correspondence from the shape the written syntax happens to share.
 pub fn c_lower_spec_proposition_at_state_with_provenance(
-    state: &CState,
+    state: &ExecutionState,
     proposition: &SpecProposition,
-    entry_state: Option<&CState>,
+    entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
 ) -> Result<
     (
@@ -3241,7 +3276,7 @@ pub struct LoweringRefusal {
     /// lower to one symbolic iteration under the fold's binders.
     pub dropped_fold_body: Option<DroppedFoldBody>,
     /// Operand types and operator of a comparison that could not be built.
-    pub dropped_comparison: Option<(CType, CComparisonOperator, CType)>,
+    pub dropped_comparison: Option<(ProgramType, CComparisonOperator, ProgramType)>,
 }
 
 impl From<LoweringRefusal> for String {
@@ -3433,9 +3468,9 @@ pub(in crate::kernel) fn exactly_selected_spec_proposition_path<'a>(
 /// Proof-side lowering keeps mandatory verification conditions distinct from
 /// assumable evaluation obligations until the caller checks their evidence.
 pub(crate) fn c_lower_spec_proposition_with_checked_obligations(
-    state: &CState,
+    state: &ExecutionState,
     proposition: &SpecProposition,
-    entry_state: Option<&CState>,
+    entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
 ) -> Result<
     (
@@ -3454,9 +3489,9 @@ pub(crate) fn c_lower_spec_proposition_with_checked_obligations(
 /// lowering, so the join may introduce its typed calls' argument domains for
 /// the joined values (see `spec::lower_assumed_interface_proposition`).
 pub(crate) fn c_lower_assumed_interface_proposition_with_checked_obligations(
-    state: &CState,
+    state: &ExecutionState,
     proposition: &SpecProposition,
-    entry_state: Option<&CState>,
+    entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
 ) -> Result<
     (
@@ -3518,9 +3553,9 @@ fn applies_pure_function(proposition: &SpecProposition) -> bool {
 }
 
 fn lower_checked_proof_proposition(
-    state: &CState,
+    state: &ExecutionState,
     proposition: &SpecProposition,
-    entry_state: Option<&CState>,
+    entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
     assumed_interface: bool,
 ) -> Result<
@@ -3608,11 +3643,11 @@ fn lower_checked_proof_proposition(
 /// is what `old(...)` refers to. The result is the value on the evaluation's
 /// single path with the load obligations the path left open.
 pub fn c_evaluate_spec_expression_at_state(
-    state: &CState,
+    state: &ExecutionState,
     expression: &SpecExpression,
-    entry_state: Option<&CState>,
+    entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
-) -> Result<(CValue, Vec<Proposition>), String> {
+) -> Result<(ProgramValue, Vec<Proposition>), String> {
     let (value, obligations) = c_evaluate_spec_expression_with_checked_obligations(
         state,
         expression,
@@ -3630,11 +3665,11 @@ pub fn c_evaluate_spec_expression_at_state(
 
 /// Retains mandatory conversion conditions for proof-side expression capture.
 pub(crate) fn c_evaluate_spec_expression_with_checked_obligations(
-    state: &CState,
+    state: &ExecutionState,
     expression: &SpecExpression,
-    entry_state: Option<&CState>,
+    entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
-) -> Result<(CValue, Vec<ProofObligation>), String> {
+) -> Result<(ProgramValue, Vec<ProofObligation>), String> {
     let lowering_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
@@ -3656,11 +3691,11 @@ pub(crate) fn c_evaluate_spec_expression_with_checked_obligations(
 }
 
 pub(crate) fn c_evaluate_spec_resource_expression_with_checked_obligations(
-    state: &CState,
+    state: &ExecutionState,
     expression: &SpecExpression,
-    entry_state: Option<&CState>,
+    entry_state: Option<&ExecutionState>,
     assumptions: &PureFactContext,
-) -> Result<(CValue, Vec<ProofObligation>), String> {
+) -> Result<(ProgramValue, Vec<ProofObligation>), String> {
     let lowering_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
@@ -3683,7 +3718,7 @@ pub(crate) fn c_evaluate_spec_resource_expression_with_checked_obligations(
 
 /// Freeze protocols before evaluating an independent contract's assumed guard
 /// inputs. This grants no resources and is not a call-site transfer operation.
-pub(crate) fn c_state_with_assumed_mutex_inputs(mut state: CState) -> CState {
+pub(crate) fn c_state_with_assumed_mutex_inputs(mut state: ExecutionState) -> ExecutionState {
     if state.resources.facts().iter().any(|fact| {
         matches!(
             fact.resource(),
@@ -3696,7 +3731,7 @@ pub(crate) fn c_state_with_assumed_mutex_inputs(mut state: CState) -> CState {
 }
 
 pub(crate) fn c_mutex_guard_resource(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     abstract_entry: bool,
 ) -> Option<CResourceFact> {
@@ -3704,7 +3739,7 @@ pub(crate) fn c_mutex_guard_resource(
 }
 
 pub(crate) fn c_mutex_live_resource(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     abstract_entry: bool,
 ) -> Option<CResourceFact> {
@@ -3713,7 +3748,7 @@ pub(crate) fn c_mutex_live_resource(
 
 /// Construct a contract requirement; this does not establish ownership.
 pub(crate) fn c_mutex_use_resource_with_type(
-    state: &CState,
+    state: &ExecutionState,
     mutex: &Pointer,
     protected: ResourceDescription,
 ) -> CResourceFact {
@@ -3725,16 +3760,16 @@ pub(crate) fn c_mutex_use_resource_with_type(
     CResourceFact::own(CResource::MutexUse(identity))
 }
 
-pub(crate) fn c_mutex_use_resource(state: &CState, mutex: &Pointer) -> CResourceFact {
+pub(crate) fn c_mutex_use_resource(state: &ExecutionState, mutex: &Pointer) -> CResourceFact {
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
 /// Binds a contract's value parameters in an entry state, as a call binds
 /// them beside its arguments.
 pub(crate) fn bind_contract_value_parameters(
-    entry: &mut CState,
-    parameters: &[CParameter],
-    values: &[CValue],
+    entry: &mut ExecutionState,
+    parameters: &[ProgramParameter],
+    values: &[ProgramValue],
 ) {
     for (parameter, value) in parameters.iter().zip(values) {
         entry.locals.set_typed_qualified_with_all_qualifiers(
@@ -3751,10 +3786,10 @@ pub(crate) fn bind_contract_value_parameters(
 }
 
 pub fn c_function_entry_state(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
-) -> Option<CState> {
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
+) -> Option<ExecutionState> {
     c_function_entry_state_with(caller_state, function, arguments, false)
 }
 
@@ -3763,23 +3798,23 @@ pub fn c_function_entry_state(
 /// declared and not copied into. It is the argument the proof is about, so
 /// the caller names its cells as their own entry values.
 pub fn c_function_input_objects_state(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
-) -> Option<CState> {
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
+) -> Option<ExecutionState> {
     c_function_entry_state_with(caller_state, function, arguments, true)
 }
 
 fn c_function_entry_state_with(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     input_aggregates: bool,
-) -> Option<CState> {
+) -> Option<ExecutionState> {
     let values = arguments
         .iter()
         .map(|argument| match argument {
-            CExpression::Value(value) => Some(value.clone()),
+            ProgramExpression::Value(value) => Some(value.clone()),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;
@@ -3808,11 +3843,11 @@ fn c_function_entry_state_with(
 /// clauses may receive authority here. Ordinary and nested calls must use the
 /// checked lending/reborrow planner instead.
 pub(crate) fn c_state_with_borrowed_contract_inputs(
-    state: CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    state: ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<CState, LoanRefusalDiagnostic> {
+) -> Result<ExecutionState, LoanRefusalDiagnostic> {
     let mut state = state;
     state.preserves_mutex_protocols |=
         crate::kernel::functions::preserves_mutex_protocols(function.contract_interface());
@@ -4000,11 +4035,11 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
 }
 
 fn install_borrowed_contract_inputs(
-    state: CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    state: ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<CState, LoanRefusalDiagnostic> {
+) -> Result<ExecutionState, LoanRefusalDiagnostic> {
     let entry = c_function_entry_state(&state, function, arguments)
         .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
     let mut budget = ExecutionBudget::beside_live_state();
@@ -4260,15 +4295,15 @@ fn install_borrowed_contract_inputs(
 /// resource, independent certification preserves that equivalent form so
 /// both executions use the same boundary state.
 pub fn c_function_contract_entry_state(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<CState, String> {
+) -> Result<ExecutionState, String> {
     let values = arguments
         .iter()
         .map(|argument| match argument {
-            CExpression::Value(value) => Some(value.clone()),
+            ProgramExpression::Value(value) => Some(value.clone()),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()
@@ -4298,9 +4333,9 @@ pub fn c_function_contract_entry_state(
 /// consults this before reading the outcome through the contract's resource
 /// transition, so the surface accepts exactly the exits certification does.
 pub fn c_function_return_resources_definitionally_established(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     outcome: &CFunctionOutcome,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -4324,9 +4359,9 @@ pub fn c_function_return_resources_definitionally_established(
 /// outcome. This changes only the contract-level resource/population state;
 /// the C value and memory come from the supplied body execution.
 pub fn apply_c_function_contract_resource_transition(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     outcome: CFunctionOutcome,
     assumptions: &PureFactContext,
 ) -> Result<(CFunctionOutcome, Vec<ProofObligation>), String> {
@@ -4354,9 +4389,9 @@ pub fn apply_c_function_contract_resource_transition(
 /// conditions have been established in the supplied checked context. The
 /// proposal API above also serves callers that retain explicit obligations.
 pub(crate) fn checked_c_function_contract_resource_transition(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     outcome: CFunctionOutcome,
     assumptions: &PureFactContext,
 ) -> Result<CFunctionOutcome, String> {
@@ -4426,13 +4461,13 @@ pub(crate) fn function_body_with_return_counts(
 /// Applies a kernel-checked, zero-source construction of one abstract token
 /// to a function outcome state.
 pub fn construct_c_function_resource(
-    state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
-    result: &CValue,
+    state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
+    result: &ProgramValue,
     constructed: &CResourceFact,
     assumptions: &PureFactContext,
-) -> Result<CState, String> {
+) -> Result<ExecutionState, String> {
     match construct_c_function_resource_checked(
         state,
         function,
@@ -4454,8 +4489,8 @@ pub fn construct_c_function_resource(
 }
 
 pub fn c_function_outcome_from_statement_outcome(
-    caller_state: &CState,
-    function: &CFunction,
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
     outcome: CStatementOutcome,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -4483,9 +4518,9 @@ pub fn c_function_outcome_from_statement_outcome(
 /// C body is not executed again: each returned case reuses the supplied statement
 /// outcome and carries the guard facts that authorized its boundary check.
 pub(crate) fn c_function_outcomes_from_statement_outcome_with_resource_cases(
-    caller_state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     outcome: CStatementOutcome,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -4537,8 +4572,8 @@ pub(crate) fn c_function_outcomes_from_statement_outcome_with_resource_cases(
 }
 
 pub fn c_function_specification(
-    state: CState,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    arguments: Vec<ProgramExpression>,
     requires: Vec<Proposition>,
     outcome: CFunctionOutcome,
 ) -> CFunctionSpecification {
@@ -4654,7 +4689,7 @@ pub(crate) fn proposition_variables(proposition: &Proposition) -> BTreeSet<Varia
 }
 
 #[cfg(test)]
-pub fn c_max_body() -> CStatement {
+pub fn c_max_body() -> ProgramStatement {
     c_if(
         c_less_than(c_variable("a"), c_variable("b")),
         c_return(c_variable("b")),
@@ -4663,21 +4698,21 @@ pub fn c_max_body() -> CStatement {
 }
 
 #[cfg(test)]
-pub fn c_max_function() -> CFunction {
+pub fn c_max_function() -> ProgramFunction {
     c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "max",
         vec![
-            c_parameter("a", CType::Int32),
-            c_parameter("b", CType::Int32),
+            c_parameter("a", ProgramType::Int32),
+            c_parameter("b", ProgramType::Int32),
         ],
         c_max_body(),
     )
 }
 
 #[cfg(test)]
-pub fn c_max_state(a: CValue, b: CValue) -> CState {
-    CState::new().with_local("a", a).with_local("b", b)
+pub fn c_max_state(a: ProgramValue, b: ProgramValue) -> ExecutionState {
+    ExecutionState::new().with_local("a", a).with_local("b", b)
 }
 
 #[cfg(test)]
@@ -4685,7 +4720,10 @@ pub fn c_max_lt_condition(a: MachineTerm, b: MachineTerm) -> ConditionTerm {
     ConditionTerm::signed_less_than(a, b)
 }
 
-pub fn prove_c_expression_evaluation(state: CState, expression: CExpression) -> Option<Theorem> {
+pub fn prove_c_expression_evaluation(
+    state: ExecutionState,
+    expression: ProgramExpression,
+) -> Option<Theorem> {
     let mut budget = ExecutionBudget::for_new_execution().with_c_expression_cost(&expression);
     let outcome = evaluate_c_expression(&state, &expression, &PureFactContext::new(), &mut budget)?;
     Some(Theorem::new(Proposition::CExpressionEvaluates {
@@ -4696,8 +4734,8 @@ pub fn prove_c_expression_evaluation(state: CState, expression: CExpression) -> 
 }
 
 pub fn prove_symbolic_c_condition_evaluation(
-    state: CState,
-    condition: CExpression,
+    state: ExecutionState,
+    condition: ProgramExpression,
     assumptions: PureFactContext,
 ) -> SymbolicCConditionEvaluation {
     let mut budget = ExecutionBudget::beside_live_state().with_c_expression_cost(&condition);
@@ -4766,13 +4804,16 @@ pub fn prove_symbolic_c_condition_evaluation(
     SymbolicCConditionEvaluation { paths, limit: None }
 }
 
-pub fn prove_c_statement_execution(state: CState, statement: CStatement) -> Option<Theorem> {
+pub fn prove_c_statement_execution(
+    state: ExecutionState,
+    statement: ProgramStatement,
+) -> Option<Theorem> {
     prove_symbolic_c_execution(state, statement, PureFactContext::new())
 }
 
 pub fn prove_symbolic_c_execution(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
 ) -> Option<Theorem> {
     let budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
@@ -4780,8 +4821,8 @@ pub fn prove_symbolic_c_execution(
 }
 
 pub fn prove_symbolic_c_execution_with_budget(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     budget: ExecutionBudget,
 ) -> Option<Theorem> {
@@ -4796,8 +4837,8 @@ pub fn prove_symbolic_c_execution_with_budget(
 }
 
 pub fn prove_symbolic_c_execution_with_environment(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -4814,8 +4855,8 @@ pub fn prove_symbolic_c_execution_with_environment(
 }
 
 pub fn prove_symbolic_c_execution_with_environment_and_budget(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -4841,8 +4882,8 @@ pub fn prove_symbolic_c_execution_with_environment_and_budget(
 }
 
 pub fn prove_symbolic_c_execution_paths(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
 ) -> SymbolicCExecution {
     let budget = ExecutionBudget::for_new_execution().with_c_statement_cost(&statement);
@@ -4850,8 +4891,8 @@ pub fn prove_symbolic_c_execution_paths(
 }
 
 pub fn prove_symbolic_c_execution_paths_with_budget(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     budget: ExecutionBudget,
 ) -> SymbolicCExecution {
@@ -4866,8 +4907,8 @@ pub fn prove_symbolic_c_execution_paths_with_budget(
 }
 
 pub fn prove_symbolic_c_execution_paths_with_environment(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -4884,8 +4925,8 @@ pub fn prove_symbolic_c_execution_paths_with_environment(
 }
 
 pub fn prove_symbolic_c_execution_paths_with_environment_and_budget(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -4957,8 +4998,8 @@ pub fn prove_symbolic_c_execution_paths_with_environment_and_budget(
 }
 
 pub fn prove_symbolic_c_statement_verification_paths_with_environment(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -4974,8 +5015,8 @@ pub fn prove_symbolic_c_statement_verification_paths_with_environment(
 }
 
 pub fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -4992,8 +5033,8 @@ pub fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_r
 }
 
 fn statement_kernel_variables<'scope>(
-    state: &'scope CState,
-    statement: &'scope CStatement,
+    state: &'scope ExecutionState,
+    statement: &'scope ProgramStatement,
     assumptions: &'scope PureFactContext,
     environment: &CExecutionEnvironment,
 ) -> KernelVariableGenerator<'scope> {
@@ -5010,8 +5051,8 @@ fn statement_kernel_variables<'scope>(
 }
 
 pub(crate) fn prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -5079,8 +5120,8 @@ fn statement_outcome_memory(outcome: &CStatementOutcome) -> Option<&CMemory> {
 
 #[cfg(test)]
 pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     initialization_proven: bool,
@@ -5105,8 +5146,8 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases(
 }
 
 pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     initialization_proven: bool,
@@ -5162,8 +5203,8 @@ pub(crate) fn prove_symbolic_c_loop_exit_with_proven_phases_using_budget(
 }
 
 fn symbolic_c_statement_execution_with_loop_rule(
-    state: CState,
-    statement: CStatement,
+    state: ExecutionState,
+    statement: ProgramStatement,
     assumptions: PureFactContext,
     paths: Vec<CStatementExecutionPath>,
     environment: &CExecutionEnvironment,
@@ -5174,7 +5215,7 @@ fn symbolic_c_statement_execution_with_loop_rule(
     // path leaves the function from inside the loop; the rule carries it so
     // the enclosing execution continues with it as a returned path instead of
     // certifying the function on the exit path alone.
-    let loop_rule = (matches!(statement, CStatement::While { .. })
+    let loop_rule = (matches!(statement, ProgramStatement::While { .. })
         && paths.iter().all(|path| {
             (matches!(
                 path.outcome,
@@ -5183,7 +5224,7 @@ fn symbolic_c_statement_execution_with_loop_rule(
                     | CStatementOutcome::VerificationDiverges
             ) || matches!(
                 (&statement, &path.outcome),
-                (CStatement::While {
+                (ProgramStatement::While {
                     backedge_target: Some(_),
                     natural_exit_target: Some(exit_target),
                     ..
@@ -5246,9 +5287,9 @@ fn symbolic_c_statement_execution_with_loop_rule(
 }
 
 pub fn prove_symbolic_c_function_execution(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
 ) -> Option<Theorem> {
     let budget = ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments);
@@ -5256,9 +5297,9 @@ pub fn prove_symbolic_c_function_execution(
 }
 
 pub fn prove_symbolic_c_function_execution_with_budget(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     budget: ExecutionBudget,
 ) -> Option<Theorem> {
@@ -5274,9 +5315,9 @@ pub fn prove_symbolic_c_function_execution_with_budget(
 }
 
 pub fn prove_symbolic_c_function_execution_with_environment(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -5294,9 +5335,9 @@ pub fn prove_symbolic_c_function_execution_with_environment(
 }
 
 pub fn prove_symbolic_c_function_execution_with_environment_and_budget(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -5323,9 +5364,9 @@ pub fn prove_symbolic_c_function_execution_with_environment_and_budget(
 }
 
 pub fn prove_symbolic_c_function_execution_paths(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
 ) -> SymbolicCExecution {
     let budget = ExecutionBudget::for_new_execution().with_c_function_cost(&function, &arguments);
@@ -5339,9 +5380,9 @@ pub fn prove_symbolic_c_function_execution_paths(
 }
 
 pub fn prove_symbolic_c_function_execution_paths_with_budget(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     budget: ExecutionBudget,
 ) -> SymbolicCExecution {
@@ -5357,9 +5398,9 @@ pub fn prove_symbolic_c_function_execution_paths_with_budget(
 }
 
 pub fn prove_symbolic_c_function_execution_paths_with_environment(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -5377,9 +5418,9 @@ pub fn prove_symbolic_c_function_execution_paths_with_environment(
 }
 
 pub fn prove_symbolic_c_function_execution_paths_with_environment_and_budget(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -5397,7 +5438,7 @@ pub fn prove_symbolic_c_function_execution_paths_with_environment_and_budget(
     )
 }
 
-fn function_has_conditional_resource_effect(function: &CFunction) -> bool {
+fn function_has_conditional_resource_effect(function: &ProgramFunction) -> bool {
     function
         .resource_ensures()
         .iter()
@@ -5406,9 +5447,9 @@ fn function_has_conditional_resource_effect(function: &CFunction) -> bool {
 
 #[allow(clippy::too_many_arguments)]
 fn prove_symbolic_c_function_execution_paths_with_contract_resources(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -5479,9 +5520,9 @@ fn prove_symbolic_c_function_execution_paths_with_contract_resources(
 }
 
 pub fn prove_symbolic_c_function_verification_paths_with_environment(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -5499,9 +5540,9 @@ pub fn prove_symbolic_c_function_verification_paths_with_environment(
 }
 
 pub fn prove_symbolic_c_function_verification_paths_with_environment_and_budget(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -5523,9 +5564,9 @@ pub fn prove_symbolic_c_function_verification_paths_with_environment_and_budget(
 /// Executes one whole-function judgment and retains its exact authority inputs
 /// together with the resulting frontier for later contract certification.
 pub fn prove_checked_c_function_execution_with_environment(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
@@ -5619,9 +5660,9 @@ pub(in crate::kernel) fn proof_evidence_assumptions(
 }
 
 pub(crate) fn execution_evidence_states_match(
-    function: &CFunction,
-    left: &CState,
-    right: &CState,
+    function: &ProgramFunction,
+    left: &ExecutionState,
+    right: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
@@ -5655,9 +5696,9 @@ pub(crate) fn execution_evidence_states_match(
 /// loads, but cannot alter locals, local-object cells, heap lifetime state,
 /// resource meaning, or population counts.
 pub(crate) fn function_entry_representation_states_match(
-    function: &CFunction,
-    left: &CState,
-    right: &CState,
+    function: &ProgramFunction,
+    left: &ExecutionState,
+    right: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> bool {
     loan_authority_states_match(left, right)
@@ -5680,7 +5721,7 @@ pub(crate) fn function_entry_representation_states_match(
 /// resource representation.  Resource occurrences are opaque identities, so
 /// equal-looking resource facts are insufficient when a checked artifact is
 /// rebased onto another proof entry.
-fn loan_authority_states_match(left: &CState, right: &CState) -> bool {
+fn loan_authority_states_match(left: &ExecutionState, right: &ExecutionState) -> bool {
     left.loan_ledger() == right.loan_ledger()
         && left.loan_participant() == right.loan_participant()
         && left.loan_view_bindings() == right.loan_view_bindings()
@@ -5689,8 +5730,8 @@ fn loan_authority_states_match(left: &CState, right: &CState) -> bool {
 }
 
 pub(in crate::kernel) fn proof_evidence_function_refines_same_source(
-    original: &CFunction,
-    checked: &CFunction,
+    original: &ProgramFunction,
+    checked: &ProgramFunction,
 ) -> bool {
     original.return_type() == checked.return_type()
         && original.name() == checked.name()
@@ -5716,7 +5757,7 @@ pub(in crate::kernel) fn proof_evidence_function_refines_same_source(
 
 pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
     events: impl IntoIterator<Item = &'e crate::kernel::proof::CheckedExecutionEvent>,
-) -> Option<&'e CState> {
+) -> Option<&'e ExecutionState> {
     use crate::kernel::proof::CheckedExecutionEvent;
 
     events.into_iter().find_map(|event| match event {
@@ -5889,18 +5930,18 @@ mod proof_case_evidence_tests {
     #[test]
     fn entry_representation_rebase_rejects_changed_loan_authority() {
         let function = c_function(
-            CType::Void,
+            ProgramType::Void,
             "loan_entry_rebase",
             Vec::new(),
-            CStatement::Return(CExpression::Value(CValue::Void)),
+            ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
         );
         let ledger = crate::kernel::loans::LoanLedger::new();
         let first_holder = ledger.fresh_participant().unwrap();
         let second_holder = ledger.fresh_participant().unwrap();
-        let first = CState::new()
+        let first = ExecutionState::new()
             .with_loan_ledger(Some(ledger.clone()))
             .with_loan_participant(Some(first_holder));
-        let second = CState::new()
+        let second = ExecutionState::new()
             .with_loan_ledger(Some(ledger))
             .with_loan_participant(Some(second_holder));
         let assumptions = PureFactContext::new();
@@ -5924,14 +5965,14 @@ mod proof_case_evidence_tests {
         let root = ProofFacts::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let mut then_core =
-            ExecutionProofCore::at_entry(CState::new(), ExecutionFrontier::default());
+            ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
         assert!(then_core.record_proof_case_arm(
             partition.clone(),
             0,
             root.with_fact(then_fact.clone())
         ));
         let mut else_core =
-            ExecutionProofCore::at_entry(CState::new(), ExecutionFrontier::default());
+            ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
         assert!(else_core.record_proof_case_arm(partition.clone(), 1, root.with_fact(else_fact)));
         let evidence = vec![
             then_core.execution_evidence[0].clone(),
@@ -5960,7 +6001,8 @@ mod proof_case_evidence_tests {
         case_facts: [&Proposition; 2],
         shared: &Proposition,
     ) -> (ExecutionProofCore, [(ExecutionProofCore, ProofFacts); 2]) {
-        let parent = ExecutionProofCore::at_entry(CState::new(), ExecutionFrontier::default());
+        let parent =
+            ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
         let arms = [0, 1].map(|index| {
             let entered = root.with_fact(case_facts[index].clone());
             let mut core = parent.clone();
@@ -5974,9 +6016,9 @@ mod proof_case_evidence_tests {
         (parent, arms)
     }
 
-    fn join_test_function() -> CFunction {
+    fn join_test_function() -> ProgramFunction {
         c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "joined",
             Vec::new(),
             c_return(c_int32_literal(0)),
@@ -6081,14 +6123,14 @@ mod proof_case_evidence_tests {
         let root = ProofFacts::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
         let mut then_core =
-            ExecutionProofCore::at_entry(CState::new(), ExecutionFrontier::default());
+            ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
         assert!(then_core.record_proof_case_arm(partition.clone(), 0, root.with_fact(then_fact)));
         // Only the `then` case has a path.
         assert!(!proof_case_partitions_are_exhaustive(&[then_core
             .execution_evidence[0]
             .clone()]));
         let mut else_core =
-            ExecutionProofCore::at_entry(CState::new(), ExecutionFrontier::default());
+            ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
         assert!(else_core.record_proof_case_arm(partition, 1, root.with_fact(else_fact)));
         assert!(proof_case_partitions_are_exhaustive(&[
             then_core.execution_evidence[0].clone(),
@@ -6100,20 +6142,21 @@ mod proof_case_evidence_tests {
     fn outcome_evidence_fork_splits_traces_in_candidate_order() {
         let root = ProofFacts::default();
         let (partition, then_fact, else_fact) = case_partition(&root);
-        let mut core = ExecutionProofCore::at_entry(CState::new(), ExecutionFrontier::default());
+        let mut core =
+            ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
         // Two candidate paths with one trace each; the second is forked.
         let function = c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "fork",
             Vec::new(),
             c_return(c_int32_literal(0)),
         );
         let entry_state =
-            c_function_entry_state(&CState::new(), &function, &[]).expect("entry state");
+            c_function_entry_state(&ExecutionState::new(), &function, &[]).expect("entry state");
         let skip_return = |value: u32| {
             Theorem::new(Proposition::CStatementVerifies {
                 state: Box::new(entry_state.clone()),
-                statement: Box::new(CStatement::Skip),
+                statement: Box::new(ProgramStatement::Skip),
                 outcome: CStatementOutcome::Return {
                     value: int32(value).into(),
                     state: Box::new(entry_state.clone()),
@@ -6236,7 +6279,8 @@ mod proof_case_evidence_tests {
                 ],
             )
         };
-        let mut core = ExecutionProofCore::at_entry(CState::new(), ExecutionFrontier::default());
+        let mut core =
+            ExecutionProofCore::at_entry(ExecutionState::new(), ExecutionFrontier::default());
         assert!(core.fork_outcome_evidence(&[plan(true)]).is_err());
         assert_eq!(
             core.execution_evidence.len(),
@@ -6397,7 +6441,7 @@ fn checked_int32_reassociated_add_domain_as_written(
 /// exact custody. Retained observations must bind the result to this state;
 /// this does not return an unconditional arithmetic theorem.
 pub fn checked_owned_resource_count_lower_bound(
-    state: &CState,
+    state: &ExecutionState,
     owned: &CResourceFact,
     assumptions: &PureFactContext,
 ) -> Option<Proposition> {
@@ -6454,7 +6498,7 @@ pub fn checked_owned_resource_count_lower_bound(
             checked_facts = checked_facts.assume_proposition(fact.proposition().clone());
         }
         let native = path.value.native();
-        let CValue::Int32(value) = native.as_ref() else {
+        let ProgramValue::Int32(value) = native.as_ref() else {
             return None;
         };
         value.clone()
@@ -6478,7 +6522,7 @@ pub fn checked_owned_resource_count_lower_bound(
 /// Certifies the nonnegativity invariant carried by an owned declared-resource
 /// coefficient in a concrete ghost state.
 pub fn prove_owned_resource_quantity_nonnegative(
-    state: &CState,
+    state: &ExecutionState,
     owned: &CResourceFact,
     claimed: &Proposition,
     assumptions: &PureFactContext,
@@ -6532,8 +6576,8 @@ fn describe_contract_reuse_premise(premise: &Proposition) -> String {
 
 fn checked_execution_at_definitionally_equal_entry_state(
     checked: &CCheckedFunctionExecution,
-    state: &CState,
-    function: &CFunction,
+    state: &ExecutionState,
+    function: &ProgramFunction,
     assumptions: &PureFactContext,
 ) -> Option<SymbolicCExecution> {
     // An artifact completed through a kernel-issued `CheckedFunctionEntry`
@@ -6649,7 +6693,10 @@ fn checked_execution_at_definitionally_equal_entry_state(
 /// which is exactly what a modular proof that never lent anything reaches.
 /// Treating that pristine case as unauthorized, or treating a ledger-less
 /// state as vacuously authorized, are the two ways to get this wrong.
-fn state_loan_bindings_are_authorized(state: &CState, assumptions: &PureFactContext) -> bool {
+fn state_loan_bindings_are_authorized(
+    state: &ExecutionState,
+    assumptions: &PureFactContext,
+) -> bool {
     match (state.loan_ledger(), state.loan_participant()) {
         (Some(ledger), Some(participant)) => {
             ledger.authorizes_bindings(participant, state.loan_view_bindings(), assumptions)
@@ -6661,7 +6708,7 @@ fn state_loan_bindings_are_authorized(state: &CState, assumptions: &PureFactCont
 
 fn checked_loan_evidence_is_valid(
     checked: &CCheckedFunctionExecution,
-    function: &CFunction,
+    function: &ProgramFunction,
 ) -> bool {
     if !function
         .resource_requires()
@@ -6678,7 +6725,7 @@ fn checked_loan_evidence_is_valid(
         (None, None) => (None, None, true),
         _ => return false,
     };
-    let thread_recovered = |return_state: &CState| match (
+    let thread_recovered = |return_state: &ExecutionState| match (
         checked.state.loan_ledger(),
         checked.state.loan_participant(),
         return_state.loan_ledger(),
@@ -6762,7 +6809,7 @@ mod loan_authorization_tests {
         // A modular proof that never lent anything returns with no ledger and
         // no binding. That is authorized: there is nothing to authorize.
         assert!(state_loan_bindings_are_authorized(
-            &CState::new(),
+            &ExecutionState::new(),
             &assumptions
         ));
 
@@ -6792,7 +6839,7 @@ mod loan_authorization_tests {
             .apply(&opening.transition)
             .expect("the opening applies to its own predecessor");
 
-        let authorized = CState::new()
+        let authorized = ExecutionState::new()
             .with_loan_ledger(Some(lent))
             .with_loan_participant(Some(reader))
             .with_resource_context_and_loan_dependencies(
@@ -6806,7 +6853,7 @@ mod loan_authorization_tests {
 
         // The same binding with the ledger taken away has no authority behind
         // it, and a ledger-less state must not be vacuously authorized.
-        let rootless = CState::new()
+        let rootless = ExecutionState::new()
             .with_resource_context_and_loan_dependencies(resources, [(occurrence, binding)]);
         assert!(!state_loan_bindings_are_authorized(&rootless, &assumptions));
 
@@ -6830,7 +6877,7 @@ pub(super) fn path_function_outcome(path: &SymbolicCExecutionPath) -> Option<&CF
 
 /// Whether two states agree on population body access and on the families
 /// they have observed.
-pub(crate) fn population_observations_equal(left: &CState, right: &CState) -> bool {
+pub(crate) fn population_observations_equal(left: &ExecutionState, right: &ExecutionState) -> bool {
     left.population_access == right.population_access
         && left.observed_population_families == right.observed_population_families
 }
@@ -6846,9 +6893,9 @@ pub(crate) fn population_observations_equal(left: &CState, right: &CState) -> bo
 /// the declared input domain, as Surface's `initial_call_state` does. See
 /// `docs/internals/kernel.md`, "Source obligations and checked evidence".
 pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
     mode: CFunctionContractExecutionMode,
@@ -6871,9 +6918,9 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
 /// [`prove_c_function_contract_execution_paths_with_checked_artifacts`].
 #[allow(clippy::too_many_arguments)]
 pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
-    state: CState,
-    function: CFunction,
-    arguments: Vec<CExpression>,
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
     mode: CFunctionContractExecutionMode,
@@ -7378,7 +7425,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
 }
 
 pub fn prove_c_function_satisfies_specification(
-    function: CFunction,
+    function: ProgramFunction,
     specification: CFunctionSpecification,
     assumptions: PureFactContext,
 ) -> Option<Theorem> {
@@ -7392,7 +7439,7 @@ pub fn prove_c_function_satisfies_specification(
 }
 
 pub fn prove_c_function_satisfies_specification_with_environment(
-    function: CFunction,
+    function: ProgramFunction,
     specification: CFunctionSpecification,
     assumptions: PureFactContext,
     environment: CExecutionEnvironment,
@@ -7537,9 +7584,9 @@ pub fn prove_int32_le_antisymmetric(left: MachineTerm, right: MachineTerm) -> Th
 /// law holds of them by the meaning of a count; it is never a fact-dependent
 /// fold. `None` when either count does not lower to one defined `int32`.
 pub fn prove_population_member_count_zero(
-    state: &CState,
+    state: &ExecutionState,
     name: &str,
-    arguments: &[CValue],
+    arguments: &[ProgramValue],
     assumptions: &PureFactContext,
 ) -> Option<Theorem> {
     if arguments.len() < 2 {
@@ -7566,7 +7613,7 @@ pub fn prove_population_member_count_zero(
             return None;
         }
         let native = path.value.native();
-        let CValue::Int32(value) = native.as_ref() else {
+        let ProgramValue::Int32(value) = native.as_ref() else {
             return None;
         };
         Some(value.clone())
@@ -8053,14 +8100,14 @@ pub fn integer_range_fold_predecessor_application(
                 format, node,
             )?)
         }
-        PureFunctionArgument::Value(CValue::Int32(endpoint)) => {
-            PureFunctionArgument::Value(CValue::Int32(MachineTerm::subtract(
+        PureFunctionArgument::Value(ProgramValue::Int32(endpoint)) => {
+            PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::subtract(
                 endpoint.clone(),
                 MachineTerm::constant(1),
             )))
         }
-        PureFunctionArgument::Value(CValue::UInt64(endpoint)) => {
-            PureFunctionArgument::Value(CValue::UInt64(MachineTerm::uint64_subtract(
+        PureFunctionArgument::Value(ProgramValue::UInt64(endpoint)) => {
+            PureFunctionArgument::Value(ProgramValue::UInt64(MachineTerm::uint64_subtract(
                 endpoint.clone(),
                 MachineTerm::uint64_constant(1),
             )))
@@ -8296,7 +8343,7 @@ pub fn c_function_contract_refinement_context(
     environment: &CExecutionEnvironment,
     contract_name: &str,
     target_name: &str,
-    values: &[CValue],
+    values: &[ProgramValue],
 ) -> Option<CFunctionContractRefinementContext> {
     let contract = environment
         .get_function_contract(contract_name)?
@@ -8328,7 +8375,7 @@ pub fn c_function_contract_refinement_context(
 pub fn c_function_refines_named_contract(
     environment: &CExecutionEnvironment,
     contract_name: &str,
-    function: &CFunction,
+    function: &ProgramFunction,
 ) -> Result<bool, String> {
     let Some(contract) = environment.get_function_contract(contract_name) else {
         return Ok(false);
@@ -8347,8 +8394,8 @@ pub fn c_function_refines_named_contract(
 /// overrides: the same judgment as a named contract's.
 pub fn c_function_refines_function_contract(
     _environment: &CExecutionEnvironment,
-    interface: &CFunction,
-    function: &CFunction,
+    interface: &ProgramFunction,
+    function: &ProgramFunction,
 ) -> Result<bool, String> {
     let Some(contract) = CFunctionContract::new(interface.name(), interface.clone()) else {
         return Ok(false);
@@ -8403,10 +8450,10 @@ pub fn c_named_contract_refinement_theorem_skeleton(
 pub fn c_contract_refinement_context(
     environment: &CExecutionEnvironment,
     target_contract_name: &str,
-    target_values: &[CValue],
+    target_values: &[ProgramValue],
     source_contract_name: &str,
-    source_values: &[CValue],
-    pointer: &CValue,
+    source_values: &[ProgramValue],
+    pointer: &ProgramValue,
 ) -> Option<CFunctionContractRefinementContext> {
     let target = environment
         .get_function_contract(target_contract_name)?
@@ -8414,7 +8461,7 @@ pub fn c_contract_refinement_context(
     let source = environment
         .get_function_contract(source_contract_name)?
         .instantiated(source_values)?;
-    let CValue::Pointer(pointer) = pointer else {
+    let ProgramValue::Pointer(pointer) = pointer else {
         return None;
     };
     if pointer.c_type() != target.function_pointer_type()
@@ -8440,7 +8487,7 @@ pub fn c_contract_refinement_context(
 /// theorem's `unfold(Contract)` step.
 pub fn c_function_contract_refinement_arguments(
     context: &CFunctionContractRefinementContext,
-) -> &[CValue] {
+) -> &[ProgramValue] {
     &context.argument_values
 }
 
@@ -8451,10 +8498,10 @@ pub fn c_function_contract_refinement_obligations(
 }
 
 impl CFunctionContractRefinementObligations {
-    pub fn entry(&self) -> &CState {
+    pub fn entry(&self) -> &ExecutionState {
         &self.entry
     }
-    pub fn post(&self) -> &CState {
+    pub fn post(&self) -> &ExecutionState {
         &self.post
     }
     pub fn proposition(&self) -> &Proposition {
@@ -8474,8 +8521,8 @@ pub(crate) fn prove_c_function_contract_refinement(
     // The fact names the pointer and then the values the contract's value
     // parameters were fixed to.
     let [
-        state @ Term::CState(_),
-        Term::CValue(CValue::Pointer(pointer)),
+        state @ Term::ExecutionState(_),
+        Term::ProgramValue(ProgramValue::Pointer(pointer)),
         values @ ..,
     ] = arguments.as_slice()
     else {
@@ -8488,7 +8535,7 @@ pub(crate) fn prove_c_function_contract_refinement(
         || !values
             .iter()
             .zip(context.contract.value_arguments())
-            .all(|(term, value)| matches!(term, Term::CValue(term) if term == value))
+            .all(|(term, value)| matches!(term, Term::ProgramValue(term) if term == value))
     {
         return None;
     }
@@ -8514,10 +8561,16 @@ pub(crate) fn prove_c_function_contract_refinement(
                 name: source.predicate_name(),
                 arguments: [
                     state.clone(),
-                    Term::CValue(CValue::Pointer(context.pointer.clone())),
+                    Term::ProgramValue(ProgramValue::Pointer(context.pointer.clone())),
                 ]
                 .into_iter()
-                .chain(source.value_arguments().iter().cloned().map(Term::CValue))
+                .chain(
+                    source
+                        .value_arguments()
+                        .iter()
+                        .cloned()
+                        .map(Term::ProgramValue),
+                )
                 .collect(),
             };
             Proposition::ForAll {
@@ -8544,7 +8597,7 @@ mod contract_interface_identity;
 /// parameter in order. No target-contract assumption authorizes this call.
 pub(crate) fn prove_executed_contract_refinement(
     environment: &CExecutionEnvironment,
-    sources: &[(&str, Vec<CValue>)],
+    sources: &[(&str, Vec<ProgramValue>)],
     target_name: &str,
     conclusion: Proposition,
     rule: &CVerifiedFunctionRule,
@@ -8561,19 +8614,21 @@ pub(crate) fn prove_executed_contract_refinement(
     }
     pop_executed_value_pins(&mut function, &target_values)?;
     let arguments = executed_call_arguments(&function, target_values.len())?;
-    let call = if function.return_type() == CType::Void {
-        CStatement::Call {
+    let call = if function.return_type() == ProgramType::Void {
+        ProgramStatement::Call {
             function_name: callback.name().to_string(),
             arguments,
         }
     } else {
-        CStatement::seq(
-            Arc::new(CStatement::CallAssign {
+        ProgramStatement::seq(
+            Arc::new(ProgramStatement::CallAssign {
                 target: "result".into(),
                 function_name: callback.name().to_string(),
                 arguments,
             }),
-            Arc::new(CStatement::Return(CExpression::Variable("result".into()))),
+            Arc::new(ProgramStatement::Return(ProgramExpression::Variable(
+                "result".into(),
+            ))),
         )
     };
     if function.body() != &call || function.source_body() != &call {
@@ -8593,7 +8648,9 @@ pub(crate) fn prove_executed_contract_refinement(
                 resource_state_dependent: false,
                 name: source.predicate_name(),
                 arguments: std::iter::once(SpecPredicateArgument::Value(
-                    SpecExpression::CExpression(CExpression::Variable(callback.name().to_string())),
+                    SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                        callback.name().to_string(),
+                    )),
                 ))
                 .chain(source_values.iter().map(|value| {
                     SpecPredicateArgument::Value(SpecExpression::Value(value.clone()))
@@ -8612,8 +8669,8 @@ pub(crate) fn prove_executed_contract_refinement(
         return None;
     };
     let [
-        state @ Term::CState(_),
-        Term::CValue(CValue::Pointer(pointer)),
+        state @ Term::ExecutionState(_),
+        Term::ProgramValue(ProgramValue::Pointer(pointer)),
         ..,
     ] = arguments.as_slice()
     else {
@@ -8636,10 +8693,10 @@ pub(crate) fn prove_executed_contract_refinement(
                 .predicate_name(),
             arguments: [
                 state.clone(),
-                Term::CValue(CValue::Pointer(pointer.clone())),
+                Term::ProgramValue(ProgramValue::Pointer(pointer.clone())),
             ]
             .into_iter()
-            .chain(source_values.iter().cloned().map(Term::CValue))
+            .chain(source_values.iter().cloned().map(Term::ProgramValue))
             .collect(),
         };
         implication = Proposition::Implies(Box::new(premise), Box::new(implication));
@@ -8659,7 +8716,7 @@ pub(crate) fn prove_executed_contract_refinement(
 fn executed_conclusion_values(
     conclusion: &Proposition,
     target: &CFunctionContract,
-) -> Option<Vec<CValue>> {
+) -> Option<Vec<ProgramValue>> {
     let Proposition::Predicate { arguments, .. } = conclusion else {
         return None;
     };
@@ -8667,7 +8724,7 @@ fn executed_conclusion_values(
         .get(2..)?
         .iter()
         .map(|argument| match argument {
-            Term::CValue(value) => Some(value.clone()),
+            Term::ProgramValue(value) => Some(value.clone()),
             _ => None,
         })
         .collect::<Option<Vec<_>>>()?;
@@ -8679,12 +8736,14 @@ fn executed_conclusion_values(
 /// conclusion's value by a trailing requirement `parameter == value`: the
 /// wrapper is verified for every value that equals it, which is the target
 /// contract at those values. Pops and checks the pins.
-fn pop_executed_value_pins(function: &mut CFunction, values: &[CValue]) -> Option<()> {
+fn pop_executed_value_pins(function: &mut ProgramFunction, values: &[ProgramValue]) -> Option<()> {
     let call_count = function.parameters().len().checked_sub(values.len())?;
     let parameters = function.parameters()[call_count..].to_vec();
     for (parameter, value) in parameters.iter().zip(values).rev() {
         let pin = SpecProposition::Comparison {
-            left: SpecExpression::CExpression(CExpression::Variable(parameter.name().to_string())),
+            left: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                parameter.name().to_string(),
+            )),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(value.clone()),
         };
@@ -8697,12 +8756,15 @@ fn pop_executed_value_pins(function: &mut CFunction, values: &[CValue]) -> Optio
 
 /// The arguments of the one call an execution wrapper makes: its call
 /// parameters, in order, without the value parameters that trail them.
-fn executed_call_arguments(function: &CFunction, value_count: usize) -> Option<Vec<CExpression>> {
+fn executed_call_arguments(
+    function: &ProgramFunction,
+    value_count: usize,
+) -> Option<Vec<ProgramExpression>> {
     let call_count = function.parameters().len().checked_sub(value_count)?;
     Some(
         function.parameters()[..call_count]
             .iter()
-            .map(|parameter| CExpression::Variable(parameter.name().to_string()))
+            .map(|parameter| ProgramExpression::Variable(parameter.name().to_string()))
             .collect(),
     )
 }
@@ -8714,7 +8776,7 @@ fn executed_call_arguments(function: &CFunction, value_count: usize) -> Option<V
 pub fn c_project_function_signature(
     environment: &CExecutionEnvironment,
     name: &str,
-) -> Option<(Vec<CType>, CType)> {
+) -> Option<(Vec<ProgramType>, ProgramType)> {
     let function = project_function_interface(environment, name)?;
     Some((
         function
@@ -8729,7 +8791,7 @@ pub fn c_project_function_signature(
 fn project_function_interface<'a>(
     environment: &'a CExecutionEnvironment,
     name: &str,
-) -> Option<&'a CFunction> {
+) -> Option<&'a ProgramFunction> {
     if let Some(rule) = environment.get_verified_function_rule(name) {
         return Some(&rule.function);
     }
@@ -8758,19 +8820,21 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     let mut function = rule.function.clone();
     pop_executed_value_pins(&mut function, &target_values)?;
     let arguments = executed_call_arguments(&function, target_values.len())?;
-    let call = if function.return_type() == CType::Void {
-        CStatement::Call {
+    let call = if function.return_type() == ProgramType::Void {
+        ProgramStatement::Call {
             function_name: callee_name.to_string(),
             arguments,
         }
     } else {
-        CStatement::seq(
-            Arc::new(CStatement::CallAssign {
+        ProgramStatement::seq(
+            Arc::new(ProgramStatement::CallAssign {
                 target: "result".into(),
                 function_name: callee_name.to_string(),
                 arguments,
             }),
-            Arc::new(CStatement::Return(CExpression::Variable("result".into()))),
+            Arc::new(ProgramStatement::Return(ProgramExpression::Variable(
+                "result".into(),
+            ))),
         )
     };
     if function.body() != &call || function.source_body() != &call {
@@ -8783,7 +8847,12 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
     let Proposition::Predicate { name, arguments } = &conclusion else {
         return None;
     };
-    let [Term::CState(_), Term::CValue(CValue::Pointer(pointer)), ..] = arguments.as_slice() else {
+    let [
+        Term::ExecutionState(_),
+        Term::ProgramValue(ProgramValue::Pointer(pointer)),
+        ..,
+    ] = arguments.as_slice()
+    else {
         return None;
     };
     if pointer.pointer().block != PointerBlock::Function(callee_name.to_string()) {
@@ -9414,7 +9483,7 @@ pub fn prove_memory_load(memory: CMemory, pointer: Pointer) -> Theorem {
 pub fn prove_memory_load_after_store_same(
     memory: CMemory,
     pointer: Pointer,
-    value: CValue,
+    value: ProgramValue,
 ) -> Theorem {
     let stored = memory.store(pointer.clone(), value.clone());
     Theorem::new(Proposition::CMemoryLoads {
@@ -9427,7 +9496,7 @@ pub fn prove_memory_load_after_store_same(
 pub fn prove_memory_load_after_store_other(
     memory: CMemory,
     stored_pointer: Pointer,
-    stored_value: CValue,
+    stored_value: ProgramValue,
     loaded_pointer: Pointer,
 ) -> Option<Theorem> {
     if stored_pointer == loaded_pointer {

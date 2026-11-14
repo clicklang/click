@@ -28,10 +28,10 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
         vec![],
     );
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "wrapper_scaling",
         vec![],
-        CStatement::Return(CExpression::Value(CValue::Void)),
+        ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
     )
     .with_composite_resource_definitions(vec![definition, member_definition]);
     let wrapper = function
@@ -42,7 +42,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
     let selected = CResourceFact::own_composite("held".into(), vec![]);
     let child = CResourceFact::own_composite("member".into(), vec![]);
     let samples = [4usize, 16, 64, 256].map(|size| {
-        let mut before = CState::new().with_population_creation_tracking();
+        let mut before = ExecutionState::new().with_population_creation_tracking();
         let mut facts = ProofFacts::default();
         let mut memory = CMemory::new();
         let mut resources = ResourceContext::new().unchecked_with_fact(child.clone());

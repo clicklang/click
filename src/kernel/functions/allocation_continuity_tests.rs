@@ -92,7 +92,7 @@ fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
     let memory = CMemory::new()
         .with_heap_allocation_claim(base.clone(), HeapExtent::int32(bytes.clone()))
         .expect("live input allocation");
-    let mut state = CState::new()
+    let mut state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(memory.clone());
     state.record_population_storage_creation(base.block.clone());
@@ -128,7 +128,7 @@ fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
             &input,
             &ResourceContext::new(),
             &output,
-            &CFunctionContractInterface::new(CType::Void, vec![]),
+            &CFunctionContractInterface::new(ProgramType::Void, vec![]),
             &PureFactContext::new(),
             None,
             &state,
@@ -180,13 +180,13 @@ fn contract_allocation_retirement_respects_initialized_mutex_storage() {
         } else {
             ResourceContext::new()
         };
-        let interface = CFunctionContractInterface::new(CType::Void, vec![]);
+        let interface = CFunctionContractInterface::new(ProgramType::Void, vec![]);
         for mutex in [
             base.offset_by_bytes(8),
             Pointer::symbolic(Variable(930_006)),
         ] {
             let symbolic = matches!(mutex.block, PointerBlock::Symbolic(_));
-            let state = super::super::mutexes::MutexContext::new(CState::new())
+            let state = super::super::mutexes::MutexContext::new(ExecutionState::new())
                 .initialize_empty(mutex, 40)
                 .unwrap()
                 .into_state();
@@ -283,7 +283,7 @@ fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
         block: "alloc-size".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
     };
-    let load = |memory: &SharedCMemory, index| {
+    let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
@@ -296,12 +296,10 @@ fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
         MachineTerm::Variable(Variable(930_010)),
         MachineTerm::Variable(Variable(930_011)),
     );
-    let after = crate::kernel::intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(pointer(b.clone()), CValue::Int32(MachineTerm::constant(9))),
-    );
+    let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
     let size = |value| MachineTerm::add(value, MachineTerm::constant(1));
     let input_size = size(load(&before, a.clone()));
     let output_size = size(load(&before, b.clone()));
@@ -371,7 +369,7 @@ fn a_contract_uint64_allocation_extent_needs_the_no_wrap_decision() {
 
     assert_eq!(
         uint64_allocation_extent_argument(&MachineTerm::uint64_constant(16), &unbounded),
-        Ok(CValue::Int32(MachineTerm::constant(16))),
+        Ok(ProgramValue::Int32(MachineTerm::constant(16))),
     );
     assert!(matches!(
         uint64_allocation_extent_argument(&product, &unbounded),
@@ -379,14 +377,14 @@ fn a_contract_uint64_allocation_extent_needs_the_no_wrap_decision() {
     ));
     assert_eq!(
         uint64_allocation_extent_argument(&product, &bounded),
-        Ok(CValue::UInt64(product.clone())),
+        Ok(ProgramValue::UInt64(product.clone())),
     );
     assert_eq!(
         uint64_allocation_extent_argument(
             &product,
             &unbounded.clone().assume_entry_clause_extents()
         ),
-        Ok(CValue::UInt64(product.clone())),
+        Ok(ProgramValue::UInt64(product.clone())),
     );
     let symbolic_product = MachineTerm::uint64_multiply(count.clone(), other);
     assert!(matches!(

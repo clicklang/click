@@ -19,7 +19,7 @@ fn facts_over_one_memory_reserve_its_variables_once() {
         let memory = (0..size).fold(CMemory::new(), |memory, index| {
             memory.store(
                 pointer(index),
-                CValue::Int32(MachineTerm::Variable(Variable(7_200_000 + index))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(7_200_000 + index))),
             )
         });
         crate::kernel::intern_c_memory(memory.clone());
@@ -57,7 +57,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
         let memory = (0..size).fold(CMemory::new(), |memory, index| {
             memory.store(
                 pointer(index),
-                CValue::Int32(MachineTerm::Variable(Variable(7_400_000 + index))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(7_400_000 + index))),
             )
         });
         crate::kernel::intern_c_memory(memory.clone());

@@ -16,7 +16,7 @@ fn construction_recording_cost_is_independent_of_snapshot_size() {
                     block: "local:scale".into(),
                     offset: PointerOffsetTerm::Constant(i * 4),
                 },
-                CValue::Int32((i as u32).into()),
+                ProgramValue::Int32((i as u32).into()),
             );
         }
         let (_, cost) = crate::instrumentation::measure_deterministic_work(|| {

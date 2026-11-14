@@ -15,7 +15,7 @@ fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
     let ordinary = |name: String, next: Option<String>| {
         CCompositeResourceDefinition::new(
             name,
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![c_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             next.into_iter()
@@ -24,7 +24,7 @@ fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
                         CResourceAccessMode::Own,
                         next,
                         vec![c_variable("p")],
-                        vec![CType::Int32Pointer],
+                        vec![ProgramType::Int32Pointer],
                     )
                 })
                 .collect(),
@@ -34,7 +34,7 @@ fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
     let population = || {
         CCompositeResourceDefinition::authority_control(
             "z-count",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![c_parameter("p", ProgramType::Int32Pointer)],
             None,
             vec![CResourceSpec::owned_memory(CMemorySegment::new(
                 c_variable("p"),
@@ -47,7 +47,7 @@ fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
     let root = |name: &str| {
         ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
             name.into(),
-            vec![CValue::pointer(pointer.clone())],
+            vec![ProgramValue::pointer(pointer.clone())],
         ))
     };
     let mut depth_samples = Vec::new();
@@ -117,12 +117,12 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
         let residual = (0..size).fold(ResourceContext::new(), |residual, index| {
             residual.unchecked_with_fact(CResourceFact::own_composite(
                 "boxed".into(),
-                vec![CValue::pointer(object(index))],
+                vec![ProgramValue::pointer(object(index))],
             ))
         });
         let memory = CMemory::new();
         let assumptions = PureFactContext::new();
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context(residual.clone());
         let written = CMemoryRange::new(
@@ -168,7 +168,7 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
         let residual = (0..size).fold(ResourceContext::new(), |resources, index| {
             resources.unchecked_with_fact(CResourceFact::own_composite(
                 "boxed".into(),
-                vec![CValue::pointer(object(index))],
+                vec![ProgramValue::pointer(object(index))],
             ))
         });
         let cell = object(size + 1);
@@ -182,7 +182,7 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
             .unchecked_with_fact(CResourceFact::own_memory(written.clone()));
         let memory = CMemory::new();
         let assumptions = PureFactContext::new();
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context(original);
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -212,16 +212,21 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
 fn call_frame_preparation_ignores_unrelated_retained_instances() {
     let samples = [4_u64, 16, 64].map(|size| {
         let _session = VerificationSession::enter();
-        let schema =
-            ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
+        let schema = ResourceFieldSchema::new(vec![(
+            "tag".into(),
+            ResourceFieldType::C(ProgramType::Int32),
+        )])
+        .unwrap();
         let residual = (0..size).fold(ResourceContext::new(), |resources, index| {
             resources.unchecked_with_fact(CResourceFact::own(CResource::Instance(
                 ResourceInstance::new(
                     Variable(8_600_000 + index),
                     "boxed".into(),
-                    vec![CValue::pointer(Pointer::symbolic(Variable(8_610_000 + index))).into()]
-                        .into(),
+                    vec![
+                        ProgramValue::pointer(Pointer::symbolic(Variable(8_610_000 + index)))
+                            .into(),
+                    ]
+                    .into(),
                     schema.clone(),
                     vec![int32(0).into()].into(),
                 )
@@ -229,7 +234,7 @@ fn call_frame_preparation_ignores_unrelated_retained_instances() {
             )))
         });
         let assumptions = PureFactContext::new();
-        let state = CState::new().with_resource_context(residual.clone());
+        let state = ExecutionState::new().with_resource_context(residual.clone());
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let _fast = crate::kernel::search::FastOperationScope::enter(
                 "call frame retaining opaque instances",
@@ -279,14 +284,14 @@ fn call_frame_preparation_must_not_open_unrelated_composites() {
                     CResourceAccessMode::Own,
                     "boxed".into(),
                     vec![c_variable("p")],
-                    vec![CType::Int32Pointer],
+                    vec![ProgramType::Int32Pointer],
                 )]
             };
             let wrapper = CCompositeResourceDefinition::new(
                 "wrapper",
                 vec![
-                    c_parameter("p", CType::Int32Pointer),
-                    c_parameter("length", CType::Int32Pointer),
+                    c_parameter("p", ProgramType::Int32Pointer),
+                    c_parameter("length", ProgramType::Int32Pointer),
                 ],
                 None,
                 false,
@@ -301,14 +306,14 @@ fn call_frame_preparation_must_not_open_unrelated_composites() {
                 residual = residual.unchecked_with_fact(CResourceFact::own_composite(
                     "wrapper".into(),
                     vec![
-                        CValue::pointer(object(index)),
-                        CValue::pointer(object(1_000 + index)),
+                        ProgramValue::pointer(object(index)),
+                        ProgramValue::pointer(object(1_000 + index)),
                     ],
                 ));
                 memory = memory.store(object(1_000 + index), int32(1));
             }
             let assumptions = PureFactContext::new();
-            let state = CState::new()
+            let state = ExecutionState::new()
                 .with_memory(memory.clone())
                 .with_resource_context(residual.clone());
             // The callee's effect and the observed retained cell are fixed at

@@ -46,7 +46,7 @@ fn model_argument_guard_work(prepare: bool) {
     for size in [4usize, 16, 64, 256] {
         let mut values = BTreeMap::from([(
             "x".into(),
-            CValue::Int32(crate::kernel::MachineTerm::Variable(
+            ProgramValue::Int32(crate::kernel::MachineTerm::Variable(
                 crate::kernel::Variable(90_000),
             )),
         )]);
@@ -65,7 +65,7 @@ fn model_argument_guard_work(prepare: bool) {
         forms.record_lowering(&guard, &lowered).unwrap();
         for index in 0..size {
             let name = format!("unused_{index}");
-            let value = CValue::Int32(crate::kernel::MachineTerm::Variable(
+            let value = ProgramValue::Int32(crate::kernel::MachineTerm::Variable(
                 crate::kernel::Variable(100_000 + index as u64),
             ));
             values.insert(name.clone(), value);
@@ -103,7 +103,7 @@ fn model_argument_guard_work(prepare: bool) {
             definitions,
             &theorems,
         );
-        let state = CState::new().with_memory(memory);
+        let state = ExecutionState::new().with_memory(memory);
         let algebraic = BTreeMap::new();
         let snapshots = RecordedSnapshots::new();
         let application_context = TheoremApplicationContext {

@@ -219,7 +219,7 @@ mod tests {
             item: Variable(1005392),
             body: Box::new(MachineTerm::ClickFunctionApplication {
                 name: "opaque_body".into(),
-                arguments: vec![PureFunctionArgument::Value(CValue::Int32(
+                arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(
                     MachineTerm::Variable(Variable(1005393)),
                 ))],
             }),
@@ -240,7 +240,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let call = MachineTerm::ClickFunctionApplication {
             name: "ordinary_opaque_call".into(),
-            arguments: vec![PureFunctionArgument::Value(CValue::Int32(
+            arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::Variable(Variable(1005394)),
             ))],
         };

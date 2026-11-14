@@ -38,7 +38,7 @@ fn owned_range(base: Pointer, start: u32, end: u32) -> CResourceFact {
 fn owned_instance(identity: u64) -> CResourceFact {
     let schema = ResourceFieldSchema::new(vec![(
         "revision".into(),
-        ResourceFieldType::C(CType::Int32),
+        ResourceFieldType::C(ProgramType::Int32),
     )])
     .unwrap();
     CResourceFact::own(CResource::Instance(
@@ -120,7 +120,7 @@ fn private_local_copy_ignores_unrelated_resources() {
                         .chain((0..size).map(|index| format!("beside_{index}")))
                         .collect(),
                 );
-                let declare = |state: &CState, name: &str, c_type: CType| {
+                let declare = |state: &ExecutionState, name: &str, c_type: ProgramType| {
                     let mut paths = execute_c_statement_paths(
                         state,
                         &c_declare(name, c_type),
@@ -136,23 +136,26 @@ fn private_local_copy_ignores_unrelated_resources() {
                     *next
                 };
                 let (c_type, initial, value, expression) = if pointer_copy {
-                    let value = CValue::typed_pointer(heap_base(TARGET_HEAP), CType::UInt8Pointer);
+                    let value = ProgramValue::typed_pointer(
+                        heap_base(TARGET_HEAP),
+                        ProgramType::UInt8Pointer,
+                    );
                     (
-                        CType::UInt8Pointer,
+                        ProgramType::UInt8Pointer,
                         value.clone(),
                         value.clone(),
-                        CExpression::Value(value),
+                        ProgramExpression::Value(value),
                     )
                 } else {
-                    (CType::Int32, int32(0), int32(9), c_int32_literal(9))
+                    (ProgramType::Int32, int32(0), int32(9), c_int32_literal(9))
                 };
                 let mut state = if address_backed {
-                    declare(&CState::new(), "target", c_type)
+                    declare(&ExecutionState::new(), "target", c_type)
                 } else {
-                    CState::new().with_local("target", initial)
+                    ExecutionState::new().with_local("target", initial)
                 };
                 for index in 0..size {
-                    state = declare(&state, &format!("beside_{index}"), CType::Int32);
+                    state = declare(&state, &format!("beside_{index}"), ProgramType::Int32);
                 }
                 let resources = state.resources().clone();
                 let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -389,14 +392,19 @@ fn indexed_validity_still_finds_every_violation_kind() {
 /// `start` and whose child is passed `p`: the body shapes of a plain-field
 /// endpoint and a field-to-field child equation.
 fn field_endpoint_definitions() -> Vec<CCompositeResourceDefinition> {
-    let suffix_schema =
-        ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
-    let holder_schema =
-        ResourceFieldSchema::new(vec![("at".into(), ResourceFieldType::C(CType::Int32))]).unwrap();
+    let suffix_schema = ResourceFieldSchema::new(vec![(
+        "start".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap();
+    let holder_schema = ResourceFieldSchema::new(vec![(
+        "at".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap();
     let suffix = CCompositeResourceDefinition::new(
         "suffix",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment {
@@ -413,7 +421,7 @@ fn field_endpoint_definitions() -> Vec<CCompositeResourceDefinition> {
     .with_instance_schema(Some(suffix_schema));
     let holder = CCompositeResourceDefinition::new(
         "holder",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![],
@@ -423,7 +431,7 @@ fn field_endpoint_definitions() -> Vec<CCompositeResourceDefinition> {
         name: "rest".into(),
         resource: "suffix".into(),
         binding: Variable(90),
-        arguments: vec![SpecExpression::CExpression(c_variable("p"))],
+        arguments: vec![SpecExpression::ProgramExpression(c_variable("p"))],
         field_bindings: vec![CResourceChildField::Parent(0)],
     }])
     .with_instance_schema(Some(holder_schema));
@@ -435,8 +443,12 @@ fn field_endpoint_instance(name: &str, field: &str, identity: u64) -> ResourceIn
     ResourceInstance::new(
         Variable(identity),
         name.into(),
-        vec![CValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
-        ResourceFieldSchema::new(vec![(field.into(), ResourceFieldType::C(CType::Int32))]).unwrap(),
+        vec![ProgramValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
+        ResourceFieldSchema::new(vec![(
+            field.into(),
+            ResourceFieldType::C(ProgramType::Int32),
+        )])
+        .unwrap(),
         vec![int32(2).into()].into(),
     )
     .unwrap()
@@ -458,11 +470,11 @@ fn field_endpoint_fold_and_unfold_ignore_unrelated_resources() {
                 ]
             }))
             .unchecked_with_facts([CResourceFact::own(CResource::Instance(parent.clone()))]);
-        let state = CState::new().with_resource_context(frame);
+        let state = ExecutionState::new().with_resource_context(frame);
         let assumptions = PureFactContext::new();
         let children = vec![("rest".to_string(), child.identity)];
         let (round_trip, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let rewrite = |state: &CState,
+            let rewrite = |state: &ExecutionState,
                            instance: &ResourceInstance,
                            definition: &CCompositeResourceDefinition,
                            unfold: bool,
@@ -503,9 +515,11 @@ fn field_endpoint_fold_and_unfold_ignore_unrelated_resources() {
 /// field: the body shape whose cells a folded instance publishes as read
 /// authority to its sibling contract clauses.
 fn window_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
-    let schema =
-        ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "start".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap();
     let contains = (0..cells)
         .map(|cell| {
             CResourceSpec::owned_memory(CMemorySegment {
@@ -526,7 +540,7 @@ fn window_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
     vec![
         CCompositeResourceDefinition::new(
             "window",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![c_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             contains,
@@ -541,9 +555,12 @@ fn window_instance(block: u64, identity: u64) -> CResourceFact {
         ResourceInstance::new(
             Variable(identity),
             "window".into(),
-            vec![CValue::pointer(heap_base(block)).into()].into(),
-            ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap(),
+            vec![ProgramValue::pointer(heap_base(block)).into()].into(),
+            ResourceFieldSchema::new(vec![(
+                "start".into(),
+                ResourceFieldType::C(ProgramType::Int32),
+            )])
+            .unwrap(),
             vec![int32(0).into()].into(),
         )
         .unwrap(),
@@ -565,7 +582,7 @@ fn unmatched_instance_body_views_ignore_unrelated_instances() {
                 window_instance(index as u64 + 1, TARGET_HEAP + 1 + index as u64),
             ]
         }));
-        let state = CState::new().with_resource_context(frame);
+        let state = ExecutionState::new().with_resource_context(frame);
         let target = window_instance(TARGET_HEAP, 2 * TARGET_HEAP);
         let assumptions = PureFactContext::new();
         let (supply, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -605,7 +622,7 @@ fn unmatched_instance_body_views_are_linear_in_the_body() {
     let mut samples = Vec::new();
     for size in BODY_SIZES {
         let definitions = window_definitions(size as u32);
-        let state = CState::new();
+        let state = ExecutionState::new();
         let target = window_instance(TARGET_HEAP, 2 * TARGET_HEAP);
         let assumptions = PureFactContext::new();
         let (supply, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -643,9 +660,11 @@ fn unmatched_instance_body_views_are_linear_in_the_body() {
 /// `arena_cells`, where the published cells sit one composite below the
 /// instance's body.
 fn holder_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
-    let schema =
-        ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "start".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap();
     let child_contains = (0..cells)
         .map(|cell| {
             CResourceSpec::owned_memory(CMemorySegment {
@@ -662,7 +681,7 @@ fn holder_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
     vec![
         CCompositeResourceDefinition::new(
             "cells",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![c_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             child_contains,
@@ -670,14 +689,14 @@ fn holder_definitions(cells: u32) -> Vec<CCompositeResourceDefinition> {
         ),
         CCompositeResourceDefinition::new(
             "holder",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![c_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![CResourceSpec::composite(
                 CResourceAccessMode::Own,
                 "cells".into(),
                 vec![c_variable("p")],
-                vec![CType::Int32Pointer],
+                vec![ProgramType::Int32Pointer],
             )],
             vec![],
         )
@@ -690,9 +709,12 @@ fn holder_instance(block: u64, identity: u64) -> CResourceFact {
         ResourceInstance::new(
             Variable(identity),
             "holder".into(),
-            vec![CValue::pointer(heap_base(block)).into()].into(),
-            ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap(),
+            vec![ProgramValue::pointer(heap_base(block)).into()].into(),
+            ResourceFieldSchema::new(vec![(
+                "start".into(),
+                ResourceFieldType::C(ProgramType::Int32),
+            )])
+            .unwrap(),
             vec![int32(0).into()].into(),
         )
         .unwrap(),
@@ -713,7 +735,7 @@ fn nested_composite_body_views_ignore_unrelated_instances() {
                 holder_instance(index as u64 + 1, TARGET_HEAP + 1 + index as u64),
             ]
         }));
-        let state = CState::new().with_resource_context(frame);
+        let state = ExecutionState::new().with_resource_context(frame);
         let target = holder_instance(TARGET_HEAP, 2 * TARGET_HEAP);
         let assumptions = PureFactContext::new();
         let (supply, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -750,7 +772,7 @@ fn nested_composite_body_views_are_linear_in_the_child_body() {
     let mut samples = Vec::new();
     for size in SIZES {
         let definitions = holder_definitions(size as u32);
-        let state = CState::new();
+        let state = ExecutionState::new();
         let target = holder_instance(TARGET_HEAP, 2 * TARGET_HEAP);
         let assumptions = PureFactContext::new();
         let (supply, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -990,7 +1012,7 @@ fn parameter_frame(count: usize) -> (ResourceContext, PureFactContext) {
         )
         .unchecked_with_fact(CResourceFact::own_composite(
             "holder".into(),
-            vec![CValue::pointer(parameter_base(FIRST_PARAMETER - 1))],
+            vec![ProgramValue::pointer(parameter_base(FIRST_PARAMETER - 1))],
         ));
     let assumptions =
         PureFactContext::new().assume_proposition(Proposition::CResourceComposition(frame.clone()));
@@ -1350,7 +1372,11 @@ fn normalizing_external_ranges_compares_only_related_bases() {
 }
 
 fn tag_schema() -> ResourceFieldSchema {
-    ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))]).unwrap()
+    ResourceFieldSchema::new(vec![(
+        "tag".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap()
 }
 
 fn layer_name(layer: usize) -> String {
@@ -1384,13 +1410,13 @@ fn layered_definitions(layers: usize) -> Vec<CCompositeResourceDefinition> {
                     name: "child".into(),
                     resource: layer_name(layer - 1),
                     binding: Variable(5_000_000 + layer as u64),
-                    arguments: vec![SpecExpression::CExpression(c_variable("p"))],
+                    arguments: vec![SpecExpression::ProgramExpression(c_variable("p"))],
                     field_bindings: vec![CResourceChildField::Parent(0)],
                 }]
             };
             CCompositeResourceDefinition::new(
                 layer_name(layer),
-                vec![c_parameter("p", CType::Int32Pointer)],
+                vec![c_parameter("p", ProgramType::Int32Pointer)],
                 None,
                 false,
                 contains,
@@ -1410,7 +1436,7 @@ fn layered_instance(layers: usize) -> CResourceFact {
         ResourceInstance::new(
             Variable(2 * TARGET_HEAP),
             layer_name(layers - 1),
-            vec![CValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
+            vec![ProgramValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
             tag_schema(),
             vec![int32(0).into()].into(),
         )
@@ -1431,7 +1457,7 @@ fn a_layered_footprint_is_linear_in_its_definitions() {
         let (definitions, work) =
             crate::instrumentation::measure_deterministic_work(|| layered_definitions(layers));
         installed.push((layers, work));
-        let state = CState::new();
+        let state = ExecutionState::new();
         let assumptions = PureFactContext::new();
         let fact = layered_instance(layers);
         let (ranges, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1477,7 +1503,7 @@ fn a_layered_footprint_is_linear_in_its_definitions() {
 fn a_recursive_footprint_is_constant_in_live_nodes() {
     let mut definitions = vec![CCompositeResourceDefinition::new(
         "list",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         true,
         vec![
@@ -1494,7 +1520,7 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
                 CResourceAccessMode::Own,
                 "list".into(),
                 vec![c_pointer_offset_bytes(c_variable("p"), 4)],
-                vec![CType::Int32Pointer],
+                vec![ProgramType::Int32Pointer],
             ),
         ],
         vec![],
@@ -1512,11 +1538,11 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
                 int32(node as u32),
             )
         });
-        let state = CState::new().with_memory(memory);
+        let state = ExecutionState::new().with_memory(memory);
         let assumptions = PureFactContext::new();
         let fact = CResourceFact::own(CResource::Composite {
             name: "list".into(),
-            arguments: vec![CValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
+            arguments: vec![ProgramValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
         });
         let (ranges, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::functions::checked_owned_memory_ranges(
@@ -1538,15 +1564,15 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
 /// descriptor's first field and then the pool's.
 fn slot_definitions() -> Vec<CCompositeResourceDefinition> {
     let schema = ResourceFieldSchema::new(vec![
-        ("at".into(), ResourceFieldType::C(CType::Int32)),
-        ("end".into(), ResourceFieldType::C(CType::Int32)),
+        ("at".into(), ResourceFieldType::C(ProgramType::Int32)),
+        ("end".into(), ResourceFieldType::C(ProgramType::Int32)),
     ])
     .unwrap();
-    let pool = c_typed_load(c_variable("s"), CType::Int32Pointer);
+    let pool = c_typed_load(c_variable("s"), ProgramType::Int32Pointer);
     vec![
         CCompositeResourceDefinition::new(
             "slot",
-            vec![c_parameter("s", CType::Int32Pointer)],
+            vec![c_parameter("s", ProgramType::Int32Pointer)],
             None,
             false,
             vec![
@@ -1562,7 +1588,7 @@ fn slot_definitions() -> Vec<CCompositeResourceDefinition> {
                 CResourceSpec::owned_memory(CMemorySegment {
                     uninitialized: false,
                     value_runs: Default::default(),
-                    base: c_typed_load(pool, CType::Int32Pointer),
+                    base: c_typed_load(pool, ProgramType::Int32Pointer),
                     start: c_variable("at"),
                     end: c_variable("end"),
                     element_width: 4,
@@ -1584,15 +1610,15 @@ fn external_descriptor(identity: u64) -> Pointer {
 
 /// The pointer a load of `cell` reads in `source`, as execution materializes
 /// it: the value named by that read.
-fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
-    CValue::Pointer(CPointerValue::from_read(
+fn materialized_pointer(source: &CMemory, cell: &Pointer) -> ProgramValue {
+    ProgramValue::Pointer(PointerValue::from_read(
         Pointer::loaded(&MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory_ref(source),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         ))
         .unwrap(),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         &crate::kernel::intern_c_memory_ref(source),
         cell,
     ))
@@ -1614,16 +1640,17 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
         let other = external_descriptor(100_001);
         let entry = CMemory::new();
         let pool = match materialized_pointer(&entry, &region) {
-            CValue::Pointer(value) => value,
+            ProgramValue::Pointer(value) => value,
             _ => unreachable!("a pointer cell is materialized as a pointer"),
         };
         let instance = ResourceInstance::new(
             Variable(2 * TARGET_HEAP),
             "slot".into(),
-            vec![CValue::typed_pointer(region.clone(), CType::Int32Pointer).into()].into(),
+            vec![ProgramValue::typed_pointer(region.clone(), ProgramType::Int32Pointer).into()]
+                .into(),
             ResourceFieldSchema::new(vec![
-                ("at".into(), ResourceFieldType::C(CType::Int32)),
-                ("end".into(), ResourceFieldType::C(CType::Int32)),
+                ("at".into(), ResourceFieldType::C(ProgramType::Int32)),
+                ("end".into(), ResourceFieldType::C(ProgramType::Int32)),
             ])
             .unwrap(),
             vec![int32(0).into(), int32(2).into()].into(),
@@ -1656,7 +1683,7 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
                 )),
                 CResourceFact::own(CResource::Instance(instance.clone())),
             ]);
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(frame);
         let assumptions = PureFactContext::new();
@@ -1697,9 +1724,12 @@ fn parameter_window_instance(parameter: u64, identity: u64) -> CResourceFact {
         ResourceInstance::new(
             Variable(identity),
             "window".into(),
-            vec![CValue::pointer(parameter_base(parameter)).into()].into(),
-            ResourceFieldSchema::new(vec![("start".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap(),
+            vec![ProgramValue::pointer(parameter_base(parameter)).into()].into(),
+            ResourceFieldSchema::new(vec![(
+                "start".into(),
+                ResourceFieldType::C(ProgramType::Int32),
+            )])
+            .unwrap(),
             vec![int32(0).into()].into(),
         )
         .unwrap(),
@@ -1712,7 +1742,7 @@ const STORE_KEPT_PARAMETER: u64 = 97_001;
 /// Frames one store at the written parameter's object as the store
 /// statement does: the opened composition first, then the cached cells. It
 /// returns the charged work and how many of `kept` cached cells survived.
-fn framed_store_beside_instances(state: &CState, kept: &[Pointer]) -> (usize, usize) {
+fn framed_store_beside_instances(state: &ExecutionState, kept: &[Pointer]) -> (usize, usize) {
     let write = parameter_base(STORE_WRITTEN_PARAMETER);
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceComposition(state.resources().clone()));
@@ -1771,7 +1801,7 @@ fn a_store_opens_no_folded_instance_whose_arguments_name_no_cached_cell() {
                 memory.store(heap_base(index as u64 + 1), int32(index as u32))
             })
             .store(kept.clone(), int32(5));
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_resource_context(frame)
             .with_memory(memory);
         let (work, survived) = framed_store_beside_instances(&state, std::slice::from_ref(&kept));
@@ -1804,7 +1834,7 @@ fn a_store_opens_folded_instances_in_work_linear_in_the_aliasing_ones() {
         let memory = cells.iter().fold(CMemory::new(), |memory, cell| {
             memory.store(cell.clone(), int32(5))
         });
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_resource_context(frame)
             .with_memory(memory);
         let (work, survived) = framed_store_beside_instances(&state, &cells);
@@ -1834,7 +1864,7 @@ fn a_store_forgets_a_folded_instance_cell_it_does_not_open() {
         parameter_object(STORE_WRITTEN_PARAMETER),
         parameter_window_instance(STORE_KEPT_PARAMETER, 3 * TARGET_HEAP),
     ]);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_resource_context(frame)
         .with_memory(CMemory::new().store(kept.clone(), int32(5)));
     // No definitions armed: nothing can be opened.
@@ -2317,7 +2347,7 @@ const WRITTEN_INT_HEAP: u64 = TARGET_HEAP + 1;
 /// A caller holding `unrelated` live heap allocations beside the target,
 /// each reached from its own never-address-taken pointer local, whose
 /// automatic storage the caller owns, as C lowering leaves `int *u = malloc(..)`.
-fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
+fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
     let locals = (0..unrelated)
         .map(|index| (format!("u{index}"), index as u64 + 1))
         .chain([("p".to_owned(), TARGET_HEAP)])
@@ -2352,14 +2382,14 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
         ])
         .unchecked_with_supported_facts(&written_owner, [CResourceFact::view_memory(written)])
         .with_cached_supported_expansion(&written_owner, vec![written_owner.clone()]);
-    let mut state = CState::new().with_population_creation_tracking();
+    let mut state = ExecutionState::new().with_population_creation_tracking();
     for (name, identity) in &locals {
         let slot = CMemory::local_pointer(name);
         memory = memory
             .with_block(slot.block.clone(), 8)
-            .store(slot.clone(), CValue::pointer(heap_base(*identity)));
+            .store(slot.clone(), ProgramValue::pointer(heap_base(*identity)));
         resources = resources.unchecked_with_fact(owned_range(slot, 0, 8));
-        state = state.with_local(name.clone(), CValue::pointer(heap_base(*identity)));
+        state = state.with_local(name.clone(), ProgramValue::pointer(heap_base(*identity)));
     }
     // The call views `p`'s bytes, so they hold values the caller wrote.
     let memory = memory.with_initialized_object(&heap_base(TARGET_HEAP), 16);
@@ -2386,9 +2416,9 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
 #[test]
 fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
     let helper = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "peek",
-        vec![c_parameter("data", CType::Int32Pointer)],
+        vec![c_parameter("data", ProgramType::Int32Pointer)],
         c_return(c_int32_literal(0)),
     )
     .with_resource_summary(
@@ -2536,7 +2566,7 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
             binding_types: vec![],
             binding_variables: vec![],
             contains: vec![CResourceSpec::owned_memory(CMemorySegment::new(
-                CExpression::Value(CValue::pointer(heap_base(TARGET_HEAP))),
+                ProgramExpression::Value(ProgramValue::pointer(heap_base(TARGET_HEAP))),
                 c_int32_literal(0),
                 c_int32_literal(2),
             ))],
@@ -2559,10 +2589,11 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
             })
             .collect::<Vec<_>>();
         definitions.push(definition.clone());
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts(
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts(
                 (0..size).map(|index| owned_range(heap_base(index as u64 + 1), 0, 1)),
-            ));
+            ),
+        );
         let (views, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::functions::instance_arm_read_authority(
                 &target,

@@ -7,9 +7,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use click::cli::{CInput, parse_mdtest, read_c_inputs, read_click_project};
 use click::kernel::{
-    CExpression, CFunctionOutcome, CMemory, CMemoryRange, CResourceFact, CState, CStatement, CType,
-    CUndefinedBehavior, MachineTerm, Pointer, PointerOffsetTerm, Proposition, PureFactContext,
-    ResourceContext, c_typed_pointer_value, int32, prove_symbolic_c_function_execution,
+    CFunctionOutcome, CMemory, CMemoryRange, CResourceFact, CUndefinedBehavior, ExecutionState,
+    MachineTerm, Pointer, PointerOffsetTerm, ProgramExpression, ProgramStatement, ProgramType,
+    Proposition, PureFactContext, ResourceContext, c_typed_pointer_value, int32,
+    prove_symbolic_c_function_execution,
 };
 use click::languages::cpp::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppExceptionBehavior, CppExpression,
@@ -2679,11 +2680,11 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
     let lowered = lower_import(&prepared).expect("lower function-scope unwind edges");
 
     fn collect_unwind_edges<'a>(
-        statement: &'a CStatement,
-        edges: &mut Vec<(&'a CStatement, &'a CStatement)>,
+        statement: &'a ProgramStatement,
+        edges: &mut Vec<(&'a ProgramStatement, &'a ProgramStatement)>,
     ) {
         match statement {
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 handler,
                 cleanup_unwind: true,
@@ -2693,12 +2694,12 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
                 collect_unwind_edges(try_body, edges);
                 collect_unwind_edges(handler, edges);
             }
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     collect_unwind_edges(statement, edges);
                 }
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -2706,7 +2707,7 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
                 collect_unwind_edges(then_branch, edges);
                 collect_unwind_edges(else_branch, edges);
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {
                 collect_unwind_edges(try_body, edges);
@@ -2725,21 +2726,21 @@ fn scalar_int32_profile_emits_function_scope_cleanup_edges_for_escaping_throws()
     );
     for (_, handler) in &edges {
         assert!(
-            matches!(handler, CStatement::Seq(sequence)
+            matches!(handler, ProgramStatement::Seq(sequence)
                 if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore")
-                    && matches!(rethrow.as_ref(), CStatement::Throw(_)) }),
+                    && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) }),
             "each escaping edge must run the live destructor before rethrowing"
         );
     }
     assert!(
         edges
             .iter()
-            .any(|(try_body, _)| matches!(try_body, CStatement::Throw(_)))
+            .any(|(try_body, _)| matches!(try_body, ProgramStatement::Throw(_)))
     );
     assert!(edges.iter().any(|(try_body, _)| {
-        matches!(try_body, CStatement::Seq(sequence)
-            if { let (declare, call) = (sequence.first(), &sequence.rest()); matches!(declare.as_ref(), CStatement::Declare { name, .. } if name == "ignored")
-                && matches!(call.as_ref(), CStatement::CallAssign { function_name, .. } if function_name == "helper") })
+        matches!(try_body, ProgramStatement::Seq(sequence)
+            if { let (declare, call) = (sequence.first(), &sequence.rest()); matches!(declare.as_ref(), ProgramStatement::Declare { name, .. } if name == "ignored")
+                && matches!(call.as_ref(), ProgramStatement::CallAssign { function_name, .. } if function_name == "helper") })
     }));
 }
 
@@ -3026,10 +3027,10 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     ));
 
     let lowered = lower_import(&import).expect("lower the predicate directly to the kernel");
-    assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
+    assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     assert_eq!(
         lowered.kernel_function().parameters()[0].c_type(),
-        CType::Int64Pointer
+        ProgramType::Int64Pointer
     );
     assert!(lowered.kernel_function().parameters()[0].pointee_is_constant());
 
@@ -3149,7 +3150,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     ));
 
     let lowered = lower_import(&import).expect("lower the constexpr predicate directly");
-    assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
+    assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_COIN_SIDECAR).unwrap();
     verify_program_prepared_project(&click_project, &import)
         .expect("verify the constexpr comparison through the offline artifact");
@@ -3246,7 +3247,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     ));
 
     let lowered = lower_import(&import).expect("lower the dependent constexpr predicate");
-    assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
+    assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_SIDECAR).unwrap();
     verify_program_prepared_project(&click_project, &import)
         .expect("verify the dependent constexpr comparison offline");
@@ -3292,7 +3293,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     ));
 
     let lowered = lower_import(&import).expect("lower signed-64 less-equal directly");
-    assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
+    assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_LE_SIDECAR).unwrap();
     verify_program_prepared_project(&click_project, &import)
         .expect("verify the inclusive MAX_MONEY upper bound offline");
@@ -3359,13 +3360,13 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
             && constant.name == "MAX_MONEY")));
 
     let lowered = lower_import(&import).expect("lower built-in C++ && directly");
-    assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
+    assert_eq!(lowered.kernel_function().return_type(), ProgramType::Bool);
     assert!(matches!(lowered.kernel_function().body(),
-        CStatement::Return(CExpression::Cast {
+        ProgramStatement::Return(ProgramExpression::Cast {
             expression,
-            target_type: CType::Bool,
+            target_type: ProgramType::Bool,
             ..
-        }) if matches!(expression.as_ref(), CExpression::And(_, _))));
+        }) if matches!(expression.as_ref(), ProgramExpression::And(_, _))));
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_RANGE_SIDECAR).unwrap();
     verify_program_prepared_project(&click_project, &import)
         .expect("verify the inclusive range contract offline");
@@ -3565,7 +3566,7 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
     let lowered = lower_import(&import).expect("lower the typed branch directly");
     assert_eq!(
         lowered.kernel_function().parameters()[0].c_type(),
-        CType::Bool
+        ProgramType::Bool
     );
     assert!(contains_if(lowered.kernel_function().body()));
 
@@ -3668,9 +3669,9 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
 
     let lowered = lower_import(&import).expect("lower both C++ reference qualifiers directly");
     let parameters = lowered.kernel_function().parameters();
-    assert_eq!(parameters[0].c_type(), CType::Int32Pointer);
+    assert_eq!(parameters[0].c_type(), ProgramType::Int32Pointer);
     assert!(!parameters[0].pointee_is_constant());
-    assert_eq!(parameters[1].c_type(), CType::Int32Pointer);
+    assert_eq!(parameters[1].c_type(), ProgramType::Int32Pointer);
     assert!(parameters[1].pointee_is_constant());
 
     project.adopt();
@@ -3748,24 +3749,27 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
     );
 }
 
-fn contains_if(statement: &CStatement) -> bool {
+fn contains_if(statement: &ProgramStatement) -> bool {
     match statement {
-        CStatement::If { .. } => true,
-        CStatement::Seq(statements) => statements.iter().any(|statement| contains_if(statement)),
+        ProgramStatement::If { .. } => true,
+        ProgramStatement::Seq(statements) => {
+            statements.iter().any(|statement| contains_if(statement))
+        }
         _ => false,
     }
 }
 
-fn contains_call(statement: &CStatement, expected: &str) -> bool {
+fn contains_call(statement: &ProgramStatement, expected: &str) -> bool {
     match statement {
-        CStatement::Call { function_name, .. } | CStatement::CallAssign { function_name, .. } => {
+        ProgramStatement::Call { function_name, .. }
+        | ProgramStatement::CallAssign { function_name, .. } => {
             function_name == expected
                 || click::surface::source_display_name(function_name).as_deref() == Some(expected)
         }
-        CStatement::Seq(statements) => statements
+        ProgramStatement::Seq(statements) => statements
             .iter()
             .any(|statement| contains_call(statement, expected)),
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -3775,19 +3779,19 @@ fn contains_call(statement: &CStatement, expected: &str) -> bool {
 }
 
 /// The functions `statement` calls, in order, as C++ names them.
-fn call_order(statement: &CStatement) -> Vec<String> {
-    fn visit(statement: &CStatement, calls: &mut Vec<String>) {
+fn call_order(statement: &ProgramStatement) -> Vec<String> {
+    fn visit(statement: &ProgramStatement, calls: &mut Vec<String>) {
         match statement {
-            CStatement::Call { function_name, .. } => calls.push(
+            ProgramStatement::Call { function_name, .. } => calls.push(
                 click::surface::source_display_name(function_name)
                     .unwrap_or_else(|| function_name.clone()),
             ),
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     visit(statement, calls);
                 }
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -3803,28 +3807,28 @@ fn call_order(statement: &CStatement) -> Vec<String> {
     calls
 }
 
-fn destructor_object_order<'a>(statement: &'a CStatement, destructor: &str) -> Vec<&'a str> {
-    fn visit<'a>(statement: &'a CStatement, destructor: &str, objects: &mut Vec<&'a str>) {
+fn destructor_object_order<'a>(statement: &'a ProgramStatement, destructor: &str) -> Vec<&'a str> {
+    fn visit<'a>(statement: &'a ProgramStatement, destructor: &str, objects: &mut Vec<&'a str>) {
         match statement {
-            CStatement::Call {
+            ProgramStatement::Call {
                 function_name,
                 arguments,
             } if function_name == destructor
                 || click::surface::source_display_name(function_name).as_deref()
                     == Some(destructor) =>
             {
-                if let [CExpression::Cast { expression, .. }] = arguments.as_slice()
-                    && let CExpression::Variable(name) = expression.as_ref()
+                if let [ProgramExpression::Cast { expression, .. }] = arguments.as_slice()
+                    && let ProgramExpression::Variable(name) = expression.as_ref()
                 {
                     objects.push(name);
                 }
             }
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     visit(statement, destructor, objects);
                 }
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -3840,17 +3844,17 @@ fn destructor_object_order<'a>(statement: &'a CStatement, destructor: &str) -> V
     objects
 }
 
-fn contains_raw_aggregate_destination(statement: &CStatement, expected: &str) -> bool {
+fn contains_raw_aggregate_destination(statement: &ProgramStatement, expected: &str) -> bool {
     match statement {
-        CStatement::DeclareAggregate {
+        ProgramStatement::DeclareAggregate {
             name,
             kind: click::kernel::CAggregateDeclarationKind::ConstructionDestination,
             ..
         } => name == expected,
-        CStatement::Seq(statements) => statements
+        ProgramStatement::Seq(statements) => statements
             .iter()
             .any(|statement| contains_raw_aggregate_destination(statement, expected)),
-        CStatement::If {
+        ProgramStatement::If {
             then_branch,
             else_branch,
             ..
@@ -3863,42 +3867,42 @@ fn contains_raw_aggregate_destination(statement: &CStatement, expected: &str) ->
 }
 
 fn contains_scalar_local_pipeline(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     call_local: &str,
     value_local: &str,
     callee: &str,
 ) -> [bool; 4] {
     let mut found = [false; 4];
     fn visit(
-        statement: &CStatement,
+        statement: &ProgramStatement,
         call_local: &str,
         value_local: &str,
         callee: &str,
         found: &mut [bool; 4],
     ) {
         match statement {
-            CStatement::Declare {
+            ProgramStatement::Declare {
                 name,
-                c_type: CType::Int32,
+                c_type: ProgramType::Int32,
                 ..
             } if name == call_local => found[0] = true,
-            CStatement::CallAssign {
+            ProgramStatement::CallAssign {
                 target,
                 function_name,
                 ..
             } if target == call_local && function_name == callee => found[1] = true,
-            CStatement::Declare {
+            ProgramStatement::Declare {
                 name,
-                c_type: CType::Int32,
+                c_type: ProgramType::Int32,
                 ..
             } if name == value_local => found[2] = true,
-            CStatement::Assign { name, .. } if name == value_local => found[3] = true,
-            CStatement::Seq(statements) => {
+            ProgramStatement::Assign { name, .. } if name == value_local => found[3] = true,
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     visit(statement, call_local, value_local, callee, found);
                 }
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -3913,42 +3917,42 @@ fn contains_scalar_local_pipeline(
     found
 }
 
-fn contains_local_aggregate_pipeline(statement: &CStatement, local: &str) -> [bool; 3] {
+fn contains_local_aggregate_pipeline(statement: &ProgramStatement, local: &str) -> [bool; 3] {
     let mut found = [false; 3];
-    fn visit(statement: &CStatement, local: &str, found: &mut [bool; 3]) {
+    fn visit(statement: &ProgramStatement, local: &str, found: &mut [bool; 3]) {
         match statement {
-            CStatement::DeclareAggregate { name, layout, .. } if name == local => {
+            ProgramStatement::DeclareAggregate { name, layout, .. } if name == local => {
                 found[0] = layout.size_bytes() == 16
                     && layout.alignment_bytes() == 8
                     && layout.fields().len() == 2;
             }
-            CStatement::TypedStore {
+            ProgramStatement::TypedStore {
                 pointer,
                 value_type,
                 ..
             } => {
-                if matches!(pointer, CExpression::Variable(name) if name == local)
-                    && *value_type == CType::Int32Pointer
+                if matches!(pointer, ProgramExpression::Variable(name) if name == local)
+                    && *value_type == ProgramType::Int32Pointer
                 {
                     found[1] = true;
                 }
-                if let CExpression::PointerOffsetBytes { pointer, bytes } = pointer
-                    && matches!(pointer.as_ref(), CExpression::Variable(name) if name == local)
+                if let ProgramExpression::PointerOffsetBytes { pointer, bytes } = pointer
+                    && matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name == local)
                 {
-                    if *bytes == 0 && *value_type == CType::Int32Pointer {
+                    if *bytes == 0 && *value_type == ProgramType::Int32Pointer {
                         found[1] = true;
                     }
-                    if *bytes == 8 && *value_type == CType::Int32 {
+                    if *bytes == 8 && *value_type == ProgramType::Int32 {
                         found[2] = true;
                     }
                 }
             }
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     visit(statement, local, found);
                 }
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -4255,11 +4259,11 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
         lower_import(&import).expect("lower pointer operations through kernel memory rules");
     assert_eq!(
         lowered.kernel_function().parameters()[0].c_type(),
-        CType::Int32Pointer
+        ProgramType::Int32Pointer
     );
     assert_eq!(
         lowered.reachable_kernel_functions()[0].parameters()[0].c_type(),
-        CType::Int32Pointer
+        ProgramType::Int32Pointer
     );
     assert!(!lowered.reachable_kernel_functions()[0].parameters()[0].pointee_is_constant());
 
@@ -4365,7 +4369,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     let lowered = lower_import(&import).expect("lower member operations through checked offsets");
     assert_eq!(
         lowered.kernel_function().parameters()[0].c_type(),
-        CType::Int32Pointer
+        ProgramType::Int32Pointer
     );
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -4604,15 +4608,15 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     );
     assert_eq!(
         lowered.reachable_kernel_functions()[0].parameters()[0].c_type(),
-        CType::Int32Pointer
+        ProgramType::Int32Pointer
     );
     assert_eq!(
         lowered.reachable_kernel_functions()[0].parameters()[1].c_type(),
-        CType::Int32Pointer
+        ProgramType::Int32Pointer
     );
     assert_eq!(
         lowered.reachable_kernel_functions()[0].return_type(),
-        CType::Void
+        ProgramType::Void
     );
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
@@ -4744,13 +4748,13 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     );
     assert!(matches!(
         lowered.kernel_function().body(),
-        CStatement::Seq(sequence)
+        ProgramStatement::Seq(sequence)
             if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
                 returned.as_ref(),
-                CStatement::Seq(sequence)
+                ProgramStatement::Seq(sequence)
                     if { let (_, returned) = (sequence.first(), &sequence.rest()); matches!(
                         returned.as_ref(),
-                        CStatement::Return(CExpression::Variable(name))
+                        ProgramStatement::Return(ProgramExpression::Variable(name))
                             if name.starts_with("__click_cpp_return_value")
                     ) }
             ) }
@@ -6130,42 +6134,42 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     assert_eq!(lowered.source_function().span, function_span);
     let function = lowered.kernel_function();
     assert_eq!(function.name(), "increment");
-    assert_eq!(function.return_type(), CType::Int32);
+    assert_eq!(function.return_type(), ProgramType::Int32);
     assert_eq!(function.parameters().len(), 1);
     assert_eq!(function.parameters()[0].name(), "&value");
-    assert_eq!(function.parameters()[0].c_type(), CType::Int32Pointer);
+    assert_eq!(function.parameters()[0].c_type(), ProgramType::Int32Pointer);
     assert!(matches!(
         function.body(),
-        CStatement::Seq(sequence)
+        ProgramStatement::Seq(sequence)
             if { let (store, returned) = (sequence.first(), &sequence.rest()); matches!(
                 store.as_ref(),
-                CStatement::TypedStore {
-                    pointer: CExpression::Variable(pointer),
-                    value: CExpression::Add(left, right),
-                    value_type: CType::Int32,
+                ProgramStatement::TypedStore {
+                    pointer: ProgramExpression::Variable(pointer),
+                    value: ProgramExpression::Add(left, right),
+                    value_type: ProgramType::Int32,
                     volatile: false,
                     pointee_constant: false,
                     ..
                 } if pointer == "&value"
                     && matches!(
                         left.as_ref(),
-                        CExpression::TypedLoad {
+                        ProgramExpression::TypedLoad {
                             pointer,
-                            value_type: CType::Int32,
+                            value_type: ProgramType::Int32,
                             volatile: false,
                             ..
-                        } if matches!(pointer.as_ref(), CExpression::Variable(name) if name == "&value")
+                        } if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name == "&value")
                     )
-                    && matches!(right.as_ref(), CExpression::Value(value) if value == &int32(1))
+                    && matches!(right.as_ref(), ProgramExpression::Value(value) if value == &int32(1))
             )
             && matches!(
                 returned.as_ref(),
-                CStatement::Return(CExpression::TypedLoad {
+                ProgramStatement::Return(ProgramExpression::TypedLoad {
                     pointer,
-                    value_type: CType::Int32,
+                    value_type: ProgramType::Int32,
                     volatile: false,
                     ..
-                }) if matches!(pointer.as_ref(), CExpression::Variable(name) if name == "&value")
+                }) if matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name == "&value")
             ) }
     ));
 
@@ -6179,11 +6183,14 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
             MachineTerm::constant(0),
             MachineTerm::constant(1),
         )));
-    let arguments = vec![c_typed_pointer_value(pointer.clone(), CType::Int32Pointer)];
-    let state = CState::new()
+    let arguments = vec![c_typed_pointer_value(
+        pointer.clone(),
+        ProgramType::Int32Pointer,
+    )];
+    let state = ExecutionState::new()
         .with_memory(CMemory::new().store(pointer.clone(), int32(41)))
         .with_resource_context(resources.clone());
-    let expected_state = CState::new()
+    let expected_state = ExecutionState::new()
         .with_memory(CMemory::new().store(pointer.clone(), int32(42)))
         .with_resource_context(resources.clone());
     let theorem = prove_symbolic_c_function_execution(
@@ -6206,7 +6213,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
         }
     );
 
-    let max_state = CState::new()
+    let max_state = ExecutionState::new()
         .with_memory(CMemory::new().store(pointer, int32(i32::MAX as u32)))
         .with_resource_context(resources);
     let overflow = prove_symbolic_c_function_execution(
@@ -9318,16 +9325,16 @@ fn direct_return_calls_keep_guarded_try_returns_unsupported_and_emit_uncaught_cl
     escaping.write_config_with_exception_behavior("escaping", "unwind.cpp", true, "scalar_int32");
     refresh_import(&escaping.config()).unwrap();
     let lowered = lower_import(&load_import(&escaping.config()).unwrap()).unwrap();
-    fn has_unwind_cleanup(statement: &CStatement) -> bool {
+    fn has_unwind_cleanup(statement: &ProgramStatement) -> bool {
         match statement {
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 handler,
                 cleanup_unwind: true,
                 ..
             } => {
-                matches!(handler.as_ref(), CStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
+                matches!(handler.as_ref(), ProgramStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Restore::~Restore") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
             }
-            CStatement::Seq(statements) => statements
+            ProgramStatement::Seq(statements) => statements
                 .iter()
                 .any(|statement| has_unwind_cleanup(statement)),
             _ => false,
@@ -14814,19 +14821,19 @@ int choose(int* slot, bool fail) { Guard guard(slot); if (predicate(fail)) { *sl
     project.write_config_with_exception_behavior("choose", "condition.cpp", true, "scalar_int32");
     refresh_import(&project.config()).unwrap();
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
-    fn guarded_condition(statement: &CStatement) -> bool {
+    fn guarded_condition(statement: &ProgramStatement) -> bool {
         match statement {
-            CStatement::Seq(statements) => statements
+            ProgramStatement::Seq(statements) => statements
                 .iter()
                 .any(|statement| guarded_condition(statement)),
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 handler,
                 cleanup_unwind: true,
                 ..
             } => {
                 contains_call(try_body, "predicate")
-                    && matches!(handler.as_ref(), CStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
+                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence) if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
             }
             _ => false,
         }
@@ -15525,20 +15532,20 @@ fn converted_call_initializers_emit_active_guard_cleanup_before_rethrow() {
     project.write_config_with_exception_behavior("relay", "converted.cpp", true, "scalar_int32");
     refresh_import(&project.config()).unwrap();
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
-    fn has_cleanup(statement: &CStatement) -> bool {
+    fn has_cleanup(statement: &ProgramStatement) -> bool {
         match statement {
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 statements.iter().any(|statement| has_cleanup(statement))
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 handler,
                 cleanup_unwind: true,
                 ..
             } => {
                 contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), CStatement::Seq(sequence)
-                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
+                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence)
+                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
             }
             _ => false,
         }
@@ -15987,20 +15994,20 @@ fn converted_return_calls_emit_active_object_cleanup_on_exception() {
     project.write_config_with_exception_behavior("relay", "relay.cpp", true, "scalar_int32");
     refresh_import(&project.config()).unwrap();
     let lowered = lower_import(&load_import(&project.config()).unwrap()).unwrap();
-    fn has_cleanup(statement: &CStatement) -> bool {
+    fn has_cleanup(statement: &ProgramStatement) -> bool {
         match statement {
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 statements.iter().any(|statement| has_cleanup(statement))
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 handler,
                 cleanup_unwind: true,
                 ..
             } => {
                 contains_call(try_body, "helper")
-                    && matches!(handler.as_ref(), CStatement::Seq(sequence)
-                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), CStatement::Throw(_)) })
+                    && matches!(handler.as_ref(), ProgramStatement::Seq(sequence)
+                    if { let (cleanup, rethrow) = (sequence.first(), &sequence.rest()); contains_call(cleanup, "Guard::~Guard") && matches!(rethrow.as_ref(), ProgramStatement::Throw(_)) })
             }
             _ => false,
         }

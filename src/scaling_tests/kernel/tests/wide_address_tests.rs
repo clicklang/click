@@ -6,22 +6,22 @@ use super::*;
 
 #[test]
 fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
-    for ty in [CType::Int128, CType::UInt128] {
+    for ty in [ProgramType::Int128, ProgramType::UInt128] {
         let mut samples = Vec::new();
         for count in [16, 64, 256, 1024, 1_000_000] {
             let _session = crate::kernel::VerificationSession::enter();
             let base = CMemory::global_pointer("wide-run");
             let at = |index| base.offset_by_bytes(index * 16);
             let zero = value(
-                &CState::new(),
-                if ty == CType::Int128 {
+                &ExecutionState::new(),
+                if ty == ProgramType::Int128 {
                     c_int128_literal(0)
                 } else {
                     c_uint128_literal(0)
                 },
             );
             let function = c_function(
-                CType::Int32,
+                ProgramType::Int32,
                 "wide_array",
                 vec![],
                 c_return(c_int32_literal(0)),
@@ -34,7 +34,7 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
                 CArrayContents::new(count, zero, []),
             )]);
             let (entry, setup_work) = crate::instrumentation::measure_deterministic_work(|| {
-                initialize_c_function_globals(&CState::new(), &function)
+                initialize_c_function_globals(&ExecutionState::new(), &function)
             });
             let memory = entry.memory.clone();
             assert_eq!(memory.cells.representation_len(), 1);
@@ -45,7 +45,7 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
             let machine = MachineIntegerType::from_c_type(ty).unwrap();
             assert!(machine.accepts_wide_term(&c_value_bitvector_term(&loaded).unwrap()));
             assert_eq!(loaded, memory.known_value(&at(count - 1)).unwrap());
-            let state = CState::new()
+            let state = ExecutionState::new()
                 .with_memory(memory.clone())
                 .with_resource_context(ResourceContext::new().unchecked_with_facts([
                     CResourceFact::view_memory(CMemoryRange::new_with_element_width(
@@ -66,8 +66,8 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
                 loaded
             );
             let replacement = value(
-                &CState::new(),
-                if ty == CType::Int128 {
+                &ExecutionState::new(),
+                if ty == ProgramType::Int128 {
                     c_int128_literal(i128::MIN)
                 } else {
                     c_uint128_literal(u128::MAX)

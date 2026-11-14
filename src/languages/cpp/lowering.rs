@@ -21,14 +21,15 @@ use super::{
     CppInitializer, CppPlace, CppPlaceReference, CppStatement, CppType, PreparedCppImport,
 };
 use crate::kernel::{
-    CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId, LoadSourceOwnerId,
-    c_add, c_allocate_aggregate_destination, c_and, c_assign, c_call, c_call_assign, c_cast,
-    c_checked_object_address, c_copy_aggregate, c_declare, c_declare_aggregate,
-    c_declare_initialized, c_declare_with_all_qualifiers, c_divide, c_end_automatic_lifetimes,
-    c_equal, c_function, c_greater_equal, c_greater_than, c_if, c_less_equal, c_less_than,
-    c_multiply, c_not_equal, c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq,
-    c_skip, c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load,
-    c_typed_load_with_source, c_typed_store, c_variable, int32,
+    CAggregateLayout, LoadSourceId, LoadSourceOwnerId, ProgramExpression, ProgramFunction,
+    ProgramStatement, ProgramType, c_add, c_allocate_aggregate_destination, c_and, c_assign,
+    c_call, c_call_assign, c_cast, c_checked_object_address, c_copy_aggregate, c_declare,
+    c_declare_aggregate, c_declare_initialized, c_declare_with_all_qualifiers, c_divide,
+    c_end_automatic_lifetimes, c_equal, c_function, c_greater_equal, c_greater_than, c_if,
+    c_less_equal, c_less_than, c_multiply, c_not_equal, c_parameter, c_pointer_offset_bytes,
+    c_remainder, c_return, c_seq, c_skip, c_subtract, c_try_catch_int32,
+    c_try_catch_int32_with_cleanup, c_typed_load, c_typed_load_with_source, c_typed_store,
+    c_variable, int32,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -39,8 +40,8 @@ pub struct LoweredCppFunction {
     source: PreparedCppImport,
     names: ResolvedNames,
     /// The selected functions, in selection order.
-    functions: Vec<CFunction>,
-    reachable_functions: Vec<CFunction>,
+    functions: Vec<ProgramFunction>,
+    reachable_functions: Vec<ProgramFunction>,
     execution: std::sync::Arc<crate::languages::PreparedExecution>,
 }
 
@@ -71,16 +72,16 @@ impl LoweredCppFunction {
     }
 
     /// The first selected function, lowered.
-    pub fn kernel_function(&self) -> &CFunction {
+    pub fn kernel_function(&self) -> &ProgramFunction {
         &self.functions[0]
     }
 
     /// Every selected function, lowered, in selection order.
-    pub fn kernel_functions(&self) -> &[CFunction] {
+    pub fn kernel_functions(&self) -> &[ProgramFunction] {
         &self.functions
     }
 
-    pub fn reachable_kernel_functions(&self) -> &[CFunction] {
+    pub fn reachable_kernel_functions(&self) -> &[ProgramFunction] {
         &self.reachable_functions
     }
 }
@@ -204,7 +205,7 @@ fn lower_function(
     constants: &BTreeMap<&str, &CppConstant>,
     layouts: &BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
     polymorphism: &Polymorphism<'_>,
-) -> Result<CFunction, String> {
+) -> Result<ProgramFunction, String> {
     let mut declared_places = Vec::new();
     collect_declared_places(&source.body, &mut declared_places);
     let places = source
@@ -283,9 +284,11 @@ fn lower_function(
         0,
     )?;
     let return_type = match &source.function_kind {
-        CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. } => CType::Void,
-        _ if source.return_type == CppType::Void => CType::Void,
-        _ if matches!(source.return_type, CppType::Record { .. }) => CType::Int32Pointer,
+        CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. } => {
+            ProgramType::Void
+        }
+        _ if source.return_type == CppType::Void => ProgramType::Void,
+        _ if matches!(source.return_type, CppType::Record { .. }) => ProgramType::Int32Pointer,
         _ => cpp_return_scalar_type(&source.return_type)?,
     };
     let return_constant = scalar::returns_constant_element(&source.return_type);
@@ -337,7 +340,7 @@ pub(super) fn is_reference_parameter(index: usize, parameter: &CppPlace) -> bool
 fn lower_parameter(
     parameter: &CppPlace,
     layouts: &BTreeMap<String, crate::languages::c::syntax::C0StructLayout>,
-) -> Result<crate::kernel::CParameter, String> {
+) -> Result<crate::kernel::ProgramParameter, String> {
     match &parameter.value_type {
         CppType::Record {
             name,
@@ -349,7 +352,7 @@ fn lower_parameter(
                 .ok_or("C++ record parameter has no checked layout")?;
             Ok(crate::kernel::c_parameter_with_aggregate_layout(
                 parameter.name.clone(),
-                CType::UInt8Pointer,
+                ProgramType::UInt8Pointer,
                 layout.to_kernel_aggregate_layout(),
             ))
         }
@@ -362,7 +365,7 @@ fn lower_parameter(
         CppType::Boolean {
             bits: 8,
             is_const: false,
-        } => Ok(c_parameter(parameter.name.clone(), CType::Bool)),
+        } => Ok(c_parameter(parameter.name.clone(), ProgramType::Bool)),
         CppType::LvalueReference { .. }
             if scalar::reference_element(&parameter.value_type).is_some() =>
         {
@@ -374,16 +377,18 @@ fn lower_parameter(
         }
         CppType::LvalueReference { pointee } if is_const_int64(pointee) => Ok(c_parameter(
             parameter.name.clone(),
-            CType::Int64Pointer,
+            ProgramType::Int64Pointer,
         )
         .with_pointee_constant(true)),
         CppType::LvalueReference { pointee }
             if matches!(pointee.as_ref(), CppType::Record { .. }) =>
         {
             Ok(
-                c_parameter(parameter.name.clone(), CType::Int32Pointer).with_pointee_constant(
-                    matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }),
-                ),
+                c_parameter(parameter.name.clone(), ProgramType::Int32Pointer)
+                    .with_pointee_constant(matches!(
+                        pointee.as_ref(),
+                        CppType::Record { is_const: true, .. }
+                    )),
             )
         }
         CppType::FunctionPointer { .. } => Ok(c_parameter(
@@ -392,9 +397,9 @@ fn lower_parameter(
                 .pointer_type()
                 .to_kernel_type(),
         )),
-        pointer @ CppType::Pointer { .. } if scalar::record_pointee(pointer).is_some() => {
-            Ok(c_parameter(parameter.name.clone(), CType::Int32Pointer))
-        }
+        pointer @ CppType::Pointer { .. } if scalar::record_pointee(pointer).is_some() => Ok(
+            c_parameter(parameter.name.clone(), ProgramType::Int32Pointer),
+        ),
         CppType::Pointer { pointee } if Scalar::pointer_element(pointee, false).is_some() => {
             Ok(c_parameter(
                 parameter.name.clone(),
@@ -413,8 +418,8 @@ fn lower_parameter(
 }
 
 // An empty evaluation prefix does not introduce a synthetic execution step.
-fn evaluate_then(prefix: CStatement, continuation: CStatement) -> CStatement {
-    if matches!(prefix, CStatement::Skip) {
+fn evaluate_then(prefix: ProgramStatement, continuation: ProgramStatement) -> ProgramStatement {
+    if matches!(prefix, ProgramStatement::Skip) {
         continuation
     } else {
         c_seq(prefix, continuation)
@@ -434,9 +439,9 @@ enum ScalarInput<'a> {
 }
 
 struct ScalarEvaluation {
-    prefix: CStatement,
-    value: CExpression,
-    value_type: CType,
+    prefix: ProgramStatement,
+    value: ProgramExpression,
+    value_type: ProgramType,
     may_throw: bool,
 }
 
@@ -463,7 +468,7 @@ struct LoweringContext<'a> {
     /// The packs the call being lowered needs, with their unpacks and the
     /// derived class's address: one for each reference argument that
     /// converts a derived class reference to a polymorphic base.
-    pending_coercions: Vec<(String, String, CExpression)>,
+    pending_coercions: Vec<(String, String, ProgramExpression)>,
     /// The receiver of the call being lowered when it converts to a base
     /// whose method runs as itself, on memory: it is not packed.
     direct_receiver: Option<CppPlaceReference>,
@@ -538,7 +543,7 @@ impl LoweringContext<'_> {
     /// `call`, after the packs its arguments need and before their unpacks:
     /// the callee holds the base class's object the derived class's memory
     /// stands for, which the sidecar may declare.
-    fn coerced(&mut self, call: CStatement) -> CStatement {
+    fn coerced(&mut self, call: ProgramStatement) -> ProgramStatement {
         let coercions = std::mem::take(&mut self.pending_coercions);
         let mut statement = call;
         for (pack, unpack, address) in coercions.iter().rev() {
@@ -589,7 +594,7 @@ impl LoweringContext<'_> {
         }
         let mut derived_place = place.clone();
         derived_place.projections.truncate(derived_path.len());
-        let address = c_cast(self.lower_place(&derived_place)?, CType::Int32Pointer);
+        let address = c_cast(self.lower_place(&derived_place)?, ProgramType::Int32Pointer);
         let (pack, unpack) = if base.is_const {
             (
                 crate::languages::cpp::names::object_const_pack_name(&derived, &base.base_name),
@@ -679,7 +684,7 @@ impl LoweringContext<'_> {
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
-            let address = c_cast(self.lower_place(place)?, CType::Int32Pointer);
+            let address = c_cast(self.lower_place(place)?, ProgramType::Int32Pointer);
             let (pack, unpack) = if *is_const {
                 (
                     crate::languages::cpp::names::object_const_pack_name(class, class),
@@ -764,7 +769,7 @@ impl LoweringContext<'_> {
         Ok(dispatch)
     }
 
-    fn lower_statement(&mut self, statement: &CppStatement) -> Result<CStatement, String> {
+    fn lower_statement(&mut self, statement: &CppStatement) -> Result<ProgramStatement, String> {
         match statement {
             CppStatement::TrivialCopy { target, source, .. } => {
                 let root = self.place(target)?;
@@ -962,8 +967,10 @@ impl LoweringContext<'_> {
                         ));
                     }
                     let layout = self.record_layout(&record.name)?;
-                    let mut lowered_arguments =
-                        vec![c_cast(c_variable(local.name.clone()), CType::Int32Pointer)];
+                    let mut lowered_arguments = vec![c_cast(
+                        c_variable(local.name.clone()),
+                        ProgramType::Int32Pointer,
+                    )];
                     lowered_arguments.extend(self.lower_call_arguments(arguments)?);
                     Ok(c_seq(
                         c_allocate_aggregate_destination(local.name.clone(), layout),
@@ -1021,7 +1028,7 @@ impl LoweringContext<'_> {
                             kind: kind @ ScalarKind::Parameter(_),
                             ..
                         }) => kind.kernel_type(),
-                        _ => CType::Int32,
+                        _ => ProgramType::Int32,
                     };
                     c_typed_store(self.lower_place(target)?, evaluation.value, element)
                 };
@@ -1064,8 +1071,8 @@ impl LoweringContext<'_> {
                 // as C++17 sequences a new-expression.
                 let object = self.fresh_call_capture()?;
                 let mut result = c_seq(
-                    c_declare(object.clone(), CType::Int32Pointer),
-                    CStatement::HeapAllocate {
+                    c_declare(object.clone(), ProgramType::Int32Pointer),
+                    ProgramStatement::HeapAllocate {
                         target: object.clone(),
                         bytes: crate::kernel::c_int32_literal(source.size_bytes),
                         zeroed: false,
@@ -1093,7 +1100,7 @@ impl LoweringContext<'_> {
                     c_typed_store(
                         self.lower_place(target)?,
                         c_variable(object),
-                        CType::Int32Pointer,
+                        ProgramType::Int32Pointer,
                     )
                 };
                 Ok(c_seq(result, assignment))
@@ -1124,7 +1131,7 @@ impl LoweringContext<'_> {
                 )?;
                 let destination = c_cast(
                     c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 );
                 let mut lowered = vec![destination];
                 lowered.extend(self.lower_call_arguments(arguments)?);
@@ -1151,7 +1158,7 @@ impl LoweringContext<'_> {
                     self.callee_name(callee)?,
                     vec![c_cast(
                         c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
-                        CType::Int32Pointer,
+                        ProgramType::Int32Pointer,
                     )],
                 ))
             }
@@ -1175,7 +1182,7 @@ impl LoweringContext<'_> {
                 )?;
                 let destination = c_cast(
                     c_pointer_offset_bytes(c_variable(self.variable_name(object)), offset),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 );
                 let mut lowered = vec![destination];
                 lowered.extend(self.lower_call_arguments(arguments)?);
@@ -1195,7 +1202,7 @@ impl LoweringContext<'_> {
                 ))
             }
             CppStatement::Unreachable { span } => Ok(crate::kernel::c_labeled_assert(
-                c_cast(CExpression::Value(int32(0)), CType::Bool),
+                c_cast(ProgramExpression::Value(int32(0)), ProgramType::Bool),
                 format!(
                     "C++ __builtin_unreachable at {}:{}:{}",
                     span.file, span.start_line, span.start_column
@@ -1297,12 +1304,12 @@ impl LoweringContext<'_> {
     /// same cleanup chain on its exceptional edge and never produces a return.
     fn lower_captured_return(
         &mut self,
-        mut evaluation: CStatement,
-        value_type: CType,
+        mut evaluation: ProgramStatement,
+        value_type: ProgramType,
         cleanups: &[&CppCleanup],
         unwind_cleanups: &[&CppCleanup],
         can_throw: bool,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let capture = self.return_capture_name.clone();
         if can_throw && self.unwind_cleanups && !unwind_cleanups.is_empty() {
             let binding = self.unwind_exception_name.clone();
@@ -1310,7 +1317,10 @@ impl LoweringContext<'_> {
             for cleanup in unwind_cleanups {
                 handler = c_seq(handler, self.lower_cleanup(cleanup)?);
             }
-            handler = c_seq(handler, CStatement::Throw(c_variable(binding.clone())));
+            handler = c_seq(
+                handler,
+                ProgramStatement::Throw(c_variable(binding.clone())),
+            );
             evaluation = c_try_catch_int32_with_cleanup(evaluation, binding, handler, true);
         }
         let mut result = c_seq(c_declare(capture.clone(), value_type), evaluation);
@@ -1328,7 +1338,7 @@ impl LoweringContext<'_> {
         plan: &'p LifetimePlan,
         state: &mut LifetimeState<'p>,
         unwind_base: usize,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let mut lowered = None;
         for statement in statements {
             let current =
@@ -1348,7 +1358,7 @@ impl LoweringContext<'_> {
         plan: &'p LifetimePlan,
         state: &mut LifetimeState<'p>,
         unwind_base: usize,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         match statement {
             CppStatement::AssignConstructionCall {
                 target,
@@ -1396,7 +1406,7 @@ impl LoweringContext<'_> {
                 let (prefix, arguments) = self.normalize_arguments(arguments)?;
                 let mut actual = vec![c_cast(
                     c_variable(crate::kernel::C_CONTRACT_RESULT_NAME),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 )];
                 actual.extend(arguments);
                 Ok(evaluate_then(
@@ -1470,7 +1480,7 @@ impl LoweringContext<'_> {
                 )
             }
             CppStatement::Throw { value, .. } => {
-                let throw = CStatement::Throw(self.lower_expression(value)?);
+                let throw = ProgramStatement::Throw(self.lower_expression(value)?);
                 self.lower_throwing_statement(throw, state.exit(unwind_base))
             }
             CppStatement::If {
@@ -1511,7 +1521,7 @@ impl LoweringContext<'_> {
                 // The condition is evaluated before each iteration, so it is
                 // one expression with nothing to capture first.
                 let evaluation = self.normalize_scalar(ScalarInput::Value(condition))?;
-                if evaluation.may_throw || !matches!(evaluation.prefix, CStatement::Skip) {
+                if evaluation.may_throw || !matches!(evaluation.prefix, ProgramStatement::Skip) {
                     return Err("a C++ while condition must evaluate without a call".into());
                 }
                 let mark = state.mark();
@@ -1558,9 +1568,9 @@ impl LoweringContext<'_> {
 
     fn lower_throwing_statement<'p>(
         &mut self,
-        statement: CStatement,
+        statement: ProgramStatement,
         mut cleanups: impl Iterator<Item = &'p CppCleanup>,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let Some(first) = cleanups.next() else {
             return Ok(statement);
         };
@@ -1569,7 +1579,10 @@ impl LoweringContext<'_> {
         for cleanup in cleanups {
             handler = c_seq(handler, self.lower_cleanup(cleanup)?);
         }
-        handler = c_seq(handler, CStatement::Throw(c_variable(binding.clone())));
+        handler = c_seq(
+            handler,
+            ProgramStatement::Throw(c_variable(binding.clone())),
+        );
         Ok(c_try_catch_int32_with_cleanup(
             statement, binding, handler, true,
         ))
@@ -1663,7 +1676,7 @@ impl LoweringContext<'_> {
     fn normalize_arguments(
         &mut self,
         arguments: &[CppCallArgument],
-    ) -> Result<(CStatement, Vec<CExpression>), String> {
+    ) -> Result<(ProgramStatement, Vec<ProgramExpression>), String> {
         let mut evaluation = c_skip();
         let has_nested = arguments
             .iter()
@@ -1767,7 +1780,7 @@ impl LoweringContext<'_> {
         evaluation: ScalarEvaluation,
         cleanups: &[&CppCleanup],
         unwind_cleanups: &[&CppCleanup],
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         if cleanups.is_empty() {
             return Ok(evaluate_then(evaluation.prefix, c_return(evaluation.value)));
         }
@@ -1786,7 +1799,7 @@ impl LoweringContext<'_> {
         expression: &CppExpression,
     ) -> Result<ScalarEvaluation, String> {
         let value_type = if scalar::record_pointee(expression.value_type()).is_some() {
-            CType::Int32Pointer
+            ProgramType::Int32Pointer
         } else if let CppType::Pointer { pointee } = expression.value_type() {
             Scalar::pointer_element(pointee, true)
                 .and_then(|scalar| scalar.kind.pointer_kernel_type())
@@ -1815,7 +1828,7 @@ impl LoweringContext<'_> {
                 let input = self.normalize_expression(value)?;
                 (
                     input.prefix,
-                    c_cast(crate::kernel::c_not(input.value), CType::Bool),
+                    c_cast(crate::kernel::c_not(input.value), ProgramType::Bool),
                     input.may_throw,
                 )
             }
@@ -1823,7 +1836,7 @@ impl LoweringContext<'_> {
                 let input = self.normalize_expression(value)?;
                 (
                     input.prefix,
-                    c_cast(input.value, CType::UInt8Pointer),
+                    c_cast(input.value, ProgramType::UInt8Pointer),
                     input.may_throw,
                 )
             }
@@ -1849,7 +1862,7 @@ impl LoweringContext<'_> {
                 let value = if matches!(address.as_ref(), CppExpression::AddressOf { .. }) {
                     input.value
                 } else {
-                    c_checked_object_address(c_typed_load(input.value, CType::Int32))
+                    c_checked_object_address(c_typed_load(input.value, ProgramType::Int32))
                 };
                 (input.prefix, value, input.may_throw)
             }
@@ -1883,13 +1896,13 @@ impl LoweringContext<'_> {
                     let prefix = evaluate_then(
                         lhs.prefix,
                         c_seq(
-                            c_declare(capture.clone(), CType::Bool),
+                            c_declare(capture.clone(), ProgramType::Bool),
                             c_if(
                                 lhs.value,
                                 evaluate_then(rhs.prefix, c_assign(capture.clone(), rhs.value)),
                                 c_assign(
                                     capture.clone(),
-                                    c_cast(CExpression::Value(int32(0)), CType::Bool),
+                                    c_cast(ProgramExpression::Value(int32(0)), ProgramType::Bool),
                                 ),
                             ),
                         ),
@@ -1897,7 +1910,7 @@ impl LoweringContext<'_> {
                     return Ok(ScalarEvaluation {
                         prefix,
                         value: c_variable(capture),
-                        value_type: CType::Bool,
+                        value_type: ProgramType::Bool,
                         may_throw: lhs.may_throw || rhs.may_throw,
                     });
                 }
@@ -1949,25 +1962,28 @@ impl LoweringContext<'_> {
     fn lower_call_arguments(
         &mut self,
         arguments: &[CppCallArgument],
-    ) -> Result<Vec<CExpression>, String> {
+    ) -> Result<Vec<ProgramExpression>, String> {
         arguments
             .iter()
             .map(|argument| self.lower_call_argument(argument))
             .collect()
     }
 
-    fn lower_cleanup(&self, cleanup: &CppCleanup) -> Result<CStatement, String> {
+    fn lower_cleanup(&self, cleanup: &CppCleanup) -> Result<ProgramStatement, String> {
         let CppCleanup::Destructor { object, callee, .. } = cleanup;
         Ok(c_call(
             self.callee_name(callee)?,
-            vec![c_cast(self.lower_place(object)?, CType::Int32Pointer)],
+            vec![c_cast(self.lower_place(object)?, ProgramType::Int32Pointer)],
         ))
     }
 
-    fn lower_call_argument(&mut self, argument: &CppCallArgument) -> Result<CExpression, String> {
+    fn lower_call_argument(
+        &mut self,
+        argument: &CppCallArgument,
+    ) -> Result<ProgramExpression, String> {
         match argument {
             CppCallArgument::RecordCopy { place, .. } => {
-                Ok(c_cast(self.lower_place(place)?, CType::UInt8Pointer))
+                Ok(c_cast(self.lower_place(place)?, ProgramType::UInt8Pointer))
             }
             CppCallArgument::Value { value } => self.lower_expression(value),
             CppCallArgument::Reference { place } => {
@@ -1981,7 +1997,7 @@ impl LoweringContext<'_> {
                 if place.projections.is_empty()
                     && matches!(root.value_type, CppType::Integer { .. })
                 {
-                    return Ok(CExpression::AddressOf(Box::new(c_variable(
+                    return Ok(ProgramExpression::AddressOf(Box::new(c_variable(
                         self.variable_name(place),
                     ))));
                 }
@@ -1996,7 +2012,7 @@ impl LoweringContext<'_> {
                     if let Some(element) = Scalar::pointer_element(value_type, true) {
                         let member_type = element.kind.kernel_type();
                         return Ok(c_checked_object_address(c_typed_load(
-                            CExpression::Subobject {
+                            ProgramExpression::Subobject {
                                 pointer: Box::new(address),
                                 width: member_type.byte_width(),
                             },
@@ -2015,9 +2031,9 @@ impl LoweringContext<'_> {
                     .resolve_path(&root.value_type, &place.projections)?;
                 let pointer_type = match value_type {
                     CppType::Record { .. } | CppType::Integer { bits: 32, .. } => {
-                        CType::Int32Pointer
+                        ProgramType::Int32Pointer
                     }
-                    CppType::Integer { bits: 64, .. } => CType::Int64Pointer,
+                    CppType::Integer { bits: 64, .. } => ProgramType::Int64Pointer,
                     _ => {
                         return Err(
                             "C++ reference place has no supported pointer representation".into(),
@@ -2032,14 +2048,18 @@ impl LoweringContext<'_> {
         }
     }
 
-    fn lower_expression(&mut self, expression: &CppExpression) -> Result<CExpression, String> {
+    fn lower_expression(
+        &mut self,
+        expression: &CppExpression,
+    ) -> Result<ProgramExpression, String> {
         match expression {
-            CppExpression::RuntimeConstantEvaluation { .. } => {
-                Ok(c_cast(CExpression::Value(int32(0)), CType::Bool))
-            }
+            CppExpression::RuntimeConstantEvaluation { .. } => Ok(c_cast(
+                ProgramExpression::Value(int32(0)),
+                ProgramType::Bool,
+            )),
             CppExpression::LogicalNot { value, .. } => Ok(c_cast(
                 crate::kernel::c_not(self.lower_expression(value)?),
-                CType::Bool,
+                ProgramType::Bool,
             )),
 
             CppExpression::ObserverCall { .. } => Err(
@@ -2052,7 +2072,7 @@ impl LoweringContext<'_> {
                 Err("a C++ closure creation is evaluated only as a call argument".into())
             }
             CppExpression::NullPointer { value_type, .. } => Ok(c_cast(
-                CExpression::Value(int32(0)),
+                ProgramExpression::Value(int32(0)),
                 cpp_scalar_kernel_type(value_type)?,
             )),
             CppExpression::IntegerLiteral {
@@ -2168,7 +2188,7 @@ impl LoweringContext<'_> {
                     if is_const_int64(pointee) && is_mutable_int64(value_type) =>
                 {
                     let pointer = self.lower_place(place)?;
-                    self.lower_typed_load(pointer, CType::Int64)
+                    self.lower_typed_load(pointer, ProgramType::Int64)
                 }
                 _ => Err("C++ load is outside direct bool/reference lowering".into()),
             },
@@ -2186,7 +2206,7 @@ impl LoweringContext<'_> {
                     .kind
                     .kernel_type();
                 Ok(c_checked_object_address(c_typed_load(
-                    CExpression::Subobject {
+                    ProgramExpression::Subobject {
                         pointer: Box::new(self.lower_place(place)?),
                         width: member_type.byte_width(),
                     },
@@ -2206,7 +2226,7 @@ impl LoweringContext<'_> {
                     CppType::Integer { .. } | CppType::Enumeration { .. },
                     CppType::Pointer { pointee },
                 ) if Scalar::pointer_element(pointee, true).is_some() => Ok(
-                    CExpression::AddressOf(Box::new(c_variable(self.variable_name(place)))),
+                    ProgramExpression::AddressOf(Box::new(c_variable(self.variable_name(place)))),
                 ),
                 _ => Err("C++ address-of is outside integer reference lowering".into()),
             },
@@ -2218,7 +2238,7 @@ impl LoweringContext<'_> {
                 } else {
                     Ok(c_checked_object_address(c_typed_load(
                         pointer,
-                        CType::Int32,
+                        ProgramType::Int32,
                     )))
                 }
             }
@@ -2248,9 +2268,10 @@ impl LoweringContext<'_> {
                 }
                 self.lower_typed_load(pointer, field_type)
             }
-            CppExpression::BytePointerCast { value, .. } => {
-                Ok(c_cast(self.lower_expression(value)?, CType::UInt8Pointer))
-            }
+            CppExpression::BytePointerCast { value, .. } => Ok(c_cast(
+                self.lower_expression(value)?,
+                ProgramType::UInt8Pointer,
+            )),
             CppExpression::IntegralCast {
                 value, value_type, ..
             }
@@ -2288,7 +2309,7 @@ impl LoweringContext<'_> {
             .ok_or_else(|| format!("C++ lowering found no checked layout for `{name}`"))
     }
 
-    fn lower_place(&self, place: &CppPlaceReference) -> Result<CExpression, String> {
+    fn lower_place(&self, place: &CppPlaceReference) -> Result<ProgramExpression, String> {
         let root = self.place(place)?;
         let (_, offset) = self
             .records
@@ -2301,9 +2322,9 @@ impl LoweringContext<'_> {
 
     fn lower_typed_load(
         &mut self,
-        pointer: CExpression,
-        value_type: CType,
-    ) -> Result<CExpression, String> {
+        pointer: ProgramExpression,
+        value_type: ProgramType,
+    ) -> Result<ProgramExpression, String> {
         let occurrence = self.next_load_occurrence;
         self.next_load_occurrence = self
             .next_load_occurrence
@@ -2327,7 +2348,7 @@ impl LoweringContext<'_> {
         &self,
         object: &CppPlaceReference,
         field: &CppFieldReference,
-    ) -> Result<(CExpression, CType), String> {
+    ) -> Result<(ProgramExpression, ProgramType), String> {
         let place = self.place(object)?;
         let (value_type, offset) = self.records.resolve_path(
             &place.value_type,
@@ -2472,10 +2493,10 @@ fn expression_contains_observer(expression: &CppExpression) -> bool {
 
 fn lower_binary_value(
     operator: CppBinaryOperator,
-    left: CExpression,
-    right: CExpression,
+    left: ProgramExpression,
+    right: ProgramExpression,
     value_type: &CppType,
-) -> CExpression {
+) -> ProgramExpression {
     let expression = match operator {
         CppBinaryOperator::Add => c_add(left, right),
         CppBinaryOperator::Subtract => c_subtract(left, right),
@@ -2491,15 +2512,15 @@ fn lower_binary_value(
         CppBinaryOperator::LogicalAnd => c_and(left, right),
     };
     if is_mutable_bool(value_type) {
-        c_cast(expression, CType::Bool)
+        c_cast(expression, ProgramType::Bool)
     } else {
         expression
     }
 }
 
-fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
+fn cpp_return_scalar_type(value_type: &CppType) -> Result<ProgramType, String> {
     if scalar::record_pointee(value_type).is_some() {
-        return Ok(CType::Int32Pointer);
+        return Ok(ProgramType::Int32Pointer);
     }
     if let CppType::Pointer { pointee } = value_type {
         return Scalar::pointer_element(pointee, true)
@@ -2515,14 +2536,14 @@ fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
 }
 
 /// The pointer that carries a native reference to `element`.
-fn element_pointer_type(element: Scalar) -> Result<CType, String> {
+fn element_pointer_type(element: Scalar) -> Result<ProgramType, String> {
     element
         .kind
         .pointer_kernel_type()
         .ok_or_else(|| "unsupported native C++ reference element".into())
 }
 
-fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
+fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<ProgramType, String> {
     if let Some(kind) = Scalar::mutable_kind(value_type)
         .filter(|kind| kind.is_integer() || matches!(kind, ScalarKind::Parameter(_)))
     {
@@ -2530,7 +2551,7 @@ fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
     } else if is_native_object_pointer(value_type) {
         cpp_return_scalar_type(value_type)
     } else if scalar::record_pointee(value_type).is_some() {
-        Ok(CType::Int32Pointer)
+        Ok(ProgramType::Int32Pointer)
     } else {
         Err("unsupported C++ scalar kernel type".into())
     }

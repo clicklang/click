@@ -2017,16 +2017,16 @@ fn resource_fields_preserve_checked_types_in_their_lowered_schema() {
         ty.arguments,
         vec![AlgebraicValueType::Algebraic {
             name: "List".into(),
-            arguments: vec![AlgebraicValueType::C(CType::Int32)],
+            arguments: vec![AlgebraicValueType::C(ProgramType::Int32)],
         }]
     );
     assert_eq!(
         schema.fields()[2].1,
-        crate::kernel::ResourceFieldType::C(CType::Int32)
+        crate::kernel::ResourceFieldType::C(ProgramType::Int32)
     );
     assert_eq!(
         schema.fields()[3].1,
-        crate::kernel::ResourceFieldType::C(CType::Int32Pointer)
+        crate::kernel::ResourceFieldType::C(ProgramType::Int32Pointer)
     );
     assert!(file.resource_definitions()[1].is_fieldless());
     let lowered = composite_resource_definitions(
@@ -2229,12 +2229,12 @@ const FILL3_CLICK: &str = r#"
         }
     "#;
 
-fn current(expression: CExpression) -> ContractExpression {
+fn current(expression: ProgramExpression) -> ContractExpression {
     ContractExpression::CFragment(expression)
 }
 
 fn current_var(name: &str) -> ContractExpression {
-    current(CExpression::Variable(name.to_string()))
+    current(ProgramExpression::Variable(name.to_string()))
 }
 
 fn current_int(value: u32) -> ContractExpression {

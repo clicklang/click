@@ -52,7 +52,9 @@
 //! so a "first matching entry" search over the candidates finds the same
 //! entry a search over the whole collection would.
 
-use super::{CType, Pointer, PointerBlock, PointerOffsetTerm, SnapshotMap, SnapshotSet, Variable};
+use super::{
+    Pointer, PointerBlock, PointerOffsetTerm, ProgramType, SnapshotMap, SnapshotSet, Variable,
+};
 use std::hash::Hash;
 use std::ops::Bound;
 
@@ -88,14 +90,14 @@ impl BlockKeyed for Pointer {
     }
 }
 
-impl BlockKeyed for (Pointer, CType) {
+impl BlockKeyed for (Pointer, ProgramType) {
     fn key_block(&self) -> &PointerBlock {
         &self.0.block
     }
 
     fn first_key_of(block: &PointerBlock) -> Self {
-        // `Void` is `CType`'s first variant.
-        (Pointer::first_key_of(block), CType::Void)
+        // `Void` is `ProgramType`'s first variant.
+        (Pointer::first_key_of(block), ProgramType::Void)
     }
 }
 

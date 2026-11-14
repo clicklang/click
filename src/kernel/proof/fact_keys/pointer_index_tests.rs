@@ -188,9 +188,10 @@ fn pointer_index_keys_erase_snapshots_only_for_candidate_selection() {
     let _session = VerificationSession::enter();
     let pointer = crate::kernel::CMemory::global_pointer("key-read");
     let before = crate::kernel::CMemory::new().with_block("key-read", 16);
-    let after = before
-        .clone()
-        .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
+    let after = before.clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(7)),
+    );
     let make = |memory, kind| {
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory),
@@ -248,7 +249,7 @@ fn pointer_index_fold_keys_restore_shadowed_binders_and_keep_free_variables() {
             MachineBinaryOp::Add,
             [
                 repeated,
-                KernelTerm::variable(KernelType::C(CType::Int32), Variable(bound)),
+                KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(bound)),
             ],
         );
         quantified(

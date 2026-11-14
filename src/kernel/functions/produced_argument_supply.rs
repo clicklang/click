@@ -6,8 +6,8 @@ use super::*;
 /// not evaluate the clause again. Guards and entry snapshots keep their normal
 /// return evaluator, so they cannot lend unconditional post-state authority.
 pub(super) fn prepare_produced_argument_supply(
-    entry: &CState,
-    evaluation: &mut CState,
+    entry: &ExecutionState,
+    evaluation: &mut ExecutionState,
     interface: &CFunctionContractInterface,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,

@@ -1,6 +1,6 @@
 //! Exclusive sequential population openings. Membership remains in the
 //! resource context, but cannot independently reopen a suspended body.
-use super::{CState, ResourceArguments};
+use super::{ExecutionState, ResourceArguments};
 use crate::persistent::PersistentSet;
 use std::sync::{
     Arc,
@@ -93,7 +93,7 @@ impl PopulationAccess {
                 .is_some_and(|frame| frame.parent == *after && &frame.key == key)
     }
 }
-impl CState {
+impl ExecutionState {
     /// The population whose function-entry count is `variable`, if any.
     pub(crate) fn population_with_entry_count(
         &self,

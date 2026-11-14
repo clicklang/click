@@ -1,8 +1,8 @@
 use super::*;
 
 fn outside(owned: Vec<CMemoryRange>, required: CMemoryRange) -> Vec<StorageWriteOutsideFootprint> {
-    let function = CFunction::new(
-        CType::Int32,
+    let function = ProgramFunction::new(
+        ProgramType::Int32,
         "caller",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -23,7 +23,7 @@ fn outside(owned: Vec<CMemoryRange>, required: CMemoryRange) -> Vec<StorageWrite
     };
     storage_writes_outside_owned_footprint(
         &function,
-        &CState::new(),
+        &ExecutionState::new(),
         &facts,
         &PureFactContext::new(),
         None,

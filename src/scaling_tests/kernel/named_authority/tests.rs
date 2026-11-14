@@ -9,7 +9,7 @@ fn alias_lookup_does_not_scan_unrelated_resources() {
     let mut work = Vec::new();
     for size in [16, 64, 256] {
         let fact = authority(1);
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         state.resources = ResourceContext::new().unchecked_with_fact(fact.clone());
         for index in 0..size {
             state.resources =

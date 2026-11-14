@@ -1,6 +1,6 @@
 use super::*;
 
-fn normal(state: CState, statement: CStatement) -> CState {
+fn normal(state: ExecutionState, statement: ProgramStatement) -> ExecutionState {
     let theorem = prove_c_statement_execution(state, statement).unwrap();
     let Proposition::CStatementExecutes {
         outcome: CStatementOutcome::Normal(after),
@@ -12,7 +12,7 @@ fn normal(state: CState, statement: CStatement) -> CState {
     *after.clone()
 }
 
-fn outcome(state: &CState, expression: CExpression) -> CExpressionOutcome {
+fn outcome(state: &ExecutionState, expression: ProgramExpression) -> CExpressionOutcome {
     let theorem = prove_c_expression_evaluation(state.clone(), expression).unwrap();
     let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
@@ -20,15 +20,15 @@ fn outcome(state: &CState, expression: CExpression) -> CExpressionOutcome {
     outcome.clone()
 }
 
-fn value(state: &CState, expression: CExpression) -> CValue {
+fn value(state: &ExecutionState, expression: ProgramExpression) -> ProgramValue {
     match outcome(state, expression) {
         CExpressionOutcome::Value(value) => value,
         other => panic!("expected a value: {other:?}"),
     }
 }
 
-fn element_address(index: u32) -> CExpression {
-    CExpression::AddressOf(Box::new(c_index(
+fn element_address(index: u32) -> ProgramExpression {
+    ProgramExpression::AddressOf(Box::new(c_index(
         c_variable("items"),
         c_int32_literal(index),
     )))
@@ -38,21 +38,21 @@ fn element_address(index: u32) -> CExpression {
 fn wide_address_scalar_address_and_pointer_slot_preserve_type_and_payload() {
     for (ty, pointer_ty, slot_ty, literal) in [
         (
-            CType::Int128,
-            CType::Int128Pointer,
-            CType::Int128PointerPointer,
+            ProgramType::Int128,
+            ProgramType::Int128Pointer,
+            ProgramType::Int128PointerPointer,
             c_int128_literal(i128::MIN),
         ),
         (
-            CType::UInt128,
-            CType::UInt128Pointer,
-            CType::UInt128PointerPointer,
+            ProgramType::UInt128,
+            ProgramType::UInt128Pointer,
+            ProgramType::UInt128PointerPointer,
             c_uint128_literal(u128::MAX),
         ),
     ] {
-        let expected = value(&CState::new(), literal.clone());
+        let expected = value(&ExecutionState::new(), literal.clone());
         let state = normal(
-            CState::new(),
+            ExecutionState::new(),
             c_seq(
                 c_declare("wide", ty),
                 c_seq(
@@ -68,7 +68,10 @@ fn wide_address_scalar_address_and_pointer_slot_preserve_type_and_payload() {
         let slot = value(&state, c_addr_of("p"));
         assert_eq!(slot.c_type(), slot_ty);
         assert_eq!(
-            value(&state, c_typed_load(CExpression::Value(slot), pointer_ty)),
+            value(
+                &state,
+                c_typed_load(ProgramExpression::Value(slot), pointer_ty)
+            ),
             pointer
         );
         assert_eq!(pointer_ty.pointer_to(), Some(slot_ty));
@@ -77,15 +80,15 @@ fn wide_address_scalar_address_and_pointer_slot_preserve_type_and_payload() {
         assert_eq!(ty.abi_alignment(), 16);
         assert_eq!(pointer_ty.abi_alignment(), 8);
         assert_eq!(slot_ty.abi_alignment(), 8);
-        let other = if ty == CType::Int128 {
-            CType::UInt128Pointer
+        let other = if ty == ProgramType::Int128 {
+            ProgramType::UInt128Pointer
         } else {
-            CType::Int128Pointer
+            ProgramType::Int128Pointer
         };
         assert!(!other.accepts(&pointer));
-        assert!(CType::VoidPointer.accepts(&pointer));
+        assert!(ProgramType::VoidPointer.accepts(&pointer));
         assert_eq!(
-            CType::function_pointer_signature(ty, &[pointer_ty]),
+            ProgramType::function_pointer_signature(ty, &[pointer_ty]),
             CallbackSignature::UNSPECIFIED
         );
     }
@@ -95,21 +98,21 @@ fn wide_address_scalar_address_and_pointer_slot_preserve_type_and_payload() {
 fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
     for (array_ty, ty, literal) in [
         (
-            CType::Int128Array(3),
-            CType::Int128,
+            ProgramType::Int128Array(3),
+            ProgramType::Int128,
             c_int128_literal(i128::MIN),
         ),
         (
-            CType::UInt128Array(3),
-            CType::UInt128,
+            ProgramType::UInt128Array(3),
+            ProgramType::UInt128,
             c_uint128_literal(u128::MAX),
         ),
     ] {
-        let state = normal(CState::new(), c_declare("items", array_ty));
-        let expected = value(&CState::new(), literal.clone());
+        let state = normal(ExecutionState::new(), c_declare("items", array_ty));
+        let expected = value(&ExecutionState::new(), literal.clone());
         let base = value(&state, c_variable("items"));
         assert_eq!(base.c_type(), ty.pointer_to().unwrap());
-        let CValue::Pointer(base) = base else {
+        let ProgramValue::Pointer(base) = base else {
             unreachable!()
         };
         assert_eq!(
@@ -119,7 +122,7 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
         assert_eq!(array_ty.abi_alignment(), 16);
         let state = normal(state, c_typed_store(element_address(2), literal, ty));
         let last = value(&state, element_address(2));
-        let CValue::Pointer(last) = last else {
+        let ProgramValue::Pointer(last) = last else {
             unreachable!()
         };
         assert_eq!(last.offset, PointerOffsetTerm::Constant(32));
@@ -133,11 +136,11 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
         ));
         // Forming the one-past pointer is valid; dereferencing it is not.
         let past = value(&state, c_add(c_variable("items"), c_int32_literal(3)));
-        let CValue::Pointer(past) = past else {
+        let ProgramValue::Pointer(past) = past else {
             unreachable!()
         };
         assert_eq!(past.offset, PointerOffsetTerm::Constant(48));
-        let read_past = c_typed_load(CExpression::Value(CValue::Pointer(past)), ty);
+        let read_past = c_typed_load(ProgramExpression::Value(ProgramValue::Pointer(past)), ty);
         let paths = evaluate_c_expression_paths(
             &state,
             &read_past,
@@ -159,25 +162,25 @@ fn wide_address_arrays_use_sixteen_byte_stride_and_preserve_endpoint_values() {
 fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
     for (element, pointer_ty, ty, literal) in [
         (
-            CPointerArrayElement::Int128,
-            CType::Int128Pointer,
-            CType::Int128,
+            PointerArrayElement::Int128,
+            ProgramType::Int128Pointer,
+            ProgramType::Int128,
             c_int128_literal(i128::MAX),
         ),
         (
-            CPointerArrayElement::UInt128,
-            CType::UInt128Pointer,
-            CType::UInt128,
+            PointerArrayElement::UInt128,
+            ProgramType::UInt128Pointer,
+            ProgramType::UInt128,
             c_uint128_literal(1u128 << 100),
         ),
     ] {
         let state = normal(
-            CState::new(),
+            ExecutionState::new(),
             c_seq(
                 c_declare("wide", ty),
                 c_seq(
                     c_assign("wide", literal.clone()),
-                    c_declare("items", CType::PointerArray(element, 2)),
+                    c_declare("items", ProgramType::PointerArray(element, 2)),
                 ),
             ),
         );
@@ -185,7 +188,7 @@ fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
             state,
             c_typed_store(element_address(1), c_addr_of("wide"), pointer_ty),
         );
-        let CValue::Pointer(slot) = value(&state, element_address(1)) else {
+        let ProgramValue::Pointer(slot) = value(&state, element_address(1)) else {
             unreachable!()
         };
         assert_eq!(slot.c_type(), pointer_ty.pointer_to().unwrap());
@@ -195,14 +198,14 @@ fn wide_address_pointer_arrays_scale_slots_by_eight_and_pointees_by_sixteen() {
                 &state,
                 c_load(c_index(c_variable("items"), c_int32_literal(1)))
             ),
-            value(&CState::new(), literal)
+            value(&ExecutionState::new(), literal)
         );
         assert_eq!(
-            CPointerArrayElement::from_pointer_type(pointer_ty),
+            PointerArrayElement::from_pointer_type(pointer_ty),
             Some(element)
         );
         assert_eq!(element.pointer_type(), pointer_ty);
-        assert_eq!(CType::PointerArray(element, 2).byte_width(), 16);
+        assert_eq!(ProgramType::PointerArray(element, 2).byte_width(), 16);
     }
 }
 
@@ -221,15 +224,15 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
         .with_block(pointee.block.clone(), 16)
         .store(
             slot.clone(),
-            CValue::typed_pointer(pointee.clone(), CType::UInt128Pointer),
+            ProgramValue::typed_pointer(pointee.clone(), ProgramType::UInt128Pointer),
         )
         .store(
             pointee.clone(),
-            value(&CState::new(), c_uint128_literal(u128::MAX)),
+            value(&ExecutionState::new(), c_uint128_literal(u128::MAX)),
         );
     for bytes in [8, 16] {
         let range = |p| CMemoryRange::new_with_element_width(p, 0u32.into(), 1u32.into(), bytes);
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context(ResourceContext::new().unchecked_with_facts([
                 CResourceFact::view_memory(CMemoryRange::new_with_element_width(
@@ -243,14 +246,14 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
         let pointer = value(
             &state,
             c_typed_load(
-                c_typed_pointer_value(slot.clone(), CType::UInt128PointerPointer),
-                CType::UInt128Pointer,
+                c_typed_pointer_value(slot.clone(), ProgramType::UInt128PointerPointer),
+                ProgramType::UInt128Pointer,
             ),
         );
-        assert_eq!(pointer.c_type(), CType::UInt128Pointer);
+        assert_eq!(pointer.c_type(), ProgramType::UInt128Pointer);
         let read = outcome(
             &state,
-            c_typed_load(CExpression::Value(pointer), CType::UInt128),
+            c_typed_load(ProgramExpression::Value(pointer), ProgramType::UInt128),
         );
         assert_eq!(matches!(read, CExpressionOutcome::Value(_)), bytes == 16);
         if bytes == 8 {
@@ -264,13 +267,13 @@ fn wide_address_pointer_slot_read_needs_eight_bytes_but_pointee_read_needs_sixte
 
 #[test]
 fn wide_address_symbolic_pointer_slot_reads_keep_eight_byte_access_identity() {
-    for pointer_ty in [CType::Int128Pointer, CType::UInt128Pointer] {
+    for pointer_ty in [ProgramType::Int128Pointer, ProgramType::UInt128Pointer] {
         let slot = Pointer {
             block: "wide-symbolic-slot".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
         for bytes in [7, 8] {
-            let state = CState::new()
+            let state = ExecutionState::new()
                 .with_memory(CMemory::new().with_block(slot.block.clone(), 8))
                 .with_resource_context(ResourceContext::new().unchecked_with_facts([
                     CResourceFact::view_memory(CMemoryRange::new_with_element_width(
@@ -307,20 +310,20 @@ fn wide_address_symbolic_pointer_slot_reads_keep_eight_byte_access_identity() {
 fn wide_address_static_array_startup_and_entry_keep_initializer_authority_separate() {
     for (ty, zero_literal, endpoint_literal) in [
         (
-            CType::Int128,
+            ProgramType::Int128,
             c_int128_literal(0),
             c_int128_literal(i128::MIN),
         ),
         (
-            CType::UInt128,
+            ProgramType::UInt128,
             c_uint128_literal(0),
             c_uint128_literal(u128::MAX),
         ),
     ] {
-        let zero = value(&CState::new(), zero_literal);
-        let endpoint = value(&CState::new(), endpoint_literal);
+        let zero = value(&ExecutionState::new(), zero_literal);
+        let endpoint = value(&ExecutionState::new(), endpoint_literal);
         let function = c_function(
-            CType::Int32,
+            ProgramType::Int32,
             "wide_static",
             vec![],
             c_return(c_int32_literal(0)),
@@ -345,7 +348,7 @@ fn wide_address_static_array_startup_and_entry_keep_initializer_authority_separa
             ),
             endpoint.clone()
         );
-        let entry = initialize_c_function_globals(&CState::new(), &function);
+        let entry = initialize_c_function_globals(&ExecutionState::new(), &function);
         assert_ne!(entry.memory.known_value(&at(2)), Some(endpoint.clone()));
         assert!(entry.resources.facts().is_empty());
         // Nested entry retains a caller's writes; it cannot restore an initializer.
@@ -365,7 +368,10 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
         .with_block("local:wide-prefix", 16)
         .with_block("local:wide-target", 8)
         .with_initialized_object(&at(0), 16)
-        .store(at(0), value(&CState::new(), c_uint128_literal(u128::MAX)));
+        .store(
+            at(0),
+            value(&ExecutionState::new(), c_uint128_literal(u128::MAX)),
+        );
     for offset in 8..16 {
         memory = memory.store(at(offset), uint8(1));
     }
@@ -378,9 +384,9 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
                     block: "local:wide-target".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CType::UInt8,
+                ProgramType::UInt8,
                 8,
-                CValue::typed_pointer(at(8), CType::UInt8Pointer),
+                ProgramValue::typed_pointer(at(8), ProgramType::UInt8Pointer),
                 true,
                 false,
                 &PureFactContext::new()
@@ -391,14 +397,17 @@ fn wide_address_narrow_array_copy_refuses_a_wide_cell_overlapping_its_prefix() {
 
 #[test]
 fn checked_object_address_accepts_uninitialized_storage_without_reading_it() {
-    let state = normal(CState::new(), c_declare("items", CType::Int32Array(2)));
+    let state = normal(
+        ExecutionState::new(),
+        c_declare("items", ProgramType::Int32Array(2)),
+    );
     let pointer = c_checked_object_address(c_index(c_variable("items"), c_int32_literal(1)));
     let address = value(&state, pointer);
     assert_eq!(address, value(&state, element_address(1)));
     assert!(matches!(
         outcome(
             &state,
-            c_typed_load(CExpression::Value(address), CType::Int32)
+            c_typed_load(ProgramExpression::Value(address), ProgramType::Int32)
         ),
         CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
     ));
@@ -406,10 +415,13 @@ fn checked_object_address_accepts_uninitialized_storage_without_reading_it() {
 
 #[test]
 fn checked_object_address_rejects_one_past_while_c_address_cancellation_preserves_it() {
-    let state = normal(CState::new(), c_declare("items", CType::Int32Array(2)));
+    let state = normal(
+        ExecutionState::new(),
+        c_declare("items", ProgramType::Int32Array(2)),
+    );
     assert!(matches!(
         outcome(&state, element_address(2)),
-        CExpressionOutcome::Value(CValue::Pointer(_))
+        CExpressionOutcome::Value(ProgramValue::Pointer(_))
     ));
     assert!(matches!(
         outcome(
@@ -422,8 +434,11 @@ fn checked_object_address_rejects_one_past_while_c_address_cancellation_preserve
         outcome(
             &state,
             c_checked_object_address(c_typed_load(
-                CExpression::Value(CValue::typed_pointer(Pointer::null(), CType::Int32Pointer)),
-                CType::Int32
+                ProgramExpression::Value(ProgramValue::typed_pointer(
+                    Pointer::null(),
+                    ProgramType::Int32Pointer
+                )),
+                ProgramType::Int32
             ))
         ),
         CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
@@ -432,9 +447,12 @@ fn checked_object_address_rejects_one_past_while_c_address_cancellation_preserve
 
 #[test]
 fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
-    let state = normal(CState::new(), c_declare("items", CType::Int32Array(2)));
+    let state = normal(
+        ExecutionState::new(),
+        c_declare("items", ProgramType::Int32Array(2)),
+    );
     let address = value(&state, element_address(0));
-    let CValue::Pointer(pointer) = &address else {
+    let ProgramValue::Pointer(pointer) = &address else {
         unreachable!()
     };
     let retired = state
@@ -443,7 +461,10 @@ fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
     assert!(matches!(
         outcome(
             &retired,
-            c_checked_object_address(c_typed_load(CExpression::Value(address), CType::Int32))
+            c_checked_object_address(c_typed_load(
+                ProgramExpression::Value(address),
+                ProgramType::Int32
+            ))
         ),
         CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
     ));
@@ -451,19 +472,27 @@ fn checked_object_address_rejects_storage_after_its_local_lifetime_ends() {
 
 #[test]
 fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
-    let state = CState::new().with_memory(CMemory::new().with_block("offsets", 16));
+    let state = ExecutionState::new().with_memory(CMemory::new().with_block("offsets", 16));
     let at = |offset| Pointer {
         block: "offsets".into(),
         offset: PointerOffsetTerm::Constant(offset),
     };
-    for ty in [CType::VoidPointer, CType::UInt8Pointer, CType::Int32Pointer] {
-        let stride = if ty == CType::Int32Pointer { 4 } else { 1 };
+    for ty in [
+        ProgramType::VoidPointer,
+        ProgramType::UInt8Pointer,
+        ProgramType::Int32Pointer,
+    ] {
+        let stride = if ty == ProgramType::Int32Pointer {
+            4
+        } else {
+            1
+        };
         for offset in [c_uint32_literal(1), c_uint64_literal(1), c_int64_literal(1)] {
             let result = value(
                 &state,
                 c_subtract(c_cast(c_typed_pointer_value(at(8), ty), ty), offset),
             );
-            assert_eq!(result, CValue::typed_pointer(at(8 - stride), ty));
+            assert_eq!(result, ProgramValue::typed_pointer(at(8 - stride), ty));
         }
         let result = value(
             &state,
@@ -472,7 +501,7 @@ fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
                 c_int64_literal(-1),
             ),
         );
-        assert_eq!(result, CValue::typed_pointer(at(8 + stride), ty));
+        assert_eq!(result, ProgramValue::typed_pointer(at(8 + stride), ty));
         for offset in [
             c_uint64_literal(17),
             c_uint64_literal(u64::MAX),
@@ -492,7 +521,7 @@ fn wide_pointer_subtraction_preserves_unsigned_magnitude_and_bounds() {
                     &state,
                     c_subtract(c_cast(c_typed_pointer_value(at(0), ty), ty), offset)
                 ),
-                CValue::typed_pointer(at(0), ty)
+                ProgramValue::typed_pointer(at(0), ty)
             );
         }
     }

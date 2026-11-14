@@ -3,7 +3,7 @@ use crate::surface::expansion::LoopEntryBranches;
 
 pub(in crate::surface::proof) fn verify_execution_proofs_forward(
     mut expansion_capture: Option<&mut ExpansionCapture>,
-    statement: &CStatement,
+    statement: &ProgramStatement,
     contexts: Vec<PlanningExecutionContext>,
     next_statement_index: &mut usize,
     next_loop_index: &mut usize,
@@ -11,7 +11,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
     verified_loop_rules: &mut Vec<CVerifiedLoopRule>,
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
     match statement {
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             let mut contexts = contexts;
             for statement in statements.iter() {
                 contexts = verify_execution_proofs_forward(
@@ -26,7 +26,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             }
             Ok(contexts)
         }
-        CStatement::If {
+        ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -100,7 +100,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             *next_statement_index = source_region.continuation_node;
             Ok(joined)
         }
-        CStatement::While {
+        ProgramStatement::While {
             condition,
             invariant_checks,
             effect_checks,
@@ -489,7 +489,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 Some(&exit_points_by_context),
             )
         }
-        CStatement::Return(_) => {
+        ProgramStatement::Return(_) => {
             let statement_index = *next_statement_index;
             *next_statement_index = environment
                 .source_layout
@@ -569,7 +569,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
 }
 
 fn split_execution_proof_branch_contexts(
-    condition: &CExpression,
+    condition: &ProgramExpression,
     contexts: Vec<PlanningExecutionContext>,
 ) -> Result<(Vec<PlanningExecutionContext>, Vec<PlanningExecutionContext>), ClickError> {
     let mut then_contexts = Vec::new();
@@ -612,7 +612,7 @@ fn split_execution_proof_branch_contexts(
 }
 
 fn advance_execution_proof_statement(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     contexts: Vec<PlanningExecutionContext>,
     statement_index: usize,
     loop_index: Option<usize>,
@@ -695,7 +695,7 @@ fn advance_execution_proof_statement(
                 &mut context.next_kernel_variable,
             )?,
         };
-        if matches!(statement, CStatement::While { .. }) {
+        if matches!(statement, ProgramStatement::While { .. }) {
             let loop_index = loop_index.ok_or_else(|| {
                 ClickError::new(format!(
                     "execution proof traversal region({statement_index}) is a loop without a loop index"
@@ -764,7 +764,7 @@ fn advance_execution_proof_statement(
                     );
                 }
             }
-            if matches!(statement, CStatement::While { .. }) {
+            if matches!(statement, ProgramStatement::While { .. }) {
                 let loop_index = loop_index.expect("a while statement has a checked loop index");
                 let loop_labels = environment
                     .function_block
@@ -814,7 +814,7 @@ fn advance_execution_proof_statement(
                             loop_index,
                         )?;
                     }
-                    if let CStatement::While { condition, .. } = statement {
+                    if let ProgramStatement::While { condition, .. } = statement {
                         let exit_condition = ClickProposition::Not(Box::new(surface_c_condition(
                             condition, exit_state,
                         )?));

@@ -16,8 +16,8 @@ fn at(block: PointerBlock, offset: i64) -> Pointer {
     }
 }
 
-fn one() -> CValue {
-    CValue::Int32(MachineTerm::constant(1))
+fn one() -> ProgramValue {
+    ProgramValue::Int32(MachineTerm::constant(1))
 }
 
 fn point(memory: &CMemory) -> ProgramPoint {
@@ -755,7 +755,7 @@ mod saved_states {
 
     fn schema() -> ResourceFieldSchema {
         ResourceFieldSchema::new(vec![
-            ("rank".into(), ResourceFieldType::C(CType::Int32)),
+            ("rank".into(), ResourceFieldType::C(ProgramType::Int32)),
             ("mark".into(), ResourceFieldType::Integer),
         ])
         .unwrap()
@@ -765,10 +765,10 @@ mod saved_states {
         ResourceInstance::new(
             Variable(identity),
             "cell".into(),
-            vec![CValue::Int32(MachineTerm::constant(7)).into()].into(),
+            vec![ProgramValue::Int32(MachineTerm::constant(7)).into()].into(),
             schema(),
             vec![
-                AlgebraicValue::C(CValue::Int32(MachineTerm::constant(rank))),
+                AlgebraicValue::C(ProgramValue::Int32(MachineTerm::constant(rank))),
                 AlgebraicValue::Integer(IntegerTerm::constant(num_bigint::BigInt::from(mark))),
             ]
             .into(),
@@ -776,8 +776,8 @@ mod saved_states {
         .unwrap()
     }
 
-    fn holding(identity: u64, rank: u32, mark: i64) -> CState {
-        CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
+    fn holding(identity: u64, rank: u32, mark: i64) -> ExecutionState {
+        ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own(CResource::Instance(instance(identity, rank, mark))),
         ))
     }
@@ -841,7 +841,7 @@ mod saved_states {
     #[test]
     fn a_consumed_instance_is_unknown() {
         let entry = holding(1, 3, 0);
-        let consumed = CState::new();
+        let consumed = ExecutionState::new();
         assert_eq!(
             same_at_states(rank(), StatePoint::at(&consumed), StatePoint::at(&entry)),
             not_held(true, false),
@@ -1059,13 +1059,16 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         block: block("global:g"),
         offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
     };
-    let three = CValue::Int32(MachineTerm::constant(3));
+    let three = ProgramValue::Int32(MachineTerm::constant(3));
     let no_facts = PureFactContext::new();
     let before = entry_memory().store(cell.clone(), three.clone());
     let after = before
         .clone()
         .without_possible_aliasing_cells(&written, 4, &no_facts)
-        .store(written.clone(), CValue::Int32(MachineTerm::constant(7)));
+        .store(
+            written.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
     assert_eq!(after.known_value(&cell), None, "the store dropped the cell");
     let after = intern_c_memory(after);
     let index_is_zero = |value| {
@@ -1088,18 +1091,20 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         &before,
         after.memory(),
         &cell,
-        crate::kernel::CType::Int32,
+        crate::kernel::ProgramType::Int32,
         &[effect],
         &crate::kernel::tests::explicit_signed_elements(
             cell.clone(),
-            crate::kernel::CType::Int32,
+            crate::kernel::ProgramType::Int32,
             index.clone(),
             MachineTerm::constant(0),
             index_is_zero(false),
         ),
     )
     .expect("explicit separation preserves the stored value");
-    let (CValue::Int32(old), CValue::Int32(new), CValue::Int32(three)) = (old, new, three) else {
+    let (ProgramValue::Int32(old), ProgramValue::Int32(new), ProgramValue::Int32(three)) =
+        (old, new, three)
+    else {
         panic!("complete int32 observations");
     };
     let source = Proposition::ConditionIs(ConditionTerm::equal(old, three.clone()), true);
@@ -1127,7 +1132,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     );
     assert_eq!(
         cell_value_on_path(&after, &cell, 4, &index_is_zero(true)),
-        Some(CValue::Int32(MachineTerm::constant(7)))
+        Some(ProgramValue::Int32(MachineTerm::constant(7)))
     );
     assert_eq!(cell_value_on_path(&after, &cell, 4, &no_facts), None);
 }
@@ -1141,7 +1146,7 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
         let first = before.clone().store(other.clone(), one());
         let second = before
             .clone()
-            .store(other, CValue::Int32(MachineTerm::constant(2)));
+            .store(other, ProgramValue::Int32(MachineTerm::constant(2)));
         let joined = first
             .clone()
             .with_interface_memory_havoc(
@@ -1198,7 +1203,7 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
     let a = before.clone().store(other.clone(), one());
     let b = before
         .clone()
-        .store(other.clone(), CValue::Int32(MachineTerm::constant(2)));
+        .store(other.clone(), ProgramValue::Int32(MachineTerm::constant(2)));
     let unchanged = a
         .clone()
         .with_interface_memory_havoc(
@@ -1209,11 +1214,11 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
         .unwrap();
     let c = a.store(
         cell.clone(),
-        CValue::UInt64(MachineTerm::uint64_constant(9)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
     );
     let d = b.store(
         cell.clone(),
-        CValue::UInt64(MachineTerm::uint64_constant(10)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(10)),
     );
     let changed = c
         .clone()
@@ -1404,13 +1409,13 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
 #[test]
 fn a_forgotten_observation_retains_only_its_complete_typed_value() {
     use super::cell_source::{CellWalkStop, memory_dag_cell_source_with_stop};
-    use crate::kernel::{CType, LoadKind};
+    use crate::kernel::{LoadKind, ProgramType};
     crate::kernel::memory_provenance::with_extended_dag_bridging(|| {
         let pointer = at(block("global:g"), 0);
         let source = intern_c_memory(entry_memory());
         let observed = source.memory().clone().materialize_cell_from_source(
             pointer.clone(),
-            CType::Int32,
+            ProgramType::Int32,
             source.clone(),
         );
         let value = observed.known_value(&pointer).unwrap();

@@ -19,16 +19,16 @@ impl KernelLegacyTerm {
             return None;
         };
         match value {
-            CValue::Int8(v)
-            | CValue::UInt8(v)
-            | CValue::Int16(v)
-            | CValue::UInt16(v)
-            | CValue::Int32(v)
-            | CValue::UInt32(v)
-            | CValue::Int64(v)
-            | CValue::UInt64(v)
-            | CValue::Int128(v)
-            | CValue::UInt128(v) => Some(v),
+            ProgramValue::Int8(v)
+            | ProgramValue::UInt8(v)
+            | ProgramValue::Int16(v)
+            | ProgramValue::UInt16(v)
+            | ProgramValue::Int32(v)
+            | ProgramValue::UInt32(v)
+            | ProgramValue::Int64(v)
+            | ProgramValue::UInt64(v)
+            | ProgramValue::Int128(v)
+            | ProgramValue::UInt128(v) => Some(v),
             _ => None,
         }
     }
@@ -280,7 +280,7 @@ pub enum KernelMachineLiteral {
 
 impl KernelMachineLiteral {
     /// An atomic literal output, preserving its written carrier exactly.
-    pub(crate) fn value_at(&self, format: MachineIntegerType) -> CValue {
+    pub(crate) fn value_at(&self, format: MachineIntegerType) -> ProgramValue {
         wrap_exact(format, self.legacy_term())
     }
 
@@ -438,20 +438,20 @@ impl MachineCastSpelling {
     }
 }
 
-pub(super) fn wrap_exact(format: MachineIntegerType, term: MachineTerm) -> CValue {
+pub(super) fn wrap_exact(format: MachineIntegerType, term: MachineTerm) -> ProgramValue {
     // value_from_term applies the word-format convention. This adapter must
     // preserve the payload exactly, including constants inside operations.
     match format {
-        MachineIntegerType::Int8 => CValue::Int8(term),
-        MachineIntegerType::UInt8 => CValue::UInt8(term),
-        MachineIntegerType::Int16 => CValue::Int16(term),
-        MachineIntegerType::UInt16 => CValue::UInt16(term),
-        MachineIntegerType::Int32 => CValue::Int32(term),
-        MachineIntegerType::UInt32 => CValue::UInt32(term),
-        MachineIntegerType::Int64 => CValue::Int64(term),
-        MachineIntegerType::UInt64 => CValue::UInt64(term),
-        MachineIntegerType::Int128 => CValue::Int128(term),
-        MachineIntegerType::UInt128 => CValue::UInt128(term),
+        MachineIntegerType::Int8 => ProgramValue::Int8(term),
+        MachineIntegerType::UInt8 => ProgramValue::UInt8(term),
+        MachineIntegerType::Int16 => ProgramValue::Int16(term),
+        MachineIntegerType::UInt16 => ProgramValue::UInt16(term),
+        MachineIntegerType::Int32 => ProgramValue::Int32(term),
+        MachineIntegerType::UInt32 => ProgramValue::UInt32(term),
+        MachineIntegerType::Int64 => ProgramValue::Int64(term),
+        MachineIntegerType::UInt64 => ProgramValue::UInt64(term),
+        MachineIntegerType::Int128 => ProgramValue::Int128(term),
+        MachineIntegerType::UInt128 => ProgramValue::UInt128(term),
     }
 }
 
@@ -894,7 +894,7 @@ mod tests {
         }
         // The result's unsigned type does not retag a sign-free word node,
         // or change the exact constant representation used by its operand.
-        let source = PureFunctionArgument::Value(CValue::UInt32(MachineTerm::Binary {
+        let source = PureFunctionArgument::Value(ProgramValue::UInt32(MachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
             left: Box::new(MachineTerm::constant(1)),
@@ -953,7 +953,7 @@ mod tests {
 
     #[test]
     fn machine_import_keeps_complete_pointer_integer_metadata() {
-        let value = CValue::UInt64(MachineTerm::Variable(Variable(991101)))
+        let value = ProgramValue::UInt64(MachineTerm::Variable(Variable(991101)))
             .complete_word(Pointer::symbolic(Variable(991102)));
         let source = PureFunctionArgument::Value(value);
         let term = KernelTermImport::default().argument(&source);
@@ -963,15 +963,15 @@ mod tests {
 
     #[test]
     fn machine_cast_bridge_keeps_source_and_destination_without_evaluation() {
-        let source = PureFunctionArgument::Value(CValue::UInt64(MachineTerm::Cast {
+        let source = PureFunctionArgument::Value(ProgramValue::UInt64(MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int32,
             to: MachineIntegerType::UInt64,
             value: Box::new(MachineTerm::constant(u32::MAX)),
         }));
         let term = KernelTermImport::default().argument(&source);
-        assert_eq!(term.children()[0].ty(), &KernelType::C(CType::Int32));
-        assert_eq!(term.ty(), &KernelType::C(CType::UInt64));
+        assert_eq!(term.children()[0].ty(), &KernelType::C(ProgramType::Int32));
+        assert_eq!(term.ty(), &KernelType::C(ProgramType::UInt64));
         assert!(matches!(term.node(), KernelTermNode::MachineCast { .. }));
         assert_eq!(KernelTermExport::default().argument(&term).unwrap(), source);
     }

@@ -13,7 +13,7 @@ fn source_scalar_lease_plan_preparation_scales_with_selected_function() {
         let (program, work) =
             crate::instrumentation::measure_deterministic_work(|| body(&export, "locked-source"));
         assert!(leaves(&program).iter().any(
-            |s| matches!(s, CStatement::Assign { source, .. } if source.lease_plan().is_some())
+            |s| matches!(s, ProgramStatement::Assign { source, .. } if source.lease_plan().is_some())
         ));
         measurements.push((size, work));
     }
@@ -31,11 +31,11 @@ fn source_scalar_lease_alias_plan_preparation_scales_with_alias_chain() {
         let (program, work) =
             crate::instrumentation::measure_deterministic_work(|| body(&source, "locked-source"));
         let statements = leaves(&program);
-        assert_eq!(statements.iter().filter(|s| matches!(s, CStatement::Assign { source, .. } if source.lease_plan().is_some())).count(), 1);
+        assert_eq!(statements.iter().filter(|s| matches!(s, ProgramStatement::Assign { source, .. } if source.lease_plan().is_some())).count(), 1);
         assert_eq!(
             statements
                 .iter()
-                .filter(|s| matches!(s, CStatement::EndScalarReference(_)))
+                .filter(|s| matches!(s, ProgramStatement::EndScalarReference(_)))
                 .count(),
             1
         );
@@ -56,7 +56,7 @@ fn source_scalar_lease_read_ending_preparation_scales_with_aliases() {
             crate::instrumentation::measure_deterministic_work(|| body(&source, "locked-source"));
         let endings = leaves(&program)
             .into_iter()
-            .filter(|statement| matches!(statement, CStatement::EndScalarReference(_)))
+            .filter(|statement| matches!(statement, ProgramStatement::EndScalarReference(_)))
             .count();
         assert_eq!(endings, 1);
         measurements.push((count, work));
@@ -93,7 +93,7 @@ fn source_scalar_lease_selected_end_is_indexed_across_live_nested_handles() {
         state = state
             .with_loan_ledger(Some(ledger))
             .with_loan_participant(Some(holder));
-        let CValue::Pointer(mut parent) = state
+        let ProgramValue::Pointer(mut parent) = state
             .locals
             .get_native("parent")
             .as_deref()
@@ -116,16 +116,16 @@ fn source_scalar_lease_selected_end_is_indexed_across_live_nested_handles() {
                 .begin_source_scalar_reference(
                     &parent,
                     (birth == 0).then_some(support),
-                    CType::Int32,
+                    ProgramType::Int32,
                     &PureFactContext::new(),
                     key.clone(),
                 )
                 .unwrap();
             state = next;
             parent = child;
-            selected = Some(CStatement::EndScalarReference(CScalarReferenceEnd::new(
-                key,
-            )));
+            selected = Some(ProgramStatement::EndScalarReference(
+                CScalarReferenceEnd::new(key),
+            ));
         }
         let end = selected.unwrap();
         let (recovered, work) =
@@ -169,7 +169,7 @@ fn source_scalar_scope_arm_preparation_is_linear_in_shared_diamonds() {
             crate::instrumentation::measure_deterministic_work(|| body(&source, "locked-source"));
         let starts = leaves(&program)
             .iter()
-            .filter(|statement| matches!(statement, CStatement::ScalarReferenceScope(_)))
+            .filter(|statement| matches!(statement, ProgramStatement::ScalarReferenceScope(_)))
             .count();
         assert_eq!(starts, count);
         measurements.push((count, work));
@@ -191,7 +191,7 @@ fn source_scalar_scope_selected_checkpoint_work_is_indexed_across_ambient_histor
                 .begin_local_scalar_reference(
                     &parent,
                     Some(support),
-                    CType::Int32,
+                    ProgramType::Int32,
                     &PureFactContext::new(),
                 )
                 .unwrap();
@@ -207,7 +207,7 @@ fn source_scalar_scope_selected_checkpoint_work_is_indexed_across_ambient_histor
                 .begin_local_scalar_reference(
                     &parent,
                     Some(support),
-                    CType::Int32,
+                    ProgramType::Int32,
                     &PureFactContext::new(),
                 )
                 .unwrap();

@@ -9,7 +9,7 @@ use super::*;
 fn loop_abstraction_and_selected_join_scale_with_index_paths() {
     let mut samples = Vec::new();
     for size in [16usize, 64, 256, 1024] {
-        let mut context = MutexContext::new(CState::new());
+        let mut context = MutexContext::new(ExecutionState::new());
         for index in 0..size {
             context = context.initialize_empty(mutex(index), 40).unwrap();
         }

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -21,19 +21,19 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
     context.contract_result_in_scope = true;
     let member = |name: &str| {
         crate::kernel::c_typed_load(
-            CExpression::Subobject {
-                pointer: Box::new(CExpression::PointerOffsetBytes {
-                    pointer: Box::new(CExpression::Variable(name.into())),
+            ProgramExpression::Subobject {
+                pointer: Box::new(ProgramExpression::PointerOffsetBytes {
+                    pointer: Box::new(ProgramExpression::Variable(name.into())),
                     bytes: 8,
                 }),
                 width: 4,
             },
-            CType::Int32,
+            ProgramType::Int32,
         )
     };
     for (base, expected, in_scope, operand_name) in [
         (
-            ContractExpression::CFragment(CExpression::Variable("result".into())),
+            ContractExpression::CFragment(ProgramExpression::Variable("result".into())),
             crate::kernel::C_CONTRACT_RESULT_NAME,
             true,
             "result",
@@ -45,7 +45,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
             "result",
         ),
         (
-            ContractExpression::CFragment(CExpression::Variable("bound".into())),
+            ContractExpression::CFragment(ProgramExpression::Variable("bound".into())),
             "bound",
             false,
             "bound",
@@ -61,7 +61,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
                 lowered: place.clone(),
                 offset_bytes: 8,
             }),
-            lowered: CExpression::AddressOf(Box::new(member("result"))),
+            lowered: ProgramExpression::AddressOf(Box::new(member("result"))),
         };
         let lowered = lowerer
             .lower_contract_expression_to_spec(&expression, &context)
@@ -70,12 +70,12 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
             lowered,
             SpecExpression::Let {
                 name: "<spec-address-operand>".into(),
-                value: Box::new(SpecExpression::CExpression(CExpression::Variable(
-                    expected.into()
-                ))),
-                body: Box::new(SpecExpression::CExpression(CExpression::AddressOf(
-                    Box::new(member("<spec-address-operand>"))
-                ))),
+                value: Box::new(SpecExpression::ProgramExpression(
+                    ProgramExpression::Variable(expected.into())
+                )),
+                body: Box::new(SpecExpression::ProgramExpression(
+                    ProgramExpression::AddressOf(Box::new(member("<spec-address-operand>")))
+                )),
             },
         );
     }
@@ -93,7 +93,7 @@ fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
         "#,
     )
     .expect("struct pointer function should parse");
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -109,13 +109,13 @@ fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
         BTreeSet::new(),
         parameter_pointer_element_widths(function.parameters()),
     );
-    let pointer_add = CExpression::Add(
-        Box::new(CExpression::Variable("p".into())),
-        Box::new(CExpression::Variable("i".into())),
+    let pointer_add = ProgramExpression::Add(
+        Box::new(ProgramExpression::Variable("p".into())),
+        Box::new(ProgramExpression::Variable("i".into())),
     );
-    let cast = CExpression::Cast {
+    let cast = ProgramExpression::Cast {
         expression: Box::new(pointer_add),
-        target_type: CType::UInt64,
+        target_type: ProgramType::UInt64,
         integer_mode: crate::kernel::CIntegerCastMode::Standard,
         pointee_struct: None,
         pointee_volatile: false,
@@ -125,7 +125,7 @@ fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
     let lowered = lowerer
         .lower_c_fragment_to_spec(&cast, &context)
         .expect("pointer arithmetic should lower");
-    let SpecExpression::Cast(pointer, CType::UInt64) = lowered else {
+    let SpecExpression::Cast(pointer, ProgramType::UInt64) = lowered else {
         panic!("expected a preserved uint64 cast around pointer arithmetic");
     };
     let SpecExpression::PointerOffset { byte_width, .. } = pointer.as_ref() else {
@@ -144,9 +144,9 @@ fn integer_binder_contexts_share_unrelated_machine_bindings() {
                 .map(|index| {
                     (
                         format!("unrelated{index}"),
-                        SpecExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(
-                            index,
-                        )))),
+                        SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+                            Variable(index),
+                        ))),
                     )
                 })
                 .collect(),
@@ -197,7 +197,7 @@ fn nested_snapshot_propositions_lower_with_small_frames_and_linear_visits() {
         .name("small-stack-proposition-lowering".into())
         .stack_size(1024 * 1024)
         .spawn(|| {
-            let state = CState::new().with_local("x", int32(7));
+            let state = ExecutionState::new().with_local("x", int32(7));
             let predicates = PredicateEnvironment::new(&[]);
             let functions = ClickFunctionEnvironment::new(&[]);
             let mut snapshots = RecordedSnapshots::default();
@@ -205,12 +205,12 @@ fn nested_snapshot_propositions_lower_with_small_frames_and_linear_visits() {
             let atom = || ClickProposition::Comparison {
                 left: ContractExpression::At {
                     selector: SnapshotSelector::Mark("before".into()),
-                    expression: Box::new(ContractExpression::CFragment(CExpression::Variable(
-                        "x".into(),
-                    ))),
+                    expression: Box::new(ContractExpression::CFragment(
+                        ProgramExpression::Variable("x".into()),
+                    )),
                 },
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(CExpression::Value(int32(7))),
+                right: ContractExpression::CFragment(ProgramExpression::Value(int32(7))),
             };
             for depth in [4, 8, 16, 32] {
                 let mut proposition = atom();
@@ -389,7 +389,7 @@ fn c0_loop_index_agrees_with_the_walk_at_every_loop() {
 #[test]
 fn ordinary_integer_arithmetic_retains_structure_and_deferred_domain_checks() {
     use crate::kernel::{IntegerTerm as Int, SpecIntegerExpression as Spec};
-    let state = CState::new();
+    let state = ExecutionState::new();
     let snapshots = RecordedSnapshots::new();
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);

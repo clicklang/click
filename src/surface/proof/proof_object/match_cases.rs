@@ -76,14 +76,16 @@ impl ExecutionMatchPlan {
                         type_name: arm.type_name.clone(),
                         variant: arm.variant.clone(),
                         bindings: arm.bindings.clone(),
-                        body: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                            MachineTerm::constant(u32::from(left.contains(&index))),
-                        ))),
+                        body: ContractExpression::CFragment(ProgramExpression::Value(
+                            ProgramValue::Int32(MachineTerm::constant(u32::from(
+                                left.contains(&index),
+                            ))),
+                        )),
                     })
                     .collect(),
             },
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+            right: ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::constant(1),
             ))),
         }
@@ -283,7 +285,7 @@ impl<'a> Proof<'a> {
             for (field_index, (name, field)) in arm.bindings.iter().zip(fields).enumerate() {
                 let expression = match field {
                     AlgebraicValue::C(value) => {
-                        ContractExpression::CFragment(CExpression::Value(value.clone()))
+                        ContractExpression::CFragment(ProgramExpression::Value(value.clone()))
                     }
                     AlgebraicValue::Algebraic(binding) => {
                         // A concrete scrutinee already carries immutable payload
@@ -329,7 +331,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn outcome_match_scrutinee(
         &self,
         source: &ProofMatch,
-        state: &CState,
+        state: &ExecutionState,
         query: &ProofFacts,
         snapshots: &RecordedSnapshots,
     ) -> Result<crate::kernel::AlgebraicTerm, ClickError> {
@@ -481,11 +483,11 @@ impl<'a> Proof<'a> {
         // its variant tests read.
         let local = match &expression {
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(CExpression::Variable(name))
+            | ContractExpression::CFragment(ProgramExpression::Variable(name))
                 if !values.contains_key(name) && !self.state.locals().values.contains_key(name) =>
             {
                 match execution.core.state.locals().get_native(name).as_deref() {
-                    Some(CValue::Parameter(term)) => Some((**term).clone()),
+                    Some(ProgramValue::Parameter(term)) => Some((**term).clone()),
                     _ => None,
                 }
             }
@@ -666,8 +668,8 @@ impl<'a> Proof<'a> {
                         // certificate generated inside the arm prints the
                         // binder the source wrote instead of a kernel variable
                         // id that no later lowering can resolve.
-                        ContractExpression::CFragment(CExpression::Value(_)) => {
-                            ContractExpression::CFragment(CExpression::Variable(name.clone()))
+                        ContractExpression::CFragment(ProgramExpression::Value(_)) => {
+                            ContractExpression::CFragment(ProgramExpression::Variable(name.clone()))
                         }
                         expression => expression.clone(),
                     })
@@ -731,7 +733,7 @@ impl<'a> Proof<'a> {
             .bindings
             .iter()
             .filter_map(|name| match plan.bindings[index].get(name)? {
-                ContractExpression::CFragment(CExpression::Value(value)) => {
+                ContractExpression::CFragment(ProgramExpression::Value(value)) => {
                     crate::kernel::single_variable_of_c_value(value)
                         .map(|variable| (variable, name.clone()))
                 }
@@ -1174,19 +1176,19 @@ impl<'a> Proof<'a> {
                     ContractExpression::Binding(name.clone())
                 }
                 Sort::CObjectPointer(c_type, class) => {
-                    ContractExpression::CFragment(CExpression::Value(
+                    ContractExpression::CFragment(ProgramExpression::Value(
                         crate::kernel::symbolic_call_result(c_type, variable)
                             .with_pointer_object_class(Some(class)),
                     ))
                 }
-                Sort::CPointer(c_type) => ContractExpression::CFragment(CExpression::Value(
+                Sort::CPointer(c_type) => ContractExpression::CFragment(ProgramExpression::Value(
                     crate::kernel::symbolic_call_result(c_type, variable),
                 )),
-                Sort::CInt32 => ContractExpression::CFragment(CExpression::Value(
-                    crate::kernel::symbolic_call_result(CType::Int32, variable),
+                Sort::CInt32 => ContractExpression::CFragment(ProgramExpression::Value(
+                    crate::kernel::symbolic_call_result(ProgramType::Int32, variable),
                 )),
-                Sort::CInt64 => ContractExpression::CFragment(CExpression::Value(
-                    crate::kernel::symbolic_call_result(CType::Int64, variable),
+                Sort::CInt64 => ContractExpression::CFragment(ProgramExpression::Value(
+                    crate::kernel::symbolic_call_result(ProgramType::Int64, variable),
                 )),
                 _ => return Err(proof.step_error("unsupported match field sort")),
             };

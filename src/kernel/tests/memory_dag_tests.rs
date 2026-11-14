@@ -18,7 +18,7 @@ fn rewritten_load_store_witness_binds_value_address_and_snapshot() {
         .assume_condition(ConditionTerm::equal(index, MachineTerm::constant(1)), true);
     let memory = CMemory::new()
         .with_block("arg-memory", 32)
-        .store(write, CValue::Int32(value.clone()));
+        .store(write, ProgramValue::Int32(value.clone()));
     let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(arc_pointer(4)),
@@ -44,7 +44,10 @@ fn rewritten_load_store_witness_binds_value_address_and_snapshot() {
         crate::kernel::LoadKind::Int32,
     );
     assert!(!witness.checks_retargeted_for_test(value.clone(), wrong_load, &assumptions, &events));
-    let overwritten = memory.store(arc_pointer(4), CValue::Int32(MachineTerm::constant(8)));
+    let overwritten = memory.store(
+        arc_pointer(4),
+        ProgramValue::Int32(MachineTerm::constant(8)),
+    );
     let overwritten_load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&overwritten),
         Box::new(arc_pointer(4)),
@@ -67,8 +70,8 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
         value.clone(),
     );
     for (stored, read) in [
-        (CValue::Int32(value.clone()), value.clone()),
-        (CValue::UInt32(value.clone()), signed_read),
+        (ProgramValue::Int32(value.clone()), value.clone()),
+        (ProgramValue::UInt32(value.clone()), signed_read),
     ] {
         let memory = CMemory::new()
             .with_block("arg-memory", 16)
@@ -128,9 +131,10 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
                     .is_none(),
                 "a different cell has no stored-value witness"
             );
-            let overwritten = memory
-                .clone()
-                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(8)));
+            let overwritten = memory.clone().store(
+                pointer.clone(),
+                ProgramValue::Int32(MachineTerm::constant(8)),
+            );
             assert!(
                 facts
                     .with_checked_rewritten_loads(
@@ -467,9 +471,10 @@ fn nested_checked_load_equality_captures_keep_evidence_with_the_inner_owner() {
 #[test]
 fn a_store_records_the_edge_from_the_snapshot_it_wrote() {
     let base = CMemory::new().with_block("arg-memory", 16);
-    let after = base
-        .clone()
-        .store(arc_pointer(4), CValue::Int32(MachineTerm::constant(7)));
+    let after = base.clone().store(
+        arc_pointer(4),
+        ProgramValue::Int32(MachineTerm::constant(7)),
+    );
 
     let derivation = crate::kernel::intern_c_memory_ref(&after)
         .derivation()
@@ -483,7 +488,7 @@ fn a_store_records_the_edge_from_the_snapshot_it_wrote() {
         } => {
             assert_eq!(recorded_base.as_ref(), &base);
             assert_eq!(pointer, &arc_pointer(4));
-            assert_eq!(value, &CValue::Int32(MachineTerm::constant(7)));
+            assert_eq!(value, &ProgramValue::Int32(MachineTerm::constant(7)));
         }
         other => panic!("expected a store edge, got {other:?}"),
     }
@@ -499,9 +504,10 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
 
     let constant_write = root.offset_by_int32_elements(MachineTerm::constant(1));
     let constant_read = root.offset_by_int32_elements(MachineTerm::constant(2));
-    let after_constant = base
-        .clone()
-        .store(constant_write, CValue::Int32(MachineTerm::constant(7)));
+    let after_constant = base.clone().store(
+        constant_write,
+        ProgramValue::Int32(MachineTerm::constant(7)),
+    );
     let constant_evidence = memory_load_equality_evidence_at(
         &crate::kernel::intern_c_memory_ref(&after_constant),
         &crate::kernel::intern_c_memory_ref(&base),
@@ -555,7 +561,10 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
     crate::kernel::eval::declare_load_access_width(&symbolic_read, 4);
     let inequality = ConditionTerm::equal(write_index, read_index);
     let assumptions = PureFactContext::new().assume_condition(inequality.clone(), false);
-    let after_symbolic = base.store(symbolic_write, CValue::Int32(MachineTerm::constant(9)));
+    let after_symbolic = base.store(
+        symbolic_write,
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    );
     let symbolic_evidence = memory_load_equality_evidence_at(
         &crate::kernel::intern_c_memory_ref(&after_symbolic),
         &crate::kernel::intern_c_memory_ref(&CMemory::new().with_block("arg-memory", 32)),
@@ -644,7 +653,7 @@ fn retained_common_base_store_hop_uses_a_stated_endpoint_order() {
     let read = root.offset_by_int32_elements(read_index.clone());
     let after = base
         .clone()
-        .store(write, CValue::Int32(MachineTerm::constant(7)));
+        .store(write, ProgramValue::Int32(MachineTerm::constant(7)));
     assert!(
         memory_load_equality_evidence_at(
             &crate::kernel::intern_c_memory_ref(&after),
@@ -729,7 +738,7 @@ fn store_hop_retains_direct_or_composed_separated_range_authority() {
     let load = load_base.offset_by_int32_elements(MachineTerm::constant(0));
     let after = base
         .clone()
-        .store(write, CValue::Int32(MachineTerm::constant(7)));
+        .store(write, ProgramValue::Int32(MachineTerm::constant(7)));
     let left = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&after),
         Box::new(load.clone()),
@@ -879,7 +888,7 @@ fn entry_separation_does_not_frame_a_store_after_its_bases_become_equal() {
     );
     let after = base
         .clone()
-        .store(left.clone(), CValue::Int32(MachineTerm::constant(7)));
+        .store(left.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
     let derivation = crate::kernel::intern_c_memory_ref(&after)
         .derivation()
         .expect("the written snapshot retains its store");
@@ -956,11 +965,11 @@ fn separated_range_store_hop_retains_symbolic_membership_bounds() {
     let load = load_base.offset_by_int32_elements(load_index.clone());
     let after = base
         .clone()
-        .store(write, CValue::Int32(MachineTerm::constant(7)));
+        .store(write, ProgramValue::Int32(MachineTerm::constant(7)));
     // An `Int32` read also encodes LP64 pointers. These terms represent int32 reads,
     // so use the typed producer to record their four-byte access width.
-    crate::kernel::eval::symbolic_load_value(&base, &load, CType::Int32).unwrap();
-    crate::kernel::eval::symbolic_load_value(&after, &load, CType::Int32).unwrap();
+    crate::kernel::eval::symbolic_load_value(&base, &load, ProgramType::Int32).unwrap();
+    crate::kernel::eval::symbolic_load_value(&after, &load, ProgramType::Int32).unwrap();
     let left = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&after),
         Box::new(load.clone()),
@@ -1018,13 +1027,20 @@ fn derivation_bases_are_strictly_older_so_the_dag_cannot_cycle() {
     // First-wins recording keeps the older edge, so following `base` still
     // strictly decreases and terminates.
     let base = CMemory::new().with_block("arg-memory", 16);
-    let written = base
-        .clone()
-        .store(arc_pointer(0), CValue::Int32(MachineTerm::constant(1)));
+    let written = base.clone().store(
+        arc_pointer(0),
+        ProgramValue::Int32(MachineTerm::constant(1)),
+    );
     let restored = written
         .clone()
-        .store(arc_pointer(0), CValue::Int32(MachineTerm::constant(0)))
-        .store(arc_pointer(0), CValue::Int32(MachineTerm::constant(1)));
+        .store(
+            arc_pointer(0),
+            ProgramValue::Int32(MachineTerm::constant(0)),
+        )
+        .store(
+            arc_pointer(0),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
     assert_eq!(restored, written, "the round trip returns the same value");
 
     let mut node = crate::kernel::intern_c_memory_ref(&restored);
@@ -1151,12 +1167,14 @@ fn call_havoc_marker_identity_includes_symbolic_write_set() {
 
 #[test]
 fn a_store_that_changes_nothing_records_no_edge_to_itself() {
-    let base = CMemory::new()
-        .with_block("arg-memory", 16)
-        .store(arc_pointer(0), CValue::Int32(MachineTerm::constant(3)));
-    let again = base
-        .clone()
-        .store(arc_pointer(0), CValue::Int32(MachineTerm::constant(3)));
+    let base = CMemory::new().with_block("arg-memory", 16).store(
+        arc_pointer(0),
+        ProgramValue::Int32(MachineTerm::constant(3)),
+    );
+    let again = base.clone().store(
+        arc_pointer(0),
+        ProgramValue::Int32(MachineTerm::constant(3)),
+    );
     assert_eq!(again, base);
 
     let node = crate::kernel::intern_c_memory_ref(&again);
@@ -1171,9 +1189,10 @@ fn a_store_that_changes_nothing_records_no_edge_to_itself() {
 
 #[test]
 fn loop_havoc_is_its_own_edge_kind_and_keeps_its_marker_block() {
-    let base = CMemory::new()
-        .with_block("arg-memory", 16)
-        .store(arc_pointer(0), CValue::Int32(MachineTerm::constant(5)));
+    let base = CMemory::new().with_block("arg-memory", 16).store(
+        arc_pointer(0),
+        ProgramValue::Int32(MachineTerm::constant(5)),
+    );
     let after = base.clone().with_loop_memory_havoc_preserving_loans(
         Variable(0),
         &BTreeSet::new(),
@@ -1253,9 +1272,10 @@ fn derivations_carry_a_load_across_a_distinct_store_but_not_across_havoc() {
         "loop havoc must never be crossed without explicit frame evidence"
     );
 
-    let havoced_then_stored = havoced
-        .clone()
-        .store(arc_pointer(4), CValue::Int32(MachineTerm::constant(9)));
+    let havoced_then_stored = havoced.clone().store(
+        arc_pointer(4),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    );
     assert!(
         !checked_memory_load_equality(&base, &havoced_then_stored, &read, &PureFactContext::new(),),
         "a crossable store must not smuggle a walk past an intervening havoc"
@@ -1322,7 +1342,7 @@ fn loop_kept_frame_preserves_only_complete_pointer_reads() {
     let field = arc_pointer(0);
     let base = CMemory::new()
         .with_block("arg-memory", 16)
-        .store(field.clone(), CValue::Int32(7u32.into()));
+        .store(field.clone(), ProgramValue::Int32(7u32.into()));
     let before = crate::kernel::intern_c_memory_ref(&base);
     let ranges = [memory_range(field.clone(), 0, 16)];
     let havoc = |kept_bytes: u32| {
@@ -1359,7 +1379,7 @@ fn loop_kept_frame_preserves_only_complete_pointer_reads() {
         None,
     );
     assert!(!unchanged(&unframed));
-    let overwritten = complete.store(field.offset_by_bytes(4), CValue::Int32(9u32.into()));
+    let overwritten = complete.store(field.offset_by_bytes(4), ProgramValue::Int32(9u32.into()));
     assert!(
         !unchanged(&overwritten),
         "the upper pointer half was overwritten"
@@ -1369,9 +1389,10 @@ fn loop_kept_frame_preserves_only_complete_pointer_reads() {
 #[test]
 fn loan_preserving_havoc_uses_the_full_cell_footprint() {
     let pointer = arc_pointer(0);
-    let base = CMemory::new()
-        .with_block("arg-memory", 16)
-        .store(pointer.clone(), CValue::Int32(MachineTerm::constant(5)));
+    let base = CMemory::new().with_block("arg-memory", 16).store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(5)),
+    );
     let fact = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
         pointer.clone(),
         MachineTerm::constant(2),
@@ -1429,7 +1450,7 @@ fn loan_havoc_may_forget_a_run_crossing_the_interval_index_boundary() {
     let run = CellRun::new(
         pointer.clone(),
         4,
-        CType::Int32,
+        ProgramType::Int32,
         2,
         original.clone(),
         crate::kernel::primitives::IndexIntervals::default(),
@@ -1737,8 +1758,14 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
     let later = entry
         .clone()
         .with_block("local:i", 4)
-        .store(arc_pointer(4), CValue::Int32(MachineTerm::constant(9)))
-        .store(arc_pointer(8), CValue::Int32(MachineTerm::constant(2)))
+        .store(
+            arc_pointer(4),
+            ProgramValue::Int32(MachineTerm::constant(9)),
+        )
+        .store(
+            arc_pointer(8),
+            ProgramValue::Int32(MachineTerm::constant(2)),
+        )
         .without_possible_aliasing_cells(&arc_pointer(4), 4, &assumptions);
     let len_at_later = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&later),
@@ -1768,7 +1795,7 @@ fn a_store_to_the_loaded_cell_is_not_crossable() {
     let read = arc_pointer(0);
     let stored = base
         .clone()
-        .store(read.clone(), CValue::Int32(MachineTerm::constant(9)));
+        .store(read.clone(), ProgramValue::Int32(MachineTerm::constant(9)));
 
     assert!(
         !checked_memory_load_equality(&base, &stored, &read, &PureFactContext::new()),
@@ -1837,7 +1864,7 @@ fn conditions_equal_modulo_proven_snapshots_needs_frame_evidence() {
         &before,
         &after,
         &loaded,
-        CType::Int32,
+        ProgramType::Int32,
         &[effect],
         &PureFactContext::new(),
     )
@@ -1921,9 +1948,10 @@ fn a_load_projection_jump_does_not_restore_a_havocked_cell() {
     let pristine = CMemory::new().with_block("arg-memory", 32);
     let loaded = symbolic_descriptor(93_000);
     let sibling = symbolic_descriptor(93_001);
-    let source = pristine
-        .clone()
-        .store(loaded.clone(), CValue::Int32(MachineTerm::constant(7)));
+    let source = pristine.clone().store(
+        loaded.clone(),
+        ProgramValue::Int32(MachineTerm::constant(7)),
+    );
     let materialized = source
         .clone()
         .store(sibling.clone(), source.symbolic_int32_load(&sibling));
@@ -1990,10 +2018,11 @@ fn a_materialized_pointer_cell_is_named_at_its_source() {
         crate::kernel::eval::canonical_cell_load(
             crate::kernel::intern_c_memory_ref(memory),
             pointer.clone(),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )
     };
-    let pointer_value = |read: Pointer| CValue::typed_pointer(read, CType::Int32Pointer);
+    let pointer_value =
+        |read: Pointer| ProgramValue::typed_pointer(read, ProgramType::Int32Pointer);
     let own = name(&pristine, &sibling);
     assert!(matches!(own, MachineTerm::MemoryLoad(..)));
     let own_read = Pointer::loaded(&own).expect("the cell's load names its read");
@@ -2038,12 +2067,12 @@ fn a_materialized_pointer_cell_must_not_launder_a_havoc() {
     );
     let materialized = pristine.clone().store(
         sibling.clone(),
-        CValue::typed_pointer(
+        ProgramValue::typed_pointer(
             Pointer {
                 block: "arg-memory".into(),
                 offset: PointerOffsetTerm::scale_int32(own, 4),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         ),
     );
     let havocked = materialized.clone().with_call_memory_havoc(
@@ -2155,9 +2184,10 @@ fn direct_strict_order_is_an_indexed_lookup() {
 /// linear in the term it traverses.
 #[test]
 fn canonical_form_resolves_loads_at_any_depth() {
-    let memory = CMemory::new()
-        .with_block("arg-memory", 16)
-        .store(arc_pointer(4), CValue::Int32(MachineTerm::constant(7)));
+    let memory = CMemory::new().with_block("arg-memory", 16).store(
+        arc_pointer(4),
+        ProgramValue::Int32(MachineTerm::constant(7)),
+    );
     let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(arc_pointer(4)),
@@ -2240,7 +2270,10 @@ fn a_retained_cell_keeps_its_load_variable_across_a_call_havoc() {
     let (name, _) = load_variable_for_term(&load_in(&base)).expect("a load term has a name");
     // Materializing a viewed cell records its own load variable in the cell,
     // which is the state the callback fixtures reach before their first call.
-    let materialized = base.store(cell.clone(), CValue::Int32(MachineTerm::Variable(name)));
+    let materialized = base.store(
+        cell.clone(),
+        ProgramValue::Int32(MachineTerm::Variable(name)),
+    );
 
     let retained = materialized.clone().with_call_memory_havoc(
         Variable(88_100),
@@ -2293,7 +2326,7 @@ fn an_array_refs_epoch_stops_at_a_store_that_may_alias_it() {
     let global = || PointerBlock::Concrete("global:g".to_string());
     let other_global = || PointerBlock::Concrete("global:h".to_string());
     let local = || PointerBlock::Concrete("local:f:i".to_string());
-    let one = || CValue::Int32(MachineTerm::constant(1));
+    let one = || ProgramValue::Int32(MachineTerm::constant(1));
     let epoch = |memory: &CMemory, block: PointerBlock| {
         crate::kernel::resource_tracker::last_same_point(
             crate::kernel::resource_tracker::Resource::Block(&block),
@@ -2381,7 +2414,7 @@ fn a_session_reset_empties_the_block_epoch_memo() {
                 block: PointerBlock::Concrete("local:f:i".to_string()),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(MachineTerm::constant(1)),
         );
     crate::kernel::resource_tracker::last_same_point(
         crate::kernel::resource_tracker::Resource::Block(&PointerBlock::ExternalArgument),
@@ -2413,7 +2446,7 @@ fn a_store_forgets_the_wider_cell_whose_bytes_it_overwrites() {
     let bare = PureFactContext::new();
     let wide = CMemory::new().with_block("arg-memory", 32).store(
         arc_pointer(0),
-        CValue::Int64(MachineTerm::int64_constant(5)),
+        ProgramValue::Int64(MachineTerm::int64_constant(5)),
     );
 
     // Above the base, where the address test alone says "separate": the
@@ -2450,21 +2483,30 @@ fn a_store_forgets_the_wider_cell_whose_bytes_it_overwrites() {
         .store(arc_pointer(8), crate::kernel::uint8(7));
     assert_eq!(
         after.known_value(&arc_pointer(0)),
-        Some(CValue::Int64(MachineTerm::int64_constant(5))),
+        Some(ProgramValue::Int64(MachineTerm::int64_constant(5))),
         "a write past the int64's last byte leaves it readable"
     );
 
     // The symmetric direction: a wide write over the narrow cells it covers.
     let narrow = CMemory::new()
         .with_block("arg-memory", 32)
-        .store(arc_pointer(0), CValue::Int32(MachineTerm::constant(1)))
-        .store(arc_pointer(4), CValue::Int32(MachineTerm::constant(2)))
-        .store(arc_pointer(8), CValue::Int32(MachineTerm::constant(3)));
+        .store(
+            arc_pointer(0),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        )
+        .store(
+            arc_pointer(4),
+            ProgramValue::Int32(MachineTerm::constant(2)),
+        )
+        .store(
+            arc_pointer(8),
+            ProgramValue::Int32(MachineTerm::constant(3)),
+        );
     let after = narrow
         .without_possible_aliasing_cells(&arc_pointer(0), 8, &bare)
         .store(
             arc_pointer(0),
-            CValue::Int64(MachineTerm::int64_constant(9)),
+            ProgramValue::Int64(MachineTerm::int64_constant(9)),
         );
     assert_eq!(
         after.known_value(&arc_pointer(4)),
@@ -2473,7 +2515,7 @@ fn a_store_forgets_the_wider_cell_whose_bytes_it_overwrites() {
     );
     assert_eq!(
         after.known_value(&arc_pointer(8)),
-        Some(CValue::Int32(MachineTerm::constant(3))),
+        Some(ProgramValue::Int32(MachineTerm::constant(3))),
         "an eight-byte write at the base stops before the int32 eight bytes up"
     );
 }
@@ -2491,7 +2533,7 @@ fn a_store_forgets_the_wider_cell_whose_bytes_it_overwrites() {
 fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
     let base = CMemory::new().with_block("arg-memory", 32);
     let read = arc_pointer(0);
-    let canonical_equal_across_store_at = |offset: i64, value: CValue| {
+    let canonical_equal_across_store_at = |offset: i64, value: ProgramValue| {
         let stored = base.clone().store(arc_pointer(offset), value);
         crate::kernel::reasoning::canonical_memory_for_pointer_load(&base, &read)
             == crate::kernel::reasoning::canonical_memory_for_pointer_load(&stored, &read)
@@ -2507,7 +2549,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
         );
     }
     assert!(
-        !canonical_equal_across_store_at(4, CValue::Int32(MachineTerm::constant(7))),
+        !canonical_equal_across_store_at(4, ProgramValue::Int32(MachineTerm::constant(7))),
         "an int32 cell four bytes above the load is inside a \
          sixteen-byte read of it and must not be dropped"
     );
@@ -2516,7 +2558,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
         "an int16 cell six bytes above the load is inside an eight-byte read"
     );
     assert!(
-        !canonical_equal_across_store_at(0, CValue::Int64(MachineTerm::int64_constant(7))),
+        !canonical_equal_across_store_at(0, ProgramValue::Int64(MachineTerm::int64_constant(7))),
         "a cell at the loaded pointer itself is never disjoint from the load"
     );
 
@@ -2526,18 +2568,18 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
         "a one-byte cell one byte below the load ends where the load starts"
     );
     assert!(
-        !canonical_equal_across_store_at(-4, CValue::Int64(MachineTerm::int64_constant(7))),
+        !canonical_equal_across_store_at(-4, ProgramValue::Int64(MachineTerm::int64_constant(7))),
         "an int64 cell four bytes below the load covers the load's first four \
          bytes and must not be dropped"
     );
     assert!(
-        canonical_equal_across_store_at(-8, CValue::Int64(MachineTerm::int64_constant(7))),
+        canonical_equal_across_store_at(-8, ProgramValue::Int64(MachineTerm::int64_constant(7))),
         "an int64 cell eight bytes below the load ends where the load starts"
     );
     assert!(
         !canonical_equal_across_store_at(
             -4,
-            CValue::Pointer(CPointerValue::new(arc_pointer(0), CType::Int32Pointer))
+            ProgramValue::Pointer(PointerValue::new(arc_pointer(0), ProgramType::Int32Pointer))
         ),
         "a stored pointer is eight bytes, so one four bytes below the load \
          covers the load's first four bytes"
@@ -2546,7 +2588,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
     // Eight bytes remains inside an unknown read; sixteen is outside every
     // scalar read and may be dropped.
     assert!(
-        !canonical_equal_across_store_at(8, CValue::Int32(MachineTerm::constant(7))),
+        !canonical_equal_across_store_at(8, ProgramValue::Int32(MachineTerm::constant(7))),
         "a cell eight bytes above an unknown load is still inside its maximum width"
     );
     assert!(
@@ -3068,8 +3110,8 @@ fn constant_normalization_bridges_a_load_across_a_call() {
 }
 
 fn seeded_pointer_read_context(
-    old: &SharedCMemory,
-    current: &SharedCMemory,
+    old: &SharedMemory,
+    current: &SharedMemory,
     address: &Pointer,
     alias: &Pointer,
 ) -> (PureFactContext, Pointer, Pointer) {
@@ -3098,7 +3140,7 @@ fn seeded_pointer_read_evidence_is_local_full_width_and_retargeting_safe() {
         .memory()
         .clone()
         .store(a.offset_by_bytes(32), int32(1))
-        .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, old.clone());
+        .with_seeded_cells(a.clone(), 4, ProgramType::Int32, 0, 2, old.clone());
     let current = intern_c_memory(seeded);
     let (context, left, right) = seeded_pointer_read_context(&old, &current, &a, &b);
     let sibling = context.clone();
@@ -3134,27 +3176,27 @@ fn seeded_pointer_read_evidence_refuses_partial_changed_and_unknown_footprints()
         .memory()
         .clone()
         .store(a.offset_by_bytes(32), int32(1))
-        .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, old.clone());
+        .with_seeded_cells(a.clone(), 4, ProgramType::Int32, 0, 2, old.clone());
     let changed_source = intern_c_memory(old.memory().clone().store(a.clone(), int32(7)));
     for (case, current) in [
         old.memory()
             .clone()
             .store(a.offset_by_bytes(32), int32(1))
-            .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 1, old.clone()),
+            .with_seeded_cells(a.clone(), 4, ProgramType::Int32, 0, 1, old.clone()),
         old.memory()
             .clone()
             .store(a.offset_by_bytes(32), int32(1))
-            .with_seeded_cells(a.clone(), 4, CType::Int32, 1, 2, old.clone()),
+            .with_seeded_cells(a.clone(), 4, ProgramType::Int32, 1, 2, old.clone()),
         old.memory()
             .clone()
-            .with_constant_run(a.clone(), CType::Int32, 2, int32(0))
+            .with_constant_run(a.clone(), ProgramType::Int32, 2, int32(0))
             .unwrap(),
         full.clone().store(a.offset_by_bytes(4), int32(7)),
         full.store(unknown, int32(7)),
         old.memory()
             .clone()
             .store(a.offset_by_bytes(32), int32(1))
-            .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, changed_source),
+            .with_seeded_cells(a.clone(), 4, ProgramType::Int32, 0, 2, changed_source),
     ]
     .into_iter()
     .enumerate()
@@ -3192,8 +3234,8 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
     );
     assert!(context.equality_graph.knows_condition(
         &ConditionTerm::pointer_value_equal(
-            CPointerValue::new(named.clone(), CType::Int32Pointer),
-            CPointerValue::new(observed.clone(), CType::Int32Pointer),
+            PointerValue::new(named.clone(), ProgramType::Int32Pointer),
+            PointerValue::new(observed.clone(), ProgramType::Int32Pointer),
         ),
         true
     ));
@@ -3204,7 +3246,7 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
         source
             .memory()
             .clone()
-            .store(address.clone(), CValue::pointer(Pointer::null())),
+            .store(address.clone(), ProgramValue::pointer(Pointer::null())),
     );
     assert!(
         !context.pointers_known_equal(&named, &Pointer::loaded_value(&changed, &address)),
@@ -3220,7 +3262,7 @@ fn pointer_read_producer_closes_seeded_snapshot_equality_in_the_shared_graph() {
     let seeded =
         old.memory()
             .clone()
-            .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, old.clone());
+            .with_seeded_cells(a.clone(), 4, ProgramType::Int32, 0, 2, old.clone());
     let current = intern_c_memory(seeded);
     let context = PureFactContext::new();
     let left = Pointer::loaded_value(&old, &b);
@@ -3265,7 +3307,12 @@ fn pointer_read_producer_admits_one_separate_store_into_the_shared_graph() {
     assert!(pointers_proven_equal_for_memory_resolution(
         &left, &right, &context
     ));
-    let argument = |value| AlgebraicValue::C(CValue::typed_pointer(value, CType::Int32Pointer));
+    let argument = |value| {
+        AlgebraicValue::C(ProgramValue::typed_pointer(
+            value,
+            ProgramType::Int32Pointer,
+        ))
+    };
     assert!(
         resource_arguments_proven_equal(&argument(left), &argument(right), &context),
         "fold's existing argument checker must see the same graph equality"
@@ -3374,7 +3421,7 @@ fn pointer_read_producer_admits_recorded_cache_forgetting() {
     let address = arc_pointer(0);
     let seeded = intern_c_memory(CMemory::new().with_block("arg-memory", 32).store(
         address.clone(),
-        CValue::Int64(MachineTerm::int64_constant(7)),
+        ProgramValue::Int64(MachineTerm::int64_constant(7)),
     ));
     let context = PureFactContext::new();
     let forgotten = intern_c_memory(seeded.memory().without_possible_aliasing_cells(
@@ -3416,7 +3463,7 @@ fn pointer_read_cache_forgetting_does_not_bridge_writes_havoc_or_unrecorded_prun
     let address = arc_pointer(0);
     let seeded = intern_c_memory(CMemory::new().with_block("arg-memory", 32).store(
         address.clone(),
-        CValue::Int64(MachineTerm::int64_constant(9)),
+        ProgramValue::Int64(MachineTerm::int64_constant(9)),
     ));
     let context = PureFactContext::new();
     let forgotten = intern_c_memory(seeded.memory().without_possible_aliasing_cells(
@@ -3464,11 +3511,18 @@ fn pointer_read_congruence_composes_materialization_and_forgetting_at_production
     let memory = original
         .memory()
         .clone()
-        .with_seeded_cells(address.clone(), 4, CType::Int32, 0, 2, original.clone())
+        .with_seeded_cells(
+            address.clone(),
+            4,
+            ProgramType::Int32,
+            0,
+            2,
+            original.clone(),
+        )
         .with_seeded_cells(
             address.offset_by_bytes(8),
             4,
-            CType::Int32,
+            ProgramType::Int32,
             0,
             2,
             original.clone(),
@@ -3476,7 +3530,7 @@ fn pointer_read_congruence_composes_materialization_and_forgetting_at_production
         .with_seeded_cells(
             address.offset_by_bytes(16),
             4,
-            CType::Int32,
+            ProgramType::Int32,
             0,
             1,
             original.clone(),
@@ -3504,7 +3558,7 @@ fn read_identity_refuses_changed_sources_constant_runs_and_unrecorded_pruning() 
     let from_changed = intern_c_memory(original.memory().clone().with_seeded_cells(
         address.clone(),
         4,
-        CType::Int32,
+        ProgramType::Int32,
         0,
         2,
         changed.clone(),
@@ -3512,7 +3566,7 @@ fn read_identity_refuses_changed_sources_constant_runs_and_unrecorded_pruning() 
     let after_changed = intern_c_memory(changed.memory().clone().with_seeded_cells(
         address.offset_by_bytes(8),
         4,
-        CType::Int32,
+        ProgramType::Int32,
         0,
         2,
         original.clone(),
@@ -3521,7 +3575,7 @@ fn read_identity_refuses_changed_sources_constant_runs_and_unrecorded_pruning() 
         original
             .memory()
             .clone()
-            .with_constant_run(address.clone(), CType::Int32, 2, int32(0))
+            .with_constant_run(address.clone(), ProgramType::Int32, 2, int32(0))
             .unwrap(),
     );
     let context = PureFactContext::new();
@@ -3543,7 +3597,7 @@ fn read_identity_is_immutable_when_a_snapshot_was_interned_before_its_edge() {
     let run = CellRun::new(
         address,
         4,
-        CType::Int32,
+        ProgramType::Int32,
         2,
         original.clone(),
         crate::kernel::primitives::IndexIntervals::default(),
@@ -3581,7 +3635,7 @@ fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
         offset: PointerOffsetTerm::Constant(offset),
     };
     let base = CMemory::new().with_block(block, 16);
-    let stored_at = |write: Pointer, value: CValue| {
+    let stored_at = |write: Pointer, value: ProgramValue| {
         crate::kernel::intern_c_memory_ref(
             &base
                 .clone()
@@ -3589,7 +3643,7 @@ fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
                 .store(write, value),
         )
     };
-    let resolves_to_seven = |memory: &SharedCMemory, read: &Pointer| {
+    let resolves_to_seven = |memory: &SharedMemory, read: &Pointer| {
         let seven = MachineTerm::constant(7);
         let load = MachineTerm::MemoryLoad(
             memory.clone(),
@@ -3622,7 +3676,7 @@ fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
 
     let narrow_read = at(9);
     crate::kernel::eval::declare_load_access_width(&narrow_read, 1);
-    let wide_store = stored_at(at(8), CValue::Int32(MachineTerm::constant(7)));
+    let wide_store = stored_at(at(8), ProgramValue::Int32(MachineTerm::constant(7)));
     assert!(
         !resolves_to_seven(&wide_store, &narrow_read),
         "a four-byte store around a one-byte read holds other bytes than that read returns"
@@ -3630,7 +3684,7 @@ fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
 
     let exact_read = at(4);
     crate::kernel::eval::declare_load_access_width(&exact_read, 4);
-    let exact_store = stored_at(at(4), CValue::Int32(MachineTerm::constant(7)));
+    let exact_store = stored_at(at(4), ProgramValue::Int32(MachineTerm::constant(7)));
     assert!(
         resolves_to_seven(&exact_store, &exact_read),
         "a store of the read's own address and width is the read's value"
@@ -3668,7 +3722,7 @@ fn an_unknown_pointer_call_drops_a_local_cache_without_separation() {
     };
     let base = CMemory::new()
         .with_block("local:unknown-call-target", 16)
-        .store(cell.clone(), CValue::Int32(MachineTerm::constant(1)));
+        .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(1)));
     let ranges = [memory_range(Pointer::symbolic(Variable(977_002)), 0, 1)];
     let assumptions = PureFactContext::new();
     let after = base
@@ -3676,7 +3730,7 @@ fn an_unknown_pointer_call_drops_a_local_cache_without_separation() {
         .with_call_memory_havoc(Variable(977_003), &ranges, &assumptions, None);
     assert!(!after.has_known_cell_at(&cell));
     assert!(after.matches_call_memory_havoc_result(&base, &ranges, &assumptions, None));
-    let forged = after.store(cell, CValue::Int32(MachineTerm::constant(1)));
+    let forged = after.store(cell, ProgramValue::Int32(MachineTerm::constant(1)));
     assert!(!forged.matches_call_memory_havoc_result(&base, &ranges, &assumptions, None));
 }
 
@@ -3730,7 +3784,7 @@ fn kept_constant_offset_fields_have_checkable_call_havoc_evidence() {
         ))
         .is_none()
     );
-    let overwritten = after.store(cell.clone(), CValue::Int32(MachineTerm::constant(43)));
+    let overwritten = after.store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(43)));
     assert!(!evidence.checks(
         &Proposition::ConditionIs(ConditionTerm::equal(load(&overwritten), load(&base)), true),
         &assumptions
@@ -3876,9 +3930,9 @@ fn initialized_array_copy_preserves_source_history_with_constant_work() {
                 .clone()
                 .write_scalar_array_region(
                     &target,
-                    CType::UInt32,
+                    ProgramType::UInt32,
                     count,
-                    CValue::pointer(source.clone()),
+                    ProgramValue::pointer(source.clone()),
                     true,
                     false,
                     &assumptions,
@@ -3904,7 +3958,7 @@ fn initialized_array_copy_preserves_source_history_with_constant_work() {
         // Metadata records cannot hide an actual overwrite of the source.
         let changed = copied
             .clone()
-            .store(source.clone(), CValue::UInt32(9u32.into()));
+            .store(source.clone(), ProgramValue::UInt32(9u32.into()));
         assert!(!checked_origin_load_equality(
             &before,
             &load(&changed),
@@ -3935,13 +3989,21 @@ fn seeded_scalar_no_write_witness_rejects_changed_or_represented_values() {
     let assumptions = PureFactContext::new();
     let witness = MemoryDagHopJustification::SeededLoadsOfBase;
     for (source, mode, ty, width) in [
-        (changed.clone(), RunValueMode::Load, CType::Int32, 4),
-        (changed, RunValueMode::Load, CType::Int32Pointer, 8),
-        (original.clone(), RunValueMode::Load, CType::Int32Pointer, 4),
+        (changed.clone(), RunValueMode::Load, ProgramType::Int32, 4),
+        (changed, RunValueMode::Load, ProgramType::Int32Pointer, 8),
         (
             original.clone(),
-            RunValueMode::Constant(CValue::typed_pointer(other.clone(), CType::Int32Pointer)),
-            CType::Int32Pointer,
+            RunValueMode::Load,
+            ProgramType::Int32Pointer,
+            4,
+        ),
+        (
+            original.clone(),
+            RunValueMode::Constant(ProgramValue::typed_pointer(
+                other.clone(),
+                ProgramType::Int32Pointer,
+            )),
+            ProgramType::Int32Pointer,
             8,
         ),
         (
@@ -3949,13 +4011,13 @@ fn seeded_scalar_no_write_witness_rejects_changed_or_represented_values() {
             RunValueMode::Copy {
                 source_base: other.clone(),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
             8,
         ),
         (
             original.clone(),
             RunValueMode::Constant(int32(7)),
-            CType::Int32,
+            ProgramType::Int32,
             4,
         ),
         (
@@ -3963,11 +4025,11 @@ fn seeded_scalar_no_write_witness_rejects_changed_or_represented_values() {
             RunValueMode::Copy {
                 source_base: other.clone(),
             },
-            CType::Int32,
+            ProgramType::Int32,
             4,
         ),
-        (original.clone(), RunValueMode::Load, CType::Bool, 1),
-        (original.clone(), RunValueMode::Load, CType::Int32, 1),
+        (original.clone(), RunValueMode::Load, ProgramType::Bool, 1),
+        (original.clone(), RunValueMode::Load, ProgramType::Int32, 1),
     ] {
         let edge = CMemoryDerivation::CellsSeeded {
             base: original.clone(),
@@ -4004,7 +4066,7 @@ fn recording_a_fresh_snapshot_keeps_the_derivation_generation() {
     };
     let base = CMemory::new().with_block("generation-block", 8);
     let before = crate::kernel::primitives::c_memory_derivation_generation();
-    let stored = base.store(cell.clone(), CValue::Int32(MachineTerm::constant(1)));
+    let stored = base.store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(1)));
     assert!(
         crate::kernel::intern_c_memory_ref(&stored)
             .derivation()
@@ -4028,9 +4090,12 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = intern_c_memory(CMemory::new());
     let p = Pointer::symbolic(Variable(998_710));
-    let q = CPointerValue::new(Pointer::symbolic(Variable(998_711)), CType::Int32Pointer);
-    let Some(CValue::Pointer(child)) =
-        crate::kernel::eval::symbolic_load_value(&before, &p, CType::Int32Pointer)
+    let q = PointerValue::new(
+        Pointer::symbolic(Variable(998_711)),
+        ProgramType::Int32Pointer,
+    );
+    let Some(ProgramValue::Pointer(child)) =
+        crate::kernel::eval::symbolic_load_value(&before, &p, ProgramType::Int32Pointer)
     else {
         panic!("pointer load")
     };
@@ -4079,12 +4144,12 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
         before.memory(),
         joined.memory(),
         q.pointer(),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         &[effect],
         &facts,
     )
     .expect("the selected join footprint preserves the complete pointer");
-    let (CValue::Pointer(old), CValue::Pointer(new)) = (old, new) else {
+    let (ProgramValue::Pointer(old), ProgramValue::Pointer(new)) = (old, new) else {
         panic!("complete pointer observations");
     };
     let preserved = facts.clone().assume_proposition(equality);
@@ -4126,8 +4191,8 @@ fn seeded_scalar_read_keeps_its_predecessor_cell_version() {
     use crate::kernel::memory_provenance::{LoadHistory, recorded_load_history};
     let assumptions = PureFactContext::new();
     for (ty, bytes, kind) in [
-        (CType::Int32, 4, crate::kernel::LoadKind::Int32),
-        (CType::UInt64, 8, crate::kernel::LoadKind::Bits64),
+        (ProgramType::Int32, 4, crate::kernel::LoadKind::Int32),
+        (ProgramType::UInt64, 8, crate::kernel::LoadKind::Bits64),
     ] {
         let pointer = Pointer::symbolic(Variable(98_610 + u64::from(bytes)));
         crate::kernel::eval::declare_load_access_width(&pointer, bytes);
@@ -4179,16 +4244,18 @@ fn numeric_address_byte_gaps_preserve_cache_and_read_history() {
         let context = PureFactContext::new().assume_proposition(premise.clone());
         // Equal physical addresses do not grant pointer provenance.
         assert!(!context.pointers_known_equal(&q, &p.offset_by_bytes(shift)));
-        let before = intern_c_memory(
-            CMemory::new().store(p.clone(), CValue::UInt64(MachineTerm::uint64_constant(17))),
-        );
+        let before = intern_c_memory(CMemory::new().store(
+            p.clone(),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(17)),
+        ));
         let cache = before
             .memory()
             .without_possible_aliasing_cells(&q, 8, &context);
         assert_eq!(cache.has_known_cell_at(&p), shift >= 8, "gap {shift}");
-        let after = intern_c_memory(
-            cache.store(q.clone(), CValue::UInt64(MachineTerm::uint64_constant(9))),
-        );
+        let after = intern_c_memory(cache.store(
+            q.clone(),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
+        ));
         let history = recorded_load_history(&before, &after, &p, LoadKind::Bits64, &context);
         assert_eq!(
             matches!(history, LoadHistory::OneVersion(_)),
@@ -4267,15 +4334,18 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
     );
     let context = address.clone().assume_proposition(owners.clone());
     assert!(!context.address_connected_objects(&q).is_empty());
-    let before = intern_c_memory(
-        CMemory::new().store(p.clone(), CValue::UInt64(MachineTerm::uint64_constant(17))),
-    );
+    let before = intern_c_memory(CMemory::new().store(
+        p.clone(),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(17)),
+    ));
     let cache = before
         .memory()
         .without_possible_aliasing_cells(&q, 8, &context);
     assert!(cache.has_known_cell_at(&p));
-    let after =
-        intern_c_memory(cache.store(q.clone(), CValue::UInt64(MachineTerm::uint64_constant(9))));
+    let after = intern_c_memory(cache.store(
+        q.clone(),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
+    ));
     assert!(matches!(
         recorded_load_history(&before, &after, &p, LoadKind::Bits64, &context),
         LoadHistory::OneVersion(_)
@@ -4309,7 +4379,7 @@ fn seeded_mixed_width_runs_match_per_cell_caching() {
             let word = CellRun::new(
                 base,
                 8,
-                CType::UInt64,
+                ProgramType::UInt64,
                 12,
                 source.clone(),
                 IndexIntervals::default(),
@@ -4317,7 +4387,7 @@ fn seeded_mixed_width_runs_match_per_cell_caching() {
             let bytes = CellRun::new(
                 other,
                 1,
-                CType::UInt8,
+                ProgramType::UInt8,
                 12,
                 source,
                 IndexIntervals::default(),
@@ -4367,8 +4437,8 @@ fn seeded_mixed_width_aliases_still_invalidate_overlapping_reads() {
     let bytes = address(98_771);
     let source = intern_c_memory(CMemory::new());
     let memory = CMemory::new()
-        .with_seeded_cells(bytes.clone(), 1, CType::UInt8, 0, 16, source.clone())
-        .with_seeded_cells(word.clone(), 8, CType::UInt64, 0, 1, source);
+        .with_seeded_cells(bytes.clone(), 1, ProgramType::UInt8, 0, 16, source.clone())
+        .with_seeded_cells(word.clone(), 8, ProgramType::UInt64, 0, 1, source);
     assert!(memory.cells.contains_key(&word));
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::pointer_equal(word.clone(), bytes.clone()),
@@ -4410,10 +4480,10 @@ fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
         before
             .memory()
             .clone()
-            .store(right, CValue::UInt64(MachineTerm::uint64_constant(0))),
+            .store(right, ProgramValue::UInt64(MachineTerm::uint64_constant(0))),
     );
     let read = left.offset_by_bytes(8);
-    let load = |memory: &SharedCMemory, pointer: &Pointer| {
+    let load = |memory: &SharedMemory, pointer: &Pointer| {
         MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
     };
     let old = load(&before, &read);
@@ -4473,10 +4543,10 @@ fn stated_separation_frames_equal_model_and_program_origins() {
     let before = intern_c_memory(CMemory::new());
     let after = intern_c_memory(before.memory().clone().store(
         node.offset_by_bytes(16),
-        CValue::UInt64(MachineTerm::uint64_constant(19)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(19)),
     ));
     let read = entry.offset_by_bytes(8);
-    let load = |memory: &SharedCMemory| {
+    let load = |memory: &SharedMemory| {
         MachineTerm::MemoryLoad(memory.clone(), Box::new(read.clone()), LoadKind::Bits64)
     };
     let original = PureFactContext::new().assume_proposition(separation.clone());
@@ -4558,7 +4628,7 @@ fn an_abstract_value_seeded_unchanged_is_its_source_snapshots_load() {
     let seeded = original.memory().clone().with_seeded_cells(
         address.clone(),
         4,
-        CType::Int32,
+        ProgramType::Int32,
         0,
         4,
         original.clone(),
@@ -4577,7 +4647,7 @@ fn an_abstract_value_seeded_unchanged_is_its_source_snapshots_load() {
     let partial = original.memory().clone().with_seeded_cells(
         address.clone(),
         4,
-        CType::Int32,
+        ProgramType::Int32,
         0,
         1,
         original.clone(),
@@ -4609,7 +4679,7 @@ fn an_abstract_value_fact_carries_across_snapshots_only_with_frame_evidence() {
         node: AlgebraicTermNode::Variable(Variable(98_481)),
     };
     let read = |memory: &CMemory| {
-        let CValue::Parameter(load) = AlgebraicTermNode::parameter_load(
+        let ProgramValue::Parameter(load) = AlgebraicTermNode::parameter_load(
             crate::kernel::intern_c_memory(memory.clone()),
             field.clone(),
             parameter,
@@ -4642,7 +4712,7 @@ fn an_abstract_value_fact_carries_across_snapshots_only_with_frame_evidence() {
         &before,
         &after,
         &field,
-        CType::Parameter(parameter),
+        ProgramType::Parameter(parameter),
         &[effect],
         &PureFactContext::new(),
     )
@@ -4669,7 +4739,7 @@ fn abstract_reads_follow_address_equalities_in_the_shared_graph() {
     let left = Pointer::symbolic(Variable(98_490));
     let right = Pointer::symbolic(Variable(98_491));
     let parameter = TypeParameterName::intern("ReadCongruenceT");
-    let read = |pointer: &Pointer, memory: &SharedCMemory| AlgebraicTerm {
+    let read = |pointer: &Pointer, memory: &SharedMemory| AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
             memory: memory.clone(),
@@ -4746,7 +4816,7 @@ fn abstract_read_naming_retains_its_selected_width_origin() {
             ),
     );
     let parameter = TypeParameterName::intern("ReadOriginT");
-    let CValue::Parameter(named) =
+    let ProgramValue::Parameter(named) =
         AlgebraicTermNode::parameter_load(source.clone(), address.clone(), parameter)
     else {
         panic!("parameter read");
@@ -4795,10 +4865,10 @@ fn program_store_cache_cleanup_records_only_the_original_store_edge() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = arc_pointer(0);
         let root = CMemory::new().with_block("arg-memory", 32);
-        let before = intern_c_memory(
-            root.clone()
-                .store(field.clone(), CValue::Int64(MachineTerm::int64_constant(7))),
-        );
+        let before = intern_c_memory(root.clone().store(
+            field.clone(),
+            ProgramValue::Int64(MachineTerm::int64_constant(7)),
+        ));
         let write = if partial {
             field.offset_by_bytes(4)
         } else {

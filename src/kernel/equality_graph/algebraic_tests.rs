@@ -51,12 +51,12 @@ fn condition(a: &AlgebraicTerm, b: &AlgebraicTerm, truth: bool) -> Proposition {
     )
 }
 fn scalar(id: u64) -> AlgebraicValue {
-    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(Variable(id))))
+    AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(Variable(id))))
 }
 
 #[test]
 fn algebraic_closure_connects_checked_aliases_in_both_orientations() {
-    let ty = model_type("Model", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type("Model", AlgebraicValueType::C(ProgramType::Int32));
     let (a, b, c) = (variable(&ty, 1), variable(&ty, 2), variable(&ty, 3));
     let empty = constructor(&ty, "Empty", vec![]);
     let node = constructor(&ty, "Node", vec![scalar(4)]);
@@ -78,10 +78,10 @@ fn algebraic_closure_connects_checked_aliases_in_both_orientations() {
 
 #[test]
 fn algebraic_closure_preserves_types_constructors_payloads_and_argument_order() {
-    let ty = model_type("Model", AlgebraicValueType::C(CType::Int32));
-    let same = model_type("Model", AlgebraicValueType::C(CType::Int32));
-    let other = model_type("Other", AlgebraicValueType::C(CType::Int32));
-    let changed = model_type("Model", AlgebraicValueType::C(CType::UInt32));
+    let ty = model_type("Model", AlgebraicValueType::C(ProgramType::Int32));
+    let same = model_type("Model", AlgebraicValueType::C(ProgramType::Int32));
+    let other = model_type("Other", AlgebraicValueType::C(ProgramType::Int32));
+    let changed = model_type("Model", AlgebraicValueType::C(ProgramType::UInt32));
     let a = variable(&ty, 10);
     let node = constructor(&ty, "Node", vec![scalar(11)]);
     let mut graph = EqualityGraph::default();
@@ -124,7 +124,7 @@ fn algebraic_closure_preserves_types_constructors_payloads_and_argument_order() 
 
 #[test]
 fn algebraic_closure_propagates_late_model_and_scalar_merges_through_calls() {
-    let ty = model_type("Model", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type("Model", AlgebraicValueType::C(ProgramType::Int32));
     let (a, b) = (variable(&ty, 20), variable(&ty, 21));
     let call = |v| MachineTerm::ClickFunctionApplication {
         name: "model_size".into(),
@@ -146,7 +146,7 @@ fn algebraic_closure_propagates_late_model_and_scalar_merges_through_calls() {
 
 #[test]
 fn algebraic_closure_keeps_branch_scope() {
-    let ty = model_type("Model", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type("Model", AlgebraicValueType::C(ProgramType::Int32));
     let (a, b) = (variable(&ty, 30), variable(&ty, 31));
     let empty = constructor(&ty, "Empty", vec![]);
     let edge = eq(&a, &b);
@@ -173,11 +173,11 @@ fn algebraic_closure_keeps_branch_scope() {
 
 #[test]
 fn algebraic_closure_generic_arguments_and_constructor_field_order_remain_typed() {
-    let mut ty = model_type("Pair", AlgebraicValueType::C(CType::Int32));
-    ty.arguments = vec![AlgebraicValueType::C(CType::Int32)];
+    let mut ty = model_type("Pair", AlgebraicValueType::C(ProgramType::Int32));
+    ty.arguments = vec![AlgebraicValueType::C(ProgramType::Int32)];
     ty.variants = vec![AlgebraicVariantType {
         name: "Node".into(),
-        fields: vec![AlgebraicValueType::C(CType::Int32); 2],
+        fields: vec![AlgebraicValueType::C(ProgramType::Int32); 2],
     }]
     .into();
     ty.schemas = Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
@@ -185,7 +185,7 @@ fn algebraic_closure_generic_arguments_and_constructor_field_order_remain_typed(
         ty.variants.clone(),
     )])));
     let mut other = ty.clone();
-    other.arguments = vec![AlgebraicValueType::C(CType::UInt32)];
+    other.arguments = vec![AlgebraicValueType::C(ProgramType::UInt32)];
     other.schemas = Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
         other.value_type(),
         other.variants.clone(),
@@ -204,7 +204,10 @@ fn algebraic_closure_generic_arguments_and_constructor_field_order_remain_typed(
 
 #[test]
 fn algebraic_closure_pointer_payloads_require_full_value_equality() {
-    let ty = model_type("PointerModel", AlgebraicValueType::C(CType::Int32Pointer));
+    let ty = model_type(
+        "PointerModel",
+        AlgebraicValueType::C(ProgramType::Int32Pointer),
+    );
     let pointer = |name: &str| Pointer {
         block: name.into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -213,9 +216,9 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
         constructor(
             &ty,
             "Node",
-            vec![AlgebraicValue::C(CValue::Pointer(CPointerValue::new(
+            vec![AlgebraicValue::C(ProgramValue::Pointer(PointerValue::new(
                 p,
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             )))],
         )
     };
@@ -223,16 +226,16 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
     graph.add_equality(&pointer("a"), &pointer("b"));
     assert!(!graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
     graph.add_pointer_value_equality(
-        &CPointerValue::new(pointer("a"), CType::Int32Pointer),
-        &CPointerValue::new(pointer("b"), CType::Int32Pointer),
+        &PointerValue::new(pointer("a"), ProgramType::Int32Pointer),
+        &PointerValue::new(pointer("b"), ProgramType::Int32Pointer),
     );
     assert!(graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
 }
 
 #[test]
 fn algebraic_closure_retains_each_schema_allocation_behind_a_memo_key() {
-    let first = model_type("Model", AlgebraicValueType::C(CType::Int32));
-    let second = model_type("Model", AlgebraicValueType::C(CType::Int32));
+    let first = model_type("Model", AlgebraicValueType::C(ProgramType::Int32));
+    let second = model_type("Model", AlgebraicValueType::C(ProgramType::Int32));
     assert!(!Arc::ptr_eq(&first.variants, &second.variants));
     let weak = Arc::downgrade(&second.variants);
     let graph = EqualityGraph::default();
@@ -249,7 +252,7 @@ fn algebraic_closure_retains_each_schema_allocation_behind_a_memo_key() {
 #[test]
 fn scalar_conflicts_follow_model_congruence() {
     let _session = crate::kernel::VerificationSession::enter();
-    let ty = model_type("ConflictModel", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type("ConflictModel", AlgebraicValueType::C(ProgramType::Int32));
     let (a, b) = (variable(&ty, 900), variable(&ty, 901));
     let getter = |v| MachineTerm::ClickFunctionApplication {
         name: "pending".into(),
@@ -313,15 +316,15 @@ fn scalar_read_conflicts_require_the_same_snapshot() {
     };
     let before = CMemory::new().with_block("cell", 4).store(
         p.clone(),
-        CValue::Int32(MachineTerm::Variable(Variable(500))),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(500))),
     );
     let after = before.clone().store(
         p.clone(),
-        CValue::Int32(MachineTerm::Variable(Variable(501))),
+        ProgramValue::Int32(MachineTerm::Variable(Variable(501))),
     );
     let memory = crate::kernel::intern_c_memory(before);
     let changed = crate::kernel::intern_c_memory(after);
-    let read = |memory: crate::kernel::SharedCMemory| {
+    let read = |memory: crate::kernel::SharedMemory| {
         MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &p,
@@ -352,7 +355,10 @@ mod scaling_tests {
 
 #[test]
 fn model_constructor_lookup_uses_shared_classes_and_scoped_evidence() {
-    let ty = model_type("ConstructorLookup", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type(
+        "ConstructorLookup",
+        AlgebraicValueType::C(ProgramType::Int32),
+    );
     let (a, b, c) = (variable(&ty, 71), variable(&ty, 72), variable(&ty, 73));
     let ctor = constructor(&ty, "Node", vec![scalar(17)]);
     for reverse in [false, true] {
@@ -375,7 +381,7 @@ fn model_constructor_lookup_uses_shared_classes_and_scoped_evidence() {
     }
     let other_ty = model_type(
         "OtherConstructorLookup",
-        AlgebraicValueType::C(CType::Int32),
+        AlgebraicValueType::C(ProgramType::Int32),
     );
     let other = variable(&other_ty, 71);
     let joined = PureFactContext::new().assume_proposition(eq(&a, &ctor));
@@ -387,7 +393,10 @@ fn model_constructor_lookup_prefers_a_stated_constructor_on_an_infeasible_path()
     // `__rb_insert` matches `c.model` as `Left` on a path where `c.model` is
     // also derived to be `Top`. The class keeps one witness, so the stated
     // constructor must win whichever reached the class first.
-    let ty = model_type("StatedConstructor", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type(
+        "StatedConstructor",
+        AlgebraicValueType::C(ProgramType::Int32),
+    );
     let (model, alias) = (variable(&ty, 81), variable(&ty, 82));
     let empty = constructor(&ty, "Empty", vec![]);
     let node = constructor(&ty, "Node", vec![scalar(18)]);
@@ -414,7 +423,7 @@ fn model_constructor_lookup_prefers_a_stated_constructor_on_an_infeasible_path()
 #[test]
 fn constructor_classes_join_fields_and_refute_distinct_variants() {
     let _session = crate::kernel::VerificationSession::enter();
-    let ty = model_type("Injective", AlgebraicValueType::C(CType::Int32));
+    let ty = model_type("Injective", AlgebraicValueType::C(ProgramType::Int32));
     let (model, alias) = (variable(&ty, 90), variable(&ty, 91));
     let first = eq(&model, &constructor(&ty, "Node", vec![scalar(92)]));
     let second = eq(&constructor(&ty, "Node", vec![scalar(93)]), &alias);
@@ -467,9 +476,10 @@ fn algebraic_closure_abstract_payloads_follow_their_terms() {
     let parameter = AlgebraicType::parameter("T".into());
     let ty = model_type(
         "Maybe",
-        AlgebraicValueType::C(CType::Parameter(TypeParameterName::of(&parameter))),
+        AlgebraicValueType::C(ProgramType::Parameter(TypeParameterName::of(&parameter))),
     );
-    let payload = |id| AlgebraicValue::C(CValue::Parameter(Box::new(variable(&parameter, id))));
+    let payload =
+        |id| AlgebraicValue::C(ProgramValue::Parameter(Box::new(variable(&parameter, id))));
     let some = |id| constructor(&ty, "Node", vec![payload(id)]);
     let mut graph = EqualityGraph::default();
     assert!(!graph.are_algebraic_equal(&some(70), &some(71)));

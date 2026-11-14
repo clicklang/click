@@ -1055,7 +1055,7 @@ impl ResourceContextIndex {
 /// inside this loop would be work the rule does not need.
 fn memory_derivation_affects_footprint(
     derivation: &CMemoryDerivation,
-    produced: &crate::kernel::SharedCMemory,
+    produced: &crate::kernel::SharedMemory,
     footprint: &ResourceMemoryFootprint,
     evidence: &crate::kernel::resource_tracker::step_effect::Evidence<'_>,
 ) -> bool {
@@ -4181,7 +4181,7 @@ impl ResourceContext {
             };
             // A seeded run is the stores it stands for, each judged as one.
             let seeded = derivation.seeded_stores();
-            let stores: Vec<(&Pointer, &CValue)> = match (&*derivation, &seeded) {
+            let stores: Vec<(&Pointer, &ProgramValue)> = match (&*derivation, &seeded) {
                 (CMemoryDerivation::Store { pointer, value, .. }, _) => vec![(pointer, value)],
                 (CMemoryDerivation::CellsSeeded { .. }, Some(stores)) => stores
                     .iter()
@@ -8618,7 +8618,7 @@ fn instance_pointer_arguments(instance: &ResourceInstance) -> impl Iterator<Item
 /// The C pointer arguments among `arguments`, in order.
 fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<Item = &Pointer> {
     arguments.iter().filter_map(|argument| match argument {
-        AlgebraicValue::C(CValue::Pointer(pointer)) => Some(pointer.pointer()),
+        AlgebraicValue::C(ProgramValue::Pointer(pointer)) => Some(pointer.pointer()),
         _ => None,
     })
 }
@@ -8631,7 +8631,7 @@ fn algebraic_pointer_arguments(arguments: &[AlgebraicValue]) -> impl Iterator<It
 /// never normalize together.
 fn normalization_anchor(arguments: &[AlgebraicValue]) -> Option<&PointerBlock> {
     match arguments.first() {
-        Some(AlgebraicValue::C(CValue::Pointer(pointer)))
+        Some(AlgebraicValue::C(ProgramValue::Pointer(pointer)))
             if matches!(
                 pointer.pointer().block,
                 PointerBlock::Heap(_) | PointerBlock::Temporary(_)
@@ -8761,7 +8761,7 @@ impl OwnedMemberKey {
 /// The first argument of a token or composite when it is a pointer.
 fn normalization_root_pointer(arguments: &[AlgebraicValue]) -> Option<&Pointer> {
     match arguments.first() {
-        Some(AlgebraicValue::C(CValue::Pointer(pointer))) => Some(pointer.pointer()),
+        Some(AlgebraicValue::C(ProgramValue::Pointer(pointer))) => Some(pointer.pointer()),
         _ => None,
     }
 }
@@ -8950,8 +8950,9 @@ fn exact_resources_proven_equal(
             iterated_memories_proven_equal(left, right, assumptions)
         }
         (CResource::Publication(left), CResource::Publication(right)) => {
-            let pointer =
-                |pointer: &Pointer| -> AlgebraicValue { CValue::pointer(pointer.clone()).into() };
+            let pointer = |pointer: &Pointer| -> AlgebraicValue {
+                ProgramValue::pointer(pointer.clone()).into()
+            };
             left.side == right.side
                 && left.observed.is_none()
                 && right.observed.is_none()
@@ -9289,7 +9290,7 @@ mod zero_quantity_graph_tests {
             block: "zero-quantity".into(),
             offset: PointerOffsetTerm::scale_int32(index, 4),
         };
-        let load = |memory: &SharedCMemory, index| {
+        let load = |memory: &SharedMemory, index| {
             MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
@@ -9299,12 +9300,10 @@ mod zero_quantity_graph_tests {
             ))
         };
         let (a, b) = (var(90_101), var(90_102));
-        let after = crate::kernel::intern_c_memory(
-            before
-                .memory()
-                .clone()
-                .store(pointer(b.clone()), CValue::Int32(MachineTerm::constant(9))),
-        );
+        let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+            pointer(b.clone()),
+            ProgramValue::Int32(MachineTerm::constant(9)),
+        ));
         let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let source = required(sum(load(&before, a.clone())));
         let later = required(sum(load(&after, b.clone())));
@@ -12042,17 +12041,17 @@ impl CResourceFact {
         Self::View(CResource::Memory(range))
     }
 
-    pub fn own_composite(name: String, arguments: Vec<CValue>) -> Self {
+    pub fn own_composite(name: String, arguments: Vec<ProgramValue>) -> Self {
         let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
         Self::own(CResource::Composite { name, arguments })
     }
 
-    pub fn view_composite(name: String, arguments: Vec<CValue>) -> Self {
+    pub fn view_composite(name: String, arguments: Vec<ProgramValue>) -> Self {
         let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
         Self::View(CResource::Composite { name, arguments })
     }
 
-    pub fn own_token(name: String, arguments: Vec<CValue>) -> Self {
+    pub fn own_token(name: String, arguments: Vec<ProgramValue>) -> Self {
         let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
         Self::own(CResource::Token { name, arguments })
     }
@@ -12086,17 +12085,17 @@ impl CResourceFact {
 
     /// `allocation(base, bytes)` with the byte count in the extent's format.
     pub(in crate::kernel) fn own_heap_allocation(base: Pointer, extent: &HeapExtent) -> Self {
-        Self::own_designated_allocation(CPointerValue::new(base, CType::Int32Pointer), extent)
+        Self::own_designated_allocation(PointerValue::new(base, ProgramType::Int32Pointer), extent)
     }
 
     pub(in crate::kernel) fn own_designated_allocation(
-        base: CPointerValue,
+        base: PointerValue,
         extent: &HeapExtent,
     ) -> Self {
         Self::own_token(
             Self::ALLOCATION_RESOURCE_NAME.to_string(),
             vec![
-                CValue::Pointer(base.with_type(CType::Int32Pointer)),
+                ProgramValue::Pointer(base.with_type(ProgramType::Int32Pointer)),
                 extent.token_value(),
             ],
         )
@@ -12113,10 +12112,10 @@ impl CResourceFact {
         // The coverage range has the token's extent kind.
         let (base, bytes) = self.allocation_arguments()?;
         let range = match bytes {
-            CValue::Int32(bytes) => {
+            ProgramValue::Int32(bytes) => {
                 CMemoryRange::from_pointer_value(base, 0u32.into(), bytes.clone(), 1)
             }
-            CValue::UInt64(bytes) => CMemoryRange::from_pointer_value_wide(
+            ProgramValue::UInt64(bytes) => CMemoryRange::from_pointer_value_wide(
                 base,
                 MachineTerm::uint64_constant(0),
                 bytes.clone(),
@@ -12134,21 +12133,21 @@ impl CResourceFact {
             .map(|(base, bytes)| (base.pointer(), bytes))
     }
 
-    pub(in crate::kernel) fn allocation_value(&self) -> Option<(&CPointerValue, &MachineTerm)> {
+    pub(in crate::kernel) fn allocation_value(&self) -> Option<(&PointerValue, &MachineTerm)> {
         let (base, bytes) = self.allocation_arguments()?;
-        let (CValue::Int32(bytes) | CValue::UInt64(bytes)) = bytes else {
+        let (ProgramValue::Int32(bytes) | ProgramValue::UInt64(bytes)) = bytes else {
             return None;
         };
         Some((base, bytes))
     }
 
     /// The base and tagged extent of an owned `allocation` token.
-    pub(in crate::kernel) fn allocation_extent(&self) -> Option<(&CPointerValue, HeapExtent)> {
+    pub(in crate::kernel) fn allocation_extent(&self) -> Option<(&PointerValue, HeapExtent)> {
         let (base, bytes) = self.allocation_arguments()?;
         Some((base, HeapExtent::from_token_value(bytes)?))
     }
 
-    fn allocation_arguments(&self) -> Option<(&CPointerValue, &CValue)> {
+    fn allocation_arguments(&self) -> Option<(&PointerValue, &ProgramValue)> {
         let Self::Own(CResource::Token { name, arguments }, _) = self else {
             return None;
         };
@@ -12156,7 +12155,7 @@ impl CResourceFact {
             return None;
         }
         let [
-            AlgebraicValue::C(CValue::Pointer(base)),
+            AlgebraicValue::C(ProgramValue::Pointer(base)),
             AlgebraicValue::C(bytes),
         ] = arguments.as_ref()
         else {
@@ -12170,7 +12169,7 @@ impl CResourceFact {
         CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_) => true,
             CResource::Memory(range) => &range.base().block == block,
             CResource::Composite { arguments, .. } => arguments.iter().any(
-                |argument| matches!(argument, AlgebraicValue::C(CValue::Pointer(pointer)) if &pointer.block == block),
+                |argument| matches!(argument, AlgebraicValue::C(ProgramValue::Pointer(pointer)) if &pointer.block == block),
             ),
             CResource::Iterated(iterated) => iterated.blocks().contains(&block),
             CResource::Token { .. } | CResource::PopulationAuthority(_)
@@ -12210,7 +12209,7 @@ impl CResourceFact {
         }) || assumptions.proves_resource_separate(&allocation_memory, &right)
     }
 
-    pub fn view_token(name: String, arguments: Vec<CValue>) -> Self {
+    pub fn view_token(name: String, arguments: Vec<ProgramValue>) -> Self {
         let arguments = arguments.into_iter().map(AlgebraicValue::C).collect();
         Self::View(CResource::Token { name, arguments })
     }
@@ -12718,7 +12717,7 @@ mod support_removal_tests {
             .store(short_pointer.clone(), int16(0))
             .store(
                 wide_pointer.clone(),
-                CValue::Float64(MachineTerm::uint64_constant(0)),
+                ProgramValue::Float64(MachineTerm::uint64_constant(0)),
             );
         let short_load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),

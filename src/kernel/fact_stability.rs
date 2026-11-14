@@ -168,7 +168,7 @@ int32 id(int32 x) {
                 memory: crate::kernel::CMemory::new().with_declared_scalar_block(
                     "local:word".into(),
                     4,
-                    crate::kernel::CType::Int32,
+                    crate::kernel::ProgramType::Int32,
                 ),
                 base: crate::kernel::Pointer::symbolic(Variable(700)),
                 bytes: MachineTerm::Variable(var),

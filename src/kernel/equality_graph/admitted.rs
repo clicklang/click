@@ -15,9 +15,9 @@ pub(in crate::kernel) struct InputData {
         crate::kernel::pointer_designations::ValueClasses<Pointer>,
     pub(in crate::kernel) extent_graph: crate::kernel::pointer_designations::ValueClasses<Pointer>,
     pub(in crate::kernel) pointer_value_classes:
-        crate::kernel::pointer_designations::ValueClasses<CPointerValue>,
+        crate::kernel::pointer_designations::ValueClasses<PointerValue>,
     pub(in crate::kernel) pointer_value_equalities:
-        crate::persistent::PersistentSet<(CPointerValue, CPointerValue)>,
+        crate::persistent::PersistentSet<(PointerValue, PointerValue)>,
 
     /// Conservative source-dependency selectors for parameter-store shortcuts.
     /// These record syntax, not equality classes or permission authority.
@@ -86,7 +86,7 @@ pub(in crate::kernel) struct InputData {
     /// are required before a graph query may use the read as a bridge.
     pub(in crate::kernel) typed_pointer_read_definitions: crate::persistent::PersistentMap<
         Variable,
-        crate::persistent::PersistentMap<((u32, u32), Pointer), (Pointer, SharedCMemory)>,
+        crate::persistent::PersistentMap<((u32, u32), Pointer), (Pointer, SharedMemory)>,
     >,
     pub(in crate::kernel) uint64_graph_equalities: crate::persistent::PersistentMap<
         (

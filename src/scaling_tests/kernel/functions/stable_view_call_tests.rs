@@ -44,7 +44,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
                 });
             }
             resources.synchronize_memory_equalities(&facts);
-            let state = CState::new()
+            let state = ExecutionState::new()
                 .with_memory(
                     CMemory::new()
                         .with_block(pointer.block.clone(), 16384)
@@ -83,7 +83,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
                 );
                 let callee = state
                     .clone()
-                    .with_local("p", CValue::pointer(pointer.clone()));
+                    .with_local("p", ProgramValue::pointer(pointer.clone()));
                 let ((transfer, transfer_work), transfer_maps) =
                     crate::persistent::measure_persistent_work(|| {
                         crate::instrumentation::measure_deterministic_work(|| {
@@ -141,7 +141,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
             resources = resources.unchecked_with_fact(own(2048 + 2 * index, 2049 + 2 * index));
         }
         resources.synchronize_memory_equalities(&facts);
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(
                 CMemory::new()
                     .with_block(pointer.block.clone(), 16384)
@@ -152,7 +152,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
         let environment = environment(&function);
         let callee = state
             .clone()
-            .with_local("p", CValue::pointer(pointer.clone()));
+            .with_local("p", ProgramValue::pointer(pointer.clone()));
         let mut samples = Vec::new();
         for _ in 0..3 {
             let ((paths, call_work), call_maps) =

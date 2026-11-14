@@ -113,7 +113,7 @@ fn nested_conditionals_parse_and_lower_on_a_two_megabyte_stack() {
                 let mut branches = 0;
                 while let Some(statement) = pending.pop() {
                     match statement {
-                        crate::kernel::CStatement::If {
+                        crate::kernel::ProgramStatement::If {
                             then_branch,
                             else_branch,
                             ..
@@ -122,7 +122,7 @@ fn nested_conditionals_parse_and_lower_on_a_two_megabyte_stack() {
                             pending.push(then_branch);
                             pending.push(else_branch);
                         }
-                        crate::kernel::CStatement::Seq(sequence) => {
+                        crate::kernel::ProgramStatement::Seq(sequence) => {
                             pending.extend(sequence.iter().map(|statement| statement.as_ref()))
                         }
                         _ => {}

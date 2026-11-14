@@ -209,7 +209,7 @@ steps.
 ## Execution state inside a proof
 
 Kernel `ExecutionProofCore` owns the semantic execution state for one proof
-path: the `CState`, typed frontier (program point, region, region start state,
+path: the `ExecutionState`, typed frontier (program point, region, region start state,
 and continuations), checked execution facts and loop rules, function-entry
 prerequisites and derivations, freshness counters, loop-effect goal, region
 flags, structured-branch flags, and unfolded kernel predicates.
@@ -541,9 +541,9 @@ guard excludes. Nothing under an existential binder is reachable before a
 `witness` names its value, so the head chain stops at the binder and the
 proof reaches a guard conjunct with `both`.
 
-`RecordedSnapshots` is a persistent map from `SnapshotSelector` to `CState`.
+`RecordedSnapshots` is a persistent map from `SnapshotSelector` to `ExecutionState`.
 A selector is either a static C `ProgramPointRef` or a proof-local mark. A
-recorded `CState` is logically complete, but its memory, facts, and resources
+recorded `ExecutionState` is logically complete, but its memory, facts, and resources
 are immutable shared roots: recording or branching a snapshot copies only
 small roots and changed map paths rather than materializing the whole state.
 
@@ -564,7 +564,7 @@ the presentation and its kernel core (`ExecutionProofState::view`, or
 planner's scratch state); nothing in it borrows a cursor.
 
 A surviving source or expansion cursor may own syntax position, focus,
-attribution, and diagnostics. It must not own facts, resources, `CState`, an
+attribution, and diagnostics. It must not own facts, resources, `ExecutionState`, an
 execution frontier, or authority to construct a successor.
 
 ## Smart planning

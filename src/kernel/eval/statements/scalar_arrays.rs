@@ -4,10 +4,10 @@ use super::*;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn execute(
-    state: &CState,
-    target: &CExpression,
-    source: &CExpression,
-    element_type: CType,
+    state: &ExecutionState,
+    target: &ProgramExpression,
+    source: &ProgramExpression,
+    element_type: ProgramType,
     count: u32,
     copy: bool,
     fresh: bool,
@@ -15,7 +15,10 @@ pub(super) fn execute(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     let mut paths = Vec::new();
-    if !matches!(element_type, CType::Int32 | CType::UInt8 | CType::UInt32) {
+    if !matches!(
+        element_type,
+        ProgramType::Int32 | ProgramType::UInt8 | ProgramType::UInt32
+    ) {
         return Ok(vec![path(
             CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
             vec![].into(),
@@ -34,7 +37,7 @@ pub(super) fn execute(
     };
     for target in evaluate_c_expression_paths(state, target, assumptions, budget)? {
         let target_pointer = match target.outcome {
-            CExpressionOutcome::Value(CValue::Pointer(pointer)) => pointer,
+            CExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => pointer,
             outcome => {
                 paths.push(path(
                     expression_error(outcome),
@@ -143,7 +146,7 @@ pub(super) fn execute(
                 continue;
             }
             if copy && bytes != 0 {
-                let CValue::Pointer(source) = &value else {
+                let ProgramValue::Pointer(source) = &value else {
                     paths.push(path(
                         CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                         facts,

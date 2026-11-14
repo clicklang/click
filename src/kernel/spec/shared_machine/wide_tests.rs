@@ -112,7 +112,7 @@ fn wide_reads_keep_type_and_snapshot_in_casts_and_observations() {
     let address = Pointer::symbolic(Variable(995703));
     let before = crate::kernel::intern_c_memory(CMemory::new());
     let after = crate::kernel::intern_c_memory(
-        CMemory::new().store(address.clone(), CValue::Int32(7u32.into())),
+        CMemory::new().store(address.clone(), ProgramValue::Int32(7u32.into())),
     );
     for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
         let kind = crate::kernel::LoadKind::of_type(format.c_type()).unwrap();
@@ -144,7 +144,7 @@ fn wide_reads_keep_type_and_snapshot_in_casts_and_observations() {
             ),
         );
         assert!(MachineOperandView::Shared(&bad).observe(format).is_none());
-        assert!(cast(&bad.into(), CType::Int32).is_none());
+        assert!(cast(&bad.into(), ProgramType::Int32).is_none());
     }
 }
 
@@ -221,7 +221,7 @@ fn supported_wide_arithmetic_matches_native_values_and_domains() {
                                     panic!()
                                 };
                                 let actual_value = SpecValue::Shared(actual.value).into_native();
-                                let normalize = |value: &CValue| {
+                                let normalize = |value: &ProgramValue| {
                                     let format =
                                         MachineIntegerType::from_c_type(value.c_type()).unwrap();
                                     let crate::kernel::integer_c_value!(term) = value else {
@@ -286,7 +286,7 @@ fn wide_producer_keeps_unsupported_operators_and_untyped_words_out() {
                 root(format, &MachineTerm::Variable(Variable(995714))),
             ],
         );
-        assert!(cast(&invalid.clone().into(), CType::Int32).is_none());
+        assert!(cast(&invalid.clone().into(), ProgramType::Int32).is_none());
         assert!(
             apply_values(
                 Some(MachineBinaryOp::Divide),
@@ -303,7 +303,7 @@ fn wide_producer_keeps_unsupported_operators_and_untyped_words_out() {
 fn nested_wide_evaluation_retains_results_and_inherited_debts() {
     let _session = VerificationSession::enter();
     let leaf = |id| {
-        Box::new(SpecExpression::Value(CValue::Int128(
+        Box::new(SpecExpression::Value(ProgramValue::Int128(
             MachineTerm::Variable(Variable(id)),
         )))
     };
@@ -315,7 +315,7 @@ fn nested_wide_evaluation_retains_results_and_inherited_debts() {
     let mut budget = SpecEvaluation::logical(&mut execution);
     let exports = KernelTermExport::machine_export_count();
     let actual = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        SpecScope::unbound(&CState::new(), None),
+        SpecScope::unbound(&ExecutionState::new(), None),
         &expression,
         &PureFactContext::new(),
         &mut budget,

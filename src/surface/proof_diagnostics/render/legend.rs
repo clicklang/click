@@ -1,6 +1,6 @@
 //! Definitions for report-local labels, never additional proof evidence.
 use super::*;
-use crate::kernel::{CMemoryConstructionKind, CMemoryDerivation, CValue, PointerBlock};
+use crate::kernel::{CMemoryConstructionKind, CMemoryDerivation, PointerBlock, ProgramValue};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{
@@ -233,13 +233,13 @@ impl SnapshotLabels {
         format!("{base_name} + {}", self.legend_offset(&pointer.offset, 4))
     }
 
-    fn legend_value(&mut self, value: &CValue) -> String {
+    fn legend_value(&mut self, value: &ProgramValue) -> String {
         match value {
-            CValue::Pointer(pointer) => self.pointer_value_name(pointer.pointer()),
-            CValue::Int32(bits)
-            | CValue::UInt32(bits)
-            | CValue::Int64(bits)
-            | CValue::UInt64(bits) => self.legend_bits(bits),
+            ProgramValue::Pointer(pointer) => self.pointer_value_name(pointer.pointer()),
+            ProgramValue::Int32(bits)
+            | ProgramValue::UInt32(bits)
+            | ProgramValue::Int64(bits)
+            | ProgramValue::UInt64(bits) => self.legend_bits(bits),
             _ => {
                 let mut renderer = Renderer {
                     output: String::new(),
@@ -627,18 +627,18 @@ mod tests {
         let before = CMemory::new();
         let after = before
             .clone()
-            .store(base.clone(), CValue::Int32(7u32.into()));
+            .store(base.clone(), ProgramValue::Int32(7u32.into()));
         let mut labels = SnapshotLabels::default();
         for memory in [before, after] {
             labels.pointer_value_name(&pure_pointer(
                 "select",
                 vec![PureFunctionArgument::ArrayRef {
                     memory,
-                    pointer: CValue::Pointer(crate::kernel::CPointerValue::new(
+                    pointer: ProgramValue::Pointer(crate::kernel::PointerValue::new(
                         base.clone(),
-                        crate::kernel::CType::Int32Pointer,
+                        crate::kernel::ProgramType::Int32Pointer,
                     )),
-                    element_type: crate::kernel::CType::Int32,
+                    element_type: crate::kernel::ProgramType::Int32,
                 }],
                 0,
             ));
@@ -685,7 +685,7 @@ mod tests {
                     block: "local:origin-test".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(MachineTerm::constant(9)),
             )
         })
         .join()
@@ -733,7 +733,10 @@ mod tests {
     #[test]
     fn legend_shows_recorded_store_and_its_base() {
         let address = Pointer::symbolic(Variable(986_402));
-        let memory = CMemory::new().store(address.clone(), CValue::Int32(MachineTerm::constant(7)));
+        let memory = CMemory::new().store(
+            address.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        );
         let mut labels = SnapshotLabels::default();
         labels.immutable_pointer_name(&address, "p");
         labels.snapshot_name(&memory);

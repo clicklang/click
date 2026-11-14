@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn nested_integer_conversions_keep_current_parameter_reads_visible() {
     let value = SpecIntegerExpression::Negate(Box::new(SpecIntegerExpression::FromMachine(
-        Box::new(SpecExpression::CExpression(c_variable("parameter"))),
+        Box::new(SpecExpression::ProgramExpression(c_variable("parameter"))),
     )));
     let conversion = SpecExpression::IntegerToMachine {
         value: Box::new(value.clone()),

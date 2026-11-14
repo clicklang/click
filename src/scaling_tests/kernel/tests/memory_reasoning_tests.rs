@@ -340,14 +340,14 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
     let mut samples = Vec::new();
     for length in [32usize, 64, 96, 128] {
         let mut memory =
-            CMemory::new().store(cell(length), CValue::Int32(MachineTerm::constant(42)));
+            CMemory::new().store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
         for index in (0..length).rev() {
             let next = MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(cell(index + 1)),
                 crate::kernel::LoadKind::Int32,
             );
-            memory = CMemory::new().store(cell(index), CValue::Int32(next));
+            memory = CMemory::new().store(cell(index), ProgramValue::Int32(next));
         }
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory),

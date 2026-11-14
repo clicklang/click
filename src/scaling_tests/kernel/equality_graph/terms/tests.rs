@@ -127,7 +127,9 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
 
 #[test]
 fn shared_machine_prefix_registration_is_linear_and_branch_local() {
-    use crate::kernel::{CType, IntegerTerm, KernelTerm, KernelType, SharedMachineIntegerTerm};
+    use crate::kernel::{
+        IntegerTerm, KernelTerm, KernelType, ProgramType, SharedMachineIntegerTerm,
+    };
     let mut baseline = Vec::new();
     for unrelated in [0, 32, 64] {
         let mut samples = Vec::new();
@@ -141,7 +143,8 @@ fn shared_machine_prefix_registration_is_linear_and_branch_local() {
                 );
             }
             let format = MachineIntegerType::Int64;
-            let mut term = KernelTerm::variable(KernelType::C(CType::Int64), Variable(980000));
+            let mut term =
+                KernelTerm::variable(KernelType::C(ProgramType::Int64), Variable(980000));
             let other =
                 IntegerTerm::from_machine(format, MachineTerm::Variable(Variable(980001))).unwrap();
             let mut retained = Vec::new();

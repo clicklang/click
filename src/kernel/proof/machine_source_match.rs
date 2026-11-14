@@ -193,7 +193,7 @@ mod tests {
         let memory = intern_c_memory(CMemory::new().with_block("opaque-source", 16));
         let later = intern_c_memory(memory.memory().clone().with_block("later", 16));
         let pointer = CMemory::global_pointer("opaque-source");
-        let opaque = |memory: SharedCMemory, name| MachineTerm::If {
+        let opaque = |memory: SharedMemory, name| MachineTerm::If {
             condition: ConditionTerm::Variable(Variable(name)).into(),
             then_term: MachineTerm::MemoryLoad(memory, pointer.clone().into(), LoadKind::Int32)
                 .into(),

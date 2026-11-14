@@ -49,7 +49,7 @@ fn variable_collection_after_a_store_costs_the_store() {
         for index in 0..cells {
             memory = memory.store(
                 at(4 * index as i64),
-                CValue::Int32(MachineTerm::Variable(Variable(7_000_000 + index as u64))),
+                ProgramValue::Int32(MachineTerm::Variable(Variable(7_000_000 + index as u64))),
             );
         }
         let before = crate::kernel::intern_c_memory(memory.clone());
@@ -62,7 +62,7 @@ fn variable_collection_after_a_store_costs_the_store() {
         assert_eq!(variables.len(), cells);
         let after = memory.store(
             at(0),
-            CValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
         );
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(after),
@@ -109,7 +109,7 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
         );
         let Ok(memory) = CMemory::new()
             .with_block("symbolic-array-history", size)
-            .with_symbolic_storage_run(at(0), CType::Int32, elements, source)
+            .with_symbolic_storage_run(at(0), ProgramType::Int32, elements, source)
         else {
             panic!("a symbolic array over a fresh block is one run");
         };
@@ -134,7 +134,7 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
         );
         let after = memory.clone().store(
             at(0),
-            CValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
         );
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(after),

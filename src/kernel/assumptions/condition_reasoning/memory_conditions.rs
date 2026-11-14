@@ -17,7 +17,7 @@ impl PureFactContext {
         if let (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) =
             (left, right)
         {
-            let same_value = |a: &CPointerValue, b: &CPointerValue| {
+            let same_value = |a: &PointerValue, b: &PointerValue| {
                 a.c_type() == b.c_type()
                     && self.pointer_designations_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
@@ -48,7 +48,7 @@ impl PureFactContext {
         if let (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) =
             (left, right)
         {
-            let same_value = |a: &CPointerValue, b: &CPointerValue| {
+            let same_value = |a: &PointerValue, b: &PointerValue| {
                 a.c_type() == b.c_type()
                     && self.pointer_designations_match(a, b)
                     && (crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
@@ -316,23 +316,23 @@ impl PureFactContext {
             .numeric_value()
             .clone()
         {
-            CValue::PointerInteger(_) => unreachable!("numeric projection"),
-            CValue::Int8(value) => value,
-            CValue::Bool(value)
-            | CValue::Int16(value)
-            | CValue::Int32(value)
-            | CValue::UInt8(value)
-            | CValue::UInt16(value)
-            | CValue::UInt32(value)
-            | CValue::Int64(value)
-            | CValue::UInt64(value)
-            | CValue::Int128(value)
-            | CValue::UInt128(value) => value,
-            CValue::Void
-            | CValue::Pointer(_)
-            | CValue::Parameter(_)
-            | CValue::Float32(_)
-            | CValue::Float64(_) => {
+            ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+            ProgramValue::Int8(value) => value,
+            ProgramValue::Bool(value)
+            | ProgramValue::Int16(value)
+            | ProgramValue::Int32(value)
+            | ProgramValue::UInt8(value)
+            | ProgramValue::UInt16(value)
+            | ProgramValue::UInt32(value)
+            | ProgramValue::Int64(value)
+            | ProgramValue::UInt64(value)
+            | ProgramValue::Int128(value)
+            | ProgramValue::UInt128(value) => value,
+            ProgramValue::Void
+            | ProgramValue::Pointer(_)
+            | ProgramValue::Parameter(_)
+            | ProgramValue::Float32(_)
+            | ProgramValue::Float64(_) => {
                 return None;
             }
         };
@@ -353,7 +353,7 @@ impl PureFactContext {
         memory: &CMemory,
         pointer: &Pointer,
         kind: LoadKind,
-    ) -> Option<CValue> {
+    ) -> Option<ProgramValue> {
         let byte_width = kind.byte_width();
         if let Some(value) = memory.known_value(pointer) {
             return kind.read_cell(&value);
@@ -364,11 +364,11 @@ impl PureFactContext {
         // load unresolved. Runs use compact slot selection even for symbolic
         // indexes: an unresolved alias is not a reason to enumerate the array.
         let mut unresolved_alias = false;
-        let mut first_equal: Option<(Pointer, CValue)> = None;
+        let mut first_equal: Option<(Pointer, ProgramValue)> = None;
         let normalized = std::cell::OnceCell::new();
         let consider = |cell_pointer: &Pointer,
-                        value: &CValue,
-                        first_equal: &mut Option<(Pointer, CValue)>| {
+                        value: &ProgramValue,
+                        first_equal: &mut Option<(Pointer, ProgramValue)>| {
             if pointers_proven_distinct_for_memory_resolution(cell_pointer, pointer, self) {
                 return false;
             }

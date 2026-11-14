@@ -54,16 +54,16 @@ impl ResourceKey {
                 crate::instrumentation::record_deterministic_work(1);
                 if let AlgebraicValue::C(value) = argument {
                     let term = match value {
-                        CValue::Int8(t)
-                        | CValue::UInt8(t)
-                        | CValue::Int16(t)
-                        | CValue::UInt16(t)
-                        | CValue::Int32(t)
-                        | CValue::UInt32(t)
-                        | CValue::Int64(t)
-                        | CValue::UInt64(t)
-                        | CValue::Int128(t)
-                        | CValue::UInt128(t) => Some(t),
+                        ProgramValue::Int8(t)
+                        | ProgramValue::UInt8(t)
+                        | ProgramValue::Int16(t)
+                        | ProgramValue::UInt16(t)
+                        | ProgramValue::Int32(t)
+                        | ProgramValue::UInt32(t)
+                        | ProgramValue::Int64(t)
+                        | ProgramValue::UInt64(t)
+                        | ProgramValue::Int128(t)
+                        | ProgramValue::UInt128(t) => Some(t),
                         _ => None,
                     };
                     if let Some(term) = term {
@@ -894,18 +894,18 @@ impl PureFactContext {
 #[cfg(test)]
 mod resource_relation_tests {
     use super::*;
-    use crate::kernel::{CPointerValue, CType, LoadKind, Pointer, Variable};
+    use crate::kernel::{LoadKind, Pointer, PointerValue, ProgramType, Variable};
 
-    fn relation(term: MachineTerm, pointer: CPointerValue, separate: bool) -> Proposition {
+    fn relation(term: MachineTerm, pointer: PointerValue, separate: bool) -> Proposition {
         let left = CResource::Composite {
             name: "storage".into(),
-            arguments: vec![AlgebraicValue::C(CValue::Pointer(pointer.clone()))].into(),
+            arguments: vec![AlgebraicValue::C(ProgramValue::Pointer(pointer.clone()))].into(),
         };
         let right = CResource::Composite {
             name: "allocation".into(),
             arguments: vec![
-                AlgebraicValue::C(CValue::Pointer(pointer)),
-                AlgebraicValue::C(CValue::Int32(MachineTerm::machine_binary(
+                AlgebraicValue::C(ProgramValue::Pointer(pointer)),
+                AlgebraicValue::C(ProgramValue::Int32(MachineTerm::machine_binary(
                     MachineIntegerType::Int32,
                     crate::kernel::MachineBinaryOp::Multiply,
                     term,
@@ -933,7 +933,7 @@ mod resource_relation_tests {
         let address = Pointer::symbolic(Variable(3_219_300));
         let memory = crate::kernel::intern_c_memory(CMemory::new());
         let other_memory = crate::kernel::intern_c_memory(
-            CMemory::new().store(address.clone(), CValue::Int32(9u32.into())),
+            CMemory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),
         );
         let name = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -941,7 +941,7 @@ mod resource_relation_tests {
             LoadKind::Int32,
             4,
         );
-        let pointer = CPointerValue::new(address.clone(), CType::Int32Pointer);
+        let pointer = PointerValue::new(address.clone(), ProgramType::Int32Pointer);
         let read = |memory, address, kind| MachineTerm::MemoryLoad(memory, Box::new(address), kind);
         for separate in [false, true] {
             let named = relation(MachineTerm::Variable(name), pointer.clone(), separate);
@@ -972,7 +972,8 @@ mod resource_relation_tests {
                     different_designation,
                     separate
                 )));
-                let different_pointer = CPointerValue::new(address.clone(), CType::Int8Pointer);
+                let different_pointer =
+                    PointerValue::new(address.clone(), ProgramType::Int8Pointer);
                 assert!(!facts.proves_exact(&relation(
                     MachineTerm::Variable(name),
                     different_pointer,

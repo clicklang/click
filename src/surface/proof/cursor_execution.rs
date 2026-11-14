@@ -14,7 +14,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &mut ProofFacts,
-    sibling_join_states: Option<&[&CState]>,
+    sibling_join_states: Option<&[&ExecutionState]>,
     // `join_next_kernel_variable` is the counter every sibling arm abstracts
     // from: the highest of the arms' own. The arms' abstractions are compared
     // for equality, so they must count from one shared lower bound rather
@@ -33,7 +33,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
     let resource_environment = proof_context.resource_environment;
     let claim_label = proof_context.claim_label;
 
-    let state: &mut CState = &mut execution.core.state;
+    let state: &mut ExecutionState = &mut execution.core.state;
 
     let mut concrete_facts = available_pure_facts.clone();
     let mut established_interface_resources = Vec::new();
@@ -532,7 +532,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     let checked_call_events = execution.core.checked_call_events();
     let _checked_call_event_scope = CheckedCallEventScope::start(&checked_call_events);
 
-    let state: &mut CState = &mut execution.core.state;
+    let state: &mut ExecutionState = &mut execution.core.state;
 
     let statement_index = execution.core.frontier.next_statement_index;
     let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
@@ -568,12 +568,12 @@ pub(super) fn execute_branch_step_from_frontier_position(
     if let Some(split) = enum_switch_proof_match(&statement, &current_state, context) {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached a Rust `match` of `{}`, whose variant is not known here; each variant is its own proof arm. Write `{}` here, or end the script here and let its implicit tail split it",
-            describe_c_expression(&CExpression::Variable(split.scrutinee_name().to_string())),
+            describe_c_expression(&ProgramExpression::Variable(split.scrutinee_name().to_string())),
             split.outline(),
         ))
         .with_path_case_match(split));
     }
-    let CStatement::If {
+    let ProgramStatement::If {
         condition,
         then_branch,
         else_branch,
@@ -702,7 +702,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     // own statement tree keeps every downstream statement reachable; the
     // patched source layout carries arm-final control successors, so no
     // continuation record is needed.
-    if complete_empty_branch && matches!(selected_branch, CStatement::Skip) {
+    if complete_empty_branch && matches!(selected_branch, ProgramStatement::Skip) {
         // The empty arm completes this branch region immediately; the patched
         // layout supplies its control successor and statically completed
         // branch regions.
@@ -805,10 +805,10 @@ fn execute_concrete_loop_head_step(
     statement_index: usize,
     loop_index: usize,
     continuation_node: usize,
-    execution_start_state: CState,
-    current_state: CState,
-    loop_statement: CStatement,
-    remaining: Option<CStatement>,
+    execution_start_state: ExecutionState,
+    current_state: ExecutionState,
+    loop_statement: ProgramStatement,
+    remaining: Option<ProgramStatement>,
     context: Option<&PureFactContext>,
 ) -> Result<(), ClickError> {
     let function_block = proof_context.function_block;
@@ -819,7 +819,7 @@ fn execute_concrete_loop_head_step(
     let tactic_index = proof_context.tactic_index;
 
     execution.core.concrete_loop_execution = true;
-    let CStatement::While {
+    let ProgramStatement::While {
         condition,
         invariant,
         invariant_checks,
@@ -850,7 +850,7 @@ fn execute_concrete_loop_head_step(
         current_state.clone(),
     );
 
-    let loop_head = CStatement::While {
+    let loop_head = ProgramStatement::While {
         condition: condition.clone(),
         invariant: invariant.clone(),
         invariant_checks: invariant_checks.clone(),
@@ -864,7 +864,7 @@ fn execute_concrete_loop_head_step(
         body: body.clone(),
     };
 
-    let state: &mut CState = &mut execution.core.state;
+    let state: &mut ExecutionState = &mut execution.core.state;
     execution.core.frontier.execution_start_state = Some(execution_start_state);
     *state = current_state.clone();
 
@@ -887,7 +887,7 @@ fn execute_concrete_loop_head_step(
             let (transitions, _) = certified_statement_transitions(
                 &current_state,
                 available_pure_facts,
-                &CStatement::Skip,
+                &ProgramStatement::Skip,
                 proof_context.function_environment,
                 Some(proof_context.spec_definitions.predicates),
                 CExecutionSemantics::APPLY_VERIFIED_RULES,
@@ -1124,9 +1124,9 @@ fn execute_concrete_loop_head_step(
 
 pub(super) fn next_top_level_statement_from_frontier_position(
     view: ExecutionView<'_>,
-    state: &CState,
-    function: &CFunction,
-    arguments: &[CExpression],
+    state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     claim_label: &str,
     tactic_index: usize,
     tactic_name: &str,
@@ -1195,7 +1195,7 @@ pub(super) fn record_loop_program_snapshot_state(
     function_block: &FunctionBlock,
     loop_index: usize,
     kind: ProgramPointKind,
-    state: CState,
+    state: ExecutionState,
 ) {
     record_code_region_program_snapshot_state(
         recorded_snapshots,
@@ -1211,7 +1211,7 @@ pub(super) fn record_statement_program_snapshot_state(
     function_block: &FunctionBlock,
     statement_index: usize,
     kind: ProgramPointKind,
-    state: CState,
+    state: ExecutionState,
 ) {
     record_code_region_program_snapshot_state(
         recorded_snapshots,
@@ -1227,7 +1227,7 @@ pub(super) fn record_code_region_program_snapshot_state(
     function_block: &FunctionBlock,
     region: CodeRegion,
     kind: ProgramPointKind,
-    state: CState,
+    state: ExecutionState,
 ) {
     let point_region = match region {
         CodeRegion::Function => CodeRegionRef::Function,
@@ -1528,7 +1528,7 @@ pub(super) fn route_throw_to_handler(
     proof_context: &ExecutionProofContext<'_>,
     available_pure_facts: &mut PureFactList,
     introduced_facts: &mut Vec<Proposition>,
-    function: &CFunction,
+    function: &ProgramFunction,
     parameter_binding: ParameterBinding<'_>,
     function_block: &FunctionBlock,
     function_environment: &CExecutionEnvironment,
@@ -1537,8 +1537,8 @@ pub(super) fn route_throw_to_handler(
     tactic_name: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
     context: Option<&PureFactContext>,
-    throw_value: &CValue,
-    thrown_state: &CState,
+    throw_value: &ProgramValue,
+    thrown_state: &ExecutionState,
     throw_facts: &[Proposition],
 ) -> Result<bool, ClickError> {
     let handler = loop {
@@ -1563,10 +1563,10 @@ pub(super) fn route_throw_to_handler(
     let mut state = thrown_state.clone();
     let mut facts = PureFactList::from(throw_facts.to_vec());
     for statement in [
-        c_declare(handler.binding.clone(), crate::kernel::CType::Int32),
+        c_declare(handler.binding.clone(), crate::kernel::ProgramType::Int32),
         c_assign(
             handler.binding.clone(),
-            CExpression::Value(throw_value.clone()),
+            ProgramExpression::Value(throw_value.clone()),
         ),
     ] {
         let mut kernel_variable = execution.core.kernel_variable_mark();
@@ -1635,7 +1635,7 @@ pub(super) fn route_throw_to_handler(
                 "{claim_label} tactic {tactic_index}: `{tactic_name}` failed to enter its exception handler: {message}"
             ))
         })?;
-        if !matches!(head, CStatement::Skip) {
+        if !matches!(head, ProgramStatement::Skip) {
             break;
         }
         let Some(tail) = tail else {
@@ -1731,14 +1731,14 @@ pub(super) struct ExecutionPointStepSuccessor {
 /// descendants and joining their certificates.
 pub(super) struct PreparedCallOutcomeSplit {
     pub(super) execution: ExecutionProofState,
-    pub(super) execution_start_state: CState,
-    pub(super) current_state: CState,
+    pub(super) execution_start_state: ExecutionState,
+    pub(super) current_state: ExecutionState,
     pub(super) statement_index: usize,
-    pub(super) statement: CStatement,
+    pub(super) statement: ProgramStatement,
     pub(super) source_frontier_position: FrontierPosition,
     pub(super) source_frontier_index: usize,
     pub(super) continuation_index: usize,
-    pub(super) continuation_remaining: Option<CStatement>,
+    pub(super) continuation_remaining: Option<ProgramStatement>,
     pub(super) next_opaque_call: u64,
     pub(super) next_kernel_variable: u64,
     pub(super) transitions: Vec<crate::surface::CertifiedStatementTransition>,
@@ -1785,7 +1785,7 @@ pub(super) fn prepare_call_outcome_split(
             tactic_name,
         )?;
 
-    while let CStatement::TryCatchInt32 {
+    while let ProgramStatement::TryCatchInt32 {
         try_body,
         binding,
         handler,
@@ -1840,7 +1840,9 @@ pub(super) fn prepare_call_outcome_split(
     }
     if !matches!(
         statement,
-        CStatement::Call { .. } | CStatement::CallAssign { .. } | CStatement::CallResult { .. }
+        ProgramStatement::Call { .. }
+            | ProgramStatement::CallAssign { .. }
+            | ProgramStatement::CallResult { .. }
     ) {
         return Ok(None);
     }
@@ -1854,7 +1856,10 @@ pub(super) fn prepare_call_outcome_split(
     prepared.core.frontier.execution_start_state = Some(execution_start_state.clone());
     prepared.core.frontier.position = FrontierPosition::StatementEntry {
         remaining: match remaining.clone() {
-            Some(tail) => Arc::new(CStatement::seq(Arc::new(statement.clone()), Arc::new(tail))),
+            Some(tail) => Arc::new(ProgramStatement::seq(
+                Arc::new(statement.clone()),
+                Arc::new(tail),
+            )),
             None => Arc::new(statement.clone()),
         },
     };
@@ -2144,7 +2149,7 @@ pub(super) fn execute_step_successor_from_frontier_position(
 /// explicit placeholders as well as legacy source-place elisions.
 fn describe_runtime_error_before_statement(
     error: &crate::kernel::CRuntimeError,
-    state: &CState,
+    state: &ExecutionState,
     function: &syntax::C0Function,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
@@ -2195,7 +2200,7 @@ fn execute_step_from_frontier_position_selecting_path(
     let checked_call_events = execution.core.checked_call_events();
     let _checked_call_event_scope = CheckedCallEventScope::start(&checked_call_events);
 
-    let state: &mut CState = &mut execution.core.state;
+    let state: &mut ExecutionState = &mut execution.core.state;
 
     let mut statement_index = execution.core.frontier.next_statement_index;
     let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
@@ -2279,7 +2284,7 @@ fn execute_step_from_frontier_position_selecting_path(
     // path; normal completion pops it with the tail like any other
     // continuation.
     let mut descended_try = false;
-    while let CStatement::TryCatchInt32 {
+    while let ProgramStatement::TryCatchInt32 {
         try_body,
         binding,
         handler,
@@ -2337,12 +2342,12 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
         })?;
     }
-    if matches!(source_statement, CStatement::While { .. }) && loop_index.is_none() {
+    if matches!(source_statement, ProgramStatement::While { .. }) && loop_index.is_none() {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve the source loop at region({statement_index})"
         )));
     }
-    if let (Some(loop_index), CStatement::While { .. }) = (loop_index, &source_statement)
+    if let (Some(loop_index), ProgramStatement::While { .. }) = (loop_index, &source_statement)
         && matches!(loop_step_policy, LoopStepPolicy::EnterBody)
     {
         execute_concrete_loop_head_step(
@@ -2383,25 +2388,25 @@ fn execute_step_from_frontier_position_selecting_path(
                 execution.core.frontier.position,
                 FrontierPosition::FunctionEntry
             )
-            && let CStatement::Seq(statements) = &step_statement
+            && let ProgramStatement::Seq(statements) = &step_statement
             && statements.len() == 2
-            && matches!(statements.rest().as_ref(), CStatement::Return(_))
+            && matches!(statements.rest().as_ref(), ProgramStatement::Return(_))
         {
             statements.first().as_ref()
         } else {
             &step_statement
         };
         let called = match selected_statement {
-            CStatement::Call {
+            ProgramStatement::Call {
                 function_name,
                 arguments,
             }
-            | CStatement::CallAssign {
+            | ProgramStatement::CallAssign {
                 function_name,
                 arguments,
                 ..
             }
-            | CStatement::CallResult {
+            | ProgramStatement::CallResult {
                 function_name,
                 arguments,
                 ..
@@ -2496,10 +2501,10 @@ fn execute_step_from_frontier_position_selecting_path(
     if selected_path_fact.is_none()
         && matches!(
             step_statement,
-            CStatement::Call { .. }
-                | CStatement::CallAssign { .. }
-                | CStatement::CallResult { .. }
-                | CStatement::TryCatchInt32 { .. }
+            ProgramStatement::Call { .. }
+                | ProgramStatement::CallAssign { .. }
+                | ProgramStatement::CallResult { .. }
+                | ProgramStatement::TryCatchInt32 { .. }
         )
         && matches!(
             execution.core.frontier.region,
@@ -2516,17 +2521,17 @@ fn execute_step_from_frontier_position_selecting_path(
             matches!(
                 (&step_statement, &transition.outcome),
                 (
-                    CStatement::Call { .. }
-                        | CStatement::CallAssign { .. }
-                        | CStatement::CallResult { .. },
+                    ProgramStatement::Call { .. }
+                        | ProgramStatement::CallAssign { .. }
+                        | ProgramStatement::CallResult { .. },
                     CStatementOutcome::Throw { .. }
                 ) | (
-                    CStatement::TryCatchInt32 { .. },
+                    ProgramStatement::TryCatchInt32 { .. },
                     CStatementOutcome::Return { .. }
                 )
             )
         })
-        && let Some(tail @ CStatement::Return(_)) = remaining.as_ref()
+        && let Some(tail @ ProgramStatement::Return(_)) = remaining.as_ref()
     {
         let whole_suffix = c_seq(step_statement.clone(), tail.clone());
         let mut next_opaque_call = next_opaque_call_before_step;
@@ -2549,17 +2554,17 @@ fn execute_step_from_frontier_position_selecting_path(
                 matches!(
                     (&step_statement, &transition.outcome),
                     (
-                        CStatement::Call { .. }
-                            | CStatement::CallAssign { .. }
-                            | CStatement::CallResult { .. },
+                        ProgramStatement::Call { .. }
+                            | ProgramStatement::CallAssign { .. }
+                            | ProgramStatement::CallResult { .. },
                         CStatementOutcome::Return { .. } | CStatementOutcome::Throw { .. }
                     ) | (
-                        CStatement::TryCatchInt32 { .. },
+                        ProgramStatement::TryCatchInt32 { .. },
                         CStatementOutcome::Return { .. }
                     )
                 )
             })
-            && (matches!(step_statement, CStatement::TryCatchInt32 { .. })
+            && (matches!(step_statement, ProgramStatement::TryCatchInt32 { .. })
                 || suffix_transitions
                     .iter()
                     .filter(|transition| {
@@ -2568,16 +2573,16 @@ fn execute_step_from_frontier_position_selecting_path(
                     .count()
                     == 1)
         {
-            if let CStatement::TryCatchInt32 {
+            if let ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } = &step_statement
                 && matches!(
                     try_body.as_ref(),
-                    CStatement::Call { .. }
-                        | CStatement::CallAssign { .. }
-                        | CStatement::CallResult { .. }
+                    ProgramStatement::Call { .. }
+                        | ProgramStatement::CallAssign { .. }
+                        | ProgramStatement::CallResult { .. }
                 )
-                && matches!(handler.as_ref(), CStatement::Return(_))
+                && matches!(handler.as_ref(), ProgramStatement::Return(_))
             {
                 let edges = transitions
                     .iter()
@@ -2596,9 +2601,9 @@ fn execute_step_from_frontier_position_selecting_path(
                 });
             } else if matches!(
                 step_statement,
-                CStatement::Call { .. }
-                    | CStatement::CallAssign { .. }
-                    | CStatement::CallResult { .. }
+                ProgramStatement::Call { .. }
+                    | ProgramStatement::CallAssign { .. }
+                    | ProgramStatement::CallResult { .. }
             ) {
                 // A direct call's continuing normal edge is its returned
                 // outcome and its terminal throw is the threw outcome, in the
@@ -2752,7 +2757,7 @@ fn execute_step_from_frontier_position_selecting_path(
         });
         let mut completed_outcomes = Vec::new();
         let mut terminal_cases = Vec::new();
-        let retain_terminal_cases = matches!(step_statement, CStatement::Return(_));
+        let retain_terminal_cases = matches!(step_statement, ProgramStatement::Return(_));
         for transition in transitions {
             let return_assumptions = transition.pure_facts.context();
             let case_outcomes =
@@ -2793,7 +2798,7 @@ fn execute_step_from_frontier_position_selecting_path(
             );
         }
         append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
-        let state: &mut CState = &mut execution.core.state;
+        let state: &mut ExecutionState = &mut execution.core.state;
         let completed =
             crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
                 execution_start_state.clone(),
@@ -2835,7 +2840,9 @@ fn execute_step_from_frontier_position_selecting_path(
     if selected_path_fact.is_none()
         && matches!(
             step_statement,
-            CStatement::Call { .. } | CStatement::CallAssign { .. } | CStatement::CallResult { .. }
+            ProgramStatement::Call { .. }
+                | ProgramStatement::CallAssign { .. }
+                | ProgramStatement::CallResult { .. }
         )
         && matches!(
             execution.core.frontier.region,
@@ -2882,7 +2889,7 @@ fn execute_step_from_frontier_position_selecting_path(
     // preparation retain the unique successful arm; the driver proves the
     // assertion at input before this conditional successor can be published.
     if crate::surface::proof::execution_planning::collecting_step_requirements()
-        && matches!(step_statement, CStatement::Assert { .. })
+        && matches!(step_statement, ProgramStatement::Assert { .. })
         && transitions
             .iter()
             .all(|transition| matches!(transition.outcome, CStatementOutcome::Normal(_)))
@@ -3316,7 +3323,9 @@ fn execute_step_from_frontier_position_selecting_path(
                 ContractExpression::Index(
                     Box::new(ContractExpression::Add(
                         Box::new(at(&store_entry_point, *base)),
-                        Box::new(ContractExpression::CFragment(CExpression::Value(int32(0)))),
+                        Box::new(ContractExpression::CFragment(ProgramExpression::Value(
+                            int32(0),
+                        ))),
                     )),
                     Box::new(at(&store_entry_point, *index)),
                 )
@@ -3343,13 +3352,13 @@ fn execute_step_from_frontier_position_selecting_path(
     // explicit return node normally inserted by C parsing.
     let outcome = match transition.outcome {
         CStatementOutcome::Normal(state)
-            if function.return_type() == crate::kernel::CType::Void
+            if function.return_type() == crate::kernel::ProgramType::Void
                 && remaining.is_none()
                 && execution.core.frontier.region == ExecutionRegionKind::Function
                 && execution.core.frontier.continuations.is_empty() =>
         {
             CStatementOutcome::Return {
-                value: CValue::Void.into(),
+                value: ProgramValue::Void.into(),
                 state,
             }
         }
@@ -3848,7 +3857,7 @@ pub(super) fn finish_exhausted_region(frontier: &mut ExecutionFrontier) -> bool 
 
 pub(super) fn resume_after_completed_region(
     frontier: &mut ExecutionFrontier,
-) -> Option<CStatement> {
+) -> Option<ProgramStatement> {
     while let Some(continuation) = frontier.continuations.pop() {
         frontier.next_statement_index = continuation.next_statement_index;
         if let Some(remaining) = continuation.remaining {
@@ -3866,10 +3875,10 @@ fn record_completed_continuation_exits(frontier: &mut ExecutionFrontier) {
 pub(super) fn record_current_statement_entry(
     frontier: &ExecutionFrontier,
     recorded_snapshots: &mut RecordedSnapshots,
-    state: &CState,
+    state: &ExecutionState,
     function_block: &FunctionBlock,
-    function: &CFunction,
-    arguments: &[CExpression],
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
     claim_label: &str,
     tactic_index: usize,
     tactic_name: &str,
@@ -3912,14 +3921,14 @@ pub(super) const BOUNDED_EXECUTE_SPLIT_LIMIT: usize = 1_024;
 /// A loop's own test has two such cases: true continues the pass, false
 /// leaves the loop, whose outcome is the loop's exit.
 fn statement_successors_are_path_cases(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     transitions: &[CertifiedStatementTransition],
 ) -> bool {
     let facts = transitions
         .iter()
         .map(|transition| transition.path_facts.as_slice())
         .collect::<Vec<_>>();
-    let loop_test = matches!(statement, CStatement::LoopTest { .. });
+    let loop_test = matches!(statement, ProgramStatement::LoopTest { .. });
     transitions.iter().all(|transition| {
         (matches!(
             transition.outcome,
@@ -3960,7 +3969,7 @@ impl<'t> PathCase<'t> {
 pub(super) fn condition_path_case_split_condition(
     path_facts: &[&[Proposition]],
     available: &dyn Fn(&Proposition) -> bool,
-    state: &CState,
+    state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
 ) -> Option<(ConditionTerm, ClickProposition)> {
     let cases = path_facts
@@ -3975,25 +3984,25 @@ pub(super) fn condition_path_case_split_condition(
 /// variant in snake case, made fresh against the function's locals. Every
 /// arm's binders differ, so all stay bound after the implicit tail finishes.
 fn enum_switch_proof_match(
-    statement: &CStatement,
-    state: &CState,
+    statement: &ProgramStatement,
+    state: &ExecutionState,
     facts: Option<&PureFactContext>,
 ) -> Option<ProofMatch> {
-    let CStatement::If { condition, .. } = statement else {
+    let ProgramStatement::If { condition, .. } = statement else {
         return None;
     };
     let mut test = condition;
-    while let CExpression::Or(left, _) = test {
+    while let ProgramExpression::Or(left, _) = test {
         test = left;
     }
-    let CExpression::EnumIs { value, .. } = test else {
+    let ProgramExpression::EnumIs { value, .. } = test else {
         return None;
     };
-    let CExpression::Variable(name) = value.as_ref() else {
+    let ProgramExpression::Variable(name) = value.as_ref() else {
         return None;
     };
     let native = state.locals().get_native(name)?;
-    let CValue::Parameter(term) = native.as_ref() else {
+    let ProgramValue::Parameter(term) = native.as_ref() else {
         return None;
     };
     if term.algebraic_type.rigid
@@ -4030,7 +4039,7 @@ fn enum_switch_proof_match(
         })
         .collect();
     Some(ProofMatch {
-        scrutinee: ContractExpression::CFragment(CExpression::Variable(name.clone())),
+        scrutinee: ContractExpression::CFragment(ProgramExpression::Variable(name.clone())),
         ensuring: None,
         arms,
     })
@@ -4064,7 +4073,7 @@ fn snake_case(name: &str) -> String {
 fn path_case_split_condition(
     cases: &[PathCase<'_>],
     available: &dyn Fn(&Proposition) -> bool,
-    state: &CState,
+    state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
 ) -> Option<(ConditionTerm, ClickProposition)> {
     let facts = cases.iter().map(|case| case.path_facts).collect::<Vec<_>>();
@@ -4135,15 +4144,15 @@ fn describe_path_case_split_guidance(
 }
 
 pub(super) fn split_next_source_operation(
-    statement: &CStatement,
-) -> Result<(CStatement, Option<CStatement>), String> {
+    statement: &ProgramStatement,
+) -> Result<(ProgramStatement, Option<ProgramStatement>), String> {
     match statement {
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             let (source_statement, first_remaining) =
                 split_next_source_operation(statements.first())?;
             let remaining = match first_remaining {
                 Some(first_remaining) => {
-                    CStatement::Seq(statements.with_statement(0, Arc::new(first_remaining)))
+                    ProgramStatement::Seq(statements.with_statement(0, Arc::new(first_remaining)))
                 }
                 None => statements.rest().as_ref().clone(),
             };
@@ -4154,7 +4163,9 @@ pub(super) fn split_next_source_operation(
 }
 
 #[cfg(test)]
-pub(super) fn sequence_from_statements(statements: &[CStatement]) -> Option<CStatement> {
+pub(super) fn sequence_from_statements(
+    statements: &[ProgramStatement],
+) -> Option<ProgramStatement> {
     let mut level = statements.to_vec();
     while level.len() > 1 {
         let mut next_level = Vec::with_capacity(level.len().div_ceil(2));
@@ -4198,7 +4209,7 @@ fn set_function_exit_execution(
     claim_label: &str,
     tactic_index: usize,
     tactic_name: &str,
-    execution_start_state: CState,
+    execution_start_state: ExecutionState,
     execution: CFunctionExecutionCandidates,
 ) -> Result<(), ClickError> {
     if frontier.is_at_function_exit() {
@@ -4242,18 +4253,21 @@ pub(super) fn describe_evidence_refusal(
 
 /// Present the callee's parameter names alongside the written call arguments
 /// when a call fails; no symbolic heap value is guessed for this diagnostic.
-fn describe_call_bindings(statement: &CStatement, environment: &CExecutionEnvironment) -> String {
+fn describe_call_bindings(
+    statement: &ProgramStatement,
+    environment: &CExecutionEnvironment,
+) -> String {
     let (name, arguments) = match statement {
-        CStatement::Call {
+        ProgramStatement::Call {
             function_name,
             arguments,
         }
-        | CStatement::CallAssign {
+        | ProgramStatement::CallAssign {
             function_name,
             arguments,
             ..
         }
-        | CStatement::CallResult {
+        | ProgramStatement::CallResult {
             function_name,
             arguments,
             ..
@@ -4288,34 +4302,34 @@ fn describe_call_bindings(statement: &CStatement, environment: &CExecutionEnviro
 /// A one-line C spelling of a statement's head, enough to recognize it in
 /// a diagnostic: the first statement of a sequence, a loop or branch by its
 /// condition, a body by its operation.
-pub(super) fn describe_statement_head(statement: &CStatement) -> String {
+pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
     match statement {
-        CStatement::Seq(statements) => describe_statement_head(statements.first()),
-        CStatement::EndScalarReference(_) => "borrow end".to_string(),
-        CStatement::ScalarReferenceScope(_) => "borrow scope".to_string(),
-        CStatement::Skip => "skip".to_string(),
-        CStatement::Break => "break".to_string(),
-        CStatement::Continue => "continue".to_string(),
-        CStatement::Goto { target } => format!("goto target({})", target.0),
-        CStatement::EndAutomaticLifetimes { .. } => "automatic lifetime end".to_string(),
-        CStatement::ForStep {
+        ProgramStatement::Seq(statements) => describe_statement_head(statements.first()),
+        ProgramStatement::EndScalarReference(_) => "borrow end".to_string(),
+        ProgramStatement::ScalarReferenceScope(_) => "borrow scope".to_string(),
+        ProgramStatement::Skip => "skip".to_string(),
+        ProgramStatement::Break => "break".to_string(),
+        ProgramStatement::Continue => "continue".to_string(),
+        ProgramStatement::Goto { target } => format!("goto target({})", target.0),
+        ProgramStatement::EndAutomaticLifetimes { .. } => "automatic lifetime end".to_string(),
+        ProgramStatement::ForStep {
             continue_after: true,
             ..
         } => "continue".to_string(),
-        CStatement::ForStep { step, .. } => describe_statement_head(step),
-        CStatement::Declare { name, .. } => format!("declare {name}"),
-        CStatement::DeclareAggregate { name, .. } => format!("declare aggregate {name}"),
-        CStatement::Assign {
+        ProgramStatement::ForStep { step, .. } => describe_statement_head(step),
+        ProgramStatement::Declare { name, .. } => format!("declare {name}"),
+        ProgramStatement::DeclareAggregate { name, .. } => format!("declare aggregate {name}"),
+        ProgramStatement::Assign {
             name, expression, ..
         } if crate::surface::diagnostics::is_call_result_temporary(name) => {
             describe_c_expression(expression)
         }
-        CStatement::Assign {
+        ProgramStatement::Assign {
             name, expression, ..
         } => {
             format!("{name} = {}", describe_c_expression(expression))
         }
-        CStatement::CallAssign {
+        ProgramStatement::CallAssign {
             target,
             function_name,
             arguments,
@@ -4335,11 +4349,11 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
                 format!("{target} = {call}")
             }
         }
-        CStatement::Call {
+        ProgramStatement::Call {
             function_name,
             arguments,
         }
-        | CStatement::CallResult {
+        | ProgramStatement::CallResult {
             function_name,
             arguments,
             ..
@@ -4352,7 +4366,7 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        CStatement::HeapAllocate {
+        ProgramStatement::HeapAllocate {
             target,
             bytes,
             zeroed,
@@ -4368,21 +4382,28 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
             };
             format!("{target} = {function}({})", describe_c_expression(bytes))
         }
-        CStatement::HeapFree { pointer } => format!("free({})", describe_c_expression(pointer)),
-        CStatement::Assert { condition, .. } => {
+        ProgramStatement::HeapFree { pointer } => {
+            format!("free({})", describe_c_expression(pointer))
+        }
+        ProgramStatement::Assert { condition, .. } => {
             format!("assert({})", describe_c_expression(condition))
         }
-        CStatement::Return(expression) => format!("return {}", describe_c_expression(expression)),
-        CStatement::Throw(expression) => format!("throw {}", describe_c_expression(expression)),
-        CStatement::TryCatchInt32 { binding, .. } => format!("try ... catch (int {binding})"),
-        CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
+        ProgramStatement::Return(expression) => {
+            format!("return {}", describe_c_expression(expression))
+        }
+        ProgramStatement::Throw(expression) => {
+            format!("throw {}", describe_c_expression(expression))
+        }
+        ProgramStatement::TryCatchInt32 { binding, .. } => format!("try ... catch (int {binding})"),
+        ProgramStatement::Store { pointer, value }
+        | ProgramStatement::TypedStore { pointer, value, .. } => {
             format!(
                 "*{} = {}",
                 describe_c_expression(pointer),
                 describe_c_expression(value)
             )
         }
-        CStatement::InitializeScalarArray {
+        ProgramStatement::InitializeScalarArray {
             target,
             count,
             copy,
@@ -4399,26 +4420,28 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
                 " by repetition"
             }
         ),
-        CStatement::CopyAggregate { target, source, .. } => format!(
+        ProgramStatement::CopyAggregate { target, source, .. } => format!(
             "copy aggregate {} <- {}",
             describe_c_expression(target),
             describe_c_expression(source)
         ),
-        CStatement::Update {
+        ProgramStatement::Update {
             target, operand, ..
         } => format!(
             "update {} with {}",
             describe_c_expression(target),
             describe_c_expression(operand)
         ),
-        CStatement::If { condition, .. } => format!("if ({})", describe_c_expression(condition)),
-        CStatement::LoopTest { condition } => {
+        ProgramStatement::If { condition, .. } => {
+            format!("if ({})", describe_c_expression(condition))
+        }
+        ProgramStatement::LoopTest { condition } => {
             format!("the loop's test ({})", describe_c_expression(condition))
         }
-        CStatement::While { condition, .. } => {
+        ProgramStatement::While { condition, .. } => {
             format!("while ({})", describe_c_expression(condition))
         }
-        CStatement::Switch { expression, .. } => {
+        ProgramStatement::Switch { expression, .. } => {
             format!("switch ({})", describe_c_expression(expression))
         }
     }
@@ -4596,14 +4619,14 @@ mod cursor_sequence_tests {
             .name("large-straight-line-cursor".to_string())
             .stack_size(256 * 1024)
             .spawn(|| {
-                let statements = vec![CStatement::Skip; 10_000];
+                let statements = vec![ProgramStatement::Skip; 10_000];
                 let mut remaining = sequence_from_statements(&statements)
                     .expect("the generated block should not be empty");
                 let mut count = 0;
                 loop {
                     let (statement, tail) = split_next_source_operation(&remaining)
                         .expect("a balanced sequence should have a next operation");
-                    assert_eq!(statement, CStatement::Skip);
+                    assert_eq!(statement, ProgramStatement::Skip);
                     count += 1;
                     let Some(tail) = tail else {
                         break;

@@ -5,7 +5,7 @@ fn machine_call_roots_retain_growing_shared_arguments_without_exports() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut operand = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995803));
+        let mut operand = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(995803));
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
@@ -82,7 +82,7 @@ fn common_call_import_keeps_growing_shared_arguments_without_exporting() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995910));
+        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(995910));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {

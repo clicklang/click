@@ -4,7 +4,7 @@ use super::*;
 fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
     let schema = ResourceFieldSchema::new(vec![(
         "revision".into(),
-        ResourceFieldType::C(CType::Int32),
+        ResourceFieldType::C(ProgramType::Int32),
     )])
     .unwrap();
     let parameter = |identity| {
@@ -20,7 +20,7 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
     };
     // `marker` is an ordinary resource: declaring it lets the kernel see that
     // this assumed contract reaches no population.
-    let function = c_function(CType::Void, "touch", vec![], CStatement::Skip)
+    let function = c_function(ProgramType::Void, "touch", vec![], ProgramStatement::Skip)
         .with_contract(vec![], vec![], vec![], vec![], true)
         .with_resource_summary(vec![parameter(0)], vec![parameter(0)])
         .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
@@ -42,13 +42,13 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
         vec![].into(),
         schema.clone(),
         vec![AlgebraicValue::C(symbolic_call_result(
-            CType::Int32,
+            ProgramType::Int32,
             Variable(1_000_002),
         ))]
         .into(),
     )
     .unwrap();
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(
             ResourceContext::new()
@@ -57,18 +57,19 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
     let environment = CExecutionEnvironment::new()
         .with_selected_call_contract("Touch")
         .with_selected_call_resource_arguments(vec![Variable(10)]);
-    let run =
-        |state: &CState, contract: &CFunctionContract, environment: &CExecutionEnvironment| {
-            execute_c_function_contracts_paths(
-                state,
-                &[contract],
-                &[],
-                &PureFactContext::new(),
-                environment,
-                &mut ExecutionBudget::default(),
-            )
-            .unwrap()
-        };
+    let run = |state: &ExecutionState,
+               contract: &CFunctionContract,
+               environment: &CExecutionEnvironment| {
+        execute_c_function_contracts_paths(
+            state,
+            &[contract],
+            &[],
+            &PureFactContext::new(),
+            environment,
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap()
+    };
     let paths = run(&state, &contract, &environment);
     let CFunctionOutcome::Return { state: after, .. } = &paths[0].outcome else {
         panic!("call failed: {:?}", paths[0].outcome);
@@ -78,7 +79,7 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
     assert_ne!(returned.fields(), before.fields());
     for (state, contract, environment) in [
         (
-            CState::new().with_population_creation_tracking(),
+            ExecutionState::new().with_population_creation_tracking(),
             contract.clone(),
             environment.clone(),
         ),
@@ -117,7 +118,7 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
 fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
     let schema = ResourceFieldSchema::new(vec![(
         "revision".into(),
-        ResourceFieldType::C(CType::Int32),
+        ResourceFieldType::C(ProgramType::Int32),
     )])
     .unwrap();
     let parameter = |identity| {
@@ -131,7 +132,7 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
         )
         .unwrap()
     };
-    let function = c_function(CType::Void, "touch", vec![], CStatement::Skip)
+    let function = c_function(ProgramType::Void, "touch", vec![], ProgramStatement::Skip)
         .with_contract(vec![], vec![], vec![], vec![], true)
         .with_resource_summary(
             vec![parameter(0), parameter(1)],
@@ -145,7 +146,7 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
                 vec![].into(),
                 schema.clone(),
                 vec![AlgebraicValue::C(symbolic_call_result(
-                    CType::Int32,
+                    ProgramType::Int32,
                     Variable(1_000_000 + identity),
                 ))]
                 .into(),
@@ -153,7 +154,7 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
             .unwrap(),
         ))
     };
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_facts([owned(10), owned(11)]));
     let bind = |callee: &str, pairs: &[(u64, u64)]| {
         let environment = CExecutionEnvironment::new().with_selected_call_binders(
@@ -206,23 +207,23 @@ fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
         MachineTerm::constant(1),
     );
     let requirement = CResourceSpec::owned_memory(CMemorySegment::new(
-        CExpression::Variable("p".into()),
-        CExpression::Value(int32(0)),
-        CExpression::Value(int32(1)),
+        ProgramExpression::Variable("p".into()),
+        ProgramExpression::Value(int32(0)),
+        ProgramExpression::Value(int32(1)),
     ))
     .with_role(CResourceTransferRole::Borrow)
     .with_snapshot(CResourceSnapshot::Entry);
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "borrow_role",
-        vec![c_parameter("p", CType::Int32Pointer)],
-        CStatement::Skip,
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        ProgramStatement::Skip,
     )
     .with_contract(vec![], vec![], vec![], vec![], true)
     .with_resource_summary(vec![requirement], vec![]);
     let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range));
-    let state = CState::new()
-        .with_local("p", CValue::pointer(pointer.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(CMemory::new().with_block(pointer.block.clone(), 4))
         .with_resource_context(resources);
     let transfer = prepare_contract_resource_transfer(
@@ -265,19 +266,19 @@ fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
     };
     let segment = |name: &str| {
         CMemorySegment::new(
-            CExpression::Variable(name.into()),
-            CExpression::Value(int32(0)),
-            CExpression::Value(int32(1)),
+            ProgramExpression::Variable(name.into()),
+            ProgramExpression::Value(int32(0)),
+            ProgramExpression::Value(int32(1)),
         )
     };
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "purpose_agreement",
         vec![
-            c_parameter("p", CType::Int32Pointer),
-            c_parameter("q", CType::Int32Pointer),
+            c_parameter("p", ProgramType::Int32Pointer),
+            c_parameter("q", ProgramType::Int32Pointer),
         ],
-        CStatement::Skip,
+        ProgramStatement::Skip,
     )
     .with_contract(vec![], vec![], vec![], vec![], true)
     .with_resource_summary(
@@ -295,9 +296,9 @@ fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
         CResourceFact::own_token("spare".into(), vec![]),
         CResourceFact::own_token("unrelated".into(), vec![]),
     ]);
-    let state = CState::new()
-        .with_local("p", CValue::pointer(owned.clone()))
-        .with_local("q", CValue::pointer(viewed.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(owned.clone()))
+        .with_local("q", ProgramValue::pointer(viewed.clone()))
         .with_memory(
             CMemory::new()
                 .with_block(owned.block.clone(), 4)
@@ -392,17 +393,20 @@ fn stable_view_refinement_uses_checked_variance_for_subranges() {
         block: PointerBlock::Concrete("refinement:stable-view".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("p", CValue::typed_pointer(base, CType::Int32Pointer))
+    let state = ExecutionState::new()
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(base, ProgramType::Int32Pointer),
+        )
         .with_memory(CMemory::new().with_block("refinement:stable-view", 8));
     let segment =
         |end| CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(end));
     let interface = |name: &str, requirement| {
         c_function(
-            CType::Void,
+            ProgramType::Void,
             name,
-            vec![c_parameter("p", CType::Int32Pointer)],
-            CStatement::Skip,
+            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            ProgramStatement::Skip,
         )
         .with_resource_summary(vec![requirement], Vec::new())
     };
@@ -453,14 +457,14 @@ fn stable_view_refinement_does_not_confuse_disjoint_same_mode_inputs() {
         block: PointerBlock::Concrete("refinement:mixed".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local(
             "p",
-            CValue::typed_pointer(base.clone(), CType::Int32Pointer),
+            ProgramValue::typed_pointer(base.clone(), ProgramType::Int32Pointer),
         )
         .with_local(
             "q",
-            CValue::typed_pointer(base.offset_by_bytes(4), CType::Int32Pointer),
+            ProgramValue::typed_pointer(base.offset_by_bytes(4), ProgramType::Int32Pointer),
         )
         .with_memory(CMemory::new().with_block("refinement:mixed", 8));
     let segment =
@@ -470,23 +474,23 @@ fn stable_view_refinement_does_not_confuse_disjoint_same_mode_inputs() {
         CResourceSpec::owned_memory(segment("q")),
     ];
     let target = c_function(
-        CType::Void,
+        ProgramType::Void,
         "mixed_target",
         vec![
-            c_parameter("p", CType::Int32Pointer),
-            c_parameter("q", CType::Int32Pointer),
+            c_parameter("p", ProgramType::Int32Pointer),
+            c_parameter("q", ProgramType::Int32Pointer),
         ],
-        CStatement::Skip,
+        ProgramStatement::Skip,
     )
     .with_resource_summary(requirements.clone(), Vec::new());
     let implementation = c_function(
-        CType::Void,
+        ProgramType::Void,
         "mixed_implementation",
         vec![
-            c_parameter("p", CType::Int32Pointer),
-            c_parameter("q", CType::Int32Pointer),
+            c_parameter("p", ProgramType::Int32Pointer),
+            c_parameter("q", ProgramType::Int32Pointer),
         ],
-        CStatement::Skip,
+        ProgramStatement::Skip,
     )
     .with_resource_summary(requirements, Vec::new());
     assert_eq!(
@@ -508,22 +512,22 @@ fn stable_view_refinement_does_not_confuse_disjoint_same_mode_inputs() {
 #[test]
 fn named_contract_application_discards_template_body_and_storage() {
     let body_variable = Variable(987_654);
-    let pointer_parameter = c_parameter("p", CType::UInt8Pointer);
-    let body_with_load = CStatement::Return(CExpression::Load(Box::new(CExpression::Variable(
-        "p".into(),
-    ))));
-    let body_with_variable = CStatement::Return(CExpression::Value(CValue::Int32(
-        MachineTerm::Variable(body_variable),
+    let pointer_parameter = c_parameter("p", ProgramType::UInt8Pointer);
+    let body_with_load = ProgramStatement::Return(ProgramExpression::Load(Box::new(
+        ProgramExpression::Variable("p".into()),
     )));
+    let body_with_variable = ProgramStatement::Return(ProgramExpression::Value(
+        ProgramValue::Int32(MachineTerm::Variable(body_variable)),
+    ));
     let with_body_and_storage = c_function(
-        CType::Void,
+        ProgramType::Void,
         "callback_template",
         vec![pointer_parameter.clone()],
         body_with_load,
     )
     .with_string_literals(vec![CStringLiteral::new("literal", b"x\0".to_vec())]);
     let with_different_body = c_function(
-        CType::Void,
+        ProgramType::Void,
         "callback_template",
         vec![pointer_parameter],
         body_with_variable,
@@ -542,15 +546,15 @@ fn named_contract_application_discards_template_body_and_storage() {
         "named-contract variable collection must not inspect its discarded body"
     );
 
-    let argument = CExpression::Value(CValue::typed_pointer(
+    let argument = ProgramExpression::Value(ProgramValue::typed_pointer(
         Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         },
-        CType::UInt8Pointer,
+        ProgramType::UInt8Pointer,
     ));
     // One caller state, so both applications start from one creation ledger.
-    let caller = CState::new().with_population_creation_tracking();
+    let caller = ExecutionState::new().with_population_creation_tracking();
     let run = |contract: &CFunctionContract| {
         execute_c_function_contracts_paths(
             &caller,
@@ -577,10 +581,10 @@ fn resource_constructors_are_direct_only_and_part_of_identity() {
         CResourceAccessMode::Own,
         "constructed_token".into(),
         vec![c_int32_literal(7)],
-        vec![CType::Int32],
+        vec![ProgramType::Int32],
     );
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "construct_token",
         vec![],
         c_return(c_void_value()),
@@ -590,10 +594,10 @@ fn resource_constructors_are_direct_only_and_part_of_identity() {
     // authority, so it is refused; a member is created by folding it.
     let constructed = CResourceFact::own_token("constructed_token".into(), vec![int32(7)]);
     let refusal = construct_c_function_resource(
-        &CState::new().with_population_creation_tracking(),
+        &ExecutionState::new().with_population_creation_tracking(),
         &function,
         &[],
-        &CValue::Void,
+        &ProgramValue::Void,
         &constructed,
         &PureFactContext::new(),
     )
@@ -611,7 +615,7 @@ fn resource_constructors_are_direct_only_and_part_of_identity() {
     // remains supported, while formation and refinement fail closed.
     assert!(CFunctionContract::new("ConstructCallback", function.clone()).is_none());
     let without_constructor = c_function(
-        CType::Void,
+        ProgramType::Void,
         "construct_token",
         vec![],
         c_return(c_void_value()),
@@ -628,13 +632,13 @@ fn resource_constructors_are_direct_only_and_part_of_identity() {
 }
 
 fn direct_and_callback_resource_transition(
-    function: &CFunction,
-    state: &CState,
+    function: &ProgramFunction,
+    state: &ExecutionState,
     contract: &CFunctionContract,
     environment: &CExecutionEnvironment,
-) -> (CState, CState) {
+) -> (ExecutionState, ExecutionState) {
     let direct_outcome = CFunctionOutcome::Return {
-        value: CValue::Void.into(),
+        value: ProgramValue::Void.into(),
         state: Box::new(state.clone()),
     };
     let (direct_outcome, direct_obligations) = apply_c_function_contract_resource_transition(
@@ -653,7 +657,7 @@ fn direct_and_callback_resource_transition(
     else {
         panic!("direct resource transition did not return");
     };
-    assert_eq!(*direct_value.native(), CValue::Void);
+    assert_eq!(*direct_value.native(), ProgramValue::Void);
 
     let paths = execute_c_function_contracts_paths(
         state,
@@ -676,7 +680,7 @@ fn direct_and_callback_resource_transition(
             paths[0].outcome
         );
     };
-    assert_eq!(callback_value.native().as_ref(), &CValue::Void);
+    assert_eq!(callback_value.native().as_ref(), &ProgramValue::Void);
     assert_eq!(direct_state.memory(), callback_state.memory());
     assert_eq!(
         direct_state.observed_population_families,
@@ -696,9 +700,14 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         c_int32_literal(0),
         c_int32_literal(1),
     ));
-    let memory_function = c_function(CType::Void, "parity_memory", vec![], CStatement::Skip)
-        .with_resource_summary(vec![memory_spec.clone()], vec![memory_spec]);
-    let memory_state = CState::new()
+    let memory_function = c_function(
+        ProgramType::Void,
+        "parity_memory",
+        vec![],
+        ProgramStatement::Skip,
+    )
+    .with_resource_summary(vec![memory_spec.clone()], vec![memory_spec]);
+    let memory_state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(CMemory::new().with_block(memory_pointer.block.clone(), 4))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
@@ -721,12 +730,17 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         CResourceAccessMode::Own,
         "parity_token".into(),
         vec![c_int32_literal(7)],
-        vec![CType::Int32],
+        vec![ProgramType::Int32],
     );
-    let token_function = c_function(CType::Void, "parity_token", vec![], CStatement::Skip)
-        .with_resource_summary(vec![token_spec.clone()], vec![token_spec])
-        .with_ordinary_abstract_families(vec!["parity_token".into()]);
-    let token_state = CState::new()
+    let token_function = c_function(
+        ProgramType::Void,
+        "parity_token",
+        vec![],
+        ProgramStatement::Skip,
+    )
+    .with_resource_summary(vec![token_spec.clone()], vec![token_spec])
+    .with_ordinary_abstract_families(vec!["parity_token".into()]);
+    let token_state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_token("parity_token".into(), vec![int32(7)]),
@@ -744,19 +758,24 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         CResourceAccessMode::Own,
         "parity_composite".into(),
         vec![c_int32_literal(11)],
-        vec![CType::Int32],
+        vec![ProgramType::Int32],
     );
-    let composite_function = c_function(CType::Void, "parity_composite", vec![], CStatement::Skip)
-        .with_resource_summary(vec![composite_spec.clone()], vec![composite_spec])
-        .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
-            "parity_composite",
-            vec![c_parameter("value", CType::Int32)],
-            None,
-            true,
-            vec![],
-            vec![],
-        )]);
-    let composite_state = CState::new()
+    let composite_function = c_function(
+        ProgramType::Void,
+        "parity_composite",
+        vec![],
+        ProgramStatement::Skip,
+    )
+    .with_resource_summary(vec![composite_spec.clone()], vec![composite_spec])
+    .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+        "parity_composite",
+        vec![c_parameter("value", ProgramType::Int32)],
+        None,
+        true,
+        vec![],
+        vec![],
+    )]);
+    let composite_state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_composite("parity_composite".into(), vec![int32(11)]),
@@ -771,15 +790,17 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
     );
     assert_eq!(direct.resources(), callback.resources());
 
-    let schema =
-        ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "value".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap();
     let identity = Variable(700);
     let instance_resource = CResourceSpec::composite(
         CResourceAccessMode::Own,
         "parity_instance".into(),
         vec![c_int32_literal(13)],
-        vec![CType::Int32],
+        vec![ProgramType::Int32],
     );
     let instance_spec = CResourceSpec::instance(
         identity,
@@ -798,17 +819,22 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         vec![int32(3).into()].into(),
     )
     .unwrap();
-    let instance_function = c_function(CType::Void, "parity_instance", vec![], CStatement::Skip)
-        .with_resource_summary(vec![instance_spec.clone()], vec![instance_spec.clone()])
-        .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
-            "parity_instance",
-            vec![c_parameter("value", CType::Int32)],
-            None,
-            false,
-            vec![],
-            vec![],
-        )]);
-    let instance_state = CState::new()
+    let instance_function = c_function(
+        ProgramType::Void,
+        "parity_instance",
+        vec![],
+        ProgramStatement::Skip,
+    )
+    .with_resource_summary(vec![instance_spec.clone()], vec![instance_spec.clone()])
+    .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+        "parity_instance",
+        vec![c_parameter("value", ProgramType::Int32)],
+        None,
+        false,
+        vec![],
+        vec![],
+    )]);
+    let instance_state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(
             ResourceContext::new()
@@ -844,23 +870,27 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
 
 #[test]
 fn executed_refinement_checks_the_exact_call_and_source_premises() {
-    check_executed_refinement_shape(CType::Void, false);
+    check_executed_refinement_shape(ProgramType::Void, false);
 }
 
 #[test]
 fn executed_refinement_requires_forwarding_the_exact_typed_call_result() {
-    for return_type in [CType::Int32, CType::Int64, CType::Int32Pointer] {
+    for return_type in [
+        ProgramType::Int32,
+        ProgramType::Int64,
+        ProgramType::Int32Pointer,
+    ] {
         check_executed_refinement_shape(return_type, false);
         check_executed_refinement_shape(return_type, true);
     }
 }
 
-fn check_executed_refinement_shape(return_type: CType, alter_result: bool) {
+fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool) {
     let template = c_function(
         return_type,
         "interface",
-        vec![c_parameter("x", CType::Int32)],
-        CStatement::Skip,
+        vec![c_parameter("x", ProgramType::Int32)],
+        ProgramStatement::Skip,
     )
     .with_contract(vec![], vec![], vec![], vec![], true);
     let source = CFunctionContract::new("Source", template.clone()).unwrap();
@@ -869,15 +899,15 @@ fn check_executed_refinement_shape(return_type: CType, alter_result: bool) {
     let premise = SpecProposition::Predicate {
         resource_state_dependent: false,
         name: source.predicate_name(),
-        arguments: vec![SpecPredicateArgument::Value(SpecExpression::CExpression(
-            c_variable("callback"),
-        ))],
+        arguments: vec![SpecPredicateArgument::Value(
+            SpecExpression::ProgramExpression(c_variable("callback")),
+        )],
     };
     let conclusion = Proposition::Predicate {
         name: target.predicate_name(),
         arguments: vec![
-            Term::CState(Box::new(CState::new())),
-            Term::CValue(CValue::Pointer(CPointerValue::new(
+            Term::ExecutionState(Box::new(ExecutionState::new())),
+            Term::ProgramValue(ProgramValue::Pointer(PointerValue::new(
                 Pointer {
                     block: PointerBlock::FunctionSymbolic(Variable(0)),
                     offset: PointerOffsetTerm::Constant(0),
@@ -907,11 +937,11 @@ fn check_executed_refinement_shape(return_type: CType, alter_result: bool) {
             return_type,
             "wrapper",
             vec![
-                c_parameter("x", CType::Int32),
+                c_parameter("x", ProgramType::Int32),
                 c_parameter("callback", pointer_type),
             ],
-            if return_type == CType::Void {
-                CStatement::Call {
+            if return_type == ProgramType::Void {
+                ProgramStatement::Call {
                     function_name: callee.to_string(),
                     arguments: vec![argument],
                 }
@@ -958,10 +988,10 @@ fn pure_callback_preparation_does_not_enumerate_the_resource_frame() {
             (0..count).map(|index| CResourceFact::own_token(format!("token{index}"), vec![])),
         );
         assert!(resources.storage.materialized.get().is_none());
-        let state = CState::new().with_resource_context(resources.clone());
+        let state = ExecutionState::new().with_resource_context(resources.clone());
         let transfer = prepare_contract_resource_transfer(
             &state,
-            &CState::new(),
+            &ExecutionState::new(),
             contract.name(),
             contract.interface(),
             &PureFactContext::new(),
@@ -989,25 +1019,30 @@ fn resource_derived_refinement_compares_checked_ranges() {
         block: PointerBlock::Concrete("local:resource-refinement:data".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("p", CValue::pointer(pointer.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(CMemory::new().with_block(pointer.block.clone(), 8));
     let resource = |start| {
         CResourceSpec::owned_memory(CMemorySegment::new(
-            CExpression::Variable("p".into()),
-            CExpression::Value(int32(start)),
-            CExpression::Value(int32(start + 1)),
+            ProgramExpression::Variable("p".into()),
+            ProgramExpression::Value(int32(start)),
+            ProgramExpression::Value(int32(start + 1)),
         ))
     };
-    let target = c_function(CType::Void, "resource_target", vec![], CStatement::Skip)
-        .with_contract(vec![], vec![], vec![], vec![], true)
-        .with_resource_summary(vec![resource(0)], vec![])
-        .with_resource_derived_mutable_frame();
+    let target = c_function(
+        ProgramType::Void,
+        "resource_target",
+        vec![],
+        ProgramStatement::Skip,
+    )
+    .with_contract(vec![], vec![], vec![], vec![], true)
+    .with_resource_summary(vec![resource(0)], vec![])
+    .with_resource_derived_mutable_frame();
     let implementation = c_function(
-        CType::Void,
+        ProgramType::Void,
         "resource_implementation",
         vec![],
-        CStatement::Skip,
+        ProgramStatement::Skip,
     )
     .with_contract(vec![], vec![], vec![], vec![], true)
     .with_resource_summary(vec![resource(1)], vec![])
@@ -1031,28 +1066,28 @@ fn resource_derived_frame_rejects_mixed_explicit_effect_metadata() {
         block: PointerBlock::Concrete("local:mixed-resource-frame:data".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
-        .with_local("p", CValue::pointer(pointer.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(CMemory::new().with_block(pointer.block.clone(), 4));
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "mixed_resource_frame",
         vec![],
-        CStatement::Skip,
+        ProgramStatement::Skip,
     )
     .with_contract(
         vec![],
         vec![],
         vec![
             CMemorySegment::new(
-                CExpression::Variable("p".into()),
-                CExpression::Value(int32(0)),
-                CExpression::Value(int32(1)),
+                ProgramExpression::Variable("p".into()),
+                ProgramExpression::Value(int32(0)),
+                ProgramExpression::Value(int32(1)),
             ),
             CMemorySegment::new(
-                CExpression::Variable("p".into()),
-                CExpression::Value(int32(2)),
-                CExpression::Value(int32(3)),
+                ProgramExpression::Variable("p".into()),
+                ProgramExpression::Value(int32(2)),
+                ProgramExpression::Value(int32(3)),
             ),
         ],
         vec![],
@@ -1060,9 +1095,9 @@ fn resource_derived_frame_rejects_mixed_explicit_effect_metadata() {
     )
     .with_resource_summary(
         vec![CResourceSpec::owned_memory(CMemorySegment::new(
-            CExpression::Variable("p".into()),
-            CExpression::Value(int32(0)),
-            CExpression::Value(int32(1)),
+            ProgramExpression::Variable("p".into()),
+            ProgramExpression::Value(int32(0)),
+            ProgramExpression::Value(int32(1)),
         ))],
         vec![],
     )
@@ -1086,33 +1121,33 @@ fn resource_derived_loop_frame_rejects_wrapper_range_disagreement() {
     };
     let definition = CCompositeResourceDefinition::new(
         "LoopWrapper",
-        vec![c_parameter("data", CType::Int32Pointer)],
+        vec![c_parameter("data", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment::new(
-            CExpression::Variable("data".into()),
-            CExpression::Value(int32(0)),
-            CExpression::Value(int32(1)),
+            ProgramExpression::Variable("data".into()),
+            ProgramExpression::Value(int32(0)),
+            ProgramExpression::Value(int32(1)),
         ))],
         vec![],
     );
     let requirement = CResourceSpec::composite(
         CResourceAccessMode::Own,
         "LoopWrapper".into(),
-        vec![CExpression::Variable("p".into())],
-        vec![CType::Int32Pointer],
+        vec![ProgramExpression::Variable("p".into())],
+        vec![ProgramType::Int32Pointer],
     );
     let wrong_loop_frame = CLoopEffectCheck::new_with_origin(
         CLoopEffect::Mutable(vec![CMemorySegment::new(
-            CExpression::Variable("p".into()),
-            CExpression::Value(int32(1)),
-            CExpression::Value(int32(2)),
+            ProgramExpression::Variable("p".into()),
+            ProgramExpression::Value(int32(1)),
+            ProgramExpression::Value(int32(2)),
         )]),
         CLoopEffectSpan::Whole,
         CLoopEffectOrigin::InheritedResourceDerived,
         Some("loop 0 inherited owned resource frame".into()),
     );
-    let body = CStatement::While {
+    let body = ProgramStatement::While {
         condition: c_int32_literal(0),
         invariant: vec![],
         invariant_checks: vec![],
@@ -1123,20 +1158,20 @@ fn resource_derived_loop_frame_rejects_wrapper_range_disagreement() {
         do_while: false,
         backedge_target: None,
         natural_exit_target: None,
-        body: Box::new(CStatement::Skip),
+        body: Box::new(ProgramStatement::Skip),
     };
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "wrong_loop_wrapper_frame",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         body,
     )
     .with_contract(vec![], vec![], vec![], vec![], true)
     .with_resource_summary(vec![requirement], vec![])
     .with_composite_resource_definitions(vec![definition])
     .with_resource_derived_mutable_frame();
-    let state = CState::new()
-        .with_local("p", CValue::pointer(pointer.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(CMemory::new().with_block(pointer.block, 4));
     let result = validate_resource_derived_loop_frames(
         &function,
@@ -1156,38 +1191,38 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
     };
     let definition = CCompositeResourceDefinition::new(
         "LoopWrapper",
-        vec![c_parameter("data", CType::Int32Pointer)],
+        vec![c_parameter("data", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment::new(
-            CExpression::Variable("data".into()),
-            CExpression::Value(int32(0)),
-            CExpression::Value(int32(1)),
+            ProgramExpression::Variable("data".into()),
+            ProgramExpression::Value(int32(0)),
+            ProgramExpression::Value(int32(1)),
         ))],
         vec![],
     );
     let spec = CResourceSpec::composite(
         CResourceAccessMode::Own,
         "LoopWrapper".into(),
-        vec![CExpression::Variable("p".into())],
-        vec![CType::Int32Pointer],
+        vec![ProgramExpression::Variable("p".into())],
+        vec![ProgramType::Int32Pointer],
     );
-    let state = CState::new()
-        .with_local("p", CValue::pointer(pointer.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(CMemory::new().with_block(pointer.block.clone(), 4))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_composite(
                 "LoopWrapper".into(),
-                vec![CValue::pointer(pointer.clone())],
+                vec![ProgramValue::pointer(pointer.clone())],
             ),
         ));
     // The surface lowers no segments for a declared frame; a stale or
     // hostile segment list here must be ignored either way.
     let declared = CLoopEffectCheck::new_with_origin(
         CLoopEffect::Mutable(vec![CMemorySegment::new(
-            CExpression::Variable("p".into()),
-            CExpression::Value(int32(5)),
-            CExpression::Value(int32(9)),
+            ProgramExpression::Variable("p".into()),
+            ProgramExpression::Value(int32(5)),
+            ProgramExpression::Value(int32(9)),
         )]),
         CLoopEffectSpan::Whole,
         CLoopEffectOrigin::DeclaredResource,
@@ -1203,7 +1238,7 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
             &[],
             std::slice::from_ref(&spec),
             definitions,
-            &CStatement::Skip,
+            &ProgramStatement::Skip,
             &assumptions,
             &mut budget,
             &mut variables,
@@ -1253,9 +1288,9 @@ fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let source_segment = CMemorySegment::new(
-        CExpression::Variable("p".into()),
-        CExpression::Value(int32(0)),
-        CExpression::Value(int32(1)),
+        ProgramExpression::Variable("p".into()),
+        ProgramExpression::Value(int32(0)),
+        ProgramExpression::Value(int32(1)),
     );
     let token = CResourceSpec::declared(
         ResourceFamily::Token,
@@ -1268,7 +1303,7 @@ fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
     )
     .unwrap();
     let quantity = CResourceSpec::quantified(
-        CExpression::Variable("missing_quantity".into()),
+        ProgramExpression::Variable("missing_quantity".into()),
         token,
         CResourceTransferRole::Consume,
         CResourceSnapshot::Current,
@@ -1281,10 +1316,10 @@ fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
         Some("loop 0 inherited owned resource frame".into()),
     );
     let function = c_function(
-        CType::Void,
+        ProgramType::Void,
         "reject_loop_surface_fallback",
-        vec![c_parameter("p", CType::Int32Pointer)],
-        CStatement::While {
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        ProgramStatement::While {
             condition: c_int32_literal(0),
             invariant: vec![],
             invariant_checks: vec![],
@@ -1295,14 +1330,14 @@ fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
             do_while: false,
             backedge_target: None,
             natural_exit_target: None,
-            body: Box::new(CStatement::Skip),
+            body: Box::new(ProgramStatement::Skip),
         },
     )
     .with_contract(vec![], vec![], vec![], vec![], true)
     .with_resource_summary(vec![quantity], vec![])
     .with_resource_derived_mutable_frame();
-    let state = CState::new()
-        .with_local("p", CValue::pointer(pointer.clone()))
+    let state = ExecutionState::new()
+        .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(CMemory::new().with_block(pointer.block, 4));
     let result = establish_resource_derived_loop_frames(
         function,
@@ -1320,14 +1355,14 @@ fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
 #[test]
 fn unresolved_call_requirements_retain_selected_source_site_identity() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "requires_positive",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_return(c_int32_literal(0)),
     )
     .with_contract(
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("x")),
+            left: SpecExpression::ProgramExpression(c_variable("x")),
             operator: CComparisonOperator::GreaterThan,
             right: SpecExpression::Value(int32(0)),
         }],
@@ -1338,13 +1373,13 @@ fn unresolved_call_requirements_retain_selected_source_site_identity() {
     );
     let contract = CFunctionContract::new("RequiresPositive", function).unwrap();
     let arguments = vec![c_int32_literal(0)];
-    let first_state = CState::new()
+    let first_state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(CMemory::new().with_block("first", 4));
-    let second_state = CState::new()
+    let second_state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(CMemory::new().with_block("second", 4));
-    let run = |state: &CState| {
+    let run = |state: &ExecutionState| {
         execute_c_function_contracts_paths(
             state,
             &[&contract],
@@ -1397,9 +1432,9 @@ fn unresolved_call_requirements_retain_selected_source_site_identity() {
 #[test]
 fn selected_contract_and_requirement_ordinals_stay_with_their_call() {
     let template = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "same_target",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_return(c_int32_literal(0)),
     )
     .with_contract(
@@ -1424,7 +1459,7 @@ fn selected_contract_and_requirement_ordinals_stay_with_their_call() {
     let first = CFunctionContract::new("FirstInterface", template.clone()).unwrap();
     let second = CFunctionContract::new("SecondInterface", template).unwrap();
     let paths = execute_c_function_contracts_paths(
-        &CState::new(),
+        &ExecutionState::new(),
         &[&first, &second],
         &[c_int32_literal(0)],
         &PureFactContext::new(),
@@ -1458,12 +1493,12 @@ fn selected_contract_and_requirement_ordinals_stay_with_their_call() {
 fn requirement_capability_describes_the_complete_source_tree() {
     let pure_disjunction = SpecProposition::Or(
         Box::new(SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("x")),
+            left: SpecExpression::ProgramExpression(c_variable("x")),
             operator: CComparisonOperator::GreaterThan,
             right: SpecExpression::Value(int32(100)),
         }),
         Box::new(SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("x")),
+            left: SpecExpression::ProgramExpression(c_variable("x")),
             operator: CComparisonOperator::LessThan,
             right: SpecExpression::Value(int32(0)),
         }),
@@ -1477,18 +1512,18 @@ fn requirement_capability_describes_the_complete_source_tree() {
         variable: Variable(900),
         body: Box::new(SpecProposition::MemoryLoadable {
             memory: SpecMemory::Current,
-            base: SpecExpression::CExpression(c_variable("p")),
+            base: SpecExpression::ProgramExpression(c_variable("p")),
             start: SpecExpression::Value(int32(0)),
             end: SpecExpression::Value(int32(1)),
             element_width: 4,
         }),
     };
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "capability_source",
         vec![
-            c_parameter("p", CType::Int32Pointer),
-            c_parameter("x", CType::Int32),
+            c_parameter("p", ProgramType::Int32Pointer),
+            c_parameter("x", ProgramType::Int32),
         ],
         c_return(c_int32_literal(0)),
     )
@@ -1502,10 +1537,10 @@ fn requirement_capability_describes_the_complete_source_tree() {
     .with_contract_requirement_sources(vec![Some(0), Some(1)]);
     let contract = CFunctionContract::new("CapabilitySource", function).unwrap();
     let paths = execute_c_function_contracts_paths(
-        &CState::new().with_population_creation_tracking(),
+        &ExecutionState::new().with_population_creation_tracking(),
         &[&contract],
         &[
-            c_typed_pointer_value(Pointer::symbolic(Variable(901)), CType::Int32Pointer),
+            c_typed_pointer_value(Pointer::symbolic(Variable(901)), ProgramType::Int32Pointer),
             c_int32_literal(7),
         ],
         &PureFactContext::new(),
@@ -1557,9 +1592,9 @@ fn generated_requirement_source_cannot_advertise_state_independence() {
 #[test]
 fn calls_without_unresolved_requirements_do_not_construct_call_site_metadata() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "established",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_return(c_variable("x")),
     )
     .with_contract(vec![], vec![], vec![], vec![], true);
@@ -1567,7 +1602,7 @@ fn calls_without_unresolved_requirements_do_not_construct_call_site_metadata() {
 
     CallRequirementSite::reset_test_construction_count();
     let paths = execute_c_function_contracts_paths(
-        &CState::new().with_population_creation_tracking(),
+        &ExecutionState::new().with_population_creation_tracking(),
         &[&contract],
         &[c_int32_literal(7)],
         &PureFactContext::new(),
@@ -1587,9 +1622,9 @@ fn calls_without_unresolved_requirements_do_not_construct_call_site_metadata() {
 #[test]
 fn missing_contract_requirement_source_map_fails_closed() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "missing_map",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_return(c_int32_literal(0)),
     )
     .with_contract(
@@ -1606,7 +1641,7 @@ fn missing_contract_requirement_source_map_fails_closed() {
     .without_test_contract_requirement_sources();
     let contract = CFunctionContract::new("MissingMap", function).unwrap();
     let paths = execute_c_function_contracts_paths(
-        &CState::new(),
+        &ExecutionState::new(),
         &[&contract],
         &[c_int32_literal(0)],
         &PureFactContext::new(),
@@ -1630,7 +1665,7 @@ fn contract_source_maps_do_not_change_function_semantic_identity() {
         arguments: vec![],
     }];
     let base = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "same_identity",
         vec![],
         c_return(c_int32_literal(0)),
@@ -1668,14 +1703,14 @@ fn call_snapshot_identity_work_does_not_scale_with_unrelated_memory() {
 #[test]
 fn empty_requirement_lowering_retains_selected_call_source() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "empty_requirement_path",
         vec![],
         c_return(c_int32_literal(0)),
     )
     .with_contract(
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable("missing")),
+            left: SpecExpression::ProgramExpression(c_variable("missing")),
             operator: CComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
         }],
@@ -1686,7 +1721,7 @@ fn empty_requirement_lowering_retains_selected_call_source() {
     );
     let contract = CFunctionContract::new("EmptyRequirement", function).unwrap();
     let paths = execute_c_function_contracts_paths(
-        &CState::new().with_population_creation_tracking(),
+        &ExecutionState::new().with_population_creation_tracking(),
         &[&contract],
         &[],
         &PureFactContext::new(),
@@ -1723,15 +1758,15 @@ fn source_load_snapshot_collection_is_iterative_and_bounded() {
 
 fn interface(index: usize) -> CFunctionContract {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         format!("Bound{index}"),
-        vec![c_parameter("value", CType::Int32)],
+        vec![c_parameter("value", ProgramType::Int32)],
         c_return(c_int32_literal(0)),
     )
     .with_contract(
         vec![],
         vec![SpecProposition::Comparison {
-            left: SpecExpression::CExpression(c_variable(C_CONTRACT_RESULT_NAME)),
+            left: SpecExpression::ProgramExpression(c_variable(C_CONTRACT_RESULT_NAME)),
             operator: CComparisonOperator::GreaterEqual,
             right: SpecExpression::Value(int32((-(index as i32)) as u32)),
         }],
@@ -1768,7 +1803,7 @@ fn check_callback_interface_scaling(select: bool) {
         };
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_c_function_contracts_paths(
-                &CState::new().with_population_creation_tracking(),
+                &ExecutionState::new().with_population_creation_tracking(),
                 &contracts,
                 &[c_int32_literal(7)],
                 &PureFactContext::new(),
@@ -1818,7 +1853,7 @@ fn check_unrelated_functions(select: bool) {
         let mut environment = CExecutionEnvironment::new();
         for index in 0..count {
             environment = environment.with_function(c_function(
-                CType::Int32,
+                ProgramType::Int32,
                 format!("unrelated{index}"),
                 vec![],
                 c_return(c_int32_literal(0)),
@@ -1836,7 +1871,7 @@ fn check_unrelated_functions(select: bool) {
         }
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_c_function_contracts_paths(
-                &CState::new().with_population_creation_tracking(),
+                &ExecutionState::new().with_population_creation_tracking(),
                 &contracts,
                 &[c_int32_literal(7)],
                 &PureFactContext::new(),

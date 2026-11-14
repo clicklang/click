@@ -75,7 +75,7 @@ impl KernelTermImport {
             _ => {
                 // Keep the entire condition, including pointer metadata. Do not
                 // key this payload by ConditionTerm's semantic equality.
-                let leaf = KernelTerm::legacy(PureFunctionArgument::Value(CValue::Bool(
+                let leaf = KernelTerm::legacy(PureFunctionArgument::Value(ProgramValue::Bool(
                     MachineTerm::BoolCast {
                         to: MachineIntegerType::UInt8,
                         value: Box::new(condition.clone()),
@@ -146,8 +146,9 @@ impl KernelTermExport {
                     .collect::<Result<Vec<_>, _>>()?,
             )),
             Node::LegacyBool(payload) => {
-                let PureFunctionArgument::Value(CValue::Bool(MachineTerm::BoolCast {
-                    value, ..
+                let PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::BoolCast {
+                    value,
+                    ..
                 })) = payload.value()
                 else {
                     return Err("expected exact legacy Bool payload");
@@ -258,7 +259,7 @@ mod tests {
             },
             ConditionTerm::BoolApplication(SharedPureApplication::intern(
                 "predicate".into(),
-                vec![PureFunctionArgument::Value(CValue::Int32(
+                vec![PureFunctionArgument::Value(ProgramValue::Int32(
                     MachineTerm::Variable(Variable(961_003)),
                 ))],
             )),

@@ -36,7 +36,7 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
         for index in 0..count {
             memory = memory.store(
                 element(&block, index),
-                CValue::Int32(MachineTerm::constant(1)),
+                ProgramValue::Int32(MachineTerm::constant(1)),
             );
         }
         let index = MachineTerm::Variable(Variable(924_008));

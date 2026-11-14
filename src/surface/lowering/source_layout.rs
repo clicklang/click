@@ -36,18 +36,18 @@ pub(in crate::surface) fn count_loop_regions(function: &syntax::C0Function) -> u
     let mut count = 0;
     while let Some(statement) = pending.pop() {
         match statement {
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 pending.extend(statements.iter().map(|statement| statement.as_ref()))
             }
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => pending.extend([try_body.as_ref(), handler.as_ref()]),
-            CStatement::While { body, .. } => {
+            ProgramStatement::While { body, .. } => {
                 count += 1;
                 pending.push(body);
             }
@@ -126,7 +126,7 @@ struct SourceExecutionLayoutData {
     address_taken_locals: std::sync::OnceLock<BTreeSet<String>>,
     /// The pointee type of each local pointer and array, indexed once for
     /// every loop's re-annotation of the function rather than once per loop.
-    local_pointer_element_types: std::sync::OnceLock<BTreeMap<String, crate::kernel::CType>>,
+    local_pointer_element_types: std::sync::OnceLock<BTreeMap<String, crate::kernel::ProgramType>>,
     /// The function's loop regions, counted once for every loop's clause
     /// validation rather than once per loop.
     loop_region_count: std::sync::OnceLock<usize>,
@@ -166,39 +166,40 @@ pub(in crate::surface) enum SourceStatementKind {
 // Inspect only expressions owned by this statement, never descendant bodies.
 // Address-of computes an lvalue address without reading its designated cell;
 // nested loads in the pointer/index expressions still count.
-fn expression_reads(expression: &CExpression) -> bool {
+fn expression_reads(expression: &ProgramExpression) -> bool {
     let mut pending = vec![(expression, true)];
     while let Some((expression, value)) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
-            CExpression::Load(_) | CExpression::TypedLoad { .. } | CExpression::Index(..)
+            ProgramExpression::Load(_)
+            | ProgramExpression::TypedLoad { .. }
+            | ProgramExpression::Index(..)
                 if value =>
             {
                 return true;
             }
-            CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
+            ProgramExpression::Load(pointer) | ProgramExpression::TypedLoad { pointer, .. } => {
                 pending.push((pointer, true))
             }
-            CExpression::AddressOf(place) | CExpression::CheckedObjectAddress(place) => {
-                pending.push((place, false))
-            }
-            CExpression::Cast { expression, .. }
-            | CExpression::FloatNegate(expression)
-            | CExpression::FloatClassification { expression, .. }
-            | CExpression::EnumField {
+            ProgramExpression::AddressOf(place)
+            | ProgramExpression::CheckedObjectAddress(place) => pending.push((place, false)),
+            ProgramExpression::Cast { expression, .. }
+            | ProgramExpression::FloatNegate(expression)
+            | ProgramExpression::FloatClassification { expression, .. }
+            | ProgramExpression::EnumField {
                 value: expression, ..
             }
-            | CExpression::EnumIs {
+            | ProgramExpression::EnumIs {
                 value: expression, ..
             }
-            | CExpression::Not(expression)
-            | CExpression::BitwiseNot(expression) => pending.push((expression, true)),
-            CExpression::EnumConstruct { fields, .. } => {
+            | ProgramExpression::Not(expression)
+            | ProgramExpression::BitwiseNot(expression) => pending.push((expression, true)),
+            ProgramExpression::EnumConstruct { fields, .. } => {
                 pending.extend(fields.iter().map(|field| (field, true)))
             }
-            CExpression::PointerOffsetBytes { pointer, .. }
-            | CExpression::Subobject { pointer, .. } => pending.push((pointer, true)),
-            CExpression::Conditional {
+            ProgramExpression::PointerOffsetBytes { pointer, .. }
+            | ProgramExpression::Subobject { pointer, .. } => pending.push((pointer, true)),
+            ProgramExpression::Conditional {
                 condition,
                 then_branch,
                 else_branch,
@@ -210,46 +211,47 @@ fn expression_reads(expression: &CExpression) -> bool {
             crate::kernel::binary_c_expression!(a, b) => {
                 pending.extend([(a.as_ref(), true), (b.as_ref(), true)])
             }
-            CExpression::Value(_)
-            | CExpression::Variable(_)
-            | CExpression::FunctionAddress(_)
-            | CExpression::CallResult { .. } => {}
+            ProgramExpression::Value(_)
+            | ProgramExpression::Variable(_)
+            | ProgramExpression::FunctionAddress(_)
+            | ProgramExpression::CallResult { .. } => {}
         }
     }
     false
 }
 
-fn kernel_statement_reads(statement: &CStatement) -> bool {
+fn kernel_statement_reads(statement: &ProgramStatement) -> bool {
     match statement {
-        CStatement::Assign { expression, .. }
-        | CStatement::Return(expression)
-        | CStatement::Throw(expression)
-        | CStatement::Assert {
+        ProgramStatement::Assign { expression, .. }
+        | ProgramStatement::Return(expression)
+        | ProgramStatement::Throw(expression)
+        | ProgramStatement::Assert {
             condition: expression,
             ..
         }
-        | CStatement::If {
+        | ProgramStatement::If {
             condition: expression,
             ..
         }
-        | CStatement::While {
+        | ProgramStatement::While {
             condition: expression,
             ..
         }
-        | CStatement::Switch { expression, .. }
-        | CStatement::HeapAllocate {
+        | ProgramStatement::Switch { expression, .. }
+        | ProgramStatement::HeapAllocate {
             bytes: expression, ..
         }
-        | CStatement::HeapFree {
+        | ProgramStatement::HeapFree {
             pointer: expression,
         } => expression_reads(expression),
-        CStatement::Call { arguments, .. }
-        | CStatement::CallAssign { arguments, .. }
-        | CStatement::CallResult { arguments, .. } => arguments.iter().any(expression_reads),
-        CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
+        ProgramStatement::Call { arguments, .. }
+        | ProgramStatement::CallAssign { arguments, .. }
+        | ProgramStatement::CallResult { arguments, .. } => arguments.iter().any(expression_reads),
+        ProgramStatement::Store { pointer, value }
+        | ProgramStatement::TypedStore { pointer, value, .. } => {
             expression_reads(pointer) || expression_reads(value)
         }
-        CStatement::Update {
+        ProgramStatement::Update {
             target, operand, ..
         } => expression_reads(target) || expression_reads(operand),
         _ => false,
@@ -401,7 +403,7 @@ impl SourceExecutionLayout {
         }
 
         fn visit(
-            statement: &CStatement,
+            statement: &ProgramStatement,
             next_statement_index: &mut usize,
             layout: &mut SourceExecutionLayoutData,
         ) -> Result<usize, ClickError> {
@@ -409,7 +411,7 @@ impl SourceExecutionLayout {
                 layout.reads.push(*next_statement_index);
             }
             match statement {
-                CStatement::Seq(statements) => {
+                ProgramStatement::Seq(statements) => {
                     let last = statements.len() - 1;
                     for statement in statements.iter().take(last) {
                         visit(statement, next_statement_index, layout)?;
@@ -420,7 +422,7 @@ impl SourceExecutionLayout {
                         layout,
                     )
                 }
-                CStatement::If {
+                ProgramStatement::If {
                     then_branch,
                     else_branch,
                     ..
@@ -456,7 +458,7 @@ impl SourceExecutionLayout {
                     );
                     Ok(statement_index)
                 }
-                CStatement::While { body, .. } => {
+                ProgramStatement::While { body, .. } => {
                     let statement_index = *next_statement_index;
                     *next_statement_index += 1;
                     let loop_index = layout.loop_bodies.len();
@@ -471,10 +473,10 @@ impl SourceExecutionLayout {
                     );
                     Ok(statement_index)
                 }
-                CStatement::Switch { .. } => Err(ClickError::new(
+                ProgramStatement::Switch { .. } => Err(ClickError::new(
                     "typed-frontend source layout does not yet support switch statements",
                 )),
-                CStatement::TryCatchInt32 {
+                ProgramStatement::TryCatchInt32 {
                     try_body, handler, ..
                 } => {
                     let statement_index = *next_statement_index;
@@ -511,14 +513,14 @@ impl SourceExecutionLayout {
                 }
                 _ => {
                     let statement_index = *next_statement_index;
-                    if let CStatement::HeapAllocate { target, .. } = statement {
+                    if let ProgramStatement::HeapAllocate { target, .. } = statement {
                         layout.call_results.insert(statement_index, target.clone());
                         layout.allocation_regions.insert(statement_index);
                     }
-                    if let CStatement::Assign { name, .. }
-                    | CStatement::CallAssign { target: name, .. }
-                    | CStatement::Update {
-                        target: CExpression::Variable(name),
+                    if let ProgramStatement::Assign { name, .. }
+                    | ProgramStatement::CallAssign { target: name, .. }
+                    | ProgramStatement::Update {
+                        target: ProgramExpression::Variable(name),
                         ..
                     } = statement
                     {
@@ -1018,8 +1020,8 @@ impl SourceExecutionLayout {
     /// The function's local pointee types, built by `build` on first use.
     pub(in crate::surface) fn local_pointer_element_types(
         &self,
-        build: impl FnOnce() -> BTreeMap<String, crate::kernel::CType>,
-    ) -> &BTreeMap<String, crate::kernel::CType> {
+        build: impl FnOnce() -> BTreeMap<String, crate::kernel::ProgramType>,
+    ) -> &BTreeMap<String, crate::kernel::ProgramType> {
         self.data.local_pointer_element_types.get_or_init(build)
     }
 
@@ -1402,20 +1404,20 @@ pub(in crate::surface) fn collect_resource_subject_referenced_names(
 }
 
 pub(in crate::surface) fn collect_c_expression_referenced_names(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        CExpression::Value(_)
-        | CExpression::FunctionAddress(_)
-        | CExpression::CallResult { .. } => {}
-        CExpression::Variable(name) => {
+        ProgramExpression::Value(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => {}
+        ProgramExpression::Variable(name) => {
             names.insert(name.clone());
         }
-        CExpression::Cast { expression, .. } | CExpression::FloatNegate(expression) => {
+        ProgramExpression::Cast { expression, .. } | ProgramExpression::FloatNegate(expression) => {
             collect_c_expression_referenced_names(expression, names);
         }
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
@@ -1424,38 +1426,38 @@ pub(in crate::surface) fn collect_c_expression_referenced_names(
             collect_c_expression_referenced_names(then_branch, names);
             collect_c_expression_referenced_names(else_branch, names);
         }
-        CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         } => {
             collect_c_expression_referenced_names(expression, names);
         }
-        CExpression::EnumConstruct { fields, .. } => {
+        ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
                 collect_c_expression_referenced_names(field, names);
             }
         }
-        CExpression::AddressOf(expression)
-        | CExpression::CheckedObjectAddress(expression)
-        | CExpression::Not(expression)
-        | CExpression::Load(expression) => {
+        ProgramExpression::AddressOf(expression)
+        | ProgramExpression::CheckedObjectAddress(expression)
+        | ProgramExpression::Not(expression)
+        | ProgramExpression::Load(expression) => {
             collect_c_expression_referenced_names(expression, names);
         }
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => {
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
             collect_c_expression_referenced_names(pointer, names);
         }
-        CExpression::TypedLoad { pointer, .. } => {
+        ProgramExpression::TypedLoad { pointer, .. } => {
             collect_c_expression_referenced_names(pointer, names);
         }
         crate::kernel::binary_c_expression!(left, right) => {
             collect_c_expression_referenced_names(left, names);
             collect_c_expression_referenced_names(right, names);
         }
-        CExpression::BitwiseNot(expression) => {
+        ProgramExpression::BitwiseNot(expression) => {
             collect_c_expression_referenced_names(expression, names);
         }
     }
@@ -1469,19 +1471,21 @@ pub(in crate::surface) fn collect_c_expression_referenced_names(
 /// scope exits with the same pre-order numbering and scope rules as C syntax.
 /// Root function storage belongs to the call frame; only nested scopes expire
 /// here. Walking scope spines visits declarations once per containing scope.
-fn collect_kernel_automatic_exits(source: &CStatement, layout: &mut SourceExecutionLayoutData) {
-    fn declarations(s: &CStatement, names: &mut Vec<String>) {
+fn collect_kernel_automatic_exits(
+    source: &ProgramStatement,
+    layout: &mut SourceExecutionLayoutData,
+) {
+    fn declarations(s: &ProgramStatement, names: &mut Vec<String>) {
         match s {
-            CStatement::Declare { name, .. } | CStatement::DeclareAggregate { name, .. } => {
-                names.push(name.clone())
-            }
-            CStatement::Seq(statements) => {
+            ProgramStatement::Declare { name, .. }
+            | ProgramStatement::DeclareAggregate { name, .. } => names.push(name.clone()),
+            ProgramStatement::Seq(statements) => {
                 for statement in statements.iter() {
                     declarations(statement, names);
                 }
             }
             // Implementation cleanup does not introduce a lexical scope.
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 cleanup_unwind: true,
                 ..
@@ -1490,7 +1494,7 @@ fn collect_kernel_automatic_exits(source: &CStatement, layout: &mut SourceExecut
         }
     }
     fn scope(
-        s: &CStatement,
+        s: &ProgramStatement,
         index: &mut usize,
         scopes: &mut Vec<(Vec<String>, Option<usize>)>,
         loop_head: Option<usize>,
@@ -1511,12 +1515,12 @@ fn collect_kernel_automatic_exits(source: &CStatement, layout: &mut SourceExecut
         tails
     }
     fn visit(
-        s: &CStatement,
+        s: &ProgramStatement,
         index: &mut usize,
         scopes: &mut Vec<(Vec<String>, Option<usize>)>,
         layout: &mut SourceExecutionLayoutData,
     ) -> Vec<usize> {
-        if let CStatement::Seq(statements) = s {
+        if let ProgramStatement::Seq(statements) = s {
             let mut tails = Vec::new();
             for statement in statements.iter() {
                 tails = visit(statement, index, scopes, layout);
@@ -1526,7 +1530,7 @@ fn collect_kernel_automatic_exits(source: &CStatement, layout: &mut SourceExecut
         let head = *index;
         *index += 1;
         match s {
-            CStatement::If {
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -1536,7 +1540,7 @@ fn collect_kernel_automatic_exits(source: &CStatement, layout: &mut SourceExecut
                 tails.extend(scope(else_branch, index, scopes, None, layout));
                 tails
             }
-            CStatement::TryCatchInt32 {
+            ProgramStatement::TryCatchInt32 {
                 try_body,
                 handler,
                 cleanup_unwind,
@@ -1551,21 +1555,21 @@ fn collect_kernel_automatic_exits(source: &CStatement, layout: &mut SourceExecut
                 tails.extend(scope(handler, index, scopes, None, layout));
                 tails
             }
-            CStatement::While { body, .. } => {
+            ProgramStatement::While { body, .. } => {
                 scope(body, index, scopes, Some(head), layout);
                 vec![head]
             }
-            CStatement::Break
-            | CStatement::Continue
-            | CStatement::Return(_)
-            | CStatement::Goto { .. } => {
+            ProgramStatement::Break
+            | ProgramStatement::Continue
+            | ProgramStatement::Return(_)
+            | ProgramStatement::Goto { .. } => {
                 let mut names = Vec::new();
                 for (declared, loop_head) in scopes.iter().rev() {
                     names.extend(declared.iter().cloned());
                     if let Some(loop_head) = loop_head
-                        && matches!(s, CStatement::Break | CStatement::Continue)
+                        && matches!(s, ProgramStatement::Break | ProgramStatement::Continue)
                     {
-                        if matches!(s, CStatement::Break) {
+                        if matches!(s, ProgramStatement::Break) {
                             layout.automatic_break_heads.insert(head, *loop_head);
                         }
                         break;
@@ -1884,8 +1888,8 @@ mod source_execution_layout_tests {
             assert!(layout.read_entry(0).unwrap() < layout.read_entry(1).unwrap());
             assert!(layout.read_entry(3).is_err());
         }
-        assert!(!expression_reads(&CExpression::AddressOf(Box::new(
-            CExpression::Variable("x".into())
+        assert!(!expression_reads(&ProgramExpression::AddressOf(Box::new(
+            ProgramExpression::Variable("x".into())
         ))));
     }
 

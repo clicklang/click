@@ -47,7 +47,7 @@ impl KernelFold {
         }
         if arguments[2].ty() != &KernelType::Integer
             && !(index == KernelFoldIndex::Int32
-                && arguments[2].ty() == &KernelType::C(CType::Int32))
+                && arguments[2].ty() == &KernelType::C(ProgramType::Int32))
         {
             return Err("unsupported fold result type");
         }
@@ -273,7 +273,7 @@ impl KernelFold {
     }
 
     pub(crate) fn export_machine(&self) -> Result<MachineTerm, &'static str> {
-        if self.result_type() != &KernelType::C(CType::Int32) {
+        if self.result_type() != &KernelType::C(ProgramType::Int32) {
             return Err("expected int32 fold result");
         }
         let [start, end, initial, body] = &self.arguments;
@@ -353,8 +353,8 @@ mod tests {
     #[test]
     fn fold_payload_rejects_mixed_bounds_results_and_unsupported_machine_sorts() {
         let int = KernelTerm::variable(KernelType::Integer, Variable(1));
-        let machine = KernelTerm::variable(KernelType::C(CType::Int32), Variable(2));
-        let wide = KernelTerm::variable(KernelType::C(CType::UInt64), Variable(3));
+        let machine = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(2));
+        let wide = KernelTerm::variable(KernelType::C(ProgramType::UInt64), Variable(3));
         for (index, args) in [
             (
                 KernelFoldIndex::Integer,

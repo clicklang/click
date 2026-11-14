@@ -6,7 +6,7 @@ fn shared_machine_collector_dag_work_is_linear() {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let variable = Variable(989981);
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), variable);
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 format,
@@ -59,7 +59,7 @@ fn shared_scope_maximum_queries_do_not_reindex_growing_prefixes() {
     for count in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(990000));
+        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(990000));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=count {
@@ -68,7 +68,10 @@ fn shared_scope_maximum_queries_do_not_reindex_growing_prefixes() {
                     MachineBinaryOp::Add,
                     [
                         root.clone(),
-                        KernelTerm::variable(KernelType::C(CType::Int32), Variable(990000 + index)),
+                        KernelTerm::variable(
+                            KernelType::C(ProgramType::Int32),
+                            Variable(990000 + index),
+                        ),
                     ],
                 );
                 let term = IntegerTerm::Machine(

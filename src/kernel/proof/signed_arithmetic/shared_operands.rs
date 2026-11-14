@@ -28,8 +28,10 @@ mod tests {
             let _session = crate::kernel::VerificationSession::enter();
             let snapshot = crate::kernel::VerificationSession::capture_state();
             let format = MachineIntegerType::Int32;
-            let mut term =
-                KernelTerm::variable(KernelType::C(crate::kernel::CType::Int32), Variable(982501));
+            let mut term = KernelTerm::variable(
+                KernelType::C(crate::kernel::ProgramType::Int32),
+                Variable(982501),
+            );
             for _ in 0..32 {
                 term = KernelTerm::machine_binary_shared(
                     format,

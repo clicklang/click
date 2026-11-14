@@ -18,18 +18,19 @@ fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
             count * 4,
             4,
             (0..count)
-                .map(|i| CAggregateField::new(format!("field_{i}"), i * 4, CType::Int32))
+                .map(|i| CAggregateField::new(format!("field_{i}"), i * 4, ProgramType::Int32))
                 .collect(),
         );
         let parameters =
-            [CParameter::new("input", CType::Int32Pointer).with_aggregate_layout(layout)];
-        let values = [CValue::pointer(source.clone())];
+            [ProgramParameter::new("input", ProgramType::Int32Pointer)
+                .with_aggregate_layout(layout)];
+        let values = [ProgramValue::pointer(source.clone())];
         let assumptions = PureFactContext::new();
         let empty = CMemory::new().with_uninitialized_block(source.block.clone(), count * 4);
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
             CMemoryRange::new_with_element_width(source.clone(), 0.into(), (count * 4).into(), 1),
         ));
-        let unwritten = CState::new()
+        let unwritten = ExecutionState::new()
             .with_memory(empty.clone())
             .with_resource_context(resources.clone());
         assert!(matches!(
@@ -42,7 +43,7 @@ fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
         for i in 0..count {
             memory = memory.store(source.offset_by_bytes(i * 4), int32(i));
         }
-        let unreadable = CState::new().with_memory(memory);
+        let unreadable = ExecutionState::new().with_memory(memory);
         assert!(matches!(
             aggregate_argument_read_refusal(&unreadable, &parameters, &values, &assumptions),
             Some(CFunctionOutcome::RuntimeError(
@@ -83,16 +84,20 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
         let layout = CAggregateLayout::new(
             count * 4,
             4,
-            vec![CAggregateField::new("words", 0, CType::UInt32Array(count))],
+            vec![CAggregateField::new(
+                "words",
+                0,
+                ProgramType::UInt32Array(count),
+            )],
         );
         let memory = CMemory::new()
             .with_block(source.block.clone(), count * 4)
             .with_block(destination.block.clone(), count * 4)
             .write_scalar_array_region(
                 &source,
-                CType::UInt32,
+                ProgramType::UInt32,
                 count,
-                CValue::UInt32(7u32.into()),
+                ProgramValue::UInt32(7u32.into()),
                 false,
                 false,
                 &PureFactContext::new(),
@@ -102,14 +107,17 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
             copy_aggregate_fields_checked(memory, &source, &destination, &layout).unwrap()
         });
         let last = destination.offset_by_bytes((count - 1) * 4);
-        assert_eq!(copied.known_value(&last), Some(CValue::UInt32(7u32.into())));
+        assert_eq!(
+            copied.known_value(&last),
+            Some(ProgramValue::UInt32(7u32.into()))
+        );
         let changed = copied.store(
             source.offset_by_bytes((count - 1) * 4),
-            CValue::UInt32(9u32.into()),
+            ProgramValue::UInt32(9u32.into()),
         );
         assert_eq!(
             changed.known_value(&last),
-            Some(CValue::UInt32(7u32.into()))
+            Some(ProgramValue::UInt32(7u32.into()))
         );
         samples.push(work);
         // An unplaced store invalidates the compact source run and its
@@ -127,7 +135,7 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
         assert!(forgotten.has_initialized_bytes_at(&source, count * 4));
         assert_eq!(
             forgotten.known_value(&last),
-            Some(CValue::UInt32(7u32.into()))
+            Some(ProgramValue::UInt32(7u32.into()))
         );
         samples.push(work);
         let (unknown, work) = crate::instrumentation::measure_deterministic_work(|| {

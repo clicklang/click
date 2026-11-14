@@ -3,7 +3,11 @@
 use super::*;
 
 impl Context<'_> {
-    pub(super) fn chunk_storage(&mut self, name: &str, option: bool) -> Result<CStatement, String> {
+    pub(super) fn chunk_storage(
+        &mut self,
+        name: &str,
+        option: bool,
+    ) -> Result<ProgramStatement, String> {
         if !self.locals.insert(name.into()) {
             return Err("chunk state identity collision".into());
         }
@@ -19,19 +23,19 @@ impl Context<'_> {
             // read once into two locals, and a terminator's condition is an
             // expression, so the number of chunks left is read into one.
             self.mir_chunk_iterators.insert(name.into());
-            c_declare(name, CType::Parameter(super::chunks_exact_type()))
+            c_declare(name, ProgramType::Parameter(super::chunks_exact_type()))
         };
         let fields = if option {
             [
-                ("some", CType::Int32, false),
-                ("pointer", CType::UInt8Pointer, true),
-                ("len", CType::UInt64, false),
+                ("some", ProgramType::Int32, false),
+                ("pointer", ProgramType::UInt8Pointer, true),
+                ("len", ProgramType::UInt64, false),
             ]
         } else {
             [
-                ("left", CType::UInt64, false),
-                ("tail", CType::UInt8Pointer, true),
-                ("tail_len", CType::UInt64, false),
+                ("left", ProgramType::UInt64, false),
+                ("tail", ProgramType::UInt8Pointer, true),
+                ("tail_len", ProgramType::UInt64, false),
             ]
         };
         for (suffix, ty, constant) in fields {
@@ -55,15 +59,19 @@ impl Context<'_> {
     /// `next` returns is a value of the library's `Option`; the chunk it
     /// holds is still a pointer and a length to the body, read once into two
     /// locals, as the remainder is.
-    fn library_chunk_storage(&mut self, name: &str, option: bool) -> Result<CStatement, String> {
+    fn library_chunk_storage(
+        &mut self,
+        name: &str,
+        option: bool,
+    ) -> Result<ProgramStatement, String> {
         let mut result = if option {
             self.chunk_options.insert(name.into());
             let option_type =
                 EnumTypes::get(&super::super::standard_library::option_byte_slice_name())?;
-            c_declare(name, CType::Parameter(option_type))
+            c_declare(name, ProgramType::Parameter(option_type))
         } else {
             self.mir_chunk_iterators.insert(name.into());
-            let value_type = CType::Parameter(super::chunks_exact_type());
+            let value_type = ProgramType::Parameter(super::chunks_exact_type());
             // Only an iterator a call borrows lives in memory: the one
             // `next(&mut it)` advances, and the one `remainder(&it)` reads
             // where it is built. One that is only moved holds its value.
@@ -81,13 +89,13 @@ impl Context<'_> {
         };
         let fields = if option {
             [
-                ("pointer", CType::UInt8Pointer, true),
-                ("len", CType::UInt64, false),
+                ("pointer", ProgramType::UInt8Pointer, true),
+                ("len", ProgramType::UInt64, false),
             ]
         } else {
             [
-                ("tail", CType::UInt8Pointer, true),
-                ("tail_len", CType::UInt64, false),
+                ("tail", ProgramType::UInt8Pointer, true),
+                ("tail_len", ProgramType::UInt64, false),
             ]
         };
         for (suffix, ty, constant) in fields {
@@ -105,7 +113,11 @@ impl Context<'_> {
     /// Reads the library `Slice<u8>` value `slice` into the pointer and
     /// length locals `pointer` and `length`, through Rust's own
     /// `<[u8]>::as_ptr` and `<[u8]>::len`.
-    fn split_slice_value(slice: CExpression, pointer: String, length: String) -> CStatement {
+    fn split_slice_value(
+        slice: ProgramExpression,
+        pointer: String,
+        length: String,
+    ) -> ProgramStatement {
         let call = |target, operation| {
             c_call_assign(
                 target,
@@ -117,7 +129,10 @@ impl Context<'_> {
     }
     /// The `next(&mut it)` call a test of the library `chunks_exact`
     /// iterator `iterator` makes, assigning the `Option<&[u8]>` it returns.
-    pub(super) fn library_chunk_next_call(&mut self, iterator: &str) -> Result<CStatement, String> {
+    pub(super) fn library_chunk_next_call(
+        &mut self,
+        iterator: &str,
+    ) -> Result<ProgramStatement, String> {
         let option = self
             .library_next_options
             .get(iterator)
@@ -133,7 +148,7 @@ impl Context<'_> {
         iterator: &str,
         slice: &E,
         size: &E,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         if !matches!(slice, E::Local { name } if self.slices.get(name).is_some_and(|(_, shared)| *shared))
         {
             return Err("chunks_exact requires a shared byte-slice local".into());
@@ -152,13 +167,13 @@ impl Context<'_> {
         let (l_capture, l) = self.capture_operand(length, &Type::Usize)?;
         let (size_prefix, size) = self.prepared_expr(size)?;
         if super::library_iterators() {
-            let value_type = CType::Parameter(super::chunks_exact_type());
+            let value_type = ProgramType::Parameter(super::chunks_exact_type());
             let built = self.fresh_temporary()?;
             let remainder = self.fresh_temporary()?;
             let address = self.address(&E::Local {
                 name: iterator.to_string(),
             })?;
-            let slice_type = CType::Parameter(EnumTypes::get(
+            let slice_type = ProgramType::Parameter(EnumTypes::get(
                 &super::super::standard_library::byte_slice_value_name(),
             )?);
             return Ok(c_seq(
@@ -205,7 +220,11 @@ impl Context<'_> {
             ),
         ))
     }
-    pub(super) fn chunk_move(&mut self, target: &str, source: &str) -> Result<CStatement, String> {
+    pub(super) fn chunk_move(
+        &mut self,
+        target: &str,
+        source: &str,
+    ) -> Result<ProgramStatement, String> {
         if target == source || !self.mir_chunk_iterators.contains(target) {
             return Err("invalid chunk move destination".into());
         }
@@ -232,7 +251,7 @@ impl Context<'_> {
         }
         Ok(result)
     }
-    pub(super) fn chunk_has_next(&self, iterator: &str) -> Result<CExpression, String> {
+    pub(super) fn chunk_has_next(&self, iterator: &str) -> Result<ProgramExpression, String> {
         if !self.mir_chunk_iterators.contains(iterator) {
             return Err("unknown MIR chunk iterator".into());
         }
@@ -241,7 +260,7 @@ impl Context<'_> {
                 .library_next_options
                 .get(iterator)
                 .ok_or("library chunk iterator test without its next() call")?;
-            return Ok(CExpression::EnumIs {
+            return Ok(ProgramExpression::EnumIs {
                 value: Box::new(c_variable(option)),
                 variant: "Some".into(),
             });
@@ -255,27 +274,31 @@ impl Context<'_> {
     /// `_left` local. Each test of it reads it afresh first, and the
     /// `next()` the test leads to uses that read, so no loop has to carry
     /// the local's meaning across its head.
-    pub(super) fn chunk_read_left(&self, iterator: &str) -> CStatement {
+    pub(super) fn chunk_read_left(&self, iterator: &str) -> ProgramStatement {
         chunk_call(
             format!("{iterator}_left"),
             "len",
             vec![c_variable(iterator)],
         )
     }
-    pub(super) fn chunk_next(&self, iterator: &str, option: &str) -> Result<CStatement, String> {
+    pub(super) fn chunk_next(
+        &self,
+        iterator: &str,
+        option: &str,
+    ) -> Result<ProgramStatement, String> {
         if !self.chunk_options.contains(option) {
             return Err("unknown chunk Option".into());
         }
         if super::library_iterators() {
             // The call is made at the test; on the edge it leads to, the
             // chunk the `Some` holds is read into the chunk's locals.
-            let chunk = CExpression::EnumField {
+            let chunk = ProgramExpression::EnumField {
                 value: Box::new(c_variable(option)),
                 variant: "Some".into(),
                 index: 0,
             };
             return Ok(c_if(
-                CExpression::EnumIs {
+                ProgramExpression::EnumIs {
                     value: Box::new(c_variable(option)),
                     variant: "Some".into(),
                 },
@@ -307,7 +330,7 @@ impl Context<'_> {
             c_assign(format!("{option}_some"), c_int32_literal(0)),
         ))
     }
-    pub(super) fn chunk_slice_checks(&self, value: &E) -> Result<CStatement, String> {
+    pub(super) fn chunk_slice_checks(&self, value: &E) -> Result<ProgramStatement, String> {
         match value {
             E::ChunkOptionSlice { .. } if super::library_iterators() => Ok(c_skip()),
             E::ChunkOptionSlice { option } if self.chunk_options.contains(option) => Ok(c_assert(
@@ -320,7 +343,11 @@ impl Context<'_> {
 
 /// Assigns `target` the result of the library `ChunksExact` operation
 /// `operation` on `arguments`.
-fn chunk_call(target: String, operation: &str, arguments: Vec<CExpression>) -> CStatement {
+fn chunk_call(
+    target: String,
+    operation: &str,
+    arguments: Vec<ProgramExpression>,
+) -> ProgramStatement {
     c_call_assign(
         target,
         super::super::standard_library::chunks_exact_function(operation),

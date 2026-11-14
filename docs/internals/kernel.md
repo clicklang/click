@@ -3,9 +3,18 @@
 This page is for agents modifying Rust implementation, not for users writing
 Click specs.
 
+The shared execution representation uses `ProgramValue`, `ProgramType`,
+`ProgramExpression`, `ProgramStatement`, and `ProgramFunction`; C, C++ and Rust
+frontends all lower into it. `ExecutionState` supplies the locals, memory and
+resources used to evaluate a program expression. A successful evaluation
+produces a `ProgramValue`, which may contain symbolic kernel terms.
+Surface/kernel names identify representation layers; program/spec names
+identify roles within those layers. C-specific source syntax and effective-type
+compatibility retain their C names.
+
 ## Core files
 
-- `src/kernel/`: proof terms, C semantics, assumptions, symbolic execution,
+- `src/kernel/`: proof terms, shared program semantics, assumptions, symbolic execution,
   and theorem-producing functions.
 - `src/languages/c/syntax.rs`: C parser and lowering to kernel C terms. The
   parser's global declarations, type declarations and initializers are in
@@ -22,7 +31,7 @@ shared imports local to the kernel.
 
 Kernel files:
 
-- `primitives.rs`: core terms, C values/state, propositions, path structs, and
+- `primitives.rs`: core terms, program values/state, propositions, path structs, and
   basic data-type impls.
 - `assumptions.rs`: `PureFactContext`, proof obligations, execution-derived pure
   facts (`ExecutionPureFact`), and symbolic execution accessors.
@@ -53,7 +62,7 @@ Kernel files:
 - `reasoning.rs`: deterministic proof helpers, finite forall/range reasoning,
   substitutions, execution-derived pure facts, and obligation plumbing.
 - `spec.rs`: `SpecExpression`/`SpecProposition` lowering and evaluation.
-- `eval.rs`: C expression/statement evaluation and memory operations.
+- `eval.rs`: program expression/statement evaluation and memory operations.
 - `loops.rs`: loop verification, loop effects, loop havoc, and invariant
   helpers.
 - `machine_integer/`: the correspondences between machine-integer and
@@ -203,7 +212,7 @@ reproduces them.
 
 Opaque function rules have a narrower boundary:
 
-- the rule is bound to the complete `CFunction`, including its lowered body,
+- the rule is bound to the complete `ProgramFunction`, including its lowered body,
   contract, exact claim targets, resource definitions, and execution metadata;
 - `CFunctionContractExecution` can only be created by the kernel from the
   exact function's entry state and contract-derived assumptions. The kernel
@@ -331,8 +340,8 @@ anchor — which raised no descent obligation at its self-calls — is not reuse
 to certify a contract whose function declares a measure. `checked_function_execution`
 refuses such an execution outright as well. What is left for the termination
 judgment is that the obligations were reachable and complete: the certified
-`CFunction` must carry the measure (the plan names only a spelling, and
-`c_verified_function_rule` binds every claim to the same `CFunction`), the
+`ProgramFunction` must carry the measure (the plan names only a spelling, and
+`c_verified_function_rule` binds every claim to the same `ProgramFunction`), the
 component's only recursive edge must be the self-call, and the function must
 not have an inline body. Both are refusals by name; `decreases <int32
 parameter>` still ranks those shapes.
@@ -559,7 +568,7 @@ In `src/kernel/`:
   carrier of their bit width. `term_width.rs` infers that carrier width.
   Debug builds refuse a condition assumed into a fact context, a value an
   expression evaluates to, or a value stored to memory whose widths disagree:
-  an operand of the wrong width, arms of different widths, a `CValue` tag
+  an operand of the wrong width, arms of different widths, a `ProgramValue` tag
   whose term has another width, or a comparison whose operands are not the
   width it names. The one exception is a load equation (a store fact or a
   load variable's defining fact), written with the 32-bit equality at any
@@ -582,16 +591,16 @@ In `src/kernel/`:
   `int32`, whose order its canonical words compare exactly, so a fact has
   one spelling. Every other order is filed at its own format: a `uint32`
   order is `Compare { format: UInt32, .. }` of the operands' words.
-- `CValue`, `CType`, `Pointer`, `CMemory`, `CState`: C semantic state,
+- `ProgramValue`, `ProgramType`, `Pointer`, `CMemory`, `ExecutionState`: C semantic state,
   including the non-object `Void` return value, scalar `int8`, `int16`, `int32`,
   `uint8`, `uint16`, `uint32`, `int64`, and `uint64`, pointers, and typed
   memory loads/stores.
   Kernel execution reports
   `TypeMismatch` if `Void` is used as a condition or object type; it never
   erases that execution path.
-- `CExpression`, `CStatement`, `CFunction`: lowered C syntax. Calls have
+- `ProgramExpression`, `ProgramStatement`, `ProgramFunction`: lowered C syntax. Calls have
   distinct assigned-result and discarded-result statements; a normal
-  fallthrough from a `void` body completes with `CValue::Void`.
+  fallthrough from a `void` body completes with `ProgramValue::Void`.
 - `SpecExpression`, `SpecProposition`: Kernel Click forms used for
   state-parametric loop invariants. They can include current-state C fragments,
   fixed-memory loads, pure `if`, `let`, and `RangeFold`. Specification memory
@@ -765,7 +774,7 @@ the widths a rule supports; it asks the module
 | Promoted comparison reading | `comparison::integer_readings_with_promotions`, `integer_comparisons_of_widenings`; `integer_affine_claims` | a signed `int32` comparison whose sides are narrow widenings or constants is the Integer comparison of the sides' values (`0 <= widen(x)` is `0 <= to_integer(x)`); a native 8- or 16-bit comparison has the readings of its promoted spelling |
 | Native narrow comparison (one fact, K8) | `ConditionTerm::comparison_fact`, `as_fact_comparison`, `ComparisonSide`; `comparison::narrow_comparison_as_int32`, `narrow_fact_widening`, `native_narrow_comparison`; `condition_match_key`; the `adjust_*` wrappers of `PureFactContext` and `EqualityGraph::add_condition` | a specification or Rust comparison `a R b` of two values of one 8- or 16-bit format `S` is native at `S`, and is the same fact as the `int32` comparison of the operands' widenings (a constant side in `S`'s range reads as its value): identity, hashing, order and every structural fact key read both as one, in O(1) per side; the 32-bit indexes also file a native fact under its `int32` spelling. Terms are built and printed as written; C comparisons and a written `x as int32 R c` stay promoted |
 | Sign cast σ (K1 deleted) | `MachineTerm::sign_cast32`, `sign_cast32_operand`; the e-graph's `intern_conversion` and `convert_like` (σ an `Int32Unary::Cast` node); the difference graph's `link_parts` and `structural_interval`; `into_index_word32` (G1) | σ(x) between `int32` and `uint32` is a node of its own wherever a term is built: no constructor, observation, e-graph or difference-graph reader peels it. The e-graph relates it to `x` by R0 and R-dist (σ of a sign-free operator is the operator at the other format over σ of its operands; σ of a low word is that low word), the difference graph links either 32-bit reading of σ(x) to the same reading of `x` with offset 0, and an element index alone reads σ's operand in `int32` index coordinates. The constructor folds a constant and keeps σ of σ as written; R0 puts σ(σ(x)) in `x`'s class. Two smart-search readers see through one σ at a side's root: `σ(x) == x` is a vacuous rewrite and no rewrite candidate (`is_sign_cast32_of`, `equality_is_vacuous`, `connected_equalities`), and `σ(y) <=u c` below the sign bit is the signed range of `y` (`unsigned_upper_bound_below_sign_bit`) |
-| R-mem at 32 bits (K5's naming deleted) | `CType::read_cell`, `LoadKind::read_cell`, `LoadKind::reads_value`; the checked stored-value evidence (`CheckedLoadEqualityEvidence::OriginStoredValue`), `is_store_fact` | the `uint32` read of a cell is σ of its `int32` read; a read of a cell stored at the other 32-bit signedness, wherever a load term is answered from a cell or a store, is σ of the stored word, and only a read of the stored kind is the stored term itself. A range's `fits` guard is `σ(end - start) <=u limit` (`memory_range_byte_count_extent`), σ of the `int32` element count as written |
+| R-mem at 32 bits (K5's naming deleted) | `ProgramType::read_cell`, `LoadKind::read_cell`, `LoadKind::reads_value`; the checked stored-value evidence (`CheckedLoadEqualityEvidence::OriginStoredValue`), `is_store_fact` | the `uint32` read of a cell is σ of its `int32` read; a read of a cell stored at the other 32-bit signedness, wherever a load term is answered from a cell or a store, is σ of the stored word, and only a read of the stored kind is the stored term itself. A range's `fits` guard is `σ(end - start) <=u limit` (`memory_range_byte_count_extent`), σ of the `int32` element count as written |
 | Observation of σ (K2 deleted) | rule W: `machine_value_reading` | `to_integer` of σ(x) at `int32` or `uint32` keeps σ as written and reads as `x` at that format, through every σ of a written chain: `to_integer((a as uint32) as int32)` reads as `to_integer(a)` (`machine_view::shared_value_reading` takes one cached step per σ node) |
 | 32-to-64-bit extension, one spelling | `conversion::extension_encoding`, `conversion::reads_as_operand`; `MachineTerm::machine_integer_cast`, `SharedMachineIntegerTerm::cast_operand`, `KernelTerm::checking_machine_cast`; rule W: `machine_value_reading`, `machine_view::shared_value_reading` | a conversion from `int32` or `uint32` to `int64` or `uint64` is the legacy-spelled `Cast` C lowering builds (`Int64From32`, `Int64FromUInt32`, `UInt64From32`, `UInt64FromInt32`) wherever it is built, never the generic spelling; `to_integer` of the three value-preserving ones at their destination reads as their operand, one match on the root. A cast-identity certificate checks an extension's bounds at its destination format |
 | 32-bit equality one fact (K6, lookup-level) | `comparison_identity` (`ConditionTerm::comparison_fact`, `as_fact_comparison`, `fact_format`), `MachineTerm::sign_cast32_bits`; `condition_match_key` | a 32-bit equality is a term of the format it is written at, `u == v` at `uint32` over `uint32` operands; identity, hashing, order and every structural fact key read it at `int32`, each side through one σ and a constant of either spelling as its bits, so `u == v` at `uint32` and `u as int32 == v as int32` are one fact. One match per side, no clone; no term is re-filed |
@@ -804,7 +813,7 @@ fact was filed first. The specification lowers `-> Bool` applications to
 `BoolLoad` yet (a `bool` cell's read is `byte != 0` over the byte load, so
 the load resolutions every other cell read uses apply to it). Every `Bool`
 value, in a specification and in C, C++ and Rust alike, travels in a
-`CValue::Bool` as its cast to `uint8`, `BoolCast { to: UInt8, value }`, the
+`ProgramValue::Bool` as its cast to `uint8`, `BoolCast { to: UInt8, value }`, the
 byte a `bool` cell holds, and its truth is `value`
 (`ConditionTerm::truth_of_bool_word`; a constant word is its own truth). A
 C, C++ or Rust `bool` parameter, call result or enum field is a named
@@ -958,12 +967,12 @@ metadata retains the enum declaration and enumerator values, but lowering
 turns an enumerator into its int32 bit pattern and emits the same scalar field
 load or store as an `int32` field. The same representation is retained when a
 supported struct value is copied by value. Inline scalar-array fields are
-copied one element at a time rather than loaded as aggregate `CValue`s.
+copied one element at a time rather than loaded as aggregate `ProgramValue`s.
 For example, `{ uint8 buf[16]; int32 a; int32* p; }` places `buf` at byte
 offset 0, `a` at byte offset 16, and `p` at byte offset 24, and has size 32.
 Inline scalar arrays are retained as aggregate type metadata, but an array
 field used in an expression decays to a pointer to its first element; the
-kernel never represents the aggregate as a runtime `CValue`. Embedded struct
+kernel never represents the aggregate as a runtime `ProgramValue`. Embedded struct
 fields follow the same address-first rule: for `{ uint8 tag; struct inner in;
 int32 tail; }` with `inner` sized at 8 bytes, `in` starts at byte offset 4 and
 `tail` starts at byte offset 12. The Click's C front end carries `in` as an aggregate
@@ -973,7 +982,7 @@ uses that same typed lvalue path, so the pointer retains the allocation block
 and the combined ABI offset rather than materializing an aggregate value.
 Direct whole-struct lvalue loads and copies are lowered into typed leaf loads
 and stores using the same address-backed layout; the kernel still never
-represents a struct as a runtime `CValue`. Resource clauses may name embedded
+represents a struct as a runtime `ProgramValue`. Resource clauses may name embedded
 aggregates directly and expand into typed leaf ranges while preserving their
 field metadata. Memory coverage, splitting, and joining are decided bytewise: a
 pair is re-spelled into one element width, or compared as byte footprints when
@@ -1004,7 +1013,7 @@ order, so each nested leaf retains its complete element stride. Pointer fields a
 shallow copies of typed
 eight-byte pointer values: the destination aggregate gets the same pointer
 provenance, not a duplicate pointee allocation or ownership transfer. The
-aggregate still has no runtime `CValue`: expressions decay to its address for
+aggregate still has no runtime `ProgramValue`: expressions decay to its address for
 field loads and stores. Union-containing layouts retain a separate typed
 overlay for each overlapping member, so aggregate copies preserve all member
 views without pretending the members occupy disjoint cells. Adding a union view
@@ -1033,7 +1042,7 @@ initialized before later field loads. Designated initializers and struct-array
 initializers remain outside this slice; no runtime aggregate value or padding
 store is introduced.
 
-Field lowering retains these byte offsets as `CExpression::PointerOffsetBytes`;
+Field lowering retains these byte offsets as `ProgramExpression::PointerOffsetBytes`;
 it must not encode a struct offset by pretending that a struct pointer is an
 `int32*`. Tests compare mixed scalar/pointer layouts against Rust `repr(C)` on
 the supported LP64 host ABI.
@@ -1177,8 +1186,8 @@ range guards to its user is what would let it be owed.
 
 ## Floating-point semantic boundary
 
-The kernel models `float` and `double` as typed IEEE-754 payloads in `CType`
-and `CValue`. Slices 1 through 5 carry those payloads through parameters, locals,
+The kernel models `float` and `double` as typed IEEE-754 payloads in `ProgramType`
+and `ProgramValue`. Slices 1 through 5 carry those payloads through parameters, locals,
 structs, arrays, allocation, typed memory loads/stores, and copies at their
 declared widths. Constant casts use integer-space round-to-nearest,
 ties-to-even conversion, and unary negation is a sign-bit operation. Same-width
@@ -1296,7 +1305,7 @@ body, its back edge and its exit (`loop(i).exit`). A pure condition such as
 `k > 0` is tested at the head, so the body starts with it as a fact and the
 exit with its negation. A condition that calls a function makes those calls
 its loop's own regions (`loop(i).call(f, j)`), followed by a test region
-(`loop(i).test()`, the kernel's `CStatement::LoopTest`): a pass steps the calls
+(`loop(i).test()`, the kernel's `ProgramStatement::LoopTest`): a pass steps the calls
 and then the test, whose true side continues the pass and whose false side
 leaves the loop there, marked `LoopControlExit::TestFalse` on the frontier.
 The other loop forms place statements differently around the same points: a
@@ -1307,10 +1316,10 @@ loop that left on several, those names are refused, since each path recorded
 them at its own state.
 
 A call nested in an expression is a call step of its own,
-`CStatement::CallResult { call, .. }`, run just before the statement that
+`ProgramStatement::CallResult { call, .. }`, run just before the statement that
 holds it. The step leaves the call's result in the path state by its number
-(`CState::call_results`), and the statement reads it there as
-`CExpression::CallResult { call, .. }`; the result ends with the first
+(`ExecutionState::call_results`), and the statement reads it there as
+`ProgramExpression::CallResult { call, .. }`; the result ends with the first
 statement that reads it, or with the condition that decides a branch. The
 surface spells it by its call, `statement(i).call(f, j).result`, from the state
 or from the call's recorded exit. A call's result has the callee's declared

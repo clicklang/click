@@ -128,7 +128,7 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
         let paths = crate::kernel::eval::evaluate_c_memory_load_paths(
             &memory,
             address.clone(),
-            CType::Int64Pointer,
+            ProgramType::Int64Pointer,
             Vec::new().into(),
             Vec::new(),
             &PureFactContext::new(),
@@ -137,7 +137,7 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
             None,
             None,
         );
-        let CExpressionOutcome::Value(CValue::Pointer(value)) = &paths[0].outcome else {
+        let CExpressionOutcome::Value(ProgramValue::Pointer(value)) = &paths[0].outcome else {
             panic!("pointer read")
         };
         (value.pointer().clone(), paths[0].facts.clone())
@@ -493,7 +493,7 @@ fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
-            CType::Int64Pointer,
+            ProgramType::Int64Pointer,
             Vec::new().into(),
             Vec::new(),
             context,
@@ -508,7 +508,7 @@ fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
                 .all(|fact| fact.is_logical_read_equation())
         );
         assert!(path.obligations.is_empty());
-        let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
+        let CExpressionOutcome::Value(ProgramValue::Pointer(value)) = &path.outcome else {
             panic!("pointer read")
         };
         value.pointer().clone()
@@ -544,7 +544,7 @@ fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
     assert!(!owner.permits_memory_read(&y, 4, &sibling));
     assert!(!owner.permits_memory_read(&y.offset_by_bytes(4), 4, &branch));
     assert!(owner.memory_write_range(&y, 5, &branch).is_none());
-    let later = memory.store(a, CValue::typed_pointer(b, CType::Int64Pointer));
+    let later = memory.store(a, ProgramValue::typed_pointer(b, ProgramType::Int64Pointer));
     let z = logical_pointer_read(&later, &Pointer::symbolic(Variable(92_251)), &branch);
     assert!(!owner.permits_memory_read(&z, 4, &branch));
 }
@@ -1225,7 +1225,7 @@ fn removing_a_supplier_registers_its_late_read_definition() {
 
 fn remove_suppliers_with_late_read_definition(register_query: bool) {
     let _session = crate::kernel::VerificationSession::enter();
-    let name = |memory: &SharedCMemory, address: &Pointer| {
+    let name = |memory: &SharedMemory, address: &Pointer| {
         crate::kernel::memory_provenance::canonical_value_load_memory(memory, address, 8);
         Pointer::canonical_loaded_value(memory, address)
     };
@@ -1238,14 +1238,14 @@ fn remove_suppliers_with_late_read_definition(register_query: bool) {
         offset: PointerOffsetTerm::Constant(0),
     };
     let first = crate::kernel::intern_c_memory(
-        CMemory::new().store(unrelated.clone(), CValue::UInt32(1u32.into())),
+        CMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
     );
     let named = name(&first, &cell);
     let later = crate::kernel::intern_c_memory(
         first
             .memory()
             .clone()
-            .store(unrelated, CValue::UInt32(2u32.into())),
+            .store(unrelated, ProgramValue::UInt32(2u32.into())),
     );
     let later_read = Pointer::loaded_value(&later, &cell);
     let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(

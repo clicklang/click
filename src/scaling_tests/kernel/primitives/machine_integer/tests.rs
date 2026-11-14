@@ -21,11 +21,11 @@ fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
         }
         let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::machine_integer::conversion::convert_value(
-                CValue::Int64(operand),
+                ProgramValue::Int64(operand),
                 MachineIntegerType::Int128,
             )
         });
-        let CValue::Int128(term) = converted.unwrap() else {
+        let ProgramValue::Int128(term) = converted.unwrap() else {
             unreachable!()
         };
         assert_eq!(work, 3, "size {size}");
@@ -63,13 +63,13 @@ fn symbolic_modulo_conversion_work_is_independent_of_operand_depth() {
             }
             let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::machine_integer::conversion::convert_value(
-                    CValue::UInt64(term),
+                    ProgramValue::UInt64(term),
                     MachineIntegerType::Int16,
                 )
             });
             assert_eq!(
                 converted.unwrap().c_type(),
-                super::super::super::CType::Int16
+                super::super::super::ProgramType::Int16
             );
             // One unit for the conversion and one for the cast node it
             // builds (the conversion table's `Cast`), whatever the depth.

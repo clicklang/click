@@ -106,7 +106,10 @@ fn an_aliased_read_meets_its_stored_cell_without_scanning_unrelated_cells_or_ali
             offset: PointerOffsetTerm::Constant(8 * i as i64),
         };
         for i in 0..=size {
-            memory = memory.store(cell(i), CValue::UInt64(MachineTerm::uint64_constant(i)));
+            memory = memory.store(
+                cell(i),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(i)),
+            );
         }
         let memory = intern_c_memory(memory);
         let mut context = PureFactContext::new();
@@ -143,7 +146,7 @@ fn an_aliased_read_grows_linearly_with_its_own_alias_class() {
         };
         let memory = intern_c_memory(CMemory::new().with_block("cells", 8).store(
             stored_at.clone(),
-            CValue::UInt64(MachineTerm::uint64_constant(7)),
+            ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
         ));
         let mut context = PureFactContext::new();
         let link = |i: u64| Pointer::symbolic(Variable(972_000 + i));
@@ -184,7 +187,7 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
                     block: "other".into(),
                     offset: PointerOffsetTerm::Constant(8 * i as i64),
                 },
-                CValue::UInt64(MachineTerm::uint64_constant(i)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(i)),
             );
             let read = word(&intern_c_memory(memory.clone()), &read_at, 8);
             assert!(!graph.are_uint64_equal(&read, &MachineTerm::uint64_constant(99)));
@@ -307,13 +310,14 @@ fn machine_observation_round_trips_retain_growing_shared_operands() {
         for size in [16, 64, 256] {
             let _session = VerificationSession::enter();
             let format = MachineIntegerType::UInt64;
-            let mut root = KernelTerm::variable(KernelType::C(CType::UInt64), Variable(989821));
+            let mut root =
+                KernelTerm::variable(KernelType::C(ProgramType::UInt64), Variable(989821));
             let context = PureFactContext::new();
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {
                     let fresh = KernelTerm::variable(
-                        KernelType::C(CType::UInt64),
+                        KernelType::C(ProgramType::UInt64),
                         Variable(989822 + index),
                     );
                     if !nested {

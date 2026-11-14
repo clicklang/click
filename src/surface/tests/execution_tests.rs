@@ -1342,7 +1342,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
 
     assert_eq!(verified.len(), 1);
     let verified = &verified[0];
-    let crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(argument)) =
+    let crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(argument)) =
         &verified.specification.arguments()[0]
     else {
         panic!("fill3's input is a pointer");
@@ -1363,7 +1363,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                 base: base.clone(),
                 bytes: 12,
                 element_width: 4,
-                element_type: Some(CType::Int32),
+                element_type: Some(ProgramType::Int32),
                 struct_layout: None,
             },
         )]),
@@ -1390,7 +1390,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
             .specification
             .state()
             .equal_up_to_unused_creation_ledgers(
-                &CState::new()
+                &ExecutionState::new()
                     .with_population_creation_tracking()
                     .with_memory(initial_memory)
                     .with_resource_context(initial_resources.clone())
@@ -1407,7 +1407,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
             .equal_up_to_unused_creation_ledgers(&CFunctionOutcome::Return {
                 value: int32(2).into(),
                 state: Box::new(
-                    CState::new()
+                    ExecutionState::new()
                         .with_population_creation_tracking()
                         .with_memory(final_memory)
                         .with_resource_context(initial_resources)
@@ -1422,15 +1422,15 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                     let parsed = syntax::parse_function(FILL3_C)
                         .expect("fill3 should parse")
                         .to_kernel_function();
-                    let CStatement::Seq(statements) = parsed.body().clone() else {
+                    let ProgramStatement::Seq(statements) = parsed.body().clone() else {
                         panic!("fill3 body should have a prefix and suffix");
                     };
                     let (prefix, suffix) = (statements.first().clone(), statements.rest());
-                    let CStatement::Seq(statements) = suffix.as_ref().clone() else {
+                    let ProgramStatement::Seq(statements) = suffix.as_ref().clone() else {
                         panic!("fill3 suffix should contain the loop and return");
                     };
                     let (loop_statement, result) = (statements.first().clone(), statements.rest());
-                    let CStatement::While {
+                    let ProgramStatement::While {
                         condition,
                         invariant,
                         invariant_checks,
@@ -1441,10 +1441,10 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                         panic!("fill3 suffix should start with a loop");
                     };
                     c_function(
-                        CType::Int32,
+                        ProgramType::Int32,
                         "fill3",
                         vec![
-                            crate::kernel::c_parameter("p", CType::Int32Pointer)
+                            crate::kernel::c_parameter("p", ProgramType::Int32Pointer)
                                 .with_pointee_class(Some(
                                     crate::kernel::effective_type::CAccessClass::Scalar(
                                         crate::kernel::effective_type::CScalarClass::Int,
@@ -1487,9 +1487,9 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                 .with_resource_summary(
                     vec![CResourceSpec::memory(
                         CMemorySegment::new(
-                            CExpression::Variable("p".to_string()),
-                            CExpression::Value(int32(0)),
-                            CExpression::Value(int32(3)),
+                            ProgramExpression::Variable("p".to_string()),
+                            ProgramExpression::Value(int32(0)),
+                            ProgramExpression::Value(int32(3)),
                         ),
                         CResourceAccessMode::Own,
                         CResourceTransferRole::Consume,
@@ -1500,13 +1500,15 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                 .with_contract(
                     vec![SpecProposition::MemoryLoadable {
                         memory: SpecMemory::Current,
-                        base: SpecExpression::CExpression(CExpression::Variable("p".to_string(),)),
+                        base: SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                            "p".to_string(),
+                        )),
                         start: SpecExpression::Value(int32(0)),
                         end: SpecExpression::Value(int32(3)),
                         element_width: 4,
                     }],
                     vec![SpecProposition::Comparison {
-                        left: SpecExpression::CExpression(CExpression::Variable(
+                        left: SpecExpression::ProgramExpression(ProgramExpression::Variable(
                             crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
                         )),
                         operator: CComparisonOperator::Equal,

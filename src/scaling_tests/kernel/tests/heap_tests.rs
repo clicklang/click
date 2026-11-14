@@ -15,7 +15,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
     let validity = Proposition::CMemoryReadDefined {
         memory: memory.clone(),
         pointer: pointer.offset_by_bytes(4),
-        value_type: CType::Int32,
+        value_type: ProgramType::Int32,
     };
     let field_alias = alias.offset_by_bytes(4);
     let mut samples = Vec::new();
@@ -31,16 +31,20 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
                     block: PointerBlock::Heap(942_000 + index),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                value_type: CType::Int32,
+                value_type: ProgramType::Int32,
             });
         }
         let assumptions = unrelated.clone().assume_proposition(validity.clone());
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            assumptions.has_memory_read_defined_evidence(&memory, &field_alias, CType::Int32)
+            assumptions.has_memory_read_defined_evidence(&memory, &field_alias, ProgramType::Int32)
         });
         assert!(proved);
         samples.push(work);
-        assert!(!unrelated.has_memory_read_defined_evidence(&memory, &field_alias, CType::Int32));
+        assert!(!unrelated.has_memory_read_defined_evidence(
+            &memory,
+            &field_alias,
+            ProgramType::Int32
+        ));
     }
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
@@ -58,7 +62,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
     let validity = Proposition::CMemoryReadDefined {
         memory: memory.clone(),
         pointer: pointer.clone(),
-        value_type: CType::Int32,
+        value_type: ProgramType::Int32,
     };
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
@@ -70,16 +74,16 @@ fn read_validity_lookup_ignores_unrelated_cells() {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Constant(index * 4),
                 },
-                value_type: CType::Int32,
+                value_type: ProgramType::Int32,
             });
         }
         let assumptions = unrelated.clone().assume_proposition(validity.clone());
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            assumptions.has_memory_read_defined_evidence(&memory, &pointer, CType::Int32)
+            assumptions.has_memory_read_defined_evidence(&memory, &pointer, ProgramType::Int32)
         });
         assert!(proved);
         samples.push(work);
-        assert!(!unrelated.has_memory_read_defined_evidence(&memory, &pointer, CType::Int32));
+        assert!(!unrelated.has_memory_read_defined_evidence(&memory, &pointer, ProgramType::Int32));
     }
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
@@ -106,7 +110,7 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
             );
         }
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            PureFactContext::new().proves_memory_read_defined(&memory, &target, CType::Int32)
+            PureFactContext::new().proves_memory_read_defined(&memory, &target, ProgramType::Int32)
         });
         assert!(!proved);
         samples.push(work);
@@ -138,7 +142,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         let fact = Proposition::CMemoryReadDefined {
             memory: memory.clone(),
             pointer: address.clone(),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         };
         let assumptions = PureFactContext::new().assume_proposition(fact);
         let request = Pointer {
@@ -154,7 +158,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
                 block: "local:result".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::pointer(request.clone()),
+            ProgramValue::pointer(request.clone()),
         );
         let (failed, _, _) = pending
             .resolve_pending_heap_allocation(&request, false)
@@ -162,7 +166,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         let goal = Proposition::CMemoryReadDefined {
             memory: failed.clone(),
             pointer: address.clone(),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         };
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::PureFactContext::settles_exactly(&assumptions, &goal)
@@ -179,7 +183,11 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             &assumptions,
             None,
         );
-        assert!(!assumptions.has_memory_read_defined_evidence(&changed, &address, CType::Int32));
+        assert!(!assumptions.has_memory_read_defined_evidence(
+            &changed,
+            &address,
+            ProgramType::Int32
+        ));
     }
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
@@ -209,9 +217,9 @@ fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
                 16,
             ));
         }
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_resource_context(resources)
-            .with_local("p", CValue::pointer(base.clone()));
+            .with_local("p", ProgramValue::pointer(base.clone()));
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_c_statement_paths(
                 &state,
@@ -263,7 +271,7 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
         }
         let state = state
             .with_resource_context(resources)
-            .with_local("q", CValue::pointer(Pointer::null()));
+            .with_local("q", ProgramValue::pointer(Pointer::null()));
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_c_statement_paths(
                 &state,
@@ -417,7 +425,7 @@ fn sequential_free_pointer_frames_stay_near_linear() {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = Pointer::symbolic(Variable(951_000));
         let value = Pointer::symbolic(Variable(951_001));
-        let mut memory = CMemory::new().store(cell.clone(), CValue::pointer(value));
+        let mut memory = CMemory::new().store(cell.clone(), ProgramValue::pointer(value));
         let mut resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
             CMemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 1u32.into(), 8),
         ));
@@ -439,13 +447,13 @@ fn sequential_free_pointer_frames_stay_near_linear() {
                     1u32.into(),
                 )));
         }
-        let mut state = CState::new()
+        let mut state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(resources);
         let mut assumptions = PureFactContext::new();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for base in bases {
-                state = state.clone().with_local("p", CValue::pointer(base));
+                state = state.clone().with_local("p", ProgramValue::pointer(base));
                 let paths = execute_c_statement_paths(
                     &state,
                     &c_heap_free(c_variable("p")),

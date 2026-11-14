@@ -26,13 +26,16 @@ pub(in crate::kernel) fn is_narrow_format(format: MachineIntegerType) -> bool {
 /// One match on the value.
 pub(in crate::kernel) fn narrow_operand(
     format: MachineIntegerType,
-    value: &CValue,
+    value: &ProgramValue,
 ) -> Option<MachineTerm> {
     match value {
-        CValue::Int8(term) | CValue::UInt8(term) | CValue::Int16(term) | CValue::UInt16(term) => {
+        ProgramValue::Int8(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::UInt16(term) => {
             (MachineIntegerType::from_c_type(value.c_type()) == Some(format)).then(|| term.clone())
         }
-        CValue::Int32(int32_constant!(bits)) => {
+        ProgramValue::Int32(int32_constant!(bits)) => {
             let value = num_bigint::BigInt::from(constant_u32(*bits) as i32);
             let (low, high) = format.format().bounds();
             (value >= low && value <= high)
@@ -49,9 +52,9 @@ pub(in crate::kernel) fn narrow_operand(
 pub(in crate::kernel) fn native_narrow_binary(
     format: MachineIntegerType,
     op: MachineBinaryOp,
-    left: &CValue,
-    right: &CValue,
-) -> Option<CValue> {
+    left: &ProgramValue,
+    right: &ProgramValue,
+) -> Option<ProgramValue> {
     if !is_narrow_format(format) || !crate::kernel::primitives::is_native_narrow_operator(op) {
         return None;
     }
@@ -60,7 +63,7 @@ pub(in crate::kernel) fn native_narrow_binary(
         // A native narrow shift's count is a 32-bit word, as a 32-bit
         // shift's is, so the shift meets its promoted spelling (rule N).
         match right.numeric_value() {
-            CValue::Int32(count) | CValue::UInt32(count) => count.clone(),
+            ProgramValue::Int32(count) | ProgramValue::UInt32(count) => count.clone(),
             _ => return None,
         }
     } else {
@@ -72,8 +75,8 @@ pub(in crate::kernel) fn native_narrow_binary(
 /// `~value` at the narrow `format`, when `value` is a value of that format.
 pub(in crate::kernel) fn native_narrow_not(
     format: MachineIntegerType,
-    value: &CValue,
-) -> Option<CValue> {
+    value: &ProgramValue,
+) -> Option<ProgramValue> {
     if !is_narrow_format(format) {
         return None;
     }

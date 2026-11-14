@@ -178,9 +178,9 @@ fn a_layered_dag_costs_linear_termination_work() {
 #[test]
 fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
     let ranked_loop = || {
-        let i = CExpression::Variable("i".to_string());
-        CStatement::While {
-            condition: CExpression::LessThan(
+        let i = ProgramExpression::Variable("i".to_string());
+        ProgramStatement::While {
+            condition: ProgramExpression::LessThan(
                 Box::new(i.clone()),
                 Box::new(crate::kernel::c_int32_literal(4)),
             ),
@@ -188,38 +188,41 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
             invariant_checks: Vec::new(),
             effect_checks: Vec::new(),
             resource_specs: Vec::new(),
-            ranking_measures: vec![CRankingComponent::CExpression(CExpression::Subtract(
-                Box::new(crate::kernel::c_int32_literal(4)),
-                Box::new(i),
-            ))],
+            ranking_measures: vec![CRankingComponent::ProgramExpression(
+                ProgramExpression::Subtract(
+                    Box::new(crate::kernel::c_int32_literal(4)),
+                    Box::new(i),
+                ),
+            )],
             structural_measure: None,
             do_while: false,
             backedge_target: None,
             natural_exit_target: None,
-            body: Box::new(CStatement::Skip),
+            body: Box::new(ProgramStatement::Skip),
         }
     };
     // Balanced, as `calls_body` builds its calls, so the walks measure work
     // rather than the host's stack.
-    fn sequence(statements: &[CStatement]) -> CStatement {
+    fn sequence(statements: &[ProgramStatement]) -> ProgramStatement {
         match statements {
-            [] => CStatement::Skip,
+            [] => ProgramStatement::Skip,
             [only] => only.clone(),
             _ => {
                 let (left, right) = statements.split_at(statements.len() / 2);
-                CStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
+                ProgramStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
             }
         }
     }
     let mut samples = Vec::new();
     for size in SIZES {
         let loops = (0..size).map(|_| ranked_loop()).collect::<Vec<_>>();
-        let function = CFunction::new(CType::Void, "loops", Vec::new(), sequence(&loops));
+        let function =
+            ProgramFunction::new(ProgramType::Void, "loops", Vec::new(), sequence(&loops));
         let loop_rules = BTreeMap::from([(
             "loops".to_string(),
             (0..size)
                 .map(|index| CVerifiedLoopRule {
-                    symbolic_entry_state: CState::default(),
+                    symbolic_entry_state: ExecutionState::default(),
                     loop_statement: ranked_loop(),
                     loop_index: Some(index),
                     required_assumptions: PureFactContext::new(),

@@ -790,9 +790,9 @@ impl<'a> Proof<'a> {
                 )
                 .ok()?;
                 let callee = match statement {
-                    CStatement::CallAssign { function_name, .. }
-                    | CStatement::Call { function_name, .. }
-                    | CStatement::CallResult { function_name, .. } => function_name,
+                    ProgramStatement::CallAssign { function_name, .. }
+                    | ProgramStatement::Call { function_name, .. }
+                    | ProgramStatement::CallResult { function_name, .. } => function_name,
                     _ => return None,
                 };
                 format!("step({callee}(...))")
@@ -1887,8 +1887,8 @@ impl<'a> Proof<'a> {
             {
                 return Ok(crate::kernel::MachineTerm::constant(value as u32));
             }
-            if let ContractExpression::CFragment(crate::kernel::CExpression::Value(
-                crate::kernel::CValue::Int32(int32_constant!(value)),
+            if let ContractExpression::CFragment(crate::kernel::ProgramExpression::Value(
+                crate::kernel::ProgramValue::Int32(int32_constant!(value)),
             )) = expression
             {
                 return Ok(crate::kernel::MachineTerm::constant(constant_u32(*value)));
@@ -2466,16 +2466,16 @@ impl<'a> Proof<'a> {
             .iter()
             .filter_map(|(name, expression)| {
                 let variable = match expression {
-                    ContractExpression::CFragment(CExpression::Value(CValue::Pointer(pointer))) => {
-                        match (&pointer.pointer().block, &pointer.pointer().offset) {
-                            (
-                                crate::kernel::PointerBlock::Symbolic(variable),
-                                crate::kernel::PointerOffsetTerm::Constant(0),
-                            ) => Some(*variable),
-                            _ => None,
-                        }
-                    }
-                    ContractExpression::CFragment(CExpression::Value(value)) => {
+                    ContractExpression::CFragment(ProgramExpression::Value(
+                        ProgramValue::Pointer(pointer),
+                    )) => match (&pointer.pointer().block, &pointer.pointer().offset) {
+                        (
+                            crate::kernel::PointerBlock::Symbolic(variable),
+                            crate::kernel::PointerOffsetTerm::Constant(0),
+                        ) => Some(*variable),
+                        _ => None,
+                    },
+                    ContractExpression::CFragment(ProgramExpression::Value(value)) => {
                         super::diagnostic_value_variable(value)
                     }
                     ContractExpression::AlgebraicVariable { binder_index, .. } => {
@@ -3122,7 +3122,7 @@ impl<'a> Proof<'a> {
                     let previous = current.surface_bindings.get(name).cloned().or_else(|| {
                         let value = match self.context.as_ref() {
                             ProofContext::Pure(context) => {
-                                context.theorem_context.values.get(name).cloned().map(CExpression::Value)
+                                context.theorem_context.values.get(name).cloned().map(ProgramExpression::Value)
                             }
                             ProofContext::FixedState(context) => context
                                 .parameter_binding.parameters
@@ -3228,11 +3228,11 @@ impl<'a> Proof<'a> {
                         // ambient facts.
                         let value = match (pointer, introduced_pointer) {
                             (true, Some(c_type)) => {
-                                CValue::typed_pointer(Pointer::symbolic(variable), c_type).with_pointer_object_class(object_class)
+                                ProgramValue::typed_pointer(Pointer::symbolic(variable), c_type).with_pointer_object_class(object_class)
                             }
                             _ => match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                 Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
-                                _ => CValue::Int32(MachineTerm::Variable(variable)),
+                                _ => ProgramValue::Int32(MachineTerm::Variable(variable)),
                             },
                         };
                         if algebraic.is_some() {
@@ -3243,7 +3243,7 @@ impl<'a> Proof<'a> {
                         } else if !*integer {
                             surface_bindings = surface_bindings.with_inserted(
                                 name.clone(),
-                                ContractExpression::CFragment(CExpression::Value(value)),
+                                ContractExpression::CFragment(ProgramExpression::Value(value)),
                             );
                         }
                         surface.and_then(written_universal_body).map(Arc::new)
@@ -3274,10 +3274,10 @@ impl<'a> Proof<'a> {
                         } else {
                             surface_bindings = surface_bindings.with_inserted(
                                 name.clone(),
-                                ContractExpression::CFragment(CExpression::Value(
+                                ContractExpression::CFragment(ProgramExpression::Value(
                                     match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                         Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
-                                        _ => CValue::Int32(MachineTerm::Variable(variable)),
+                                        _ => ProgramValue::Int32(MachineTerm::Variable(variable)),
                                     },
                                 )),
                             );
@@ -3307,10 +3307,10 @@ impl<'a> Proof<'a> {
                     ) => {
                         surface_bindings = surface_bindings.with_inserted(
                             item.clone(),
-                            ContractExpression::CFragment(CExpression::Value(
+                            ContractExpression::CFragment(ProgramExpression::Value(
                                 match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                     Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
-                                    _ => CValue::Int32(MachineTerm::Variable(variable)),
+                                    _ => ProgramValue::Int32(MachineTerm::Variable(variable)),
                                 },
                             )),
                         );
@@ -3394,7 +3394,7 @@ impl<'a> Proof<'a> {
         // facts or asking individual premise consumers to recover the name.
         if let Some((name, variable, value)) = machine_binding {
             let names = BTreeMap::from([(variable, name.clone())]);
-            let source_state = CState::new().with_local(name, value);
+            let source_state = ExecutionState::new().with_local(name, value);
             for fact in state.state().added_facts() {
                 let surface = super::super::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
                     fact, ParameterBinding::default(), &source_state, &names,
@@ -3443,7 +3443,7 @@ impl<'a> Proof<'a> {
             );
         }
         match context.theorem_context.values.get(parameter) {
-            Some(CValue::Int32(current)) => {
+            Some(ProgramValue::Int32(current)) => {
                 let nonnegative = Proposition::ConditionIs(
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -3462,7 +3462,7 @@ impl<'a> Proof<'a> {
                 }
             }
             // Every native unsigned value is in the well-founded domain.
-            Some(CValue::UInt64(_)) => {}
+            Some(ProgramValue::UInt64(_)) => {}
             _ => return Err(self.step_error("induction parameter must have type int32 or uint64")),
         }
         let quantified = super::super::pure_theorems::pure_induction_hypothesis(
@@ -3534,7 +3534,7 @@ impl<'a> Proof<'a> {
             }
         }
 
-        let state = CState::new().with_memory(context.theorem_context.memory.clone());
+        let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
         let mut active_functions = BTreeSet::new();
         let value = evaluate_contract_expression_with_environment(
             &context.theorem_context.values,
@@ -3552,8 +3552,8 @@ impl<'a> Proof<'a> {
             self.step_error(format!("could not evaluate induction argument: {message}"))
         })?;
         let argument = match (context.theorem_context.values.get(&setup.parameter), value) {
-            (Some(CValue::Int32(_)), CValue::Int32(argument))
-            | (Some(CValue::UInt64(_)), CValue::UInt64(argument)) => argument,
+            (Some(ProgramValue::Int32(_)), ProgramValue::Int32(argument))
+            | (Some(ProgramValue::UInt64(_)), ProgramValue::UInt64(argument)) => argument,
             _ => return Err(self.step_error("induction argument must have the measure's type")),
         };
         let quantified = super::super::pure_theorems::pure_induction_hypothesis(
@@ -3726,10 +3726,10 @@ fn trace_frontier(frontier: &ExecutionFrontier) -> String {
     }
 }
 
-fn trace_statement_head(statement: &CStatement) -> String {
-    if let CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } =
-        statement
-        && let CExpression::Add(base, index) = pointer
+fn trace_statement_head(statement: &ProgramStatement) -> String {
+    if let ProgramStatement::Store { pointer, value }
+    | ProgramStatement::TypedStore { pointer, value, .. } = statement
+        && let ProgramExpression::Add(base, index) = pointer
     {
         return format!(
             "{}[{}] = {}",
@@ -3747,7 +3747,7 @@ fn trace_statement_head(statement: &CStatement) -> String {
 fn trace_resource_fact(
     fact: &CResourceFact,
     context: &ExecutionProofContext<'_>,
-    reached: &CState,
+    reached: &ExecutionState,
 ) -> String {
     if let Some(range) = fact.memory_range() {
         for (parameter, argument) in context
@@ -3756,7 +3756,7 @@ fn trace_resource_fact(
             .iter()
             .zip(context.arguments)
         {
-            if let CExpression::Value(CValue::Pointer(base)) = argument
+            if let ProgramExpression::Value(ProgramValue::Pointer(base)) = argument
                 && base.pointer() == range.base()
             {
                 return crate::surface::proof_diagnostics::render::render_resource_fact_diagnostic(
@@ -4029,12 +4029,12 @@ fn trace_function_pointer_load(
     else {
         return None;
     };
-    let CStatement::Assign {
+    let ProgramStatement::Assign {
         name,
         expression:
-            CExpression::TypedLoad {
+            ProgramExpression::TypedLoad {
                 pointer,
-                value_type: CType::FunctionPointer(_),
+                value_type: ProgramType::FunctionPointer(_),
                 ..
             },
         ..
@@ -4048,7 +4048,7 @@ fn trace_function_pointer_load(
     let value = after.scalar_local_value(name)?;
     let (address, _) = crate::kernel::c_evaluate_spec_expression_at_state(
         state,
-        &crate::kernel::SpecExpression::CExpression(pointer.as_ref().clone()),
+        &crate::kernel::SpecExpression::ProgramExpression(pointer.as_ref().clone()),
         None,
         assumptions,
     )

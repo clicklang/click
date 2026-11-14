@@ -92,7 +92,7 @@ impl<'a> Proof<'a> {
         {
             return Ok(false);
         }
-        let Ok((_, current_state, CStatement::If { condition, .. }, _)) =
+        let Ok((_, current_state, ProgramStatement::If { condition, .. }, _)) =
             next_top_level_statement_from_frontier_position(
                 execution.view(context),
                 &execution.core.state,
@@ -177,7 +177,7 @@ impl<'a> Proof<'a> {
                 context.tactic_index,
                 "branch",
             )?;
-        let CStatement::If {
+        let ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -185,7 +185,7 @@ impl<'a> Proof<'a> {
         else {
             return Err(self.step_error("`branch` source region did not contain a C `if`"));
         };
-        let branch_statement = CStatement::If {
+        let branch_statement = ProgramStatement::If {
             condition: condition.clone(),
             then_branch: then_branch.clone(),
             else_branch: else_branch.clone(),
@@ -370,7 +370,7 @@ impl<'a> Proof<'a> {
             // to the parent, never to a bounded arm.
             arm_execution.core.frontier.continuations = PersistentSequence::default();
             arm_execution.core.frontier.region = ExecutionRegionKind::BranchArm;
-            if matches!(selected_branch, CStatement::Skip) {
+            if matches!(selected_branch, ProgramStatement::Skip) {
                 record_statement_program_snapshot_state(
                     &mut arm_execution.presentation.recorded_snapshots,
                     context.function_block,
@@ -665,7 +665,7 @@ impl<'a> Proof<'a> {
             context.tactic_index,
             "decided branch",
         )?;
-        let CStatement::If {
+        let ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -687,7 +687,7 @@ impl<'a> Proof<'a> {
         } else {
             else_branch.as_ref()
         };
-        let entry_steps = 1 + usize::from(matches!(source_arm, CStatement::Skip));
+        let entry_steps = 1 + usize::from(matches!(source_arm, ProgramStatement::Skip));
         let mut selected_steps = Vec::with_capacity(entry_steps + arm.certificate.steps().len());
         selected_steps.push(ProofStep::Step);
         selected_steps.resize_with(entry_steps, || ProofStep::Step);
@@ -784,8 +784,8 @@ impl<'a> Proof<'a> {
         parent_execution: &ExecutionProofState,
         statement_index: usize,
         continuation_index: usize,
-        continuation_remaining: &Option<Arc<CStatement>>,
-        execution_start_state: CState,
+        continuation_remaining: &Option<Arc<ProgramStatement>>,
+        execution_start_state: ExecutionState,
         // The C branch the arms came from, or `None` with
         // `proof_case_condition` when they are the cases of a proof `if`.
         checked_condition_split: Option<CheckedBranchSplit>,
@@ -937,7 +937,7 @@ impl<'a> Proof<'a> {
             "interface execution join",
         )?;
 
-        let sibling_join_states: [&CState; 2] =
+        let sibling_join_states: [&ExecutionState; 2] =
             [&arms[0].execution.core.state, &arms[1].execution.core.state];
         // Both arms abstract from the higher of their two counters: their
         // abstractions are compared for equality below, so one shared lower
@@ -1473,7 +1473,7 @@ impl<'a> Proof<'a> {
         parent_unfolds: &PersistentOrderedSet<String>,
         parent_execution: &ExecutionProofState,
         statement_index: usize,
-        execution_start_state: CState,
+        execution_start_state: ExecutionState,
         proof_case_condition: Option<ProofCaseCondition>,
         call_outcomes: bool,
         arms: [CheckedExecutionJoinArm<'_>; 2],
@@ -1498,11 +1498,11 @@ impl<'a> Proof<'a> {
         let (surface_condition, empty_source_arms) = if call_outcomes {
             (
                 ClickProposition::Comparison {
-                    left: ContractExpression::CFragment(CExpression::Value(
+                    left: ContractExpression::CFragment(ProgramExpression::Value(
                         crate::kernel::api::int32(0),
                     )),
                     operator: ComparisonOperator::Equal,
-                    right: ContractExpression::CFragment(CExpression::Value(
+                    right: ContractExpression::CFragment(ProgramExpression::Value(
                         crate::kernel::api::int32(0),
                     )),
                 },
@@ -1520,7 +1520,7 @@ impl<'a> Proof<'a> {
                 context.tactic_index,
                 "terminal branch join",
             )?;
-            let CStatement::If {
+            let ProgramStatement::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -1539,8 +1539,8 @@ impl<'a> Proof<'a> {
                     },
                 )?,
                 [
-                    matches!(then_branch.as_ref(), CStatement::Skip),
-                    matches!(else_branch.as_ref(), CStatement::Skip),
+                    matches!(then_branch.as_ref(), ProgramStatement::Skip),
+                    matches!(else_branch.as_ref(), ProgramStatement::Skip),
                 ],
             )
         };
@@ -2137,8 +2137,8 @@ impl<'a> Proof<'a> {
         parent_execution: &ExecutionProofState,
         statement_index: usize,
         continuation_index: usize,
-        continuation_remaining: Option<Arc<CStatement>>,
-        execution_start_state: CState,
+        continuation_remaining: Option<Arc<ProgramStatement>>,
+        execution_start_state: ExecutionState,
         checked_condition_split: CheckedBranchSplit,
         require_empty: bool,
         arms: [CheckedExecutionJoinArm<'_>; 2],
@@ -2773,7 +2773,7 @@ impl<'a> Proof<'a> {
                         context.tactic_index,
                         "branch join",
                     )?;
-                let CStatement::If { condition, .. } = statement else {
+                let ProgramStatement::If { condition, .. } = statement else {
                     return Err(self.step_error("checked C branch split no longer names a C `if`"));
                 };
                 if !split.validates_exhaustive_join(
@@ -3294,7 +3294,7 @@ impl<'a> Proof<'a> {
             context.tactic_index,
             "expanded execution branch",
         )?;
-        let CStatement::If {
+        let ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -3321,7 +3321,7 @@ impl<'a> Proof<'a> {
         } else {
             else_branch.as_ref()
         };
-        let entry_steps = 1 + usize::from(matches!(source_arm, CStatement::Skip));
+        let entry_steps = 1 + usize::from(matches!(source_arm, ProgramStatement::Skip));
         let mut expected = vec![ProofStep::Step];
         expected.resize_with(entry_steps, || ProofStep::Step);
         Ok(expected)
@@ -3398,7 +3398,7 @@ impl<'a> Proof<'a> {
         else {
             return Ok(FrontierCases::Branch(None));
         };
-        let CStatement::If { .. } = &statement else {
+        let ProgramStatement::If { .. } = &statement else {
             return Ok(FrontierCases::PathCases);
         };
         let (checked_split, transitions) = certified_proof_condition_split(
@@ -3442,7 +3442,7 @@ impl<'a> Proof<'a> {
         };
         Ok(
             super::super::cursor_execution::split_next_source_operation(&statement)
-                .is_ok_and(|(statement, _)| matches!(statement, CStatement::Switch { .. })),
+                .is_ok_and(|(statement, _)| matches!(statement, ProgramStatement::Switch { .. })),
         )
     }
 
@@ -3743,7 +3743,7 @@ impl<'a> Proof<'a> {
             continuation_remaining: prepared.continuation_remaining,
             execution_start_state: prepared.execution_start_state,
             split_state: (*parent_execution.core.state).clone(),
-            split_statement: CStatement::Skip,
+            split_statement: ProgramStatement::Skip,
         });
         Ok((successor, record))
     }
@@ -3992,9 +3992,9 @@ mod progress_tests {
             crate::surface::parse("int32 identity(int32 x) { ensures result == x; }").unwrap();
         let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
         let function = parsed.to_kernel_function();
-        let arguments = [CExpression::Value(CValue::Int32(MachineTerm::Variable(
-            Variable(71_000),
-        )))];
+        let arguments = [ProgramExpression::Value(ProgramValue::Int32(
+            MachineTerm::Variable(Variable(71_000)),
+        ))];
         let functions = CExecutionEnvironment::new();
         let resources = ResourceEnvironment::new(&[]);
         let predicates = PredicateEnvironment::new(&[]);
@@ -4004,7 +4004,7 @@ mod progress_tests {
             "identity.contract",
             0,
             ExecutionProofState::at_entry(
-                CState::new(),
+                ExecutionState::new(),
                 ExecutionFrontier::default(),
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),
@@ -4022,15 +4022,15 @@ mod progress_tests {
             &theorems,
         );
         let written = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("x".into())),
+            left: ContractExpression::CFragment(ProgramExpression::Variable("x".into())),
             operator: ComparisonOperator::LessThan,
-            right: ContractExpression::CFragment(CExpression::Value(int32(10))),
+            right: ContractExpression::CFragment(ProgramExpression::Value(int32(10))),
         };
         let assertions = [
             ProofAssertion::Fact(ClickProposition::Comparison {
-                left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+                left: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+                right: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
             }),
             ProofAssertion::Fact(written),
         ];
@@ -4046,7 +4046,7 @@ mod progress_tests {
         let read = Proposition::CMemoryReadDefined {
             memory: CMemory::new(),
             pointer: Pointer::symbolic(Variable(71_001)),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         };
         for arm in [0, 1, 2] {
             for (goal, side_condition, expected, expected_trace) in [
@@ -4131,14 +4131,14 @@ mod progress_tests {
         )
         .expect("test C function should parse");
         let function = parsed_function.to_kernel_function();
-        let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
-            Variable(71_000),
-        )))];
+        let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
+            MachineTerm::Variable(Variable(71_000)),
+        ))];
         let function_environment = CExecutionEnvironment::new();
         let condition = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
+            left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
             operator: ComparisonOperator::GreaterEqual,
-            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            right: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
         };
 
         for size in [8_u32, 32, 128] {
@@ -4146,7 +4146,7 @@ mod progress_tests {
                 "execution proof if scaling",
                 0,
                 ExecutionProofState::at_entry(
-                    CState::new(),
+                    ExecutionState::new(),
                     ExecutionFrontier::default(),
                     RecordedSnapshots::new(),
                     SurfacePropositionMap::default(),

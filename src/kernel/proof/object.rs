@@ -188,7 +188,7 @@ pub(crate) enum PropositionIntroduction {
     /// checked goal now mentions.
     Universal {
         variable: crate::kernel::Variable,
-        pointer: Option<crate::kernel::CType>,
+        pointer: Option<crate::kernel::ProgramType>,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
         algebraic: Option<crate::kernel::AlgebraicType>,
     },
@@ -939,11 +939,12 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     )
                 }
                 Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => {
-                    let pointer = if matches!(c_type, crate::kernel::CType::FunctionPointer(_)) {
-                        crate::kernel::Pointer::symbolic_function(chosen)
-                    } else {
-                        crate::kernel::Pointer::symbolic(chosen)
-                    };
+                    let pointer =
+                        if matches!(c_type, crate::kernel::ProgramType::FunctionPointer(_)) {
+                            crate::kernel::Pointer::symbolic_function(chosen)
+                        } else {
+                            crate::kernel::Pointer::symbolic(chosen)
+                        };
                     crate::kernel::substitute_pointer_variable_in_proposition(&body, var, &pointer)
                 }
                 Sort::Algebraic(algebraic_type) => {
@@ -1683,8 +1684,8 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
     /// language supplies presentation only, never obligations or assumptions.
     pub(crate) fn open_invariant_body(
         &self,
-        loop_entry: &crate::kernel::CState,
-        iteration_entry: &crate::kernel::CState,
+        loop_entry: &crate::kernel::ExecutionState,
+        iteration_entry: &crate::kernel::ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
         checks: &[crate::kernel::CLoopInvariantCheck],
         ranking_measures: &[crate::kernel::CRankingComponent],
@@ -2881,12 +2882,12 @@ mod tests {
         let reserving = Proposition::ForAll {
             name: Default::default(),
             var: bound,
-            sort: Sort::CPointer(crate::kernel::CType::Int32),
+            sort: Sort::CPointer(crate::kernel::ProgramType::Int32),
             body: Box::new(body.clone()),
         };
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&reserving));
         let (witness, _) = facts
-            .freshen_pointer_forall_body(bound, crate::kernel::CType::Int32, &body)
+            .freshen_pointer_forall_body(bound, crate::kernel::ProgramType::Int32, &body)
             .expect("the witness range holds an identity");
         assert!(
             crate::kernel::ExecutionBudget::is_universal_witness_variable(witness),
@@ -2900,8 +2901,9 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            CMemory, CState, CValue, ConditionTerm, IntegerRangeFoldIndex, IntegerTerm,
-            MachineIntegerType, Pointer, PointerOffsetTerm, SharedIntegerRangeEndpoint,
+            CMemory, ConditionTerm, ExecutionState, IntegerRangeFoldIndex, IntegerTerm,
+            MachineIntegerType, Pointer, PointerOffsetTerm, ProgramValue,
+            SharedIntegerRangeEndpoint,
         };
         type TestProof = ProofObject<
             (),
@@ -2918,7 +2920,7 @@ mod tests {
                         unfolded_predicates: PersistentOrderedSet::default(),
                         execution: Some(Arc::new(ProofExecutionState::new(
                             ExecutionProofCore::at_entry(
-                                CState::new(),
+                                ExecutionState::new(),
                                 ExecutionFrontier {
                                     region: ExecutionRegionKind::LoopBody,
                                     position: FrontierPosition::RegionBoundary,
@@ -3036,7 +3038,7 @@ mod tests {
                 block: "alpha".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(MachineTerm::constant(7)),
         );
         assert!(
             root(
@@ -3054,8 +3056,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            CLoopInvariantCheck, CState, CType, CValue, Pointer, PointerOffsetTerm, SpecExpression,
-            SpecMemory, SpecProposition,
+            CLoopInvariantCheck, ExecutionState, Pointer, PointerOffsetTerm, ProgramType,
+            ProgramValue, SpecExpression, SpecMemory, SpecProposition,
         };
         type TestProof = ProofObject<
             (),
@@ -3064,16 +3066,16 @@ mod tests {
         >;
         let load = SpecExpression::MemoryLoad {
             memory: SpecMemory::Current,
-            pointer: Box::new(SpecExpression::Value(CValue::Pointer(
-                crate::kernel::CPointerValue::new(
+            pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
+                crate::kernel::PointerValue::new(
                     Pointer {
                         block: "unallocated".into(),
                         offset: PointerOffsetTerm::Constant(0),
                     },
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 ),
             ))),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         };
         // An explicit validity claim needs evidence even though logical
         // reflexivity at this address would hold without memory permission.
@@ -3091,7 +3093,7 @@ mod tests {
                     unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(ProofExecutionState::new(
                         ExecutionProofCore::at_entry(
-                            CState::new(),
+                            ExecutionState::new(),
                             ExecutionFrontier {
                                 region: ExecutionRegionKind::LoopBody,
                                 position: FrontierPosition::RegionBoundary,
@@ -3105,8 +3107,8 @@ mod tests {
         );
         let (body, scope) = frontier
             .open_invariant_body(
-                &CState::new(),
-                &CState::new(),
+                &ExecutionState::new(),
+                &ExecutionState::new(),
                 &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                 &checks,
                 &[],

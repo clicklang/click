@@ -137,10 +137,10 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_01")]
 fn region_footprint_refuses_unrecorded_memory_changes() {
     let _session = crate::kernel::VerificationSession::enter();
-    let before = CState::new();
+    let before = ExecutionState::new();
     let after = before.clone().with_memory(before.memory().clone().store(
         crate::kernel::Pointer::symbolic(Variable(8_390_200)),
-        CValue::Int32(7u32.into()),
+        ProgramValue::Int32(7u32.into()),
     ));
     let mut snapshots = RecordedSnapshots::new();
     snapshots.insert(
@@ -164,7 +164,7 @@ fn region_footprint_refuses_unrecorded_memory_changes() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_01")]
 fn region_footprint_identity_survives_unrelated_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
-    let state = CState::new();
+    let state = ExecutionState::new();
     let mut snapshots = RecordedSnapshots::new();
     snapshots.insert(
         ProgramPointRef {

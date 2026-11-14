@@ -2,9 +2,9 @@ use super::*;
 
 fn guard(operator: CComparisonOperator, value: u32) -> SpecProposition {
     SpecProposition::Comparison {
-        left: SpecExpression::CExpression(c_variable("active")),
+        left: SpecExpression::ProgramExpression(c_variable("active")),
         operator,
-        right: SpecExpression::CExpression(c_int32_literal(value)),
+        right: SpecExpression::ProgramExpression(c_int32_literal(value)),
     }
 }
 
@@ -20,22 +20,22 @@ fn segment(guard: Option<SpecProposition>, start: u32, end: u32) -> CMemorySegme
     }
 }
 
-fn function_with_segment(name: &str, segment: CMemorySegment) -> CFunction {
-    c_function(CType::Void, name, Vec::new(), c_return(c_void_value())).with_contract(
+fn function_with_segment(name: &str, segment: CMemorySegment) -> ProgramFunction {
+    c_function(
+        ProgramType::Void,
+        name,
         Vec::new(),
-        Vec::new(),
-        vec![segment],
-        Vec::new(),
-        true,
+        c_return(c_void_value()),
     )
+    .with_contract(Vec::new(), Vec::new(), vec![segment], Vec::new(), true)
 }
 
-fn entry_state() -> CState {
-    CState::new()
+fn entry_state() -> ExecutionState {
+    ExecutionState::new()
         .with_local("active", int32(MachineTerm::Variable(Variable(980_001))))
         .with_local(
             "cells",
-            CValue::pointer(Pointer {
+            ProgramValue::pointer(Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             }),
@@ -43,8 +43,8 @@ fn entry_state() -> CState {
 }
 
 fn compatible_with_assumptions(
-    contract: &CFunction,
-    function: &CFunction,
+    contract: &ProgramFunction,
+    function: &ProgramFunction,
     assumptions: &PureFactContext,
 ) -> bool {
     let entry = entry_state();
@@ -59,7 +59,7 @@ fn compatible_with_assumptions(
     .expect("guarded mutable refinement should execute")
 }
 
-fn compatible(contract: &CFunction, function: &CFunction) -> bool {
+fn compatible(contract: &ProgramFunction, function: &ProgramFunction) -> bool {
     compatible_with_assumptions(contract, function, &PureFactContext::new())
 }
 

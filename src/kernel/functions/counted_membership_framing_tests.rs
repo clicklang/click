@@ -4,7 +4,7 @@ use crate::kernel::*;
 fn boxed_definition() -> CCompositeResourceDefinition {
     CCompositeResourceDefinition::new(
         "boxed",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![CResourceSpec::owned_memory(CMemorySegment::new(
@@ -28,11 +28,11 @@ fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
     let object = |index: u64| Pointer::symbolic(Variable(781_000 + index));
     let residual = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
         "boxed".into(),
-        vec![CValue::pointer(object(1))],
+        vec![ProgramValue::pointer(object(1))],
     ));
     let memory = CMemory::new().store(object(1), int32(5));
     let assumptions = PureFactContext::new();
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_memory(memory.clone())
         .with_resource_context(residual.clone());
     let kept = call_kept_ownership(&residual, &[boxed], &state, &assumptions);
@@ -75,15 +75,16 @@ fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
     let range =
         |base: Pointer, start, end| CMemoryRange::new_with_element_width(base, start, end, 4);
     let flat = range(cell.clone(), 0u32.into(), 3u32.into());
-    let boxed =
-        |base: Pointer| CResourceFact::own_composite("boxed".into(), vec![CValue::pointer(base)]);
+    let boxed = |base: Pointer| {
+        CResourceFact::own_composite("boxed".into(), vec![ProgramValue::pointer(base)])
+    };
     let original = ResourceContext::new()
         .unchecked_with_fact(CResourceFact::own_memory(flat.clone()))
         .unchecked_with_fact(boxed(other));
     let assumptions = PureFactContext::new();
     let memory = CMemory::new();
     let record = |original: &ResourceContext, residual: &ResourceContext| {
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context(original.clone());
         let kept = call_kept_ownership(residual, &[boxed_definition()], &state, &assumptions)
@@ -168,19 +169,21 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         };
         let population = CCompositeResourceDefinition::authority_control(
             "remaining",
-            vec![c_parameter("p", CType::Int32Pointer)],
+            vec![c_parameter("p", ProgramType::Int32Pointer)],
             None,
             vec![memory_spec("p")],
             vec![],
         );
-        let schema =
-            ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))])
-                .unwrap();
+        let schema = ResourceFieldSchema::new(vec![(
+            "tag".into(),
+            ResourceFieldType::C(ProgramType::Int32),
+        )])
+        .unwrap();
         let wrapper = CCompositeResourceDefinition::new(
             "wrapper",
             vec![
-                c_parameter("p", CType::Int32Pointer),
-                c_parameter("q", CType::Int32Pointer),
+                c_parameter("p", ProgramType::Int32Pointer),
+                c_parameter("q", ProgramType::Int32Pointer),
             ],
             None,
             false,
@@ -189,7 +192,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
                     CResourceAccessMode::Own,
                     "remaining".into(),
                     vec![c_variable("p")],
-                    vec![CType::Int32Pointer],
+                    vec![ProgramType::Int32Pointer],
                 ),
                 memory_spec("q"),
             ],
@@ -202,14 +205,14 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
                 residual = residual.unchecked_with_fact(CResourceFact::own_memory(range(&private)));
                 CResourceFact::own_composite(
                     "remaining".into(),
-                    vec![CValue::pointer(shared.clone())],
+                    vec![ProgramValue::pointer(shared.clone())],
                 )
             }
             1 => CResourceFact::own_composite(
                 "wrapper".into(),
                 vec![
-                    CValue::pointer(shared.clone()),
-                    CValue::pointer(private.clone()),
+                    ProgramValue::pointer(shared.clone()),
+                    ProgramValue::pointer(private.clone()),
                 ],
             ),
             _ => CResourceFact::own(CResource::Instance(
@@ -217,8 +220,8 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
                     Variable(780_100),
                     "wrapper".into(),
                     vec![
-                        CValue::pointer(shared.clone()).into(),
-                        CValue::pointer(private.clone()).into(),
+                        ProgramValue::pointer(shared.clone()).into(),
+                        ProgramValue::pointer(private.clone()).into(),
                     ]
                     .into(),
                     schema,
@@ -242,14 +245,14 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let before = base
             .store(
                 shared.clone(),
-                CValue::Int32(MachineTerm::Variable(old_name)),
+                ProgramValue::Int32(MachineTerm::Variable(old_name)),
             )
             .store(private.clone(), int32(7));
         let assumptions = PureFactContext::new().assume_condition(
             ConditionTerm::equal(MachineTerm::Variable(old_name), MachineTerm::constant(0)),
             true,
         );
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(before.clone())
             .with_resource_context(residual.clone());
         let kept = call_kept_ownership(&residual, &[population, wrapper], &state, &assumptions);

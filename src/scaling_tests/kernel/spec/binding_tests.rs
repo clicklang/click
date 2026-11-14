@@ -5,9 +5,9 @@ fn let_binding_chains_retain_shared_prefixes_beside_unrelated_locals() {
     for signed in [false, true] {
         let wrap = |value| {
             if signed {
-                CValue::Int64(value)
+                ProgramValue::Int64(value)
             } else {
-                CValue::UInt64(value)
+                ProgramValue::UInt64(value)
             }
         };
         for nested_values in [false, true] {
@@ -15,7 +15,7 @@ fn let_binding_chains_retain_shared_prefixes_beside_unrelated_locals() {
                 let mut previous = None;
                 for size in [16, 64, 256] {
                     let _session = VerificationSession::enter();
-                    let mut state = CState::new()
+                    let mut state = ExecutionState::new()
                         .with_local("x", wrap(MachineTerm::Variable(Variable(992410))));
                     for index in 0..unrelated {
                         state.locals.set(format!("other_{index}"), int32(index));
@@ -69,8 +69,8 @@ fn let_binding_chains_retain_shared_prefixes_beside_unrelated_locals() {
 fn selected_let_lookup_does_not_scan_other_lexical_values() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let state = CState::new();
-        let selected = KernelTerm::variable(KernelType::C(CType::UInt64), Variable(992420));
+        let state = ExecutionState::new();
+        let selected = KernelTerm::variable(KernelType::C(ProgramType::UInt64), Variable(992420));
         let mut values = crate::persistent::PersistentMap::default();
         for index in 0..size {
             values.insert(format!("other_{index}"), selected.clone());

@@ -886,7 +886,7 @@ mod tests {
     #[test]
     fn named_read_bounds_are_available_to_structural_indices() {
         use crate::kernel::{
-            CMemory, CValue, LoadKind, Pointer, VerificationSession, intern_c_memory,
+            CMemory, LoadKind, Pointer, ProgramValue, VerificationSession, intern_c_memory,
         };
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(998_301));
@@ -928,7 +928,7 @@ mod tests {
                 memory
                     .memory()
                     .clone()
-                    .store(address.clone(), CValue::Int32(17u32.into())),
+                    .store(address.clone(), ProgramValue::Int32(17u32.into())),
             );
             let other =
                 MachineTerm::MemoryLoad(changed, Box::new(address.clone()), LoadKind::Int32);

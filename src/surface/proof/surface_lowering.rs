@@ -9,7 +9,7 @@ pub(super) fn promote_integer_expression(
     surface_bindings: &crate::persistent::PersistentMap<String, ContractExpression>,
 ) -> ContractExpression {
     match expression {
-        ContractExpression::CFragment(CExpression::Variable(name))
+        ContractExpression::CFragment(ProgramExpression::Variable(name))
             if integer_values.get(name).is_some() && surface_bindings.get(name).is_none() =>
         {
             ContractExpression::Binding(name.clone())
@@ -89,7 +89,7 @@ pub(super) fn promote_integer_expression(
 /// gives it a value.
 pub(in crate::surface::proof) fn unassigned_local_read_by(
     proposition: &ClickProposition,
-    state: &crate::kernel::CState,
+    state: &crate::kernel::ExecutionState,
 ) -> Option<String> {
     let mut names = BTreeSet::new();
     collect_click_proposition_referenced_names(proposition, &mut names);
@@ -722,7 +722,7 @@ impl<'a> Proof<'a> {
             .focused_outcome_data()
             .filter(|data| data.core.is_exceptional)
             .map(|data| {
-                ContractExpression::CFragment(CExpression::Value((*data.core.result).clone()))
+                ContractExpression::CFragment(ProgramExpression::Value((*data.core.result).clone()))
             });
         names
             .into_iter()
@@ -913,7 +913,7 @@ impl<'a> Proof<'a> {
         else {
             return Ok(resource);
         };
-        fn resolve(resource: &mut ResourceClause, state: &CState) -> Result<(), String> {
+        fn resolve(resource: &mut ResourceClause, state: &ExecutionState) -> Result<(), String> {
             if let ResourceClause::Declared {
                 arguments,
                 resource_type_arguments,
@@ -930,7 +930,7 @@ impl<'a> Proof<'a> {
                             state.locals().get(&name).map(|value| {
                                 (
                                     name,
-                                    ContractExpression::CFragment(CExpression::Value(
+                                    ContractExpression::CFragment(ProgramExpression::Value(
                                         value.clone().into_native(),
                                     )),
                                 )

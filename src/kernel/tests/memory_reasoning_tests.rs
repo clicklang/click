@@ -773,7 +773,7 @@ fn byte_store_does_not_change_a_proven_distinct_byte_load() {
     let after = before.clone().store(written.clone(), uint8(7));
     let assumptions =
         PureFactContext::new().assume_condition(ConditionTerm::equal(i.clone(), j.clone()), false);
-    let assumptions = explicit_signed_elements(base, CType::UInt8, i, j, assumptions);
+    let assumptions = explicit_signed_elements(base, ProgramType::UInt8, i, j, assumptions);
     let effect = Proposition::CMemoryMutatesOnly {
         before: before.clone(),
         after: after.clone(),
@@ -783,7 +783,7 @@ fn byte_store_does_not_change_a_proven_distinct_byte_load() {
         &before,
         &after,
         &read,
-        CType::UInt8,
+        ProgramType::UInt8,
         &[effect.clone()],
         &assumptions,
     )
@@ -799,7 +799,7 @@ fn byte_store_does_not_change_a_proven_distinct_byte_load() {
             &before,
             &after,
             &read,
-            CType::Int32,
+            ProgramType::Int32,
             &[effect.clone()],
             &assumptions
         )
@@ -811,7 +811,7 @@ fn byte_store_does_not_change_a_proven_distinct_byte_load() {
             &before,
             &after,
             &read,
-            CType::UInt8,
+            ProgramType::UInt8,
             &[effect],
             &PureFactContext::new()
         )
@@ -1305,7 +1305,7 @@ fn memory_range_endpoint_match_uses_graph_loads_in_one_snapshot() {
         block: "range".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
     };
-    let load = |memory: &SharedCMemory, index| {
+    let load = |memory: &SharedMemory, index| {
         MachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
@@ -1318,12 +1318,10 @@ fn memory_range_endpoint_match_uses_graph_loads_in_one_snapshot() {
         MachineTerm::Variable(Variable(41_110)),
         MachineTerm::Variable(Variable(41_111)),
     );
-    let after = crate::kernel::intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(pointer(b.clone()), CValue::Int32(MachineTerm::constant(9))),
-    );
+    let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
     let resource = |end| {
         CResource::Memory(CMemoryRange::new(
             Pointer::symbolic(Variable(41_112)),
@@ -1353,7 +1351,7 @@ fn direct_composite_resource_match_checks_pointer_load_across_block_declaration(
     let resource_at = |memory: CMemory| CResource::Composite {
         name: "tree".to_string(),
         arguments: vec![
-            CValue::Pointer(CPointerValue::from_read(
+            ProgramValue::Pointer(PointerValue::from_read(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(
@@ -1365,7 +1363,7 @@ fn direct_composite_resource_match_checks_pointer_load_across_block_declaration(
                         4,
                     ),
                 },
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
                 &crate::kernel::intern_c_memory(memory),
                 &field,
             ))
@@ -1384,7 +1382,7 @@ fn direct_composite_resource_match_checks_pointer_load_across_block_declaration(
     for displacement in [0, 4] {
         let overwritten = later.clone().store(
             field.clone().offset_by_bytes(displacement),
-            CValue::Int32(MachineTerm::constant(0)),
+            ProgramValue::Int32(MachineTerm::constant(0)),
         );
         assert!(!c_resources_directly_match(
             &resource_at(entry.clone()),
@@ -1837,7 +1835,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         &base_memory,
         &execution_memory,
         &owner_data_cell,
-        CType::Int32,
+        ProgramType::Int32,
         &[Proposition::CMemoryMutatesOnly {
             before: base_memory.clone(),
             after: execution_memory.clone(),
@@ -1919,7 +1917,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
     }
     apply_law(
         crate::kernel::prove_separation_subrange(
-            CPointerValue::new(execution_data.clone(), CType::Int32Pointer),
+            PointerValue::new(execution_data.clone(), ProgramType::Int32Pointer),
             4,
             MachineIntegerType::Int32,
             0u32.into(),
@@ -1976,7 +1974,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         &execution_memory,
         &after_memory,
         &metadata_cell,
-        CType::Int32,
+        ProgramType::Int32,
         &[Proposition::CMemoryMutatesOnly {
             before: execution_memory.clone(),
             after: after_memory.clone(),
@@ -2132,13 +2130,16 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
         Box::new(field.clone()),
         crate::kernel::LoadKind::Bits64,
     );
-    let pointer = CPointerValue::from_read(
+    let pointer = PointerValue::from_read(
         Pointer::integer_address(bits),
-        CType::VoidPointer,
+        ProgramType::VoidPointer,
         &before,
         &field,
     );
-    let parent = CPointerValue::new(Pointer::symbolic(Variable(9_889_501)), CType::VoidPointer);
+    let parent = PointerValue::new(
+        Pointer::symbolic(Variable(9_889_501)),
+        ProgramType::VoidPointer,
+    );
     let source = Proposition::ConditionIs(
         ConditionTerm::PointerValueEqual(Box::new(pointer), Box::new(parent)),
         true,
@@ -2147,7 +2148,7 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
     for offset in [8, 12, 24] {
         let after = before.memory().clone().store(
             field.offset_by_bytes(offset),
-            CValue::UInt32(MachineTerm::constant(7)),
+            ProgramValue::UInt32(MachineTerm::constant(7)),
         );
         let theorem = prove_c_condition_fact_transport(&source, &after, &context)
             .expect("separate metadata preserves the complete packed pointer");
@@ -2158,7 +2159,7 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
     for offset in [0, 4] {
         let after = before.memory().clone().store(
             field.offset_by_bytes(offset),
-            CValue::UInt32(MachineTerm::constant(7)),
+            ProgramValue::UInt32(MachineTerm::constant(7)),
         );
         assert!(
             prove_c_condition_fact_transport(&source, &after, &context).is_none(),
@@ -2598,7 +2599,7 @@ fn atomic_condition_fact_transport_ignores_distinct_materialized_cell() {
     crate::kernel::eval::declare_load_access_width(&preserved, 4);
     let after = before
         .clone()
-        .store(materialized, CValue::Int32(MachineTerm::constant(9)));
+        .store(materialized, ProgramValue::Int32(MachineTerm::constant(9)));
     let fact = Proposition::ConditionIs(
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
@@ -2697,7 +2698,7 @@ fn equality_fact_matching_transports_both_pointer_offset_endpoints() {
         .with_block("local:value", 4);
     let after = before
         .clone()
-        .store(local, CValue::Int32(MachineTerm::constant(7)));
+        .store(local, ProgramValue::Int32(MachineTerm::constant(7)));
     let load_offset = |memory: &CMemory, pointer: &Pointer| {
         PointerOffsetTerm::scale_int32(
             MachineTerm::MemoryLoad(
@@ -3712,16 +3713,19 @@ fn store_and_union_cells_never_coexist_at_one_pointer() {
 
     let overlay_over_store = base.clone().store(cell.clone(), int32(42)).store_union(
         cell.clone(),
-        CType::UInt8,
+        ProgramType::UInt8,
         crate::kernel::uint8(7),
     );
     assert_eq!(overlay_over_store.known_value(&cell), None);
     assert!(overlay_over_store.has_union_overlay_at(&cell));
     let replacement =
-        overlay_over_store.store_union(cell.clone(), CType::Int16, crate::kernel::int16(9));
-    assert_eq!(replacement.known_union_value(&cell, CType::UInt8), None);
+        overlay_over_store.store_union(cell.clone(), ProgramType::Int16, crate::kernel::int16(9));
     assert_eq!(
-        replacement.known_union_value(&cell, CType::Int16),
+        replacement.known_union_value(&cell, ProgramType::UInt8),
+        None
+    );
+    assert_eq!(
+        replacement.known_union_value(&cell, ProgramType::Int16),
         Some(crate::kernel::int16(9)),
     );
 
@@ -3729,21 +3733,21 @@ fn store_and_union_cells_never_coexist_at_one_pointer() {
         cell.clone(),
         4,
         vec![
-            (cell.clone(), CType::UInt8, crate::kernel::uint8(7)),
-            (cell.clone(), CType::Int16, crate::kernel::int16(7)),
+            (cell.clone(), ProgramType::UInt8, crate::kernel::uint8(7)),
+            (cell.clone(), ProgramType::Int16, crate::kernel::int16(7)),
         ],
     );
     assert_eq!(
-        same_image_views.known_union_value(&cell, CType::UInt8),
+        same_image_views.known_union_value(&cell, ProgramType::UInt8),
         Some(crate::kernel::uint8(7)),
     );
     assert_eq!(
-        same_image_views.known_union_value(&cell, CType::Int16),
+        same_image_views.known_union_value(&cell, ProgramType::Int16),
         Some(crate::kernel::int16(7)),
     );
 
     let store_over_overlay = base
-        .store_union(cell.clone(), CType::UInt8, crate::kernel::uint8(7))
+        .store_union(cell.clone(), ProgramType::UInt8, crate::kernel::uint8(7))
         .store(cell.clone(), int32(42));
     assert_eq!(store_over_overlay.known_value(&cell), Some(int32(42)));
     assert!(!store_over_overlay.has_union_overlay_at(&cell));
@@ -3958,7 +3962,10 @@ fn a_store_to_a_local_is_not_framed_away_for_an_unresolved_pointer() {
         .without_possible_aliasing_cells(&q, crate::kernel::C_POINTER_BYTE_WIDTH, &bare)
         .store(
             q.clone(),
-            CValue::Pointer(CPointerValue::new(symbolic.clone(), CType::Int32Pointer)),
+            ProgramValue::Pointer(PointerValue::new(
+                symbolic.clone(),
+                ProgramType::Int32Pointer,
+            )),
         );
     let after_store = after_binding
         .clone()
@@ -4351,7 +4358,7 @@ fn a_composition_separates_a_store_from_a_load_only_through_two_owners() {
         CResourceFact::own_memory(value_cell.clone()),
         CResourceFact::own(CResource::Composite {
             name: "Cell".to_string(),
-            arguments: vec![CValue::pointer(acquired.clone()).into()].into(),
+            arguments: vec![ProgramValue::pointer(acquired.clone()).into()].into(),
         }),
     ]);
     assert!(
@@ -4547,7 +4554,7 @@ fn the_entry_partition_pairs_a_transferred_clause_only_with_a_borrowed_one() {
             clause(
                 CResourceFact::own(CResource::Composite {
                     name: "Cell".to_string(),
-                    arguments: vec![CValue::pointer(owned_base.clone()).into()].into(),
+                    arguments: vec![ProgramValue::pointer(owned_base.clone()).into()].into(),
                 }),
                 CResourceTransferRole::Consume,
             ),
@@ -7107,7 +7114,7 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
         };
         let memory = CMemory::new()
             .with_block("symbolic-run-resolution", count * 4)
-            .with_constant_run(base.clone(), CType::Int32, count, int32(9))
+            .with_constant_run(base.clone(), ProgramType::Int32, count, int32(9))
             .expect("a named scalar run is compact");
         let unknown = PureFactContext::new();
         assert_eq!(
@@ -7869,7 +7876,9 @@ fn kept_call_frame_with_loaded_owner_survives_equivalent_input_lineages() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Pointer::symbolic(Variable(953_001));
     let memory = CMemory::new();
-    let CValue::Pointer(value) = memory.symbolic_pointer_load(&address, CType::Int32Pointer) else {
+    let ProgramValue::Pointer(value) =
+        memory.symbolic_pointer_load(&address, ProgramType::Int32Pointer)
+    else {
         panic!("a typed pointer read");
     };
     let owner = value.pointer().clone();
@@ -8043,7 +8052,10 @@ fn snapshot_equality_ignores_unrelated_propositions() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let before = CMemory::new()
-        .store(target.clone(), CValue::UInt32(MachineTerm::constant(1)))
+        .store(
+            target.clone(),
+            ProgramValue::UInt32(MachineTerm::constant(1)),
+        )
         .with_block("call-havoc:0", 0);
     let after = before.clone().with_block("call-havoc:1", 0);
     // The call may write the target itself, so the summary shows nothing.

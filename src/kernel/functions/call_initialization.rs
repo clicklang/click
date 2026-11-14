@@ -35,7 +35,7 @@ pub(super) fn uninitialized_call_input<'a>(
     let constructed = interface
         .construction_parameter()
         .and_then(|(index, _)| interface.parameters().get(index))
-        .map(CParameter::name)
+        .map(ProgramParameter::name)
         .or_else(|| {
             (interface.aggregate_return_mode() == CAggregateReturnMode::Construction)
                 .then_some(crate::kernel::C_CONTRACT_RESULT_NAME)
@@ -78,15 +78,15 @@ pub(super) fn uninitialized_call_input<'a>(
 }
 
 /// The parameter a segment's address is computed from.
-fn root_parameter(expression: &CExpression) -> Option<&str> {
+fn root_parameter(expression: &ProgramExpression) -> Option<&str> {
     match expression {
-        CExpression::Variable(name) => Some(name),
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. }
-        | CExpression::AddressOf(pointer)
-        | CExpression::CheckedObjectAddress(pointer)
-        | CExpression::Add(pointer, _)
-        | CExpression::Subtract(pointer, _) => root_parameter(pointer),
+        ProgramExpression::Variable(name) => Some(name),
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. }
+        | ProgramExpression::AddressOf(pointer)
+        | ProgramExpression::CheckedObjectAddress(pointer)
+        | ProgramExpression::Add(pointer, _)
+        | ProgramExpression::Subtract(pointer, _) => root_parameter(pointer),
         _ => None,
     }
 }
@@ -186,12 +186,12 @@ fn elements_are_initialized(
 }
 
 /// The scalar types a `defined(p[k])` fact of this element width may name.
-fn element_types_of_width(width: u32) -> &'static [CType] {
+fn element_types_of_width(width: u32) -> &'static [ProgramType] {
     match width {
-        1 => &[CType::UInt8, CType::Int8],
-        2 => &[CType::UInt16, CType::Int16],
-        4 => &[CType::Int32, CType::UInt32],
-        8 => &[CType::Int64, CType::UInt64],
+        1 => &[ProgramType::UInt8, ProgramType::Int8],
+        2 => &[ProgramType::UInt16, ProgramType::Int16],
+        4 => &[ProgramType::Int32, ProgramType::UInt32],
+        8 => &[ProgramType::Int64, ProgramType::UInt64],
         _ => &[],
     }
 }

@@ -20,7 +20,7 @@ fn automatic_lifetime_end_consumes_only_local_construction_ownership() {
             resources = resources
                 .unchecked_with_fact(CResourceFact::own_token(format!("unrelated_{i}"), vec![]));
         }
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_local("selected", int32(0))
             .with_memory(CMemory::new().with_block("local:selected", 16))
             .with_resource_context(resources);
@@ -59,7 +59,7 @@ fn automatic_lifetime_end_consumes_only_local_construction_ownership() {
 #[test]
 fn automatic_lifetime_event_ignores_unrelated_locals_and_checks_exact_states() {
     let samples = [8, 16, 32, 64].map(|size| {
-        let mut state = CState::new()
+        let mut state = ExecutionState::new()
             .with_local("selected", int32(5))
             .with_memory(CMemory::new().with_block("local:selected", 4));
         for i in 0..size {

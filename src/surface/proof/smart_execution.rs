@@ -245,7 +245,7 @@ impl<'a> Proof<'a> {
             let ProofContext::Pure(context) = self.context.as_ref() else {
                 return None;
             };
-            let state = CState::new().with_memory(context.theorem_context.memory.clone());
+            let state = ExecutionState::new().with_memory(context.theorem_context.memory.clone());
             let recorded_snapshots = RecordedSnapshots::new();
             let algebraic_values = application
                 .arguments

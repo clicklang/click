@@ -36,17 +36,17 @@ fn volatile_access_fact(
     budget: &mut ExecutionBudget,
     write: bool,
     pointer: Pointer,
-    value_type: CType,
-    value: CValue,
+    value_type: ProgramType,
+    value: ProgramValue,
 ) -> ExecutionResult<ExecutionPureFact> {
     let event_id = budget.allocate_kernel_variable()?.0;
     let operation = if write { "write" } else { "read" };
-    let pointer_type = value_type.pointer_to().unwrap_or(CType::UInt8Pointer);
+    let pointer_type = value_type.pointer_to().unwrap_or(ProgramType::UInt8Pointer);
     Ok(ExecutionPureFact::certified(Proposition::Predicate {
         name: format!("__click_volatile_{operation}_{event_id}"),
         arguments: vec![
-            Term::CValue(CValue::typed_pointer(pointer, pointer_type)),
-            Term::CValue(value),
+            Term::ProgramValue(ProgramValue::typed_pointer(pointer, pointer_type)),
+            Term::ProgramValue(value),
         ],
     }))
 }

@@ -4,7 +4,7 @@ use super::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(in crate::kernel) enum ReadType {
-    Pointer(CType),
+    Pointer(ProgramType),
     Abstract,
     PointerAddress,
     Integer(MachineIntegerType),
@@ -29,7 +29,7 @@ impl ReadType {
     }
 }
 
-type Reads = imbl::HashMap<(SharedCMemory, Pointer, ReadType), CValue>;
+type Reads = imbl::HashMap<(SharedMemory, Pointer, ReadType), ProgramValue>;
 thread_local! {
     static READS: std::cell::RefCell<Option<Reads>> = const { std::cell::RefCell::new(None) };
 }
@@ -48,19 +48,19 @@ impl Drop for ReadScope {
     }
 }
 
-pub(super) fn record(memory: &CMemory, address: &Pointer, value: &CValue) {
+pub(super) fn record(memory: &CMemory, address: &Pointer, value: &ProgramValue) {
     if !READS.with(|reads| reads.borrow().is_some()) {
         return;
     }
     let value = value.numeric_value();
     let kind = match value {
-        CValue::Pointer(p) => ReadType::Pointer(p.c_type()),
-        CValue::Parameter(_) => ReadType::Abstract,
-        CValue::Int32(_) => ReadType::Integer(MachineIntegerType::Int32),
-        CValue::UInt32(_) => ReadType::Integer(MachineIntegerType::UInt32),
-        CValue::UInt8(_) => ReadType::Integer(MachineIntegerType::UInt8),
-        CValue::Int64(_) => ReadType::Integer(MachineIntegerType::Int64),
-        CValue::UInt64(_) => ReadType::Integer(MachineIntegerType::UInt64),
+        ProgramValue::Pointer(p) => ReadType::Pointer(p.c_type()),
+        ProgramValue::Parameter(_) => ReadType::Abstract,
+        ProgramValue::Int32(_) => ReadType::Integer(MachineIntegerType::Int32),
+        ProgramValue::UInt32(_) => ReadType::Integer(MachineIntegerType::UInt32),
+        ProgramValue::UInt8(_) => ReadType::Integer(MachineIntegerType::UInt8),
+        ProgramValue::Int64(_) => ReadType::Integer(MachineIntegerType::Int64),
+        ProgramValue::UInt64(_) => ReadType::Integer(MachineIntegerType::UInt64),
         _ => return,
     };
     crate::instrumentation::record_deterministic_work(1);
@@ -86,7 +86,7 @@ pub(in crate::kernel) fn get(
     memory: &CMemory,
     address: &Pointer,
     kind: ReadType,
-) -> Option<CValue> {
+) -> Option<ProgramValue> {
     crate::instrumentation::record_deterministic_work(1);
     READS.with(|reads| {
         reads

@@ -12,7 +12,7 @@ fn held_separation_uses_only_the_selected_members() {
     for size in [4u64, 16, 64, 256] {
         let resources = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| CResourceFact::own(cell(index))));
-        let state = CState::new().with_resource_context(resources);
+        let state = ExecutionState::new().with_resource_context(resources);
         let facts = ProofFacts::default();
         let goal = separation(cell(size - 2), cell(size - 1));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -35,10 +35,11 @@ fn held_field_separation_does_not_visit_unrelated_owners() {
     for size in [4u64, 16, 64, 256] {
         // Keep term-bridge imports cold at every sample size.
         crate::kernel::clear_integer_bridge_memo();
-        let state =
-            CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts(
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new().unchecked_with_facts(
                 (0..size).map(|index| CResourceFact::own(range(index, 0, 6, 4))),
-            ));
+            ),
+        );
         let goal = separation(range(size - 2, 1, 2, 8), range(size - 1, 0, 1, 8));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(
@@ -78,7 +79,7 @@ fn held_separation_transitive_alias_uses_the_shared_resource_index() {
         }
         let resources = ResourceContext::new_with_equalities(facts.assumptions())
             .unchecked_with_facts((0..size).map(|index| CResourceFact::own(range(index, 0, 6, 4))));
-        let state = CState::new().with_resource_context(resources);
+        let state = ExecutionState::new().with_resource_context(resources);
         let goal = separation(range(size + 2, 1, 2, 8), range(1, 0, 1, 8));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(

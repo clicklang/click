@@ -105,7 +105,7 @@ pub(super) fn verify_execution_theorem(
     }
     let is_callback = |arguments: &[ContractExpression]| {
         matches!(arguments.first(), Some(ContractExpression::Binding(name)) if name == &execution.callback)
-            || matches!(arguments.first(), Some(ContractExpression::CFragment(CExpression::Variable(name))) if name == &execution.callback)
+            || matches!(arguments.first(), Some(ContractExpression::CFragment(ProgramExpression::Variable(name))) if name == &execution.callback)
     };
     if concrete_callee.is_none() && !is_callback(arguments) {
         return Err(error("the conclusion must describe the executed callback"));
@@ -243,7 +243,9 @@ pub(super) fn verify_execution_theorem(
         .map(|(declared, written)| {
             (
                 declared.name().to_string(),
-                ContractExpression::CFragment(CExpression::Variable(written.name().to_string())),
+                ContractExpression::CFragment(ProgramExpression::Variable(
+                    written.name().to_string(),
+                )),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -310,11 +312,11 @@ pub(super) fn verify_execution_theorem(
             .zip(&target_values)
             .map(|(parameter, value)| {
                 Requirement::Proposition(ClickProposition::Comparison {
-                    left: ContractExpression::CFragment(CExpression::Variable(
+                    left: ContractExpression::CFragment(ProgramExpression::Variable(
                         parameter.name().to_string(),
                     )),
                     operator: ComparisonOperator::Equal,
-                    right: ContractExpression::CFragment(CExpression::Value(value.clone())),
+                    right: ContractExpression::CFragment(ProgramExpression::Value(value.clone())),
                 })
             }),
     );

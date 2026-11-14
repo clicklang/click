@@ -3,7 +3,7 @@
 //! A name is an alias, never a second resource. In particular, a copied name
 //! does not keep an authority alive after its owned occurrence is consumed.
 
-use super::{CResource, CResourceFact, CState, ResourceOccurrenceId, Variable};
+use super::{CResource, CResourceFact, ExecutionState, ResourceOccurrenceId, Variable};
 use crate::persistent::PersistentMap;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
@@ -62,7 +62,7 @@ impl NamedMutexAuthorities {
         &self,
         binder: Variable,
         fact: &CResourceFact,
-        state: &CState,
+        state: &ExecutionState,
     ) -> Result<Self, NamedMutexAuthorityError> {
         if !matches!(
             fact,
@@ -106,7 +106,7 @@ impl NamedMutexAuthorities {
     pub(in crate::kernel) fn resolve<'a>(
         &'a self,
         binder: Variable,
-        state: &CState,
+        state: &ExecutionState,
     ) -> Option<&'a CResourceFact> {
         let alias = self.aliases.get(&binder)?;
         state
@@ -137,7 +137,7 @@ impl NamedMutexAuthorities {
         &self,
         binder: Variable,
         expected: &CResourceFact,
-        state: &CState,
+        state: &ExecutionState,
     ) -> Result<Self, NamedMutexAuthorityError> {
         let previous = self
             .aliases
@@ -179,7 +179,7 @@ impl NamedMutexAuthorities {
     pub(in crate::kernel) fn apply_checked_mutex_updates(
         &self,
         updates: &[super::loans::mutex_calls::MutexAuthorityUpdate],
-        state: &CState,
+        state: &ExecutionState,
     ) -> Result<Self, NamedMutexAuthorityError> {
         let mut next = self.clone();
         for update in updates {
@@ -205,7 +205,7 @@ impl NamedMutexAuthorities {
         binder: Variable,
         source: &CResourceFact,
         derived: &CResourceFact,
-        state: &CState,
+        state: &ExecutionState,
     ) -> Result<Self, NamedMutexAuthorityError> {
         let previous = self
             .aliases
@@ -312,7 +312,7 @@ mod tests {
         let source = authority(1);
         let other = authority(2);
         let derived = use_authority(1, Variable(400));
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         state.resources = ResourceContext::new().unchecked_with_fact(source.clone());
         let named = NamedMutexAuthorities::new()
             .bind(Variable(1), &source, &state)
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn aliases_require_exact_unique_live_mutex_authority() {
         let fact = authority(1);
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         let empty = NamedMutexAuthorities::new();
         assert_eq!(
             empty.bind(Variable(1), &fact, &state),

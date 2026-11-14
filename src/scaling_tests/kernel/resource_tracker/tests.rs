@@ -33,7 +33,7 @@ fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
         let first = before.clone().store(at(block("global:h"), 0), one());
         let second = before.clone().store(
             at(block("global:h"), 0),
-            CValue::Int32(MachineTerm::constant(2)),
+            ProgramValue::Int32(MachineTerm::constant(2)),
         );
         let joined = first
             .clone()
@@ -85,11 +85,11 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
     for index in 0..32 {
         let left = memory.clone().store(
             at(block("global:h"), 0),
-            CValue::Int32(MachineTerm::constant(index * 2)),
+            ProgramValue::Int32(MachineTerm::constant(index * 2)),
         );
         let right = memory.clone().store(
             at(block("global:h"), 0),
-            CValue::Int32(MachineTerm::constant(index * 2 + 1)),
+            ProgramValue::Int32(MachineTerm::constant(index * 2 + 1)),
         );
         memory = left
             .clone()
@@ -173,7 +173,7 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
             for i in 0..size {
                 memory = memory.clone().store(
                     at(block("local:f:i"), 0),
-                    CValue::Int32(MachineTerm::constant(i)),
+                    ProgramValue::Int32(MachineTerm::constant(i)),
                 );
                 let here = point(&memory);
                 assert_eq!(
@@ -401,10 +401,10 @@ fn cold_cell_source_lookup_does_not_search_older_stores() {
             memory
                 .memory()
                 .clone()
-                .store(cell.clone(), CValue::Int32(2u32.into())),
+                .store(cell.clone(), ProgramValue::Int32(2u32.into())),
         );
         assert!(
-            matches!(cell_source::memory_dag_cell_source(&latest, &cell, 4, &facts, false), Some(cell_source::MemoryDagCell::Stored { value, .. }) if value == CValue::Int32(2u32.into()))
+            matches!(cell_source::memory_dag_cell_source(&latest, &cell, 4, &facts, false), Some(cell_source::MemoryDagCell::Stored { value, .. }) if value == ProgramValue::Int32(2u32.into()))
         );
         assert!(!matches!(
             cell_source::memory_dag_cell_source(&latest, &cell, 8, &facts, false),
@@ -467,7 +467,7 @@ fn shared_conditional_guard_reads_keep_snapshot_identity_in_linear_work() {
         let memory = intern_c_memory(CMemory::new().with_declared_scalar_block(
             block("global:g"),
             4,
-            CType::Int32,
+            ProgramType::Int32,
         ));
         let pointer = at(block("global:g"), 0);
         crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 4);
@@ -476,7 +476,7 @@ fn shared_conditional_guard_reads_keep_snapshot_identity_in_linear_work() {
             MachineTerm::constant(0),
         );
         let guard = KernelTermImport::default().condition(&guard);
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(998201));
+        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(998201));
         for _ in 0..size {
             root = KernelTerm::machine_if_shared(
                 MachineIntegerType::Int32,

@@ -21,7 +21,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     available_facts: &ProofFacts,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
 ) -> Result<Vec<ClickProposition>, ClickError> {
     let available = available_facts.to_vec();
     let mut selected = Vec::new();

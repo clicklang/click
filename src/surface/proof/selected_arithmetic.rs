@@ -340,9 +340,11 @@ fn oriented_forms(
                 | ContractExpression::Multiply(..)
                 | ContractExpression::Negate(_) => return true,
                 ContractExpression::CFragment(
-                    CExpression::Add(..) | CExpression::Subtract(..) | CExpression::Multiply(..),
+                    ProgramExpression::Add(..)
+                    | ProgramExpression::Subtract(..)
+                    | ProgramExpression::Multiply(..),
                 ) => return true,
-                ContractExpression::CFragment(CExpression::Value(value)) => {
+                ContractExpression::CFragment(ProgramExpression::Value(value)) => {
                     return matches!(
                     value.numeric_value(), crate::kernel::integer_c_value!(term) if machine_arithmetic(term));
                 }
@@ -384,8 +386,8 @@ fn explicit_native_rewrite_equality(
     ) -> ContractExpression {
         ContractExpression::CUnary {
             operand: Box::new(operand.clone()),
-            lowered: CExpression::Cast {
-                expression: Box::new(CExpression::Value(int32(0))),
+            lowered: ProgramExpression::Cast {
+                expression: Box::new(ProgramExpression::Value(int32(0))),
                 target_type: format.c_type(),
                 integer_mode: crate::kernel::CIntegerCastMode::CConversion,
                 pointee_struct: None,
@@ -961,7 +963,8 @@ theorem black_color_is_black(color: Color) {
             },
             true,
         );
-        let name = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
+        let name =
+            |name: &str| ContractExpression::CFragment(ProgramExpression::Variable(name.into()));
         let surface = ClickProposition::Comparison {
             left: name("capacity"),
             operator: ComparisonOperator::Equal,

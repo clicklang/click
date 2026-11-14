@@ -9,10 +9,10 @@ pub(super) struct Id(u64);
 
 #[derive(Clone)]
 struct Record {
-    memory: SharedCMemory,
+    memory: SharedMemory,
     pointer: Pointer,
     kind: LoadKind,
-    origin: SharedCMemory,
+    origin: SharedMemory,
     epoch: u64,
     bytes: u32,
     typed: bool,
@@ -25,7 +25,7 @@ pub(super) struct State {
     keys: imbl::HashMap<Key, Id>,
     records: imbl::HashMap<Id, Record>,
     terms: imbl::HashMap<u64, Id>,
-    latest: imbl::HashMap<(u64, Id), (SharedCMemory, Pointer)>,
+    latest: imbl::HashMap<(u64, Id), (SharedMemory, Pointer)>,
 }
 
 thread_local! {
@@ -44,7 +44,7 @@ pub(super) fn clear() {
     STATE.with(|state| *state.borrow_mut() = State::default());
 }
 
-pub(super) fn existing(memory: &SharedCMemory, pointer: &Pointer, kind: LoadKind) -> Option<Id> {
+pub(super) fn existing(memory: &SharedMemory, pointer: &Pointer, kind: LoadKind) -> Option<Id> {
     crate::instrumentation::record_deterministic_work(1);
     STATE.with(|state| {
         state
@@ -56,20 +56,20 @@ pub(super) fn existing(memory: &SharedCMemory, pointer: &Pointer, kind: LoadKind
 }
 
 pub(super) fn record(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     kind: LoadKind,
-    origin: &SharedCMemory,
+    origin: &SharedMemory,
     bytes: u32,
 ) -> Id {
     record_with_width(memory, pointer, kind, origin, bytes, true)
 }
 
 pub(super) fn record_untyped(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     kind: LoadKind,
-    origin: &SharedCMemory,
+    origin: &SharedMemory,
 ) -> Id {
     record_with_width(
         memory,
@@ -82,10 +82,10 @@ pub(super) fn record_untyped(
 }
 
 fn record_with_width(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     kind: LoadKind,
-    origin: &SharedCMemory,
+    origin: &SharedMemory,
     bytes: u32,
     typed: bool,
 ) -> Id {
@@ -127,13 +127,7 @@ fn record_with_width(
     })
 }
 
-fn refresh_record(
-    record: &mut Record,
-    origin: &SharedCMemory,
-    epoch: u64,
-    bytes: u32,
-    typed: bool,
-) {
+fn refresh_record(record: &mut Record, origin: &SharedMemory, epoch: u64, bytes: u32, typed: bool) {
     let first_typed = typed && !record.typed;
     if first_typed {
         record.bytes = bytes;
@@ -158,7 +152,7 @@ pub(super) fn select(id: Id) {
     });
 }
 
-pub(super) fn selected(memory: &SharedCMemory, pointer: &Pointer, kind: LoadKind) -> bool {
+pub(super) fn selected(memory: &SharedMemory, pointer: &Pointer, kind: LoadKind) -> bool {
     existing(memory, pointer, kind).is_some_and(|id| {
         STATE.with(|state| {
             state
@@ -170,7 +164,7 @@ pub(super) fn selected(memory: &SharedCMemory, pointer: &Pointer, kind: LoadKind
     })
 }
 
-pub(super) fn refresh(id: Id, origin: &SharedCMemory, bytes: u32) {
+pub(super) fn refresh(id: Id, origin: &SharedMemory, bytes: u32) {
     crate::instrumentation::record_deterministic_work(1);
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     STATE.with(|state| {
@@ -357,12 +351,10 @@ mod tests {
             8
         );
         assert!(existing(&memory, &pointer, LoadKind::Int32).is_none());
-        let live = intern_c_memory(
-            memory
-                .memory()
-                .clone()
-                .store(pointer.offset_by_bytes(16), CValue::Int32(1u32.into())),
-        );
+        let live = intern_c_memory(memory.memory().clone().store(
+            pointer.offset_by_bytes(16),
+            ProgramValue::Int32(1u32.into()),
+        ));
         record(&memory, &pointer, LoadKind::Int32, &live, 4);
         let observed = for_operand(MachineOperandView::Legacy(&read)).unwrap();
         assert_eq!(observed.bytes, 4);
@@ -450,12 +442,10 @@ mod tests {
         let saved = capture_load_variable_registry();
         begin_load_origin_epoch();
         assert!(observe(&other_format).origin.is_none());
-        let later = intern_c_memory(
-            memory
-                .memory()
-                .clone()
-                .store(pointer.offset_by_bytes(16), CValue::Int32(1u32.into())),
-        );
+        let later = intern_c_memory(memory.memory().clone().store(
+            pointer.offset_by_bytes(16),
+            ProgramValue::Int32(1u32.into()),
+        ));
         record(&memory, &pointer, LoadKind::Int32, &later, 8);
         assert_eq!(observe(&read).bytes, 8);
         assert_eq!(observe(&other_format).origin, Some(later));
@@ -470,8 +460,9 @@ mod tests {
         let _session = VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(998_702));
         let before = intern_c_memory(CMemory::new());
-        let after =
-            intern_c_memory(CMemory::new().store(pointer.clone(), CValue::Int32(1u32.into())));
+        let after = intern_c_memory(
+            CMemory::new().store(pointer.clone(), ProgramValue::Int32(1u32.into())),
+        );
         let first = record(&before, &pointer, LoadKind::Int32, &before, 4);
         let other_kind = record(&before, &pointer, LoadKind::Int16, &before, 2);
         let other_time = record(&after, &pointer, LoadKind::Int32, &after, 8);
@@ -497,16 +488,16 @@ mod tests {
         let memory = CMemory::new();
         let pointer = Pointer::symbolic(Variable(998_704));
         for ty in [
-            CType::Int8,
-            CType::UInt8,
-            CType::Int16,
-            CType::UInt16,
-            CType::Int32,
-            CType::UInt32,
-            CType::Int64,
-            CType::UInt64,
-            CType::Int128,
-            CType::UInt128,
+            ProgramType::Int8,
+            ProgramType::UInt8,
+            ProgramType::Int16,
+            ProgramType::UInt16,
+            ProgramType::Int32,
+            ProgramType::UInt32,
+            ProgramType::Int64,
+            ProgramType::UInt64,
+            ProgramType::Int128,
+            ProgramType::UInt128,
         ] {
             let mut facts = ExecutionFacts::new();
             let value = canonicalized_symbolic_load_value_with_identity(
@@ -544,7 +535,7 @@ mod tests {
             memory
                 .memory()
                 .clone()
-                .store(destination.clone(), CValue::Int32(held.clone())),
+                .store(destination.clone(), ProgramValue::Int32(held.clone())),
         );
         let read = canonical_form_of_load(after, destination.clone(), LoadKind::Int32);
         assert!(

@@ -97,7 +97,7 @@ fn check_resource_publication_work(
             ],
         });
         let state =
-            CState::new()
+            ExecutionState::new()
                 .with_resource_context(ResourceContext::new().unchecked_with_fact(
                     CResourceFact::own(CResource::Instance(instance.clone())),
                 ));
@@ -130,7 +130,7 @@ fn check_resource_publication_work(
         if retain_requirements {
             assumptions = assumptions.retaining_required_obligations();
         }
-        let mut interface = CFunctionContractInterface::new(CType::Void, vec![]);
+        let mut interface = CFunctionContractInterface::new(ProgramType::Void, vec![]);
         interface.composite_resource_definitions = vec![definition.clone()];
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
             if fold {

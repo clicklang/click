@@ -759,7 +759,7 @@ fn rewrite_through_loaded_pointer_block(
     cache: &PointerReadRewrites,
 ) -> Option<Pointer> {
     fn name_read(
-        memory: SharedCMemory,
+        memory: SharedMemory,
         address: Pointer,
         kind: Option<LoadKind>,
     ) -> Option<Pointer> {
@@ -1257,43 +1257,47 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
     }
     fn rewrite_c_value(
-        value: &CValue,
+        value: &ProgramValue,
         rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
         rewrite_shared: &impl Fn(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
-    ) -> CValue {
+    ) -> ProgramValue {
         match value {
-            CValue::PointerInteger(record) => CValue::PointerInteger(PointerIntegerValue {
-                kind: record.kind.clone(),
-                numeric: Box::new(rewrite_c_value(
-                    &record.numeric,
-                    rewrite_term,
-                    rewrite_pointer,
-                    rewrite_shared,
-                )),
-                pointer: Box::new(record.pointer.map_addresses(rewrite_pointer)),
-            }),
-            CValue::Parameter(term) => CValue::Parameter(Box::new(rewrite_algebraic(
+            ProgramValue::PointerInteger(record) => {
+                ProgramValue::PointerInteger(PointerIntegerValue {
+                    kind: record.kind.clone(),
+                    numeric: Box::new(rewrite_c_value(
+                        &record.numeric,
+                        rewrite_term,
+                        rewrite_pointer,
+                        rewrite_shared,
+                    )),
+                    pointer: Box::new(record.pointer.map_addresses(rewrite_pointer)),
+                })
+            }
+            ProgramValue::Parameter(term) => ProgramValue::Parameter(Box::new(rewrite_algebraic(
                 term,
                 rewrite_term,
                 rewrite_pointer,
                 rewrite_shared,
             ))),
-            CValue::Void => CValue::Void,
-            CValue::Bool(term) => CValue::Bool(rewrite_term(term)),
-            CValue::Int8(term) => CValue::Int8(rewrite_term(term)),
-            CValue::Int16(term) => CValue::Int16(rewrite_term(term)),
-            CValue::Int32(term) => CValue::Int32(rewrite_term(term)),
-            CValue::UInt8(term) => CValue::UInt8(rewrite_term(term)),
-            CValue::UInt16(term) => CValue::UInt16(rewrite_term(term)),
-            CValue::UInt32(term) => CValue::UInt32(rewrite_term(term)),
-            CValue::Int64(term) => CValue::Int64(rewrite_term(term)),
-            CValue::UInt64(term) => CValue::UInt64(rewrite_term(term)),
-            CValue::Int128(term) => CValue::Int128(rewrite_term(term)),
-            CValue::UInt128(term) => CValue::UInt128(rewrite_term(term)),
-            CValue::Float32(term) => CValue::Float32(rewrite_term(term)),
-            CValue::Float64(term) => CValue::Float64(rewrite_term(term)),
-            CValue::Pointer(pointer) => CValue::Pointer(pointer.map_addresses(rewrite_pointer)),
+            ProgramValue::Void => ProgramValue::Void,
+            ProgramValue::Bool(term) => ProgramValue::Bool(rewrite_term(term)),
+            ProgramValue::Int8(term) => ProgramValue::Int8(rewrite_term(term)),
+            ProgramValue::Int16(term) => ProgramValue::Int16(rewrite_term(term)),
+            ProgramValue::Int32(term) => ProgramValue::Int32(rewrite_term(term)),
+            ProgramValue::UInt8(term) => ProgramValue::UInt8(rewrite_term(term)),
+            ProgramValue::UInt16(term) => ProgramValue::UInt16(rewrite_term(term)),
+            ProgramValue::UInt32(term) => ProgramValue::UInt32(rewrite_term(term)),
+            ProgramValue::Int64(term) => ProgramValue::Int64(rewrite_term(term)),
+            ProgramValue::UInt64(term) => ProgramValue::UInt64(rewrite_term(term)),
+            ProgramValue::Int128(term) => ProgramValue::Int128(rewrite_term(term)),
+            ProgramValue::UInt128(term) => ProgramValue::UInt128(rewrite_term(term)),
+            ProgramValue::Float32(term) => ProgramValue::Float32(rewrite_term(term)),
+            ProgramValue::Float64(term) => ProgramValue::Float64(rewrite_term(term)),
+            ProgramValue::Pointer(pointer) => {
+                ProgramValue::Pointer(pointer.map_addresses(rewrite_pointer))
+            }
         }
     }
 
@@ -2269,17 +2273,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
                                     value, from, to,
                                 ));
                             }
-                            PureFunctionArgument::Value(CValue::Int32(value)) => {
-                                CValue::Int32(rewrite_term(value, from, to))
+                            PureFunctionArgument::Value(ProgramValue::Int32(value)) => {
+                                ProgramValue::Int32(rewrite_term(value, from, to))
                             }
-                            PureFunctionArgument::Value(CValue::UInt32(value)) => {
-                                CValue::UInt32(rewrite_term(value, from, to))
+                            PureFunctionArgument::Value(ProgramValue::UInt32(value)) => {
+                                ProgramValue::UInt32(rewrite_term(value, from, to))
                             }
-                            PureFunctionArgument::Value(CValue::Int64(value)) => {
-                                CValue::Int64(rewrite_term(value, from, to))
+                            PureFunctionArgument::Value(ProgramValue::Int64(value)) => {
+                                ProgramValue::Int64(rewrite_term(value, from, to))
                             }
-                            PureFunctionArgument::Value(CValue::UInt64(value)) => {
-                                CValue::UInt64(rewrite_term(value, from, to))
+                            PureFunctionArgument::Value(ProgramValue::UInt64(value)) => {
+                                ProgramValue::UInt64(rewrite_term(value, from, to))
                             }
                             _ => return argument.clone(),
                         };
@@ -2710,7 +2714,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let from = Pointer::symbolic(Variable(998_940));
         let to = Pointer::symbolic(Variable(998_941));
-        let stored = CValue::pointer(Pointer::symbolic(Variable(998_942)));
+        let stored = ProgramValue::pointer(Pointer::symbolic(Variable(998_942)));
         let memory = CMemory::new().store(to.clone(), stored);
         let memory = crate::kernel::intern_c_memory(memory);
         let cited =
@@ -2740,9 +2744,9 @@ mod tests {
         }
         let later = memory.memory().clone().store(
             to.clone(),
-            CValue::pointer(Pointer::symbolic(Variable(998_943))),
+            ProgramValue::pointer(Pointer::symbolic(Variable(998_943))),
         );
-        let _ = later.symbolic_pointer_version_load(&to, CType::Int32Pointer);
+        let _ = later.symbolic_pointer_version_load(&to, ProgramType::Int32Pointer);
         let goal = Proposition::ConditionIs(
             ConditionTerm::pointer_equal(input.offset_by_bytes(8), from.clone()),
             true,
@@ -2767,7 +2771,7 @@ mod tests {
         let from = Pointer::symbolic(Variable(998_960));
         let to = Pointer::symbolic(Variable(998_961));
         let memory = crate::kernel::intern_c_memory(
-            CMemory::new().store(to.clone(), CValue::Int32(7u32.into())),
+            CMemory::new().store(to.clone(), ProgramValue::Int32(7u32.into())),
         );
         let read = |address: &Pointer| {
             let load =
@@ -3628,7 +3632,7 @@ mod tests {
         let before = CMemory::new().with_block("integer-rewrite-snapshot", 8);
         let after = before.clone().store(
             pointer.clone(),
-            CValue::Int64(MachineTerm::int64_constant(9)),
+            ProgramValue::Int64(MachineTerm::int64_constant(9)),
         );
         let observe = |memory: CMemory| {
             IntegerTerm::from_machine(
@@ -3824,9 +3828,9 @@ mod tests {
             let changed = after.clone().store(
                 pointer.clone(),
                 if wide {
-                    CValue::UInt64(MachineTerm::uint64_constant(7))
+                    ProgramValue::UInt64(MachineTerm::uint64_constant(7))
                 } else {
-                    CValue::Int32(MachineTerm::constant(7))
+                    ProgramValue::Int32(MachineTerm::constant(7))
                 },
             );
             let kind = if wide {
@@ -4024,12 +4028,14 @@ mod tests {
         // of its own width, and a load whose width nobody recorded is taken
         // as the widest scalar access, which no `int32` store supplies.
         crate::kernel::eval::declare_load_access_width(&pointer, 4);
-        let memory = CMemory::new()
-            .with_block("rewrite-presentation", 4)
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(42)));
-        let changed = memory
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(43)));
+        let memory = CMemory::new().with_block("rewrite-presentation", 4).store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(42)),
+        );
+        let changed = memory.clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(43)),
+        );
         let load = |memory| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
@@ -4118,7 +4124,9 @@ mod tests {
             variable(free),
             MachineTerm::ClickFunctionApplication {
                 name: "f".to_string(),
-                arguments: vec![PureFunctionArgument::Value(CValue::Int32(variable(bound)))],
+                arguments: vec![PureFunctionArgument::Value(ProgramValue::Int32(variable(
+                    bound,
+                )))],
             },
         );
         assert!(
@@ -4293,10 +4301,10 @@ mod numeric_address_annotation_tests {
                 .proposition(),
             &equality,
         );
-        let left = CPointerValue::new(p.clone(), CType::Int32Pointer)
+        let left = PointerValue::new(p.clone(), ProgramType::Int32Pointer)
             .with_extent(Some(SubobjectExtent::constant(p, 4)));
         for width in [4, 8] {
-            let right = CPointerValue::new(q.clone(), CType::Int32Pointer)
+            let right = PointerValue::new(q.clone(), ProgramType::Int32Pointer)
                 .with_extent(Some(SubobjectExtent::constant(q.clone(), width)));
             assert!(
                 !facts

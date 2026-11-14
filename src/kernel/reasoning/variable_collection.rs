@@ -714,7 +714,7 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
         Term::PointerOffset(offset) => {
             collect_pointer_offset_bitvector_variables(offset, variables)
         }
-        Term::CValue(value) => collect_c_value_bitvector_variables(value, variables),
+        Term::ProgramValue(value) => collect_c_value_bitvector_variables(value, variables),
         Term::Sequence(sequence) => collect_sequence_bitvector_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_term_bitvector_variables(term, variables),
         Term::CExpressionOutcome(outcome) => {
@@ -727,7 +727,7 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
             collect_c_function_outcome_bitvector_variables(outcome, variables);
         }
         Term::CMemory(memory) => collect_memory_bitvector_variables(memory, variables),
-        Term::CState(state) => collect_c_state_bitvector_variables(state, variables),
+        Term::ExecutionState(state) => collect_c_state_bitvector_variables(state, variables),
     }
 }
 
@@ -735,7 +735,7 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
 /// conditional `if condition { 1 } else { 0 }`: a walker reaches its terms as
 /// it reaches any scalar conditional's.
 fn condition_carrier(condition: &ConditionTerm) -> AlgebraicValue {
-    AlgebraicValue::C(CValue::Int32(MachineTerm::If {
+    AlgebraicValue::C(ProgramValue::Int32(MachineTerm::If {
         condition: Box::new(condition.clone()),
         then_term: Box::new(MachineTerm::constant(1)),
         else_term: Box::new(MachineTerm::constant(0)),
@@ -745,12 +745,12 @@ fn condition_carrier(condition: &ConditionTerm) -> AlgebraicValue {
 /// A [`AlgebraicTermNode::MemoryLoad`]'s memory and address as the scalar
 /// load at them: a walker reaches them as it reaches a scalar load's.
 fn load_carrier(
-    memory: &crate::kernel::SharedCMemory,
+    memory: &crate::kernel::SharedMemory,
     pointer: &crate::kernel::Pointer,
 ) -> AlgebraicValue {
-    AlgebraicValue::C(CValue::UInt64(AlgebraicTermNode::memory_load_carrier(
-        memory, pointer,
-    )))
+    AlgebraicValue::C(ProgramValue::UInt64(
+        AlgebraicTermNode::memory_load_carrier(memory, pointer),
+    ))
 }
 
 fn collect_algebraic_term_bitvector_variables(
@@ -847,23 +847,23 @@ fn collect_sequence_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     variables: &mut BTreeSet<Variable>,
 ) {
     match expression {
-        CExpression::Value(value) => collect_c_value_bitvector_variables(value, variables),
-        CExpression::Variable(_)
-        | CExpression::FunctionAddress(_)
-        | CExpression::CallResult { .. } => {}
-        CExpression::Cast { expression, .. } => {
+        ProgramExpression::Value(value) => collect_c_value_bitvector_variables(value, variables),
+        ProgramExpression::Variable(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => {}
+        ProgramExpression::Cast { expression, .. } => {
             collect_c_expression_bitvector_variables(expression, variables)
         }
-        CExpression::EnumConstruct { fields, .. } => {
+        ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
                 collect_c_expression_bitvector_variables(field, variables);
             }
         }
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
@@ -872,119 +872,120 @@ pub(in crate::kernel) fn collect_c_expression_bitvector_variables(
             collect_c_expression_bitvector_variables(then_branch, variables);
             collect_c_expression_bitvector_variables(else_branch, variables);
         }
-        CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::FloatNegate(expression)
+        | ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         } => collect_c_expression_bitvector_variables(expression, variables),
-        CExpression::AddressOf(body)
-        | CExpression::CheckedObjectAddress(body)
-        | CExpression::Not(body)
-        | CExpression::Load(body) => {
+        ProgramExpression::AddressOf(body)
+        | ProgramExpression::CheckedObjectAddress(body)
+        | ProgramExpression::Not(body)
+        | ProgramExpression::Load(body) => {
             collect_c_expression_bitvector_variables(body, variables);
         }
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => {
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
             collect_c_expression_bitvector_variables(pointer, variables);
         }
-        CExpression::TypedLoad { pointer, .. } => {
+        ProgramExpression::TypedLoad { pointer, .. } => {
             collect_c_expression_bitvector_variables(pointer, variables);
         }
         crate::kernel::binary_c_expression!(left, right) => {
             collect_c_expression_bitvector_variables(left, variables);
             collect_c_expression_bitvector_variables(right, variables);
         }
-        CExpression::BitwiseNot(expression) => {
+        ProgramExpression::BitwiseNot(expression) => {
             collect_c_expression_bitvector_variables(expression, variables);
         }
     }
 }
 
 pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
-    statement: &CStatement,
+    statement: &ProgramStatement,
     variables: &mut BTreeSet<Variable>,
 ) {
     match statement {
-        CStatement::Skip
-        | CStatement::EndScalarReference(_)
-        | CStatement::ScalarReferenceScope(_)
-        | CStatement::EndAutomaticLifetimes { .. }
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare {
+        ProgramStatement::Skip
+        | ProgramStatement::EndScalarReference(_)
+        | ProgramStatement::ScalarReferenceScope(_)
+        | ProgramStatement::EndAutomaticLifetimes { .. }
+        | ProgramStatement::Break
+        | ProgramStatement::Continue
+        | ProgramStatement::Goto { .. }
+        | ProgramStatement::Declare {
             initializer: None, ..
         }
-        | CStatement::DeclareAggregate { .. } => {}
-        CStatement::ForStep { step, .. } => {
+        | ProgramStatement::DeclareAggregate { .. } => {}
+        ProgramStatement::ForStep { step, .. } => {
             collect_c_statement_bitvector_variables(step, variables);
         }
-        CStatement::Declare {
+        ProgramStatement::Declare {
             initializer: Some(expression),
             ..
         }
-        | CStatement::Assign { expression, .. }
-        | CStatement::Return(expression)
-        | CStatement::Throw(expression)
-        | CStatement::Assert {
+        | ProgramStatement::Assign { expression, .. }
+        | ProgramStatement::Return(expression)
+        | ProgramStatement::Throw(expression)
+        | ProgramStatement::Assert {
             condition: expression,
             ..
         }
-        | CStatement::LoopTest {
+        | ProgramStatement::LoopTest {
             condition: expression,
         } => {
             collect_c_expression_bitvector_variables(expression, variables);
         }
-        CStatement::CallAssign { arguments, .. } => {
+        ProgramStatement::CallAssign { arguments, .. } => {
             for argument in arguments {
                 collect_c_expression_bitvector_variables(argument, variables);
             }
         }
-        CStatement::Call { arguments, .. } | CStatement::CallResult { arguments, .. } => {
+        ProgramStatement::Call { arguments, .. }
+        | ProgramStatement::CallResult { arguments, .. } => {
             for argument in arguments {
                 collect_c_expression_bitvector_variables(argument, variables);
             }
         }
-        CStatement::HeapAllocate { bytes, .. } => {
+        ProgramStatement::HeapAllocate { bytes, .. } => {
             collect_c_expression_bitvector_variables(bytes, variables);
         }
-        CStatement::HeapFree { pointer } => {
+        ProgramStatement::HeapFree { pointer } => {
             collect_c_expression_bitvector_variables(pointer, variables);
         }
-        CStatement::Seq(statements) => {
+        ProgramStatement::Seq(statements) => {
             for statement in statements.iter() {
                 collect_c_statement_bitvector_variables(statement, variables);
             }
         }
-        CStatement::TryCatchInt32 {
+        ProgramStatement::TryCatchInt32 {
             try_body, handler, ..
         } => {
             collect_c_statement_bitvector_variables(try_body, variables);
             collect_c_statement_bitvector_variables(handler, variables);
         }
-        CStatement::Store { pointer, value } => {
+        ProgramStatement::Store { pointer, value } => {
             collect_c_expression_bitvector_variables(pointer, variables);
             collect_c_expression_bitvector_variables(value, variables);
         }
-        CStatement::TypedStore { pointer, value, .. } => {
+        ProgramStatement::TypedStore { pointer, value, .. } => {
             collect_c_expression_bitvector_variables(pointer, variables);
             collect_c_expression_bitvector_variables(value, variables);
         }
-        CStatement::CopyAggregate { target, source, .. }
-        | CStatement::InitializeScalarArray { target, source, .. } => {
+        ProgramStatement::CopyAggregate { target, source, .. }
+        | ProgramStatement::InitializeScalarArray { target, source, .. } => {
             collect_c_expression_bitvector_variables(target, variables);
             collect_c_expression_bitvector_variables(source, variables);
         }
-        CStatement::Update {
+        ProgramStatement::Update {
             target, operand, ..
         } => {
             collect_c_expression_bitvector_variables(target, variables);
             collect_c_expression_bitvector_variables(operand, variables);
         }
-        CStatement::If {
+        ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
@@ -993,7 +994,7 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
             collect_c_statement_bitvector_variables(then_branch, variables);
             collect_c_statement_bitvector_variables(else_branch, variables);
         }
-        CStatement::While {
+        ProgramStatement::While {
             condition,
             invariant,
             invariant_checks,
@@ -1022,7 +1023,7 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
             }
             collect_c_statement_bitvector_variables(body, variables);
         }
-        CStatement::Switch { expression, cases } => {
+        ProgramStatement::Switch { expression, cases } => {
             collect_c_expression_bitvector_variables(expression, variables);
             for case in cases {
                 collect_c_statement_bitvector_variables(&case.body, variables);
@@ -1041,7 +1042,7 @@ pub(in crate::kernel) fn collect_c_ranking_component_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match component {
-        CRankingComponent::CExpression(expression) => {
+        CRankingComponent::ProgramExpression(expression) => {
             collect_c_expression_bitvector_variables(expression, variables);
         }
         CRankingComponent::Pure { expression, .. } => {
@@ -1072,7 +1073,7 @@ fn collect_spec_bitvector_variables(root: SpecNode<'_>, variables: &mut BTreeSet
             N::Expression(SpecExpression::Value(value)) => {
                 collect_c_value_bitvector_variables(value, variables);
             }
-            N::Expression(SpecExpression::CExpression(expression)) => {
+            N::Expression(SpecExpression::ProgramExpression(expression)) => {
                 collect_c_expression_bitvector_variables(expression, variables);
             }
             N::Integer(SpecIntegerExpression::Term(term)) => {
@@ -1306,24 +1307,24 @@ fn collect_algebraic_value_bound_identities(
 }
 
 fn collect_c_value_bound_identities(
-    value: &CValue,
+    value: &ProgramValue,
     variables: &mut BTreeSet<Variable>,
     _integer_seen: &mut SeenTerms,
 ) {
     match value {
-        CValue::PointerInteger(record) => {
+        ProgramValue::PointerInteger(record) => {
             collect_c_value_bound_identities(&record.numeric, variables, _integer_seen);
             collect_c_value_bound_identities(
-                &CValue::Pointer(*record.pointer.clone()),
+                &ProgramValue::Pointer(*record.pointer.clone()),
                 variables,
                 _integer_seen,
             );
         }
-        CValue::Parameter(term) => {
+        ProgramValue::Parameter(term) => {
             collect_algebraic_term_bound_identities(term, variables, _integer_seen)
         }
-        CValue::Void => {}
-        CValue::Pointer(pointer) => {
+        ProgramValue::Void => {}
+        ProgramValue::Pointer(pointer) => {
             for address in pointer.pointers() {
                 if let PointerBlock::PureFunctionApplication(application) = &address.block
                     && _integer_seen.pointers.insert(application.id())
@@ -1334,64 +1335,64 @@ fn collect_c_value_bound_identities(
                 }
             }
         }
-        CValue::Int8(bits) => {
+        ProgramValue::Int8(bits) => {
             collect_bitvector_integer_variables(bits, variables);
         }
-        CValue::Bool(bits)
-        | CValue::Int16(bits)
-        | CValue::UInt8(bits)
-        | CValue::UInt16(bits)
-        | CValue::Int32(bits)
-        | CValue::UInt32(bits)
-        | CValue::Int64(bits)
-        | CValue::UInt64(bits)
-        | CValue::Int128(bits)
-        | CValue::UInt128(bits)
-        | CValue::Float32(bits)
-        | CValue::Float64(bits) => {
+        ProgramValue::Bool(bits)
+        | ProgramValue::Int16(bits)
+        | ProgramValue::UInt8(bits)
+        | ProgramValue::UInt16(bits)
+        | ProgramValue::Int32(bits)
+        | ProgramValue::UInt32(bits)
+        | ProgramValue::Int64(bits)
+        | ProgramValue::UInt64(bits)
+        | ProgramValue::Int128(bits)
+        | ProgramValue::UInt128(bits)
+        | ProgramValue::Float32(bits)
+        | ProgramValue::Float64(bits) => {
             collect_bitvector_integer_variables(bits, variables);
         }
     }
 }
 
 fn collect_c_expression_bound_identities(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
 ) {
     match expression {
-        CExpression::Value(value) => {
+        ProgramExpression::Value(value) => {
             collect_c_value_bound_identities(value, variables, integer_seen);
         }
-        CExpression::Variable(_)
-        | CExpression::FunctionAddress(_)
-        | CExpression::CallResult { .. } => {}
-        CExpression::Cast { expression, .. }
-        | CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::Variable(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => {}
+        ProgramExpression::Cast { expression, .. }
+        | ProgramExpression::FloatNegate(expression)
+        | ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         }
-        | CExpression::AddressOf(expression)
-        | CExpression::CheckedObjectAddress(expression)
-        | CExpression::Not(expression)
-        | CExpression::Load(expression)
-        | CExpression::TypedLoad {
+        | ProgramExpression::AddressOf(expression)
+        | ProgramExpression::CheckedObjectAddress(expression)
+        | ProgramExpression::Not(expression)
+        | ProgramExpression::Load(expression)
+        | ProgramExpression::TypedLoad {
             pointer: expression,
             ..
         }
-        | CExpression::BitwiseNot(expression) => {
+        | ProgramExpression::BitwiseNot(expression) => {
             collect_c_expression_bound_identities(expression, variables, integer_seen);
         }
-        CExpression::EnumConstruct { fields, .. } => {
+        ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
                 collect_c_expression_bound_identities(field, variables, integer_seen);
             }
         }
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
@@ -1400,8 +1401,8 @@ fn collect_c_expression_bound_identities(
             collect_c_expression_bound_identities(then_branch, variables, integer_seen);
             collect_c_expression_bound_identities(else_branch, variables, integer_seen);
         }
-        CExpression::PointerOffsetBytes { pointer, .. }
-        | CExpression::Subobject { pointer, .. } => {
+        ProgramExpression::PointerOffsetBytes { pointer, .. }
+        | ProgramExpression::Subobject { pointer, .. } => {
             collect_c_expression_bound_identities(pointer, variables, integer_seen);
         }
         crate::kernel::binary_c_expression!(left, right) => {
@@ -1430,7 +1431,7 @@ fn collect_spec_bound_identities(
             N::Expression(SpecExpression::Value(value)) => {
                 collect_c_value_bound_identities(value, variables, integer_seen);
             }
-            N::Expression(SpecExpression::CExpression(expression)) => {
+            N::Expression(SpecExpression::ProgramExpression(expression)) => {
                 collect_c_expression_bound_identities(expression, variables, integer_seen);
             }
             N::Expression(SpecExpression::ResourceField { projection, .. })
@@ -1535,7 +1536,7 @@ pub(in crate::kernel) fn collect_c_function_outcome_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_c_state_bitvector_variables(
-    state: &CState,
+    state: &ExecutionState,
     variables: &mut BTreeSet<Variable>,
 ) {
     if let Some(destination) = &state.aggregate_destination {
@@ -1649,7 +1650,7 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_c_function_bitvector_variables(
-    function: &CFunction,
+    function: &ProgramFunction,
     variables: &mut BTreeSet<Variable>,
 ) {
     collect_c_function_contract_interface_bitvector_variables(
@@ -2813,7 +2814,7 @@ fn collect_pure_argument_integer_variables(
 }
 
 fn collect_c_value_integer_variables(
-    value: &CValue,
+    value: &ProgramValue,
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
@@ -2821,31 +2822,33 @@ fn collect_c_value_integer_variables(
         return;
     }
     match value {
-        CValue::PointerInteger(record) => {
+        ProgramValue::PointerInteger(record) => {
             collect_c_value_integer_variables(&record.numeric, variables, seen);
             collect_c_value_integer_variables(
-                &CValue::Pointer(*record.pointer.clone()),
+                &ProgramValue::Pointer(*record.pointer.clone()),
                 variables,
                 seen,
             );
         }
-        CValue::Void => {}
-        CValue::Int8(value) => collect_bitvector_integer_variables_seen(value, variables, seen),
-        CValue::Bool(value)
-        | CValue::Int16(value)
-        | CValue::UInt8(value)
-        | CValue::UInt16(value)
-        | CValue::Int32(value)
-        | CValue::UInt32(value)
-        | CValue::Int64(value)
-        | CValue::UInt64(value)
-        | CValue::Int128(value)
-        | CValue::UInt128(value)
-        | CValue::Float32(value)
-        | CValue::Float64(value) => {
+        ProgramValue::Void => {}
+        ProgramValue::Int8(value) => {
             collect_bitvector_integer_variables_seen(value, variables, seen)
         }
-        CValue::Pointer(_) | CValue::Parameter(_) => {}
+        ProgramValue::Bool(value)
+        | ProgramValue::Int16(value)
+        | ProgramValue::UInt8(value)
+        | ProgramValue::UInt16(value)
+        | ProgramValue::Int32(value)
+        | ProgramValue::UInt32(value)
+        | ProgramValue::Int64(value)
+        | ProgramValue::UInt64(value)
+        | ProgramValue::Int128(value)
+        | ProgramValue::UInt128(value)
+        | ProgramValue::Float32(value)
+        | ProgramValue::Float64(value) => {
+            collect_bitvector_integer_variables_seen(value, variables, seen)
+        }
+        ProgramValue::Pointer(_) | ProgramValue::Parameter(_) => {}
     }
 }
 
@@ -3124,7 +3127,7 @@ fn collect_shared_integer_variables(
 }
 
 fn collect_stored_load_connection_variables(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -3567,7 +3570,7 @@ fn collect_pointer_capture_variables(
 }
 
 fn collect_capture_variables_in_c_value(
-    value: &CValue,
+    value: &ProgramValue,
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
 ) {
@@ -3575,36 +3578,36 @@ fn collect_capture_variables_in_c_value(
         return;
     }
     match value {
-        CValue::PointerInteger(record) => {
+        ProgramValue::PointerInteger(record) => {
             collect_capture_variables_in_c_value(&record.numeric, variables, integer_seen);
             collect_capture_variables_in_c_value(
-                &CValue::Pointer(*record.pointer.clone()),
+                &ProgramValue::Pointer(*record.pointer.clone()),
                 variables,
                 integer_seen,
             );
         }
-        CValue::Parameter(term) => {
+        ProgramValue::Parameter(term) => {
             collect_capture_variables_in_algebraic_term(term, variables, integer_seen)
         }
-        CValue::Void => {}
-        CValue::Int8(bits) => {
+        ProgramValue::Void => {}
+        ProgramValue::Int8(bits) => {
             collect_bitvector_capture_variables_seen(bits, variables, integer_seen)
         }
-        CValue::Bool(bits)
-        | CValue::Int16(bits)
-        | CValue::UInt8(bits)
-        | CValue::UInt16(bits)
-        | CValue::Int32(bits)
-        | CValue::UInt32(bits)
-        | CValue::Int64(bits)
-        | CValue::UInt64(bits)
-        | CValue::Int128(bits)
-        | CValue::UInt128(bits)
-        | CValue::Float32(bits)
-        | CValue::Float64(bits) => {
+        ProgramValue::Bool(bits)
+        | ProgramValue::Int16(bits)
+        | ProgramValue::UInt8(bits)
+        | ProgramValue::UInt16(bits)
+        | ProgramValue::Int32(bits)
+        | ProgramValue::UInt32(bits)
+        | ProgramValue::Int64(bits)
+        | ProgramValue::UInt64(bits)
+        | ProgramValue::Int128(bits)
+        | ProgramValue::UInt128(bits)
+        | ProgramValue::Float32(bits)
+        | ProgramValue::Float64(bits) => {
             collect_bitvector_capture_variables_seen(bits, variables, integer_seen)
         }
-        CValue::Pointer(pointer) => {
+        ProgramValue::Pointer(pointer) => {
             for address in pointer.pointers() {
                 collect_pointer_capture_variables(address, variables, integer_seen);
             }
@@ -4487,37 +4490,37 @@ fn collect_scope_summary_in_argument(
 }
 
 fn collect_c_value_scope_summary(
-    value: &CValue,
+    value: &ProgramValue,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     if checked_collection_checkpoint() {
         return IntegerScopeSummary::default();
     }
     match value {
-        CValue::PointerInteger(record) => {
+        ProgramValue::PointerInteger(record) => {
             let mut summary = collect_c_value_scope_summary(&record.numeric, summaries);
             summary.merge(collect_c_value_scope_summary(
-                &CValue::Pointer(*record.pointer.clone()),
+                &ProgramValue::Pointer(*record.pointer.clone()),
                 summaries,
             ));
             summary
         }
-        CValue::Parameter(term) => collect_algebraic_scope_summary(term, summaries),
-        CValue::Void => IntegerScopeSummary::default(),
-        CValue::Int8(term) => collect_bitvector_scope_summary(term, summaries),
-        CValue::Bool(term)
-        | CValue::Int16(term)
-        | CValue::UInt8(term)
-        | CValue::UInt16(term)
-        | CValue::Int32(term)
-        | CValue::UInt32(term)
-        | CValue::Int64(term)
-        | CValue::UInt64(term)
-        | CValue::Int128(term)
-        | CValue::UInt128(term)
-        | CValue::Float32(term)
-        | CValue::Float64(term) => collect_bitvector_scope_summary(term, summaries),
-        CValue::Pointer(pointer) => {
+        ProgramValue::Parameter(term) => collect_algebraic_scope_summary(term, summaries),
+        ProgramValue::Void => IntegerScopeSummary::default(),
+        ProgramValue::Int8(term) => collect_bitvector_scope_summary(term, summaries),
+        ProgramValue::Bool(term)
+        | ProgramValue::Int16(term)
+        | ProgramValue::UInt8(term)
+        | ProgramValue::UInt16(term)
+        | ProgramValue::Int32(term)
+        | ProgramValue::UInt32(term)
+        | ProgramValue::Int64(term)
+        | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term)
+        | ProgramValue::Float32(term)
+        | ProgramValue::Float64(term) => collect_bitvector_scope_summary(term, summaries),
+        ProgramValue::Pointer(pointer) => {
             let mut summary = IntegerScopeSummary::default();
             for address in pointer.pointers() {
                 summary.merge(collect_pointer_scope_summary(address, summaries));
@@ -5248,7 +5251,7 @@ fn collect_pointer_binder_variables(
 }
 
 fn collect_binder_variables_in_c_value(
-    value: &CValue,
+    value: &ProgramValue,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
@@ -5257,7 +5260,7 @@ fn collect_binder_variables_in_c_value(
         return;
     }
     match value {
-        CValue::PointerInteger(record) => {
+        ProgramValue::PointerInteger(record) => {
             collect_binder_variables_in_c_value(
                 &record.numeric,
                 integer_variables,
@@ -5265,43 +5268,43 @@ fn collect_binder_variables_in_c_value(
                 integer_seen,
             );
             collect_binder_variables_in_c_value(
-                &CValue::Pointer(*record.pointer.clone()),
+                &ProgramValue::Pointer(*record.pointer.clone()),
                 integer_variables,
                 bitvector_variables,
                 integer_seen,
             );
         }
-        CValue::Parameter(term) => collect_binder_variables_in_algebraic_term(
+        ProgramValue::Parameter(term) => collect_binder_variables_in_algebraic_term(
             term,
             integer_variables,
             bitvector_variables,
             integer_seen,
         ),
-        CValue::Void => {}
-        CValue::Int8(bits) => collect_bitvector_binder_variables_seen(
+        ProgramValue::Void => {}
+        ProgramValue::Int8(bits) => collect_bitvector_binder_variables_seen(
             bits,
             integer_variables,
             bitvector_variables,
             integer_seen,
         ),
-        CValue::Bool(bits)
-        | CValue::Int16(bits)
-        | CValue::UInt8(bits)
-        | CValue::UInt16(bits)
-        | CValue::Int32(bits)
-        | CValue::UInt32(bits)
-        | CValue::Int64(bits)
-        | CValue::UInt64(bits)
-        | CValue::Int128(bits)
-        | CValue::UInt128(bits)
-        | CValue::Float32(bits)
-        | CValue::Float64(bits) => collect_bitvector_binder_variables_seen(
+        ProgramValue::Bool(bits)
+        | ProgramValue::Int16(bits)
+        | ProgramValue::UInt8(bits)
+        | ProgramValue::UInt16(bits)
+        | ProgramValue::Int32(bits)
+        | ProgramValue::UInt32(bits)
+        | ProgramValue::Int64(bits)
+        | ProgramValue::UInt64(bits)
+        | ProgramValue::Int128(bits)
+        | ProgramValue::UInt128(bits)
+        | ProgramValue::Float32(bits)
+        | ProgramValue::Float64(bits) => collect_bitvector_binder_variables_seen(
             bits,
             integer_variables,
             bitvector_variables,
             integer_seen,
         ),
-        CValue::Pointer(pointer) => {
+        ProgramValue::Pointer(pointer) => {
             for address in pointer.pointers() {
                 collect_pointer_binder_variables(
                     address,
@@ -5712,7 +5715,7 @@ fn symbolic_storage_run_shared_variables(
 /// found without visiting one.
 fn constant_run_variables(
     run: &crate::kernel::primitives::CellRun,
-    value: &CValue,
+    value: &ProgramValue,
 ) -> BTreeSet<Variable> {
     crate::instrumentation::record_deterministic_work(1);
     let mut shared = BTreeSet::new();
@@ -5761,7 +5764,7 @@ pub(in crate::kernel) fn clear_shared_memory_variables() {
     HEAP_VARIABLES.with(|table| *table.borrow_mut() = None);
 }
 
-fn remembered_memory_variables(memory: &SharedCMemory) -> Option<VariableCounts> {
+fn remembered_memory_variables(memory: &SharedMemory) -> Option<VariableCounts> {
     SHARED_MEMORY_VARIABLES.with(|table| table.borrow().get(&memory.arena_id()).cloned())
 }
 
@@ -5774,10 +5777,7 @@ pub(in crate::kernel) fn prepare_memory_variable_index(memory: &CMemory) {
 /// Advance an established index by the exact memory delta. Unindexed
 /// executions remain lazy; an indexed execution never leaves a later call
 /// to pay for all preceding stores.
-pub(in crate::kernel) fn advance_memory_variable_index(
-    base: &SharedCMemory,
-    result: &SharedCMemory,
-) {
+pub(in crate::kernel) fn advance_memory_variable_index(base: &SharedMemory, result: &SharedMemory) {
     if remembered_memory_variables(result).is_some() {
         return;
     }
@@ -5794,7 +5794,7 @@ pub(in crate::kernel) fn advance_memory_variable_index(
 /// charges one unit per entry and per derivation step it visits; a snapshot
 /// already counted is an indexed lookup plus the variables it hands back.
 pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
     if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get)
@@ -5915,7 +5915,7 @@ const RESERVED_SNAPSHOT_HOPS: usize = 64;
 /// one of the reserved snapshot's, and every one of those is `memory`'s, so
 /// the reserved variables come out as they would from its whole counts.
 fn extend_with_snapshot_variables(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     whole: WholeCount,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -5980,8 +5980,8 @@ fn extend_with_snapshot_variables(
 /// outside a reservation. Its bound variables together with those of the
 /// entries `memory` changes since include all of `memory`'s.
 pub(in crate::kernel) fn bound_reserved_base(
-    memory: &crate::kernel::primitives::SharedCMemory,
-) -> Option<crate::kernel::primitives::SharedCMemory> {
+    memory: &crate::kernel::primitives::SharedMemory,
+) -> Option<crate::kernel::primitives::SharedMemory> {
     SNAPSHOT_RESERVATION.with(|cell| {
         let reservation = cell.borrow();
         let reservation = reservation.as_ref()?;
@@ -6099,7 +6099,7 @@ enum WholeCount {
     Uncharged,
 }
 
-fn shared_memory_variable_counts(memory: &SharedCMemory, whole: WholeCount) -> VariableCounts {
+fn shared_memory_variable_counts(memory: &SharedMemory, whole: WholeCount) -> VariableCounts {
     if let Some(counts) = remembered_memory_variables(memory) {
         return counts;
     }
@@ -6176,7 +6176,7 @@ fn add_counts(counts: &mut VariableCounts, mentioned: BTreeSet<Variable>, sign: 
     }
 }
 
-fn block_variables(block: &PointerBlock, contents: &CBlock) -> BTreeSet<Variable> {
+fn block_variables(block: &PointerBlock, contents: &MemoryBlock) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
     match block {
         PointerBlock::PureFunctionApplication(application) => {
@@ -6225,7 +6225,7 @@ fn object_address_variables(pointer: &Pointer) -> BTreeSet<Variable> {
     variables
 }
 
-fn cell_variables(pointer: &Pointer, value: &CValue) -> BTreeSet<Variable> {
+fn cell_variables(pointer: &Pointer, value: &ProgramValue) -> BTreeSet<Variable> {
     #[cfg(test)]
     CELLS_COLLECTED.with(|visited| visited.set(visited.get() + 1));
     let mut variables = BTreeSet::new();
@@ -6562,33 +6562,35 @@ fn collect_expression_value_bitvector_variables(
 }
 
 pub(crate) fn collect_c_value_bitvector_variables(
-    value: &CValue,
+    value: &ProgramValue,
     variables: &mut BTreeSet<Variable>,
 ) {
     match value {
-        CValue::PointerInteger(record) => {
+        ProgramValue::PointerInteger(record) => {
             collect_c_value_bitvector_variables(&record.numeric, variables);
             collect_c_value_bitvector_variables(
-                &CValue::Pointer(*record.pointer.clone()),
+                &ProgramValue::Pointer(*record.pointer.clone()),
                 variables,
             );
         }
-        CValue::Parameter(term) => collect_algebraic_term_bitvector_variables(term, variables),
-        CValue::Void => {}
-        CValue::Int8(bits) => collect_bitvector_variables(bits, variables),
-        CValue::Bool(bits)
-        | CValue::Int16(bits)
-        | CValue::Int32(bits)
-        | CValue::UInt8(bits)
-        | CValue::UInt16(bits)
-        | CValue::UInt32(bits)
-        | CValue::Int64(bits)
-        | CValue::UInt64(bits)
-        | CValue::Int128(bits)
-        | CValue::UInt128(bits)
-        | CValue::Float32(bits)
-        | CValue::Float64(bits) => collect_bitvector_variables(bits, variables),
-        CValue::Pointer(pointer) => {
+        ProgramValue::Parameter(term) => {
+            collect_algebraic_term_bitvector_variables(term, variables)
+        }
+        ProgramValue::Void => {}
+        ProgramValue::Int8(bits) => collect_bitvector_variables(bits, variables),
+        ProgramValue::Bool(bits)
+        | ProgramValue::Int16(bits)
+        | ProgramValue::Int32(bits)
+        | ProgramValue::UInt8(bits)
+        | ProgramValue::UInt16(bits)
+        | ProgramValue::UInt32(bits)
+        | ProgramValue::Int64(bits)
+        | ProgramValue::UInt64(bits)
+        | ProgramValue::Int128(bits)
+        | ProgramValue::UInt128(bits)
+        | ProgramValue::Float32(bits)
+        | ProgramValue::Float64(bits) => collect_bitvector_variables(bits, variables),
+        ProgramValue::Pointer(pointer) => {
             for address in pointer.pointers() {
                 collect_pointer_bitvector_variables(address, variables);
             }
@@ -6606,7 +6608,7 @@ mod integer_expression_tests {
         let expression = SpecIntegerExpression::Negate(Box::new(SpecIntegerExpression::Add(
             Box::new(SpecIntegerExpression::Term(IntegerTerm::Constant(1.into()))),
             Box::new(SpecIntegerExpression::FromMachine(Box::new(
-                SpecExpression::Value(CValue::Int32(MachineTerm::Variable(variable))),
+                SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(variable))),
             ))),
         )));
         let mut variables = BTreeSet::new();

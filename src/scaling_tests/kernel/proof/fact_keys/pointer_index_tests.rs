@@ -69,7 +69,7 @@ fn pointer_index_fact_lookup_ignores_unrelated_facts() {
         let _session = VerificationSession::enter();
         let make = |var, width| {
             let ty = MachineIntegerType::Int32;
-            let x = KernelTerm::variable(KernelType::C(CType::Int32), Variable(var));
+            let x = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(var));
             let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
             quantified(
                 Variable(var),

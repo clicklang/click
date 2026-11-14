@@ -67,12 +67,12 @@ fn requirement_source_bindings(
 }
 
 pub(super) struct TheoremApplicationContext<'a> {
-    pub(super) values: &'a BTreeMap<String, CValue>,
+    pub(super) values: &'a BTreeMap<String, ProgramValue>,
     pub(super) array_refs: &'a ClickArrayRefs,
     pub(super) algebraic_values: &'a BTreeMap<String, SpecAlgebraicExpression>,
-    pub(super) pre_state: &'a CState,
-    pub(super) post_state: &'a CState,
-    pub(super) result: Option<&'a CValue>,
+    pub(super) pre_state: &'a ExecutionState,
+    pub(super) post_state: &'a ExecutionState,
+    pub(super) result: Option<&'a ProgramValue>,
     pub(super) recorded_snapshots: &'a RecordedSnapshots,
     pub(super) integer_values:
         &'a crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
@@ -211,7 +211,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
     // parameters bound and lowered by the kernel.
     // The theorem's parameters shadow any C local of the same name: the
     // application binds them, not the state.
-    let bind = |state: &CState| {
+    let bind = |state: &ExecutionState| {
         values.iter().fold(state.clone(), |state, (name, value)| {
             state.with_local(name.clone(), value.clone())
         })
@@ -962,11 +962,11 @@ fn theorem_application_argument_type(
         | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
             return Ok(Some(ClickType::Algebraic(algebraic_type.clone())));
         }
-        ContractExpression::CFragment(CExpression::Value(value)) => {
+        ContractExpression::CFragment(ProgramExpression::Value(value)) => {
             return Ok(Some(generics::click_type_from_c_value(value)));
         }
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name)) => {
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
             if let Some(value) = context.values.get(name) {
                 return Ok(Some(generics::click_type_from_c_value(value)));
             }
@@ -1009,7 +1009,7 @@ fn evaluate_native_theorem_argument(
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
-) -> Result<CValue, String> {
+) -> Result<ProgramValue, String> {
     let algebraic_values = contract_expression_referenced_names(argument)
         .into_iter()
         .filter_map(|name| {
@@ -1045,7 +1045,7 @@ pub(super) fn theorem_application_bindings(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<
     (
-        BTreeMap<String, CValue>,
+        BTreeMap<String, ProgramValue>,
         ClickArrayRefs,
         BTreeMap<String, SpecAlgebraicExpression>,
         crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
@@ -1223,7 +1223,7 @@ pub(super) fn theorem_application_bindings(
         // pointer parameter, so a whole-tree claim can be stated at the null
         // parent (`parent_consistent(t, 0)`).
         if crate::surface::lowering::argument_is_null_pointer_constant(argument, parameter_type) {
-            let pointer = CValue::typed_pointer(
+            let pointer = ProgramValue::typed_pointer(
                 crate::kernel::Pointer::null(),
                 parameter_type.to_kernel_type(),
             );
@@ -1302,7 +1302,7 @@ pub(super) fn theorem_application_bindings(
                 }
                 value.retag_pointer(parameter_type.to_kernel_type())
             } else {
-                CValue::Pointer(
+                ProgramValue::Pointer(
                     pointer_value.with_type(expected_element_type.pointer_to().unwrap()),
                 )
             };
@@ -1461,17 +1461,17 @@ fn pointer_element_width_for_argument(
 }
 
 fn pointer_element_width_for_c_expression(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     known: &BTreeMap<String, u32>,
 ) -> Option<u32> {
     match expression {
-        CExpression::Variable(name) => known.get(name).copied(),
-        CExpression::Add(left, right) => pointer_element_width_for_c_expression(left, known)
+        ProgramExpression::Variable(name) => known.get(name).copied(),
+        ProgramExpression::Add(left, right) => pointer_element_width_for_c_expression(left, known)
             .or_else(|| pointer_element_width_for_c_expression(right, known)),
-        CExpression::Subtract(left, _)
-        | CExpression::PointerOffsetBytes { pointer: left, .. }
-        | CExpression::Subobject { pointer: left, .. }
-        | CExpression::Cast {
+        ProgramExpression::Subtract(left, _)
+        | ProgramExpression::PointerOffsetBytes { pointer: left, .. }
+        | ProgramExpression::Subobject { pointer: left, .. }
+        | ProgramExpression::Cast {
             expression: left, ..
         } => pointer_element_width_for_c_expression(left, known),
         _ => None,
@@ -1762,7 +1762,7 @@ theorem nested_count(value: int32) {
         )
         .unwrap();
         let theorem = &parsed.theorem_definitions()[0];
-        let pre_state = CState::new().with_local("x", int32(7u32));
+        let pre_state = ExecutionState::new().with_local("x", int32(7u32));
         let post_state = pre_state.clone().with_local("x", int32(9u32));
         let values = BTreeMap::new();
         let arrays = BTreeMap::new();
@@ -1912,7 +1912,7 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     let parameter = |side: &ContractExpression| match side {
         ContractExpression::Binding(name)
         | ContractExpression::CBinding(name)
-        | ContractExpression::CFragment(CExpression::Variable(name))
+        | ContractExpression::CFragment(ProgramExpression::Variable(name))
             if machine.contains(name.as_str()) =>
         {
             Some(name.clone())
@@ -1925,7 +1925,7 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     // `100u64 < n - k`.
     let literal = |side: &ContractExpression| match side {
         ContractExpression::IntegerLiteral(_) => true,
-        ContractExpression::CFragment(CExpression::Value(value)) => {
+        ContractExpression::CFragment(ProgramExpression::Value(value)) => {
             super::resources::is_integer_constant(value)
         }
         ContractExpression::Negate(inner) => {

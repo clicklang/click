@@ -463,7 +463,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
 /// classed loads read from other snapshots.
 #[test]
 fn load_congruence_work_ignores_classed_loads_of_other_snapshots() {
-    let name = |memory: &crate::kernel::SharedCMemory, address: Pointer| {
+    let name = |memory: &crate::kernel::SharedMemory, address: Pointer| {
         PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &address,
@@ -481,7 +481,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_snapshots() {
                     .with_block(symbolic(70_000 + index), 16)
                     .store(
                         at(symbolic(70_000 + index), 0),
-                        CValue::Int32(MachineTerm::constant(index as u32)),
+                        ProgramValue::Int32(MachineTerm::constant(index as u32)),
                     ),
             );
             let loaded = name(&memory, at(symbolic(70_000 + index), 0));
@@ -710,7 +710,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
             let address = Pointer::symbolic(Variable(1_200_000 + item));
             let _ = memory
                 .memory()
-                .symbolic_pointer_load(&address, CType::Int32Pointer);
+                .symbolic_pointer_load(&address, ProgramType::Int32Pointer);
             graph.add_equality(
                 &Pointer::symbolic(Variable(1_300_000 + item)),
                 &Pointer::symbolic(Variable(1_400_000 + item)),
@@ -718,9 +718,9 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         }
         let address = Pointer::symbolic(Variable(1_500_000));
         let model = Pointer::symbolic(Variable(1_500_001));
-        let CValue::Pointer(raw) = memory
+        let ProgramValue::Pointer(raw) = memory
             .memory()
-            .symbolic_pointer_load(&address, CType::Int32Pointer)
+            .symbolic_pointer_load(&address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read");
         };
@@ -756,9 +756,9 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
         let graph = EqualityGraph::default();
         let mut target = None;
         for id in 0..size {
-            let domain = crate::kernel::CPointerValue::new(
+            let domain = crate::kernel::PointerValue::new(
                 Pointer::symbolic(Variable(9_000_000 + id)),
-                crate::kernel::CType::Int32Pointer,
+                crate::kernel::ProgramType::Int32Pointer,
             );
             let fact = std::sync::Arc::new(crate::kernel::ExecutionPureFact::certified(
                 domain

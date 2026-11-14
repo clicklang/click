@@ -72,14 +72,14 @@ impl<'a> Analysis<'a> {
             .copied()
     }
 
-    fn c_origins(&self, value: &CExpression) -> Origins {
+    fn c_origins(&self, value: &ProgramExpression) -> Origins {
         match value {
-            CExpression::Variable(name) => self
+            ProgramExpression::Variable(name) => self
                 .bindings
                 .get(name.as_str())
                 .cloned()
                 .unwrap_or_default(),
-            CExpression::Cast { expression, .. } => self.c_origins(expression),
+            ProgramExpression::Cast { expression, .. } => self.c_origins(expression),
             _ => None,
         }
     }
@@ -100,7 +100,7 @@ impl<'a> Analysis<'a> {
         }
         crate::instrumentation::record_deterministic_work(1);
         let result = match value {
-            SpecExpression::CExpression(value) => self.c_origins(value),
+            SpecExpression::ProgramExpression(value) => self.c_origins(value),
             SpecExpression::Cast(value, _) | SpecExpression::LoopEntrySnapshot(value) => {
                 self.origins(value)
             }
@@ -291,19 +291,18 @@ pub(in crate::kernel) fn declared_return_class(
     None
 }
 fn direct_result(value: &SpecExpression) -> bool {
-    matches!(value, SpecExpression::CExpression(CExpression::Variable(name)) if name == C_CONTRACT_RESULT_NAME)
+    matches!(value, SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) if name == C_CONTRACT_RESULT_NAME)
 }
 fn zero(value: &SpecExpression) -> bool {
     match value {
-        SpecExpression::Value(value) | SpecExpression::CExpression(CExpression::Value(value)) => {
-            match value {
-                CValue::Pointer(p) => p.is_null(),
-                CValue::Int32(bits32_constant!(0))
-                | CValue::UInt32(bits32_constant!(0))
-                | CValue::UInt64(uint64_constant!(0)) => true,
-                _ => false,
-            }
-        }
+        SpecExpression::Value(value)
+        | SpecExpression::ProgramExpression(ProgramExpression::Value(value)) => match value {
+            ProgramValue::Pointer(p) => p.is_null(),
+            ProgramValue::Int32(bits32_constant!(0))
+            | ProgramValue::UInt32(bits32_constant!(0))
+            | ProgramValue::UInt64(uint64_constant!(0)) => true,
+            _ => false,
+        },
         SpecExpression::Cast(value, _) => zero(value),
         _ => false,
     }
@@ -369,12 +368,12 @@ mod tests {
         CAccessClass::Struct(CStructClass::opaque("node"))
     }
     fn variable(name: &str) -> SpecExpression {
-        SpecExpression::CExpression(CExpression::Variable(name.to_string()))
+        SpecExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
     }
     fn typed(value: SpecExpression) -> SpecExpression {
         SpecExpression::PureFunctionApplication {
             name: "typed".to_string(),
-            result_type: CType::Int32,
+            result_type: ProgramType::Int32,
             pointer_result: None,
             result_object_class: None,
             projection: None,
@@ -386,10 +385,10 @@ mod tests {
     }
     fn interface(proposition: SpecProposition) -> CFunctionContractInterface {
         let mut interface = CFunctionContractInterface::new(
-            CType::Void,
+            ProgramType::Void,
             vec![
-                CParameter::new("p", CType::Int32Pointer),
-                CParameter::new("q", CType::Int32Pointer),
+                ProgramParameter::new("p", ProgramType::Int32Pointer),
+                ProgramParameter::new("q", ProgramType::Int32Pointer),
             ],
         );
         interface.contract_ensures = vec![proposition];
@@ -413,7 +412,7 @@ mod tests {
         let spec = SpecProposition::ForAllPointer {
             name: "p".to_string(),
             variable: Variable(501),
-            c_type: CType::Int32Pointer,
+            c_type: ProgramType::Int32Pointer,
             body: Box::new(SpecProposition::Defined(typed(variable("p")))),
         };
         assert!(declared_requirements(&interface(spec)).is_empty());
@@ -438,9 +437,9 @@ mod tests {
             interface.object_type_requirements(),
             &ObjectTypeRequirements::unit(1, class())
         );
-        let mut normal = vec![CValue::typed_pointer(
+        let mut normal = vec![ProgramValue::typed_pointer(
             Pointer::symbolic(Variable(700)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )];
         assert!(
             check_requirements(
@@ -453,9 +452,9 @@ mod tests {
             )
             .is_none()
         );
-        let mut captured = vec![CValue::typed_pointer(
+        let mut captured = vec![ProgramValue::typed_pointer(
             Pointer::symbolic(Variable(701)),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )];
         assert!(
             check_value_requirements(
@@ -481,7 +480,7 @@ mod tests {
     }
 
     fn returning(clause: SpecProposition) -> CFunctionContractInterface {
-        let mut interface = CFunctionContractInterface::new(CType::Int32Pointer, vec![]);
+        let mut interface = CFunctionContractInterface::new(ProgramType::Int32Pointer, vec![]);
         interface.contract_ensures = vec![clause];
         interface
     }
@@ -492,7 +491,7 @@ mod tests {
         SpecProposition::Comparison {
             left: variable(C_CONTRACT_RESULT_NAME),
             operator,
-            right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
+            right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
         }
     }
     #[test]
@@ -536,7 +535,7 @@ mod tests {
             declared_return_class(&returning(SpecProposition::Defined(branched))),
             None
         );
-        let mut address_only = CFunctionContractInterface::new(CType::Int32Pointer, vec![]);
+        let mut address_only = CFunctionContractInterface::new(ProgramType::Int32Pointer, vec![]);
         address_only.return_pointee_class = Some(class());
         assert_eq!(declared_return_class(&address_only), None);
     }

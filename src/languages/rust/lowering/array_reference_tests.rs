@@ -3,9 +3,9 @@ use crate::surface::C0VerificationSession;
 
 #[test]
 fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() {
-    fn shape(s: &CStatement) -> (usize, usize) {
+    fn shape(s: &ProgramStatement) -> (usize, usize) {
         match s {
-            CStatement::Seq(statements) => {
+            ProgramStatement::Seq(statements) => {
                 let mut total = (statements.len() - 1, 0);
                 for statement in statements.iter() {
                     let part = shape(statement);
@@ -13,14 +13,14 @@ fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() 
                 }
                 total
             }
-            CStatement::DeclareAggregate { layout, .. } => {
+            ProgramStatement::DeclareAggregate { layout, .. } => {
                 assert!(
                     layout.fields().is_empty(),
                     "array storage must stay compact"
                 );
                 (1, 0)
             }
-            CStatement::InitializeScalarArray { fresh: false, .. } => (1, 1),
+            ProgramStatement::InitializeScalarArray { fresh: false, .. } => (1, 1),
             _ => (1, 0),
         }
     }
@@ -80,9 +80,9 @@ fn charon_external_array_operations_keep_lowering_and_proof_work_bounded() {
     .unwrap();
     let (functions, _) = lower(&export).unwrap();
     let prepared = super::super::import::prepared_for_test(export).unwrap();
-    fn statements(statement: &CStatement) -> usize {
+    fn statements(statement: &ProgramStatement) -> usize {
         match statement {
-            CStatement::Seq(sequence) => {
+            ProgramStatement::Seq(sequence) => {
                 sequence.len() - 1
                     + sequence
                         .iter()

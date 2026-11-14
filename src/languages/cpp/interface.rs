@@ -1,15 +1,15 @@
 //! Contract-facing metadata prepared by the C++ frontend alongside execution.
 use super::scalar::{Scalar, ScalarKind};
 use super::{CppStatement, CppType, PreparedCppImport};
-use crate::kernel::CFunction;
+use crate::kernel::ProgramFunction;
 use crate::languages::PreparedExecution;
 use crate::languages::c::syntax::{self, C0Type, LongRank};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn prepare(
     import: &PreparedCppImport,
-    selected: &[CFunction],
-    reachable: &[CFunction],
+    selected: &[ProgramFunction],
+    reachable: &[ProgramFunction],
     layouts: BTreeMap<String, syntax::C0StructLayout>,
     library_contracts: String,
     object_coercions: &BTreeSet<(String, String)>,
@@ -241,8 +241,8 @@ pub(super) fn prepare_layouts(
 
 fn prepare_functions(
     import: &PreparedCppImport,
-    selected: &[CFunction],
-    reachable: &[CFunction],
+    selected: &[ProgramFunction],
+    reachable: &[ProgramFunction],
     layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<Vec<syntax::C0Function>, String> {
     let observers = super::schema::observer_callees(import);
@@ -358,7 +358,7 @@ fn prepare_functions(
 /// semantics come from `lower_import`, never from reconstructing C++ as C.
 fn function_interface(
     source: &super::CppFunction,
-    lowered: &crate::kernel::CFunction,
+    lowered: &crate::kernel::ProgramFunction,
     layouts: &BTreeMap<String, syntax::C0StructLayout>,
 ) -> Result<syntax::C0Function, String> {
     let return_reference = matches!(source.return_type, CppType::LvalueReference { .. });

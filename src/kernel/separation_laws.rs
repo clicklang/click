@@ -5,7 +5,7 @@ use super::prelude::*;
 /// Distinct indices of one typed array describe disjoint complete elements.
 /// Pointer offsets use exact scaled coordinates, not modular byte arithmetic.
 pub(crate) fn prove_separation_elements(
-    base: CPointerValue,
+    base: PointerValue,
     width: u32,
     format: MachineIntegerType,
     i: MachineTerm,
@@ -53,7 +53,7 @@ pub(crate) fn prove_separation_elements(
 /// scaled offsets the same way), and the premise is the index disequality in
 /// the index format.
 pub(crate) fn prove_separation_distinct_elements(
-    base: CPointerValue,
+    base: PointerValue,
     width: u32,
     format: MachineIntegerType,
     i: MachineTerm,
@@ -122,7 +122,7 @@ pub(crate) fn prove_separation_restrict(
 /// A nested element interval denotes a contained resource. Both ranges are
 /// constructed with one base and width; no facts or memory are inspected.
 pub(crate) fn prove_separation_subrange(
-    base: CPointerValue,
+    base: PointerValue,
     width: u32,
     format: MachineIntegerType,
     lo: MachineTerm,
@@ -175,7 +175,7 @@ pub(crate) fn prove_separation_subrange(
 /// An explicitly bounded index denotes one complete element of its interval.
 /// Offset construction is exact; no wrapping `i + 1` endpoint is introduced.
 pub(crate) fn prove_separation_contains_element(
-    base: CPointerValue,
+    base: PointerValue,
     width: u32,
     format: MachineIntegerType,
     lo: MachineTerm,

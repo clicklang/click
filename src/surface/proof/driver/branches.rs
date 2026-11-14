@@ -54,7 +54,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             context.tactic_index,
             "source proof `if`",
         )?;
-        let CStatement::If {
+        let ProgramStatement::If {
             condition: c_condition,
             ..
         } = statement

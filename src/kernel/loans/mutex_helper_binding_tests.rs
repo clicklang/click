@@ -43,7 +43,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
             holder,
         )
         .unwrap();
-    let mut state = crate::kernel::CState::new();
+    let mut state = crate::kernel::ExecutionState::new();
     state.preserves_mutex_protocols = true;
     state.loan_ledger = Some(ledger.clone());
     state.loan_participant = Some(holder);

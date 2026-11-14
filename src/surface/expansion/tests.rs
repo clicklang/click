@@ -3784,12 +3784,12 @@ fn branch_transfers_cannot_claim_an_unreachable_return() {
         returning_then_arms(&branch(c_seq(c_skip(), c_return(c_int32_literal(0))))).contains(&0)
     );
     for transfer in [
-        CStatement::Break,
-        CStatement::Continue,
-        CStatement::Goto {
+        ProgramStatement::Break,
+        ProgramStatement::Continue,
+        ProgramStatement::Goto {
             target: crate::kernel::CControlTargetId(7),
         },
-        CStatement::Throw(c_int32_literal(0)),
+        ProgramStatement::Throw(c_int32_literal(0)),
     ] {
         assert!(
             returning_then_arms(&branch(c_seq(transfer, c_return(c_int32_literal(0))))).is_empty()
@@ -3803,7 +3803,7 @@ fn a_caught_call_can_bypass_its_branch_return() {
     let body = c_if(
         c_int32_literal(1),
         c_seq(
-            CStatement::Call {
+            ProgramStatement::Call {
                 function_name: "may_throw".into(),
                 arguments: Vec::new(),
             },
@@ -3812,7 +3812,7 @@ fn a_caught_call_can_bypass_its_branch_return() {
         c_skip(),
     );
     assert!(returning_then_arms(&body).contains(&0));
-    let caught = CStatement::TryCatchInt32 {
+    let caught = ProgramStatement::TryCatchInt32 {
         try_body: Box::new(body),
         binding: "error".into(),
         handler: Box::new(c_skip()),

@@ -234,11 +234,11 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
         };
         let expression = ContractExpression::QualifiedC {
             name: format!("file{index}::state"),
-            lowered: CExpression::TypedLoad {
-                pointer: Box::new(CExpression::Value(CValue::Pointer(
-                    crate::kernel::CPointerValue::new(pointer.clone(), CType::UInt64Pointer),
+            lowered: ProgramExpression::TypedLoad {
+                pointer: Box::new(ProgramExpression::Value(ProgramValue::Pointer(
+                    crate::kernel::PointerValue::new(pointer.clone(), ProgramType::UInt64Pointer),
                 ))),
-                value_type: CType::UInt64,
+                value_type: ProgramType::UInt64,
                 volatile: false,
                 pointee_constant: false,
                 access_class: None,

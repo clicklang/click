@@ -1,11 +1,11 @@
 use super::*;
 
-fn read_pointer(id: u64) -> CPointerValue {
+fn read_pointer(id: u64) -> PointerValue {
     let memory = crate::kernel::intern_c_memory(CMemory::new());
     let cell = Pointer::symbolic(Variable(id));
-    CPointerValue::from_read(
+    PointerValue::from_read(
         Pointer::loaded_value(&memory, &cell),
-        CType::Int32Pointer,
+        ProgramType::Int32Pointer,
         &memory,
         &cell,
     )
@@ -18,7 +18,7 @@ fn a_full_pointer_equality_connects_a_read_extent_to_owned_root_storage() {
         block: PointerBlock::Heap(981_000),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let stored = CPointerValue::new(base.clone(), CType::Int32Pointer);
+    let stored = PointerValue::new(base.clone(), ProgramType::Int32Pointer);
     let read = read_pointer(981_001);
     let held = CMemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
     let before = PureFactContext::new().assume_condition(
@@ -53,11 +53,12 @@ fn a_known_subobject_extent_does_not_grant_root_storage_access() {
         block: PointerBlock::Heap(981_002),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let bounded =
-        CPointerValue::new(base.clone(), CType::Int32Pointer).with_extent(Some(SubobjectExtent {
+    let bounded = PointerValue::new(base.clone(), ProgramType::Int32Pointer).with_extent(Some(
+        SubobjectExtent {
             start: base.clone(),
             width: 4u32.into(),
-        }));
+        },
+    ));
     let read = read_pointer(981_003);
     let facts = PureFactContext::new().assume_condition(
         ConditionTerm::pointer_value_equal(read.clone(), bounded),

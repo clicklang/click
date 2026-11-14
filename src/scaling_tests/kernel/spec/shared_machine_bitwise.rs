@@ -7,9 +7,10 @@ fn retained_bitwise_masks_scale_without_exporting_prefixes() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut execution = ExecutionBudget::new();
         let budget = SpecEvaluation::logical(&mut execution);
-        let mut root: SpecValue = CValue::UInt64(MachineTerm::Variable(Variable(993470))).into();
-        let mask: SpecValue = CValue::UInt64(MachineTerm::uint64_constant(!3)).into();
-        let tag: SpecValue = CValue::UInt64(MachineTerm::uint64_constant(1)).into();
+        let mut root: SpecValue =
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(993470))).into();
+        let mask: SpecValue = ProgramValue::UInt64(MachineTerm::uint64_constant(!3)).into();
+        let tag: SpecValue = ProgramValue::UInt64(MachineTerm::uint64_constant(1)).into();
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
@@ -47,7 +48,7 @@ fn retained_xor_normalizes_only_its_selected_component_without_exports() {
             );
         }
         let left: SpecValue = root.into();
-        let right: SpecValue = CValue::UInt32(MachineTerm::Variable(Variable(993480))).into();
+        let right: SpecValue = ProgramValue::UInt32(MachineTerm::Variable(Variable(993480))).into();
         let mut execution = ExecutionBudget::new();
         let budget = SpecEvaluation::logical(&mut execution);
         let exports = KernelTermExport::machine_export_count();
@@ -56,14 +57,14 @@ fn retained_xor_normalizes_only_its_selected_component_without_exports() {
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         let native = left.into_native();
-        let CValue::UInt32(native) = native else {
+        let ProgramValue::UInt32(native) = native else {
             panic!("word");
         };
         let expected =
             MachineTerm::bitwise_xor_at(format, native, MachineTerm::Variable(Variable(993480)));
         assert_eq!(
             SpecValue::from(result.value).into_native(),
-            CValue::UInt32(expected)
+            ProgramValue::UInt32(expected)
         );
         work.push(measured);
     }

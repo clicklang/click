@@ -12,22 +12,22 @@ use super::*;
 fn a_recursion_check_is_linear_in_sequential_branches() {
     let n = || crate::kernel::c_variable("n");
     let literal = |value: u32| crate::kernel::c_int32_literal(value);
-    let guarded_call = |argument: CExpression| {
+    let guarded_call = |argument: ProgramExpression| {
         crate::kernel::c_if(
             crate::kernel::c_greater_than(n(), literal(0)),
             crate::kernel::c_call("countdown", vec![argument]),
-            CStatement::Skip,
+            ProgramStatement::Skip,
         )
     };
     // A balanced sequence, so the walk's depth is logarithmic and the
     // test measures the branch count and not the nesting.
-    fn sequence(statements: &[CStatement]) -> CStatement {
+    fn sequence(statements: &[ProgramStatement]) -> ProgramStatement {
         match statements {
-            [] => CStatement::Skip,
+            [] => ProgramStatement::Skip,
             [only] => only.clone(),
             _ => {
                 let (left, right) = statements.split_at(statements.len() / 2);
-                CStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
+                ProgramStatement::seq(Arc::new(sequence(left)), Arc::new(sequence(right)))
             }
         }
     }
@@ -37,8 +37,8 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
             .map(|index| {
                 crate::kernel::c_if(
                     crate::kernel::c_less_than(n(), literal(index as u32 + 1_000)),
-                    CStatement::Skip,
-                    CStatement::Skip,
+                    ProgramStatement::Skip,
+                    ProgramStatement::Skip,
                 )
             })
             .collect::<Vec<_>>();
@@ -48,16 +48,16 @@ fn a_recursion_check_is_linear_in_sequential_branches() {
         } else {
             n()
         };
-        body = CStatement::seq(Arc::new(body), Arc::new(guarded_call(argument)));
+        body = ProgramStatement::seq(Arc::new(body), Arc::new(guarded_call(argument)));
         [CVerifiedFunctionRule {
             pointer_result: None,
             loop_semantics: CLoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
-            function: CFunction::new(
-                CType::Void,
+            function: ProgramFunction::new(
+                ProgramType::Void,
                 "countdown",
-                vec![crate::kernel::c_parameter("n", CType::Int32)],
+                vec![crate::kernel::c_parameter("n", ProgramType::Int32)],
                 body,
             ),
         }]

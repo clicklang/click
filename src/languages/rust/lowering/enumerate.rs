@@ -11,7 +11,7 @@ impl Context<'_> {
         name: &str,
         element: &Type,
         option: bool,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         let storage = self.shared_array_storage(name, element, option)?;
         if !self.enumerated.insert(name.into()) {
             return Err("enumerated iterator identity collision".into());
@@ -23,7 +23,7 @@ impl Context<'_> {
         if !self.locals.insert(field.clone()) {
             return Err("enumerated iterator identity collision".into());
         }
-        Ok(c_seq(storage, c_declare(field, CType::UInt64)))
+        Ok(c_seq(storage, c_declare(field, ProgramType::UInt64)))
     }
 
     fn enumerated_iterator(&self, name: &str) -> Result<(), String> {
@@ -40,7 +40,7 @@ impl Context<'_> {
         &mut self,
         target: &str,
         source: &str,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         self.enumerated_iterator(target)?;
         if self.enumerated.contains(source) {
             return Err("enumerate requires a slice iterator".into());
@@ -60,7 +60,7 @@ impl Context<'_> {
         &mut self,
         target: &str,
         source: &str,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         self.enumerated_iterator(target)?;
         self.enumerated_iterator(source)?;
         self.shared_array_move(target, source)
@@ -72,7 +72,7 @@ impl Context<'_> {
         &self,
         iterator: &str,
         option: &str,
-    ) -> Result<CStatement, String> {
+    ) -> Result<ProgramStatement, String> {
         self.enumerated_iterator(iterator)?;
         if !self.enumerated.contains(option) || !self.shared_array_options.contains_key(option) {
             return Err("unknown enumerated iterator Option".into());
@@ -91,7 +91,7 @@ impl Context<'_> {
     pub(super) fn enumerate_option_index(
         &self,
         option: &str,
-    ) -> Result<(CStatement, CExpression), String> {
+    ) -> Result<(ProgramStatement, ProgramExpression), String> {
         if !self.enumerated.contains(option) || !self.shared_array_options.contains_key(option) {
             return Err("unknown enumerated iterator Option".into());
         }

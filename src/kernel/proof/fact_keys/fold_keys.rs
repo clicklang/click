@@ -71,7 +71,7 @@ pub(crate) fn integer_key(fold: &KernelFold) -> Option<IntegerFoldAlphaKey> {
 }
 
 fn machine_key(fold: &KernelFold) -> Option<(AlphaBitvectorKey, usize)> {
-    if fold.result_type() != &KernelType::C(CType::Int32) {
+    if fold.result_type() != &KernelType::C(ProgramType::Int32) {
         return None;
     }
     let mut bindings = bindings();
@@ -192,9 +192,10 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::CMemory::new();
         let pointer = Pointer::symbolic(Variable(101));
-        let later = memory
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1)));
+        let later = memory.clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(1)),
+        );
         let fold = |memory: &crate::kernel::CMemory| {
             let native = machine_fold(
                 81,

@@ -95,7 +95,7 @@ fn check_binder_bodies(scalar: bool) {
     };
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
         name: "Case".into(),
-        fields: vec![AlgebraicValueType::C(CType::Int32)],
+        fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
     }]
     .into();
     let value_type = AlgebraicValueType::Algebraic {
@@ -115,7 +115,7 @@ fn check_binder_bodies(scalar: bool) {
         algebraic_type,
         node: AlgebraicTermNode::Variable(Variable(70)),
     };
-    let binding = AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(Variable(51))));
+    let binding = AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(Variable(51))));
     let machine_match = MachineTerm::AlgebraicMatch {
         scrutinee: Box::new(scrutinee.clone()),
         arms: vec![AlgebraicBitvectorMatchArm {

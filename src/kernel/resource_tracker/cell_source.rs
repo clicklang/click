@@ -32,8 +32,8 @@ pub(crate) enum MemoryDagCell {
     /// [`Self::Unwritten`] at the node it produced: no extraction rule turns
     /// its value into the bytes the read returns.
     Stored {
-        node: SharedCMemory,
-        value: CValue,
+        node: SharedMemory,
+        value: ProgramValue,
         path: Vec<MemoryDagHop>,
     },
     /// The walk reached `node` without crossing any edge that could have
@@ -41,7 +41,7 @@ pub(crate) enum MemoryDagCell {
     /// derivation is undecidable against this pointer, or the hop cap ran
     /// out. The load therefore reads whatever `node` holds at the pointer.
     Unwritten {
-        node: SharedCMemory,
+        node: SharedMemory,
         path: Vec<MemoryDagHop>,
     },
 }
@@ -79,7 +79,7 @@ pub(in crate::kernel) enum CellWalkStop {
 /// derivation that justified crossing assumption-dependent edges.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MemoryDagHop {
-    pub(in crate::kernel) derived: SharedCMemory,
+    pub(in crate::kernel) derived: SharedMemory,
     pub(in crate::kernel) derivation: std::sync::Arc<CMemoryDerivation>,
     pub(in crate::kernel) justification: MemoryDagHopJustification,
 }
@@ -958,7 +958,7 @@ impl RangeDisjointFromPointerEvidence {
 }
 
 impl MemoryDagCell {
-    pub(in crate::kernel) fn node(&self) -> &SharedCMemory {
+    pub(in crate::kernel) fn node(&self) -> &SharedMemory {
         match self {
             Self::Stored { node, .. } | Self::Unwritten { node, .. } => node,
         }
@@ -977,7 +977,7 @@ impl MemoryDagCell {
         &self,
         pointer: &Pointer,
         kind: LoadKind,
-    ) -> Option<CValue> {
+    ) -> Option<ProgramValue> {
         match self {
             Self::Stored { value, .. } => kind.read_cell(value),
             Self::Unwritten { node, .. } => kind.read_cell(&node.known_value(pointer)?),
@@ -986,7 +986,7 @@ impl MemoryDagCell {
 
     pub(in crate::kernel) fn checks_walk_from(
         &self,
-        memory: &SharedCMemory,
+        memory: &SharedMemory,
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
@@ -1047,7 +1047,7 @@ pub(in crate::kernel) struct CellLookupGuard {
 }
 
 impl CellLookupGuard {
-    pub(in crate::kernel) fn enter(memory: &SharedCMemory, pointer: &Pointer) -> Option<Self> {
+    pub(in crate::kernel) fn enter(memory: &SharedMemory, pointer: &Pointer) -> Option<Self> {
         let key = (memory.arena_id(), pointer.clone());
         // `then`, not `then_some`: a guard built eagerly and discarded on
         // the cycle path would run `drop` and unregister the outer lookup.
@@ -1527,7 +1527,7 @@ pub(in crate::kernel) fn retirement_inside_its_call_havoc(step: &CMemoryDerivati
 /// nothing either: the havoc, the next edge down, stops every cell and every
 /// block question the retirement would have stopped for this allocation.
 pub(in crate::kernel) fn retirement_keeps_its_call_havocs_forget_mark(
-    base: &SharedCMemory,
+    base: &SharedMemory,
     allocation_base: &Pointer,
     bytes: &MachineTerm,
 ) -> bool {
@@ -1535,7 +1535,7 @@ pub(in crate::kernel) fn retirement_keeps_its_call_havocs_forget_mark(
 }
 
 fn retired_allocation_inside_call_havoc(
-    base: &SharedCMemory,
+    base: &SharedMemory,
     allocation_base: &Pointer,
     bytes: &MachineTerm,
 ) -> bool {
@@ -1609,7 +1609,7 @@ fn range_structurally_covers_allocation(
 /// `int8` value's term is sign-extended where a `uint8` read's is not.
 pub(in crate::kernel) fn write_supplies_read(
     write: &Pointer,
-    value: &CValue,
+    value: &ProgramValue,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -1622,7 +1622,7 @@ pub(in crate::kernel) fn write_supplies_read(
 }
 
 pub(in crate::kernel) fn memory_dag_cell_source(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -1638,7 +1638,7 @@ pub(in crate::kernel) fn memory_dag_cell_source(
 /// Reaching that limit is inconclusive, not evidence of preservation across
 /// any earlier transition.
 pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -1661,7 +1661,7 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
 /// stopping snapshot's own cell; it never assumes that an unchecked hop frames
 /// the read. This prevents a simple normalization from scanning a whole path.
 pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -1672,7 +1672,7 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit(
 }
 
 pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -1690,7 +1690,7 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
 }
 
 fn memory_dag_cell_source_walk(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -1710,7 +1710,7 @@ fn memory_dag_cell_source_walk(
 }
 
 fn memory_dag_cell_source_walk_inner(
-    memory: &SharedCMemory,
+    memory: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -1869,8 +1869,8 @@ fn memory_dag_cell_source_walk_inner(
 /// common ancestor without inspecting its history. Every hop carries the
 /// same local typed certificate as an ordinary read-preservation query.
 pub(in crate::kernel) fn join_read_agreement(
-    base: &SharedCMemory,
-    incoming: &SharedCMemory,
+    base: &SharedMemory,
+    incoming: &SharedMemory,
     pointer: &Pointer,
     bytes: u32,
     evidence: &super::step_effect::Evidence<'_>,
@@ -1988,7 +1988,7 @@ mod separated_range_frame_tests {
         Pointer,
         Pointer,
         Pointer,
-        SharedCMemory,
+        SharedMemory,
         PureFactContext,
         Vec<Proposition>,
     ) {
@@ -2036,7 +2036,7 @@ mod separated_range_frame_tests {
         let before = crate::kernel::intern_c_memory_ref(&initial);
         let after = crate::kernel::intern_c_memory(initial.store(
             data.offset_by_elements(actual_index, 4),
-            CValue::Int32(1u32.into()),
+            ProgramValue::Int32(1u32.into()),
         ));
         (
             Pointer::loaded_value(&before, &field),
@@ -2074,7 +2074,7 @@ mod separated_range_frame_tests {
             memory
                 .memory()
                 .clone()
-                .store(field.offset_by_bytes(4), CValue::Int32(2u32.into())),
+                .store(field.offset_by_bytes(4), ProgramValue::Int32(2u32.into())),
         );
         let overwritten = Pointer::loaded_value(&partial, &field);
         assert!(
@@ -2349,7 +2349,7 @@ mod shared_range_bound_evidence_tests {
     fn range_bounds_retain_shared_sources_and_checked_successor_links() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let variable = |n| KernelTerm::variable(KernelType::C(CType::Int32), Variable(n));
+        let variable = |n| KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(n));
         let product = KernelTerm::machine_binary_shared(
             format,
             MachineBinaryOp::Multiply,

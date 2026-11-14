@@ -4,7 +4,7 @@ use super::*;
 /// resolves every bound occurrence to the binder's variable; the kernel
 /// never binds a quantifier by its source spelling.
 fn bound(variable: Variable) -> SpecExpression {
-    SpecExpression::Value(CValue::Int32(MachineTerm::Variable(variable)))
+    SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(variable)))
 }
 
 fn positive(expression: SpecExpression) -> SpecProposition {
@@ -26,7 +26,7 @@ fn universal(body: SpecProposition) -> SpecProposition {
 fn introductions(proposition: &SpecProposition) -> LoweringIntroductions {
     let (_, _, _, introductions) =
         crate::kernel::c_lower_spec_proposition_at_state_with_provenance(
-            &CState::new(),
+            &ExecutionState::new(),
             proposition,
             None,
             &PureFactContext::new(),
@@ -58,7 +58,7 @@ fn inequality_lowering_records_its_negation() {
         ] {
             let (goal, _, _, recorded) =
                 crate::kernel::c_lower_spec_proposition_at_state_with_provenance(
-                    &CState::new(),
+                    &ExecutionState::new(),
                     &source,
                     None,
                     &PureFactContext::new(),
@@ -147,7 +147,7 @@ fn a_definedness_guard_under_an_existential_stays_under_its_binder() {
     );
     let (goal, facts, obligations, recorded) =
         crate::kernel::c_lower_spec_proposition_at_state_with_provenance(
-            &CState::new(),
+            &ExecutionState::new(),
             &existential(positive(incremented)),
             None,
             &PureFactContext::new(),
@@ -204,7 +204,7 @@ fn an_integer_existential_does_not_expose_nested_introductions_at_its_head() {
     };
 
     let (_, _, _, recorded) = crate::kernel::c_lower_spec_proposition_at_state_with_provenance(
-        &CState::new(),
+        &ExecutionState::new(),
         &proposition,
         None,
         &PureFactContext::new(),
@@ -234,7 +234,7 @@ fn native_existential_conversion_obligations_share_the_claim_witness() {
     });
     let (goal, _, obligations, _) =
         crate::kernel::c_lower_spec_proposition_with_checked_obligations(
-            &CState::new(),
+            &ExecutionState::new(),
             &claim,
             None,
             &PureFactContext::new(),

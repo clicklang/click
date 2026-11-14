@@ -51,7 +51,7 @@ pub(super) fn apply_nonzero(
     }
     let value = match format {
         MachineIntegerType::Int32 => int32(result(left, right)),
-        MachineIntegerType::Int64 => CValue::Int64(result(left, right)),
+        MachineIntegerType::Int64 => ProgramValue::Int64(result(left, right)),
         _ => unreachable!("native signed division width"),
     };
     let mut paths = vec![CExpressionPath {
@@ -141,8 +141,8 @@ mod tests {
         for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
             let (left, right) = terms();
             let wrap = |word| match format {
-                MachineIntegerType::Int32 => CValue::Int32(word),
-                _ => CValue::Int64(word),
+                MachineIntegerType::Int32 => ProgramValue::Int32(word),
+                _ => ProgramValue::Int64(word),
             };
             for op in [MachineBinaryOp::Divide, MachineBinaryOp::Remainder] {
                 for (mode, expected) in [

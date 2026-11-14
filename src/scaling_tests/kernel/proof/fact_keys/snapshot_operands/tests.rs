@@ -8,7 +8,7 @@ fn snapshot_operand_keys_share_prefixes_in_linear_work() {
     let samples = [16usize, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(998211));
+        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(998211));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
@@ -38,7 +38,7 @@ fn conditional_snapshot_keys_reuse_growing_shared_arms() {
     let samples = [16usize, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(998221));
+        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(998221));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {

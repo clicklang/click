@@ -823,8 +823,14 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
         syntax::C0Parameter::new(C0Type::Int32Pointer, "visited".to_string(), None),
     ];
     let arguments = vec![
-        CExpression::Value(CValue::typed_pointer(base(100_000), CType::Int32Pointer)),
-        CExpression::Value(CValue::typed_pointer(base(100_001), CType::Int32Pointer)),
+        ProgramExpression::Value(ProgramValue::typed_pointer(
+            base(100_000),
+            ProgramType::Int32Pointer,
+        )),
+        ProgramExpression::Value(ProgramValue::typed_pointer(
+            base(100_001),
+            ProgramType::Int32Pointer,
+        )),
     ];
     // `visited + old_cur * 4`, with `old_cur` a variable no local names.
     let store = Pointer {
@@ -966,8 +972,8 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
         syntax::C0Parameter::new(C0Type::Int32, "y".to_string(), None),
     ];
     let arguments = vec![
-        CExpression::Value(CValue::Int32(x.clone())),
-        CExpression::Value(CValue::Int32(y.clone())),
+        ProgramExpression::Value(ProgramValue::Int32(x.clone())),
+        ProgramExpression::Value(ProgramValue::Int32(y.clone())),
     ];
     let message = super::proof::describe_condition_search_miss(
         &goal,
@@ -1266,7 +1272,7 @@ int32 pick(struct node* node) {
     );
     assert!(!message.contains("CMemory {"), "{message}");
     assert!(!message.contains("CHeapMemory {"), "{message}");
-    assert!(!message.contains("CBlock {"), "{message}");
+    assert!(!message.contains("MemoryBlock {"), "{message}");
     assert!(message.len() < 8000, "{message}");
 }
 
@@ -1591,7 +1597,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     };
     let before = CMemory::new().with_block(global.block.clone(), 4);
     let after = before.clone().store(alias.clone(), int32(1));
-    let pre_state = CState::new().with_memory(before.clone());
+    let pre_state = ExecutionState::new().with_memory(before.clone());
     let aliases_global =
         Proposition::ConditionIs(ConditionTerm::pointer_equal(alias.clone(), global), true);
     let facts = [
@@ -2085,11 +2091,11 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
             field_index: 0,
             click_type: Some(ClickType::C(C0Type::Int32)),
         }),
-        right: ContractExpression::CFragment(CExpression::Value(crate::kernel::int32(0))),
+        right: ContractExpression::CFragment(ProgramExpression::Value(crate::kernel::int32(0))),
     };
     let message = crate::surface::diagnostics::describe_consumed_instance_field_read(
         &proposition,
-        &CState::new(),
+        &ExecutionState::new(),
         false,
     )
     .unwrap();
@@ -2104,15 +2110,16 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     use crate::kernel::{
-        CMemoryRange, CPointerValue, CType, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
+        CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
+        ProgramType,
     };
     let base = Pointer {
         block: PointerBlock::Concrete("unknown".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new().with_local(
+    let state = ExecutionState::new().with_local(
         "cursor",
-        CValue::Pointer(CPointerValue::new(base.clone(), CType::Int32Pointer)),
+        ProgramValue::Pointer(PointerValue::new(base.clone(), ProgramType::Int32Pointer)),
     );
     let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&state, None);
     let range = CMemoryRange::new(base, MachineTerm::constant(1), MachineTerm::constant(2));
@@ -2847,7 +2854,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
     let before = CMemory::new();
     let blocked = before.clone().store(
         written.clone(),
-        CValue::UInt64(MachineTerm::uint64_constant(42)),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(42)),
     );
     let after = blocked.clone().store(
         Pointer {
@@ -3566,8 +3573,8 @@ void symbolic(int32* p, const struct callbacks* cb) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots() {
     use crate::kernel::{
-        AlgebraicValue, CMemory, CPointerValue, CResource, CType, CValue, LoadKind, Pointer,
-        PointerBlock, PointerOffsetTerm, Variable, intern_c_memory,
+        AlgebraicValue, CMemory, CResource, LoadKind, Pointer, PointerBlock, PointerOffsetTerm,
+        PointerValue, ProgramType, ProgramValue, Variable, intern_c_memory,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let read = Pointer {
@@ -3577,7 +3584,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
     let before = CMemory::new();
     let after = before.clone().store(read.clone(), int32(7));
     let argument = |memory: CMemory| {
-        AlgebraicValue::C(CValue::Pointer(CPointerValue::new(
+        AlgebraicValue::C(ProgramValue::Pointer(PointerValue::new(
             Pointer {
                 block: PointerBlock::Concrete("nodes".into()),
                 offset: PointerOffsetTerm::scale_int32(
@@ -3594,7 +3601,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
                     4,
                 ),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )))
     };
     let resource = |argument| {
@@ -4302,14 +4309,16 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
         "struct item { uint8 tag; int64 value; }; void inspect(struct item **pp) {}",
     )
     .unwrap();
-    let pointer = crate::kernel::CPointerValue::new(
+    let pointer = crate::kernel::PointerValue::new(
         Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         },
-        CType::Int32PointerPointer,
+        ProgramType::Int32PointerPointer,
     );
-    let arguments = [CExpression::Value(CValue::Pointer(pointer.clone()))];
+    let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
+        pointer.clone(),
+    ))];
     for (start, end) in [(0, 4), (1, 3)] {
         let range = CMemoryRange::from_pointer_value(
             &pointer,

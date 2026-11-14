@@ -435,8 +435,9 @@ mod tests {
 
     #[test]
     fn retained_fold_collectors_keep_call_connection_modes_query_local() {
-        let value =
-            |n| PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(Variable(n))));
+        let value = |n| {
+            PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(n))))
+        };
         let integer = |n| PureFunctionArgument::Integer(IntegerTerm::Variable(Variable(n)).into());
         let source = IntegerTerm::RangeFold {
             index: IntegerRangeFoldIndex::Integer {

@@ -64,10 +64,10 @@ fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
         for index in 1..=count {
             memory = memory.store(
                 pointer.offset_by_bytes(index * 8),
-                CValue::UInt64(MachineTerm::uint64_constant(index as u64)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(index as u64)),
             );
         }
-        memory = memory.store(pointer.clone(), CValue::UInt64(bits.clone()));
+        memory = memory.store(pointer.clone(), ProgramValue::UInt64(bits.clone()));
         let load =
             MachineTerm::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Bits64);
         crate::kernel::memory_provenance::clear_canonical_form_caches();
@@ -119,10 +119,10 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         for index in 0..count {
             memory = memory.store(
                 Pointer::symbolic(Variable(79_000 + index)),
-                CValue::UInt64(MachineTerm::uint64_constant(index)),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(index)),
             );
         }
-        memory = memory.store(read_pointer.clone(), CValue::UInt64(bits.clone()));
+        memory = memory.store(read_pointer.clone(), ProgramValue::UInt64(bits.clone()));
         let after = memory.with_call_memory_havoc(
             Variable(78_104),
             &[memory_range(callee.clone(), 0, 2)],
@@ -154,7 +154,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         let partial = read_pointer.offset_by_bytes(4);
         let changed = after
             .without_possible_aliasing_cells(&partial, 4, &selected)
-            .store(partial, CValue::Int32(MachineTerm::constant(0)));
+            .store(partial, ProgramValue::Int32(MachineTerm::constant(0)));
         let changed = MachineTerm::MemoryLoad(
             intern_c_memory(changed),
             Box::new(read_pointer.clone()),
@@ -186,7 +186,7 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
     let bits = MachineTerm::uint64_constant(7);
     let mut previous = None;
     for count in [128, 256, 512] {
-        let mut memory = CMemory::new().store(pointer.clone(), CValue::UInt64(bits.clone()));
+        let mut memory = CMemory::new().store(pointer.clone(), ProgramValue::UInt64(bits.clone()));
         for index in 0..count {
             memory = memory.with_call_memory_havoc(
                 Variable(82_000 + index),
@@ -233,7 +233,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
         for index in 0..count {
             memory = memory.store(
                 owned_pointer.offset_by_bytes((index + 1) * 8),
-                CValue::UInt64(MachineTerm::uint64_constant(u64::from(index))),
+                ProgramValue::UInt64(MachineTerm::uint64_constant(u64::from(index))),
             );
             selected = selected.assume_condition(
                 ConditionTerm::equal(
@@ -245,7 +245,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
         }
         memory = memory.store(
             owned_pointer.clone(),
-            CValue::UInt64(MachineTerm::Variable(Variable(90_000 + u64::from(count)))),
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(90_000 + u64::from(count)))),
         );
         let kept =
             CallKeptOwnership::new(
@@ -293,8 +293,11 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
             &selected,
         ));
         for (offset, value) in [
-            (0, CValue::UInt64(MachineTerm::uint64_constant(1 << 32))),
-            (4, CValue::Int32(MachineTerm::constant(1))),
+            (
+                0,
+                ProgramValue::UInt64(MachineTerm::uint64_constant(1 << 32)),
+            ),
+            (4, ProgramValue::Int32(MachineTerm::constant(1))),
         ] {
             let address = owned_pointer.offset_by_bytes(offset);
             let changed = after

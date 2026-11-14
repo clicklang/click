@@ -9,7 +9,7 @@ fn checked_loop_exit_copies_share_their_fact_storage() {
     for count in [4usize, 64, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = vec![Proposition::ConditionIs(ConditionTerm::Constant(true), true); count];
-        let state = CState::new();
+        let state = ExecutionState::new();
         let (break_exit, break_work) = crate::instrumentation::measure_deterministic_work(|| {
             CLoopBreakExit::new(state.clone(), facts.clone())
         });

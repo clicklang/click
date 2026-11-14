@@ -8,13 +8,15 @@ fn selected_context_does_not_withdraw_ambient_pointer_facts() {
         for index in 0..size {
             context = context.assume_proposition(Proposition::Predicate {
                 name: "pointer_fact".into(),
-                arguments: vec![Term::CValue(CValue::Pointer(CPointerValue::new(
-                    Pointer {
-                        block: format!("ambient_{index}").into(),
-                        offset: PointerOffsetTerm::Constant(0),
-                    },
-                    CType::Int32Pointer,
-                )))],
+                arguments: vec![Term::ProgramValue(ProgramValue::Pointer(
+                    PointerValue::new(
+                        Pointer {
+                            block: format!("ambient_{index}").into(),
+                            offset: PointerOffsetTerm::Constant(0),
+                        },
+                        ProgramType::Int32Pointer,
+                    ),
+                ))],
             });
         }
         let (restricted, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -133,14 +135,14 @@ fn adjacent_view_looks_up_its_suffix_beside_unrelated_cells_and_ranges() {
                 bytes: 4.into(),
                 wide: false,
             });
-            memory = memory.store(other, CValue::Int32(7.into()));
+            memory = memory.store(other, ProgramValue::Int32(7.into()));
         }
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.adjacent_loadable_region_facts(&CMemory::new(), &base, &12.into())
         });
         assert_eq!(facts.unwrap(), vec![prefix.clone(), suffix]);
         let selected = PureFactContext::new().assume_proposition(prefix.clone());
-        let memory = memory.store(base.offset_by_bytes(8), CValue::Int32(9.into()));
+        let memory = memory.store(base.offset_by_bytes(8), ProgramValue::Int32(9.into()));
         let (facts, stored_work) = crate::instrumentation::measure_deterministic_work(|| {
             selected.adjacent_loadable_region_facts(&memory, &base, &12.into())
         });
@@ -248,7 +250,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                     let source = if snapshots {
                         memory.clone().store(
                             Pointer::symbolic(Variable(790_001 + u64::from(index))),
-                            CValue::Int32(7.into()),
+                            ProgramValue::Int32(7.into()),
                         )
                     } else {
                         memory.clone()

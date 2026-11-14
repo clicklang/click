@@ -12,7 +12,11 @@ const OPERATORS: [CComparisonOperator; 6] = [
     CComparisonOperator::GreaterEqual,
 ];
 
-fn compare(operator: CComparisonOperator, a: CExpression, b: CExpression) -> CExpression {
+fn compare(
+    operator: CComparisonOperator,
+    a: ProgramExpression,
+    b: ProgramExpression,
+) -> ProgramExpression {
     match operator {
         CComparisonOperator::Equal => c_equal(a, b),
         CComparisonOperator::NotEqual => c_not_equal(a, b),
@@ -47,20 +51,20 @@ fn complement(operator: CComparisonOperator) -> CComparisonOperator {
     }
 }
 
-fn symbolic(operator: CComparisonOperator, ty: MachineIntegerType) -> CExpression {
+fn symbolic(operator: CComparisonOperator, ty: MachineIntegerType) -> ProgramExpression {
     let value = |variable| {
-        CExpression::Value(match ty {
-            MachineIntegerType::Int128 => CValue::Int128(MachineTerm::Variable(variable)),
-            MachineIntegerType::UInt128 => CValue::UInt128(MachineTerm::Variable(variable)),
+        ProgramExpression::Value(match ty {
+            MachineIntegerType::Int128 => ProgramValue::Int128(MachineTerm::Variable(variable)),
+            MachineIntegerType::UInt128 => ProgramValue::UInt128(MachineTerm::Variable(variable)),
             _ => unreachable!(),
         })
     };
     compare(operator, value(LEFT), value(RIGHT))
 }
 
-fn paths(expression: &CExpression, context: &PureFactContext) -> Vec<CExpressionPath> {
+fn paths(expression: &ProgramExpression, context: &PureFactContext) -> Vec<CExpressionPath> {
     evaluate_c_expression_paths(
-        &CState::new(),
+        &ExecutionState::new(),
         expression,
         context,
         &mut ExecutionBudget::for_c_expression(expression),
@@ -68,8 +72,8 @@ fn paths(expression: &CExpression, context: &PureFactContext) -> Vec<CExpression
     .unwrap()
 }
 
-fn outcome(expression: CExpression) -> CExpressionOutcome {
-    let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+fn outcome(expression: ProgramExpression) -> CExpressionOutcome {
+    let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
     let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
     };
@@ -104,7 +108,7 @@ fn wide_comparison_constants_match_full_width_ordering_oracle() {
         ),
     ] {
         let literal = |value: &BigInt| {
-            CExpression::Value(
+            ProgramExpression::Value(
                 ty.constant_value(
                     MachineIntegerConstant::from_integer(ty.format(), value).unwrap(),
                 )
@@ -165,7 +169,7 @@ fn wide_comparison_symbolic_paths_retain_exact_true_and_false_guards() {
                     CExpressionOutcome::Value(int32(u32::from(truth)))
                 );
             }
-            assert!(prove_c_expression_evaluation(CState::new(), expression).is_none());
+            assert!(prove_c_expression_evaluation(ExecutionState::new(), expression).is_none());
         }
     }
 }
@@ -184,7 +188,7 @@ fn wide_comparison_requires_explicit_promotions_and_preserves_operand_failures()
                 CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
             );
         }
-        let converted = c_integer_cast_modulo(c_int64_literal(-1), CType::UInt128);
+        let converted = c_integer_cast_modulo(c_int64_literal(-1), ProgramType::UInt128);
         assert_eq!(
             outcome(compare(
                 CComparisonOperator::GreaterThan,

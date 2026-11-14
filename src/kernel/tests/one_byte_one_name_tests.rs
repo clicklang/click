@@ -85,8 +85,8 @@ fn signed_and_unsigned_symbolic_reads_of_one_byte_are_two_loads() {
             other => panic!("{other:?}"),
         }
     };
-    assert!(matches!(read(CType::UInt8), CValue::UInt8(_)));
-    let CValue::Int8(signed) = read(CType::Int8) else {
+    assert!(matches!(read(ProgramType::UInt8), ProgramValue::UInt8(_)));
+    let ProgramValue::Int8(signed) = read(ProgramType::Int8) else {
         panic!("a signed byte read is int8");
     };
     assert_eq!(signed.signed_byte_operand(), None);

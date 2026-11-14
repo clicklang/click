@@ -142,11 +142,11 @@ struct StaticAddress {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct C0Function {
-    pub(crate) program_entry_state: Option<std::sync::Arc<crate::kernel::CState>>,
+    pub(crate) program_entry_state: Option<std::sync::Arc<crate::kernel::ExecutionState>>,
     /// A typed language frontend may provide executable kernel semantics
     /// directly while reusing this declaration interface for Surface Click
     /// contract checking. C parsing always leaves this absent.
-    prelowered_kernel_function: Option<crate::kernel::CFunction>,
+    prelowered_kernel_function: Option<crate::kernel::ProgramFunction>,
     return_type: C0Type,
     return_pointee_constant: bool,
     return_reference: bool,
@@ -315,7 +315,7 @@ pub struct C0Global {
     /// resolved in its defining translation unit. Another unit may not see
     /// the private object the initializer names, so it reads this value and
     /// never re-evaluates the initializer against its own names.
-    resolved_address: Option<crate::kernel::CValue>,
+    resolved_address: Option<crate::kernel::ProgramValue>,
     tentative: bool,
     file_static: bool,
     volatile: bool,
@@ -393,7 +393,7 @@ impl C0Global {
 
     /// This global with its pointer initializer's address resolved by its
     /// defining translation unit.
-    pub(crate) fn with_resolved_address(mut self, address: crate::kernel::CValue) -> Self {
+    pub(crate) fn with_resolved_address(mut self, address: crate::kernel::ProgramValue) -> Self {
         self.resolved_address = Some(address);
         self
     }
@@ -495,7 +495,10 @@ impl C0Global {
         Some(self.to_kernel_global_with_value(value))
     }
 
-    fn to_kernel_global_with_value(&self, value: crate::kernel::CValue) -> crate::kernel::CGlobal {
+    fn to_kernel_global_with_value(
+        &self,
+        value: crate::kernel::ProgramValue,
+    ) -> crate::kernel::CGlobal {
         crate::kernel::CGlobal::new_with_kernel_name(
             self.name.clone(),
             self.kernel_name.clone(),
@@ -1067,8 +1070,8 @@ fn array_type_for_element(element_type: C0Type, length: u32) -> Option<C0Type> {
     })
 }
 
-fn pointer_array_element(c_type: C0Type) -> Option<crate::kernel::CPointerArrayElement> {
-    use crate::kernel::CPointerArrayElement as Element;
+fn pointer_array_element(c_type: C0Type) -> Option<crate::kernel::PointerArrayElement> {
+    use crate::kernel::PointerArrayElement as Element;
     Some(match c_type {
         C0Type::VoidPointer => Element::Void,
         C0Type::CharPointer(PlainChar::Unsigned) => Element::UnsignedPlainChar,
@@ -1094,10 +1097,10 @@ fn pointer_array_element(c_type: C0Type) -> Option<crate::kernel::CPointerArrayE
 /// The element pointer type of a pointer array; `rank` is the `long`/`long
 /// long` rank of a 64-bit integer pointee, which the kernel element erases.
 fn pointer_array_element_type(
-    element: crate::kernel::CPointerArrayElement,
+    element: crate::kernel::PointerArrayElement,
     rank: LongRank,
 ) -> C0Type {
-    use crate::kernel::CPointerArrayElement as Element;
+    use crate::kernel::PointerArrayElement as Element;
     match element {
         Element::Void => C0Type::VoidPointer,
         Element::UnsignedPlainChar => C0Type::CharPointer(PlainChar::Unsigned),
@@ -1122,10 +1125,10 @@ fn pointer_array_element_type(
 fn kernel_integer_literal_value(
     c_type: C0Type,
     initializer: &C0Expression,
-) -> Option<crate::kernel::CValue> {
+) -> Option<crate::kernel::ProgramValue> {
     Some(match c_type {
         C0Type::Bool => {
-            crate::kernel::CValue::bool_constant(initializer_integer_bits(initializer)? != 0)
+            crate::kernel::ProgramValue::bool_constant(initializer_integer_bits(initializer)? != 0)
         }
         C0Type::Float32 => match initializer {
             C0Expression::Float32Literal(bits) => {
@@ -1197,7 +1200,7 @@ fn kernel_integer_literal_value(
         | C0Type::Int8PointerPointer
             if matches!(initializer, C0Expression::Int32Literal(0)) =>
         {
-            crate::kernel::CValue::typed_pointer(
+            crate::kernel::ProgramValue::typed_pointer(
                 crate::kernel::Pointer::null(),
                 c_type.to_kernel_type(),
             )
@@ -1228,7 +1231,7 @@ fn kernel_integer_literal_value(
         | C0Type::Float64PointerPointer
             if matches!(initializer, C0Expression::Int32Literal(0)) =>
         {
-            crate::kernel::CValue::typed_pointer(
+            crate::kernel::ProgramValue::typed_pointer(
                 crate::kernel::Pointer::null(),
                 c_type.to_kernel_type(),
             )
@@ -1240,7 +1243,7 @@ fn kernel_integer_literal_value(
 fn kernel_aggregate_initializer_value(
     c_type: C0Type,
     initializer: &C0Expression,
-) -> Option<crate::kernel::CValue> {
+) -> Option<crate::kernel::ProgramValue> {
     match c_type {
         C0Type::Int32Pointer
         | C0Type::CharPointer(_)
@@ -1254,7 +1257,7 @@ fn kernel_aggregate_initializer_value(
         | C0Type::Float64PointerPointer
             if matches!(initializer, C0Expression::Int32Literal(0)) =>
         {
-            Some(crate::kernel::CValue::typed_pointer(
+            Some(crate::kernel::ProgramValue::typed_pointer(
                 crate::kernel::Pointer::null(),
                 c_type.to_kernel_type(),
             ))
@@ -1264,14 +1267,16 @@ fn kernel_aggregate_initializer_value(
         // signature, exactly as a store through a pointer coerces `&f` before
         // writing the cell, so a later load dispatches to the concrete target.
         C0Type::FunctionPointer(_) => match initializer {
-            C0Expression::Int32Literal(0) => Some(crate::kernel::CValue::typed_pointer(
+            C0Expression::Int32Literal(0) => Some(crate::kernel::ProgramValue::typed_pointer(
                 crate::kernel::Pointer::null(),
                 c_type.to_kernel_type(),
             )),
-            C0Expression::FunctionAddress(name) => Some(crate::kernel::CValue::typed_pointer(
-                crate::kernel::Pointer::function(name.clone()),
-                c_type.to_kernel_type(),
-            )),
+            C0Expression::FunctionAddress(name) => {
+                Some(crate::kernel::ProgramValue::typed_pointer(
+                    crate::kernel::Pointer::function(name.clone()),
+                    c_type.to_kernel_type(),
+                ))
+            }
             _ => None,
         },
         C0Type::Int8 => kernel_integer_literal_value(c_type, initializer),
@@ -1498,7 +1503,7 @@ impl C0StaticLocal {
                 }
                 _ => return None,
             },
-            C0Type::Bool => crate::kernel::CValue::bool_constant(
+            C0Type::Bool => crate::kernel::ProgramValue::bool_constant(
                 initializer_integer_bits(&self.initializer)? != 0,
             ),
             C0Type::Int8 => crate::kernel::int8(initializer_integer_bits(&self.initializer)?),
@@ -1520,7 +1525,7 @@ impl C0StaticLocal {
 
     fn to_kernel_static_with_value(
         &self,
-        value: crate::kernel::CValue,
+        value: crate::kernel::ProgramValue,
     ) -> crate::kernel::CStaticLocal {
         crate::kernel::CStaticLocal::new(
             self.source_name.clone(),
@@ -1634,7 +1639,7 @@ impl C0ArrayInitializer {
     /// element is listed, the first one's value stands as the default.
     fn to_kernel_contents(
         &self,
-        mut lower: impl FnMut(&C0Expression) -> Option<crate::kernel::CValue>,
+        mut lower: impl FnMut(&C0Expression) -> Option<crate::kernel::ProgramValue>,
     ) -> Option<crate::kernel::CArrayContents> {
         let default = match (self.has_zero_elements(), self.elements.first()) {
             (false, Some((_, first))) => lower(first)?,
@@ -1688,7 +1693,7 @@ impl C0ZeroFill {
                 (offset < stride
                     && matches!(
                         value.to_kernel_expression(),
-                        crate::kernel::CExpression::Value(_)
+                        crate::kernel::ProgramExpression::Value(_)
                     ))
                 .then(|| (offset, value_type, pointee_constant, value.clone()))
             })
@@ -1744,7 +1749,7 @@ impl C0ZeroFill {
             self.cells
                 .iter()
                 .map(|(offset, value_type, pointee_constant, zero)| {
-                    let crate::kernel::CExpression::Value(zero) = zero.to_kernel_expression()
+                    let crate::kernel::ProgramExpression::Value(zero) = zero.to_kernel_expression()
                     else {
                         unreachable!("a zero fill holds only literal zero initializers")
                     };
@@ -2026,7 +2031,7 @@ pub struct C0Parameter {
 }
 
 /// The nominal part of a callback signature that the kernel's structural
-/// `CType::FunctionPointer` deliberately does not carry.  The ABI signature
+/// `ProgramType::FunctionPointer` deliberately does not carry.  The ABI signature
 /// remains structural; these tags are checked while parsing C0 expressions so
 /// `struct left *` and `struct right *` cannot silently become interchangeable
 /// callback arguments.
@@ -2380,10 +2385,10 @@ pub enum C0Type {
     CharPointerPointer(PlainChar),
     CharArray(PlainChar, u32),
     /// A value of an abstract type parameter, as in a generic Rust trait's
-    /// interface; its kernel type is `CType::Parameter`.
+    /// interface; its kernel type is `ProgramType::Parameter`.
     Parameter(crate::kernel::TypeParameterName),
     /// A pointer to one, a Rust `&T`; its kernel type is
-    /// `CType::ParameterPointer`.
+    /// `ProgramType::ParameterPointer`.
     ParameterPointer(crate::kernel::TypeParameterName),
     Void,
     Bool,
@@ -2455,7 +2460,7 @@ pub enum C0Type {
     /// An array of pointers. The kernel element erases the `long`/`long
     /// long` rank of a 64-bit integer pointee, which [`LongRank`] keeps (and
     /// is [`LongRank::Long`] for every other element).
-    PointerArray(crate::kernel::CPointerArrayElement, LongRank, u32),
+    PointerArray(crate::kernel::PointerArrayElement, LongRank, u32),
 }
 
 /// A translation unit's declarations of one kind, by name. Every parsed
@@ -3306,7 +3311,7 @@ pub enum C0Expression {
         struct_name: Option<String>,
     },
     /// Address of an embedded struct field. Aggregate objects have no
-    /// runtime `CValue`; this node carries the aggregate place through nested
+    /// runtime `ProgramValue`; this node carries the aggregate place through nested
     /// member selection until a scalar field is selected.
     AggregateAddress {
         pointer: Box<C0Expression>,
@@ -3314,7 +3319,7 @@ pub enum C0Expression {
     },
     /// A struct member's address narrowed to the member's `width` bytes
     /// (`design/pointer-subobject-extents.md`); lowers to the kernel's
-    /// `CExpression::Subobject`.
+    /// `ProgramExpression::Subobject`.
     Subobject {
         pointer: Box<C0Expression>,
         width: u32,
@@ -3610,7 +3615,7 @@ impl C0Function {
     /// This declaration with contract value parameters after its C
     /// parameters, so a contract that reads them lowers as it lowers the C
     /// parameters. The lowered function moves them back out of its C
-    /// parameters ([`crate::kernel::CFunction::with_trailing_value_parameters`]).
+    /// parameters ([`crate::kernel::ProgramFunction::with_trailing_value_parameters`]).
     pub(crate) fn with_trailing_value_parameters(
         &self,
         parameters: impl IntoIterator<Item = C0Parameter>,
@@ -3664,7 +3669,7 @@ impl C0Function {
 
     pub(crate) fn with_prelowered_kernel_function(
         mut self,
-        function: crate::kernel::CFunction,
+        function: crate::kernel::ProgramFunction,
     ) -> Self {
         // A front end that lowers its own body, as Rust's does, declares its
         // locals there; a sidecar comparison doing arithmetic on a pointer
@@ -3676,7 +3681,7 @@ impl C0Function {
         self
     }
 
-    pub(crate) fn prelowered_kernel_function(&self) -> Option<&crate::kernel::CFunction> {
+    pub(crate) fn prelowered_kernel_function(&self) -> Option<&crate::kernel::ProgramFunction> {
         self.prelowered_kernel_function.as_ref()
     }
 
@@ -3884,7 +3889,7 @@ impl C0Function {
         self
     }
 
-    pub fn body_kernel_statement(&self) -> crate::kernel::CStatement {
+    pub fn body_kernel_statement(&self) -> crate::kernel::ProgramStatement {
         self.body
             .to_kernel_statement_with_control_targets(&self.control_targets)
     }
@@ -4190,7 +4195,7 @@ impl C0Function {
         declared_type: C0Type,
         declared_pointee_constant: bool,
         initializer: &C0Expression,
-    ) -> Option<crate::kernel::CValue> {
+    ) -> Option<crate::kernel::ProgramValue> {
         let C0Expression::AddressOf(target) = initializer else {
             return None;
         };
@@ -4198,8 +4203,8 @@ impl C0Function {
         if address.c_type.pointer_type()? != declared_type {
             return None;
         }
-        Some(crate::kernel::CValue::Pointer(
-            crate::kernel::CPointerValue::new(address.pointer, declared_type.to_kernel_type())
+        Some(crate::kernel::ProgramValue::Pointer(
+            crate::kernel::PointerValue::new(address.pointer, declared_type.to_kernel_type())
                 .with_pointee_constant(declared_pointee_constant)
                 .with_extent(address.extent),
         ))
@@ -4252,7 +4257,7 @@ impl C0Function {
     pub(crate) fn resolve_linked_pointer_initializer(
         &self,
         global: &C0Global,
-    ) -> Result<Option<crate::kernel::CValue>, C0SyntaxError> {
+    ) -> Result<Option<crate::kernel::ProgramValue>, C0SyntaxError> {
         let Some(initializer) = global.initializer() else {
             return Ok(None);
         };
@@ -4392,14 +4397,14 @@ impl C0Function {
         static_local.to_kernel_static()
     }
 
-    pub fn to_kernel_function(&self) -> crate::kernel::CFunction {
+    pub fn to_kernel_function(&self) -> crate::kernel::ProgramFunction {
         if let Some(function) = &self.prelowered_kernel_function {
             return function.clone();
         }
         let kernel_body = self
             .body
             .to_kernel_statement_with_control_targets(&self.control_targets);
-        let mut suffix: Option<std::sync::Arc<crate::kernel::CStatement>> = None;
+        let mut suffix: Option<std::sync::Arc<crate::kernel::ProgramStatement>> = None;
         let mut control_targets = BTreeMap::new();
         if !self.control_targets.is_empty() {
             let mut statements = Vec::new();
@@ -4431,7 +4436,7 @@ impl C0Function {
         }
         let mut function = crate::kernel::c_function(
             if self.return_struct_name.is_some() {
-                crate::kernel::CType::UInt8Pointer
+                crate::kernel::ProgramType::UInt8Pointer
             } else {
                 self.return_type.to_kernel_type()
             },
@@ -4473,13 +4478,13 @@ impl C0Function {
     pub(crate) fn to_kernel_static_storage(
         &self,
         include_globals: bool,
-    ) -> crate::kernel::CFunction {
+    ) -> crate::kernel::ProgramFunction {
         self.with_kernel_static_storage(
-            crate::kernel::CFunction::new(
-                crate::kernel::CType::Void,
+            crate::kernel::ProgramFunction::new(
+                crate::kernel::ProgramType::Void,
                 self.name.clone(),
                 vec![],
-                crate::kernel::CStatement::Skip,
+                crate::kernel::ProgramStatement::Skip,
             ),
             include_globals,
         )
@@ -4487,9 +4492,9 @@ impl C0Function {
 
     fn with_kernel_static_storage(
         &self,
-        mut function: crate::kernel::CFunction,
+        mut function: crate::kernel::ProgramFunction,
         include_globals: bool,
-    ) -> crate::kernel::CFunction {
+    ) -> crate::kernel::ProgramFunction {
         if include_globals {
             function = function
                 .with_global_variables(
@@ -5202,7 +5207,7 @@ impl C0Parameter {
         self.struct_name.is_some() && matches!(self.c_type, C0Type::UInt8Array(_))
     }
 
-    pub fn to_kernel_parameter(&self) -> crate::kernel::CParameter {
+    pub fn to_kernel_parameter(&self) -> crate::kernel::ProgramParameter {
         if self.is_struct_value() {
             let layout = self
                 .struct_layout
@@ -5211,7 +5216,7 @@ impl C0Parameter {
                 .to_kernel_aggregate_layout();
             return crate::kernel::c_parameter_with_aggregate_layout(
                 self.name.clone(),
-                crate::kernel::CType::UInt8Pointer,
+                crate::kernel::ProgramType::UInt8Pointer,
                 layout,
             )
             .with_volatile(self.is_volatile())
@@ -5221,7 +5226,7 @@ impl C0Parameter {
         }
         let c_type = self
             .array_element_width
-            .map(|_| crate::kernel::CType::UInt8Pointer)
+            .map(|_| crate::kernel::ProgramType::UInt8Pointer)
             .unwrap_or_else(|| self.c_type.to_kernel_type());
         let pointee_class = (self.struct_name.is_none() && self.array_element_width.is_none())
             .then(|| {
@@ -5557,85 +5562,91 @@ impl C0Type {
     }
 
     /// The kernel type of a pointer to a byte type (`uint8` or `int8`).
-    fn pointer_kernel_type(self) -> crate::kernel::CType {
+    fn pointer_kernel_type(self) -> crate::kernel::ProgramType {
         match self {
-            Self::Int8 => crate::kernel::CType::Int8Pointer,
-            _ => crate::kernel::CType::UInt8Pointer,
+            Self::Int8 => crate::kernel::ProgramType::Int8Pointer,
+            _ => crate::kernel::ProgramType::UInt8Pointer,
         }
     }
 
     /// The kernel type of a value of this C type. Plain `char` types take
     /// the representation of their target's [`PlainChar::byte_type`], so
     /// this mapping needs no target of its own.
-    pub fn to_kernel_type(self) -> crate::kernel::CType {
+    pub fn to_kernel_type(self) -> crate::kernel::ProgramType {
         match self {
-            Self::Parameter(name) => crate::kernel::CType::Parameter(name),
-            Self::ParameterPointer(name) => crate::kernel::CType::ParameterPointer(name),
-            Self::Void => crate::kernel::CType::Void,
-            Self::Bool => crate::kernel::CType::Bool,
-            Self::VoidPointer => crate::kernel::CType::VoidPointer,
-            Self::VoidPointerPointer => crate::kernel::CType::VoidPointerPointer,
-            Self::Int8 => crate::kernel::CType::Int8,
-            Self::Int16 => crate::kernel::CType::Int16,
-            Self::Int32 => crate::kernel::CType::Int32,
+            Self::Parameter(name) => crate::kernel::ProgramType::Parameter(name),
+            Self::ParameterPointer(name) => crate::kernel::ProgramType::ParameterPointer(name),
+            Self::Void => crate::kernel::ProgramType::Void,
+            Self::Bool => crate::kernel::ProgramType::Bool,
+            Self::VoidPointer => crate::kernel::ProgramType::VoidPointer,
+            Self::VoidPointerPointer => crate::kernel::ProgramType::VoidPointerPointer,
+            Self::Int8 => crate::kernel::ProgramType::Int8,
+            Self::Int16 => crate::kernel::ProgramType::Int16,
+            Self::Int32 => crate::kernel::ProgramType::Int32,
             Self::Char(plain) => plain.byte_type().to_kernel_type(),
-            Self::UInt8 => crate::kernel::CType::UInt8,
-            Self::UInt16 => crate::kernel::CType::UInt16,
-            Self::UInt32 => crate::kernel::CType::UInt32,
-            Self::Int64(_) => crate::kernel::CType::Int64,
-            Self::UInt64(_) => crate::kernel::CType::UInt64,
-            Self::Int128 => crate::kernel::CType::Int128,
-            Self::UInt128 => crate::kernel::CType::UInt128,
-            Self::Float32 => crate::kernel::CType::Float32,
-            Self::Float64 => crate::kernel::CType::Float64,
-            Self::Int32Pointer => crate::kernel::CType::Int32Pointer,
-            Self::Int8Pointer => crate::kernel::CType::Int8Pointer,
-            Self::Int16Pointer => crate::kernel::CType::Int16Pointer,
-            Self::UInt16Pointer => crate::kernel::CType::UInt16Pointer,
+            Self::UInt8 => crate::kernel::ProgramType::UInt8,
+            Self::UInt16 => crate::kernel::ProgramType::UInt16,
+            Self::UInt32 => crate::kernel::ProgramType::UInt32,
+            Self::Int64(_) => crate::kernel::ProgramType::Int64,
+            Self::UInt64(_) => crate::kernel::ProgramType::UInt64,
+            Self::Int128 => crate::kernel::ProgramType::Int128,
+            Self::UInt128 => crate::kernel::ProgramType::UInt128,
+            Self::Float32 => crate::kernel::ProgramType::Float32,
+            Self::Float64 => crate::kernel::ProgramType::Float64,
+            Self::Int32Pointer => crate::kernel::ProgramType::Int32Pointer,
+            Self::Int8Pointer => crate::kernel::ProgramType::Int8Pointer,
+            Self::Int16Pointer => crate::kernel::ProgramType::Int16Pointer,
+            Self::UInt16Pointer => crate::kernel::ProgramType::UInt16Pointer,
             Self::CharPointer(plain) => plain.byte_type().pointer_kernel_type(),
-            Self::UInt8Pointer => crate::kernel::CType::UInt8Pointer,
-            Self::UInt32Pointer => crate::kernel::CType::UInt32Pointer,
-            Self::Int64Pointer(_) => crate::kernel::CType::Int64Pointer,
-            Self::Int128Pointer => crate::kernel::CType::Int128Pointer,
-            Self::UInt64Pointer(_) => crate::kernel::CType::UInt64Pointer,
-            Self::UInt128Pointer => crate::kernel::CType::UInt128Pointer,
-            Self::Float32Pointer => crate::kernel::CType::Float32Pointer,
-            Self::Float64Pointer => crate::kernel::CType::Float64Pointer,
-            Self::Int8PointerPointer => crate::kernel::CType::Int8PointerPointer,
-            Self::Int16PointerPointer => crate::kernel::CType::Int16PointerPointer,
-            Self::UInt16PointerPointer => crate::kernel::CType::UInt16PointerPointer,
-            Self::Int32PointerPointer => crate::kernel::CType::Int32PointerPointer,
+            Self::UInt8Pointer => crate::kernel::ProgramType::UInt8Pointer,
+            Self::UInt32Pointer => crate::kernel::ProgramType::UInt32Pointer,
+            Self::Int64Pointer(_) => crate::kernel::ProgramType::Int64Pointer,
+            Self::Int128Pointer => crate::kernel::ProgramType::Int128Pointer,
+            Self::UInt64Pointer(_) => crate::kernel::ProgramType::UInt64Pointer,
+            Self::UInt128Pointer => crate::kernel::ProgramType::UInt128Pointer,
+            Self::Float32Pointer => crate::kernel::ProgramType::Float32Pointer,
+            Self::Float64Pointer => crate::kernel::ProgramType::Float64Pointer,
+            Self::Int8PointerPointer => crate::kernel::ProgramType::Int8PointerPointer,
+            Self::Int16PointerPointer => crate::kernel::ProgramType::Int16PointerPointer,
+            Self::UInt16PointerPointer => crate::kernel::ProgramType::UInt16PointerPointer,
+            Self::Int32PointerPointer => crate::kernel::ProgramType::Int32PointerPointer,
             Self::CharPointerPointer(PlainChar::Unsigned) => {
-                crate::kernel::CType::UInt8PointerPointer
+                crate::kernel::ProgramType::UInt8PointerPointer
             }
-            Self::CharPointerPointer(PlainChar::Signed) => crate::kernel::CType::Int8PointerPointer,
-            Self::UInt8PointerPointer => crate::kernel::CType::UInt8PointerPointer,
-            Self::UInt32PointerPointer => crate::kernel::CType::UInt32PointerPointer,
-            Self::Int64PointerPointer(_) => crate::kernel::CType::Int64PointerPointer,
-            Self::Int128PointerPointer => crate::kernel::CType::Int128PointerPointer,
-            Self::UInt64PointerPointer(_) => crate::kernel::CType::UInt64PointerPointer,
-            Self::UInt128PointerPointer => crate::kernel::CType::UInt128PointerPointer,
-            Self::Float32PointerPointer => crate::kernel::CType::Float32PointerPointer,
-            Self::Float64PointerPointer => crate::kernel::CType::Float64PointerPointer,
-            Self::FunctionPointer(signature) => crate::kernel::CType::FunctionPointer(signature),
-            Self::Int32Array(length) => crate::kernel::CType::Int32Array(length),
+            Self::CharPointerPointer(PlainChar::Signed) => {
+                crate::kernel::ProgramType::Int8PointerPointer
+            }
+            Self::UInt8PointerPointer => crate::kernel::ProgramType::UInt8PointerPointer,
+            Self::UInt32PointerPointer => crate::kernel::ProgramType::UInt32PointerPointer,
+            Self::Int64PointerPointer(_) => crate::kernel::ProgramType::Int64PointerPointer,
+            Self::Int128PointerPointer => crate::kernel::ProgramType::Int128PointerPointer,
+            Self::UInt64PointerPointer(_) => crate::kernel::ProgramType::UInt64PointerPointer,
+            Self::UInt128PointerPointer => crate::kernel::ProgramType::UInt128PointerPointer,
+            Self::Float32PointerPointer => crate::kernel::ProgramType::Float32PointerPointer,
+            Self::Float64PointerPointer => crate::kernel::ProgramType::Float64PointerPointer,
+            Self::FunctionPointer(signature) => {
+                crate::kernel::ProgramType::FunctionPointer(signature)
+            }
+            Self::Int32Array(length) => crate::kernel::ProgramType::Int32Array(length),
             Self::CharArray(PlainChar::Unsigned, length) => {
-                crate::kernel::CType::UInt8Array(length)
+                crate::kernel::ProgramType::UInt8Array(length)
             }
-            Self::CharArray(PlainChar::Signed, length) => crate::kernel::CType::Int8Array(length),
-            Self::UInt8Array(length) => crate::kernel::CType::UInt8Array(length),
-            Self::Int8Array(length) => crate::kernel::CType::Int8Array(length),
-            Self::Int16Array(length) => crate::kernel::CType::Int16Array(length),
-            Self::UInt16Array(length) => crate::kernel::CType::UInt16Array(length),
-            Self::UInt32Array(length) => crate::kernel::CType::UInt32Array(length),
-            Self::Int64Array(_, length) => crate::kernel::CType::Int64Array(length),
-            Self::Int128Array(length) => crate::kernel::CType::Int128Array(length),
-            Self::UInt64Array(_, length) => crate::kernel::CType::UInt64Array(length),
-            Self::UInt128Array(length) => crate::kernel::CType::UInt128Array(length),
-            Self::Float32Array(length) => crate::kernel::CType::Float32Array(length),
-            Self::Float64Array(length) => crate::kernel::CType::Float64Array(length),
+            Self::CharArray(PlainChar::Signed, length) => {
+                crate::kernel::ProgramType::Int8Array(length)
+            }
+            Self::UInt8Array(length) => crate::kernel::ProgramType::UInt8Array(length),
+            Self::Int8Array(length) => crate::kernel::ProgramType::Int8Array(length),
+            Self::Int16Array(length) => crate::kernel::ProgramType::Int16Array(length),
+            Self::UInt16Array(length) => crate::kernel::ProgramType::UInt16Array(length),
+            Self::UInt32Array(length) => crate::kernel::ProgramType::UInt32Array(length),
+            Self::Int64Array(_, length) => crate::kernel::ProgramType::Int64Array(length),
+            Self::Int128Array(length) => crate::kernel::ProgramType::Int128Array(length),
+            Self::UInt64Array(_, length) => crate::kernel::ProgramType::UInt64Array(length),
+            Self::UInt128Array(length) => crate::kernel::ProgramType::UInt128Array(length),
+            Self::Float32Array(length) => crate::kernel::ProgramType::Float32Array(length),
+            Self::Float64Array(length) => crate::kernel::ProgramType::Float64Array(length),
             Self::PointerArray(element, _, length) => {
-                crate::kernel::CType::PointerArray(element, length)
+                crate::kernel::ProgramType::PointerArray(element, length)
             }
         }
     }
@@ -5711,7 +5722,7 @@ impl C0Statement {
     pub(crate) fn to_kernel_statement_with_control_targets(
         &self,
         targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
-    ) -> crate::kernel::CStatement {
+    ) -> crate::kernel::ProgramStatement {
         enum Task<'a> {
             Visit(&'a C0Statement),
             Seq,
@@ -5762,7 +5773,7 @@ impl C0Statement {
     fn to_kernel_statement_leaf(
         &self,
         targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
-    ) -> crate::kernel::CStatement {
+    ) -> crate::kernel::ProgramStatement {
         match self {
             Self::Skip => crate::kernel::c_skip(),
             Self::Break => crate::kernel::c_break(),
@@ -5797,7 +5808,7 @@ impl C0Statement {
                     *pointee_constant,
                     zero_fill.as_ref().map(C0ZeroFill::to_kernel),
                 );
-                if let crate::kernel::CStatement::Declare {
+                if let crate::kernel::ProgramStatement::Declare {
                     initializer: value,
                     declared_class,
                     ..
@@ -5841,7 +5852,7 @@ impl C0Statement {
                 result_type,
                 result_pointee_constant,
                 ..
-            } => crate::kernel::CStatement::CallResult {
+            } => crate::kernel::ProgramStatement::CallResult {
                 call: *call,
                 function_name: function_name.clone(),
                 arguments: arguments
@@ -5871,7 +5882,7 @@ impl C0Statement {
                 zeroed,
                 object_type,
                 ..
-            } => crate::kernel::CStatement::HeapAllocate {
+            } => crate::kernel::ProgramStatement::HeapAllocate {
                 target: target.clone(),
                 bytes: bytes.to_kernel_expression(),
                 zeroed: *zeroed,
@@ -5884,7 +5895,7 @@ impl C0Statement {
             Self::Assert {
                 condition, label, ..
             } => crate::kernel::c_labeled_assert(condition.to_kernel_expression(), label.clone()),
-            Self::LoopTest { condition, .. } => crate::kernel::CStatement::LoopTest {
+            Self::LoopTest { condition, .. } => crate::kernel::ProgramStatement::LoopTest {
                 condition: condition.to_kernel_expression(),
             },
             Self::Return(expression, _) => {
@@ -6009,21 +6020,21 @@ impl C0Expression {
     /// Lowers an expression a Click specification wrote in C syntax. Its
     /// integer casts convert modulo 2^N, as the same cast in C source does;
     /// a specification states a checked conversion with `to_T(...)`.
-    pub fn to_kernel_specification_expression(&self) -> crate::kernel::CExpression {
+    pub fn to_kernel_specification_expression(&self) -> crate::kernel::ProgramExpression {
         self.lower_expression()
     }
 
-    pub fn to_kernel_expression(&self) -> crate::kernel::CExpression {
+    pub fn to_kernel_expression(&self) -> crate::kernel::ProgramExpression {
         self.lower_expression()
     }
 
-    fn lower_expression(&self) -> crate::kernel::CExpression {
+    fn lower_expression(&self) -> crate::kernel::ProgramExpression {
         match self {
             Self::CallResult {
                 call,
                 function_name,
                 ..
-            } => crate::kernel::CExpression::CallResult {
+            } => crate::kernel::ProgramExpression::CallResult {
                 call: *call,
                 function_name: function_name.clone(),
             },
@@ -6100,7 +6111,7 @@ impl C0Expression {
                     pointer.lower_expression()
                 }
                 target => {
-                    crate::kernel::CExpression::AddressOf(Box::new(target.lower_expression()))
+                    crate::kernel::ProgramExpression::AddressOf(Box::new(target.lower_expression()))
                 }
             },
             Self::AggregateAddress { pointer, .. } => pointer.lower_expression(),
@@ -6108,7 +6119,7 @@ impl C0Expression {
             Self::PointerOffsetBytes { pointer, bytes } => {
                 crate::kernel::c_pointer_offset_bytes(pointer.lower_expression(), *bytes)
             }
-            Self::Subobject { pointer, width } => crate::kernel::CExpression::Subobject {
+            Self::Subobject { pointer, width } => crate::kernel::ProgramExpression::Subobject {
                 pointer: Box::new(pointer.lower_expression()),
                 width: *width,
             },
@@ -12189,7 +12200,7 @@ impl Parser {
                 )
             })
             .collect::<Vec<_>>();
-        let signature = crate::kernel::CType::qualified_function_pointer_signature(
+        let signature = crate::kernel::ProgramType::qualified_function_pointer_signature(
             return_type.c_type.to_kernel_type(),
             return_type.pointee_constant,
             &parameter_types,
@@ -20687,20 +20698,22 @@ fn function_pointer_signature_from_header(header: &C0FunctionHeader) -> C0Functi
 }
 
 fn function_pointer_type(signature: &C0FunctionPointerSignature) -> C0Type {
-    C0Type::FunctionPointer(crate::kernel::CType::qualified_function_pointer_signature(
-        signature.return_type().to_kernel_type(),
-        signature.return_pointee_constant,
-        &signature
-            .parameters()
-            .iter()
-            .map(|parameter| {
-                (
-                    parameter.c_type().to_kernel_type(),
-                    parameter.pointee_constant,
-                )
-            })
-            .collect::<Vec<_>>(),
-    ))
+    C0Type::FunctionPointer(
+        crate::kernel::ProgramType::qualified_function_pointer_signature(
+            signature.return_type().to_kernel_type(),
+            signature.return_pointee_constant,
+            &signature
+                .parameters()
+                .iter()
+                .map(|parameter| {
+                    (
+                        parameter.c_type().to_kernel_type(),
+                        parameter.pointee_constant,
+                    )
+                })
+                .collect::<Vec<_>>(),
+        ),
+    )
 }
 
 /// Whether `left` and `right` are pointers of the same depth to 64-bit
@@ -20723,7 +20736,7 @@ fn long_rank_pointers_differ(left: C0Type, right: C0Type) -> bool {
 /// character types, at one level of indirection: C11 6.5p7 lets either type
 /// access the object, GCC and Clang convert between them with at most a
 /// `-Wpointer-sign` warning, and the kernel reads a cell through either as
-/// its bits (`CType::read_cell`).
+/// its bits (`ProgramType::read_cell`).
 fn one_byte_pointer(ty: C0Type) -> bool {
     matches!(
         ty,
@@ -21904,21 +21917,23 @@ fn is_ident_continue(ch: char) -> bool {
 }
 
 /// The locals `body` declares with pointer type in every declaration.
-fn declared_pointer_locals(body: &crate::kernel::CStatement) -> BTreeSet<String> {
-    use crate::kernel::CStatement;
+fn declared_pointer_locals(body: &crate::kernel::ProgramStatement) -> BTreeSet<String> {
+    use crate::kernel::ProgramStatement;
     let mut pointers = BTreeMap::<String, bool>::new();
     let mut pending = vec![body];
     while let Some(statement) = pending.pop() {
         match statement {
-            CStatement::Declare { name, c_type, .. } => {
+            ProgramStatement::Declare { name, c_type, .. } => {
                 let pointer = c_type.is_pointer();
                 pointers
                     .entry(name.clone())
                     .and_modify(|existing| *existing &= pointer)
                     .or_insert(pointer);
             }
-            CStatement::Seq(statements) => pending.extend(statements.iter().map(|item| &**item)),
-            CStatement::If {
+            ProgramStatement::Seq(statements) => {
+                pending.extend(statements.iter().map(|item| &**item))
+            }
+            ProgramStatement::If {
                 then_branch,
                 else_branch,
                 ..
@@ -21926,15 +21941,15 @@ fn declared_pointer_locals(body: &crate::kernel::CStatement) -> BTreeSet<String>
                 pending.push(then_branch);
                 pending.push(else_branch);
             }
-            CStatement::While { body, .. } => pending.push(body),
-            CStatement::ForStep { step, .. } => pending.push(step),
-            CStatement::TryCatchInt32 {
+            ProgramStatement::While { body, .. } => pending.push(body),
+            ProgramStatement::ForStep { step, .. } => pending.push(step),
+            ProgramStatement::TryCatchInt32 {
                 try_body, handler, ..
             } => {
                 pending.push(try_body);
                 pending.push(handler);
             }
-            CStatement::Switch { cases, .. } => {
+            ProgramStatement::Switch { cases, .. } => {
                 pending.extend(cases.iter().map(|case| &*case.body))
             }
             _ => {}

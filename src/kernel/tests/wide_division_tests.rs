@@ -4,7 +4,7 @@ use num_bigint::BigInt;
 const LEFT: Variable = Variable(155_001);
 const RIGHT: Variable = Variable(155_002);
 
-fn operation(a: CExpression, b: CExpression, remainder: bool) -> CExpression {
+fn operation(a: ProgramExpression, b: ProgramExpression, remainder: bool) -> ProgramExpression {
     if remainder {
         c_remainder(a, b)
     } else {
@@ -12,18 +12,18 @@ fn operation(a: CExpression, b: CExpression, remainder: bool) -> CExpression {
     }
 }
 
-fn evaluated(expression: CExpression) -> CExpressionOutcome {
-    let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+fn evaluated(expression: ProgramExpression) -> CExpressionOutcome {
+    let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
     let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
     };
     outcome.clone()
 }
 
-fn value(ty: MachineIntegerType, variable: Variable) -> CValue {
+fn value(ty: MachineIntegerType, variable: Variable) -> ProgramValue {
     match ty {
-        MachineIntegerType::Int128 => CValue::Int128(MachineTerm::Variable(variable)),
-        MachineIntegerType::UInt128 => CValue::UInt128(MachineTerm::Variable(variable)),
+        MachineIntegerType::Int128 => ProgramValue::Int128(MachineTerm::Variable(variable)),
+        MachineIntegerType::UInt128 => ProgramValue::UInt128(MachineTerm::Variable(variable)),
         _ => unreachable!(),
     }
 }
@@ -111,7 +111,7 @@ fn wide_division_signed_constants_match_exact_oracle_and_native_failures() {
                     let CExpressionOutcome::Value(value) = outcome else {
                         panic!("{outcome:?}")
                     };
-                    assert_eq!(value.c_type(), CType::Int128);
+                    assert_eq!(value.c_type(), ProgramType::Int128);
                     assert_eq!(
                         MachineIntegerType::Int128
                             .constant_from_value(&value)
@@ -144,7 +144,7 @@ fn wide_division_unsigned_preserves_high_bits_and_format() {
                     let CExpressionOutcome::Value(value) = outcome else {
                         panic!("{outcome:?}")
                     };
-                    assert_eq!(value.c_type(), CType::UInt128);
+                    assert_eq!(value.c_type(), ProgramType::UInt128);
                     assert_eq!(
                         MachineIntegerType::UInt128
                             .constant_from_value(&value)
@@ -189,7 +189,7 @@ fn wide_division_symbolic_paths_keep_native_guards_and_certified_observation() {
                 unreachable!()
             };
             let term = match value {
-                CValue::Int128(t) | CValue::UInt128(t) => t,
+                ProgramValue::Int128(t) | ProgramValue::UInt128(t) => t,
                 _ => unreachable!(),
             };
             let MachineTerm::IntegerToMachine {
@@ -268,13 +268,13 @@ fn wide_division_minimum_dividend_still_checks_minus_one_for_remainder() {
     for remainder in [false, true] {
         let expression = operation(
             c_int128_literal(i128::MIN),
-            CExpression::Value(value(MachineIntegerType::Int128, RIGHT)),
+            ProgramExpression::Value(value(MachineIntegerType::Int128, RIGHT)),
             remainder,
         );
         let (zero, _, minus_one, _) = guards(MachineIntegerType::Int128);
         let assumptions = PureFactContext::new().assume_condition(zero, false);
         let output = evaluate_c_expression_paths(
-            &CState::new(),
+            &ExecutionState::new(),
             &expression,
             &assumptions,
             &mut ExecutionBudget::for_c_expression(&expression),
@@ -313,7 +313,7 @@ fn wide_division_promotions_are_explicit_and_operand_definedness_is_preserved() 
         assert_eq!(
             evaluated(operation(
                 c_int128_literal(-7),
-                c_cast(c_int32_literal(3), CType::Int128),
+                c_cast(c_int32_literal(3), ProgramType::Int128),
                 remainder
             )),
             CExpressionOutcome::Value(
@@ -332,7 +332,7 @@ fn wide_division_promotions_are_explicit_and_operand_definedness_is_preserved() 
             evaluated(operation(
                 c_cast(
                     c_divide(c_int64_literal(1), c_int64_literal(0)),
-                    CType::Int128
+                    ProgramType::Int128
                 ),
                 c_int128_literal(1),
                 remainder
@@ -348,10 +348,10 @@ fn wide_division_unknown_guards_cannot_produce_an_unconditional_theorem() {
         for remainder in [false, true] {
             assert!(
                 prove_c_expression_evaluation(
-                    CState::new(),
+                    ExecutionState::new(),
                     operation(
-                        CExpression::Value(value(ty, LEFT)),
-                        CExpression::Value(value(ty, RIGHT)),
+                        ProgramExpression::Value(value(ty, LEFT)),
+                        ProgramExpression::Value(value(ty, RIGHT)),
                         remainder
                     )
                 )
@@ -454,9 +454,9 @@ fn wide_division_checked_function_artifacts_recheck_exactly() {
                 assumptions = assumptions.assume_proposition(safe);
             }
             let cty = if ty == MachineIntegerType::Int128 {
-                CType::Int128
+                ProgramType::Int128
             } else {
-                CType::UInt128
+                ProgramType::UInt128
             };
             let function = c_function(
                 cty,
@@ -464,10 +464,10 @@ fn wide_division_checked_function_artifacts_recheck_exactly() {
                 vec![c_parameter("a", cty), c_parameter("b", cty)],
                 c_return(operation(c_variable("a"), c_variable("b"), remainder)),
             );
-            let state = CState::new().with_local("caller", int32(77));
+            let state = ExecutionState::new().with_local("caller", int32(77));
             let arguments = vec![
-                CExpression::Value(value(ty, LEFT)),
-                CExpression::Value(value(ty, RIGHT)),
+                ProgramExpression::Value(value(ty, LEFT)),
+                ProgramExpression::Value(value(ty, RIGHT)),
             ];
             let check = || {
                 prove_checked_c_function_execution_with_environment(
@@ -506,10 +506,10 @@ fn wide_division_checked_function_artifacts_recheck_exactly() {
     }
 }
 
-fn promoted_division_expression(ty: MachineIntegerType, remainder: bool) -> CExpression {
-    let divisor = CExpression::Cast {
-        expression: Box::new(CExpression::Value(ty.symbolic_value(RIGHT))),
-        target_type: CType::Int128,
+fn promoted_division_expression(ty: MachineIntegerType, remainder: bool) -> ProgramExpression {
+    let divisor = ProgramExpression::Cast {
+        expression: Box::new(ProgramExpression::Value(ty.symbolic_value(RIGHT))),
+        target_type: ProgramType::Int128,
         integer_mode: CIntegerCastMode::CConversion,
         pointee_struct: None,
         pointee_volatile: false,
@@ -517,7 +517,7 @@ fn promoted_division_expression(ty: MachineIntegerType, remainder: bool) -> CExp
         explicit_qualification: false,
     };
     operation(
-        CExpression::Value(value(MachineIntegerType::Int128, LEFT)),
+        ProgramExpression::Value(value(MachineIntegerType::Int128, LEFT)),
         divisor,
         remainder,
     )
@@ -558,7 +558,7 @@ fn wide_promoted_divisors_keep_native_guards_and_overflow_disjunctions() {
             let expression = promoted_division_expression(ty, remainder);
             let evaluate = |context: &PureFactContext| {
                 evaluate_c_expression_paths(
-                    &CState::new(),
+                    &ExecutionState::new(),
                     &expression,
                     context,
                     &mut ExecutionBudget::for_c_expression(&expression),

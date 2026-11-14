@@ -27,19 +27,21 @@ fn reads() -> [MachineTerm; 3] {
         block: "retained-snapshot".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new()
-        .with_block(pointer.block.clone(), 64)
-        .store(pointer.clone(), CValue::Int32(MachineTerm::constant(2)));
+    let memory = CMemory::new().with_block(pointer.block.clone(), 64).store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(2)),
+    );
     let other = Pointer {
         block: pointer.block.clone(),
         offset: PointerOffsetTerm::Constant(32),
     };
     let separate = memory
         .clone()
-        .store(other, CValue::Int32(MachineTerm::constant(3)));
-    let overlap = memory
-        .clone()
-        .store(pointer.clone(), CValue::Int32(MachineTerm::constant(3)));
+        .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
+    let overlap = memory.clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(3)),
+    );
     [memory, separate, overlap].map(|memory| {
         MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory),

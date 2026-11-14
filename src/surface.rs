@@ -12,22 +12,23 @@ use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
     AlgebraicValue, BitvectorEqualityDerivationStep, CCheckedFunctionExecution,
     CCheckedFunctionProposition, CComparisonOperator, CCompositeResourceDefinition,
-    CConditionOutcome, CExecutionEnvironment, CExecutionSemantics, CExpression, CExpressionOutcome,
-    CFunction, CFunctionContract, CFunctionContractClaim, CFunctionContractClaimKey,
+    CConditionOutcome, CExecutionEnvironment, CExecutionSemantics, CExpressionOutcome,
+    CFunctionContract, CFunctionContractClaim, CFunctionContractClaimKey,
     CFunctionContractClaimTarget, CFunctionContractExecutionMode, CFunctionExecutionCandidates,
     CFunctionOutcome, CFunctionSpecification, CLoopBreakExit, CLoopEffect, CLoopEffectCheck,
     CLoopEffectSpan, CLoopFinalExitCandidate, CLoopInvariantCheck, CLoopReturnExit, CMemory,
     CMemoryRange, CMemorySegment, CResource, CResourceAccessMode, CResourceFact, CResourceSnapshot,
-    CResourceSpec, CResourceTransferRole, CState, CStatement, CStatementOutcome,
-    CTerminationRefusal, CTerminationVerdicts, CType, CUnsuitableCallback, CValue,
-    CVerifiedLoopRule, CVerifiedPureTheorem, ConditionTerm, ExecutionBudget, ExecutionPureFact,
-    MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, ProofObligation, Proposition,
-    PropositionDerivation, PureFactContext, ResourceContext, ResourceContextValidityError,
-    ResourceFamily, Sort, SpecAlgebraicExpression, SpecExpression, SpecMemory,
-    SpecPredicateArgument, SpecProposition, SpecResource, SymbolicCExecution, Term, Theorem,
-    Variable, abstract_c_state_for_join, assume_universally_quantified_pure_implication, c_assign,
-    c_condition_fact_memories, c_contract_refinement_context, c_declare,
-    c_do_while_preservation_contexts, c_do_while_with_invariant_and_effect_checks, c_function,
+    CResourceSpec, CResourceTransferRole, CStatementOutcome, CTerminationRefusal,
+    CTerminationVerdicts, CUnsuitableCallback, CVerifiedLoopRule, CVerifiedPureTheorem,
+    ConditionTerm, ExecutionBudget, ExecutionPureFact, ExecutionState, MachineTerm, Pointer,
+    PointerBlock, PointerOffsetTerm, ProgramExpression, ProgramFunction, ProgramStatement,
+    ProgramType, ProgramValue, ProofObligation, Proposition, PropositionDerivation,
+    PureFactContext, ResourceContext, ResourceContextValidityError, ResourceFamily, Sort,
+    SpecAlgebraicExpression, SpecExpression, SpecMemory, SpecPredicateArgument, SpecProposition,
+    SpecResource, SymbolicCExecution, Term, Theorem, Variable, abstract_c_state_for_join,
+    assume_universally_quantified_pure_implication, c_assign, c_condition_fact_memories,
+    c_contract_refinement_context, c_declare, c_do_while_preservation_contexts,
+    c_do_while_with_invariant_and_effect_checks, c_function,
     c_function_contract_claims_from_completions, c_function_contract_entry_state,
     c_function_contract_refinement_arguments, c_function_contract_refinement_context,
     c_function_entry_state, c_function_termination_plan, c_if, c_loop_invariants_hold_at_entry,
@@ -50,10 +51,10 @@ use crate::persistent::PersistentMap;
 
 fn contract_expression_function_address(expression: &ContractExpression) -> Option<&str> {
     match expression {
-        ContractExpression::CFragment(CExpression::FunctionAddress(name)) => Some(name),
-        ContractExpression::CFragment(CExpression::AddressOf(expression)) => {
+        ContractExpression::CFragment(ProgramExpression::FunctionAddress(name)) => Some(name),
+        ContractExpression::CFragment(ProgramExpression::AddressOf(expression)) => {
             match expression.as_ref() {
-                CExpression::Variable(name) => Some(name),
+                ProgramExpression::Variable(name) => Some(name),
                 _ => None,
             }
         }
@@ -501,14 +502,15 @@ pub(crate) fn rust_iterator_method(
     accessor: &str,
 ) -> Result<ContractExpression, String> {
     use syntax::RustIteratorKind as K;
-    let variable = |suffix: &str| CExpression::Variable(format!("{}_{suffix}", iterator.local));
+    let variable =
+        |suffix: &str| ProgramExpression::Variable(format!("{}_{suffix}", iterator.local));
     let expression = match (iterator.kind, accessor) {
         (K::Slice | K::Enumerate, "len()") => variable("remaining"),
         // The remaining elements start `length - remaining` into the slice
         // the iterator was built from.
-        (K::Slice, "as_slice()") => CExpression::Add(
+        (K::Slice, "as_slice()") => ProgramExpression::Add(
             Box::new(variable("base")),
-            Box::new(CExpression::Subtract(
+            Box::new(ProgramExpression::Subtract(
                 Box::new(variable("length")),
                 Box::new(variable("remaining")),
             )),
@@ -518,7 +520,7 @@ pub(crate) fn rust_iterator_method(
         (K::RangeInclusive, "start()") => variable("start"),
         (K::RangeInclusive, "end()") => variable("end"),
         (K::Range, "len()") => {
-            CExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
+            ProgramExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
         }
         _ => {
             return Err(format!(
@@ -572,7 +574,7 @@ pub(crate) fn rust_iterator_spelling(
             .iter()
             .find_map(|accessor| {
                 (rust_iterator_method(iterator, accessor).ok()?
-                    == ContractExpression::CFragment(CExpression::Variable(name.to_string())))
+                    == ContractExpression::CFragment(ProgramExpression::Variable(name.to_string())))
                 .then(|| {
                     if current == Some(index) {
                         format!("iter.{accessor}")
@@ -602,7 +604,7 @@ pub(crate) fn loop_iterator_bindings(
     if let Some(local) = rust_library_iterator(&iterator) {
         return vec![(
             "iter".to_string(),
-            ContractExpression::CFragment(CExpression::Variable(local.to_string())),
+            ContractExpression::CFragment(ProgramExpression::Variable(local.to_string())),
         )];
     }
     rust_iterator_accessors(iterator.kind)
@@ -814,7 +816,7 @@ enum DeclarationIdentity {
     Resource(String),
     Theorem(String),
     Contract(String),
-    CFunction(String),
+    ProgramFunction(String),
     Tactic(String),
 }
 
@@ -827,7 +829,7 @@ impl std::fmt::Display for DeclarationIdentity {
             Self::Resource(name) => ("resource", name),
             Self::Theorem(name) => ("theorem", name),
             Self::Contract(name) => ("contract", name),
-            Self::CFunction(name) => ("C function", name),
+            Self::ProgramFunction(name) => ("C function", name),
             Self::Tactic(name) => ("tactic", name),
         };
         write!(f, "{kind} `{name}`")
@@ -1847,7 +1849,7 @@ pub struct FunctionParameter {
 pub(in crate::surface) struct FieldPlace {
     name: String,
     offset_bytes: u32,
-    value_type: CType,
+    value_type: ProgramType,
     pointee_constant: bool,
     /// For a pointer to a struct, that struct: a read through the loaded
     /// pointer names the struct's fields, `p->next->second`.
@@ -1885,9 +1887,9 @@ pub(in crate::surface) fn scalar_field_places(
             let offset_bytes = base + field.offset_bytes();
             if field.array_element_width().is_some() {
                 let element = match field.c_type() {
-                    C0Type::Int32Array(length) => Some((CType::Int32, 4, length)),
-                    C0Type::UInt32Array(length) => Some((CType::UInt32, 4, length)),
-                    C0Type::UInt8Array(length) => Some((CType::UInt8, 1, length)),
+                    C0Type::Int32Array(length) => Some((ProgramType::Int32, 4, length)),
+                    C0Type::UInt32Array(length) => Some((ProgramType::UInt32, 4, length)),
+                    C0Type::UInt8Array(length) => Some((ProgramType::UInt8, 1, length)),
                     _ => None,
                 };
                 if let Some((value_type, width, length)) = element
@@ -2454,13 +2456,13 @@ thread_local! {
 /// The specification `bool` literal `true` or `false`: a C `bool` value,
 /// exactly `1` or `0`.
 pub(crate) fn bool_literal(value: bool) -> ContractExpression {
-    ContractExpression::CFragment(CExpression::Value(CValue::bool_constant(value)))
+    ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::bool_constant(value)))
 }
 
 /// The value of a `bool` literal written as `true` or `false`.
 pub(crate) fn bool_literal_value(expression: &ContractExpression) -> Option<bool> {
     match expression {
-        ContractExpression::CFragment(CExpression::Value(CValue::Bool(value))) => {
+        ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Bool(value))) => {
             value.bool_constant_value()
         }
         _ => None,
@@ -2829,35 +2831,35 @@ impl ClickProposition {
 }
 
 pub(crate) fn collect_c_expression_variables(
-    expression: &CExpression,
+    expression: &ProgramExpression,
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        CExpression::Value(_)
-        | CExpression::FunctionAddress(_)
-        | CExpression::CallResult { .. } => {}
-        CExpression::Variable(name) => {
+        ProgramExpression::Value(_)
+        | ProgramExpression::FunctionAddress(_)
+        | ProgramExpression::CallResult { .. } => {}
+        ProgramExpression::Variable(name) => {
             names.insert(name.clone());
         }
-        CExpression::Cast { expression, .. } => {
+        ProgramExpression::Cast { expression, .. } => {
             collect_c_expression_variables(expression, names);
         }
-        CExpression::FloatNegate(expression)
-        | CExpression::FloatClassification { expression, .. }
-        | CExpression::EnumField {
+        ProgramExpression::FloatNegate(expression)
+        | ProgramExpression::FloatClassification { expression, .. }
+        | ProgramExpression::EnumField {
             value: expression, ..
         }
-        | CExpression::EnumIs {
+        | ProgramExpression::EnumIs {
             value: expression, ..
         } => {
             collect_c_expression_variables(expression, names);
         }
-        CExpression::EnumConstruct { fields, .. } => {
+        ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
                 collect_c_expression_variables(field, names);
             }
         }
-        CExpression::Conditional {
+        ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
@@ -2866,14 +2868,14 @@ pub(crate) fn collect_c_expression_variables(
             collect_c_expression_variables(then_branch, names);
             collect_c_expression_variables(else_branch, names);
         }
-        CExpression::AddressOf(inner)
-        | CExpression::CheckedObjectAddress(inner)
-        | CExpression::PointerOffsetBytes { pointer: inner, .. }
-        | CExpression::Subobject { pointer: inner, .. }
-        | CExpression::Not(inner)
-        | CExpression::BitwiseNot(inner)
-        | CExpression::Load(inner)
-        | CExpression::TypedLoad { pointer: inner, .. } => {
+        ProgramExpression::AddressOf(inner)
+        | ProgramExpression::CheckedObjectAddress(inner)
+        | ProgramExpression::PointerOffsetBytes { pointer: inner, .. }
+        | ProgramExpression::Subobject { pointer: inner, .. }
+        | ProgramExpression::Not(inner)
+        | ProgramExpression::BitwiseNot(inner)
+        | ProgramExpression::Load(inner)
+        | ProgramExpression::TypedLoad { pointer: inner, .. } => {
             collect_c_expression_variables(inner, names);
         }
         crate::kernel::binary_c_expression!(left, right) => {
@@ -3183,7 +3185,7 @@ pub enum SurfaceTerm {
     /// proof expansion while lowering its stable storage identity, not a local.
     QualifiedC {
         name: String,
-        lowered: CExpression,
+        lowered: ProgramExpression,
     },
     ResourceField(ResourceFieldAccess),
     /// A fully type-applied constructor of a specification-only algebraic
@@ -3228,14 +3230,14 @@ pub enum SurfaceTerm {
     /// it does not denote C pointer arithmetic or allocate C memory.
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
     /// A C expression fragment appearing inside Surface Click.
-    CFragment(CExpression),
+    CFragment(ProgramExpression),
     /// A C unary operation whose operand retains source and binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
     /// in that case `lowered` retains the cast metadata with a placeholder, and
     /// conversion back to a C fragment must rebuild from `operand` or refuse.
     CUnary {
         operand: Box<ContractExpression>,
-        lowered: CExpression,
+        lowered: ProgramExpression,
     },
     /// A source-level struct field place paired with its lowered C expression.
     ///
@@ -3247,7 +3249,7 @@ pub enum SurfaceTerm {
         pointee_struct: Option<String>,
         base: Box<ContractExpression>,
         field: String,
-        lowered: CExpression,
+        lowered: ProgramExpression,
         /// Byte offset of `field` from the address denoted by `base`.
         /// Keeping this separately lets lowering rebuild the field load when
         /// `base` is evaluated in a different snapshot from the field value.
@@ -3309,7 +3311,7 @@ pub enum SurfaceTerm {
         base: Box<ContractExpression>,
         indexes: Vec<ContractExpression>,
         dimensions: Vec<u32>,
-        lowered: CExpression,
+        lowered: ProgramExpression,
     },
     If {
         condition: Box<ClickProposition>,
@@ -3361,7 +3363,7 @@ pub(crate) use binary_contract_expression;
 struct ClickArrayRef {
     memory: CMemory,
     pointer: Pointer,
-    element_type: CType,
+    element_type: ProgramType,
 }
 
 type ClickArrayRefs = BTreeMap<String, ClickArrayRef>;
@@ -3370,12 +3372,12 @@ type ClickArrayRefs = BTreeMap<String, ClickArrayRef>;
 /// references, as `contract_environment_at_state` builds them.
 #[derive(Clone, Copy)]
 struct ContractEnvironment<'a> {
-    values: &'a BTreeMap<String, CValue>,
+    values: &'a BTreeMap<String, ProgramValue>,
     array_refs: &'a ClickArrayRefs,
 }
 
 impl<'a> ContractEnvironment<'a> {
-    fn new(values: &'a BTreeMap<String, CValue>, array_refs: &'a ClickArrayRefs) -> Self {
+    fn new(values: &'a BTreeMap<String, ProgramValue>, array_refs: &'a ClickArrayRefs) -> Self {
         Self { values, array_refs }
     }
 }
@@ -3391,7 +3393,7 @@ fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
-        AlgebraicValue::C(CValue::Parameter(term)) => match term.node {
+        AlgebraicValue::C(ProgramValue::Parameter(term)) => match term.node {
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
@@ -3403,7 +3405,7 @@ fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::
 }
 
 fn instance_holds_field_value(
-    state: &CState,
+    state: &ExecutionState,
     identity: crate::kernel::Variable,
     field_index: usize,
     variable: crate::kernel::Variable,
@@ -3431,8 +3433,8 @@ struct RecordedHistoryMark(Option<std::sync::Arc<RecordedSnapshotChange>>);
 /// Points one path recorded at a range of regions, with their call results.
 #[derive(Clone, Default)]
 struct RecordedRegionPoints {
-    snapshots: Vec<(SnapshotSelector, CState)>,
-    call_results: Vec<(usize, CValue)>,
+    snapshots: Vec<(SnapshotSelector, ExecutionState)>,
+    call_results: Vec<(usize, ProgramValue)>,
 }
 
 #[derive(Clone)]
@@ -3449,8 +3451,8 @@ struct RecordedSnapshots {
                     usize,
                     usize,
                     Option<crate::kernel::CResource>,
-                    crate::kernel::SharedCMemory,
-                    crate::kernel::SharedCMemory,
+                    crate::kernel::SharedMemory,
+                    crate::kernel::SharedMemory,
                 ),
                 crate::kernel::CResource,
             >,
@@ -3491,15 +3493,15 @@ struct RecordedSnapshots {
     /// of later pointer reads or assignments to the result local.
     allocation_results: crate::persistent::PersistentMap<crate::kernel::Pointer, CodeRegionRef>,
     /// Values produced at call exits, independent of destination locals.
-    call_results: crate::persistent::PersistentMap<usize, CValue>,
+    call_results: crate::persistent::PersistentMap<usize, ProgramValue>,
     /// The points inside a loop that left at several places, by the loop
     /// and its number of leaving paths: each path recorded the point at its
     /// own state, so after the loop the name has no one state.
     ambiguous_exit_points: crate::persistent::PersistentMap<SnapshotSelector, (usize, usize)>,
     call_result_points: crate::persistent::PersistentMap<(u64, usize), ()>,
-    read_event_results: crate::persistent::PersistentMap<(usize, usize), CValue>,
+    read_event_results: crate::persistent::PersistentMap<(usize, usize), ProgramValue>,
     read_event_counts: crate::persistent::PersistentMap<usize, usize>,
-    read_event_names: ReadEventNames<CValue>,
+    read_event_names: ReadEventNames<ProgramValue>,
     read_event_scalar_names: ReadEventNames<crate::kernel::MachineTerm>,
     read_event_pointer_names: ReadEventNames<crate::kernel::Pointer>,
     /// The call that produced each algebraic value a call returned, a Rust
@@ -3590,7 +3592,7 @@ impl Default for RecordedSnapshots {
 #[derive(Clone)]
 struct RecordedSnapshotNode {
     selector: SnapshotSelector,
-    state: Option<CState>,
+    state: Option<ExecutionState>,
     left: Option<std::sync::Arc<RecordedSnapshotNode>>,
     right: Option<std::sync::Arc<RecordedSnapshotNode>>,
     height: u8,
@@ -3687,7 +3689,7 @@ impl<'a> RecordedSnapshotRange<'a> {
 }
 
 impl<'a> Iterator for RecordedSnapshotRange<'a> {
-    type Item = (&'a SnapshotSelector, &'a CState);
+    type Item = (&'a SnapshotSelector, &'a ExecutionState);
 
     fn next(&mut self) -> Option<Self::Item> {
         while !self.stopped {
@@ -3845,7 +3847,7 @@ impl RecordedSnapshots {
         Self::default()
     }
 
-    fn get<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&CState> {
+    fn get<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
         if self.loop_labels.is_some() || key.is_source_path() {
             let selector = self.recorded_spelling(key.to_selector());
             return self.get_exact(&selector);
@@ -3985,7 +3987,7 @@ impl RecordedSnapshots {
     fn record_read_event_values<'a>(
         &mut self,
         index: usize,
-        values: impl Iterator<Item = &'a CValue>,
+        values: impl Iterator<Item = &'a ProgramValue>,
     ) {
         // Only this completed statement's output is visited, never prior facts.
         for event in 0..self.read_event_counts.get(&index).copied().unwrap_or(0) {
@@ -3995,10 +3997,10 @@ impl RecordedSnapshots {
                 self.read_event_results.remove(&key);
                 Self::remove_read_event_name(&mut self.read_event_names, &value, key);
                 match &value {
-                    CValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
+                    ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
                         Self::remove_read_event_name(&mut self.read_event_scalar_names, term, key);
                     }
-                    CValue::Pointer(pointer) => {
+                    ProgramValue::Pointer(pointer) => {
                         Self::remove_read_event_name(
                             &mut self.read_event_pointer_names,
                             pointer.pointer(),
@@ -4016,10 +4018,10 @@ impl RecordedSnapshots {
             self.read_event_results.insert(key, value.clone());
             Self::add_read_event_name(&mut self.read_event_names, value, key);
             match value {
-                CValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
+                ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
                     Self::add_read_event_name(&mut self.read_event_scalar_names, term, key);
                 }
-                CValue::Pointer(pointer) => {
+                ProgramValue::Pointer(pointer) => {
                     Self::add_read_event_name(
                         &mut self.read_event_pointer_names,
                         pointer.pointer(),
@@ -4037,7 +4039,7 @@ impl RecordedSnapshots {
         }
     }
 
-    fn read_event_values(&self, index: usize) -> impl Iterator<Item = &CValue> {
+    fn read_event_values(&self, index: usize) -> impl Iterator<Item = &ProgramValue> {
         (0..self.read_event_counts.get(&index).copied().unwrap_or(0)).map(move |event| {
             self.read_event_results
                 .get(&(index, event))
@@ -4045,7 +4047,7 @@ impl RecordedSnapshots {
         })
     }
 
-    fn read_event_naming_value(&self, value: &CValue) -> Option<CodeRegionRef> {
+    fn read_event_naming_value(&self, value: &ProgramValue) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let &(index, event) = self.read_event_names.get(value)?.last()?;
         Some(self.read_event_region(index, event))
@@ -4066,7 +4068,7 @@ impl RecordedSnapshots {
         Some(self.read_event_region(index, event))
     }
 
-    fn region_result_value(&self, region: &CodeRegionRef) -> Result<CValue, String> {
+    fn region_result_value(&self, region: &CodeRegionRef) -> Result<ProgramValue, String> {
         if let CodeRegionRef::Path(steps) = region
             && let Some((SourcePathStep::ReadEvent(event), parent)) = steps.split_last()
         {
@@ -4192,30 +4194,32 @@ impl RecordedSnapshots {
         }
     }
 
-    fn record_call_result(&mut self, index: usize, value: Option<CValue>) {
+    fn record_call_result(&mut self, index: usize, value: Option<ProgramValue>) {
         crate::instrumentation::record_deterministic_work(1);
         // A pointer-sized integer is named by its numeric value.
-        if let Some(CValue::Bool(term) | crate::kernel::integer_c_value!(term)) =
-            self.call_results.get(&index).map(CValue::numeric_value)
+        if let Some(ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term)) = self
+            .call_results
+            .get(&index)
+            .map(ProgramValue::numeric_value)
         {
             self.call_result_points
                 .remove(&(crate::kernel::held_term_fingerprint(term), index));
         }
-        if let Some(CValue::Parameter(term)) = self.call_results.get(&index)
+        if let Some(ProgramValue::Parameter(term)) = self.call_results.get(&index)
             && self.algebraic_call_results.get(term.as_ref()) == Some(&index)
         {
             self.algebraic_call_results.remove(term.as_ref());
         }
         self.call_results.remove(&index);
-        if let Some(value) = value.filter(|value| *value != CValue::Void) {
-            if let CValue::Bool(term) | crate::kernel::integer_c_value!(term) =
+        if let Some(value) = value.filter(|value| *value != ProgramValue::Void) {
+            if let ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) =
                 value.numeric_value()
             {
                 self.call_result_points
                     .insert((crate::kernel::held_term_fingerprint(term), index), ());
             }
             // The first call to produce an algebraic value names it.
-            if let CValue::Parameter(term) = &value
+            if let ProgramValue::Parameter(term) = &value
                 && self.algebraic_call_results.get(term.as_ref()).is_none()
             {
                 self.algebraic_call_results
@@ -4264,7 +4268,7 @@ impl RecordedSnapshots {
 
     /// Each recorded call's result with the source spelling that names it,
     /// `<call>.result`. Diagnostics only.
-    pub(in crate::surface) fn call_result_bindings(&self) -> Vec<(String, &CValue)> {
+    pub(in crate::surface) fn call_result_bindings(&self) -> Vec<(String, &ProgramValue)> {
         let Some(layout) = self.source_layout.as_ref() else {
             return Vec::new();
         };
@@ -4290,7 +4294,7 @@ impl RecordedSnapshots {
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.algebraic_call_results.get(term)?;
-        matches!(self.call_results.get(&index), Some(CValue::Parameter(held)) if held.as_ref() == term)
+        matches!(self.call_results.get(&index), Some(ProgramValue::Parameter(held)) if held.as_ref() == term)
             .then_some(CodeRegionRef::Region(index))
     }
 
@@ -4308,7 +4312,7 @@ impl RecordedSnapshots {
                 return None;
             }
             crate::instrumentation::record_deterministic_work(1);
-            if matches!(self.call_results.get(index).map(CValue::numeric_value), Some(CValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
+            if matches!(self.call_results.get(index).map(ProgramValue::numeric_value), Some(ProgramValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
             {
                 return Some(CodeRegionRef::Region(*index));
             }
@@ -4317,7 +4321,7 @@ impl RecordedSnapshots {
         }
     }
 
-    fn region_allocation(&self, region: &CodeRegionRef) -> Result<CValue, String> {
+    fn region_allocation(&self, region: &CodeRegionRef) -> Result<ProgramValue, String> {
         let (point, local) = self.region_result(region)?;
         let CodeRegionRef::Region(index) = &point.region else {
             unreachable!("resolved region")
@@ -4334,13 +4338,13 @@ impl RecordedSnapshots {
             .get(&SnapshotSelector::ProgramPoint(point))
             .ok_or("`.allocation` names an allocation this proof has not executed yet")?;
         let result_value = state.locals().get_native(&local);
-        let Some(CValue::Pointer(result)) = result_value.as_deref() else {
+        let Some(ProgramValue::Pointer(result)) = result_value.as_deref() else {
             return Err("allocation result was not recorded at its exit".to_string());
         };
         state
             .memory()
             .fresh_allocation_identity(result)
-            .map(CValue::Pointer)
+            .map(ProgramValue::Pointer)
             .ok_or_else(|| "region has no fresh allocation identity".to_string())
     }
 
@@ -4429,7 +4433,7 @@ impl RecordedSnapshots {
         }
     }
 
-    fn get_exact<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&CState> {
+    fn get_exact<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> Option<&ExecutionState> {
         let mut node = self.version.root.as_deref();
         while let Some(current) = node {
             match key.compare(&current.selector) {
@@ -4445,8 +4449,8 @@ impl RecordedSnapshots {
     /// as `memory`, with its state. One hash lookup; no snapshot is visited.
     fn point_reading_memory(
         &self,
-        memory: &crate::kernel::SharedCMemory,
-    ) -> Option<(&SnapshotSelector, &CState)> {
+        memory: &crate::kernel::SharedMemory,
+    ) -> Option<(&SnapshotSelector, &ExecutionState)> {
         let selector = self.memory_points.get(&memory.read_identity())?;
         Some((selector, self.get_exact(selector)?))
     }
@@ -4457,7 +4461,7 @@ impl RecordedSnapshots {
     fn point_naming_integer(
         &self,
         term: &crate::kernel::MachineTerm,
-    ) -> Option<(&SnapshotSelector, &str, &CState)> {
+    ) -> Option<(&SnapshotSelector, &str, &ExecutionState)> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, String::new());
         let mut found = self.value_points.get_key_value(&key);
@@ -4482,7 +4486,7 @@ impl RecordedSnapshots {
     /// `state`'s locals hold and the state inserted before it did not, at
     /// `selector`. A value keeps the first
     /// point that names it while that point's state still holds it.
-    fn record_value_points(&mut self, selector: &SnapshotSelector, state: &CState) {
+    fn record_value_points(&mut self, selector: &SnapshotSelector, state: &ExecutionState) {
         for (name, term) in state
             .locals()
             .changed_integer_holdings(self.last_locals.as_ref())
@@ -4559,8 +4563,8 @@ impl RecordedSnapshots {
     fn update_allocation_result(
         &mut self,
         selector: &SnapshotSelector,
-        prior: Option<&CState>,
-        next: Option<&CState>,
+        prior: Option<&ExecutionState>,
+        next: Option<&ExecutionState>,
     ) {
         let SnapshotSelector::ProgramPoint(ProgramPointRef {
             region: CodeRegionRef::Region(index),
@@ -4576,9 +4580,9 @@ impl RecordedSnapshots {
         else {
             return;
         };
-        let result = |state: &CState| {
+        let result = |state: &ExecutionState| {
             let native = state.locals().get_native(local)?;
-            let CValue::Pointer(value) = native.as_ref() else {
+            let ProgramValue::Pointer(value) = native.as_ref() else {
                 return None;
             };
             state
@@ -4614,8 +4618,8 @@ impl RecordedSnapshots {
     /// read. At most [`MEMORY_POINTS_NEAR`] are offered on each side.
     fn points_near_memory(
         &self,
-        memory: &crate::kernel::SharedCMemory,
-    ) -> impl Iterator<Item = (&SnapshotSelector, &CState)> {
+        memory: &crate::kernel::SharedMemory,
+    ) -> impl Iterator<Item = (&SnapshotSelector, &ExecutionState)> {
         let identity = memory.read_identity();
         let after = self
             .memory_points
@@ -4639,7 +4643,7 @@ impl RecordedSnapshots {
     fn points_holding_pointer_block<'a>(
         &'a self,
         block: &'a crate::kernel::PointerBlock,
-    ) -> impl Iterator<Item = (&'a SnapshotSelector, &'a CState)> {
+    ) -> impl Iterator<Item = (&'a SnapshotSelector, &'a ExecutionState)> {
         let mut key = (block.clone(), String::new());
         let mut found = self.pointer_points.get_key_value(&key);
         std::iter::from_fn(move || {
@@ -4668,7 +4672,7 @@ impl RecordedSnapshots {
     fn points_holding_cell_integer(
         &self,
         term: &crate::kernel::MachineTerm,
-    ) -> impl Iterator<Item = (&SnapshotSelector, &CState)> {
+    ) -> impl Iterator<Item = (&SnapshotSelector, &ExecutionState)> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, 0);
         let mut first = true;
@@ -4698,7 +4702,7 @@ impl RecordedSnapshots {
     fn point_holding_field_value(
         &self,
         variable: crate::kernel::Variable,
-    ) -> Option<(&SnapshotSelector, &CState)> {
+    ) -> Option<(&SnapshotSelector, &ExecutionState)> {
         let selector = self.field_points.get(&variable)?;
         let state = self.get_exact(selector)?;
         let origin = crate::kernel::model_fields::registered_model_field_origin(variable)?;
@@ -4710,7 +4714,11 @@ impl RecordedSnapshots {
         self.get(key).is_some()
     }
 
-    fn insert(&mut self, selector: impl Into<SnapshotSelector>, state: CState) -> Option<CState> {
+    fn insert(
+        &mut self,
+        selector: impl Into<SnapshotSelector>,
+        state: ExecutionState,
+    ) -> Option<ExecutionState> {
         let selector = self.recorded_spelling(selector.into());
         self.ambiguous_exit_points.remove(&selector);
         self.effect_offsets
@@ -4783,7 +4791,7 @@ impl RecordedSnapshots {
         None
     }
 
-    fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<CState> {
+    fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<ExecutionState> {
         let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), None);
@@ -4897,7 +4905,7 @@ impl RecordedSnapshots {
         Some(common)
     }
 
-    fn iter(&self) -> std::vec::IntoIter<(&SnapshotSelector, &CState)> {
+    fn iter(&self) -> std::vec::IntoIter<(&SnapshotSelector, &ExecutionState)> {
         let mut entries = Vec::new();
         recorded_snapshot_entries(self.version.root.as_deref(), &mut entries);
         entries.into_iter()
@@ -4924,7 +4932,7 @@ impl RecordedSnapshots {
     fn statement_entries_nearest(
         &self,
         anchor: usize,
-    ) -> impl Iterator<Item = (&ProgramPointRef, &CState)> {
+    ) -> impl Iterator<Item = (&ProgramPointRef, &ExecutionState)> {
         let selector = |index, kind| {
             SnapshotSelector::ProgramPoint(ProgramPointRef {
                 region: CodeRegionRef::Region(index),
@@ -4953,7 +4961,7 @@ impl RecordedSnapshots {
 
     /// Bounded, newest-first source points for diagnostic reconstruction.
     /// History can repeat a key; only its currently recorded state is returned.
-    fn recent(&self, limit: usize) -> Vec<(&SnapshotSelector, &CState)> {
+    fn recent(&self, limit: usize) -> Vec<(&SnapshotSelector, &ExecutionState)> {
         let mut result = Vec::new();
         let mut seen = BTreeSet::new();
         let mut change = self.version.history.as_ref();
@@ -4974,14 +4982,14 @@ impl RecordedSnapshots {
     /// The proof's marks, at most `limit` of them. `Mark` selectors sort
     /// after every program point, so they lead the newest-first walk and
     /// the walk stops at the first program point.
-    fn marks(&self, limit: usize) -> Vec<(&SnapshotSelector, &CState)> {
+    fn marks(&self, limit: usize) -> Vec<(&SnapshotSelector, &ExecutionState)> {
         self.iter_newest_first()
             .take_while(|(selector, _)| matches!(selector, SnapshotSelector::Mark(_)))
             .take(limit)
             .collect()
     }
 
-    fn retain(&mut self, mut keep: impl FnMut(&SnapshotSelector, &mut CState) -> bool) {
+    fn retain(&mut self, mut keep: impl FnMut(&SnapshotSelector, &mut ExecutionState) -> bool) {
         let mut retained = Self::new();
         retained.loop_labels = self.loop_labels.clone();
         retained.source_layout = self.source_layout.clone();
@@ -5066,7 +5074,7 @@ fn recorded_snapshot_height(node: Option<&std::sync::Arc<RecordedSnapshotNode>>)
 
 fn recorded_snapshot_node(
     selector: SnapshotSelector,
-    state: Option<CState>,
+    state: Option<ExecutionState>,
     left: Option<std::sync::Arc<RecordedSnapshotNode>>,
     right: Option<std::sync::Arc<RecordedSnapshotNode>>,
 ) -> std::sync::Arc<RecordedSnapshotNode> {
@@ -5085,7 +5093,7 @@ fn recorded_snapshot_node(
 
 fn recorded_snapshot_balance(
     selector: SnapshotSelector,
-    state: Option<CState>,
+    state: Option<ExecutionState>,
     mut left: Option<std::sync::Arc<RecordedSnapshotNode>>,
     mut right: Option<std::sync::Arc<RecordedSnapshotNode>>,
 ) -> std::sync::Arc<RecordedSnapshotNode> {
@@ -5167,7 +5175,7 @@ fn recorded_snapshot_balance(
 fn recorded_snapshot_insert(
     root: Option<&std::sync::Arc<RecordedSnapshotNode>>,
     selector: SnapshotSelector,
-    state: Option<CState>,
+    state: Option<ExecutionState>,
 ) -> std::sync::Arc<RecordedSnapshotNode> {
     let Some(root) = root else {
         return recorded_snapshot_node(selector, state, None, None);
@@ -5214,7 +5222,7 @@ impl<'a> RecordedSnapshotsNewestFirst<'a> {
 }
 
 impl<'a> Iterator for RecordedSnapshotsNewestFirst<'a> {
-    type Item = (&'a SnapshotSelector, &'a CState);
+    type Item = (&'a SnapshotSelector, &'a ExecutionState);
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(node) = self.pending.pop() {
@@ -5229,7 +5237,7 @@ impl<'a> Iterator for RecordedSnapshotsNewestFirst<'a> {
 
 fn recorded_snapshot_entries<'a>(
     node: Option<&'a RecordedSnapshotNode>,
-    entries: &mut Vec<(&'a SnapshotSelector, &'a CState)>,
+    entries: &mut Vec<(&'a SnapshotSelector, &'a ExecutionState)>,
 ) {
     let Some(node) = node else {
         return;
@@ -5245,7 +5253,7 @@ fn recorded_snapshot_entries<'a>(
 struct SpecArrayRef {
     memory: SpecMemory,
     pointer: SpecExpression,
-    element_type: CType,
+    element_type: ProgramType,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -5271,7 +5279,7 @@ struct SpecElaborationContext {
     /// The recorded state a proof snapshot names, when the context is one:
     /// a resource count there is that state's population, which the spec
     /// form cannot name and the elaboration evaluates.
-    snapshot_state: Option<CState>,
+    snapshot_state: Option<ExecutionState>,
     /// Bare `result` names the internal contract-return binding here;
     /// explicit C bindings keep their source identifier and value.
     contract_result_in_scope: bool,
@@ -5331,7 +5339,7 @@ impl SpecElaborationContext {
 
     fn old_state(
         &self,
-        entry_values: &BTreeMap<String, CValue>,
+        entry_values: &BTreeMap<String, ProgramValue>,
         entry_memory: &CMemory,
     ) -> Result<Self, String> {
         if self.function_contract {
@@ -5388,9 +5396,9 @@ impl SpecElaborationContext {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ContractSegment {
     state: ContractSegmentState,
-    base: CExpression,
-    start: CExpression,
-    end: CExpression,
+    base: ProgramExpression,
+    start: ProgramExpression,
+    end: ProgramExpression,
     surface: ContractSegmentSurface,
     /// `uninitialized(p[a..b])`: the callee holds these bytes but makes no
     /// claim that they are initialized. The callee's proof starts with them
@@ -5414,12 +5422,12 @@ enum ContractSegmentSurface {
     Field {
         /// How the contract spelled the struct the field belongs to, when the
         /// parse had it. A base reached through a link reads as `old->left`
-        /// there, which is what the user wrote; the lowered `CExpression` for
+        /// there, which is what the user wrote; the lowered `ProgramExpression` for
         /// the same place reads as `load_int32_pointer(old)`, which is not.
         base: Option<Box<ContractExpression>>,
         name: String,
         element_width: Option<u32>,
-        element_type: Option<CType>,
+        element_type: Option<ProgramType>,
         /// A scalar field's slot runs to the next field, so its trailing
         /// bytes are padding: the value is this many bytes at its start.
         value_bytes: Option<u32>,
@@ -5499,7 +5507,7 @@ impl ContractSegment {
         }
     }
 
-    pub(crate) fn field_element_type(&self) -> Option<CType> {
+    pub(crate) fn field_element_type(&self) -> Option<ProgramType> {
         match &self.surface {
             ContractSegmentSurface::Field { element_type, .. } => *element_type,
             ContractSegmentSurface::Range { .. }
@@ -5553,7 +5561,7 @@ pub enum SourceProof {
 #[doc(hidden)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedStatementTransition {
-    pub(crate) call_result: Option<CValue>,
+    pub(crate) call_result: Option<ProgramValue>,
     /// The call's by-value aggregate parameters as it bound them, recorded
     /// as the call region's parameter point (`R.parameter(name)`).
     pub(crate) call_parameters: Option<crate::kernel::CallParameters>,
@@ -6698,7 +6706,7 @@ impl ProofMatch {
     /// The C local an execution-generated `match` splits on.
     pub(in crate::surface) fn scrutinee_name(&self) -> &str {
         match &self.scrutinee {
-            ContractExpression::CFragment(CExpression::Variable(name)) => name,
+            ContractExpression::CFragment(ProgramExpression::Variable(name)) => name,
             _ => "",
         }
     }
@@ -7420,17 +7428,17 @@ pub enum SmartTactic {
 /// recorded at named snapshots.
 #[derive(Clone, Copy)]
 pub(in crate::surface) struct FixedStateFrame<'a> {
-    pub(in crate::surface) pre_state: &'a CState,
-    pub(in crate::surface) state: &'a CState,
-    pub(in crate::surface) result: Option<&'a CValue>,
+    pub(in crate::surface) pre_state: &'a ExecutionState,
+    pub(in crate::surface) state: &'a ExecutionState,
+    pub(in crate::surface) result: Option<&'a ProgramValue>,
     pub(in crate::surface) recorded_snapshots: &'a RecordedSnapshots,
 }
 
 impl<'a> FixedStateFrame<'a> {
     pub(in crate::surface) fn new(
-        pre_state: &'a CState,
-        state: &'a CState,
-        result: Option<&'a CValue>,
+        pre_state: &'a ExecutionState,
+        state: &'a ExecutionState,
+        result: Option<&'a ProgramValue>,
         recorded_snapshots: &'a RecordedSnapshots,
     ) -> Self {
         Self {
@@ -7447,7 +7455,7 @@ impl<'a> FixedStateFrame<'a> {
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ParameterBinding<'a> {
     pub(crate) parameters: &'a [syntax::C0Parameter],
-    pub(crate) arguments: &'a [CExpression],
+    pub(crate) arguments: &'a [ProgramExpression],
     /// Each parameter's position by name, when the caller built one: a
     /// lowering that reads a few parameters then looks up only those
     /// instead of building a map over every parameter.
@@ -7459,7 +7467,10 @@ pub(crate) struct ParameterBinding<'a> {
 }
 
 impl<'a> ParameterBinding<'a> {
-    pub(crate) fn new(parameters: &'a [syntax::C0Parameter], arguments: &'a [CExpression]) -> Self {
+    pub(crate) fn new(
+        parameters: &'a [syntax::C0Parameter],
+        arguments: &'a [ProgramExpression],
+    ) -> Self {
         Self {
             parameters,
             arguments,
@@ -7493,12 +7504,12 @@ impl<'a> ParameterBinding<'a> {
 /// shared by every diagnostic the proof captures.
 pub(crate) struct ParameterNaming {
     pub(crate) parameters: std::sync::Arc<[syntax::C0Parameter]>,
-    pub(crate) arguments: std::sync::Arc<[CExpression]>,
+    pub(crate) arguments: std::sync::Arc<[ProgramExpression]>,
     pointer_sources: BTreeMap<Pointer, usize>,
 }
 
 impl ParameterNaming {
-    pub(crate) fn new(parameters: &[syntax::C0Parameter], arguments: &[CExpression]) -> Self {
+    pub(crate) fn new(parameters: &[syntax::C0Parameter], arguments: &[ProgramExpression]) -> Self {
         crate::instrumentation::record_deterministic_work(parameters.len() + arguments.len());
         Self {
             parameters: parameters.into(),
@@ -7506,7 +7517,7 @@ impl ParameterNaming {
             pointer_sources: arguments.iter().enumerate().fold(
                 BTreeMap::new(),
                 |mut sources, (index, argument)| {
-                    if let CExpression::Value(CValue::Pointer(pointer)) = argument {
+                    if let ProgramExpression::Value(ProgramValue::Pointer(pointer)) = argument {
                         sources.entry(pointer.pointer().clone()).or_insert(index);
                     }
                     sources
@@ -7518,7 +7529,7 @@ impl ParameterNaming {
     pub(crate) fn pointer_source(
         &self,
         pointer: &Pointer,
-    ) -> Option<(&syntax::C0Parameter, &CExpression)> {
+    ) -> Option<(&syntax::C0Parameter, &ProgramExpression)> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_sources.get(pointer)?;
         Some((self.parameters.get(index)?, self.arguments.get(index)?))
@@ -7577,7 +7588,7 @@ impl<'a> SpecDefinitions<'a> {
         self
     }
 
-    fn pointer_element_width(&self, pointer: &crate::kernel::CPointerValue) -> Result<u32, String> {
+    fn pointer_element_width(&self, pointer: &crate::kernel::PointerValue) -> Result<u32, String> {
         if let Some(crate::kernel::effective_type::CAccessClass::Struct(class)) =
             pointer.object_class()
         {
@@ -7590,7 +7601,7 @@ impl<'a> SpecDefinitions<'a> {
         pointer
             .c_type()
             .pointee_type()
-            .map(CType::byte_width)
+            .map(ProgramType::byte_width)
             .ok_or_else(|| "expected a sized pointer element".to_string())
     }
 }
@@ -7707,7 +7718,7 @@ fn field_projection(definition: &ClickFunctionDefinition) -> Option<crate::kerne
     let names = |expression: &ContractExpression| match expression {
         ContractExpression::Binding(name)
         | ContractExpression::AlgebraicVariable { name, .. }
-        | ContractExpression::CFragment(CExpression::Variable(name)) => Some(name.clone()),
+        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => Some(name.clone()),
         _ => None,
     };
     let ContractExpression::AlgebraicMatch { scrutinee, arms } = definition.body()? else {
@@ -7858,31 +7869,33 @@ fn contract_expression_reads_memory(
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
-        | ContractExpression::CFragment(CExpression::Variable(_) | CExpression::Value(_)) => false,
+        | ContractExpression::CFragment(
+            ProgramExpression::Variable(_) | ProgramExpression::Value(_),
+        ) => false,
         // `address(p)` of a name is that pointer value's integer
         // representation: it reads nothing its operand does not.
         ContractExpression::CUnary {
             operand,
             lowered:
-                CExpression::Cast {
+                ProgramExpression::Cast {
                     expression,
-                    target_type: CType::UInt64,
+                    target_type: ProgramType::UInt64,
                     ..
                 },
         } if matches!(
             expression.as_ref(),
-            CExpression::Variable(_) | CExpression::Value(_)
+            ProgramExpression::Variable(_) | ProgramExpression::Value(_)
         ) =>
         {
             contract_expression_reads_memory(operand, callees)
         }
-        ContractExpression::CFragment(CExpression::Cast {
+        ContractExpression::CFragment(ProgramExpression::Cast {
             expression,
-            target_type: CType::UInt64,
+            target_type: ProgramType::UInt64,
             ..
         }) if matches!(
             expression.as_ref(),
-            CExpression::Variable(_) | CExpression::Value(_)
+            ProgramExpression::Variable(_) | ProgramExpression::Value(_)
         ) =>
         {
             false
@@ -8495,7 +8508,7 @@ pub(in crate::surface) struct UnresolvedRequirement {
     /// For the truthiness obligation an `assert` leaves on its false path
     /// (`0 == 1`, which holds only where that path is unreachable), the
     /// asserted condition: what a proof at the step's pre-state shows.
-    pub(in crate::surface) assertion_condition: Option<crate::kernel::CExpression>,
+    pub(in crate::surface) assertion_condition: Option<crate::kernel::ProgramExpression>,
     /// The Surface spelling the tactic that owes this requirement gave it
     /// where it created it, such as a `fold` body fact with the resource's
     /// arguments substituted. Proofs state the requirement this way.
@@ -8641,7 +8654,7 @@ impl ClickFile {
 
     fn function_is_selected(&self, name: &str) -> bool {
         self.entry_module.as_ref().is_none_or(|entry| {
-            self.declaration_owner(&DeclarationIdentity::CFunction(name.to_string()))
+            self.declaration_owner(&DeclarationIdentity::ProgramFunction(name.to_string()))
                 .or_else(|| self.declaration_owner(&DeclarationIdentity::Tactic(name.to_string())))
                 == Some(entry.as_str())
         })
@@ -9008,14 +9021,16 @@ impl ContractDefinition {
                 )
             })
             .collect::<Vec<_>>();
-        C0Type::FunctionPointer(crate::kernel::CType::qualified_function_pointer_signature(
-            self.function_block
-                .signature()
-                .return_type()
-                .to_kernel_type(),
-            self.function_block.signature().return_pointee_is_constant(),
-            &parameter_types,
-        ))
+        C0Type::FunctionPointer(
+            crate::kernel::ProgramType::qualified_function_pointer_signature(
+                self.function_block
+                    .signature()
+                    .return_type()
+                    .to_kernel_type(),
+                self.function_block.signature().return_pointee_is_constant(),
+                &parameter_types,
+            ),
+        )
     }
 }
 
@@ -9563,7 +9578,7 @@ impl FunctionSignature {
             use crate::kernel::AlgebraicValueType as V;
             match ty {
                 V::Parameter(_) => true,
-                V::C(crate::kernel::CType::Parameter(name)) => abstract_type(*name),
+                V::C(crate::kernel::ProgramType::Parameter(name)) => abstract_type(*name),
                 V::Algebraic { arguments, .. } => arguments.iter().any(abstract_value_type),
                 _ => false,
             }
@@ -9692,7 +9707,7 @@ fn parameter_is_click_array_ref(parameter: &FunctionParameter) -> bool {
         .is_some_and(|c_type| click_array_element_type(c_type).is_some())
 }
 
-fn click_array_element_type(c_type: C0Type) -> Option<CType> {
+fn click_array_element_type(c_type: C0Type) -> Option<ProgramType> {
     c_type.pointee_type().map(C0Type::to_kernel_type)
 }
 
@@ -11054,7 +11069,7 @@ impl ClickError {
     /// truthiness requirement; see [`UnresolvedRequirement::assertion_condition`].
     pub(in crate::surface) fn with_assertion_condition(
         mut self,
-        condition: Option<&crate::kernel::CExpression>,
+        condition: Option<&crate::kernel::ProgramExpression>,
     ) -> Self {
         if let (Some(condition), Some(requirement)) =
             (condition, self.unresolved_requirement.as_mut())

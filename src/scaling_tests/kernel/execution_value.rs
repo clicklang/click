@@ -5,7 +5,7 @@ fn retained_execution_handoffs_do_not_walk_the_value_dag() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let leaf = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(998241));
+        let leaf = KernelTerm::variable(KernelType::C(ProgramType::UInt32), Variable(998241));
         let mut root = leaf.clone();
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
@@ -23,7 +23,7 @@ fn retained_execution_handoffs_do_not_walk_the_value_dag() {
             let CExpressionOutcome::Value(value) = outcome else {
                 unreachable!()
             };
-            assert_eq!(value.c_type(), CType::UInt32);
+            assert_eq!(value.c_type(), ProgramType::UInt32);
             let (_, MachineOperandView::Shared(selected)) = value.machine().unwrap() else {
                 panic!("shared operand")
             };

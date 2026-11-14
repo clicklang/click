@@ -667,7 +667,7 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     preservation: &crate::kernel::CLoopPreservationContext,
     pure_facts: &PureFactList,
     enclosing_snapshots: &RecordedSnapshots,
-    body: &CStatement,
+    body: &ProgramStatement,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<AutomaticLoopBody, ClickError> {
     let claim_label = environment.frontier_loop_source.claim_label.clone();
@@ -849,7 +849,7 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
         };
         let (source_statement, _) =
             split_next_source_operation(remaining).map_err(ClickError::new)?;
-        let CStatement::If { condition, .. } = source_statement else {
+        let ProgramStatement::If { condition, .. } = source_statement else {
             return Err(proof.step_error("source branch does not match the lowered statement"));
         };
         let condition = surface_c_condition(&condition, view.state)?;
@@ -912,8 +912,8 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     invariant_checks: &[CLoopInvariantCheck],
     ranking_measures: &[crate::kernel::CRankingComponent],
     structural_measure: Option<&str>,
-    condition: &CExpression,
-    body: &CStatement,
+    condition: &ProgramExpression,
+    body: &ProgramStatement,
     do_while: bool,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<LoopPreservationProofResult, ClickError> {
@@ -1722,7 +1722,7 @@ impl SeenLoopExits {
     /// the caller is about to push it to when it is new.
     fn is_new<T: PartialEq>(
         &mut self,
-        state: &CState,
+        state: &ExecutionState,
         facts: &[Proposition],
         recorded: &[T],
         exit: &T,

@@ -115,15 +115,17 @@ enum Hint {
 }
 
 impl Hint {
-    fn of_type(c_type: crate::kernel::CType) -> Option<Self> {
-        use crate::kernel::CType;
+    fn of_type(c_type: crate::kernel::ProgramType) -> Option<Self> {
+        use crate::kernel::ProgramType;
         Some(match c_type {
-            CType::Int32 => Self::Signed32,
-            CType::UInt32 => Self::Unsigned32,
-            CType::Int8 | CType::Int16 => Self::Narrow { signed: true },
-            CType::Bool | CType::UInt8 | CType::UInt16 => Self::Narrow { signed: false },
-            CType::Int64 => Self::Int64,
-            CType::UInt64 => Self::UInt64,
+            ProgramType::Int32 => Self::Signed32,
+            ProgramType::UInt32 => Self::Unsigned32,
+            ProgramType::Int8 | ProgramType::Int16 => Self::Narrow { signed: true },
+            ProgramType::Bool | ProgramType::UInt8 | ProgramType::UInt16 => {
+                Self::Narrow { signed: false }
+            }
+            ProgramType::Int64 => Self::Int64,
+            ProgramType::UInt64 => Self::UInt64,
             _ => return None,
         })
     }
@@ -230,7 +232,10 @@ pub(super) fn source_resource(resource: &CResource, labels: &mut SnapshotLabels)
 }
 
 /// The total source spelling of one C value.
-pub(super) fn source_value(value: &crate::kernel::CValue, labels: &mut SnapshotLabels) -> String {
+pub(super) fn source_value(
+    value: &crate::kernel::ProgramValue,
+    labels: &mut SnapshotLabels,
+) -> String {
     bounded(
         printer(labels, Mode::Source)
             .cvalue(value, 0)
@@ -414,7 +419,7 @@ impl Printer<'_> {
         for (index, binding) in bindings.iter().enumerate() {
             let variable = match binding {
                 V::C(value) => match value.numeric_value() {
-                    crate::kernel::CValue::Parameter(term) => match term.node {
+                    crate::kernel::ProgramValue::Parameter(term) => match term.node {
                         AlgebraicTermNode::Variable(variable) => Some(variable),
                         _ => None,
                     },
@@ -517,12 +522,13 @@ impl Printer<'_> {
                 while let Some(argument) = arguments.next() {
                     let spelled = match argument {
                         // The logical resource-state argument is implicit.
-                        Term::CState(_) => continue,
+                        Term::ExecutionState(_) => continue,
                         // Each array argument is a (memory, pointer) pair.
                         // Its snapshot is part of the argument's identity.
                         Term::CMemory(memory) => {
-                            let pointer @ Term::CValue(crate::kernel::CValue::Pointer(_)) =
-                                arguments.next()?
+                            let pointer @ Term::ProgramValue(crate::kernel::ProgramValue::Pointer(
+                                _,
+                            )) = arguments.next()?
                             else {
                                 return None;
                             };
@@ -753,9 +759,14 @@ impl Printer<'_> {
                 return Some(negate(name, polarity));
             }
             ConditionTerm::PointerValueEqual(left, right) => {
-                let left = self.cvalue(&crate::kernel::CValue::Pointer((**left).clone()), depth)?;
-                let right =
-                    self.cvalue(&crate::kernel::CValue::Pointer((**right).clone()), depth)?;
+                let left = self.cvalue(
+                    &crate::kernel::ProgramValue::Pointer((**left).clone()),
+                    depth,
+                )?;
+                let right = self.cvalue(
+                    &crate::kernel::ProgramValue::Pointer((**right).clone()),
+                    depth,
+                )?;
                 return Some(atom(format!(
                     "{} {} {}",
                     operand(left, SHIFT),
@@ -988,8 +999,8 @@ impl Printer<'_> {
                         return None;
                     };
                     match self.labels.source_types.get(variable) {
-                        Some(crate::kernel::CType::Int32) => Some(true),
-                        Some(crate::kernel::CType::UInt32) => Some(false),
+                        Some(crate::kernel::ProgramType::Int32) => Some(true),
+                        Some(crate::kernel::ProgramType::UInt32) => Some(false),
                         _ => None,
                     }
                 })
@@ -1322,13 +1333,13 @@ impl Printer<'_> {
             Term::Bitvector32(value) => self.bitvector(value, None, depth + 1),
             Term::Integer(value) => self.integer(value, depth + 1),
             Term::Condition(ConditionTerm::Constant(value)) => Some(atom(value.to_string())),
-            Term::CValue(value) => self.cvalue(value, depth + 1),
+            Term::ProgramValue(value) => self.cvalue(value, depth + 1),
             Term::Algebraic(value) => self.algebraic(value, depth + 1),
             _ if !self.source_mode() => None,
             Term::Condition(condition) => self.condition(condition, true, depth + 1),
             Term::PointerOffset(offset) => Some(atom(self.offset(offset, depth + 1))),
             Term::CMemory(memory) => Some(atom(self.state_phrase(memory))),
-            Term::CState(state) => Some(atom(self.state_phrase(state.memory()))),
+            Term::ExecutionState(state) => Some(atom(self.state_phrase(state.memory()))),
             Term::CExpressionOutcome(_)
             | Term::CStatementOutcome(_)
             | Term::CFunctionOutcome(_) => Some(atom("<an execution outcome>")),
@@ -1801,7 +1812,9 @@ impl Printer<'_> {
                 .zip(&naming.1)
                 .filter(|(name, _)| name.name().len() <= 256)
                 .filter(|(_, value)| match value {
-                    crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(base)) => base
+                    crate::kernel::ProgramExpression::Value(
+                        crate::kernel::ProgramValue::Pointer(base),
+                    ) => base
                         .c_type()
                         .pointee_type()
                         .and_then(crate::kernel::LoadKind::of_type)
@@ -2123,7 +2136,9 @@ impl Printer<'_> {
             .iter()
             .zip(&tables.1)
             .find_map(|(parameter, value)| {
-                let crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(base)) = value
+                let crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
+                    base,
+                )) = value
                 else {
                     return None;
                 };
@@ -2152,9 +2167,9 @@ impl Printer<'_> {
             .iter()
             .zip(&tables.1)
             .find_map(|(parameter, value)| match value {
-                crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(_))
-                    if parameter.name() == name =>
-                {
+                crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
+                    _,
+                )) if parameter.name() == name => {
                     Some(crate::surface::diagnostics::diagnostic_parameter_element_width(parameter))
                 }
                 _ => None,
@@ -2174,10 +2189,11 @@ impl Printer<'_> {
             .iter()
             .zip(&tables.1)
             .find_map(|(parameter, value)| match value {
-                crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(base))
-                    if base.pointer().block == pointer.block
-                        && base.pointer().offset == **base_offset
-                        && parameter.name().len() <= 256 =>
+                crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
+                    base,
+                )) if base.pointer().block == pointer.block
+                    && base.pointer().offset == **base_offset
+                    && parameter.name().len() <= 256 =>
                 {
                     Some(parameter.name().to_string())
                 }
@@ -2210,9 +2226,9 @@ impl Printer<'_> {
             .iter()
             .zip(&tables.1)
             .find_map(|(parameter, value)| match value {
-                crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(pointer))
-                    if pointer.pointer() == base =>
-                {
+                crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
+                    pointer,
+                )) if pointer.pointer() == base => {
                     Some(crate::surface::diagnostics::diagnostic_parameter_element_width(parameter))
                 }
                 _ => None,
@@ -2386,30 +2402,30 @@ impl Printer<'_> {
         }
     }
 
-    fn cvalue(&mut self, value: &crate::kernel::CValue, depth: usize) -> Option<Spelled> {
+    fn cvalue(&mut self, value: &crate::kernel::ProgramValue, depth: usize) -> Option<Spelled> {
         if let Err(elided) = self.enter(depth) {
             return elided;
         }
         let depth = depth + 1;
-        use crate::kernel::CValue;
+        use crate::kernel::ProgramValue;
         if !self.source_mode() {
             return match value {
-                CValue::Bool(value) if value.bool_constant_value() == Some(false) => {
+                ProgramValue::Bool(value) if value.bool_constant_value() == Some(false) => {
                     Some(atom("false"))
                 }
-                CValue::Bool(value) if value.bool_constant_value() == Some(true) => {
+                ProgramValue::Bool(value) if value.bool_constant_value() == Some(true) => {
                     Some(atom("true"))
                 }
-                CValue::Bool(value) | CValue::Int64(value) | CValue::UInt64(value) => {
-                    self.bitvector(value, None, depth)
-                }
-                CValue::Int32(value) => self
+                ProgramValue::Bool(value)
+                | ProgramValue::Int64(value)
+                | ProgramValue::UInt64(value) => self.bitvector(value, None, depth),
+                ProgramValue::Int32(value) => self
                     .exact_operand(value, Some(true), depth)
                     .map(|text| spelled(text, SHIFT)),
-                CValue::UInt32(value) => self
+                ProgramValue::UInt32(value) => self
                     .exact_operand(value, Some(false), depth)
                     .map(|text| spelled(text, SHIFT)),
-                CValue::Pointer(pointer) => {
+                ProgramValue::Pointer(pointer) => {
                     let naming = self.labels.naming.clone()?;
                     self.exact_pointer_value(pointer, &naming).map(atom)
                 }
@@ -2426,40 +2442,48 @@ impl Printer<'_> {
             })
         };
         match value.numeric_value() {
-            CValue::PointerInteger(_) => unreachable!("numeric projection"),
-            CValue::Parameter(term) => self.algebraic(term, depth),
-            CValue::Void => Some(atom("void")),
-            CValue::Bool(value) if value.bool_constant_value() == Some(false) => {
+            ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+            ProgramValue::Parameter(term) => self.algebraic(term, depth),
+            ProgramValue::Void => Some(atom("void")),
+            ProgramValue::Bool(value) if value.bool_constant_value() == Some(false) => {
                 Some(atom("false"))
             }
-            CValue::Bool(value) if value.bool_constant_value() == Some(true) => Some(atom("true")),
-            CValue::Bool(value) => {
+            ProgramValue::Bool(value) if value.bool_constant_value() == Some(true) => {
+                Some(atom("true"))
+            }
+            ProgramValue::Bool(value) => {
                 self.bitvector(value, Some(Hint::Narrow { signed: false }), depth)
             }
-            CValue::Int8(value) => typed(self, value, Hint::Narrow { signed: true }, "i8"),
-            CValue::Int16(value) => typed(self, value, Hint::Narrow { signed: true }, "i16"),
-            CValue::UInt8(value) => typed(self, value, Hint::Narrow { signed: false }, "u8"),
-            CValue::UInt16(value) => typed(self, value, Hint::Narrow { signed: false }, "u16"),
-            CValue::Int32(value) => typed(self, value, Hint::Signed32, ""),
-            CValue::UInt32(value) => typed(self, value, Hint::Unsigned32, ""),
-            CValue::Int64(value) => typed(self, value, Hint::Int64, ""),
-            CValue::UInt64(value) => typed(self, value, Hint::UInt64, ""),
-            CValue::Int128(value) | CValue::UInt128(value) => self.bitvector(value, None, depth),
-            CValue::Float32(bits32_constant!(bits)) => Some(atom(format!(
+            ProgramValue::Int8(value) => typed(self, value, Hint::Narrow { signed: true }, "i8"),
+            ProgramValue::Int16(value) => typed(self, value, Hint::Narrow { signed: true }, "i16"),
+            ProgramValue::UInt8(value) => typed(self, value, Hint::Narrow { signed: false }, "u8"),
+            ProgramValue::UInt16(value) => {
+                typed(self, value, Hint::Narrow { signed: false }, "u16")
+            }
+            ProgramValue::Int32(value) => typed(self, value, Hint::Signed32, ""),
+            ProgramValue::UInt32(value) => typed(self, value, Hint::Unsigned32, ""),
+            ProgramValue::Int64(value) => typed(self, value, Hint::Int64, ""),
+            ProgramValue::UInt64(value) => typed(self, value, Hint::UInt64, ""),
+            ProgramValue::Int128(value) | ProgramValue::UInt128(value) => {
+                self.bitvector(value, None, depth)
+            }
+            ProgramValue::Float32(bits32_constant!(bits)) => Some(atom(format!(
                 "{:?}f32",
                 f32::from_bits(constant_u32(*bits))
             ))),
-            CValue::Float64(uint64_constant!(bits)) => {
+            ProgramValue::Float64(uint64_constant!(bits)) => {
                 Some(atom(format!("{:?}", f64::from_bits(constant_u64(*bits)))))
             }
-            CValue::Float32(value) | CValue::Float64(value) => self.bitvector(value, None, depth),
-            CValue::Pointer(pointer) => self.pointer(pointer.pointer(), depth),
+            ProgramValue::Float32(value) | ProgramValue::Float64(value) => {
+                self.bitvector(value, None, depth)
+            }
+            ProgramValue::Pointer(pointer) => self.pointer(pointer.pointer(), depth),
         }
     }
 
     fn exact_pointer_value(
         &self,
-        pointer: &crate::kernel::CPointerValue,
+        pointer: &crate::kernel::PointerValue,
         naming: &NamingTables,
     ) -> Option<String> {
         if self.mode == Mode::ExactIdentity
@@ -2472,10 +2496,11 @@ impl Printer<'_> {
             .iter()
             .zip(&naming.1)
             .find_map(|(name, value)| match value {
-                crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(base))
-                    if base == pointer
-                        && base.c_type() == pointer.c_type()
-                        && name.name().len() <= 256 =>
+                crate::kernel::ProgramExpression::Value(crate::kernel::ProgramValue::Pointer(
+                    base,
+                )) if base == pointer
+                    && base.c_type() == pointer.c_type()
+                    && name.name().len() <= 256 =>
                 {
                     Some(name.name().to_owned())
                 }
@@ -2498,7 +2523,7 @@ impl Printer<'_> {
             PureFunctionArgument::Algebraic(value) => self.algebraic(value, depth + 1),
             PureFunctionArgument::ArrayRef {
                 memory,
-                pointer: crate::kernel::CValue::Pointer(pointer),
+                pointer: crate::kernel::ProgramValue::Pointer(pointer),
                 element_type,
             } => {
                 if !self.source_mode() {
@@ -2906,7 +2931,9 @@ fn typed_literal(text: String, suffix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{CPointerValue, CType, CValue, LoadKind, PointerBlock, SharedCMemory};
+    use crate::kernel::{
+        LoadKind, PointerBlock, PointerValue, ProgramType, ProgramValue, SharedMemory,
+    };
 
     fn equality(value: MachineTerm) -> Proposition {
         Proposition::ConditionIs(
@@ -2935,8 +2962,12 @@ mod tests {
             ),
         ];
         let arguments = [
-            crate::kernel::CExpression::Value(CValue::Float64(MachineTerm::Variable(Variable(7)))),
-            crate::kernel::CExpression::Value(CValue::Float32(MachineTerm::Variable(Variable(8)))),
+            crate::kernel::ProgramExpression::Value(ProgramValue::Float64(MachineTerm::Variable(
+                Variable(7),
+            ))),
+            crate::kernel::ProgramExpression::Value(ProgramValue::Float32(MachineTerm::Variable(
+                Variable(8),
+            ))),
         ];
         let mut labels = SnapshotLabels::naming(ParameterBinding::new(&parameters, &arguments));
         for (value, expected) in [
@@ -2987,7 +3018,7 @@ mod tests {
         labels.source_name(Variable(7), "r".into());
         let application = crate::kernel::SharedPureApplication::intern(
             "size".into(),
-            vec![PureFunctionArgument::Value(CValue::Int32(
+            vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 MachineTerm::Variable(Variable(7)),
             ))],
         );
@@ -3037,8 +3068,10 @@ mod tests {
 
     #[test]
     fn narrowed_wide_values_keep_the_signed_comparison_view() {
-        let state =
-            CState::new().with_local("size", CValue::UInt64(MachineTerm::Variable(Variable(94))));
+        let state = ExecutionState::new().with_local(
+            "size",
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(94))),
+        );
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &state);
         let value = MachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
@@ -3065,7 +3098,7 @@ mod tests {
         let mut labels = SnapshotLabels::default();
         labels.source_name(Variable(7), "a".into());
         labels.source_name(Variable(8), "u".into());
-        labels.source_types.insert(Variable(8), CType::UInt32);
+        labels.source_types.insert(Variable(8), ProgramType::UInt32);
         let signed = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3102,10 +3135,10 @@ mod tests {
     #[test]
     fn machine_arithmetic_comparisons_preserve_their_observations() {
         for (format, source_type) in [
-            (MachineIntegerType::Int32, CType::Int32),
-            (MachineIntegerType::UInt32, CType::UInt32),
-            (MachineIntegerType::Int64, CType::Int64),
-            (MachineIntegerType::UInt64, CType::UInt64),
+            (MachineIntegerType::Int32, ProgramType::Int32),
+            (MachineIntegerType::UInt32, ProgramType::UInt32),
+            (MachineIntegerType::Int64, ProgramType::Int64),
+            (MachineIntegerType::UInt64, ProgramType::UInt64),
         ] {
             let mut labels = SnapshotLabels::default();
             labels.source_name(Variable(7), "a".into());
@@ -3188,14 +3221,14 @@ mod tests {
 
     #[test]
     fn predicate_array_arguments_keep_their_individual_snapshots() {
-        let pointer = CValue::Pointer(CPointerValue::new(
+        let pointer = ProgramValue::Pointer(PointerValue::new(
             Pointer {
                 block: PointerBlock::Concrete("global:cells".into()),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         ));
-        let before = CState::new()
+        let before = ExecutionState::new()
             .with_local("cells", pointer.clone())
             .with_memory(CMemory::new().with_block("global:cells", 4));
         let copied = before
@@ -3209,9 +3242,12 @@ mod tests {
         labels.source_state(&copied, "copied".into());
         let predicate = |memories: [&CMemory; 3]| Proposition::Predicate {
             name: "same".into(),
-            arguments: std::iter::once(Term::CState(Box::new(before.clone())))
+            arguments: std::iter::once(Term::ExecutionState(Box::new(before.clone())))
                 .chain(memories.into_iter().flat_map(|memory| {
-                    [Term::CMemory(memory.clone()), Term::CValue(pointer.clone())]
+                    [
+                        Term::CMemory(memory.clone()),
+                        Term::ProgramValue(pointer.clone()),
+                    ]
                 }))
                 .collect(),
         };
@@ -3230,15 +3266,15 @@ mod tests {
     #[test]
     fn reserved_predicates_print_the_click_spelling_that_lowers_to_them() {
         let cell = |name: &str| {
-            CValue::Pointer(CPointerValue::new(
+            ProgramValue::Pointer(PointerValue::new(
                 Pointer {
                     block: PointerBlock::Concrete(format!("global:{name}")),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CType::Int32Pointer,
+                ProgramType::Int32Pointer,
             ))
         };
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_local("m", cell("m"))
             .with_local("p", cell("p"))
             .with_memory(CMemory::new().with_block("global:m", 4));
@@ -3247,21 +3283,21 @@ mod tests {
         let held = fact(
             crate::kernel::MUTEX_HELD_PREDICATE_NAME.into(),
             vec![
-                Term::CState(Box::new(state.clone())),
-                Term::CValue(cell("m")),
+                Term::ExecutionState(Box::new(state.clone())),
+                Term::ProgramValue(cell("m")),
             ],
         );
         assert_eq!(source(&held, &mut labels), "held(m)");
         let same = fact(
             crate::kernel::SAME_OBJECT_PREDICATE_NAME.into(),
-            vec![Term::CValue(cell("m")), Term::CValue(cell("p"))],
+            vec![Term::ProgramValue(cell("m")), Term::ProgramValue(cell("p"))],
         );
         assert_eq!(source(&same, &mut labels), "same_object(m, p)");
         let contract = fact(
             crate::kernel::CFunctionContract::predicate_name_for("ordered"),
             vec![
-                Term::CState(Box::new(state.clone())),
-                Term::CValue(cell("p")),
+                Term::ExecutionState(Box::new(state.clone())),
+                Term::ProgramValue(cell("p")),
             ],
         );
         assert_eq!(source(&contract, &mut labels), "ordered(p)");
@@ -3286,9 +3322,9 @@ mod tests {
 
     #[test]
     fn the_contract_result_local_prints_as_result() {
-        let state = CState::new().with_local(
+        let state = ExecutionState::new().with_local(
             crate::kernel::C_CONTRACT_RESULT_NAME,
-            CValue::Int32(MachineTerm::Variable(Variable(7))),
+            ProgramValue::Int32(MachineTerm::Variable(Variable(7))),
         );
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &state);
         assert_eq!(
@@ -3303,8 +3339,11 @@ mod tests {
             block: PointerBlock::Concrete("global:cells".into()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let base = CValue::Pointer(CPointerValue::new(pointer.clone(), CType::Int32Pointer));
-        let before = CState::new()
+        let base = ProgramValue::Pointer(PointerValue::new(
+            pointer.clone(),
+            ProgramType::Int32Pointer,
+        ));
+        let before = ExecutionState::new()
             .with_local("cells", base.clone())
             .with_memory(CMemory::new().with_block("global:cells", 4));
         let after = before
@@ -3314,7 +3353,7 @@ mod tests {
         labels.source_state(&before, "pre".into());
         let load = |memory: &CMemory, kind| {
             equality(MachineTerm::MemoryLoad(
-                SharedCMemory::from(memory.clone()),
+                SharedMemory::from(memory.clone()),
                 Box::new(pointer.clone()),
                 kind,
             ))
@@ -3353,19 +3392,19 @@ mod tests {
             block: PointerBlock::Heap(1),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CState::new().with_memory(CMemory::new().with_block("global:a", 4));
-        let after = CState::new().with_memory(CMemory::new().with_block("global:a", 8));
+        let before = ExecutionState::new().with_memory(CMemory::new().with_block("global:a", 4));
+        let after = ExecutionState::new().with_memory(CMemory::new().with_block("global:a", 8));
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
-        labels.source_result(&CValue::Int32(MachineTerm::Variable(index)));
+        labels.source_result(&ProgramValue::Int32(MachineTerm::Variable(index)));
         // An allocation no local holds is the returned pointer.
-        labels.source_result(&CValue::Pointer(CPointerValue::new(
+        labels.source_result(&ProgramValue::Pointer(PointerValue::new(
             heap.clone(),
-            CType::Int32Pointer,
+            ProgramType::Int32Pointer,
         )));
         let load = |memory: &CMemory| {
             equality(MachineTerm::MemoryLoad(
-                SharedCMemory::from(memory.clone()),
+                SharedMemory::from(memory.clone()),
                 Box::new(heap.clone()),
                 LoadKind::Int32,
             ))
@@ -3385,11 +3424,11 @@ mod tests {
 
     #[test]
     fn reassigned_parameters_do_not_rename_their_old_value_as_current() {
-        let entry =
-            CState::new().with_local("i", CValue::Int32(MachineTerm::Variable(Variable(7))));
+        let entry = ExecutionState::new()
+            .with_local("i", ProgramValue::Int32(MachineTerm::Variable(Variable(7))));
         let current = entry
             .clone()
-            .with_local("i", CValue::Int32(MachineTerm::Variable(Variable(8))));
+            .with_local("i", ProgramValue::Int32(MachineTerm::Variable(Variable(8))));
         let (names, values) = crate::surface::diagnostics::local_naming_tables(&entry);
         let mut labels =
             SnapshotLabels::with_state(ParameterBinding::new(&names, &values), &current);
@@ -3408,7 +3447,8 @@ mod tests {
 mod resource_tests {
     use super::*;
     use crate::kernel::{
-        AlgebraicType, CPointerValue, CState, CType, CValue, LoadKind, PointerBlock, SharedCMemory,
+        AlgebraicType, ExecutionState, LoadKind, PointerBlock, PointerValue, ProgramType,
+        ProgramValue, SharedMemory,
     };
 
     #[test]
@@ -3417,10 +3457,13 @@ mod resource_tests {
             block: PointerBlock::Concrete("global:cells".into()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CState::new()
+        let before = ExecutionState::new()
             .with_local(
                 "cells",
-                CValue::Pointer(CPointerValue::new(pointer.clone(), CType::Int32Pointer)),
+                ProgramValue::Pointer(PointerValue::new(
+                    pointer.clone(),
+                    ProgramType::Int32Pointer,
+                )),
             )
             .with_memory(CMemory::new().with_block("global:cells", 4));
         let after = before
@@ -3429,8 +3472,8 @@ mod resource_tests {
         let resource = |memory: &CMemory| {
             CResourceFact::view_composite(
                 "sampled".into(),
-                vec![CValue::Int32(MachineTerm::MemoryLoad(
-                    SharedCMemory::from(memory.clone()),
+                vec![ProgramValue::Int32(MachineTerm::MemoryLoad(
+                    SharedMemory::from(memory.clone()),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,
                 ))],

@@ -16,17 +16,17 @@ const FORMATS: [MachineIntegerType; 10] = [
 
 pub(super) fn cast_chain(
     root: &KernelTerm,
-    target: CType,
+    target: ProgramType,
     count: usize,
 ) -> (SpecExpressionPath, usize) {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let mut values = crate::persistent::PersistentMap::default();
     values.insert("x".to_string(), root.clone());
     let scope = SpecScope {
         values: Some(&values),
         ..SpecScope::unbound(&state, None)
     };
-    let mut expression = SpecExpression::CExpression(CExpression::Variable("x".into()));
+    let mut expression = SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
     for _ in 0..count {
         expression = SpecExpression::Cast(Box::new(expression), target);
     }
@@ -67,7 +67,7 @@ fn identity_casts_keep_selected_read_snapshots_distinct() {
     let pointer = Pointer::symbolic(Variable(995411));
     let before = crate::kernel::intern_c_memory(CMemory::new());
     let after = crate::kernel::intern_c_memory(
-        CMemory::new().store(pointer.clone(), CValue::Int32(7u32.into())),
+        CMemory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
     );
     let roots = [before, after].map(|memory| {
         let name = crate::kernel::eval::load_variable_for_exact_cell(
@@ -81,7 +81,7 @@ fn identity_casts_keep_selected_read_snapshots_distinct() {
     assert_ne!(roots[0], roots[1]);
     let exports = KernelTermExport::machine_export_count();
     for root in &roots {
-        let (path, _) = cast_chain(root, CType::Int32, 3);
+        let (path, _) = cast_chain(root, ProgramType::Int32, 3);
         assert_eq!(path.value, SpecValue::Shared(root.clone()));
     }
     assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -94,12 +94,12 @@ fn changed_type_cast_is_not_an_identity_cast() {
         MachineIntegerType::UInt64,
         &MachineTerm::uint64_constant(256),
     );
-    let (path, _) = cast_chain(&root, CType::UInt8, 1);
-    assert_eq!(path.value.c_type(), CType::UInt8);
+    let (path, _) = cast_chain(&root, ProgramType::UInt8, 1);
+    assert_eq!(path.value.c_type(), ProgramType::UInt8);
     assert_ne!(path.value, SpecValue::Shared(root));
     assert_eq!(
         path.value.into_native(),
-        CValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0))
+        ProgramValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0))
     );
 }
 

@@ -120,7 +120,7 @@ impl ResourcePureFacts for ProofResourcePureFacts {
 }
 
 pub(super) struct UnfoldedCompositeResource {
-    pub(super) state: CState,
+    pub(super) state: ExecutionState,
     pub(super) selected: CResourceFact,
     pub(super) body_was_already_exposed: bool,
 }
@@ -130,7 +130,7 @@ pub(super) struct UnfoldedCompositeResource {
 /// only when they carry the same checked loan bundle; otherwise the rewrite
 /// is ambiguous and must fail closed.
 fn unique_borrowed_resource_dependency(
-    state: &CState,
+    state: &ExecutionState,
     resource: &CResourceFact,
 ) -> Result<Option<crate::kernel::LoanViewBinding>, String> {
     if !state.loan_bindings_are_consistent() {
@@ -178,14 +178,14 @@ fn unique_borrowed_resource_dependency(
 /// that list on trust: the kernel expands the parent one level itself and
 /// `project` re-checks every child against that expansion (D2 law 10).
 fn project_children_into_ledger(
-    state: CState,
+    state: ExecutionState,
     binding: &crate::kernel::LoanViewBinding,
     children: impl IntoIterator<Item = CResourceFact>,
     memory: &CMemory,
     assumptions: &PureFactContext,
     definitions: &[CCompositeResourceDefinition],
     context_label: &str,
-) -> Result<CState, ClickError> {
+) -> Result<ExecutionState, ClickError> {
     let (Some(ledger), Some(holder)) = (state.loan_ledger().cloned(), state.loan_participant())
     else {
         return Ok(state);
@@ -297,14 +297,14 @@ type QuantifiedBinder<'a> = Option<(Variable, &'a Proposition)>;
 /// that dependency capture does not search equal ambient occurrences.
 fn dynamic_body_fact_dependency(
     required: &Proposition,
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
     temporary_views: &DynamicViewDependencyIndex,
 ) -> Result<Option<crate::kernel::LoanViewBinding>, String> {
     fn check_load(
         pointer: Pointer,
         width: u32,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
         binder: QuantifiedBinder<'_>,
@@ -424,7 +424,7 @@ fn dynamic_body_fact_dependency(
     }
     fn walk_term(
         term: &Term,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
         binder: QuantifiedBinder<'_>,
@@ -445,7 +445,7 @@ fn dynamic_body_fact_dependency(
     }
     fn walk_proposition(
         proposition: &Proposition,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
         binder: QuantifiedBinder<'_>,
@@ -512,7 +512,7 @@ fn dynamic_body_fact_dependency(
             | Proposition::CResourceContains { .. } => Ok(()),
             Proposition::CMemoryLoads { outcome, .. } => match outcome {
                 CExpressionOutcome::Value(value) => walk_term(
-                    &Term::CValue(value.clone()),
+                    &Term::ProgramValue(value.clone()),
                     state,
                     assumptions,
                     temporary_views,
@@ -531,7 +531,7 @@ fn dynamic_body_fact_dependency(
                 // Definedness is an observation of the same cell as a load.
                 // Retain its access dependency, including loads in its address.
                 walk_term(
-                    &Term::CValue(CValue::pointer(pointer.clone())),
+                    &Term::ProgramValue(ProgramValue::pointer(pointer.clone())),
                     state,
                     assumptions,
                     temporary_views,
@@ -590,11 +590,11 @@ fn dynamic_body_fact_dependency(
 pub(super) fn materialize_folded_composite_resource_cells(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     claim_label: &str,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
-) -> Result<CState, ClickError> {
+) -> Result<ExecutionState, ClickError> {
     let memory = materialize_folded_composite_resource_memory(
         resource_environment,
         parameter_binding,
@@ -609,7 +609,7 @@ pub(super) fn materialize_folded_composite_resource_cells(
 fn materialize_folded_composite_resource_memory(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
 ) -> Result<CMemory, String> {
@@ -829,7 +829,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     click_function_environment: &ClickFunctionEnvironment,
     instance: &ResourceInstance,
     records: &[crate::kernel::ResourceBodyClauseRecord],
-    function_values: &BTreeMap<String, CValue>,
+    function_values: &BTreeMap<String, ProgramValue>,
     proof_bindings: Option<&[String]>,
 ) -> Result<Vec<ResourceClausePresentation>, ClickError> {
     let Some(first) = records.first() else {
@@ -868,7 +868,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
     if !bindings.is_empty() && proof_bindings.is_none_or(|names| names.len() != bindings.len()) {
         return Ok(Vec::new());
     }
-    let mut names_by_value = BTreeMap::<CValue, Option<String>>::new();
+    let mut names_by_value = BTreeMap::<ProgramValue, Option<String>>::new();
     for (name, value) in function_values {
         use std::collections::btree_map::Entry;
         match names_by_value.entry(value.clone()) {
@@ -888,8 +888,8 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
             ));
         };
         let expression = match names_by_value.get(value).and_then(Option::as_ref) {
-            Some(name) => ContractExpression::CFragment(CExpression::Variable(name.clone())),
-            None => ContractExpression::CFragment(CExpression::Value(value.clone())),
+            Some(name) => ContractExpression::CFragment(ProgramExpression::Variable(name.clone())),
+            None => ContractExpression::CFragment(ProgramExpression::Value(value.clone())),
         };
         substitutions.insert(parameter.name().to_string(), expression);
     }
@@ -1047,12 +1047,12 @@ pub(in crate::surface) fn materialize_unfolded_instance_arm_cells(
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     instance: &ResourceInstance,
     assumptions: &PureFactContext,
     naming_assumptions: &PureFactContext,
     checked_active_body: bool,
-) -> CState {
+) -> ExecutionState {
     if !checked_active_body {
         return state;
     }
@@ -1109,12 +1109,12 @@ pub(super) enum OwnedCores {
 pub(super) fn project_initial_composite_resource_cores(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    mut state: CState,
+    mut state: ExecutionState,
     available_pure_facts: &(impl PropositionSource + ?Sized),
     claim_label: &str,
     owned: Option<OwnedCores>,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<CState, ClickError> {
+) -> Result<ExecutionState, ClickError> {
     let include_owned = owned.is_some();
     let attach_to_owner = owned == Some(OwnedCores::AttachedToOwner);
     let attach_instance_arms = attach_to_owner;
@@ -1213,7 +1213,7 @@ pub(super) fn project_initial_composite_resource_cores(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             &assumptions,
             spec_definitions,
         )
@@ -1305,11 +1305,11 @@ fn project_selected_instance_arm_cells(
     selected: &SelectedInstanceArm,
     instance: &ResourceInstance,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     assumptions: &PureFactContext,
     include_owned: bool,
     owner: Option<&CResourceFact>,
-) -> CState {
+) -> ExecutionState {
     let arm = &selected.arm;
     let Some(body) = arm.composite_body() else {
         return state;
@@ -1409,7 +1409,7 @@ fn resource_value_substitutions_for_parameters(
                 .ok_or_else(|| format!("resource `{name}` has a non-C argument"))?;
             Ok((
                 parameter.name().to_string(),
-                ContractExpression::CFragment(CExpression::Value(argument.clone())),
+                ContractExpression::CFragment(ProgramExpression::Value(argument.clone())),
             ))
         })
         .collect::<Result<BTreeMap<_, _>, String>>()?;
@@ -1425,7 +1425,7 @@ fn resource_value_substitutions_for_parameters(
         };
         substitutions.insert(
             parameter.name().to_string(),
-            ContractExpression::CFragment(CExpression::Value(value.clone())),
+            ContractExpression::CFragment(ProgramExpression::Value(value.clone())),
         );
     }
     Ok(substitutions)
@@ -1434,12 +1434,12 @@ fn resource_value_substitutions_for_parameters(
 pub(super) fn project_initial_resource_facts(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     available_pure_facts: &[Proposition],
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
 ) -> Result<Vec<Proposition>, ClickError> {
-    let result = CValue::Int32(MachineTerm::constant(0));
+    let result = ProgramValue::Int32(MachineTerm::constant(0));
     let mut facts = ProofResourcePureFacts::new(ProofFacts::from_ordered(available_pure_facts));
     append_state_resource_context_observable_facts_with_store(
         parameter_binding,
@@ -1463,7 +1463,7 @@ pub(super) fn project_initial_resource_facts(
 pub(super) fn project_outcome_resource_facts(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
+    pre_state: &ExecutionState,
     outcome: &CFunctionOutcome,
     available_pure_facts: ProofFacts,
     spec_definitions: SpecDefinitions<'_>,
@@ -1499,7 +1499,7 @@ pub(super) fn project_outcome_resource_facts(
 
 fn append_state_resource_context_observable_facts_with_store<F: ResourcePureFacts>(
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     available_pure_facts: &mut F,
     context: &str,
 ) -> Result<(), ClickError> {
@@ -1521,9 +1521,9 @@ fn append_state_resource_context_observable_facts_with_store<F: ResourcePureFact
 fn project_folded_resource_observable_facts_with_store(
     resource_environment: &ResourceEnvironment,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
+    result: &ProgramValue,
     propositions: &mut ProofResourcePureFacts,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(), String> {
@@ -1543,7 +1543,7 @@ fn project_folded_resource_observable_facts_with_store(
 }
 
 pub(super) struct CheckedResourceObservation {
-    pub(super) state: CState,
+    pub(super) state: ExecutionState,
     pub(super) facts: ProofFacts,
     pub(super) added_facts: Vec<Proposition>,
     pub(super) observed_resource: CResourceFact,
@@ -1551,11 +1551,11 @@ pub(super) struct CheckedResourceObservation {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn observe_composite_resource_for_proof(
-    function: &CFunction,
+    function: &ProgramFunction,
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     facts: ProofFacts,
     surface_propositions: &mut SurfacePropositionMap,
     count_derivations: &mut PersistentOrderedSet<Theorem>,
@@ -1587,18 +1587,18 @@ pub(super) fn observe_composite_resource_for_proof(
 
 #[allow(clippy::too_many_arguments)]
 fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
-    function: &CFunction,
+    function: &ProgramFunction,
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     available_pure_facts: &mut F,
     surface_propositions: &mut SurfacePropositionMap,
     count_derivations: &mut PersistentOrderedSet<Theorem>,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
     tactic_index: usize,
-) -> Result<(CState, CResourceFact), ClickError> {
+) -> Result<(ExecutionState, CResourceFact), ClickError> {
     let requested_resource = lower_resource_clause_at_state(resource, parameter_binding, &state)?;
     let assumptions = available_pure_facts.assumptions().clone();
     let viewed_resource = CResourceFact::View(requested_resource.resource().clone());
@@ -1663,7 +1663,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             (quantity.clone(), resource.as_ref().clone(), true)
         }
         ResourceClause::Declared { .. } => (
-            ContractExpression::CFragment(CExpression::Value(int32(1))),
+            ContractExpression::CFragment(ProgramExpression::Value(int32(1))),
             resource.clone(),
             false,
         ),
@@ -1699,7 +1699,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 parameter_binding,
                 &state,
                 &state,
-                &CValue::Int32(MachineTerm::constant(0)),
+                &ProgramValue::Int32(MachineTerm::constant(0)),
                 available_pure_facts.assumptions(),
                 &count_witness,
                 spec_definitions,
@@ -1729,7 +1729,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             }
         }
         let nonnegative_witness = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            left: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
             operator: ComparisonOperator::LessEqual,
             right: observed_quantity.clone(),
         };
@@ -1737,7 +1737,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &nonnegative_witness,
             spec_definitions,
@@ -1769,7 +1769,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         // population fact of the entry, and a certificate that cites it
         // needs this spelling of it.
         let count_nonnegative_witness = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            left: ContractExpression::CFragment(ProgramExpression::Value(int32(0))),
             operator: ComparisonOperator::LessEqual,
             right: ContractExpression::ResourceCount(Box::new(counted_resource.clone())),
         };
@@ -1777,7 +1777,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &count_nonnegative_witness,
             spec_definitions,
@@ -1875,7 +1875,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         parameter_binding,
         &state,
         &state,
-        &CValue::Int32(MachineTerm::constant(0)),
+        &ProgramValue::Int32(MachineTerm::constant(0)),
         available_pure_facts,
         spec_definitions,
         false,
@@ -2069,8 +2069,8 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
     resource: &ResourceClause,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    fact_state: &CState,
+    pre_state: &ExecutionState,
+    fact_state: &ExecutionState,
     instantiated: &crate::kernel::InstantiatedCompositeResourceFacts,
     available_pure_facts: &F,
     surface_propositions: &mut SurfacePropositionMap,
@@ -2085,7 +2085,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         parameter_binding,
         pre_state,
         fact_state,
-        &CValue::Int32(MachineTerm::constant(0)),
+        &ProgramValue::Int32(MachineTerm::constant(0)),
         available_pure_facts.assumptions(),
         spec_definitions,
     )?
@@ -2235,7 +2235,7 @@ pub(super) fn record_initial_composite_surface_facts(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     available_pure_facts: &PureFactList,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
@@ -2277,7 +2277,7 @@ pub(super) fn record_initial_composite_surface_facts(
             parameter_binding,
             state,
             state,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             &assumptions,
             spec_definitions,
         )?
@@ -2293,7 +2293,7 @@ pub(super) fn record_initial_composite_surface_facts(
                 parameter_binding,
                 state,
                 state,
-                &CValue::Int32(MachineTerm::constant(0)),
+                &ProgramValue::Int32(MachineTerm::constant(0)),
                 available_pure_facts,
                 &surface,
                 spec_definitions,
@@ -2314,9 +2314,9 @@ fn project_held_resource_observable_facts(
     resource_environment: &ResourceEnvironment,
     resource: &CResourceFact,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
+    result: &ProgramValue,
     available_pure_facts: &mut ProofResourcePureFacts,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<CMemory, String> {
@@ -2388,9 +2388,9 @@ fn try_select_composite_resource_body(
     definition: &ResourceDefinition,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
+    result: &ProgramValue,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Option<bool>, String> {
@@ -2472,9 +2472,9 @@ fn composite_resource_body_is_active_with_assumptions(
     definition: &ResourceDefinition,
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
+    result: &ProgramValue,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<bool, String> {
@@ -2506,9 +2506,9 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
     definition: &ResourceDefinition,
     resource_arguments: &[AlgebraicValue],
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    state: &ExecutionState,
+    result: &ProgramValue,
     available_pure_facts: &mut F,
     spec_definitions: SpecDefinitions<'_>,
     lower_declared_source_facts: bool,
@@ -2625,9 +2625,9 @@ fn append_composite_definition_observable_facts<F: ResourcePureFacts>(
     substitutions: &BTreeMap<String, ContractExpression>,
     contained_resources: &ResourceContext,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    fact_state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    fact_state: &ExecutionState,
+    result: &ProgramValue,
     propositions: &mut F,
     spec_definitions: SpecDefinitions<'_>,
     lower_declared_source_facts: bool,
@@ -2739,7 +2739,7 @@ fn append_resource_clause_loadable_fact_with_store<F: ResourcePureFacts>(
     memory: &CMemory,
     propositions: &mut F,
 ) -> Result<(), ClickError> {
-    let state = CState::new().with_memory(memory.clone());
+    let state = ExecutionState::new().with_memory(memory.clone());
     let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, &state)?
     else {
         return Ok(());
@@ -2759,7 +2759,7 @@ pub(super) fn append_lowered_resource_clause_loadable_fact(
     resource: &ResourceClause,
     _parameters: &[syntax::C0Parameter],
     lowered: &CResourceFact,
-    state: &CState,
+    state: &ExecutionState,
     propositions: &mut Vec<Proposition>,
 ) {
     let ResourceClause::ViewMemory(_) = resource else {
@@ -2788,9 +2788,9 @@ fn append_composite_resource_declared_facts<F: ResourcePureFacts>(
     substitutions: &BTreeMap<String, ContractExpression>,
     contained_resources: &ResourceContext,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    fact_state: &CState,
-    result: &CValue,
+    pre_state: &ExecutionState,
+    fact_state: &ExecutionState,
+    result: &ProgramValue,
     propositions: &mut F,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(), String> {
@@ -2897,7 +2897,7 @@ fn materialize_composite_resource_memory(
         let lowered = lower_resource_clause_at_state_with_assumptions(
             &contained,
             parameter_binding,
-            &CState::new().with_memory(memory.clone()),
+            &ExecutionState::new().with_memory(memory.clone()),
             None,
             assumptions,
         )
@@ -2946,7 +2946,7 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
         let lowered = lower_resource_clause_at_state_with_assumptions(
             &contained,
             parameter_binding,
-            &CState::new().with_memory(memory.clone()),
+            &ExecutionState::new().with_memory(memory.clone()),
             None,
             assumptions,
         )
@@ -2995,7 +2995,7 @@ fn resource_value_substitutions(
                 .ok_or_else(|| "algebraic resource bodies are not supported yet".to_string())?;
             Ok((
                 parameter.name().to_string(),
-                ContractExpression::CFragment(CExpression::Value(argument.clone())),
+                ContractExpression::CFragment(ProgramExpression::Value(argument.clone())),
             ))
         })
         .collect::<Result<_, String>>()
@@ -3052,7 +3052,7 @@ fn resource_value_substitutions_with_witnesses(
     for (witness, value) in body.witnesses().iter().zip(values) {
         substitutions.insert(
             witness.name().to_string(),
-            ContractExpression::CFragment(CExpression::Value(value)),
+            ContractExpression::CFragment(ProgramExpression::Value(value)),
         );
     }
     Ok(substitutions)
@@ -3061,7 +3061,7 @@ fn resource_value_substitutions_with_witnesses(
 pub(super) struct CheckedResourceUnfold {
     /// Facts this unfold publishes, including facts already known locally.
     pub(super) published_facts: Vec<Proposition>,
-    pub(super) state: CState,
+    pub(super) state: ExecutionState,
     pub(super) facts: ProofFacts,
     pub(super) added_facts: Vec<Proposition>,
     pub(super) selected: CResourceFact,
@@ -3074,7 +3074,7 @@ pub(super) fn unfold_composite_resource_for_proof(
     resource: &ResourceClause,
     source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     facts: ProofFacts,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
@@ -3103,7 +3103,7 @@ pub(super) fn open_composite_resource_for_proof(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     facts: ProofFacts,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
@@ -3132,7 +3132,7 @@ fn unfold_composite_resource_for_proof_with_access(
     resource: &ResourceClause,
     source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: CState,
+    state: ExecutionState,
     facts: ProofFacts,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
@@ -3174,12 +3174,12 @@ pub(super) fn declared_resource_witness_values(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
     tactic_index: usize,
-) -> Result<Vec<(String, CValue)>, ClickError> {
+) -> Result<Vec<(String, ProgramValue)>, ClickError> {
     let definition = composite_resource_law_definition(
         resource_environment,
         resource,
@@ -3207,7 +3207,7 @@ pub(super) fn declared_resource_witness_values(
         .witnesses()
         .iter()
         .filter_map(|witness| match substitutions.get(witness.name()) {
-            Some(ContractExpression::CFragment(CExpression::Value(value))) => {
+            Some(ContractExpression::CFragment(ProgramExpression::Value(value))) => {
                 Some((witness.name().to_string(), value.clone()))
             }
             _ => None,
@@ -3241,7 +3241,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     resource: &ResourceClause,
     source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    mut state: CState,
+    mut state: ExecutionState,
     available_pure_facts: &mut F,
     surface_propositions: &mut SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
@@ -3287,7 +3287,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         parameter_binding,
         &state,
         &state,
-        &CValue::Int32(MachineTerm::constant(0)),
+        &ProgramValue::Int32(MachineTerm::constant(0)),
         available_pure_facts.assumptions(),
         spec_definitions,
     )
@@ -3673,7 +3673,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &fact_state,
             &fact_state,
-            &CValue::Int32(MachineTerm::constant(0)),
+            &ProgramValue::Int32(MachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &fact,
             spec_definitions,
@@ -4012,7 +4012,7 @@ fn fold_composite_resources_on_outcome_with_facts(
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     pure_facts: &impl ResourcePureFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
+    pre_state: &ExecutionState,
     mut outcome: CFunctionOutcome,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
@@ -4077,7 +4077,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                         &BTreeSet::new(),
                     )
                     .map_err(ClickError::new)?;
-                    *argument = ContractExpression::CFragment(CExpression::Value(value));
+                    *argument = ContractExpression::CFragment(ProgramExpression::Value(value));
                 }
             }
         }
@@ -4474,7 +4474,8 @@ fn fold_composite_resources_on_outcome_with_facts(
                                 _ => pre_state,
                             });
                     for expression in spelling_substitutions.values_mut() {
-                        if let ContractExpression::CFragment(CExpression::Value(value)) = expression
+                        if let ContractExpression::CFragment(ProgramExpression::Value(value)) =
+                            expression
                             && let Some(spelled) =
                                 crate::surface::proof::surface_synthesis::synthesize_surface_value(
                                     value,
@@ -4490,7 +4491,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                     if spelling_substitutions.values().any(|expression| {
                         matches!(
                             expression,
-                            ContractExpression::CFragment(CExpression::Value(value))
+                            ContractExpression::CFragment(ProgramExpression::Value(value))
                                 if !is_integer_constant(value)
                         )
                     }) {
@@ -4939,7 +4940,7 @@ fn fold_composite_resources_on_outcome_with_facts(
 
 pub(super) struct CheckedResourceFold {
     pub(super) selected: CResourceFact,
-    pub(super) state: CState,
+    pub(super) state: ExecutionState,
     pub(super) facts: ProofFacts,
     /// The hold a borrowing fold placed on the loan behind its viewed body,
     /// which the kernel checks as the fold's only ledger change.
@@ -4972,8 +4973,8 @@ pub(super) fn fold_composite_resource_for_proof(
     tactic_index: usize,
     facts: ProofFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: CState,
+    pre_state: &ExecutionState,
+    state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
     family_reaches_population: bool,
@@ -5008,7 +5009,7 @@ pub(super) fn fold_composite_resource_on_outcome_for_proof(
     execution_pure_facts: &(impl ExecutionFactSource + ?Sized),
     facts: ProofFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
+    pre_state: &ExecutionState,
     outcome: CFunctionOutcome,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
@@ -5087,8 +5088,8 @@ pub(super) fn close_open_resource_for_proof(
     tactic_index: usize,
     facts: ProofFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: CState,
+    pre_state: &ExecutionState,
+    state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
     preserve_exposed_body: bool,
@@ -5121,8 +5122,8 @@ fn fold_composite_resource_for_proof_with_closure(
     tactic_index: usize,
     facts: ProofFacts,
     parameter_binding: ParameterBinding<'_>,
-    pre_state: &CState,
-    state: CState,
+    pre_state: &ExecutionState,
+    state: ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
     unfolded_predicates: &[String],
     closure: ResourceBodyClosure,
@@ -5130,7 +5131,7 @@ fn fold_composite_resource_for_proof_with_closure(
 ) -> Result<CheckedResourceFold, ClickError> {
     let facts = ProofResourcePureFacts::new(facts);
     let outcome = CFunctionOutcome::Return {
-        value: CValue::Int32(MachineTerm::constant(0)).into(),
+        value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
         state: Box::new(state),
     };
     let (outcome, mut selections, loan_holds) = fold_composite_resources_on_outcome_with_facts(
@@ -5172,7 +5173,7 @@ pub(super) fn iterated_template_for_resource(
     resource: &ResourceClause,
     action: &str,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
+    state: &ExecutionState,
     claim_label: &str,
     tactic_index: usize,
     assumptions: &PureFactContext,
@@ -5288,8 +5289,8 @@ fn extend_substitutions_with_witnesses(
     definition: &ResourceDefinition,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    state: &CState,
-    result: Option<&CValue>,
+    state: &ExecutionState,
+    result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
@@ -5338,7 +5339,7 @@ fn extend_substitutions_with_witnesses(
     for (witness, value) in body.witnesses().iter().zip(values) {
         substitutions.insert(
             witness.name().to_string(),
-            ContractExpression::CFragment(CExpression::Value(value)),
+            ContractExpression::CFragment(ProgramExpression::Value(value)),
         );
     }
     Ok(())
@@ -5346,17 +5347,17 @@ fn extend_substitutions_with_witnesses(
 
 /// Whether `value` is an integer constant, which a requirement spells as its
 /// literal.
-pub(in crate::surface::proof) fn is_integer_constant(value: &CValue) -> bool {
+pub(in crate::surface::proof) fn is_integer_constant(value: &ProgramValue) -> bool {
     matches!(
         value,
-        CValue::Int8(term)
-            | CValue::Int16(term)
-            | CValue::Int32(term)
-            | CValue::Int64(term)
-            | CValue::UInt8(term)
-            | CValue::UInt16(term)
-            | CValue::UInt32(term)
-            | CValue::UInt64(term)
+        ProgramValue::Int8(term)
+            | ProgramValue::Int16(term)
+            | ProgramValue::Int32(term)
+            | ProgramValue::Int64(term)
+            | ProgramValue::UInt8(term)
+            | ProgramValue::UInt16(term)
+            | ProgramValue::UInt32(term)
+            | ProgramValue::UInt64(term)
             if matches!(
                 term,
                 bits32_constant!(_)
@@ -5563,11 +5564,12 @@ fn materialize_composite_resource_cells_from_snapshot(
                         // Function pointers retain their scalar function-name
                         // carrier. Object-pointer observations use the same
                         // selected source as the range path below.
-                        let storage_type = if matches!(element_type, CType::FunctionPointer(_)) {
-                            CType::Int32
-                        } else {
-                            element_type
-                        };
+                        let storage_type =
+                            if matches!(element_type, ProgramType::FunctionPointer(_)) {
+                                ProgramType::Int32
+                            } else {
+                                element_type
+                            };
                         memory = memory.materialize_cell_from_source(
                             pointer,
                             storage_type,
@@ -5616,9 +5618,9 @@ fn materialize_composite_resource_cells_from_snapshot(
     {
         segment_type
     } else if element_width == 1 {
-        CType::UInt8
+        ProgramType::UInt8
     } else {
-        CType::Int32
+        ProgramType::Int32
     };
     if run_type.byte_width() <= element_width {
         match memory.with_named_cell_run(
@@ -5745,7 +5747,7 @@ void child_release(struct child* obj) {
         let fact = Proposition::CMemoryReadDefined {
             memory: observed.memory().clone(),
             pointer: range.base().offset_by_bytes(4),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         };
         let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], assumptions);
         assert!(
@@ -5804,7 +5806,7 @@ void child_release(struct child* obj) {
         let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
         let occurrences = resources.occurrences_for_fact(&child);
         let binding = binding_for(support_occurrence, child.clone());
-        let state = CState::new().with_resource_context_and_loan_dependencies(
+        let state = ExecutionState::new().with_resource_context_and_loan_dependencies(
             resources,
             [(occurrences[0], binding.clone())],
         );
@@ -5878,7 +5880,7 @@ void child_release(struct child* obj) {
                             byte_width: 4,
                         },
                     },
-                    value_type: crate::kernel::CType::Int32,
+                    value_type: crate::kernel::ProgramType::Int32,
                 }),
             )),
         };
@@ -5901,7 +5903,7 @@ void child_release(struct child* obj) {
         };
         let bound_resources = ResourceContext::new().unchecked_with_fact(view.clone());
         let view_occurrence = bound_resources.occurrences_for_fact(&view)[0];
-        let state = CState::new()
+        let state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context_and_loan_dependencies(
                 bound_resources,
@@ -5945,7 +5947,10 @@ void child_release(struct child* obj) {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new().store(pointer.clone(), CValue::Int32(MachineTerm::constant(0)));
+        let memory = CMemory::new().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(0)),
+        );
         let snapshot = crate::kernel::intern_c_memory_ref(&memory);
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -5961,7 +5966,7 @@ void child_release(struct child* obj) {
             Proposition::CMemoryReadDefined {
                 memory: memory.clone(),
                 pointer: pointer.clone(),
-                value_type: crate::kernel::CType::Int32,
+                value_type: crate::kernel::ProgramType::Int32,
             }
         } else {
             Proposition::ConditionIs(condition, true)
@@ -6002,7 +6007,7 @@ void child_release(struct child* obj) {
         // remains in the caller state that supplied the exact occurrence.
         let bound_resources = ResourceContext::new().unchecked_with_fact(view.clone());
         let view_occurrence = bound_resources.occurrences_for_fact(&view)[0];
-        let bound_state = CState::new()
+        let bound_state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context_and_loan_dependencies(
                 bound_resources,
@@ -6074,7 +6079,7 @@ void child_release(struct child* obj) {
             [view.clone()],
             &memory,
         );
-        let supported_state = CState::new()
+        let supported_state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context(supported);
         assert!(
@@ -6088,9 +6093,11 @@ void child_release(struct child* obj) {
             .is_none()
         );
 
-        let unbound_state = CState::new().with_memory(memory).with_resource_context(
-            ResourceContext::new().unchecked_with_facts([own.clone(), view]),
-        );
+        let unbound_state = ExecutionState::new()
+            .with_memory(memory)
+            .with_resource_context(
+                ResourceContext::new().unchecked_with_facts([own.clone(), view]),
+            );
         assert!(
             dynamic_body_fact_dependency(
                 &proposition,
@@ -6104,7 +6111,7 @@ void child_release(struct child* obj) {
         assert!(
             dynamic_body_fact_dependency(
                 &proposition,
-                &CState::new().with_memory(unbound_state.memory().clone()),
+                &ExecutionState::new().with_memory(unbound_state.memory().clone()),
                 &assumptions,
                 &no_temporary_views,
             )
@@ -6118,7 +6125,7 @@ void child_release(struct child* obj) {
             return;
         }
 
-        let owner_state = CState::new()
+        let owner_state = ExecutionState::new()
             .with_memory(unbound_state.memory().clone())
             .with_resource_context(ResourceContext::new().unchecked_with_fact(own));
         assert!(
@@ -6164,7 +6171,7 @@ mod wide_range_reader_tests {
         let segment = ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,
-            base: CExpression::Value(CValue::pointer(base.clone())),
+            base: ProgramExpression::Value(ProgramValue::pointer(base.clone())),
             start: crate::kernel::c_uint64_literal(0),
             end: crate::kernel::c_uint64_literal(1 << 33),
             surface: ContractSegmentSurface::Range {
@@ -6231,7 +6238,7 @@ resource cell(p: int32*) {
         let specs = SpecDefinitions::new(&predicates, &functions);
         let schema = crate::kernel::ResourceFieldSchema::new(vec![(
             "number".to_string(),
-            crate::kernel::ResourceFieldType::C(CType::Int32),
+            crate::kernel::ResourceFieldType::C(ProgramType::Int32),
         )])
         .unwrap();
         for (pointer, active) in [
@@ -6251,16 +6258,16 @@ resource cell(p: int32*) {
             let instance = ResourceInstance::new(
                 crate::kernel::Variable(88_002),
                 "cell".to_string(),
-                vec![AlgebraicValue::C(CValue::typed_pointer(
+                vec![AlgebraicValue::C(ProgramValue::typed_pointer(
                     pointer.clone(),
-                    CType::Int32Pointer,
+                    ProgramType::Int32Pointer,
                 ))]
                 .into(),
                 schema.clone(),
                 vec![AlgebraicValue::C(crate::kernel::int32(3))].into(),
             )
             .unwrap();
-            let before = CState::new();
+            let before = ExecutionState::new();
             let after = materialize_unfolded_instance_arm_cells(
                 &resources,
                 specs,
@@ -6360,7 +6367,7 @@ mod fold_quantity_activity_tests {
 mod declared_scalar_field_observation_tests {
     use super::*;
 
-    fn field(base: CExpression, element_type: CType) -> ContractSegment {
+    fn field(base: ProgramExpression, element_type: ProgramType) -> ContractSegment {
         ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,
@@ -6384,8 +6391,8 @@ mod declared_scalar_field_observation_tests {
             let mut samples = Vec::new();
             for padding in [0u32, 16, 64, 256] {
                 let segment = field(
-                    CExpression::Value(CValue::pointer(base.clone())),
-                    CType::Int32,
+                    ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+                    ProgramType::Int32,
                 );
                 let range = CMemoryRange::new(base.clone(), 0.into(), (1 + padding).into());
                 let (clause, fact) = if viewed {
@@ -6411,7 +6418,7 @@ mod declared_scalar_field_observation_tests {
                 });
                 assert!(matches!(
                     named.load(&base),
-                    CExpressionOutcome::Value(CValue::Int32(_))
+                    CExpressionOutcome::Value(ProgramValue::Int32(_))
                 ));
                 assert!(
                     !matches!(
@@ -6435,8 +6442,8 @@ mod declared_scalar_field_observation_tests {
         let base = Pointer::symbolic(Variable(985_803));
         let memory = CMemory::new();
         let segment = field(
-            CExpression::Value(CValue::pointer(base.clone())),
-            CType::Int32Pointer,
+            ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+            ProgramType::Int32Pointer,
         );
         let named = materialize_composite_resource_cells_from_snapshot(
             memory.clone(),
@@ -6449,7 +6456,7 @@ mod declared_scalar_field_observation_tests {
             panic!("observed field")
         };
         assert!(
-            matches!(value, CValue::Pointer(_)),
+            matches!(value, ProgramValue::Pointer(_)),
             "a pointer field must not be cached as an integer prefix"
         );
         let expected = Pointer::loaded(&MachineTerm::MemoryLoad(
@@ -6458,7 +6465,7 @@ mod declared_scalar_field_observation_tests {
             crate::kernel::LoadKind::Int32,
         ))
         .unwrap();
-        assert!(value == CValue::typed_pointer(expected, CType::Int32Pointer));
+        assert!(value == ProgramValue::typed_pointer(expected, ProgramType::Int32Pointer));
         assert!(!matches!(
             named.load(&base.offset_by_bytes(4)),
             CExpressionOutcome::Value(_)
@@ -6475,10 +6482,10 @@ mod declared_scalar_field_observation_tests {
         for count in [0, 16, 64, 256] {
             let segment = field(
                 crate::kernel::c_typed_load(
-                    CExpression::Value(CValue::pointer(base.clone())),
-                    CType::Int32Array(count),
+                    ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+                    ProgramType::Int32Array(count),
                 ),
-                CType::Int32,
+                ProgramType::Int32,
             );
             let range = CMemoryRange::new(base.clone(), 0.into(), (count + 4).into());
             let memory = CMemory::new();
@@ -6492,7 +6499,7 @@ mod declared_scalar_field_observation_tests {
             if count > 0 {
                 assert!(matches!(
                     named.load(&base.offset_by_bytes((count - 1) * 4)),
-                    CExpressionOutcome::Value(CValue::Int32(_))
+                    CExpressionOutcome::Value(ProgramValue::Int32(_))
                 ));
             }
             assert!(!matches!(

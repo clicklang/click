@@ -74,16 +74,16 @@ pub(crate) struct ScalarReferenceSourcePlan {
     key: ScalarReferencePlanKey,
     parent: String,
     child: String,
-    value_type: CType,
-    assignment: CExpression,
+    value_type: ProgramType,
+    assignment: ProgramExpression,
 }
 impl ScalarReferenceSourcePlan {
     pub(crate) fn new(
         key: ScalarReferencePlanKey,
         parent: String,
         child: String,
-        value_type: CType,
-        assignment: CExpression,
+        value_type: ProgramType,
+        assignment: ProgramExpression,
     ) -> Arc<Self> {
         Arc::new(Self {
             key,
@@ -96,16 +96,16 @@ impl ScalarReferenceSourcePlan {
     pub(crate) fn key(&self) -> &ScalarReferencePlanKey {
         &self.key
     }
-    pub(super) fn validates_assignment(&self, name: &str, expression: &CExpression) -> bool {
+    pub(super) fn validates_assignment(&self, name: &str, expression: &ProgramExpression) -> bool {
         name == self.child && expression == &self.assignment
     }
     pub(super) fn begin(
         &self,
-        before: &CState,
-        after: &CState,
+        before: &ExecutionState,
+        after: &ExecutionState,
         assumptions: &PureFactContext,
-    ) -> Result<CState, loans::LoanRefusal> {
-        let CValue::Pointer(parent) = before
+    ) -> Result<ExecutionState, loans::LoanRefusal> {
+        let ProgramValue::Pointer(parent) = before
             .locals
             .get(&self.parent)
             .and_then(|value| value.native_payload())
@@ -113,7 +113,7 @@ impl ScalarReferenceSourcePlan {
         else {
             return Err(loans::LoanRefusal::InvalidEvidence);
         };
-        let CValue::Pointer(child) = after
+        let ProgramValue::Pointer(child) = after
             .locals
             .get(&self.child)
             .and_then(|value| value.native_payload())
@@ -157,7 +157,7 @@ impl ScalarReferenceSourcePlan {
             assumptions,
             self.key.clone(),
         )?;
-        let value = CValue::Pointer(child);
+        let value = ProgramValue::Pointer(child);
         // Assignment already checked this private local's storage; attaching
         // custody changes its permission identity, not the pointer's address.
         eval::sync_stack_local(&mut state, &self.child, &value);
@@ -184,9 +184,9 @@ impl CScalarReferenceEnd {
     }
     pub(super) fn execute(
         &self,
-        state: &CState,
+        state: &ExecutionState,
         assumptions: &PureFactContext,
-    ) -> Result<CState, loans::LoanRefusal> {
+    ) -> Result<ExecutionState, loans::LoanRefusal> {
         state.end_source_scalar_reference(&self.0, assumptions)
     }
 }

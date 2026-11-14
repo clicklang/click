@@ -19,8 +19,8 @@ pub(in crate::kernel) enum ResolutionQuery {
         crate::kernel::SharedMachineIntegerTerm,
         crate::kernel::SharedMachineIntegerTerm,
     ),
-    SnapshotsMatch(SharedCMemory, SharedCMemory, Pointer),
-    CanonicalMemory(SharedCMemory, Pointer),
+    SnapshotsMatch(SharedMemory, SharedMemory, Pointer),
+    CanonicalMemory(SharedMemory, Pointer),
     RangeDisjoint(Pointer, Pointer),
     RangesSeparate(CMemoryRange, CMemoryRange),
     RangeContained(CMemoryRange, CMemoryRange),
@@ -153,11 +153,11 @@ const RESOLUTION_QUERY_MEMO_LIMIT: usize = 200_000;
 
 thread_local! {
     static CANONICAL_MEMORY_CACHE: std::cell::RefCell<
-        std::collections::HashMap<(super::SharedCMemory, Pointer), CMemory>,
+        std::collections::HashMap<(super::SharedMemory, Pointer), CMemory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// [`source_holds_cells_observable_by`], by interned snapshot and block.
     static SOURCE_OBSERVABLE_BY_BLOCK: std::cell::RefCell<
-        std::collections::HashMap<(super::SharedCMemory, crate::kernel::primitives::PointerBlock), bool>,
+        std::collections::HashMap<(super::SharedMemory, crate::kernel::primitives::PointerBlock), bool>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// The producer-known source of one canonical load projection. The
     /// projected snapshot is intentionally not given an ordinary memory-DAG
@@ -166,24 +166,24 @@ thread_local! {
     /// source for checked load equality without pretending the projection has
     /// a unique memory parent.
     static CANONICAL_LOAD_PROJECTION_SOURCES: std::cell::RefCell<
-        std::collections::HashMap<(super::SharedCMemory, Pointer), super::SharedCMemory>,
+        std::collections::HashMap<(super::SharedMemory, Pointer), super::SharedMemory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// The latest producer observation of a named value read. Every stored
     /// edge is structural and valid only for its recorded access width.
     static VALUE_LOAD_ORIGINS: std::cell::RefCell<
-        std::collections::HashMap<(super::SharedCMemory, Pointer, u32), super::SharedCMemory>,
+        std::collections::HashMap<(super::SharedMemory, Pointer, u32), super::SharedMemory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// Reverse definitions select a name from the exact observation. Keeping
     /// this direction preserves earlier observations when a name is reused.
     static VALUE_LOAD_NAMES: std::cell::RefCell<
-        std::collections::HashMap<(super::SharedCMemory, Pointer, u32), super::SharedCMemory>,
+        std::collections::HashMap<(super::SharedMemory, Pointer, u32), super::SharedMemory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     static LOAD_DEFINITION_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Every exact producer-known projection triple. Evidence checks this
     /// durable set rather than requiring its selected source to remain the
     /// preferred source if an older equivalent producer is registered later.
     static CANONICAL_LOAD_PROJECTIONS: std::cell::RefCell<
-        std::collections::HashSet<(super::SharedCMemory, super::SharedCMemory, Pointer)>,
+        std::collections::HashSet<(super::SharedMemory, super::SharedMemory, Pointer)>,
     > = std::cell::RefCell::new(std::collections::HashSet::new());
 }
 
@@ -219,8 +219,8 @@ pub(in crate::kernel) fn load_definition_generation() -> u64 {
 /// multiple equivalent sources, so all exact triples remain valid while the
 /// oldest arena node is kept as the constant-time lookup preference.
 pub(in crate::kernel) fn record_canonical_load_projection(
-    source: &super::SharedCMemory,
-    projected: &super::SharedCMemory,
+    source: &super::SharedMemory,
+    projected: &super::SharedMemory,
     pointer: &Pointer,
 ) {
     if source == projected {
@@ -253,8 +253,8 @@ pub(in crate::kernel) fn record_canonical_load_projection(
 /// value-load naming. Unlike a projection edge, this may cross writes outside
 /// that width, so it must never be used for a wider observation.
 pub(in crate::kernel) fn record_value_load_origin(
-    origin: &super::SharedCMemory,
-    named: &super::SharedCMemory,
+    origin: &super::SharedMemory,
+    named: &super::SharedMemory,
     pointer: &Pointer,
     bytes: u32,
 ) {
@@ -280,10 +280,10 @@ pub(in crate::kernel) fn record_value_load_origin(
 }
 
 pub(in crate::kernel) fn value_load_origin(
-    named: &super::SharedCMemory,
+    named: &super::SharedMemory,
     pointer: &Pointer,
     bytes: u32,
-) -> Option<super::SharedCMemory> {
+) -> Option<super::SharedMemory> {
     VALUE_LOAD_ORIGINS.with(|origins| {
         origins
             .borrow()
@@ -294,10 +294,10 @@ pub(in crate::kernel) fn value_load_origin(
 
 /// The structurally chosen name for this exact observation and width.
 pub(in crate::kernel) fn value_load_name(
-    origin: &super::SharedCMemory,
+    origin: &super::SharedMemory,
     pointer: &Pointer,
     bytes: u32,
-) -> Option<super::SharedCMemory> {
+) -> Option<super::SharedMemory> {
     VALUE_LOAD_NAMES.with(|names| {
         names
             .borrow()
@@ -310,9 +310,9 @@ pub(in crate::kernel) fn value_load_name(
 /// The lookup is constant-time in the number of projections and never
 /// reconstructs the canonical form.
 pub(in crate::kernel) fn canonical_load_projection_source(
-    projected: &super::SharedCMemory,
+    projected: &super::SharedMemory,
     pointer: &Pointer,
-) -> Option<super::SharedCMemory> {
+) -> Option<super::SharedMemory> {
     CANONICAL_LOAD_PROJECTION_SOURCES.with(|sources| {
         sources
             .borrow()
@@ -322,8 +322,8 @@ pub(in crate::kernel) fn canonical_load_projection_source(
 }
 
 pub(in crate::kernel) fn canonical_load_projection_recorded(
-    source: &super::SharedCMemory,
-    projected: &super::SharedCMemory,
+    source: &super::SharedMemory,
+    projected: &super::SharedMemory,
     pointer: &Pointer,
 ) -> bool {
     CANONICAL_LOAD_PROJECTIONS.with(|projections| {
@@ -1956,7 +1956,7 @@ fn memory_resolution_graph_offsets_keep_load_snapshots_distinct() {
         block: "offset-load".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
     };
-    let loaded = |memory: &SharedCMemory, index| {
+    let loaded = |memory: &SharedMemory, index| {
         MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &address(index),
@@ -1965,12 +1965,10 @@ fn memory_resolution_graph_offsets_keep_load_snapshots_distinct() {
             memory,
         ))
     };
-    let after = crate::kernel::intern_c_memory(
-        before
-            .memory()
-            .clone()
-            .store(address(scalar(1)), CValue::Int32(MachineTerm::constant(9))),
-    );
+    let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+        address(scalar(1)),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
     let left = PointerOffsetTerm::scale_int32(loaded(&before, scalar(1)), 4);
     let right = PointerOffsetTerm::scale_int32(loaded(&before, scalar(2)), 4);
     let changed = PointerOffsetTerm::scale_int32(loaded(&after, scalar(2)), 4);
@@ -2050,18 +2048,18 @@ fn stored_value_at_equal_pointer(
     memory: &CMemory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
-) -> Option<CValue> {
+) -> Option<ProgramValue> {
     if let Some(value) = memory.known_value(pointer) {
         return Some(value);
     }
-    if let Some(value) = memory.known_union_value(pointer, CType::Int32) {
+    if let Some(value) = memory.known_union_value(pointer, ProgramType::Int32) {
         return Some(value);
     }
     let normalized = pointer_with_exact_index_constants(pointer, assumptions);
     if normalized != *pointer
         && let Some(value) = memory
             .known_value(&normalized)
-            .or_else(|| memory.known_union_value(&normalized, CType::Int32))
+            .or_else(|| memory.known_union_value(&normalized, ProgramType::Int32))
     {
         return Some(value);
     }
@@ -2090,7 +2088,7 @@ fn stored_value_at_equal_pointer(
                                     byte_width: *byte_width,
                                 },
                             },
-                            CType::Int32,
+                            ProgramType::Int32,
                         )
                     })
             })
@@ -2108,7 +2106,7 @@ fn stored_value_at_equal_pointer(
             crate::instrumentation::record_deterministic_work(1);
             memory
                 .known_value(&alias)
-                .or_else(|| memory.known_union_value(&alias, CType::Int32))
+                .or_else(|| memory.known_union_value(&alias, ProgramType::Int32))
         })
         .or_else(|| {
             // Add(root, displacement) occupies one contiguous map interval.
@@ -2155,7 +2153,7 @@ fn run_value_at_equal_displaced_pointer(
     pointer: &Pointer,
     root: &PointerOffsetTerm,
     assumptions: &PureFactContext,
-) -> Option<CValue> {
+) -> Option<ProgramValue> {
     crate::instrumentation::record_deterministic_work(1);
     if run.base().block != pointer.block || run.base().offset != *root || run.live_count() == 0 {
         return None;
@@ -2285,7 +2283,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
         return true;
     }
     if let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Int32) = left
-        && let Some(CValue::Int32(value)) =
+        && let Some(ProgramValue::Int32(value)) =
             stored_value_at_equal_pointer(memory, pointer, assumptions)
         && &value != left
         && bitvector_terms_proven_equal_for_memory_resolution(&value, right, assumptions)
@@ -2293,7 +2291,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
         return true;
     }
     if let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Int32) = right
-        && let Some(CValue::Int32(value)) =
+        && let Some(ProgramValue::Int32(value)) =
             stored_value_at_equal_pointer(memory, pointer, assumptions)
         && &value != right
         && bitvector_terms_proven_equal_for_memory_resolution(left, &value, assumptions)
@@ -2470,7 +2468,7 @@ pub(in crate::kernel) fn int32_operand_values_equal_for_memory_resolution(
         }
         for (read, other) in [(left, right), (right, left)] {
             if let Some((memory, pointer, LoadKind::Int32)) = read.read()
-                && let Some(CValue::Int32(value)) =
+                && let Some(ProgramValue::Int32(value)) =
                     stored_value_at_equal_pointer(memory, pointer, assumptions)
                 && equal(V::Legacy(&value), other)
             {
@@ -2529,35 +2527,35 @@ pub(in crate::kernel) fn int32_values_proven_equal_for_memory_resolution(
 }
 
 pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
-    left: &CValue,
-    right: &CValue,
+    left: &ProgramValue,
+    right: &ProgramValue,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
         return true;
     }
     match (left, right) {
-        (CValue::Void, CValue::Void) => true,
-        (CValue::Int8(left), CValue::Int8(right)) => {
+        (ProgramValue::Void, ProgramValue::Void) => true,
+        (ProgramValue::Int8(left), ProgramValue::Int8(right)) => {
             bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
         }
-        (CValue::Int32(left), CValue::Int32(right)) => {
+        (ProgramValue::Int32(left), ProgramValue::Int32(right)) => {
             int32_values_proven_equal_for_memory_resolution(left, right, assumptions)
         }
-        (CValue::Int64(left), CValue::Int64(right))
-        | (CValue::UInt64(left), CValue::UInt64(right)) => {
+        (ProgramValue::Int64(left), ProgramValue::Int64(right))
+        | (ProgramValue::UInt64(left), ProgramValue::UInt64(right)) => {
             assumptions.uint64_values_known_equal(left, right)
                 || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
         }
-        (CValue::Int16(left), CValue::Int16(right))
-        | (CValue::UInt8(left), CValue::UInt8(right))
-        | (CValue::UInt16(left), CValue::UInt16(right))
-        | (CValue::UInt32(left), CValue::UInt32(right))
-        | (CValue::Float32(left), CValue::Float32(right))
-        | (CValue::Float64(left), CValue::Float64(right)) => {
+        (ProgramValue::Int16(left), ProgramValue::Int16(right))
+        | (ProgramValue::UInt8(left), ProgramValue::UInt8(right))
+        | (ProgramValue::UInt16(left), ProgramValue::UInt16(right))
+        | (ProgramValue::UInt32(left), ProgramValue::UInt32(right))
+        | (ProgramValue::Float32(left), ProgramValue::Float32(right))
+        | (ProgramValue::Float64(left), ProgramValue::Float64(right)) => {
             bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
         }
-        (CValue::Pointer(left), CValue::Pointer(right)) => {
+        (ProgramValue::Pointer(left), ProgramValue::Pointer(right)) => {
             assumptions.pointer_designations_match(left, right)
                 && pointers_proven_equal_for_memory_resolution(
                     left.pointer(),
@@ -2599,9 +2597,9 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
 /// The object read under **its own name** is a different question, and not
 /// this filter's to answer. A scalar local's program-visible value lives in
 /// the `CLocalEnvironment` binding, which the callers of these two
-/// comparisons either compare exactly as part of `CState` equality or do not
+/// comparisons either compare exactly as part of `ExecutionState` equality or do not
 /// ask about at all (an effect chain's two endpoints). A caller that needs the
-/// slot cell itself compares `CState::local_cell_values` beside the memory,
+/// slot cell itself compares `ExecutionState::local_cell_values` beside the memory,
 /// as `function_entry_representation_states_match` does.
 ///
 /// Cost: one registry lookup on a name of bounded length.
@@ -2717,13 +2715,13 @@ pub(in crate::kernel) fn memory_load_terms_equal_for_fact_transport(
 /// Naming projections use their registered source, without discovering any
 /// older source by walking history.
 pub(in crate::kernel) fn loads_lack_recorded_equality(
-    left: &SharedCMemory,
-    right: &SharedCMemory,
+    left: &SharedMemory,
+    right: &SharedMemory,
     pointer: &Pointer,
     kind: LoadKind,
     assumptions: &PureFactContext,
 ) -> bool {
-    let agrees = |left: &SharedCMemory, right: &SharedCMemory| {
+    let agrees = |left: &SharedMemory, right: &SharedMemory| {
         matches!(
             crate::kernel::api::with_extended_dag_bridging(|| {
                 crate::kernel::api::recorded_load_history(left, right, pointer, kind, assumptions)
@@ -2846,7 +2844,7 @@ fn memory_snapshots_match_for_resolution(
 /// A cell that is only a union view, or one holding `Void`, has no value width
 /// to read and stands in the widest scalar: over-stating a width can only
 /// shrink the separated set.
-pub(in crate::kernel) fn cell_access_byte_width(value: &CValue) -> u32 {
+pub(in crate::kernel) fn cell_access_byte_width(value: &ProgramValue) -> u32 {
     match value.byte_width() {
         0 => crate::kernel::resource_tracker::widest_scalar_access_bytes(),
         bytes => bytes,
@@ -3026,7 +3024,7 @@ fn memory_has_materialized_load_from(
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    let Some(CValue::Int32(MachineTerm::MemoryLoad(snapshot, load_pointer, LoadKind::Int32))) =
+    let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(snapshot, load_pointer, LoadKind::Int32))) =
         materialized.known_value(pointer)
     else {
         return false;
@@ -3530,16 +3528,14 @@ fn unrelated_forgotten_snapshots_do_not_prove_their_loads_equal() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let shell = CMemory::new().with_block("unrelated-forgotten", 4);
-    let left_source = crate::kernel::intern_c_memory_ref(
-        &shell
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1))),
-    );
-    let right_source = crate::kernel::intern_c_memory_ref(
-        &shell
-            .clone()
-            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(2))),
-    );
+    let left_source = crate::kernel::intern_c_memory_ref(&shell.clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(1)),
+    ));
+    let right_source = crate::kernel::intern_c_memory_ref(&shell.clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(2)),
+    ));
     let mut left = shell.clone();
     left.mark_forgotten_from(&left_source);
     let mut right = shell;
@@ -3636,7 +3632,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
     let concrete_memory = CMemory::new().with_block("unrelated-concrete", 4);
     let mut with_unrelated_heap = concrete_memory.clone();
     std::sync::Arc::make_mut(&mut with_unrelated_heap.blocks)
-        .insert(PointerBlock::Heap(7_620_003), CBlock::new(4));
+        .insert(PointerBlock::Heap(7_620_003), MemoryBlock::new(4));
     std::sync::Arc::make_mut(&mut with_unrelated_heap.heap)
         .live_allocations
         .insert(
@@ -3658,7 +3654,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
         &concrete_memory,
         &with_unrelated_heap,
         &concrete,
-        CType::Int32,
+        ProgramType::Int32,
         &[],
         &PureFactContext::new(),
     )
@@ -3885,7 +3881,7 @@ fn run_stem_slot(run: &crate::kernel::primitives::CellRun) -> Option<u32> {
 /// is memoized by interned snapshot identity; a miss visits the source's
 /// candidate entries up to the first observable one.
 fn source_holds_cells_observable_by(
-    source: &crate::kernel::primitives::SharedCMemory,
+    source: &crate::kernel::primitives::SharedMemory,
     block: &crate::kernel::primitives::PointerBlock,
 ) -> bool {
     let key = (source.clone(), block.clone());
@@ -4028,7 +4024,7 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
     let mut visited = 0usize;
     // Lazily: the collection below stops at the first cell that is not a
     // cached load, so an ordinary store costs one visit, not every cell.
-    let observable: Box<dyn Iterator<Item = (&Pointer, &CValue)>> = match &reachable {
+    let observable: Box<dyn Iterator<Item = (&Pointer, &ProgramValue)>> = match &reachable {
         Some(reachable) => Box::new(reachable.iter()),
         None => Box::new(candidates.entries(memory.cells.concrete())),
     };
@@ -4106,7 +4102,7 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
     // longer holds (pinned by
     // `a_load_projection_jump_does_not_restore_a_havocked_cell`).
     let mut cells = (*canonical.cells).clone();
-    let keep = |cell_pointer: &Pointer, value: &CValue| {
+    let keep = |cell_pointer: &Pointer, value: &ProgramValue| {
         cell_pointer.block.observable_by_load(&pointer.block)
             && !cell_disjoint_from_load_by_constant_offset(cell_pointer, value, pointer)
             && (!jumped || memory.cells.get(cell_pointer).is_some())
@@ -4146,7 +4142,7 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
     canonical.record_diagnostic_transform(
         "project memory for pointer read",
         vec![memory.clone()],
-        vec![CValue::pointer(pointer.clone())],
+        vec![ProgramValue::pointer(pointer.clone())],
     );
     canonical
 }
@@ -4155,8 +4151,8 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
 /// key ranges their name prefixes occupy (concrete block names order as
 /// strings, so the names sharing a prefix are contiguous).
 pub(in crate::kernel) fn havoc_marker_blocks(
-    blocks: &SnapshotMap<PointerBlock, CBlock>,
-) -> impl Iterator<Item = (&PointerBlock, &CBlock)> {
+    blocks: &SnapshotMap<PointerBlock, MemoryBlock>,
+) -> impl Iterator<Item = (&PointerBlock, &MemoryBlock)> {
     ["call-havoc:", "havoc:"]
         .into_iter()
         .flat_map(move |prefix| {
@@ -4659,7 +4655,7 @@ fn run_slots_kept_by_load_projection_set(run: &CellRun, pointer: &Pointer) -> Sl
 /// drop the cell.
 ///
 /// The cell contributes the real width of the value stored in it, taken from
-/// [`CValue::byte_width`] rather than from a second width table here: an
+/// [`ProgramValue::byte_width`] rather than from a second width table here: an
 /// `int64`, a `uint64`, a `double` and an LP64 pointer are eight bytes, and a
 /// cell whose width this function guessed too small would be dropped while
 /// the load still reads part of it.
@@ -4673,7 +4669,7 @@ fn run_slots_kept_by_load_projection_set(run: &CellRun, pointer: &Pointer) -> Sl
 /// disjoint from it.
 fn cell_disjoint_from_load_by_constant_offset(
     cell_pointer: &Pointer,
-    value: &CValue,
+    value: &ProgramValue,
     load_pointer: &Pointer,
 ) -> bool {
     // Offsets are only comparable inside one block. Two blocks that may be
@@ -5075,7 +5071,7 @@ impl StoreByteInterval {
     pub(in crate::kernel) fn overwrites(
         &self,
         cell_pointer: &Pointer,
-        cell_value: &CValue,
+        cell_value: &ProgramValue,
     ) -> bool {
         let cell_width = i64::from(cell_value.byte_width());
         self.overwrites_bytes(cell_pointer, cell_width)
@@ -5084,7 +5080,7 @@ impl StoreByteInterval {
     pub(in crate::kernel) fn overwrites_typed(
         &self,
         cell_pointer: &Pointer,
-        cell_type: CType,
+        cell_type: ProgramType,
     ) -> bool {
         self.overwrites_bytes(cell_pointer, i64::from(cell_type.byte_width()))
     }
@@ -5103,7 +5099,7 @@ impl StoreByteInterval {
     pub(in crate::kernel) fn overwrites_completely(
         &self,
         cell_pointer: &Pointer,
-        cell_value: &CValue,
+        cell_value: &ProgramValue,
     ) -> bool {
         self.covers_bytes(cell_pointer, i64::from(cell_value.byte_width()))
     }
@@ -5111,7 +5107,7 @@ impl StoreByteInterval {
     pub(in crate::kernel) fn overwrites_typed_completely(
         &self,
         cell_pointer: &Pointer,
-        cell_type: CType,
+        cell_type: ProgramType,
     ) -> bool {
         self.covers_bytes(cell_pointer, i64::from(cell_type.byte_width()))
     }
@@ -5147,35 +5143,35 @@ impl StoreByteInterval {
 /// the load variable registered for a load of `p`, whose source the registry
 /// records. Materialization changes which cells are concrete, not what the
 /// load means.
-fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<SharedCMemory> {
+fn materialized_cell_source(cell_pointer: &Pointer, value: &ProgramValue) -> Option<SharedMemory> {
     let bits = match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Int8(bits)
-        | CValue::Bool(bits)
-        | CValue::Int16(bits)
-        | CValue::UInt16(bits)
-        | CValue::Int32(bits)
-        | CValue::UInt8(bits)
-        | CValue::Int64(bits)
-        | CValue::UInt64(bits)
-        | CValue::Int128(bits)
-        | CValue::UInt128(bits)
-        | CValue::Float32(bits)
-        | CValue::Float64(bits) => bits,
+        ProgramValue::PointerInteger(_) => unreachable!("numeric projection"),
+        ProgramValue::Int8(bits)
+        | ProgramValue::Bool(bits)
+        | ProgramValue::Int16(bits)
+        | ProgramValue::UInt16(bits)
+        | ProgramValue::Int32(bits)
+        | ProgramValue::UInt8(bits)
+        | ProgramValue::Int64(bits)
+        | ProgramValue::UInt64(bits)
+        | ProgramValue::Int128(bits)
+        | ProgramValue::UInt128(bits)
+        | ProgramValue::Float32(bits)
+        | ProgramValue::Float64(bits) => bits,
         // A pointer cell is a materialization when it holds the pointer a
         // typed load of this same cell produces (`symbolic_pointer_load`):
         // that read's own name, which records the complete value and
         // provenance of reading the cell's bytes in its defining memory. A
         // pointer given a symbolic identity, or one loaded from another cell,
         // is a write and never qualifies.
-        CValue::Pointer(value) => {
+        ProgramValue::Pointer(value) => {
             let read = value.pointer().as_loaded_value()?;
             return (read.displacement == PointerOffsetTerm::Constant(0)
                 && read.defining_address == *cell_pointer)
                 .then_some(read.defining_memory);
         }
-        CValue::Parameter(_) => return None,
-        CValue::Void | CValue::UInt32(_) => return None,
+        ProgramValue::Parameter(_) => return None,
+        ProgramValue::Void | ProgramValue::UInt32(_) => return None,
     };
     let load = match bits {
         MachineTerm::MemoryLoad(_, _, _) => bits.clone(),
@@ -5515,7 +5511,7 @@ fn external_load_projection_retains_aliases_across_cell_updates() {
     });
     let mut memory = CMemory::new();
     for pointer in &pointers {
-        memory = memory.store(pointer.clone(), CValue::Int32(7u32.into()));
+        memory = memory.store(pointer.clone(), ProgramValue::Int32(7u32.into()));
     }
     for load in [&pointers[1], &pointers[2]] {
         let projected = canonical_memory_for_pointer_load(&memory, load);
@@ -5529,11 +5525,11 @@ fn external_load_projection_retains_aliases_across_cell_updates() {
     }
     let updated = memory
         .clone()
-        .store(pointers[0].clone(), CValue::Int32(9u32.into()));
+        .store(pointers[0].clone(), ProgramValue::Int32(9u32.into()));
     let projected = canonical_memory_for_pointer_load(&updated, &pointers[1]);
     assert_eq!(
         projected.known_value(&pointers[0]),
-        Some(CValue::Int32(9u32.into()))
+        Some(ProgramValue::Int32(9u32.into()))
     );
     let removed = updated.without_cell(&pointers[0]);
     let projected = canonical_memory_for_pointer_load(&removed, &pointers[1]);
@@ -5541,7 +5537,7 @@ fn external_load_projection_retains_aliases_across_cell_updates() {
     let original = canonical_memory_for_pointer_load(&memory, &pointers[1]);
     assert_eq!(
         original.known_value(&pointers[0]),
-        Some(CValue::Int32(7u32.into()))
+        Some(ProgramValue::Int32(7u32.into()))
     );
 }
 
@@ -5663,10 +5659,10 @@ mod retained_run_access_tests {
             let run = CellRun::new_with_mode(
                 base.clone(),
                 4,
-                CType::Int32,
+                ProgramType::Int32,
                 8,
                 crate::kernel::intern_c_memory(CMemory::new()),
-                crate::kernel::primitives::RunValueMode::Constant(CValue::Int32(7u32.into())),
+                crate::kernel::primitives::RunValueMode::Constant(ProgramValue::Int32(7u32.into())),
                 Default::default(),
             );
             let pointer = Pointer {
@@ -5703,7 +5699,7 @@ mod retained_run_access_tests {
             );
             assert_eq!(
                 run_value_at_equal_displaced_pointer(&run, &pointer, &base.offset, &pinned),
-                Some(CValue::Int32(7u32.into()))
+                Some(ProgramValue::Int32(7u32.into()))
             );
             let mut holes = run.holes().clone();
             holes.insert(2);

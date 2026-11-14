@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::{
-    CFunctionContractClaim, CStatement, Proposition, bool_value, c_call, c_function, c_if,
+    CFunctionContractClaim, ProgramStatement, Proposition, bool_value, c_call, c_function, c_if,
     c_int32_literal, c_parameter, c_return, c_seq, c_skip, c_try_catch_int32, c_variable,
     prove_c_function_contract_execution_paths_with_checked_artifacts,
     prove_checked_c_function_execution_with_environment,
@@ -16,12 +16,12 @@ use crate::kernel::{
 #[test]
 fn call_outcome_split_does_not_copy_the_proofs_facts() {
     let helper = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "helper",
-        vec![c_parameter("should_throw", CType::Bool)],
+        vec![c_parameter("should_throw", ProgramType::Bool)],
         c_if(
             c_variable("should_throw"),
-            CStatement::Throw(c_int32_literal(7)),
+            ProgramStatement::Throw(c_int32_literal(7)),
             c_return(c_int32_literal(5)),
         ),
     )
@@ -33,11 +33,11 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         vec![CFunctionContractClaim::body_safety()],
         true,
     );
-    let helper_arguments = vec![CExpression::Value(bool_value(MachineTerm::Variable(
+    let helper_arguments = vec![ProgramExpression::Value(bool_value(MachineTerm::Variable(
         Variable(80_111),
     )))];
     let artifacts = prove_checked_c_function_execution_with_environment(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments.clone(),
         PureFactContext::new(),
@@ -46,7 +46,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         CFunctionContractExecutionMode::VerifyLoops,
     );
     let certified = prove_c_function_contract_execution_paths_with_checked_artifacts(
-        CState::new().with_population_creation_tracking(),
+        ExecutionState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments,
         CExecutionEnvironment::new(),
@@ -62,11 +62,11 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         .with_function(helper)
         .with_verified_function_rule(helper_rule);
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "caller",
         vec![
-            c_parameter("construct", CType::Bool),
-            c_parameter("should_throw", CType::Bool),
+            c_parameter("construct", ProgramType::Bool),
+            c_parameter("should_throw", ProgramType::Bool),
         ],
         c_seq(
             c_if(
@@ -96,8 +96,8 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
     .unwrap();
     let function_block = &click_file.function_blocks()[0];
     let arguments = vec![
-        CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_112)))),
-        CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_113)))),
+        ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_112)))),
+        ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_113)))),
     ];
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -126,7 +126,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
             "call outcome split",
             0,
             ExecutionProofState::at_entry(
-                CState::new().with_population_creation_tracking(),
+                ExecutionState::new().with_population_creation_tracking(),
                 ExecutionFrontier::default(),
                 RecordedSnapshots::new(),
                 SurfacePropositionMap::default(),

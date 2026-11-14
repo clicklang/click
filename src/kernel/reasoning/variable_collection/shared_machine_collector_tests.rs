@@ -190,8 +190,8 @@ fn shared_scope_maximum_covers_empty_syntax_and_extreme_identities() {
         format,
         MachineBinaryOp::Add,
         [
-            KernelTerm::variable(KernelType::C(CType::Int32), fresh),
-            KernelTerm::variable(KernelType::C(CType::Int32), Variable(u64::MAX)),
+            KernelTerm::variable(KernelType::C(ProgramType::Int32), fresh),
+            KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(u64::MAX)),
         ],
     );
     let machine = SharedMachineIntegerTerm::from_shared(format, root).unwrap();

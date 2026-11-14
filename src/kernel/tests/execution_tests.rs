@@ -9,7 +9,7 @@ use std::sync::Arc;
 fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
     let _session = crate::kernel::VerificationSession::enter();
     crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".to_string()]));
-    let execute = |state: &CState, statement: &CStatement| {
+    let execute = |state: &ExecutionState, statement: &ProgramStatement| {
         execute_c_statement_paths(
             state,
             statement,
@@ -21,14 +21,14 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
     };
     let declaration = c_declare_initialized(
         "x",
-        CType::Int32,
+        ProgramType::Int32,
         c_int32_literal(7),
         false,
         false,
         true,
         false,
     );
-    let state = normal_state(&execute(&CState::new(), &declaration));
+    let state = normal_state(&execute(&ExecutionState::new(), &declaration));
     let pointer = state.locals.slot("x").unwrap().clone();
     assert!(state.memory.is_read_only_block(&pointer.block));
     assert!(state.memory.requires_explicit_scalar_ownership(&pointer));
@@ -42,9 +42,9 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
         execute(
             &state,
             &c_typed_store(
-                c_typed_pointer_value(pointer.clone(), CType::Int32Pointer),
+                c_typed_pointer_value(pointer.clone(), ProgramType::Int32Pointer),
                 c_int32_literal(9),
-                CType::Int32
+                ProgramType::Int32
             )
         )[0]
         .outcome,
@@ -56,20 +56,23 @@ fn scalar_initialization_freezes_storage_and_preserves_lifetime() {
         execute(
             &replaced,
             &c_return(c_typed_load(
-                c_typed_pointer_value(pointer, CType::Int32Pointer),
-                CType::Int32
+                c_typed_pointer_value(pointer, ProgramType::Int32Pointer),
+                ProgramType::Int32
             ))
         )[0]
         .outcome,
         CStatementOutcome::UndefinedBehavior(_)
     ));
-    let unwritten = normal_state(&execute(&CState::new(), &c_declare("u", CType::Int32)));
+    let unwritten = normal_state(&execute(
+        &ExecutionState::new(),
+        &c_declare("u", ProgramType::Int32),
+    ));
     assert!(!matches!(
         execute(
             &unwritten,
             &c_declare_initialized(
                 "x",
-                CType::Int32,
+                ProgramType::Int32,
                 c_variable("u"),
                 false,
                 false,
@@ -87,9 +90,9 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
     let target = CControlTargetId(0);
     let target_statement = c_return(c_variable("x"));
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "forward",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_seq(
             c_goto(target),
             c_seq(c_return(c_int32_literal(99)), target_statement.clone()),
@@ -103,7 +106,7 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
         },
     )]));
     let theorem = prove_symbolic_c_function_execution(
-        CState::new(),
+        ExecutionState::new(),
         function,
         vec![c_int32_literal(1)],
         PureFactContext::new(),
@@ -118,7 +121,7 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
                     ..
                 },
                 ..
-            } if matches!(value.native().as_ref(), CValue::Int32(int32_constant!(1)))
+            } if matches!(value.native().as_ref(), ProgramValue::Int32(int32_constant!(1)))
         ),
         "{:?}",
         theorem.proposition()
@@ -143,7 +146,7 @@ fn active_memory_loan(range: CMemoryRange) -> LoanLedger {
         .expect("memory loan apply")
 }
 
-fn normal_state(paths: &[CStatementExecutionPath]) -> CState {
+fn normal_state(paths: &[CStatementExecutionPath]) -> ExecutionState {
     let [
         CStatementExecutionPath {
             outcome: CStatementOutcome::Normal(state),
@@ -189,10 +192,10 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
     let _session = crate::kernel::VerificationSession::enter();
     crate::kernel::set_never_address_taken_locals(BTreeSet::from(["x".to_string()]));
     let declared = execute_c_statement_paths(
-        &CState::new(),
-        &CStatement::Declare {
+        &ExecutionState::new(),
+        &ProgramStatement::Declare {
             name: "x".to_string(),
-            c_type: CType::Int32,
+            c_type: ProgramType::Int32,
             volatile: false,
             pointee_volatile: false,
             constant: false,
@@ -217,7 +220,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
 
     let direct = execute_c_statement_paths(
         &state,
-        &CStatement::Assign {
+        &ProgramStatement::Assign {
             source: Default::default(),
             name: "x".to_string(),
             expression: c_int32_literal(1),
@@ -231,9 +234,9 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
 
     let reused = execute_c_statement_paths(
         &state,
-        &CStatement::Declare {
+        &ProgramStatement::Declare {
             name: "x".to_string(),
-            c_type: CType::Int32,
+            c_type: ProgramType::Int32,
             volatile: false,
             pointee_volatile: false,
             constant: false,
@@ -249,7 +252,10 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
     .expect("name reuse should return a checked refusal");
     assert_loan_write_rejected(&reused[0].outcome);
 
-    let alias_state = state.with_local("p", CValue::typed_pointer(pointer, CType::Int32Pointer));
+    let alias_state = state.with_local(
+        "p",
+        ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+    );
     let indirect = execute_c_statement_paths(
         &alias_state,
         &c_store(c_variable("p"), c_int32_literal(2)),
@@ -265,7 +271,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
 fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
     let _session = crate::kernel::VerificationSession::enter();
     crate::kernel::set_never_address_taken_locals(BTreeSet::from(["p".to_string()]));
-    let execute = |state: &CState, statement: &CStatement| {
+    let execute = |state: &ExecutionState, statement: &ProgramStatement| {
         execute_c_statement_paths(
             state,
             statement,
@@ -276,11 +282,14 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
         .unwrap()
     };
     let state = normal_state(&execute(
-        &CState::new(),
-        &c_declare("p", CType::UInt8Pointer),
+        &ExecutionState::new(),
+        &c_declare("p", ProgramType::UInt8Pointer),
     ));
-    let value = CValue::typed_pointer(Pointer::symbolic(Variable(93_700)), CType::UInt8Pointer);
-    let copy = c_assign("p", CExpression::Value(value.clone()));
+    let value = ProgramValue::typed_pointer(
+        Pointer::symbolic(Variable(93_700)),
+        ProgramType::UInt8Pointer,
+    );
+    let copy = c_assign("p", ProgramExpression::Value(value.clone()));
     assert_eq!(
         normal_state(&execute(&state, &copy))
             .locals()
@@ -290,7 +299,7 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
     );
     let discard_const = c_assign(
         "p",
-        CExpression::Value(value.clone().with_pointer_pointee_constant(true)),
+        ProgramExpression::Value(value.clone().with_pointer_pointee_constant(true)),
     );
     assert!(matches!(
         execute(&state, &discard_const)[0].outcome,
@@ -314,10 +323,10 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
 #[test]
 fn active_stable_loan_allows_a_disjoint_local_store() {
     let declared = execute_c_statement_paths(
-        &CState::new(),
-        &CStatement::Declare {
+        &ExecutionState::new(),
+        &ProgramStatement::Declare {
             name: "a".to_string(),
-            c_type: CType::Int32Array(2),
+            c_type: ProgramType::Int32Array(2),
             volatile: false,
             pointee_volatile: false,
             constant: false,
@@ -340,7 +349,7 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
     ));
     let state = state.with_loan_ledger(Some(loan)).with_local(
         "p",
-        CValue::typed_pointer(base.offset_by_bytes(4), CType::Int32Pointer),
+        ProgramValue::typed_pointer(base.offset_by_bytes(4), ProgramType::Int32Pointer),
     );
     let paths = execute_c_statement_paths(
         &state,
@@ -360,19 +369,19 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
 #[test]
 fn volatile_parameter_accesses_emit_ordered_facts() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "volatile_read",
-        vec![c_parameter("value", CType::Int32).with_volatile(true)],
-        CStatement::seq(
-            std::sync::Arc::new(CStatement::Assign {
+        vec![c_parameter("value", ProgramType::Int32).with_volatile(true)],
+        ProgramStatement::seq(
+            std::sync::Arc::new(ProgramStatement::Assign {
                 source: Default::default(),
                 name: "value".to_string(),
                 expression: c_int32_literal(8),
             }),
-            std::sync::Arc::new(CStatement::Return(c_variable("value"))),
+            std::sync::Arc::new(ProgramStatement::Return(c_variable("value"))),
         ),
     );
-    let bound = bind_c_function_arguments(&CState::new(), &function, &[int32(7)])
+    let bound = bind_c_function_arguments(&ExecutionState::new(), &function, &[int32(7)])
         .expect("volatile parameter should bind");
     let paths = execute_c_statement_paths(
         &bound,
@@ -425,7 +434,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
 /// caller that must avoid what a state already mentions sees them.
 #[test]
 fn a_state_scan_reserves_memory_havoc_marker_identities() {
-    let state = CState::new().with_memory(
+    let state = ExecutionState::new().with_memory(
         CMemory::new()
             .with_block("havoc:1000004", 0)
             .with_block("call-havoc:1000009", 0)
@@ -451,7 +460,7 @@ fn a_state_scan_reserves_memory_havoc_marker_identities() {
 
 #[test]
 fn scalar_local_updates_share_memory_and_resource_state() {
-    let before = CState::new();
+    let before = ExecutionState::new();
     let after = before.clone().with_local("x", int32(1));
     assert!(before.shares_nonlocal_storage_with(&after));
 }
@@ -465,18 +474,20 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
     let memory = CMemory::new()
         .with_heap_allocation_claim(allocation.clone(), HeapExtent::int32(16))
         .expect("test allocation claim should be fresh");
-    let top = CState::new().with_memory(memory).with_resource_context(
-        ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_allocation(allocation.clone(), 16))
-            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
-                allocation,
-                MachineTerm::constant(0),
-                MachineTerm::constant(4),
-            ))),
-    );
+    let top = ExecutionState::new()
+        .with_memory(memory)
+        .with_resource_context(
+            ResourceContext::new()
+                .unchecked_with_fact(CResourceFact::own_allocation(allocation.clone(), 16))
+                .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                    allocation,
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(4),
+                ))),
+        );
     let freed = execute_c_statement_paths(
         &top,
-        &c_heap_free(CExpression::Value(CValue::pointer(Pointer {
+        &c_heap_free(ProgramExpression::Value(ProgramValue::pointer(Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         }))),
@@ -500,9 +511,9 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
     assert!(error.contains("resource ownership"));
 
     let token = CResourceFact::own_token("can_complete".to_string(), Vec::new());
-    let token_top =
-        CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(token));
-    let token_consumed = CState::new();
+    let token_top = ExecutionState::new()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(token));
+    let token_consumed = ExecutionState::new();
     let error = c_loop_state_components_match_at_back_edge(
         &token_top,
         &token_consumed,
@@ -517,7 +528,7 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
 fn final_iteration_condition_can_use_the_pre_body_bound() {
     let original = Variable(91_001);
     let original_bits = MachineTerm::Variable(original);
-    let state = CState::new().with_local(
+    let state = ExecutionState::new().with_local(
         "i",
         int32(MachineTerm::add(
             original_bits.clone(),
@@ -551,7 +562,7 @@ fn join_state_forgets_changed_scalars_and_memory() {
         block: "heap".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state_zero = CState::new()
+    let state_zero = ExecutionState::new()
         .with_local("x", stable_x.clone())
         .with_local("y", int32(0))
         .with_memory(
@@ -560,7 +571,7 @@ fn join_state_forgets_changed_scalars_and_memory() {
                 .store(pointer.clone(), int32(0)),
         )
         .with_resource_context(own_memory_context(pointer.clone(), 0, 1));
-    let state_one = CState::new()
+    let state_one = ExecutionState::new()
         .with_local("x", stable_x.clone())
         .with_local("y", int32(1))
         .with_memory(
@@ -601,13 +612,13 @@ fn join_state_abstracts_changed_pointer_locals() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let abstract_left = abstract_c_state_for_join(
-        &CState::new().with_local("selected", CValue::pointer(left)),
+        &ExecutionState::new().with_local("selected", ProgramValue::pointer(left)),
         &BTreeMap::new(),
         0,
     )
     .expect("pointer join abstraction");
     let abstract_right = abstract_c_state_for_join(
-        &CState::new().with_local("selected", CValue::pointer(right)),
+        &ExecutionState::new().with_local("selected", ProgramValue::pointer(right)),
         &BTreeMap::new(),
         0,
     )
@@ -615,7 +626,7 @@ fn join_state_abstracts_changed_pointer_locals() {
 
     assert_eq!(abstract_left, abstract_right);
     let local_native_output_596 = abstract_left.state.locals().get_native("selected");
-    let Some(CValue::Pointer(selected)) = local_native_output_596.as_deref() else {
+    let Some(ProgramValue::Pointer(selected)) = local_native_output_596.as_deref() else {
         panic!("selected should remain a pointer local");
     };
     assert!(selected.has_symbolic_block());
@@ -623,9 +634,9 @@ fn join_state_abstracts_changed_pointer_locals() {
 
 #[test]
 fn join_state_fresh_variables_do_not_collide_with_symbolic_pointer_blocks() {
-    let state = CState::new().with_local(
+    let state = ExecutionState::new().with_local(
         "selected",
-        CValue::pointer(Pointer::symbolic(Variable(1_000_000))),
+        ProgramValue::pointer(Pointer::symbolic(Variable(1_000_000))),
     );
     let abstract_state =
         abstract_c_state_for_join(&state, &BTreeMap::new(), 0).expect("pointer join abstraction");
@@ -635,7 +646,7 @@ fn join_state_fresh_variables_do_not_collide_with_symbolic_pointer_blocks() {
     // continues from there.
     assert_eq!(abstract_state.next_kernel_variable, 3);
     let local_native_output_615 = abstract_state.state.locals().get_native("selected");
-    let Some(CValue::Pointer(selected)) = local_native_output_615.as_deref() else {
+    let Some(ProgramValue::Pointer(selected)) = local_native_output_615.as_deref() else {
         panic!("selected should remain a pointer local");
     };
 
@@ -644,10 +655,10 @@ fn join_state_fresh_variables_do_not_collide_with_symbolic_pointer_blocks() {
 
 #[test]
 fn sibling_join_abstraction_is_deterministic_after_a_nested_join() {
-    let nested_source = CState::new().with_local("y", int32(0));
+    let nested_source = ExecutionState::new().with_local("y", int32(0));
     let nested = abstract_c_state_for_join(&nested_source, &BTreeMap::new(), 0)
         .expect("nested join abstraction");
-    let sibling = CState::new().with_local("y", int32(1));
+    let sibling = ExecutionState::new().with_local("y", int32(1));
     let states = [&nested.state, &sibling];
 
     let abstract_nested = abstract_c_state_for_join_across(
@@ -667,9 +678,9 @@ fn sibling_join_abstraction_is_deterministic_after_a_nested_join() {
 
     assert_eq!(abstract_nested, abstract_sibling);
 
-    let inner_empty = abstract_c_state_for_join(&CState::new(), &BTreeMap::new(), 0)
+    let inner_empty = abstract_c_state_for_join(&ExecutionState::new(), &BTreeMap::new(), 0)
         .expect("inner empty-state abstraction");
-    let raw_empty = CState::new();
+    let raw_empty = ExecutionState::new();
     let empty_states = [&inner_empty.state, &raw_empty];
     let outer_nested = abstract_c_state_for_join_across(
         &inner_empty.state,
@@ -739,7 +750,7 @@ fn concrete_max_executes_without_list_encoding() {
 
 #[test]
 fn concrete_max_function_call_preserves_caller_locals() {
-    let state = CState::new().with_local("caller", int32(99));
+    let state = ExecutionState::new().with_local("caller", int32(99));
     let function = c_max_function();
     let arguments = vec![c_int32_literal(0), c_int32_literal(1)];
     let theorem = prove_symbolic_c_function_execution(
@@ -771,11 +782,11 @@ fn symbolic_max_function_call_reports_branch_facts() {
     let a_bits = MachineTerm::Variable(a);
     let b_bits = MachineTerm::Variable(b);
     let condition = c_max_lt_condition(a_bits.clone(), b_bits.clone());
-    let state = CState::new();
+    let state = ExecutionState::new();
     let function = c_max_function();
     let arguments = vec![
-        CExpression::Value(int32(a_bits.clone())),
-        CExpression::Value(int32(b_bits.clone())),
+        ProgramExpression::Value(int32(a_bits.clone())),
+        ProgramExpression::Value(int32(b_bits.clone())),
     ];
     let execution = prove_symbolic_c_function_execution_paths(
         state.clone(),
@@ -843,7 +854,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
     let left = CFunctionOutcome::Return {
         value: int32(0).into(),
         state: Box::new(
-            CState::new().with_memory(base.clone().with_call_memory_havoc(
+            ExecutionState::new().with_memory(base.clone().with_call_memory_havoc(
                 Variable(41),
                 std::slice::from_ref(&first_range),
                 &assumptions,
@@ -854,7 +865,7 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
     let equivalent = CFunctionOutcome::Return {
         value: int32(0).into(),
         state: Box::new(
-            CState::new().with_memory(base.clone().with_call_memory_havoc(
+            ExecutionState::new().with_memory(base.clone().with_call_memory_havoc(
                 Variable(42),
                 std::slice::from_ref(&first_range),
                 &assumptions,
@@ -864,12 +875,14 @@ fn execution_provenance_matches_only_equivalent_call_havoc() {
     };
     let different = CFunctionOutcome::Return {
         value: int32(0).into(),
-        state: Box::new(CState::new().with_memory(base.with_call_memory_havoc(
-            Variable(43),
-            &[other_range],
-            &assumptions,
-            None,
-        ))),
+        state: Box::new(
+            ExecutionState::new().with_memory(base.with_call_memory_havoc(
+                Variable(43),
+                &[other_range],
+                &assumptions,
+                None,
+            )),
+        ),
     };
 
     assert!(
@@ -901,20 +914,20 @@ fn function_call_threads_memory_but_discards_callee_locals() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("caller", int32(42))
         .with_resource_context(resources.clone());
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "store_and_load",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_seq(
             c_store(c_variable("p"), c_int32_literal(9)),
             c_return(c_load(c_variable("p"))),
         ),
     );
     let arguments = vec![c_pointer_value(pointer.clone())];
-    let final_state = CState::new()
+    let final_state = ExecutionState::new()
         .with_local("caller", int32(42))
         .with_memory(CMemory::new().store(pointer.clone(), int32(9)))
         .with_resource_context(resources);
@@ -947,20 +960,20 @@ fn function_call_does_not_inherit_undeclared_resources() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
-    let state = CState::new().with_resource_context(resources);
+    let state = ExecutionState::new().with_resource_context(resources);
     let helper = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "store_and_load",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_seq(
             c_store(c_variable("p"), c_int32_literal(9)),
             c_return(c_load(c_variable("p"))),
         ),
     );
     let caller = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "caller",
-        vec![c_parameter("p", CType::Int32Pointer)],
+        vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_call_assign("result", "store_and_load", vec![c_variable("p")]),
     );
     let arguments = vec![c_pointer_value(pointer.clone())];
@@ -991,12 +1004,12 @@ fn function_call_does_not_inherit_undeclared_resources() {
 fn concrete_function_specification_is_native_theorem() {
     let function = c_max_function();
     let specification = c_function_specification(
-        CState::new(),
+        ExecutionState::new(),
         vec![c_int32_literal(0), c_int32_literal(1)],
         Vec::new(),
         CFunctionOutcome::Return {
             value: int32(1).into(),
-            state: Box::new(CState::new()),
+            state: Box::new(ExecutionState::new()),
         },
     );
     let theorem = prove_c_function_satisfies_specification(
@@ -1024,15 +1037,15 @@ fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
     let condition = c_max_lt_condition(a_bits.clone(), b_bits.clone());
     let function = c_max_function();
     let specification = c_function_specification(
-        CState::new(),
+        ExecutionState::new(),
         vec![
-            CExpression::Value(int32(a_bits)),
-            CExpression::Value(int32(b_bits)),
+            ProgramExpression::Value(int32(a_bits)),
+            ProgramExpression::Value(int32(b_bits)),
         ],
         vec![Proposition::ConditionIs(condition.clone(), true)],
         CFunctionOutcome::Return {
             value: int32(MachineTerm::Variable(b)).into(),
-            state: Box::new(CState::new()),
+            state: Box::new(ExecutionState::new()),
         },
     );
     let theorem = prove_c_function_satisfies_specification(
@@ -1060,15 +1073,15 @@ fn incomplete_symbolic_function_specification_does_not_prove() {
     let b = Variable(19);
     let function = c_max_function();
     let specification = c_function_specification(
-        CState::new(),
+        ExecutionState::new(),
         vec![
-            CExpression::Value(int32(MachineTerm::Variable(a))),
-            CExpression::Value(int32(MachineTerm::Variable(b))),
+            ProgramExpression::Value(int32(MachineTerm::Variable(a))),
+            ProgramExpression::Value(int32(MachineTerm::Variable(b))),
         ],
         Vec::new(),
         CFunctionOutcome::Return {
             value: int32(MachineTerm::Variable(b)).into(),
-            state: Box::new(CState::new()),
+            state: Box::new(ExecutionState::new()),
         },
     );
 
@@ -1081,18 +1094,18 @@ fn incomplete_symbolic_function_specification_does_not_prove() {
 #[test]
 fn call_assign_uses_function_environment() {
     let increment = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "increment",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_return(c_add(c_variable("x"), c_int32_literal(1))),
     );
     let environment = CExecutionEnvironment::new().with_function(increment);
-    let state = CState::new();
+    let state = ExecutionState::new();
     let statement = c_seq(
         c_call_assign("result", "increment", vec![c_int32_literal(41)]),
         c_return(c_variable("result")),
     );
-    let final_state = CState::new().with_local("result", int32(42));
+    let final_state = ExecutionState::new().with_local("result", int32(42));
     let theorem = prove_symbolic_c_execution_with_environment(
         state.clone(),
         statement.clone(),
@@ -1118,14 +1131,14 @@ fn call_assign_uses_function_environment() {
 #[test]
 fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
     let thrower = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "thrower",
         Vec::new(),
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome();
     let environment = CExecutionEnvironment::new().with_function(thrower);
-    let state = CState::new().with_local("result", int32(1));
+    let state = ExecutionState::new().with_local("result", int32(1));
     let statement = c_seq(
         c_call_assign("result", "thrower", Vec::new()),
         c_return(c_variable("result")),
@@ -1155,14 +1168,14 @@ fn direct_call_propagates_internal_throw_and_skips_its_suffix() {
 #[test]
 fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
     let thrower = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "thrower",
         Vec::new(),
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome();
     let environment = CExecutionEnvironment::new().with_function(thrower);
-    let state = CState::new().with_local("x", int32(1));
+    let state = ExecutionState::new().with_local("x", int32(1));
     let statement = c_try_catch_int32(
         c_seq(
             c_assign("x", c_int32_literal(9)),
@@ -1196,7 +1209,7 @@ fn int32_handler_receives_payload_and_thrown_state_across_a_call() {
 
 #[test]
 fn int32_handler_does_not_run_on_normal_or_return_paths() {
-    let initial = CState::new().with_local("x", int32(1));
+    let initial = ExecutionState::new().with_local("x", int32(1));
     let normal = c_seq(
         c_try_catch_int32(
             c_assign("x", c_int32_literal(9)),
@@ -1215,7 +1228,7 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
                 ..
             },
             ..
-        } if matches!(value.native().as_ref(), CValue::Int32(int32_constant!(9)))
+        } if matches!(value.native().as_ref(), ProgramValue::Int32(int32_constant!(9)))
     ));
     let returning = c_try_catch_int32(
         c_return(c_int32_literal(3)),
@@ -1232,19 +1245,20 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
                 ..
             },
             ..
-        } if matches!(value.native().as_ref(), CValue::Int32(int32_constant!(3)))
+        } if matches!(value.native().as_ref(), ProgramValue::Int32(int32_constant!(3)))
     ));
 }
 
 #[test]
 fn throw_from_int32_handler_escapes_instead_of_being_recaught() {
     let statement = c_try_catch_int32(
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
         "caught",
-        CStatement::Throw(c_variable("caught")),
+        ProgramStatement::Throw(c_variable("caught")),
     );
-    let theorem = prove_symbolic_c_execution(CState::new(), statement, PureFactContext::new())
-        .expect("a handler throw should escape the same handler");
+    let theorem =
+        prove_symbolic_c_execution(ExecutionState::new(), statement, PureFactContext::new())
+            .expect("a handler throw should escape the same handler");
     assert!(matches!(
         theorem.proposition(),
         Proposition::CStatementExecutes {
@@ -1253,19 +1267,19 @@ fn throw_from_int32_handler_escapes_instead_of_being_recaught() {
                 ..
             },
             ..
-        } if matches!(value.native().as_ref(), CValue::Int32(int32_constant!(7)))
+        } if matches!(value.native().as_ref(), ProgramValue::Int32(int32_constant!(7)))
     ));
 }
 
 #[test]
 fn int32_handler_rejects_a_binding_that_would_replace_a_live_local() {
     let statement = c_try_catch_int32(
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
         "live",
         c_return(c_variable("live")),
     );
     let theorem = prove_symbolic_c_execution(
-        CState::new().with_local("live", int32(11)),
+        ExecutionState::new().with_local("live", int32(11)),
         statement,
         PureFactContext::new(),
     )
@@ -1282,17 +1296,17 @@ fn int32_handler_rejects_a_binding_that_would_replace_a_live_local() {
 #[test]
 fn caught_throw_satisfies_a_nonthrowing_function_signature() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "fully_handled",
         Vec::new(),
         c_try_catch_int32(
-            CStatement::Throw(c_int32_literal(7)),
+            ProgramStatement::Throw(c_int32_literal(7)),
             "caught",
             c_return(c_variable("caught")),
         ),
     );
     let theorem = prove_symbolic_c_function_execution(
-        CState::new(),
+        ExecutionState::new(),
         function,
         Vec::new(),
         PureFactContext::new(),
@@ -1306,29 +1320,29 @@ fn caught_throw_satisfies_a_nonthrowing_function_signature() {
                 ..
             },
             ..
-        } if matches!(value.native().as_ref(), CValue::Int32(int32_constant!(7)))
+        } if matches!(value.native().as_ref(), ProgramValue::Int32(int32_constant!(7)))
     ));
 }
 
 #[test]
 fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
     let helper = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "helper",
-        vec![c_parameter("should_throw", CType::Bool)],
+        vec![c_parameter("should_throw", ProgramType::Bool)],
         c_if(
             c_variable("should_throw"),
-            CStatement::Throw(c_int32_literal(7)),
+            ProgramStatement::Throw(c_int32_literal(7)),
             c_return(c_int32_literal(5)),
         ),
     )
     .with_int32_exceptional_outcome();
     let caller = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "caller",
         vec![
-            c_parameter("construct", CType::Bool),
-            c_parameter("should_throw", CType::Bool),
+            c_parameter("construct", ProgramType::Bool),
+            c_parameter("should_throw", ProgramType::Bool),
         ],
         c_seq(
             c_if(
@@ -1344,11 +1358,11 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
         ),
     );
     let execution = prove_symbolic_c_function_execution_paths_with_environment(
-        CState::new(),
+        ExecutionState::new(),
         caller,
         vec![
-            CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_001)))),
-            CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_002)))),
+            ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_001)))),
+            ProgramExpression::Value(bool_value(MachineTerm::Variable(Variable(80_002)))),
         ],
         PureFactContext::new(),
         CExecutionEnvironment::new().with_function(helper),
@@ -1371,7 +1385,7 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
                     ..
                 } => {
                     let native = value.native();
-                    let CValue::Int32(int32_constant!(bits)) = native.as_ref() else {
+                    let ProgramValue::Int32(int32_constant!(bits)) = native.as_ref() else {
                         panic!("constant return");
                     };
                     constant_u32(*bits)
@@ -1387,10 +1401,10 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
 #[test]
 fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     let throwing = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "throwing",
         Vec::new(),
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
     )
     .with_int32_exceptional_outcome();
     assert!(!throwing.opaque_contract_supported());
@@ -1403,7 +1417,7 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     );
 
     let declared_without_throw = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "declared_without_throw",
         Vec::new(),
         c_return(c_int32_literal(0)),
@@ -1414,7 +1428,7 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     assert!(CFunctionContract::new("DeclaredWithoutThrow", declared_without_throw).is_some());
 
     let modular = prove_symbolic_c_execution_with_environment(
-        CState::new(),
+        ExecutionState::new(),
         c_call("throwing", Vec::new()),
         PureFactContext::new(),
         CExecutionEnvironment::new().with_function(throwing),
@@ -1434,8 +1448,8 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
     );
 
     let theorem = prove_symbolic_c_execution(
-        CState::new(),
-        CStatement::Throw(c_pointer_value(Pointer::null())),
+        ExecutionState::new(),
+        ProgramStatement::Throw(c_pointer_value(Pointer::null())),
         PureFactContext::new(),
     )
     .expect("a non-int32 throw should produce a checked type mismatch");
@@ -1451,13 +1465,13 @@ fn internal_throw_is_int32_only_and_requires_a_verified_direct_rule() {
 #[test]
 fn function_execution_rejects_an_undeclared_exceptional_outcome() {
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "undeclared_throw",
         Vec::new(),
-        CStatement::Throw(c_int32_literal(7)),
+        ProgramStatement::Throw(c_int32_literal(7)),
     );
     let theorem = prove_symbolic_c_function_execution(
-        CState::new(),
+        ExecutionState::new(),
         function,
         Vec::new(),
         PureFactContext::new(),
@@ -1474,7 +1488,7 @@ fn function_execution_rejects_an_undeclared_exceptional_outcome() {
 
 #[test]
 fn loop_semantics_explicitly_select_verification_or_verified_rules() {
-    let state = CState::new().with_local("i", int32(0));
+    let state = ExecutionState::new().with_local("i", int32(0));
     let statement = c_while_with_invariant_checks(
         c_less_than(c_variable("i"), c_int32_literal(1)),
         Vec::new(),
@@ -1482,7 +1496,7 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::CExpression(c_variable("i")),
+                right: SpecExpression::ProgramExpression(c_variable("i")),
             },
             Some("loop entry".to_string()),
             Some("loop preservation".to_string()),
@@ -1564,12 +1578,12 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
 fn statement_checks_share_one_execution_environment_variable_index() {
     let reserved = Variable(1_000_000);
     let indexed_function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "indexed",
         Vec::new(),
-        c_return(CExpression::Value(CValue::Int32(MachineTerm::Variable(
-            reserved,
-        )))),
+        c_return(ProgramExpression::Value(ProgramValue::Int32(
+            MachineTerm::Variable(reserved),
+        ))),
     );
     let environment = CExecutionEnvironment::new().with_function(indexed_function);
     let cloned_before_initialization = environment.clone();
@@ -1577,7 +1591,7 @@ fn statement_checks_share_one_execution_environment_variable_index() {
 
     for candidate in [environment.clone(), cloned_before_initialization] {
         let execution = prove_symbolic_c_statement_verification_paths_with_environment(
-            CState::new(),
+            ExecutionState::new(),
             c_skip(),
             PureFactContext::new(),
             candidate,
@@ -1606,12 +1620,12 @@ fn statement_checks_share_one_execution_environment_variable_index() {
     );
 
     let changed = environment.with_function(c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "changed",
         Vec::new(),
-        c_return(CExpression::Value(CValue::Int32(MachineTerm::Variable(
-            Variable(1_000_001),
-        )))),
+        c_return(ProgramExpression::Value(ProgramValue::Int32(
+            MachineTerm::Variable(Variable(1_000_001)),
+        ))),
     ));
     assert_eq!(changed.variable_index.build_count(), 0);
     let changed_index = execution_environment_variable_index(&changed);
@@ -1628,7 +1642,7 @@ fn statement_checks_share_one_execution_environment_variable_index() {
 #[test]
 fn adding_a_loop_rule_collects_only_that_rules_variables() {
     let rule = |index: u64| CVerifiedLoopRule {
-        symbolic_entry_state: CState::default(),
+        symbolic_entry_state: ExecutionState::default(),
         loop_statement: c_skip(),
         loop_index: Some(index as usize),
         required_assumptions: PureFactContext::new()
@@ -1665,12 +1679,12 @@ fn adding_a_loop_rule_collects_only_that_rules_variables() {
 #[test]
 fn environment_variable_scans_do_not_multiply_by_statement_count() {
     for size in [8, 32, 128, 512] {
-        let mut body = c_return(CExpression::Value(int32(0)));
+        let mut body = c_return(ProgramExpression::Value(int32(0)));
         for index in (0..size).rev() {
             body = c_seq(
                 c_assign(
                     "symbolic",
-                    CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(
+                    ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(
                         1_000_000 + index,
                     )))),
                 ),
@@ -1678,7 +1692,7 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
             );
         }
         let environment = CExecutionEnvironment::new().with_function(c_function(
-            CType::Int32,
+            ProgramType::Int32,
             format!("indexed_{size}"),
             Vec::new(),
             body,
@@ -1686,7 +1700,7 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
 
         for _ in 0..size {
             let execution = prove_symbolic_c_statement_verification_paths_with_environment(
-                CState::new(),
+                ExecutionState::new(),
                 c_skip(),
                 PureFactContext::new(),
                 environment.clone(),
@@ -1704,7 +1718,7 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
 
 #[test]
 fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let statement = c_while_with_invariant_checks(
         c_int32_literal(1),
         Vec::new(),
@@ -1748,7 +1762,7 @@ fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
 
 #[test]
 fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
-    let state = CState::new().with_local("i", int32(0));
+    let state = ExecutionState::new().with_local("i", int32(0));
     let statement = c_while_with_invariant_checks(
         c_less_than(c_variable("i"), c_int32_literal(1)),
         Vec::new(),
@@ -1756,7 +1770,7 @@ fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::CExpression(c_variable("i")),
+                right: SpecExpression::ProgramExpression(c_variable("i")),
             },
             Some("loop entry".to_string()),
             Some("loop preservation".to_string()),
@@ -1800,7 +1814,7 @@ fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
 
 #[test]
 fn loop_exit_with_unproven_preservation_does_not_produce_rule() {
-    let state = CState::new().with_local("i", int32(u32::MAX));
+    let state = ExecutionState::new().with_local("i", int32(u32::MAX));
     let statement = c_while_with_invariant_checks(
         c_int32_literal(1),
         Vec::new(),
@@ -1808,7 +1822,7 @@ fn loop_exit_with_unproven_preservation_does_not_produce_rule() {
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::CExpression(c_variable("i")),
+                right: SpecExpression::ProgramExpression(c_variable("i")),
             },
             Some("loop entry".to_string()),
             Some("loop preservation".to_string()),
@@ -1847,7 +1861,7 @@ fn loop_exit_with_unproven_preservation_does_not_produce_rule() {
 
 #[test]
 fn unknown_call_assign_is_runtime_error() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let statement = c_call_assign("result", "missing", Vec::new());
     let theorem = prove_symbolic_c_execution_with_environment(
         state.clone(),
@@ -1881,9 +1895,12 @@ fn unreadable_guard_operand_leaves_the_condition_undecided() {
         block: "external".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let state = CState::new()
+    let state = ExecutionState::new()
         .with_local("a", int32(MachineTerm::Variable(Variable(1))))
-        .with_local("p", CValue::typed_pointer(pointer, CType::Int32Pointer));
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
+        );
     let condition = c_and(
         c_not_equal(c_variable("a"), c_int32_literal(0)),
         c_not_equal(c_load(c_variable("p")), c_int32_literal(0)),
@@ -1915,14 +1932,14 @@ fn unreadable_guard_operand_leaves_the_condition_undecided() {
 
 #[test]
 fn while_loop_executes_concrete_countdown() {
-    let state = CState::new().with_local("x", int32(3));
+    let state = ExecutionState::new().with_local("x", int32(3));
     let loop_statement = c_while(
         c_greater_than(c_variable("x"), c_int32_literal(0)),
         Vec::new(),
         c_assign("x", c_subtract(c_variable("x"), c_int32_literal(1))),
     );
     let statement = c_seq(loop_statement, c_return(c_variable("x")));
-    let final_state = CState::new().with_local("x", int32(0));
+    let final_state = ExecutionState::new().with_local("x", int32(0));
     let theorem =
         prove_symbolic_c_execution(state.clone(), statement.clone(), PureFactContext::new())
             .expect("concrete countdown loop should execute");
@@ -1942,7 +1959,7 @@ fn while_loop_executes_concrete_countdown() {
 
 #[test]
 fn loop_budget_exhaustion_is_executor_failure_not_c_runtime_error() {
-    let state = CState::new().with_local("x", int32(0));
+    let state = ExecutionState::new().with_local("x", int32(0));
     let statement = c_while(
         c_int32_literal(1),
         Vec::new(),
@@ -1966,7 +1983,7 @@ fn loop_budget_exhaustion_is_executor_failure_not_c_runtime_error() {
 
 #[test]
 fn executor_budgets_cap_steps_calls_and_paths() {
-    let state = CState::new();
+    let state = ExecutionState::new();
     let statement = c_return(c_int32_literal(1));
 
     assert_eq!(
@@ -1991,14 +2008,14 @@ fn executor_budgets_cap_steps_calls_and_paths() {
     );
 
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "id",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         c_return(c_variable("x")),
     );
     assert_eq!(
         prove_symbolic_c_function_execution_paths_with_budget(
-            CState::new(),
+            ExecutionState::new(),
             function,
             vec![c_int32_literal(1)],
             PureFactContext::new(),
@@ -2009,7 +2026,7 @@ fn executor_budgets_cap_steps_calls_and_paths() {
     );
 
     let straight_line = (0..128).fold(c_return(c_int32_literal(1)), |tail, _| {
-        c_seq(CStatement::Skip, tail)
+        c_seq(ProgramStatement::Skip, tail)
     });
     assert_eq!(
         prove_symbolic_c_execution_paths_with_budget(
@@ -2026,7 +2043,7 @@ fn executor_budgets_cap_steps_calls_and_paths() {
     );
 
     let branchy_statement = c_if(
-        CExpression::Value(int32(MachineTerm::Variable(Variable(75)))),
+        ProgramExpression::Value(int32(MachineTerm::Variable(Variable(75)))),
         c_return(c_int32_literal(1)),
         c_return(c_int32_literal(0)),
     );
@@ -2062,16 +2079,16 @@ fn whole_function_default_budget_scales_with_selected_source() {
         statements = next;
     }
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "large_identity",
-        vec![c_parameter("x", CType::Int32)],
+        vec![c_parameter("x", ProgramType::Int32)],
         statements.pop().expect("nonempty function body"),
     );
     let arguments = vec![c_int32_literal(1)];
 
     let fixed_budget_execution =
         prove_symbolic_c_function_verification_paths_with_environment_and_budget(
-            CState::new(),
+            ExecutionState::new(),
             function.clone(),
             arguments.clone(),
             PureFactContext::new(),
@@ -2086,7 +2103,7 @@ fn whole_function_default_budget_scales_with_selected_source() {
     );
 
     let source_sized_execution = prove_symbolic_c_function_verification_paths_with_environment(
-        CState::new(),
+        ExecutionState::new(),
         function,
         arguments,
         PureFactContext::new(),
@@ -2113,7 +2130,7 @@ fn while_invariant_is_proof_obligation() {
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    let state = CState::new().with_local("x", int32(0));
+    let state = ExecutionState::new().with_local("x", int32(0));
     let statement = c_while(
         c_greater_than(c_variable("x"), c_int32_literal(0)),
         vec![invariant.clone()],
@@ -2142,12 +2159,12 @@ fn while_invariant_is_proof_obligation() {
 /// so applying a rule has to check them against the facts available at the
 /// application site. This is the case no fixture reaches through the surface:
 /// a source loop's invariant checks carry its loop index, so two source loops
-/// are never the same `CStatement`, and one source loop is planned once per
+/// are never the same `ProgramStatement`, and one source loop is planned once per
 /// proof path.
 #[test]
 fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
     let (statement, base_rule) = prerequisite_loop_rule_fixture();
-    let state = CState::new().with_local("i", int32(0));
+    let state = ExecutionState::new().with_local("i", int32(0));
     let first_guard = loop_rule_guard(1);
     let second_guard = loop_rule_guard(2);
 
@@ -2214,7 +2231,7 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
 #[test]
 fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
     let (statement, base_rule) = prerequisite_loop_rule_fixture();
-    let state = CState::new().with_local("i", int32(0));
+    let state = ExecutionState::new().with_local("i", int32(0));
     let bound = MachineTerm::Variable(Variable(900_001));
     let required = ConditionTerm::signed_greater_equal(bound.clone(), MachineTerm::constant(0));
     let stronger = ConditionTerm::signed_greater_equal(bound, MachineTerm::constant(1));
@@ -2256,8 +2273,8 @@ fn loop_rule_guard(value: u32) -> ConditionTerm {
 /// One verified `while` rule, built by ordinary loop verification, that the
 /// prerequisite regressions above re-issue under different required
 /// assumptions.
-fn prerequisite_loop_rule_fixture() -> (CStatement, CVerifiedLoopRule) {
-    let state = CState::new().with_local("i", int32(0));
+fn prerequisite_loop_rule_fixture() -> (ProgramStatement, CVerifiedLoopRule) {
+    let state = ExecutionState::new().with_local("i", int32(0));
     let statement = c_while_with_invariant_checks(
         c_less_than(c_variable("i"), c_int32_literal(1)),
         Vec::new(),
@@ -2265,7 +2282,7 @@ fn prerequisite_loop_rule_fixture() -> (CStatement, CVerifiedLoopRule) {
             SpecProposition::Comparison {
                 left: SpecExpression::Value(int32(0)),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::CExpression(c_variable("i")),
+                right: SpecExpression::ProgramExpression(c_variable("i")),
             },
             Some("loop entry".to_string()),
             Some("loop preservation".to_string()),
@@ -2324,7 +2341,7 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
         },
     );
     let at = |ledger: LoanLedger, participant| {
-        CState::new()
+        ExecutionState::new()
             .with_resource_context(resources.clone())
             .with_loan_ledger(Some(ledger))
             .with_loan_participant(Some(participant))
@@ -2400,11 +2417,11 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
 
 #[test]
 fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
-    let state = CState::new().with_local("i", int32(0));
+    let state = ExecutionState::new().with_local("i", int32(0));
     let proposition = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(0)),
         operator: CComparisonOperator::LessEqual,
-        right: SpecExpression::CExpression(c_variable("i")),
+        right: SpecExpression::ProgramExpression(c_variable("i")),
     };
     let checks = (0..2)
         .map(|index| {
@@ -2439,11 +2456,11 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
 
 #[test]
 fn loop_entry_goals_preserve_guarded_judgments() {
-    let state = CState::new().with_local("i", int32(MachineTerm::Variable(Variable(600))));
+    let state = ExecutionState::new().with_local("i", int32(MachineTerm::Variable(Variable(600))));
     let proposition = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(0)),
         operator: CComparisonOperator::LessEqual,
-        right: SpecExpression::CExpression(c_variable("i")),
+        right: SpecExpression::ProgramExpression(c_variable("i")),
     };
     let checks = (0..2)
         .map(|index| {
@@ -2547,7 +2564,7 @@ fn guard_path_disjunction_has_nothing_to_export_without_two_stating_paths() {
 /// so the continuation cannot start below what the join spent.
 #[test]
 fn a_post_join_allocation_never_reuses_a_join_abstracted_variable() {
-    let then_state = CState::new()
+    let then_state = ExecutionState::new()
         .with_local("kept", int32(7))
         .with_local("picked", int32(1));
     let else_state = then_state.clone().with_local("picked", int32(2));
@@ -2563,7 +2580,7 @@ fn a_post_join_allocation_never_reuses_a_join_abstracted_variable() {
     )
     .expect("the arms have one deterministic abstraction");
     let local_native_output_2533 = abstraction.state.locals().get_native("picked");
-    let Some(CValue::Int32(MachineTerm::Variable(abstracted))) =
+    let Some(ProgramValue::Int32(MachineTerm::Variable(abstracted))) =
         local_native_output_2533.as_deref()
     else {
         panic!("a local the arms disagree on abstracts to one symbolic int32");
@@ -2606,7 +2623,7 @@ fn a_post_join_allocation_never_reuses_a_join_abstracted_variable() {
 fn a_join_successor_cannot_continue_from_a_rewound_counter() {
     use crate::kernel::proof::{ExecutionFrontier, ExecutionProofCore};
 
-    let then_state = CState::new()
+    let then_state = ExecutionState::new()
         .with_local("kept", int32(7))
         .with_local("picked", int32(1));
     let else_state = then_state.clone().with_local("picked", int32(2));
@@ -2699,7 +2716,7 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
     let mut variables = KernelVariableGenerator::fresh_for_execution(BTreeSet::new());
     let schema = ResourceFieldSchema::new(vec![(
         "rank".to_string(),
-        ResourceFieldType::C(CType::Int32),
+        ResourceFieldType::C(ProgramType::Int32),
     )])
     .expect("one int32 model field");
 
@@ -2721,7 +2738,8 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
             &mut budget,
         )
         .expect("the execution's counter is nowhere near its ceiling");
-        let [AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(field)))] = fields.as_ref()
+        let [AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(field)))] =
+            fields.as_ref()
         else {
             panic!("an int32 model field is one symbolic int32: {fields:?}");
         };
@@ -2749,7 +2767,7 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
 /// proof that runs inside it can start below what the head spent.
 #[test]
 fn loop_preservation_contexts_allocate_above_the_executions_counter() {
-    let loop_entry_state = CState::new()
+    let loop_entry_state = ExecutionState::new()
         .with_local("i", int32(0))
         .with_local("n", int32(MachineTerm::Variable(Variable(7))));
     let condition = c_less_than(c_variable("i"), c_variable("n"));
@@ -3076,7 +3094,7 @@ fn the_universal_witness_range_is_disjoint_from_every_other_producer() {
 /// `could not lower entry invariants: ResourceFieldInstanceUnavailable`.
 #[test]
 fn loop_entry_lowering_limit_is_spelled_in_words() {
-    let state = CState::new().with_local("i", int32(0));
+    let state = ExecutionState::new().with_local("i", int32(0));
     let proposition = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(0)),
         operator: CComparisonOperator::LessEqual,
@@ -3087,7 +3105,7 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
                 field_index: 0,
                 at_entry: false,
             },
-            c_type: CType::Int32,
+            c_type: ProgramType::Int32,
         },
     };
     let checks = vec![CLoopInvariantCheck::new(
@@ -3107,20 +3125,23 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
 /// lowers it when the declaration zero-fills: a 16-byte struct whose
 /// element zero stores are an int32 key, a byte tag and a pointer, then
 /// the stores of the fields the initializer writes.
-fn zero_filled_node_array(length: u32, written: &[(u32, CValue, CType)]) -> CStatement {
+fn zero_filled_node_array(
+    length: u32,
+    written: &[(u32, ProgramValue, ProgramType)],
+) -> ProgramStatement {
     let fill = CZeroFill::new(
         16,
         length,
         vec![
-            CZeroCell::new(0, CType::Int32, false, int32(0)),
-            CZeroCell::new(4, CType::UInt8, false, int32(0)),
-            CZeroCell::new(8, CType::Int32Pointer, false, int32(0)),
+            CZeroCell::new(0, ProgramType::Int32, false, int32(0)),
+            CZeroCell::new(4, ProgramType::UInt8, false, int32(0)),
+            CZeroCell::new(8, ProgramType::Int32Pointer, false, int32(0)),
         ],
     );
     written.iter().fold(
         c_declare_with_zero_fill(
             "items",
-            CType::UInt8Array(length * 16),
+            ProgramType::UInt8Array(length * 16),
             false,
             false,
             false,
@@ -3132,7 +3153,7 @@ fn zero_filled_node_array(length: u32, written: &[(u32, CValue, CType)]) -> CSta
                 statement,
                 c_typed_store(
                     c_pointer_offset_bytes(c_variable("items"), *offset),
-                    CExpression::Value(value.clone()),
+                    ProgramExpression::Value(value.clone()),
                     *value_type,
                 ),
             )
@@ -3142,9 +3163,9 @@ fn zero_filled_node_array(length: u32, written: &[(u32, CValue, CType)]) -> CSta
 
 /// `statements` in order as a balanced sequence, so executing a long one
 /// does not recurse once per statement.
-fn balanced_c_seq(statements: &[CStatement]) -> CStatement {
+fn balanced_c_seq(statements: &[ProgramStatement]) -> ProgramStatement {
     match statements {
-        [] => CStatement::Skip,
+        [] => ProgramStatement::Skip,
         [statement] => statement.clone(),
         _ => {
             let (first, second) = statements.split_at(statements.len() / 2);
@@ -3153,7 +3174,11 @@ fn balanced_c_seq(statements: &[CStatement]) -> CStatement {
     }
 }
 
-fn load_items_field(state: &CState, offset: u32, value_type: CType) -> CExpressionOutcome {
+fn load_items_field(
+    state: &ExecutionState,
+    offset: u32,
+    value_type: ProgramType,
+) -> CExpressionOutcome {
     let paths = evaluate_c_expression_paths(
         state,
         &c_typed_load(
@@ -3170,7 +3195,7 @@ fn load_items_field(state: &CState, offset: u32, value_type: CType) -> CExpressi
     path.outcome.clone()
 }
 
-fn execute_declaration(state: &CState, statement: &CStatement) -> CState {
+fn execute_declaration(state: &ExecutionState, statement: &ProgramStatement) -> ExecutionState {
     normal_state(
         &execute_c_statement_paths(
             state,
@@ -3192,32 +3217,35 @@ fn execute_declaration(state: &CState, statement: &CStatement) -> CState {
 fn a_zero_filled_automatic_array_holds_exactly_the_per_element_stores() {
     for length in [1u32, 2, 5, 64, 65] {
         let written = [
-            (16 * (length - 1), int32(7), CType::Int32),
-            (4, uint8(9), CType::UInt8),
+            (16 * (length - 1), int32(7), ProgramType::Int32),
+            (4, uint8(9), ProgramType::UInt8),
         ];
-        let filled = execute_declaration(&CState::new(), &zero_filled_node_array(length, &written));
+        let filled = execute_declaration(
+            &ExecutionState::new(),
+            &zero_filled_node_array(length, &written),
+        );
         let stores = (0..length)
             .flat_map(|element| {
                 [
-                    (16 * element, int32(0), CType::Int32),
-                    (16 * element + 4, int32(0), CType::UInt8),
-                    (16 * element + 8, int32(0), CType::Int32Pointer),
+                    (16 * element, int32(0), ProgramType::Int32),
+                    (16 * element + 4, int32(0), ProgramType::UInt8),
+                    (16 * element + 8, int32(0), ProgramType::Int32Pointer),
                 ]
             })
             .chain(written.iter().cloned())
             .map(|(offset, value, value_type)| {
                 c_typed_store(
                     c_pointer_offset_bytes(c_variable("items"), offset),
-                    CExpression::Value(value),
+                    ProgramExpression::Value(value),
                     value_type,
                 )
             })
             .collect::<Vec<_>>();
         let per_element = c_seq(
-            c_declare("items", CType::UInt8Array(length * 16)),
+            c_declare("items", ProgramType::UInt8Array(length * 16)),
             balanced_c_seq(&stores),
         );
-        let stored = execute_declaration(&CState::new(), &per_element);
+        let stored = execute_declaration(&ExecutionState::new(), &per_element);
         assert_eq!(
             filled.memory().cells.logical(),
             stored.memory().cells.logical(),
@@ -3228,11 +3256,11 @@ fn a_zero_filled_automatic_array_holds_exactly_the_per_element_stores() {
             "[{length}] is three runs and two written cells"
         );
         let declared = execute_declaration(
-            &CState::new(),
-            &c_declare("items", CType::UInt8Array(length * 16)),
+            &ExecutionState::new(),
+            &c_declare("items", ProgramType::UInt8Array(length * 16)),
         );
         assert_eq!(
-            load_items_field(&declared, 16 * (length - 1), CType::Int32),
+            load_items_field(&declared, 16 * (length - 1), ProgramType::Int32),
             CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
             "[{length}] an array declared without an initializer is uninitialized"
         );
@@ -3264,7 +3292,7 @@ fn statement_reservations_cover_integer_arguments_of_machine_applications() {
         arguments: vec![SpecPureFunctionArgument::Integer(
             SpecIntegerExpression::Term(IntegerTerm::var(held)),
         )],
-        result_type: CType::Int32,
+        result_type: ProgramType::Int32,
         pointer_result: None,
         result_object_class: None,
         projection: None,
@@ -3273,7 +3301,7 @@ fn statement_reservations_cover_integer_arguments_of_machine_applications() {
         SpecProposition::Comparison {
             left: call,
             operator: CComparisonOperator::LessEqual,
-            right: SpecExpression::CExpression(c_variable("i")),
+            right: SpecExpression::ProgramExpression(c_variable("i")),
         },
         held,
     );
@@ -3340,26 +3368,29 @@ mod scaling_tests {
 fn loop_join_reports_the_local_and_both_object_classes() {
     use crate::kernel::effective_type::{CAccessClass, CStructClass};
     let pointer = |class| {
-        CValue::Pointer(
-            CPointerValue::new(Pointer::symbolic(Variable(987_001)), CType::Int32Pointer)
-                .with_object_class(class),
+        ProgramValue::Pointer(
+            PointerValue::new(
+                Pointer::symbolic(Variable(987_001)),
+                ProgramType::Int32Pointer,
+            )
+            .with_object_class(class),
         )
     };
     let node = CAccessClass::Struct(CStructClass::opaque("node"));
     let other = CAccessClass::Struct(CStructClass::opaque("other"));
-    let head = CState::new().with_local("parent", pointer(Some(node.clone())));
+    let head = ExecutionState::new().with_local("parent", pointer(Some(node.clone())));
     let assumptions = PureFactContext::new();
     for (class, expected) in [
         (Some(other), "struct other"),
         (None, "unknown (no retained object class)"),
     ] {
-        let back = CState::new().with_local("parent", pointer(class));
+        let back = ExecutionState::new().with_local("parent", pointer(class));
         let error = c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[])
             .unwrap_err();
         assert!(error.contains("pointer local `parent`: loop-head object class: struct node; back-edge object class: "), "{error}");
         assert!(error.ends_with(expected), "{error}");
     }
-    let back = CState::new().with_local("parent", pointer(Some(node)));
+    let back = ExecutionState::new().with_local("parent", pointer(Some(node)));
     assert!(c_loop_state_components_match_at_back_edge(&head, &back, &assumptions, &[]).is_ok());
 }
 
@@ -3367,25 +3398,30 @@ fn loop_join_reports_the_local_and_both_object_classes() {
 fn loop_join_accepts_null_without_restoring_an_object_class() {
     use crate::kernel::effective_type::{CAccessClass, CStructClass};
     let node = CAccessClass::Struct(CStructClass::opaque("node"));
-    let head_pointer =
-        CPointerValue::new(Pointer::symbolic(Variable(987_010)), CType::Int32Pointer)
-            .with_object_class(Some(node));
-    let head = CState::new().with_local("parent", CValue::Pointer(head_pointer));
-    let unknown = CPointerValue::new(Pointer::symbolic(Variable(987_011)), CType::Int32Pointer);
-    let null = CPointerValue::new(Pointer::null(), CType::Int32Pointer);
+    let head_pointer = PointerValue::new(
+        Pointer::symbolic(Variable(987_010)),
+        ProgramType::Int32Pointer,
+    )
+    .with_object_class(Some(node));
+    let head = ExecutionState::new().with_local("parent", ProgramValue::Pointer(head_pointer));
+    let unknown = PointerValue::new(
+        Pointer::symbolic(Variable(987_011)),
+        ProgramType::Int32Pointer,
+    );
+    let null = PointerValue::new(Pointer::null(), ProgramType::Int32Pointer);
     let empty = PureFactContext::new();
     let known_null = empty.clone().assume_condition(
         ConditionTerm::pointer_equal(unknown.pointer().clone(), Pointer::null()),
         true,
     );
     for (pointer, facts) in [(null, &empty), (unknown.clone(), &known_null)] {
-        let back = CState::new().with_local("parent", CValue::Pointer(pointer));
+        let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(pointer));
         assert!(c_loop_state_components_match_at_back_edge(&head, &back, facts, &[]).is_ok());
         assert!(
-            matches!(back.locals().get_native("parent").as_deref(), Some(CValue::Pointer(p)) if p.object_class().is_none())
+            matches!(back.locals().get_native("parent").as_deref(), Some(ProgramValue::Pointer(p)) if p.object_class().is_none())
         );
     }
-    let back = CState::new().with_local("parent", CValue::Pointer(unknown.clone()));
+    let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(unknown.clone()));
     assert!(c_loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
     let nonnull = empty.assume_condition(
         ConditionTerm::pointer_equal(unknown.pointer().clone(), Pointer::null()),

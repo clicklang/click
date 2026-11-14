@@ -47,7 +47,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   synthesis (a Rust enum a call returned) an index from the value to the
   first call that returned it (`algebraic_call_results`). Replacing or removing
   the recorded exit replaces or removes its result name too. A call step's result
-  is also named from the state that holds it (`CState::call_results`, by call
+  is also named from the state that holds it (`ExecutionState::call_results`, by call
   number; `SourceExecutionLayout::call_region` maps the number to its call).
   Source-layout result locals preserve allocation naming, and the remaining
   frontend result temporaries map back to their calls
@@ -94,7 +94,7 @@ checked. Each one costs completeness, expansion, or a readable report.
   A local that keeps one value in memory, a borrowed Rust enum or
   type-parameter local (`CAggregateLayout::holding_value`), is named by its
   own name: `o` lowers to the read of its object at the point it was last
-  written (`CState::held_local_value`), never to a value a store left there,
+  written (`ExecutionState::held_local_value`), never to a value a store left there,
   and that read spells `o`, or `at(point, o)` at the recorded point whose
   memory reads it.
 - **Every fact kind has syntax.** A kernel fact that a proof state can hold

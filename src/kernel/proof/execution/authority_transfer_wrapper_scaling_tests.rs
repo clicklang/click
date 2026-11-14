@@ -1,12 +1,14 @@
 use super::*;
-use crate::kernel::{CResourceAccessMode, CResourceSpec, CType, c_function, int32};
+use crate::kernel::{CResourceAccessMode, CResourceSpec, ProgramType, c_function, int32};
 
 #[test]
 fn authority_named_memory_rewrite_preserves_population_ledger() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
-    let schema =
-        ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-            .unwrap();
+    let schema = ResourceFieldSchema::new(vec![(
+        "value".into(),
+        ResourceFieldType::C(ProgramType::Int32),
+    )])
+    .unwrap();
     let instance = ResourceInstance::new(
         Variable(9_850_001),
         "cell".into(),
@@ -24,11 +26,11 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
             crate::kernel::CMemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: CExpression::Value(CValue::pointer(crate::kernel::Pointer::symbolic(
-                    Variable(9_850_002),
-                ))),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
+                base: ProgramExpression::Value(ProgramValue::pointer(
+                    crate::kernel::Pointer::symbolic(Variable(9_850_002)),
+                )),
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(1)),
                 element_width: 4,
                 guard: None,
             },
@@ -37,14 +39,14 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
     )
     .with_instance_schema(Some(schema));
     let function = c_function(
-        CType::Int32,
+        ProgramType::Int32,
         "test",
         vec![],
-        CStatement::Return(CExpression::Value(int32(7))),
+        ProgramStatement::Return(ProgramExpression::Value(int32(7))),
     )
     .with_composite_resource_definitions(vec![definition.clone()]);
     let selected = CResourceFact::own(CResource::Instance(instance.clone()));
-    let folded = CState::new()
+    let folded = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let facts = ProofFacts::default();
@@ -74,7 +76,7 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
         .with_fact(Proposition::CMemoryReadDefined {
             memory: open.memory().clone(),
             pointer: crate::kernel::Pointer::symbolic(Variable(9_850_004)),
-            value_type: CType::Int32,
+            value_type: ProgramType::Int32,
         });
     assert!(
         CheckedResourceRewrite::check(

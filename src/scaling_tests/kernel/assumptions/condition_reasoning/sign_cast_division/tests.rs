@@ -1,12 +1,12 @@
 use super::*;
-use crate::kernel::{CType, KernelTerm, KernelTermExport, KernelType, Variable};
+use crate::kernel::{KernelTerm, KernelTermExport, KernelType, ProgramType, Variable};
 
 #[test]
 fn sign_division_construction_retains_growing_shared_operands() {
     let samples = [16usize, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut n = KernelTerm::variable(KernelType::C(CType::Int32), Variable(189121));
-        let d = KernelTerm::variable(KernelType::C(CType::Int32), Variable(189122));
+        let mut n = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(189121));
+        let d = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(189122));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {

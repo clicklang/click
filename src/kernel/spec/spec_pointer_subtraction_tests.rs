@@ -8,12 +8,12 @@ fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
     };
     let left = external(32_000);
     let right = external(32_001);
-    let state = CState::new()
-        .with_local("left", CValue::pointer(left.clone()))
-        .with_local("right", CValue::pointer(right.clone()));
+    let state = ExecutionState::new()
+        .with_local("left", ProgramValue::pointer(left.clone()))
+        .with_local("right", ProgramValue::pointer(right.clone()));
     let expression = SpecExpression::Subtract(
-        Box::new(SpecExpression::CExpression(c_variable("right"))),
-        Box::new(SpecExpression::CExpression(c_variable("left"))),
+        Box::new(SpecExpression::ProgramExpression(c_variable("right"))),
+        Box::new(SpecExpression::ProgramExpression(c_variable("left"))),
     );
 
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(

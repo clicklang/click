@@ -13,8 +13,8 @@ fn wide_cast_chains_retain_prefixes_with_linear_work() {
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
-                value = cast(&value, CType::UInt32).unwrap().into();
-                value = cast(&value, CType::Int128).unwrap().into();
+                value = cast(&value, ProgramType::UInt32).unwrap().into();
+                value = cast(&value, ProgramType::Int128).unwrap().into();
             }
         });
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -33,7 +33,8 @@ fn wide_quotient_chains_retain_integer_sources_with_linear_work() {
             &MachineTerm::Variable(Variable(995721)),
         )
         .into();
-        let divisor: SpecValue = CValue::Int128(word(MachineIntegerType::Int128, 3.into())).into();
+        let divisor: SpecValue =
+            ProgramValue::Int128(word(MachineIntegerType::Int128, 3.into())).into();
         let mut execution = ExecutionBudget::new();
         let budget = SpecEvaluation::logical(&mut execution);
         let exports = KernelTermExport::machine_export_count();

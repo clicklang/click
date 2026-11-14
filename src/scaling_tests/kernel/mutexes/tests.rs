@@ -45,7 +45,7 @@ fn symbolic_guard_lookup_and_exchange_use_indexed_paths() {
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [16usize, 64, 256, 1024] {
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         state.preserves_mutex_protocols = true;
         // Every input is a distinct opaque guard over the same empty memory.
         // Assemble and validate that frame once; the measured exchange below
@@ -84,7 +84,7 @@ fn guard_transitions_touch_only_logarithmic_index_paths() {
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [16usize, 64, 256, 1024] {
-        let mut context = MutexContext::new(CState::new());
+        let mut context = MutexContext::new(ExecutionState::new());
         for index in 0..size {
             context = context.initialize_empty(mutex(index), 40).unwrap();
             context = context
@@ -118,7 +118,7 @@ fn lifetime_transitions_do_not_scan_unrelated_owners() {
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [16usize, 64, 256, 1024] {
-        let mut context = MutexContext::new(CState::new());
+        let mut context = MutexContext::new(ExecutionState::new());
         for index in 0..size {
             context = context.initialize_empty(mutex(index), 40).unwrap();
         }
@@ -181,7 +181,7 @@ fn abstract_reservation_queries_do_not_scan_other_mutexes_in_one_object() {
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let mut state = CState::new();
+        let mut state = ExecutionState::new();
         state.mutex_input_reservations = MutexInputReservations::from_ranges(
             (0..size).map(|index| storage_range(&base.offset_by_bytes(index * 64), 40)),
         );
@@ -223,7 +223,7 @@ fn reservation_index_queries_same_object_in_logarithmic_work() {
     let base = mutex(91_104);
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let mut context = MutexContext::new(CState::new());
+        let mut context = MutexContext::new(ExecutionState::new());
         for index in 0..size {
             context = context
                 .initialize_empty(base.offset_by_bytes(index * 64), 40)
@@ -289,7 +289,7 @@ fn initialization_storage_lookup_is_indexed_within_one_object() {
                 ),
             ));
         }
-        let state = CState::new().with_resource_context(resources);
+        let state = ExecutionState::new().with_resource_context(resources);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in [0, size / 2, size - 1] {
                 let pointer = base.offset_by_bytes((index * 64) as u32);
@@ -332,7 +332,7 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
     let mut samples = vec![];
     let assumptions = PureFactContext::new();
     for size in [16usize, 64, 256, 1024] {
-        let mut context = MutexContext::new(CState::new());
+        let mut context = MutexContext::new(ExecutionState::new());
         for index in 0..size {
             for block in [
                 PointerBlock::Heap(index as u64),
@@ -399,7 +399,7 @@ fn storage_retirement_lookup_ignores_unrelated_mutex_blocks() {
     let mut samples = Vec::new();
     let assumptions = PureFactContext::new();
     for size in [16, 64, 256, 1024] {
-        let mut state = MutexContext::new(CState::new());
+        let mut state = MutexContext::new(ExecutionState::new());
         for index in 0..size {
             state = state.initialize_empty(mutex(index), 40).unwrap();
         }
@@ -429,7 +429,7 @@ fn loop_mutex_join_work_tracks_changed_keys_not_unrelated_mutexes() {
     let mut work = Vec::new();
     let mut replacement_work = Vec::new();
     for size in [32, 128, 512] {
-        let mut head = MutexContext::new(CState::new());
+        let mut head = MutexContext::new(ExecutionState::new());
         for index in 0..size {
             head = head.initialize_empty(mutex(index), 40).unwrap();
         }
@@ -478,7 +478,7 @@ fn automatic_use_acquisition_does_not_scan_the_resource_frame() {
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
-        let mut context = MutexContext::new(CState::new())
+        let mut context = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex(0), 40)
             .unwrap();
         let (lent, _) = context.lend_use(&mutex(0), &assumptions).unwrap();
@@ -516,7 +516,7 @@ fn use_loan_round_trip_does_not_scan_unrelated_mutexes() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let assumptions = PureFactContext::new();
-        let mut initialized = MutexContext::new(CState::new());
+        let mut initialized = MutexContext::new(ExecutionState::new());
         for index in 0..size {
             initialized = initialized.initialize_empty(mutex(index), 40).unwrap();
         }

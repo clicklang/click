@@ -7,12 +7,12 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{
     CMemory, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, Pointer, PointerBlock,
-    PointerOffsetTerm, SharedCMemory, SharedIntegerRangeEndpoint, SharedIntegerTerm,
-    SharedMachineIntegerTerm, Term, Variable,
+    PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedMachineIntegerTerm,
+    SharedMemory, Term, Variable,
 };
 use std::collections::BTreeMap;
 
-fn memory() -> SharedCMemory {
+fn memory() -> SharedMemory {
     crate::kernel::intern_c_memory(CMemory::new().with_block("registered-load-capture", 64))
 }
 
@@ -24,7 +24,7 @@ fn checked_index_substitution_reprojects_the_selected_scalar_read() {
             block: PointerBlock::Concrete("registered-load-capture".into()),
             offset: PointerOffsetTerm::Constant(0),
         },
-        CValue::Int32(MachineTerm::constant(7)),
+        ProgramValue::Int32(MachineTerm::constant(7)),
     ));
     let from = MachineTerm::Variable(Variable(3_219_010));
     let to = MachineTerm::Variable(Variable(3_219_011));
@@ -69,7 +69,7 @@ fn checked_index_substitution_reprojects_the_selected_scalar_read() {
     );
 }
 
-fn exact_load(memory: &SharedCMemory, pointer: &Pointer) -> Variable {
+fn exact_load(memory: &SharedMemory, pointer: &Pointer) -> Variable {
     crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
@@ -320,8 +320,8 @@ fn shared_carrier_cache_preserves_current_registered_load_dependencies() {
         format,
         MachineBinaryOp::Add,
         [
-            KernelTerm::variable(KernelType::C(CType::Int32), load),
-            KernelTerm::variable(KernelType::C(CType::Int32), load),
+            KernelTerm::variable(KernelType::C(ProgramType::Int32), load),
+            KernelTerm::variable(KernelType::C(ProgramType::Int32), load),
         ],
     );
     let machine = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
@@ -413,7 +413,7 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Pointer::symbolic(Variable(3_219_020));
     let memory = crate::kernel::intern_c_memory(
-        CMemory::new().store(address.clone(), CValue::Int32(37u32.into())),
+        CMemory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
     );
     let relation = |term: MachineTerm| {
         let parent = CResource::Composite {
@@ -425,7 +425,7 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
         };
         let child = CResource::Composite {
             name: "allocation".into(),
-            arguments: vec![AlgebraicValue::C(CValue::Int32(term))].into(),
+            arguments: vec![AlgebraicValue::C(ProgramValue::Int32(term))].into(),
         };
         Proposition::CResourceContains {
             parent: Box::new(parent),
@@ -447,7 +447,7 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
         Some(expected.clone())
     );
     let other_memory = crate::kernel::intern_c_memory(
-        CMemory::new().store(address.clone(), CValue::Int32(38u32.into())),
+        CMemory::new().store(address.clone(), ProgramValue::Int32(38u32.into())),
     );
     assert_ne!(
         crate::kernel::eval::comparison_form(&relation(read(other_memory, address))),
