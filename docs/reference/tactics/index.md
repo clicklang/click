@@ -4149,7 +4149,24 @@ unchanged, and profiling charges one application.
 
 ### Observing resources
 
-**Form:** `observe(resource)`
+**Form:** `observe(resource)` or `observe(p[lo..hi])`
+
+For an explicitly selected memory range, `observe(p[lo..hi])` adds
+`viewable(p[lo..hi])` at the current program state. The exact range must be
+held as a unit owner or view. This form also works at function exit and
+inside a `have` proof with a concrete program state. It performs indexed
+permission lookups, without looking for a covering range or following
+history. The held resources do not change.
+
+This establishes live storage, not initialized contents or any stored value.
+To restrict the resulting fact to a smaller range, use `separation::subrange`
+and `separation::viewable_restrict`. For example, see
+[`observe_memory_after_store.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_memory_after_store.md).
+[`observe_uninitialized_memory_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_uninitialized_memory_rejected.md)
+checks that a subsequent `solve` still cannot establish initialization.
+
+The remaining rules in this section describe observing a declared composite
+resource.
 
 **Specialized.** Write it to read a folded resource's view and facts without
 unfolding it. Keep a held composite folded while projecting its declared

@@ -1638,3 +1638,52 @@ fn a_returned_have_expands_the_same_single_preservation() {
     assert_ne!(changed, expanded, "the preservation names its exit read");
     assert!(without_implicit_solve(|| verify_c_sources(&changed, &sources)).is_err());
 }
+
+#[test]
+fn memory_observation_after_a_write_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/observe_memory_after_store.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "update").unwrap();
+    assert!(expanded.contains("observe(p[0..n])"), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve_for_claim("update.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+    let larger = source.replace("observe(p[0..n])", "observe(p[0..n+1])");
+    assert!(verify_c_sources(&larger, &sources).is_err());
+}
+
+#[test]
+fn memory_observation_does_not_establish_initialization() {
+    let source = r#"
+        verifying "unwritten.c";
+        void unwritten(int32 *p) {
+            owns uninitialized(p[0..2]);
+            ensures defined(p[1]);
+        } by {
+            step_until(function.exit);
+            observe(p[0..2]);
+            assumption();
+        }
+    "#;
+    let sources = [("unwritten.c", "void unwritten(int32 *p) {}")];
+    let live_only = source.replace("ensures defined(p[1]);", "ensures viewable(p[0..2]);");
+    verify_c_sources(&live_only, &sources).unwrap();
+    let unowned = live_only.replace("owns uninitialized(p[0..2]);", "");
+    let error = verify_c_sources(&unowned, &sources).unwrap_err();
+    assert!(
+        error.message().contains("exact memory range"),
+        "{}",
+        error.report()
+    );
+    let error = verify_c_sources(source, &sources).unwrap_err();
+    assert!(
+        error.report().contains("goal: defined(p[1])"),
+        "{}",
+        error.report()
+    );
+}

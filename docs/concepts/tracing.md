@@ -111,6 +111,7 @@ that every current implementation meets the checking-cost contract.
 | Establish arithmetic | [Arithmetic certificates](../reference/tactics/index.md#arithmetic-certificates) | The family, cited premises, and checked certificate nodes |
 | Execute one program statement | [Single statements](../reference/tactics/index.md#single-statements), [one statement obligation](../reference/tactics/index.md#one-statement-obligation) | The statement, its preconditions, and resulting state/effect |
 | Preserve a fact across a state transition | [Transport certificates](../reference/tactics/index.md#transport-certificates), [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
+| Establish current live storage | [Observing resources](../reference/tactics/index.md#observing-resources) | One exact held memory range, named by `observe(p[lo..hi])`; this establishes liveness, not initialization or a stored value |
 | Manipulate ownership or open a resource definition | [Scoped resource opening](../reference/tactics/index.md#scoped-resource-opening), [tactic reference](../reference/tactics/index.md) | The selected resource instance, its definition, and required ownership quantities |
 
 When adding a primitive, document its premises, conclusion, explicit Click

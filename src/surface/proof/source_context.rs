@@ -25,6 +25,16 @@ pub(in crate::surface::proof) enum SourceContext {
 impl SourceContext {
     /// Whether this context runs `tactic` as one checked leaf step.
     fn admits_leaf(self, tactic: &ProofTactic) -> bool {
+        // A memory observation reads one held permission, without changing
+        // resources, so it also applies in a proposition or outcome proof.
+        if matches!(
+            tactic,
+            ProofTactic::ObserveResource(
+                ResourceClause::ViewMemory(_) | ResourceClause::OwnMemory(_)
+            )
+        ) {
+            return true;
+        }
         match self {
             Self::PureGoal => matches!(
                 tactic,

@@ -242,6 +242,20 @@ addresses or indices. Existing mode-specific treatment of coordinates, loaded
 pointer definitions, call arguments and metadata is unchanged; native block
 and machine-scope readers are shared with the prepared path.
 
+7e prepares a per-scope structural pointer mapper. Selected address replacements
+are simultaneous; shared offset and numeric results are memoized only within
+that invocation. Unchanged handles and complete metadata are retained. Numeric
+callbacks use the existing scoped term rewriter; no matching search, pointer
+normalization, new evidence, or producer activation is introduced here.
+
+7f prepares shared pointer transport across selected memory frames. Numeric
+indices use the existing frame checks and scale reconstruction, and shared
+addition reconstruction retains the existing constant-displacement policy.
+Loaded pointer definitions retain their historical identity; reconstructed
+complete words require the same complete-read evidence. All memos are local to
+one snapshot/context pair. Native block atoms and one-node scaled adapters remain
+explicit compatibility boundaries; shared expression trees are never exported.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface
