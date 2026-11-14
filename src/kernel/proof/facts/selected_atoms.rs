@@ -92,13 +92,14 @@ pub(super) fn collect(
     machine: &SharedMachineIntegerTerm,
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
-    collect_in(machine, atoms, &mut BTreeSet::new());
+    collect_in(machine, atoms, &mut BTreeSet::new(), false);
 }
 
 fn collect_in(
     machine: &SharedMachineIntegerTerm,
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
     seen: &mut BTreeSet<u64>,
+    inside_fold: bool,
 ) {
     let Some(root) = machine.shared_operand() else {
         collect_bitvector_atoms(machine.value(), atoms);
@@ -126,13 +127,19 @@ fn collect_in(
             if let KernelTermNode::Fold(fold) = leaf.node() {
                 for child in &fold.arguments {
                     let child = MachineOperandView::Shared(child).retain(MachineIntegerType::Int32);
-                    collect_in(&child, atoms, seen);
+                    collect_in(&child, atoms, seen, true);
                 }
             }
             if let Some(native) = leaf.machine_conversion_leaf() {
-                // Preserve the native opaque leaf's own atom and dependency
-                // rules (calls, Bool guards, pointer addresses and matches).
-                collect_bitvector_atoms(native, atoms);
+                if inside_fold {
+                    // Native folds visited these children before migration.
+                    // Preserve their opaque atoms and dependency rules here.
+                    collect_bitvector_atoms(native, atoms);
+                } else if let MachineTerm::BoolCast { value, .. } = native {
+                    // Ordinary common expressions retain their existing
+                    // selection policy; migrating folds must not widen it.
+                    collect_condition_bitvector_atoms(value, atoms);
+                }
             }
         }
     }
@@ -182,6 +189,33 @@ mod tests {
         collect(&value, &mut actual);
         assert_eq!(actual, expected);
         assert_eq!(KernelTermExport::machine_export_count(), before);
+    }
+
+    #[test]
+    fn ordinary_shared_atom_selection_does_not_adopt_fold_leaf_rules() {
+        let _session = VerificationSession::enter();
+        let call = MachineTerm::ClickFunctionApplication {
+            name: "ordinary_opaque_call".into(),
+            arguments: vec![PureFunctionArgument::Value(CValue::Int32(
+                MachineTerm::Variable(Variable(1005394)),
+            ))],
+        };
+        let call_atom = bitvector_equality_atom_key(&call).expect("opaque call atom");
+        let native = MachineTerm::Binary {
+            format: MachineIntegerType::Int32,
+            op: MachineBinaryOp::Add,
+            left: Box::new(call),
+            right: Box::new(MachineTerm::constant(1)),
+        };
+        let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, native);
+        assert!(machine.shared_operand().is_some());
+        let mut atoms = BTreeSet::new();
+        collect(&machine, &mut atoms);
+        assert!(!atoms.contains(&call_atom));
+        assert_eq!(
+            atoms,
+            BTreeSet::from([BitvectorEqualityAtomKey::Constant(1)])
+        );
     }
 
     #[test]
