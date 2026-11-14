@@ -16,8 +16,18 @@ mod matches;
 pub(crate) use matches::KernelMatch;
 pub(crate) use matches::KernelMatchArm;
 mod reads;
+// Prepared pointer payloads; producer activation follows scoped consumers and spelling.
+#[allow(dead_code)]
+mod addresses;
+#[allow(dead_code)]
+mod offsets;
+#[allow(dead_code)]
+mod pointers;
+pub(crate) use addresses::{SharedPointerAddress, SharedPointerBlock};
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
+pub(crate) use offsets::{KernelPointerOffset, SharedPointerOffset};
+pub(crate) use pointers::{PointerRewrite, PointerRewriteError, SharedPointerValue};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
 

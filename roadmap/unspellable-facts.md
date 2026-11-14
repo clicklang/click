@@ -86,7 +86,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 4 | Mixed-width arithmetic and casts | Implemented as subchunks 4a–4j below, one PR per subchunk. Numeric producers retain shared operands and results within the existing supported profile. General call and nonnumeric compatibility boundaries belong to the remaining packages; the previous combined branch stays unmerged reference material. |
 | 5 | C/Rust execution result carriers | Supported machine handoffs implemented in 5a–5g below: expression paths, local bindings, returns and caller receipt retain common roots. Native memory-cell, specification and presentation boundaries remain explicit. |
 | 6 | Folds, binders and algebraic matches | Implemented as 6a–6n below. Common fold and numeric/algebraic match results retain scoped children; remaining native consumers are named compatibility boundaries. |
-| 7 | Complete pointers and read addresses | Open |
+| 7 | Complete pointers and read addresses | Delivery sequence 7a–7u below; shared offset preparation starts the package. |
 | 8 | Remaining Boolean and opaque expression payloads | Open |
 | 9 | Unified raising/lowering and certificate boundaries | Open |
 | 10 | Duplicate storage removal and final closure | Open |
@@ -184,6 +184,69 @@ that syntax comparison with arithmetic observation equality.
 [PR #2701](https://github.com/clicklang/click/pull/2701) closes the integer
 call-result sequence, not the wider KernelTerm/SurfaceTerm migration or the
 other result families.
+
+## Chunk 7: complete pointers and read addresses
+
+Deliver 7a–7u sequentially, one PR per slice. Shared offsets are internal
+address components with common numeric children, not standalone Click values.
+Prepare consumers and existing Surface spelling before switching live producers.
+Preserve pointer semantics, exact metadata, evidence, refusals and budgets.
+Routine ordering refinements do not change this scope.
+
+| Subchunk | Boundary | Completion criterion |
+| --- | --- | --- |
+| 7a | Shared offsets | Preserve constant/variable/addition shape, scale, index width and signedness; retain shared numeric children. |
+| 7b | Shared addresses | Retain block identity and shared displacement without a parallel native address tree. |
+| 7c | Complete pointer payloads | Preserve designation, opaque extent, qualifiers, subobject bounds and evidence, including metadata ignored by logical equality. |
+| 7d | Dependency readers | Collect variables, capture and memory dependencies through shared children. |
+| 7e | Substitution | Rewrite selected children with capture and metadata preservation. |
+| 7f | Snapshot transport | Retain historical read and snapshot identity during transport. |
+| 7g | Identity and fact keys | Preserve existing matching keys while separating exact payload identity from logical equality. |
+| 7h | Checking consumers | Preserve equality, designation, extent and access evidence requirements. |
+| 7i | Address Surface boundary | Raise/lower offsets in their address context using existing syntax. |
+| 7j | Complete-pointer Surface boundary | Existing names and spellings retain complete metadata and historical identity. |
+| 7k | Scalar read addresses | Numeric loads retain common addresses. |
+| 7l | Pointer reads | Pointer/function-pointer loads retain defining memory, address and complete result payload. |
+| 7m | Formation and casts | Null/object/function addresses, field projections and casts retain prepared carriers. |
+| 7n | Pointer arithmetic | Addition and displacement retain operands and complete metadata. |
+| 7o | Numeric observations | Address-to-integer observations and pointer differences preserve existing restrictions. |
+| 7p | Pure calls | Pointer-valued specification calls retain their arguments and result structure. |
+| 7q | Conditional/match results | Pointer branch assembly retains carriers and scoped obligations. |
+| 7r | Locals and call arguments | Assignment, lookup and execution argument handoffs retain pointer structure. |
+| 7s | Returns | Callee/caller return handoffs retain complete payloads. |
+| 7t | Memory storage | Stores and value receipt preserve pointer structure through the existing memory model. |
+| 7u | Closure | Remove superseded pointer adapters; validate nested calls/arithmetic/reads/stores/snapshots and Surface round trips. |
+
+7a prepares a shared offset DAG with constant-time child identities. It is an
+internal address component, not a new `KernelType` or source-level value.
+Explicit import/export preserves native shape and opaque index annotations;
+shared numeric index DAGs are never exported by this boundary. Live producers
+remain unchanged until their consumers and pointer-context spelling migrate.
+
+7b prepares raw addresses from shared block identities and shared offsets, with
+no parallel native address tree. Block atoms preserve literal occurrence IDs,
+loaded-pointer IDs, and exact pure-call payload handles. Call argument migration
+remains in 7p. Address identity compares only handles; explicit native output
+preserves the original address shape. Producers remain inactive in this slice.
+
+7c prepares complete pointer payloads with shared addresses and common numeric
+subobject widths. Qualifiers, designation, opaque extent, object-type evidence
+and local-reference custody survive explicit round trips, including metadata
+ignored by logical pointer equality. Exact producer handles do not coalesce
+those payloads. Persistent evidence is retained without premise traversal;
+no live producer or access decision changes in this preparation slice.
+
+7d prepares shared pointer dependency, capture, binder and scope readers. They
+visit distinct offset nodes and common numeric children without exporting
+addresses or indices. Existing mode-specific treatment of coordinates, loaded
+pointer definitions, call arguments and metadata is unchanged; native block
+and machine-scope readers are shared with the prepared path.
+
+7e prepares a per-scope structural pointer mapper. Selected address replacements
+are simultaneous; shared offset and numeric results are memoized only within
+that invocation. Unchanged handles and complete metadata are retained. Numeric
+callbacks use the existing scoped term rewriter; no matching search, pointer
+normalization, new evidence, or producer activation is introduced here.
 
 ## Chunk 6: folds, binders and algebraic matches
 

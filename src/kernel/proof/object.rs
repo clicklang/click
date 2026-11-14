@@ -382,7 +382,7 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
         &self,
         branches: Vec<ProofBranch<O, E>>,
     ) -> Result<(Self, Vec<BranchId>), ProofFocusError> {
-        if self.state.open_branches.get(self.focused_branch).is_none() || branches.is_empty() {
+        if self.state.open_branches.get(self.focused_branch).is_none() {
             return Err(ProofFocusError::NotOpen);
         }
         let mut open_branches = self.state.open_branches.close_at(self.focused_branch);
@@ -400,7 +400,7 @@ impl<L: Clone, O: Clone, E: Clone> ProofObject<L, O, E> {
                     added_facts: Arc::new(Vec::new()),
                     checked_facts: Arc::new(Vec::new()),
                 },
-                ids[0],
+                ids.first().copied().unwrap_or(self.focused_branch),
             ),
             ids,
         ))
@@ -563,8 +563,7 @@ impl<L, P: Clone, O: Clone, S: Clone>
 impl<L: Clone, P: Clone, S: Clone, E: Clone>
     ProofObject<L, ProofObligation<P, Arc<OutcomeProofState<S>>>, E>
 {
-    /// Retire the outcome branch only after every source and closing goal is closed.
-    pub(crate) fn complete_function_outcome(&self) -> Result<Self, String> {
+    fn completed_outcome_identity(&self) -> Result<&super::OutcomeIdentity, String> {
         let branch = self
             .state
             .open_branches
@@ -585,7 +584,63 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             }
             None => {}
         }
+        Ok(&outcome.data.core.identity)
+    }
+
+    /// Retire the outcome branch only after every source and closing goal is closed.
+    #[cfg(test)]
+    pub(crate) fn complete_function_outcome(&self) -> Result<Self, String> {
+        self.completed_outcome_identity()?;
         Ok(self.closed_focused())
+    }
+
+    /// Return this case's completion to its owner without importing the case's
+    /// local names, facts or presentation into its siblings. The only read is
+    /// the selected branch and its generative outcome identity.
+    pub(crate) fn complete_function_outcome_in(&self, owner: &Self) -> Result<Self, String> {
+        let identity = self.completed_outcome_identity()?;
+        self.close_owned_outcome(owner, identity)
+    }
+
+    pub(crate) fn refute_function_outcome_in(
+        &self,
+        owner: &Self,
+        fact: &Proposition,
+    ) -> Result<Self, String> {
+        let branch = self
+            .state
+            .open_branches
+            .get(self.focused_branch)
+            .ok_or_else(|| "the outcome case is no longer open".to_string())?;
+        let ProofObligation::FunctionOutcome(outcome) = &branch.obligation else {
+            return Err("refutation requires an outcome case".into());
+        };
+        if !branch.state.facts.contradicts(fact) {
+            return Err("the retained case contradiction was not available".into());
+        }
+        self.close_owned_outcome(owner, &outcome.data.core.identity)
+    }
+
+    fn close_owned_outcome(
+        &self,
+        owner: &Self,
+        identity: &super::OutcomeIdentity,
+    ) -> Result<Self, String> {
+        let branch = owner
+            .state
+            .open_branches
+            .get(self.focused_branch)
+            .ok_or_else(|| "the owner no longer has this outcome case open".to_string())?;
+        let ProofObligation::FunctionOutcome(outcome) = &branch.obligation else {
+            return Err("the selected owner branch is not an outcome case".into());
+        };
+        if !outcome.data.core.identity.same_as(identity) {
+            return Err("the completion belongs to another outcome owner".into());
+        }
+        Ok(owner
+            .focus_open_branch(self.focused_branch)
+            .map_err(|_| "the owner no longer has this outcome case open".to_string())?
+            .closed_focused())
     }
 
     /// Open the contract judgment on this branch. Its requirements, facts,

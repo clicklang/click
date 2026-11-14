@@ -379,6 +379,16 @@ resource `assumption` closers and `solve` retain the same checked claim
 receipts, and certification checks their joint availability independently of
 how the certificate was printed.
 
+Function body proofs open their contract entry before running tactics.
+`OpenedContractEntry` selects the admitted source premises, preserves their
+source occurrence indices, adds the execution environment's byte order, and
+constructs the function-entry state and resource transfer. The body retains
+that entry and the same indexed fact context. A failed entry construction is
+an entry error, not permission to run under the unfiltered source facts.
+Surface retains the selected canonical caller context for registration rather
+than the earlier candidate context. Independent execution artifacts still use
+the conditional checked-entry API.
+
 Contract closing constructs the obligations needed to establish the current
 contract at its checked outcome. It does not search for their proofs. Tactics
 may also create obligations; omitted proofs are attempted by the implicit
@@ -397,6 +407,18 @@ and write-footprint obligations. The outcome's goal selector orders its source
 clauses first and then these three closing goals. Completing an outcome branch
 requires both sets of goals to have been opened and every applicable goal to
 be closed; finishing the last written clause alone does not complete it.
+The driver returns each completed outcome to the proof that owns its branch,
+using its branch index and generative outcome identity. This retires only that
+case; it does not import case-local facts, names or presentation into sibling
+cases. Duplicate or foreign completions are refused. A case excluded by a
+checked contradiction is retired explicitly, and an execution with no returning
+outcomes retires its frontier without creating an outcome obligation. The
+owning proof must have no open outcome branches before completion proceeds.
+The outcome producer returns a path-to-branch index, so later completion does
+not scan siblings to locate a case. Registration's separate resource-entry
+case reconstruction remains a legacy consumer to migrate; outcome ownership
+does not remove it yet.
+
 Closing goal state is fixed-size and shared proof forks retain independent
 updates. An explicit `assumption()` discharges the selected closing goal using
 its retained outcome, receipts and body effects. Written `solve()` selects the

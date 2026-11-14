@@ -71,15 +71,21 @@ pub(crate) use contracts::{
 mod integer;
 pub(crate) use integer::WeakIntegerTerm;
 mod kernel_term;
-pub(crate) use kernel_term::KernelMatchArm;
 pub(crate) use kernel_term::{
     KernelFold, KernelFoldIndex, KernelMatch, KernelTermExport, KernelTermImport,
     clear_integer_bridge_memo,
 };
+// Prepared rewrite interface for the following scoped consumers.
 pub use kernel_term::{
     KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm, KernelTermNode,
     KernelType,
 };
+pub(crate) use kernel_term::{
+    KernelMatchArm, KernelPointerOffset, SharedPointerAddress, SharedPointerOffset,
+    SharedPointerValue,
+};
+#[allow(unused_imports)]
+pub(crate) use kernel_term::{PointerRewrite, PointerRewriteError, SharedPointerBlock};
 mod machine_integer;
 pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,

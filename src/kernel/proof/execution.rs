@@ -3113,6 +3113,7 @@ pub(crate) struct CheckedFunctionEntry {
 }
 
 impl CheckedFunctionEntry {
+    #[cfg(test)]
     fn check(
         caller_state: &ExecutionState,
         function: &ProgramFunction,
@@ -3132,6 +3133,16 @@ impl CheckedFunctionEntry {
                 "the checked function entry does not match the proof entry".into(),
             ));
         }
+        Self::construct(caller_state, function, arguments, entry_state, assumptions)
+    }
+
+    fn construct(
+        caller_state: &ExecutionState,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        entry_state: ExecutionState,
+        assumptions: PureFactContext,
+    ) -> Result<Arc<Self>, RuntimeError> {
         let function = Arc::new(function.clone());
         let boundary_transfer = {
             Some(
@@ -3203,6 +3214,113 @@ impl CheckedFunctionEntry {
 
     pub(crate) fn caller_state(&self) -> &ExecutionState {
         &self.caller_state
+    }
+}
+
+/// The contract entry opened before a body proof. The producer selects its
+/// premises and constructs the state and resource transfer together; retaining
+/// it never asks the body proof to reconstruct or authorize its own inputs.
+pub(crate) struct OpenedContractEntry {
+    entry: Arc<CheckedFunctionEntry>,
+    facts: ProofFacts,
+    source_origins: Vec<Option<usize>>,
+}
+
+impl OpenedContractEntry {
+    pub(crate) fn open(
+        caller_state: &ExecutionState,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        source_facts: &(impl super::PropositionSource + ?Sized),
+        environment: &crate::kernel::ExecutionEnvironment,
+    ) -> Result<Self, RuntimeError> {
+        let contract =
+            crate::kernel::program_function_contract_entry(caller_state, function, arguments)
+                .map_err(RuntimeError::FunctionContract)?;
+        let mut propositions = Vec::new();
+        let mut source_origins = Vec::new();
+        let mut kept = std::collections::BTreeSet::new();
+        for (index, fact) in source_facts.propositions().enumerate() {
+            // Preserve source aliases, except complete pointer equations: those
+            // keep the entry producer's form, avoiding extra read-over-write
+            // equations being admitted as independent premises.
+            let selected = match fact {
+                Proposition::ConditionIs(
+                    crate::kernel::ConditionTerm::PointerValueEqual(..),
+                    _,
+                ) => contract.explicitly_states(fact),
+                _ => contract.states(fact),
+            };
+            if selected && kept.insert(fact.clone()) {
+                propositions.push(fact.clone());
+                source_origins.push(Some(index));
+            }
+        }
+        for fact in contract.facts() {
+            use crate::kernel::ContractEntryFactOrigin as Origin;
+            let visible = !matches!(
+                fact.origin(),
+                Origin::CompositeDefinition
+                    | Origin::PopulationFact
+                    | Origin::Observable
+                    | Origin::ResourceQuantity
+                    | Origin::PredicateBody(_)
+            );
+            if visible && kept.insert(fact.proposition().clone()) {
+                propositions.push(fact.proposition().clone());
+                source_origins.push(None);
+            }
+        }
+        let byte_order = environment.byte_order_fact();
+        if kept.insert(byte_order.clone()) {
+            propositions.push(byte_order);
+            source_origins.push(None);
+        }
+        let mut facts = ProofFacts::from_ordered(&propositions);
+        facts.prepare_entry_resources(caller_state.resources());
+        let entry_state =
+            crate::kernel::program_function_entry_state(caller_state, function, arguments)
+                .ok_or_else(|| {
+                    RuntimeError::FunctionContract(
+                        "could not bind the function entry arguments".into(),
+                    )
+                })?;
+        let entry = CheckedFunctionEntry::construct(
+            caller_state,
+            function,
+            arguments,
+            entry_state,
+            facts.assumptions().clone(),
+        )?;
+        Ok(Self {
+            entry,
+            facts,
+            source_origins,
+        })
+    }
+
+    pub(crate) fn facts(&self) -> &ProofFacts {
+        &self.facts
+    }
+
+    /// The selected source occurrence for each admitted fact. Derived facts
+    /// carry no source occurrence; Surface retains only their presentation.
+    pub(crate) fn source_origins(&self) -> &[Option<usize>] {
+        &self.source_origins
+    }
+
+    pub(crate) fn entry_state(&self) -> &ExecutionState {
+        &self.entry.entry_state
+    }
+
+    pub(crate) fn into_execution_core(self) -> ExecutionProofCore {
+        let mut core = ExecutionProofCore::at_entry(
+            self.entry.caller_state.clone(),
+            ExecutionFrontier::default(),
+        );
+        core.function_entry = Some(self.entry);
+        core.entry_facts = Some(self.facts);
+        core
     }
 }
 
@@ -7955,25 +8073,6 @@ impl ExecutionProofCore {
         }
     }
 
-    /// Checks the function entry under `facts` and keeps them as the lineage
-    /// the proof's later facts descend from.
-    pub(crate) fn record_checked_function_entry_with_facts(
-        &mut self,
-        function: &ProgramFunction,
-        arguments: &[ProgramExpression],
-        expected_entry_state: &ExecutionState,
-        facts: &ProofFacts,
-    ) -> Result<(), RuntimeError> {
-        self.record_checked_function_entry(
-            function,
-            arguments,
-            expected_entry_state,
-            facts.assumptions().clone(),
-        )?;
-        self.entry_facts = Some(facts.clone());
-        Ok(())
-    }
-
     /// The entry facts while the proof has not left its checked entry.
     pub(crate) fn entry_facts_at_entry(&self) -> Option<&ProofFacts> {
         (self.frontier.is_at_function_entry()
@@ -7983,6 +8082,7 @@ impl ExecutionProofCore {
         .flatten()
     }
 
+    #[cfg(test)]
     pub(crate) fn record_checked_function_entry(
         &mut self,
         function: &ProgramFunction,

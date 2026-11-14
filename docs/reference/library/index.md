@@ -7251,6 +7251,25 @@ endpoint, inspect memory, or search facts. It grants no ownership.
 
 **Verified use:** [`mdtests/separation_element_contains_the_selected_cell.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_element_contains_the_selected_cell.md).
 
+### `separation::rebase`
+
+```click
+theorem rebase<T, I>(p: T*, lo: I, hi: I) {
+    requires 0 <= to_integer(lo);
+    requires lo <= hi;
+    ensures contains(memory(p[lo..hi]), memory((p + lo)[0..hi-lo]));
+}
+```
+
+**Meaning:** The selected interval contains the same interval expressed relative
+to its first element. `I` is `int32` or `uint64`; the nonnegative ordered bounds
+make `hi-lo` exact. Both descriptors retain the pointer's provenance and the
+width of `T`. The rule grants no ownership or read permission and searches no
+facts or memory history. Pointer arithmetic and resource expressions retain
+their usual evaluation obligations.
+
+**Verified use:** [`mdtests/separation_rebase.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_rebase.md).
+
 ## Namespace and extension rules
 
 Library functions, predicates and theorems have qualified names, such as

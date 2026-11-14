@@ -4,6 +4,8 @@ use super::*;
 mod retained_folds;
 #[allow(dead_code)]
 mod retained_matches;
+#[allow(dead_code)]
+mod retained_pointers;
 use crate::kernel::spec::walk::{SpecNode, Visit, WalkBudget, walk_spec};
 
 /// Visit only the carrier-bearing leaves of shared machine arithmetic.
@@ -4030,10 +4032,19 @@ fn collect_machine_scope_summary(
     machine: &SharedMachineIntegerTerm,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
-    let Some(root) = machine.shared_operand() else {
-        return collect_bitvector_scope_summary(machine.value(), summaries);
+    collect_machine_operand_scope_summary(machine.operand_view(), summaries)
+}
+
+fn collect_machine_operand_scope_summary(
+    operand: MachineOperandView<'_>,
+    summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
+) -> IntegerScopeSummary {
+    let MachineOperandView::Shared(root) = operand else {
+        let MachineOperandView::Legacy(term) = operand else {
+            unreachable!()
+        };
+        return collect_bitvector_scope_summary(term, summaries);
     };
-    let operand = machine.operand_view();
     if let Some(variable) = operand.variable() {
         return collect_bitvector_scope_summary(&MachineTerm::Variable(*variable), summaries);
     }
@@ -5546,6 +5557,14 @@ pub(in crate::kernel) fn collect_pointer_bitvector_variables(
     pointer: &Pointer,
     variables: &mut BTreeSet<Variable>,
 ) {
+    collect_pointer_block_bitvector_variables(&pointer.block, variables);
+    collect_pointer_offset_bitvector_variables(&pointer.offset, variables);
+}
+
+fn collect_pointer_block_bitvector_variables(
+    block: &PointerBlock,
+    variables: &mut BTreeSet<Variable>,
+) {
     CONNECTION_BLOCKS.with(|blocks| {
         // ExternalArgument is the shared address arena of all formal array
         // parameters. Their offset variables identify the actual objects;
@@ -5554,18 +5573,18 @@ pub(in crate::kernel) fn collect_pointer_bitvector_variables(
         // not connect all their objects through the null pointer.
         if let Some(blocks) = blocks.borrow_mut().as_mut()
             && !matches!(
-                pointer.block,
+                *block,
                 PointerBlock::ExternalArgument
                     | PointerBlock::Symbolic(_)
                     | PointerBlock::FunctionSymbolic(_)
                     | PointerBlock::ExternalObject(_)
             )
-            && !pointer.is_in_null_block()
+            && !matches!(block, PointerBlock::Concrete(name) if name == "null")
         {
-            blocks.insert(pointer.block.clone());
+            blocks.insert(block.clone());
         }
     });
-    match &pointer.block {
+    match block {
         PointerBlock::PureFunctionApplication(application) => {
             for argument in application.arguments() {
                 collect_capture_variables_in_pure_argument(
@@ -5583,9 +5602,9 @@ pub(in crate::kernel) fn collect_pointer_bitvector_variables(
         // A pointer read has no variable of its own, but it is the value at
         // the address it was read from, so it depends on that address's
         // variables, as a load term depends on its address's.
-        PointerBlock::LoadedPointer(_) => {
-            if let Some(read) = pointer.as_loaded_value() {
-                collect_pointer_bitvector_variables(&read.defining_address, variables);
+        PointerBlock::LoadedPointer(identity) => {
+            if let Some((_, address)) = crate::kernel::eval::registered_pointer_load(*identity) {
+                collect_pointer_bitvector_variables(&address, variables);
             }
         }
         PointerBlock::Concrete(_)
@@ -5595,7 +5614,6 @@ pub(in crate::kernel) fn collect_pointer_bitvector_variables(
         | PointerBlock::Heap(_)
         | PointerBlock::Temporary(_) => {}
     }
-    collect_pointer_offset_bitvector_variables(&pointer.offset, variables);
 }
 
 #[cfg(test)]

@@ -179,15 +179,11 @@ also passed the CLI's replay with the implicit closer disabled.
 
 ### Confirmed generated output
 
-There are **five reproduced output shapes**, from four successful source
-examples. Two shapes occur in the same vector example. These may share fixes;
-they are not necessarily five different kernel primitives.
+There are **two remaining reproduced output shapes**, both in the vector
+example. These may share fixes; they need not require separate kernel primitives.
 
 | ID | Reproducer | Surviving generated operation | Work to isolate next |
 | --- | --- | --- | --- |
-| T1 | [`native_view_window.md`](../mdtests/native_view_window.md), claim `window.contract` | `transport(viewable(p[0u64..held]), viewable((p + start)[0u64..requested])) using { ... }` | Express the displaced window as an explicit containment/rebasing proof, then apply viewability restriction. Direct-endpoint same-base native ranges are already handled. |
-| T2 | `quantifier.c` / `quantifier.click` below, claim `keep.contract` | After `intro` and `instantiate`: `transport(at(function.entry, p[i] == 7), p[i] == 7) using { ... }` | Select the separation and preservation links for the instantiated read across the one disjoint store. |
-| T3 | `universal_bound.c` / `universal_bound.click` below, claim `stronger.contract` | After `instantiate`: `transport(at(function.entry, p[i] <= limit), p[i] < result) using { ... }` | Separate carrying the instantiated fact from the arithmetic that uses `result == limit + 1`. This example has no memory store. |
 | T4 | `restricted_solve_certifies_unchanged_prefix_after_indexed_store` in [`expansion_tests.rs`](../src/surface/tests/expansion_tests.rs), full `vector_push.contract` | The resource fold's prerequisite uses `transport(at(function.entry, viewable((owner->data as (int32 *))[0..owner->cap])), viewable(owner->data[0..owner->len])) using { ... }` | Isolate historical view evidence, pointer/endpoint equalities, and range restriction. The fold driver is the caller, not a separate proof principle. |
 | T5 | Same vector example and full contract | Under the quantified prefix goal: `transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using { ... }` | Select explicit preservation for an indexed read through the recorded owner pointer. Its only printed extra premise is an anchored `index <= owner->cap`; the legacy checker still supplies the historical reasoning. |
 
@@ -196,45 +192,6 @@ with the current CLI. To reproduce its test:
 
 ```console
 cargo nextest run --lib --features fast-gate --run-ignored only -E 'test(restricted_solve_certifies_unchanged_prefix_after_indexed_store)'
-```
-
-For T1, run:
-
-```console
-click expand --claim window.contract mdtests/native_view_window.md
-```
-
-For T2 and T3, save each following C/Click pair in one directory and run
-`click expand --claim keep.contract quantifier.click` or
-`click expand --claim stronger.contract universal_bound.click`.
-
-```c filename=quantifier.c
-void keep(int32 p[], int32 n, int32 *q) { *q = 9; }
-```
-
-```click filename=quantifier.click
-verifying "quantifier.c";
-void keep(int32 p[], int32 n, int32 *q) {
-    views p[0..n];
-    owns q[0];
-    requires separate(memory(q[0]), memory(p[0..n]));
-    requires forall (i: int32) { 0 <= i and i < n implies p[i] == 7 };
-    ensures forall (i: int32) { 0 <= i and i < n implies p[i] == 7 };
-} by { step_until(function.exit); solve(); }
-```
-
-```c filename=universal_bound.c
-int32 stronger(int32 p[], int32 n, int32 limit) { return limit + 1; }
-```
-
-```click filename=universal_bound.click
-verifying "universal_bound.c";
-int32 stronger(int32 p[], int32 n, int32 limit) {
-    views p[0..n];
-    requires limit < 2147483647;
-    requires forall (i: int32) { 0 <= i and i < n implies p[i] <= limit };
-    ensures forall (i: int32) { 0 <= i and i < n implies p[i] < result };
-} by { step_until(function.exit); solve(); }
 ```
 
 ### Written syntax is a separate migration
@@ -260,7 +217,7 @@ inventory rather than a proof-reachability claim.
 Of those 167 mdtest files, 62 have failure expectations. They must retain their
 refusal coverage when rewritten; they are not 62 successful legacy proofs.
 Migrate written sites alongside each semantic fix where possible. A final
-corpus pass and syntax/dispatcher deletion are distinct from proving T1–T5.
+corpus pass and syntax/dispatcher deletion are distinct from these generated forms.
 
 ### Excluded or still unconfirmed
 
@@ -284,8 +241,7 @@ Do not count these as additional confirmed generated-output families:
 - `quantified_old_transport_expands_to_one_quantified_frame` and
   `quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_proof`
   both fail before expansion at the shifted-copy store's separation
-  prerequisite. T2 supplies a smaller successful quantified reproducer;
-  whole-quantifier transport is still unconfirmed by a passing fixture.
+  prerequisite. Whole-quantifier transport is still unconfirmed by a passing fixture.
 - Residual scalar/address variants, logical wrappers beyond these examples,
   and other proof-context adapters remain source-audit candidates. They get
   another work item only after a successful expansion demonstrates it.
@@ -309,13 +265,11 @@ then remove it, including obsolete source/result normalization and
 premise/effect collection. Finish with a boundary test that an expanded proof
 cannot create `ProofSearch`; a text search alone is insufficient.
 
-A concrete next sequence is T3, T2, T1, T4, T5, then the remaining written
-corpus and dispatcher retirement. That is **five proof migrations plus
-compatibility cleanup and deletion**, roughly six to eight PRs if the current
-families hold. T2/T5 may share a fix, and corpus migration can accompany each
-fix. Missing primitives or newly reproduced output shapes require a new design
-discussion rather than silently expanding a chunk. This inventory does not
-claim exhaustive coverage of all possible source programs or the unrelated
+The next sequence is T1, T4, T5, then the remaining written corpus and
+dispatcher retirement. These are three proof migrations plus compatibility
+cleanup and deletion. Corpus migration can accompany each fix. Missing primitives or newly reproduced output shapes require a new
+design discussion rather than silently expanding a chunk. This inventory does
+not claim exhaustive coverage of all possible source programs or the unrelated
 fast-operation ledger.
 
 ## Outstanding measurement ledger

@@ -24,6 +24,8 @@ explicitly and through `solve`.
 The generic range law `separation::subrange` is verified in
 [`generic_pointer_theorem_parameters.md`](generic_pointer_theorem_parameters.md),
 including nested generic applications and several element widths.
+The rebasing law `separation::rebase` is verified in
+[`separation_rebase.md`](separation_rebase.md), with signed and unsigned bounds.
 The selected-cell law `separation::contains_element` is verified in
 [`separation_element_contains_the_selected_cell.md`](separation_element_contains_the_selected_cell.md),
 including signed 32-bit and unsigned 64-bit interval bounds.

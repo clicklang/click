@@ -224,3 +224,4 @@ universal_candidates
 try_resource_descriptor_rewrite_closure
 requirement_kernel_atoms_for_search
 try_ordinary_viewability_restriction_closure
+try_universal_steps_with_arithmetic
