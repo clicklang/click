@@ -1,5 +1,7 @@
 // Staged common fold dependency reader; activated with fold producers.
 #[allow(dead_code)]
+mod pointer_checks;
+#[allow(dead_code)]
 mod retained_folds;
 #[allow(dead_code)]
 mod retained_matches;
@@ -97,28 +99,32 @@ pub(in crate::kernel) fn pointers_equal_with_load_atoms(
     right: &Pointer,
     loads_match: LoadAtomsMatch<'_>,
 ) -> bool {
-    (left.block == right.block
-        || match (&left.block, &right.block) {
-            (PointerBlock::LoadedPointer(_), PointerBlock::LoadedPointer(_)) => {
-                let (Some(a), Some(b)) = (left.as_loaded_value(), right.as_loaded_value()) else {
+    pointer_blocks_equal_with_load_atoms(&left.block, &right.block, loads_match)
+        && offsets_equal_with_load_atoms(&left.offset, &right.offset, loads_match)
+}
+
+fn pointer_blocks_equal_with_load_atoms(
+    left: &PointerBlock,
+    right: &PointerBlock,
+    loads_match: LoadAtomsMatch<'_>,
+) -> bool {
+    left == right
+        || match (left, right) {
+            (PointerBlock::LoadedPointer(a), PointerBlock::LoadedPointer(b)) => {
+                let (Some((am, ap)), Some((bm, bp))) = (
+                    crate::kernel::eval::registered_pointer_load(*a),
+                    crate::kernel::eval::registered_pointer_load(*b),
+                ) else {
                     return false;
                 };
                 loads_match(
-                    &MachineTerm::MemoryLoad(
-                        a.defining_memory,
-                        Box::new(a.defining_address),
-                        LoadKind::Bits64,
-                    ),
-                    &MachineTerm::MemoryLoad(
-                        b.defining_memory,
-                        Box::new(b.defining_address),
-                        LoadKind::Bits64,
-                    ),
+                    &MachineTerm::MemoryLoad(am, Box::new(ap), LoadKind::Bits64),
+                    &MachineTerm::MemoryLoad(bm, Box::new(bp), LoadKind::Bits64),
                 )
             }
             (PointerBlock::Symbolic(_), PointerBlock::Symbolic(_)) => {
-                let base = |pointer: &Pointer| Pointer {
-                    block: pointer.block.clone(),
+                let base = |block: &PointerBlock| Pointer {
+                    block: block.clone(),
                     offset: PointerOffsetTerm::Constant(0),
                 };
                 let (Some(first), Some(second)) = (
@@ -130,8 +136,7 @@ pub(in crate::kernel) fn pointers_equal_with_load_atoms(
                 terms_equal_with_load_atoms(&first, &second, loads_match)
             }
             _ => false,
-        })
-        && offsets_equal_with_load_atoms(&left.offset, &right.offset, loads_match)
+        }
 }
 
 fn offsets_equal_with_load_atoms(
@@ -3821,16 +3826,15 @@ impl PureFactContext {
         required: (&Pointer, Option<&Pointer>),
         available: &MemoryRange,
     ) -> bool {
-        self.designations_equal(required.0, &available.designation)
-            && required
-                .1
-                .is_none_or(|extent| match available.opaque_extent.as_deref() {
-                    Some(source) => self.opaque_extents_equal(extent, source),
-                    None => {
-                        available.carrier_extent_known
-                            && self.equality_graph.opaque_extent_is_root(extent)
-                    }
-                })
+        pointer_checks::access_match(
+            required,
+            (
+                &available.designation,
+                available.opaque_extent.as_deref(),
+                available.carrier_extent_known,
+            ),
+            self,
+        )
     }
 
     pub(in crate::kernel) fn pointer_designations_match(
@@ -3838,9 +3842,6 @@ impl PureFactContext {
         left: &PointerValue,
         right: &PointerValue,
     ) -> bool {
-        if self.pointer_designations_match_without_stored_values(left, right) {
-            return true;
-        }
         // A complete read can carry a pointer copied from a different cell.
         // Compare the producer's entire stored value once; scalar address
         // aliases and partial stores cannot supply its designation or bounds.
@@ -3855,14 +3856,11 @@ impl PureFactContext {
             }
             crate::kernel::memory_provenance::complete_pointer_read_value(value.designation(), self)
         };
-        let stored_left = stored_value(left);
-        let stored_right = stored_value(right);
-        if stored_left.is_none() && stored_right.is_none() {
-            return false;
-        }
-        self.pointer_designations_match_without_stored_values(
-            stored_left.as_ref().unwrap_or(left),
-            stored_right.as_ref().unwrap_or(right),
+        pointer_checks::complete_match(
+            left,
+            right,
+            |a, b| self.pointer_designations_match_without_stored_values(a, b),
+            stored_value,
         )
     }
 
@@ -3884,18 +3882,11 @@ impl PureFactContext {
                 &ConditionTerm::PointerValueEqual(Box::new(left.clone()), Box::new(right.clone())),
                 true,
             )
-            || (self.designations_equal(left.designation(), right.designation())
-                && match (left.extent(), right.extent()) {
-                    (None, None) if left.extent_is_known() && right.extent_is_known() => true,
-                    (None, None) if !left.extent_is_known() && !right.extent_is_known() => left
-                        .opaque_extent()
-                        .zip(right.opaque_extent())
-                        .is_some_and(|(a, b)| self.opaque_extents_equal(a, b)),
-                    (Some(a), Some(b)) => {
-                        a.width == b.width && self.equality_graph.are_equal(&a.start, &b.start)
-                    }
-                    _ => false,
-                })
+            || pointer_checks::origins_match(
+                pointer_checks::Origins::native(left),
+                pointer_checks::Origins::native(right),
+                self,
+            )
     }
 
     pub(in crate::kernel) fn pointer_value_at_entry(&self, value: &PointerValue) -> PointerValue {
