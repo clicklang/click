@@ -64,13 +64,16 @@ impl KernelFold {
     }
 
     fn import_endpoint(
-        import: &mut KernelTermImport,
+        _import: &mut KernelTermImport,
         format: MachineIntegerType,
         endpoint: &SharedIntegerRangeEndpoint,
     ) -> KernelTerm {
         match endpoint.machine_operand().shared_operand() {
             Some(root) => root.with_machine_observation_type(format),
-            None => import.machine(format, endpoint.value()),
+            None => KernelTerm::retained_machine_operand(
+                format,
+                endpoint.machine_operand().operand_view(),
+            ),
         }
     }
 
@@ -117,7 +120,7 @@ impl KernelFold {
     }
 
     pub(crate) fn import_machine(
-        import: &mut KernelTermImport,
+        _import: &mut KernelTermImport,
         source: &MachineTerm,
     ) -> Option<Self> {
         let MachineTerm::RangeFold {
@@ -131,7 +134,12 @@ impl KernelFold {
         else {
             return None;
         };
-        let mut read = |term| import.machine(MachineIntegerType::Int32, term);
+        let read = |term| {
+            KernelTerm::retained_machine_operand(
+                MachineIntegerType::Int32,
+                MachineOperandView::Legacy(term),
+            )
+        };
         Some(
             Self::new(
                 KernelFoldIndex::Int32,
