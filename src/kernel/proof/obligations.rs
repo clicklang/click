@@ -869,6 +869,148 @@ mod outcome_claim_goal_tests {
     }
 
     #[test]
+    fn owned_outcome_completion_keeps_siblings_open_and_rejects_foreign_cases() {
+        use super::super::*;
+        let execution = closing_execution();
+        let context = crate::kernel::ContractClosingContext::new(&execution);
+        let goal = |path_index| {
+            let core = outcome();
+            let mut closing = context.open(path_index, &core);
+            for kind in ContractClosingGoal::ORDER {
+                closing = closing.fixture_close_goal(kind);
+            }
+            let mut goal = FunctionOutcomeObligation::new(
+                path_index,
+                Arc::new(OutcomeProofState::new(core, ())),
+            );
+            goal.claims = Some(OutcomeClaimGoals::open([], false));
+            goal.closing = Some(closing);
+            goal
+        };
+        let first = goal(0);
+        let second = goal(1);
+        let seed = outcome_root(first.clone());
+        let branch = |goal| {
+            ProofBranch::new(
+                ProofObligation::FunctionOutcome(goal),
+                ProofBranchState {
+                    facts: ProofFacts::from_ordered(&[]),
+                    unfolded_predicates: PersistentOrderedSet::default(),
+                    execution: None,
+                },
+            )
+        };
+        let (owner, ids) = seed
+            .replace_focused_with_checked_branches(vec![branch(first), branch(second)])
+            .unwrap_or_else(|_| panic!("expected an open owned outcome"));
+        let first = owner
+            .focus_open_branch(ids[0])
+            .unwrap_or_else(|_| panic!("expected an open owned outcome"));
+        let case_local = crate::kernel::Proposition::Predicate {
+            name: "first_case_only".into(),
+            arguments: vec![],
+        };
+        let first = first
+            .replace_focused_obligation_and_facts(
+                first
+                    .state()
+                    .open_branches()
+                    .get(ids[0])
+                    .unwrap()
+                    .obligation
+                    .clone(),
+                ProofFacts::from_ordered(std::slice::from_ref(&case_local)),
+            )
+            .unwrap_or_else(|_| panic!("first case is open"));
+        let after_first = first
+            .complete_function_outcome_in(&owner)
+            .unwrap_or_else(|_| panic!("expected an open owned outcome"));
+        assert!(
+            !after_first.is_complete(),
+            "one case does not complete its sibling"
+        );
+        assert!(
+            first.complete_function_outcome_in(&after_first).is_err(),
+            "one case cannot be counted twice"
+        );
+        let second = after_first
+            .focus_open_branch(ids[1])
+            .unwrap_or_else(|_| panic!("expected an open owned outcome"));
+        assert!(
+            !second
+                .state()
+                .open_branches()
+                .get(ids[1])
+                .unwrap()
+                .state
+                .facts
+                .contains(&case_local)
+        );
+        assert!(
+            second
+                .complete_function_outcome_in(&after_first)
+                .unwrap_or_else(|_| panic!("expected an open owned outcome"))
+                .is_complete()
+        );
+        assert!(
+            !owner.is_complete(),
+            "persistent ancestors retain their open cases"
+        );
+        let (foreign, foreign_ids) = seed
+            .replace_focused_with_checked_branches(vec![branch(goal(0)), branch(goal(1))])
+            .unwrap_or_else(|_| panic!("expected an open owned outcome"));
+        assert_eq!(
+            ids, foreign_ids,
+            "branch ordinals alone are not owner identity"
+        );
+        assert!(
+            foreign
+                .focus_open_branch(ids[0])
+                .unwrap_or_else(|_| panic!("expected an open owned outcome"))
+                .complete_function_outcome_in(&owner)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn owned_case_refutation_requires_a_checked_contradiction() {
+        use super::super::*;
+        let core = outcome();
+        let goal = FunctionOutcomeObligation::new(0, Arc::new(OutcomeProofState::new(core, ())));
+        let owner = outcome_root(goal.clone());
+        let fact = crate::kernel::Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::Constant(true),
+            true,
+        );
+        assert!(owner.refute_function_outcome_in(&owner, &fact).is_err());
+        let false_fact = crate::kernel::Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::Constant(false),
+            true,
+        );
+        let routed = owner
+            .replace_focused_obligation_and_facts(
+                ProofObligation::FunctionOutcome(goal),
+                ProofFacts::from_ordered(std::slice::from_ref(&false_fact)),
+            )
+            .unwrap_or_else(|_| panic!("expected an open owned outcome"));
+        assert!(
+            routed
+                .refute_function_outcome_in(&owner, &false_fact)
+                .unwrap_or_else(|_| panic!("expected an open owned outcome"))
+                .is_complete()
+        );
+        assert!(!owner.is_complete());
+        let (empty, ids) = owner
+            .replace_focused_with_checked_branches(vec![])
+            .unwrap_or_else(|_| panic!("the owner is open"));
+        assert!(ids.is_empty());
+        assert!(
+            empty.is_complete(),
+            "no returning cases retire the frontier"
+        );
+    }
+
+    #[test]
     fn outcome_completion_requires_opened_claims_and_all_closing_goals() {
         let execution = closing_execution();
         let core = outcome();

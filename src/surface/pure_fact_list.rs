@@ -414,16 +414,6 @@ impl PureFactList {
         self.built.context_of(&self.facts, self.next)
     }
 
-    /// Finish entry-input publication in the same cached context the proof
-    /// will retain, before any individual C statement adds pointer aliases.
-    pub(super) fn prepare_resource_addresses(
-        &mut self,
-        resources: &crate::kernel::ResourceContext,
-    ) {
-        let context = self.context().with_prepared_resource_addresses(resources);
-        self.built = BuiltContext::built(self.next, context);
-    }
-
     pub(crate) fn len(&self) -> usize {
         self.facts.len()
     }

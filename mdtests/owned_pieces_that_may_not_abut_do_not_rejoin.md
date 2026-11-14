@@ -6,6 +6,7 @@ it starts at `j`, and `i + 1 <= j` does not make that the first piece's end
 `i + 1`: under `i + 1 < j` the cells between are held by no one. Rejoining
 the pieces into `owns x[0..j + 1]` would produce cells the caller never held,
 so the produced range is missing.
+The small bounds keep both input range endpoints defined.
 
 ```c filename=owned_pieces_that_may_not_abut_do_not_rejoin.c
 void wr(int32* p) {
@@ -26,6 +27,7 @@ void wr(int32* p) {
 
 void caller(int32* x, int32 i, int32 j) {
     requires 0 <= i;
+    requires i < 3;
     requires to_integer(i + 1) <= to_integer(j);
     requires j < 4;
     consumes x[0..(i + 1)];
