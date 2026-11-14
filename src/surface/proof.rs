@@ -1833,6 +1833,7 @@ pub(super) fn function_claims(function_block: &FunctionBlock) -> Vec<FunctionCla
 /// instead of building it again.
 #[derive(Clone, Debug)]
 pub(in crate::surface) struct ProofEntryContext {
+    pub(in crate::surface) cases: Arc<crate::kernel::PreparedContractEntryCases>,
     pub(in crate::surface) state: ExecutionState,
     pub(in crate::surface) arguments: Vec<ProgramExpression>,
     pub(in crate::surface) pure_facts: PureFactList,

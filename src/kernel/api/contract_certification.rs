@@ -11,6 +11,124 @@ mod contract_claims;
 mod retained_syntax;
 pub use contract_claims::*;
 
+/// Exhaustive contract-entry alternatives constructed before a body proof.
+/// The caller, declared subject and case contexts are retained together;
+/// registration consumes these contexts without reconstructing the entry.
+#[derive(Clone)]
+pub(crate) struct PreparedContractEntryCases {
+    identity: Arc<()>,
+    pub(super) guard_cases: Vec<Vec<Proposition>>,
+    pub(super) state: ExecutionState,
+    pub(super) function: ProgramFunction,
+    pub(super) arguments: Vec<ProgramExpression>,
+    pub(super) byte_order: Proposition,
+    pub(super) raw_entry_state: ExecutionState,
+    pub(super) cases: Vec<PreparedContractEntryCase>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct PreparedContractEntryCase {
+    pub(super) assumptions: PureFactContext,
+    pub(super) entry_state: ExecutionState,
+}
+
+impl std::fmt::Debug for PreparedContractEntryCases {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedContractEntryCases")
+            .field("function", &self.function.name())
+            .field("cases", &self.cases.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for PreparedContractEntryCases {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.identity, &other.identity)
+    }
+}
+impl Eq for PreparedContractEntryCases {}
+
+impl PreparedContractEntryCases {
+    #[cfg(test)]
+    pub(crate) fn case_count(&self) -> usize {
+        self.cases.len()
+    }
+
+    pub(crate) fn caller_state(&self) -> &ExecutionState {
+        &self.state
+    }
+}
+
+pub(crate) fn prepare_function_contract_entry_cases(
+    entry: ContractEntry,
+    byte_order: Proposition,
+) -> Result<PreparedContractEntryCases, String> {
+    let ContractEntry {
+        subject,
+        assumptions,
+        ..
+    } = entry;
+    let state = &subject.state;
+    let function = &subject.function;
+    let arguments = &subject.arguments;
+    let base_assumptions = assumptions.assume_proposition(byte_order.clone());
+    let resource_condition_cases = contract_resource_condition_cases(
+        state,
+        function,
+        arguments,
+        &base_assumptions.clone().assume_entry_clause_extents(),
+    )
+    .ok_or("could not enumerate the undecided resource guards of the contract entry")?;
+    let raw_entry_state = program_function_entry_state(state, function, arguments)
+        .ok_or("could not build the contract entry state from the call arguments")?;
+    let has_recursive_resources = function
+        .composite_resource_definitions()
+        .iter()
+        .any(CompositeResourceDefinition::is_recursive);
+    let mut cases = Vec::with_capacity(resource_condition_cases.len());
+    for case_facts in &resource_condition_cases {
+        crate::instrumentation::record_deterministic_work(1);
+        let assumptions = assumptions_with_propositions(&base_assumptions, case_facts);
+        let entry_state = if has_recursive_resources {
+            // Keep proof-directed projections for recursive resources.
+            raw_entry_state.clone()
+        } else {
+            let resources = super::super::functions::expand_all_composite_resource_facts_at_state(
+                raw_entry_state.resources(),
+                function.composite_resource_definitions(),
+                &raw_entry_state,
+                &assumptions,
+            )
+            .ok_or("could not expand the composite resources of the contract entry state")?;
+            raw_entry_state.clone().with_resource_context(resources)
+        };
+        cases.push(PreparedContractEntryCase {
+            assumptions,
+            entry_state,
+        });
+    }
+    Ok(PreparedContractEntryCases {
+        identity: Arc::new(()),
+        guard_cases: resource_condition_cases,
+        state: state.clone(),
+        function: function.clone(),
+        arguments: arguments.to_vec(),
+        byte_order,
+        raw_entry_state,
+        cases,
+    })
+}
+
+#[cfg(test)]
+thread_local! {
+    static GUARD_CASE_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn guard_case_builds() -> usize {
+    GUARD_CASE_BUILDS.with(std::cell::Cell::get)
+}
+
 /// Returns an exhaustive set of proof-only cases for undecided guards on
 /// composite resources required directly at function entry.
 ///
@@ -25,6 +143,8 @@ pub(crate) fn contract_resource_condition_cases(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
 ) -> Option<Vec<Vec<Proposition>>> {
+    #[cfg(test)]
+    GUARD_CASE_BUILDS.with(|count| count.set(count.get() + 1));
     let entry_state = program_function_entry_state(caller_state, function, arguments)?;
     let mut budget = ExecutionBudget::beside_live_state();
     let required_resources = evaluate_function_resource_context(
@@ -1115,6 +1235,24 @@ pub enum ContractEntryFactOrigin {
     PredicateBody(usize),
 }
 
+/// The subject captured by the entry producer; preparing cases consumes it
+/// with its facts, so a caller cannot pair an entry with a different subject.
+#[derive(Clone)]
+struct ContractEntrySubject {
+    state: ExecutionState,
+    function: ProgramFunction,
+    arguments: Vec<ProgramExpression>,
+}
+
+impl std::fmt::Debug for ContractEntrySubject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ContractEntrySubject")
+            .field("function", &self.function.name())
+            .field("arguments", &self.arguments.len())
+            .finish_non_exhaustive()
+    }
+}
+
 /// One fact a function may assume at entry, with where it comes from.
 #[derive(Clone, Debug)]
 pub struct ContractEntryFact {
@@ -1159,6 +1297,7 @@ impl ContractEntryFactLog {
 /// callers establish.
 #[derive(Clone, Debug)]
 pub struct ContractEntry {
+    subject: ContractEntrySubject,
     assumptions: PureFactContext,
     facts: Vec<ContractEntryFact>,
     /// The propositions of `facts`, for membership.
@@ -1171,11 +1310,6 @@ impl ContractEntry {
     /// The entry facts in the order the contract yields them.
     pub fn facts(&self) -> &[ContractEntryFact] {
         &self.facts
-    }
-
-    /// The entry facts as one context.
-    pub(super) fn into_assumptions(self) -> PureFactContext {
-        self.assumptions
     }
 
     /// Whether this is an actual output of the entry producer. Selecting the
@@ -1276,6 +1410,11 @@ pub fn program_function_contract_entry(
         .map(|fact| fact.proposition.clone())
         .collect();
     Ok(ContractEntry {
+        subject: ContractEntrySubject {
+            state: caller_state.clone(),
+            function: function.clone(),
+            arguments: arguments.to_vec(),
+        },
         assumptions,
         facts: entry_facts.0,
         stated,
@@ -3424,4 +3563,165 @@ mod scaling_tests {
     include!(
         "../../scaling_tests/kernel/api/contract_certification/shared_contract_operand_tests.rs"
     );
+}
+
+#[cfg(test)]
+mod prepared_entry_cases_tests {
+    use super::*;
+
+    fn fixture(
+        guards: usize,
+        unrelated: usize,
+    ) -> (ExecutionState, ProgramFunction, Vec<ProgramExpression>) {
+        let mut parameters = Vec::new();
+        let mut arguments = Vec::new();
+        let mut definitions = Vec::new();
+        let mut requirements = Vec::new();
+        let mut resources = ResourceContext::new();
+        for index in 0..guards {
+            let name = format!("guarded_{index}");
+            let parameter = format!("flag_{index}");
+            let value =
+                ProgramValue::Int32(MachineTerm::Variable(Variable(600_000 + index as u64)));
+            parameters.push(program_parameter(&parameter, ProgramType::Int32));
+            arguments.push(ProgramExpression::Value(value.clone()));
+            requirements.push(ResourceSpec::composite(
+                ResourceAccessMode::Own,
+                name.clone(),
+                vec![crate::kernel::program_expression::variable(&parameter)],
+                vec![ProgramType::Int32],
+            ));
+            resources = resources
+                .unchecked_with_fact(ResourceFact::own_composite(name.clone(), vec![value]));
+            definitions.push(CompositeResourceDefinition::new(
+                name,
+                vec![program_parameter("flag", ProgramType::Int32)],
+                Some(SpecProposition::Comparison {
+                    left: SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable("flag"),
+                    ),
+                    operator: ComparisonOperator::NotEqual,
+                    right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                }),
+                false,
+                vec![ResourceSpec::token(
+                    ResourceAccessMode::Own,
+                    format!("token_{index}"),
+                    vec![],
+                    vec![],
+                )],
+                vec![],
+            ));
+        }
+        let function = program_function(
+            ProgramType::Int32,
+            "guarded_entry",
+            parameters,
+            program_return(crate::kernel::program_expression::int32_literal(0)),
+        )
+        .with_resource_summary(requirements, vec![])
+        .with_contract(
+            (0..unrelated)
+                .map(|index| SpecProposition::Predicate {
+                    name: format!("unrelated_{index}"),
+                    arguments: vec![],
+                    resource_state_dependent: false,
+                })
+                .collect(),
+            vec![],
+            vec![],
+            vec![],
+            true,
+        )
+        .with_composite_resource_definitions(definitions);
+        (
+            ExecutionState::new().with_resource_context(resources),
+            function,
+            arguments,
+        )
+    }
+
+    #[test]
+    fn opening_retains_all_entry_alternatives_and_their_resource_states() {
+        let (state, function, arguments) = fixture(2, 0);
+        let opened = crate::kernel::proof::OpenedContractEntry::open(
+            &state,
+            &function,
+            &arguments,
+            &Vec::<Proposition>::new(),
+            &ExecutionEnvironment::new(),
+        )
+        .unwrap();
+        let prepared = opened.prepared_cases().clone();
+        assert_eq!(prepared.case_count(), 4);
+        assert_eq!(prepared.guard_cases.len(), 4);
+        for (case, guards) in prepared.cases.iter().zip(&prepared.guard_cases) {
+            assert_eq!(guards.len(), 2);
+            for guard in guards {
+                assert!(case.assumptions.proves_exact(guard));
+                assert!(
+                    !case
+                        .assumptions
+                        .proves_exact(&negate_contract_case_proposition(guard))
+                );
+            }
+        }
+        let token_counts = prepared
+            .cases
+            .iter()
+            .map(|case| case.entry_state.resources().facts().len())
+            .collect::<Vec<_>>();
+        assert_eq!(token_counts, vec![2, 1, 1, 0]);
+        let core = opened.into_execution_core();
+        // Registration can inspect missing coverage, but must not invent new cases.
+        let before = guard_case_builds();
+        for _ in 0..2 {
+            let execution = prove_prepared_function_contract_execution_paths(
+                &prepared,
+                function.clone(),
+                ExecutionEnvironment::new(),
+                ExecutionSemantics::APPLY_VERIFIED_RULES,
+                FunctionContractExecutionMode::VerifyLoops,
+                &[],
+                &[],
+            );
+            assert_eq!(execution.cases.len(), 4);
+            assert!(
+                !execution.is_complete(),
+                "unproved cases do not become completed coverage"
+            );
+        }
+        assert_eq!(
+            guard_case_builds(),
+            before,
+            "registration consumes the retained alternatives"
+        );
+        let _ = core;
+        let foreign = program_function(
+            ProgramType::Int32,
+            "other",
+            vec![],
+            program_return(crate::kernel::program_expression::int32_literal(0)),
+        );
+        let refused = prove_prepared_function_contract_execution_paths(
+            &prepared,
+            foreign,
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
+            FunctionContractExecutionMode::VerifyLoops,
+            &[],
+            &[],
+        );
+        assert!(!refused.is_complete());
+        assert!(
+            refused
+                .reuse_diagnostic()
+                .unwrap()
+                .contains("another function or target")
+        );
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/api/contract_certification/prepared_entry_cases.rs");
+    }
 }
