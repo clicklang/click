@@ -262,8 +262,5 @@ mod tests {
 
 #[cfg(test)]
 mod scaling_tests {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/scaling_tests/kernel/proof/term_rewrite/retained_folds.rs"
-    ));
+    include!("../../../scaling_tests/kernel/proof/term_rewrite/retained_folds.rs");
 }
