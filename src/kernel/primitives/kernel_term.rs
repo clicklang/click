@@ -21,6 +21,8 @@ mod reads;
 mod addresses;
 #[allow(dead_code)]
 mod offsets;
+#[allow(dead_code)]
+mod pointers;
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
 use std::collections::{HashMap, VecDeque};
