@@ -76,11 +76,7 @@ void walk(struct Node* p, int32* marker) {
             mark before_store;
             step();
             have marker[0] == 9 by {
-                transport(at(before_store, marker[0]) == 9, marker[0] == 9) using {
-                    at(before_store, marker[0]) == 9;
-                    q == identity;
-                    separate(memory(marker[0]), memory(identity->next));
-                };
+                assumption();
             }
             step_until(function.exit); solve();
         },

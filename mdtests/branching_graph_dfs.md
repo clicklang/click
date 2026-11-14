@@ -371,10 +371,6 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
             if k == cur {
                 have at(before_right, visited[old(left[k])]) != 0 by {
                     rewrite(k == cur);
-                    transport(
-                        at(before_right, visited[at(after_mark, left[cur])]) != 0,
-                        at(before_right, visited[old(left[cur])]) != 0
-                    ) using { at(before_right, visited[at(after_mark, left[cur])]) != 0; };
                     assumption();
                 }
                 instantiate(forall (k: int32) {
