@@ -8394,11 +8394,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
                 return None;
             }
-            if matches!(tactic, ProofTactic::TransportUsing { .. })
-                && let Ok(Some(closed)) = Self::try_arithmetic_with_selected_premises(&proof)
-            {
-                proof = closed;
-                continue;
+            if let ProofTactic::TransportUsing { source, .. } = tactic {
+                // Instantiation may already close the goal through ordinary
+                // equality reasoning. Do not plan arithmetic for that case.
+                if let Ok(closed) = proof.driver().apply_step(ProofStep::Assumption) {
+                    proof = closed;
+                    continue;
+                }
+                // This route handles arithmetic consequences of a current
+                // fact. Historical reads must first be preserved; attempting
+                // every arithmetic strategy before that can exhaust the
+                // closer's budget on an unrelated derivation.
+                let current_source = match source {
+                    ClickProposition::At { proposition, .. } => proposition.as_ref(),
+                    other => other,
+                };
+                if let Ok(scope) = proof.driver().open_have(current_source.clone())
+                    && let Ok(scope) = scope.driver().apply_step(ProofStep::Assumption)
+                    && let Ok(current) = scope.join()
+                    && let Ok(Some(closed)) = Self::try_arithmetic_with_selected_premises(&current)
+                {
+                    proof = closed;
+                    continue;
+                }
             }
             let step = SourceContext::PureGoal.leaf_step(tactic)?;
             proof = proof.driver().apply_step(step).ok()?;

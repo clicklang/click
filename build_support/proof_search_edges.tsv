@@ -648,5 +648,5 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_so
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_goal	try_universal_steps_with_arithmetic	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_instantiation	try_universal_steps_with_arithmetic	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	driver	4
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	try_arithmetic_with_selected_premises	1
