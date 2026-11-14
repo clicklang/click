@@ -2,6 +2,8 @@ use super::*;
 // Staged common fold readers; producers activate after the Surface boundary.
 #[allow(dead_code)]
 mod retained_folds;
+#[allow(dead_code)]
+mod retained_matches;
 use crate::kernel::spec::walk::{SpecNode, Visit, WalkBudget, walk_spec};
 
 /// Visit only the carrier-bearing leaves of shared machine arithmetic.

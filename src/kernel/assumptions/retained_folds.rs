@@ -19,12 +19,21 @@ pub(super) fn collect_fold_memory_loads(
         KernelType::C(ty) => Some(ty.byte_width()),
         _ => width,
     };
-    let mut pending = vec![
+    let pending = vec![
         (&fold.arguments[3], result_width),
         (&fold.arguments[2], result_width),
         (&fold.arguments[1], endpoint_width),
         (&fold.arguments[0], endpoint_width),
     ];
+    collect_common_memory_loads(pending, current_memory, loads, seen_integers)
+}
+
+pub(super) fn collect_common_memory_loads(
+    mut pending: Vec<(&KernelTerm, Option<u32>)>,
+    current_memory: &CMemory,
+    loads: &mut Vec<(Pointer, u32)>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
     let mut seen = BTreeSet::new();
     while let Some((term, width)) = pending.pop() {
         if crate::instrumentation::deadline_exceeded_with_work(1) {

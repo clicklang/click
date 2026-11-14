@@ -12,6 +12,9 @@ pub(crate) use folds::KernelFoldIndex;
 mod machine;
 #[allow(dead_code)]
 mod matches;
+pub(crate) use matches::KernelMatch;
+#[cfg(test)]
+pub(crate) use matches::KernelMatchArm;
 mod reads;
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
