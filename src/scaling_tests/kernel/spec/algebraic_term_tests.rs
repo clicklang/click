@@ -57,6 +57,7 @@ fn algebraic_integer_match_scales_with_nested_depth() {
         }
         let mut execution = ExecutionBudget::new();
         let mut budget = SpecEvaluation::logical(&mut execution);
+        let exports = KernelTermExport::algebraic_export_count();
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             evaluate_spec_algebraic_at_state_in(
                 &CState::new(),
@@ -72,19 +73,43 @@ fn algebraic_integer_match_scales_with_nested_depth() {
             "arm scopes must be restored"
         );
         assert_eq!(paths.len(), 1);
-        let mut value = &paths[0].value;
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        let AlgebraicResult::Shared(mut value) = paths[0].value.clone() else {
+            panic!("retained result");
+        };
         let mut last_binding = None;
         for _ in 0..depth {
-            let AlgebraicTermNode::Match { arms, .. } = &value.node else {
-                panic!("expected nested match");
+            let crate::kernel::KernelTermNode::Match(matched) = value.node() else {
+                panic!("expected nested common match");
             };
-            last_binding = Some(arms[0].bindings[0].clone());
-            value = &arms[0].body;
+            let crate::kernel::KernelTermNode::Variable(variable) =
+                matched.arms[0].bindings[0].node()
+            else {
+                panic!("Integer declaration");
+            };
+            last_binding = Some(AlgebraicValue::Integer(IntegerTerm::var(*variable)));
+            value = matched.arguments[1].clone();
         }
-        let AlgebraicTermNode::Constructor { fields, .. } = &value.node else {
-            panic!("expected payload constructor");
+        let crate::kernel::KernelTermNode::Legacy(leaf) = value.node() else {
+            panic!("constructor boundary");
+        };
+        let PureFunctionArgument::Algebraic(AlgebraicTerm {
+            node: AlgebraicTermNode::Constructor { fields, .. },
+            ..
+        }) = leaf.value()
+        else {
+            panic!("payload constructor");
         };
         assert_eq!(fields, &vec![last_binding.unwrap()]);
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        let (native, export_work) = crate::instrumentation::measure_deterministic_work(|| {
+            paths[0].value.clone().into_native_compat()
+        });
+        assert!(matches!(native.node, AlgebraicTermNode::Match { .. }));
+        assert!(
+            export_work <= 20 * depth + 20,
+            "depth={depth}, export work={export_work}"
+        );
         assert!(work <= 256 * depth + 128, "depth {depth}: {work}");
         if let Some(previous) = previous {
             assert!(

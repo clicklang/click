@@ -9,6 +9,7 @@ mod boolean;
 mod folds;
 pub use folds::KernelFold;
 pub(crate) use folds::KernelFoldIndex;
+mod algebraic;
 mod machine;
 #[allow(dead_code)]
 mod matches;
@@ -1360,6 +1361,11 @@ impl KernelTermExport {
                 format,
                 Self::machine(term)?,
             )));
+        }
+        if matches!(term.ty(), KernelType::Algebraic(_))
+            && matches!(term.node(), KernelTermNode::Match(_))
+        {
+            return self.algebraic(term).map(PureFunctionArgument::Algebraic);
         }
         if let Some(value) = self.values.get(term) {
             return Ok(value.clone());

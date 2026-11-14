@@ -54,7 +54,9 @@ pub(super) struct SpecPropositionPath {
     pub(super) introductions: LoweringIntroductions,
 }
 
+mod algebraic_result;
 mod bindings;
+use algebraic_result::AlgebraicResult;
 mod result;
 use result::{SpecCallArgument, SpecValue, call_arguments};
 
@@ -81,7 +83,7 @@ struct SpecSequencePath {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SpecAlgebraicPath {
-    value: AlgebraicTerm,
+    value: AlgebraicResult,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 }
@@ -594,7 +596,7 @@ pub(crate) fn capture_spec_algebraic_value(
     {
         return Err("algebraic initializer has unproved evaluation obligations".into());
     }
-    Ok(path.value.clone())
+    Ok(path.value.clone().into_native_compat())
 }
 
 /// Smart theorem selection asks only for the evaluation conditions of its
@@ -3224,17 +3226,17 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
     for scrutinee_path in scrutinee_paths {
         let mut facts = scrutinee_path.facts;
         let mut obligations = scrutinee_path.obligations;
-        if arms.len() != scrutinee_path.value.algebraic_type.variants.len()
+        if arms.len() != scrutinee_path.value.algebraic_type().variants.len()
             || scrutinee_path
                 .value
-                .algebraic_type
+                .algebraic_type()
                 .variants
                 .iter()
                 .any(|schema| arms.iter().filter(|arm| arm.variant == schema.name).count() != 1)
             || arms.iter().any(|arm| {
                 scrutinee_path
                     .value
-                    .algebraic_type
+                    .algebraic_type()
                     .variants
                     .iter()
                     .find(|schema| schema.name == arm.variant)
@@ -3247,13 +3249,13 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
         for arm in arms {
             let schema = scrutinee_path
                 .value
-                .algebraic_type
+                .algebraic_type()
                 .variants
                 .iter()
                 .find(|schema| schema.name == arm.variant)
                 .ok_or(ExecutionLimit::Paths)?;
             let bindings = symbolic_algebraic_match_binders_in(
-                &scrutinee_path.value.algebraic_type,
+                &scrutinee_path.value.algebraic_type(),
                 schema,
                 budget,
             )?;
@@ -3330,8 +3332,12 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 body: body.into(),
             });
         }
-        let value = match &scrutinee_path.value.node {
-            AlgebraicTermNode::Constructor { variant, fields } => lowered_arms
+        let value = match scrutinee_path
+            .value
+            .native_constructor()
+            .map(|value| &value.node)
+        {
+            Some(AlgebraicTermNode::Constructor { variant, fields }) => lowered_arms
                 .iter()
                 .find(|arm| arm.variant == *variant)
                 .and_then(|arm| {
@@ -3346,7 +3352,10 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                     Some(body)
                 })
                 .ok_or(ExecutionLimit::Paths)?,
-            _ => IntegerTerm::algebraic_match(scrutinee_path.value, lowered_arms),
+            _ => IntegerTerm::algebraic_match(
+                scrutinee_path.value.into_native_compat(),
+                lowered_arms,
+            ),
         };
         result.push(SpecIntegerPath {
             value,
@@ -3661,7 +3670,7 @@ fn lower_spec_algebraic_comparison_at_state_in(
             &right_assumptions,
             budget,
         )? {
-            if left_path.value.algebraic_type != right_path.value.algebraic_type {
+            if left_path.value.algebraic_type() != right_path.value.algebraic_type() {
                 continue;
             }
             let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
@@ -3676,13 +3685,12 @@ fn lower_spec_algebraic_comparison_at_state_in(
             };
             // State-dependent projections must be resolved (and their ownership
             // checked) before reflexivity can close a symbolic application.
-            let equality = if left_path.value == right_path.value {
+            let left_value = left_path.value.clone().into_native_compat();
+            let right_value = right_path.value.into_native_compat();
+            let equality = if left_value == right_value {
                 Proposition::ConditionIs(ConditionTerm::Constant(true), true)
             } else {
-                Proposition::Equal(
-                    Term::Algebraic(left_path.value.clone()),
-                    Term::Algebraic(right_path.value),
-                )
+                Proposition::Equal(Term::Algebraic(left_value), Term::Algebraic(right_value))
             };
             paths.push(SpecPropositionPath {
                 introductions: if equal {
@@ -3811,16 +3819,17 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                 return Err(ExecutionLimit::Paths);
             }
             Ok(vec![SpecAlgebraicPath {
-                value: value.clone(),
+                value: (value.clone()).into(),
                 facts: vec![].into(),
                 obligations: vec![],
             }])
         }
         SpecAlgebraicExpressionNode::Variable(variable) => Ok(vec![SpecAlgebraicPath {
-            value: AlgebraicTerm {
+            value: (AlgebraicTerm {
                 algebraic_type: expression.algebraic_type.clone(),
                 node: AlgebraicTermNode::Variable(*variable),
-            },
+            })
+            .into(),
             facts: Vec::new().into(),
             obligations: Vec::new(),
         }]),
@@ -3839,7 +3848,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                     return Err(ExecutionLimit::Paths);
                 }
                 paths.push(SpecAlgebraicPath {
-                    value: *term,
+                    value: (*term).into(),
                     facts: path.facts,
                     obligations: path.obligations,
                 });
@@ -3854,7 +3863,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                 return Err(ExecutionLimit::Paths);
             }
             Ok(vec![SpecAlgebraicPath {
-                value: value.clone(),
+                value: (value.clone()).into(),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
@@ -3883,17 +3892,14 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                 assumptions,
                 budget,
             )? {
-                if !matches!(
-                    scrutinee_path.value.node,
-                    AlgebraicTermNode::Constructor { .. }
-                ) {
+                if scrutinee_path.value.native_constructor().is_none() {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
                     let facts = scrutinee_path.facts.clone();
                     let obligations = scrutinee_path.obligations.clone();
                     for arm in arms {
                         let Some(schema) = scrutinee_path
                             .value
-                            .algebraic_type
+                            .algebraic_type()
                             .variants
                             .iter()
                             .find(|variant| variant.name == arm.variant)
@@ -3901,7 +3907,7 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                             return Err(ExecutionLimit::Paths);
                         };
                         let bindings = symbolic_algebraic_match_binders_in(
-                            &scrutinee_path.value.algebraic_type,
+                            &scrutinee_path.value.algebraic_type(),
                             schema,
                             budget,
                         )?;
@@ -3955,27 +3961,36 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         }
                         // The only remaining body facts are derived read equations.
                         // They belong to this arm, not to the enclosing match.
-                        lowered_arms.push(AlgebraicResultMatchArm {
-                            binding_names: crate::kernel::BindingNames::written(&arm.bindings),
-                            variant: arm.variant.clone(),
-                            bindings,
-                            body: body_path.value,
-                        });
+                        lowered_arms.push(crate::kernel::KernelMatchArm::import(
+                            &mut KernelTermImport::default(),
+                            &arm.variant,
+                            &bindings,
+                            body_path.value.into_kernel(),
+                            &crate::kernel::BindingNames::written(&arm.bindings),
+                        ));
                     }
                     result.push(SpecAlgebraicPath {
-                        value: AlgebraicTerm {
-                            algebraic_type: expression.algebraic_type.clone(),
-                            node: AlgebraicTermNode::Match {
-                                scrutinee: Box::new(scrutinee_path.value),
-                                arms: lowered_arms,
-                            },
-                        },
+                        value: AlgebraicResult::Shared(
+                            crate::kernel::KernelMatch::new(
+                                KernelType::Algebraic(expression.algebraic_type.clone()),
+                                scrutinee_path.value.into_kernel(),
+                                lowered_arms,
+                            )
+                            .expect("algebraic match producer")
+                            .into_term(),
+                        ),
                         facts,
                         obligations,
                     });
                     continue;
                 }
-                for case in algebraic_case_paths_in(&scrutinee_path.value, budget)? {
+                for case in algebraic_case_paths_in(
+                    scrutinee_path
+                        .value
+                        .native_constructor()
+                        .expect("constructor selected"),
+                    budget,
+                )? {
                     let Some(arm) = arms.iter().find(|arm| arm.variant == case.variant) else {
                         return Err(ExecutionLimit::Paths);
                     };
@@ -4151,13 +4166,14 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             let paths = paths
                 .into_iter()
                 .map(|(fields, facts, obligations)| SpecAlgebraicPath {
-                    value: AlgebraicTerm {
+                    value: (AlgebraicTerm {
                         algebraic_type: expression.algebraic_type.clone(),
                         node: AlgebraicTermNode::Constructor {
                             variant: variant.clone(),
                             fields,
                         },
-                    },
+                    })
+                    .into(),
                     facts,
                     obligations,
                 })
@@ -4167,7 +4183,11 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             // subslice, is named here as the form that built it.
             if fields.iter().any(required_constructions::field_is_required) {
                 for path in &paths {
-                    required_constructions::record_required_construction(&path.value);
+                    required_constructions::record_required_construction(
+                        path.value
+                            .native_constructor()
+                            .expect("constructor producer"),
+                    );
                 }
             }
             Ok(paths)
@@ -4237,13 +4257,14 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                         }
                     }
                     SpecAlgebraicPath {
-                        value: AlgebraicTerm {
+                        value: (AlgebraicTerm {
                             algebraic_type: expression.algebraic_type.clone(),
                             node: AlgebraicTermNode::PureFunctionApplication {
                                 name: name.clone(),
                                 arguments,
                             },
-                        },
+                        })
+                        .into(),
                         facts,
                         obligations,
                     }
@@ -4371,7 +4392,7 @@ fn evaluate_spec_algebraic_value_at_state_in(
             )?
             .into_iter()
             .map(|path| SpecAlgebraicValuePath {
-                value: AlgebraicValue::Algebraic(path.value),
+                value: AlgebraicValue::Algebraic(path.value.into_native_compat()),
                 facts: path.facts,
                 obligations: path.obligations,
             })
@@ -6729,10 +6750,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
             )? {
-                if !matches!(
-                    scrutinee_path.value.node,
-                    AlgebraicTermNode::Constructor { .. }
-                ) {
+                if scrutinee_path.value.native_constructor().is_none() {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
                     let mut parameter_arms = Vec::new();
                     let mut compatibility_arms = Vec::new();
@@ -6742,7 +6760,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     for arm in arms {
                         let Some(schema) = scrutinee_path
                             .value
-                            .algebraic_type
+                            .algebraic_type()
                             .variants
                             .iter()
                             .find(|variant| variant.name == arm.variant)
@@ -6751,7 +6769,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         };
                         let mut variables = Vec::with_capacity(schema.fields.len());
                         let bindings = symbolic_algebraic_fields(
-                            &scrutinee_path.value.algebraic_type,
+                            &scrutinee_path.value.algebraic_type(),
                             schema,
                             || {
                                 let variable = budget.allocate_match_binder_variable()?;
@@ -6803,7 +6821,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         for obligation in body_path.obligations {
                             obligations.push(guard_scalar_match_obligation(
                                 obligation,
-                                &scrutinee_path.value,
+                                &scrutinee_path.value.clone().into_native_compat(),
                                 arm,
                                 &bindings,
                                 &variables,
@@ -6860,7 +6878,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         SpecValue::from(CValue::Parameter(Box::new(AlgebraicTerm {
                             algebraic_type: name.algebraic_type(),
                             node: AlgebraicTermNode::Match {
-                                scrutinee: Box::new(scrutinee_path.value),
+                                scrutinee: Box::new(scrutinee_path.value.into_native_compat()),
                                 arms: parameter_arms,
                             },
                         })))
@@ -6869,15 +6887,21 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             c_value_from_bitvector_term(
                                 result_type,
                                 MachineTerm::AlgebraicMatch {
-                                    scrutinee: Box::new(scrutinee_path.value),
+                                    scrutinee: Box::new(scrutinee_path.value.into_native_compat()),
                                     arms: compatibility_arms,
                                 },
                             )
                             .ok_or(ExecutionLimit::Paths)?,
                         )
                     } else {
-                        let scrutinee = KernelTermImport::default()
-                            .argument(&PureFunctionArgument::Algebraic(scrutinee_path.value));
+                        // Numeric match consumers still use native algebraic
+                        // scrutinee descriptors. The numeric root and arms
+                        // retain their common representation across this
+                        // explicit algebraic compatibility boundary.
+                        let scrutinee =
+                            KernelTermImport::default().argument(&PureFunctionArgument::Algebraic(
+                                scrutinee_path.value.into_native_compat(),
+                            ));
                         SpecValue::Shared(
                             crate::kernel::KernelMatch::new(
                                 KernelType::C(result_type),
@@ -6895,7 +6919,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     });
                     continue;
                 }
-                for case in algebraic_case_paths_in(&scrutinee_path.value, budget)? {
+                for case in algebraic_case_paths_in(
+                    scrutinee_path
+                        .value
+                        .native_constructor()
+                        .expect("constructor selected"),
+                    budget,
+                )? {
                     let Some(arm) = arms.iter().find(|arm| arm.variant == case.variant) else {
                         return Err(ExecutionLimit::Paths);
                     };
@@ -8038,7 +8068,9 @@ fn evaluate_spec_pure_function_argument_paths_in(
             )?
             .into_iter()
             .map(|path| SpecPureFunctionArgumentPath {
-                value: SpecCallArgument::Native(PureFunctionArgument::Algebraic(path.value)),
+                value: SpecCallArgument::Native(PureFunctionArgument::Algebraic(
+                    path.value.into_native_compat(),
+                )),
                 facts: path.facts,
                 obligations: path.obligations,
             })
@@ -8898,11 +8930,12 @@ fn evaluate_spec_algebraic_if_paths_in(
                             (else_path.value.clone(), then_path.value.clone())
                         };
                         branch_paths.push(SpecAlgebraicPath {
-                            value: AlgebraicTerm::if_then_else(
+                            value: (AlgebraicTerm::if_then_else(
                                 condition.clone(),
-                                then_value,
-                                else_value,
-                            ),
+                                then_value.into_native_compat(),
+                                else_value.into_native_compat(),
+                            ))
+                            .into(),
                             facts,
                             obligations,
                         });

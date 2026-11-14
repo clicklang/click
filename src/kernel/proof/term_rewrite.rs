@@ -68,24 +68,7 @@ fn collect_machine_operand_carriers(
     if let Some(leaves) = shared_machine_conversion_leaves(root, || variables.visit()) {
         for (_, leaf) in leaves.iter() {
             if let KernelTermNode::Match(matched) = leaf.node() {
-                let mut export = KernelTermExport::default();
-                let mut seen = BTreeSet::new();
-                for child in matched
-                    .arguments
-                    .iter()
-                    .chain(matched.arms.iter().flat_map(|arm| &arm.bindings))
-                {
-                    if let KernelType::C(ty) = child.ty()
-                        && MachineIntegerType::from_c_type(*ty).is_some()
-                    {
-                        collect_machine_operand_carriers(
-                            MachineOperandView::Shared(child),
-                            variables,
-                        );
-                    } else if let Ok(argument) = export.argument(child) {
-                        collect_argument_carriers(&argument, variables, &mut seen);
-                    }
-                }
+                retained_matches::collect_match_carriers(matched, variables);
                 continue;
             }
             if let KernelTermNode::Fold(fold) = leaf.node() {

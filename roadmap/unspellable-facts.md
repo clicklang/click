@@ -336,7 +336,8 @@ neither language syntax nor evaluator reduction policy. All 2,100 tests in the
 full scaling and related Surface, match, fold and substitution selection pass,
 including six print/parse/lower round trips and typed-field scope checks.
 
-6l switches numeric match production to live common roots and arm bodies.
+6l ([PR #2752](https://github.com/clicklang/click/pull/2752), merged)
+switches numeric match production to live common roots and arm bodies.
 Integer path results retain a shallow native reading; machine path results
 retain their `KernelTerm` directly. Scoped consumers preserve capture,
 constructor evidence, memory dependencies and typed observation identity.
@@ -357,6 +358,24 @@ The full 5,286-fixture Markdown corpus passes with zero fact-stability changes.
 Numeric match imports use the same retained-operand boundary as folds: opaque
 arm expressions, including boolean casts, remain valid arithmetic leaves.
 This fixes the Rust option and example-project storage assertion found by CI.
+
+6m retains symbolic algebraic match results in a private evaluator carrier.
+Nested algebraic scrutinees and arm bodies stay common through construction
+and scoped rewriting. Capture reservation walks shared children directly;
+unknown nested matches decline constructor reduction without materializing
+their native trees. Exact native-source replacement preserves the existing
+value-equality policy, including pointer evidence.
+
+Native output is an explicit, iterative compatibility operation. Remaining
+boundaries are algebraic constructors and calls, conditionals, equality facts,
+resource capture, generic C parameters, and algebraic scrutinee descriptors
+consumed by numeric matches. These are not claims that every algebraic term
+family has migrated. Concrete constructor selection, arm obligations and
+refusals remain unchanged. Producer scaling covers depths 8/16/32/64; scoped
+rewriting covers shared nested bodies at 8/32/128 without native exports.
+All 2,404 tests in the full scaling and related selection pass, as does the
+full Markdown corpus with zero fact-stability differences and the production
+build check.
 
 ## Chunk 5: execution value handoffs
 

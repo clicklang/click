@@ -92,10 +92,16 @@ fn algebraic_integer_match_reconnects_symbolic_and_concrete_fields() {
         )
         .unwrap();
         assert_eq!(paths.len(), 1);
+        if !concrete {
+            assert!(
+                matches!(&paths[0].value, AlgebraicResult::Shared(root) if matches!(root.node(), crate::kernel::KernelTermNode::Match(_)))
+            );
+        }
+        let native = paths[0].value.clone().into_native_compat();
         let (body, expected) = if concrete {
-            (&paths[0].value, AlgebraicValue::Integer(payload.clone()))
+            (&native, AlgebraicValue::Integer(payload.clone()))
         } else {
-            let AlgebraicTermNode::Match { arms, .. } = &paths[0].value.node else {
+            let AlgebraicTermNode::Match { arms, .. } = &native.node else {
                 panic!("symbolic match must remain a match");
             };
             (&arms[0].body, arms[0].bindings[0].clone())
@@ -337,7 +343,7 @@ fn arbitrary_algebraic_value_is_one_variable_without_eager_cases() {
         assert_eq!(paths.len(), 1);
         assert_eq!(budget.next_kernel_variable, next_variable);
         assert_eq!(
-            paths[0].value,
+            paths[0].value.clone().into_native_compat(),
             AlgebraicTerm {
                 algebraic_type,
                 node: AlgebraicTermNode::Variable(Variable(41)),
@@ -667,10 +673,10 @@ fn algebraic_result_match_on_symbolic_value_remains_one_term() {
 
     assert_eq!(paths.len(), 1);
     assert!(matches!(
-        paths[0].value.node,
-        AlgebraicTermNode::Match { .. }
+        &paths[0].value,
+        AlgebraicResult::Shared(root) if matches!(root.node(), crate::kernel::KernelTermNode::Match(_))
     ));
-    assert!(paths[0].value.is_well_formed());
+    assert!(paths[0].value.clone().into_native_compat().is_well_formed());
 }
 
 #[test]
@@ -946,7 +952,7 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
         .expect("typed model match");
         assert_eq!(paths.len(), usize::from(valid));
         if valid {
-            assert!(paths[0].value.is_well_formed());
+            assert!(paths[0].value.clone().into_native_compat().is_well_formed());
         }
     }
 }
