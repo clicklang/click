@@ -104,6 +104,17 @@ pub enum KernelTermNode {
     },
     /// Complete formed pointer value with prepared address and metadata children.
     PointerValue(SharedPointerValue),
+    /// A pointer argument with its selected memory snapshot.
+    ArrayReference {
+        memory: SharedMemory,
+        pointer: KernelTerm,
+        element_type: ProgramType,
+    },
+    /// Generic call structure plus the complete checked pointer result.
+    PointerCall {
+        call: KernelTerm,
+        value: SharedPointerValue,
+    },
     /// Pointer arithmetic keeps its exact input roots beside the complete
     /// checked result payload. Formation evidence stays on the execution path.
     PointerArithmetic {
@@ -242,7 +253,7 @@ struct TermData {
     // Temporary reverse bridge. Weak because the old node caches this term.
     integer: Mutex<WeakIntegerTerm>,
     machine_leaf: MachineLeafCache,
-    pointer_leaf: std::sync::OnceLock<Box<ProgramValue>>,
+    pointer_leaf: std::sync::OnceLock<Box<PureFunctionArgument>>,
 }
 
 struct NodeKeyData {
@@ -1449,8 +1460,12 @@ impl KernelTermExport {
             }
             KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
+            | KernelTermNode::PointerCall { value, .. }
             | KernelTermNode::PointerValue(value) => {
                 PureFunctionArgument::Value(ProgramValue::Pointer(value.export()?))
+            }
+            KernelTermNode::ArrayReference { .. } => {
+                term.pointer_argument_native().unwrap().clone()
             }
             KernelTermNode::Legacy(value) => value.value().clone(),
             KernelTermNode::IntegerLiteral(value) => {

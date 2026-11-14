@@ -131,8 +131,17 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
+            KernelTermNode::ArrayReference { .. } => {
+                collect_argument(
+                    term.pointer_argument_native().expect("array descriptor"),
+                    mode,
+                    &mut leaf_variables,
+                    &mut SeenTerms::default(),
+                );
+            }
             KernelTermNode::PointerRead { value, .. }
             | KernelTermNode::PointerArithmetic { value, .. }
+            | KernelTermNode::PointerCall { value, .. }
             | KernelTermNode::PointerValue(value) => {
                 super::retained_pointers::collect_pointer_variables(
                     value,

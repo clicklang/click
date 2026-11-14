@@ -330,6 +330,14 @@ transport preserves them. Pointer differences keep the existing same-object/stri
 checker and common numeric result admission. Native index admission is unchanged;
 Surface observations use the existing pointer cast spelling.
 
+7p retains pointer-valued specification calls as a generic call root with original
+common argument handles and the complete result payload. Typed pointer arguments
+retain their selected memory snapshot and pointer child; existing nominal
+object-type refinement preserves that structure. Explicit native call
+argument descriptors preserve object-origin evidence and existing null/projection
+reductions. Surface raises the retained generic call with the existing call syntax;
+scoped readers keep the native result payload's dependency policy.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface

@@ -7770,7 +7770,11 @@ fn evaluate_spec_pure_function_application_paths_in(
             projection.and_then(|projection| projected_field(projection, &arguments, result_type))
         {
             results.push(SpecExpressionPath {
-                value: value.into(),
+                value: if result_type.is_pointer() && !budget.machine_result_production_disabled {
+                    SpecValue::retain_formed_pointer(value)
+                } else {
+                    value.into()
+                },
                 facts,
                 obligations,
             });
@@ -7790,34 +7794,58 @@ fn evaluate_spec_pure_function_application_paths_in(
             });
             continue;
         }
-        let value = if result_type.is_pointer() {
+        if result_type.is_pointer() {
             let (all_null, object_class) =
                 pure_pointer_result_class_from(pointer_result, |index| {
                     arguments
                         .get(index)
                         .and_then(SpecCallArgument::native_descriptor)
                 });
-            ProgramValue::Pointer(
-                PointerValue::new(
-                    if all_null {
-                        Pointer::null()
-                    } else {
-                        Pointer {
-                            block: PointerBlock::PureFunctionApplication(
-                                SharedPureApplication::intern(
-                                    name.to_string(),
-                                    call_arguments(arguments),
-                                ),
-                            ),
-                            offset: PointerOffsetTerm::Constant(0),
-                        }
-                    },
-                    result_type,
-                )
-                .with_declared_object_class(result_object_class.cloned())
-                .with_object_type_evidence(object_class),
+            let retained = arguments
+                .iter()
+                .map(|argument| match argument {
+                    SpecCallArgument::Shared(root) => Some(root.clone()),
+                    SpecCallArgument::Native(_) => None,
+                })
+                .collect();
+            let application = (!all_null)
+                .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
+            let value = PointerValue::new(
+                if all_null {
+                    Pointer::null()
+                } else {
+                    Pointer {
+                        block: PointerBlock::PureFunctionApplication(
+                            application.as_ref().unwrap().clone(),
+                        ),
+                        offset: PointerOffsetTerm::Constant(0),
+                    }
+                },
+                result_type,
             )
-        } else if let ProgramType::Parameter(parameter) = result_type {
+            .with_declared_object_class(result_object_class.cloned())
+            .with_object_type_evidence(object_class);
+            let value = if budget.machine_result_production_disabled {
+                SpecValue::Native(ProgramValue::Pointer(value))
+            } else if let Some(application) = application {
+                KernelTermImport::default()
+                    .pointer_call(
+                        &application,
+                        retained,
+                        SharedPointerValue::import_produced(&value),
+                    )
+                    .into()
+            } else {
+                SpecValue::retain_formed_pointer(ProgramValue::Pointer(value))
+            };
+            results.push(SpecExpressionPath {
+                value,
+                facts,
+                obligations,
+            });
+            continue;
+        }
+        let value = if let ProgramType::Parameter(parameter) = result_type {
             // A value of an abstract type is an algebraic term: the
             // application is one of that type.
             ProgramValue::Parameter(Box::new(AlgebraicTerm {
@@ -8045,6 +8073,14 @@ fn evaluate_spec_pure_function_argument_paths_in(
             Ok(paths
                 .into_iter()
                 .filter_map(|mut path| {
+                    let retained = match &path.value {
+                        SpecCallArgument::Shared(root) => Some(root.clone()),
+                        _ => None,
+                    };
+                    if let Some(root) = &retained {
+                        path.value =
+                            SpecCallArgument::Native(root.pointer_argument_native()?.clone());
+                    }
                     let value = match &mut path.value {
                         SpecCallArgument::Native(
                             PureFunctionArgument::Value(value)
@@ -8081,6 +8117,13 @@ fn evaluate_spec_pure_function_argument_paths_in(
                                 object_class,
                             ),
                         ));
+                    }
+                    if let Some(root) = retained {
+                        let ProgramValue::Pointer(pointer) = value else {
+                            return None;
+                        };
+                        path.value =
+                            SpecCallArgument::Shared(root.refined_pointer_argument(pointer));
                     }
                     Some(path)
                 })
@@ -8153,22 +8196,30 @@ fn evaluate_spec_pure_function_argument_paths_in(
                 budget,
             )?
             .into_iter()
-            .map(|path| SpecPureFunctionArgumentPath {
-                value: SpecCallArgument::Native(PureFunctionArgument::ArrayRef {
-                    // The argument names the snapshot it reads, and that
-                    // snapshot is compared structurally, so the live one
-                    // would make this argument -- and every fact about a
-                    // function of it -- different after any step at all.
-                    // `array_ref_argument_memory` gives the latest snapshot
-                    // that still agrees with this one about everything the
-                    // function can observe through this pointer, so a fact
-                    // survives exactly the steps that cannot touch the array.
-                    memory: array_ref_argument_memory(memory, &path.value.native()),
-                    pointer: path.value.into_native(),
-                    element_type: *element_type,
-                }),
-                facts: path.facts,
-                obligations: path.obligations,
+            .map(|path| {
+                // Preserve the existing selected snapshot; retain the pointer
+                // expression separately from its native descriptor reading.
+                let memory = array_ref_argument_memory(memory, &path.value.native());
+                let value = if budget.machine_result_production_disabled
+                    || !path.value.program_type().is_pointer()
+                {
+                    SpecCallArgument::Native(PureFunctionArgument::ArrayRef {
+                        memory,
+                        pointer: path.value.into_native(),
+                        element_type: *element_type,
+                    })
+                } else {
+                    SpecCallArgument::Shared(KernelTerm::shared_array_reference(
+                        crate::kernel::intern_memory_ref(&memory),
+                        path.value.common_operand(),
+                        *element_type,
+                    ))
+                };
+                SpecPureFunctionArgumentPath {
+                    value,
+                    facts: path.facts,
+                    obligations: path.obligations,
+                }
             })
             .collect())
         }
