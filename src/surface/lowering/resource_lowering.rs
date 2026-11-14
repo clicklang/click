@@ -1932,8 +1932,7 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and
     assumptions: &PureFactContext,
 ) -> Result<ResourceFact, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
-    let array_refs =
-        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
+    let array_refs = array_refs_for_values(parameter_binding, &values, state.memory());
     let (values, _) = contract_environment_at_state(&values, &array_refs, state);
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(

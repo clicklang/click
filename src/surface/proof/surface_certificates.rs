@@ -2079,8 +2079,14 @@ pub(super) fn viewability_restriction_requirements(
             bound,
             ContractExpression::IntegerLiteral(_)
                 | ContractExpression::Binding(_)
+                | ContractExpression::Field { .. }
+                | ContractExpression::ArrayIndex { .. }
                 | ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable(_) | ProgramExpression::Value(_)
+                    ProgramExpression::Variable(_)
+                        | ProgramExpression::Value(_)
+                        | ProgramExpression::Load(_)
+                        | ProgramExpression::TypedLoad { .. }
+                        | ProgramExpression::Index(..)
                 )
         )
     };

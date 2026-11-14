@@ -10778,7 +10778,7 @@ impl Parser {
                     }
                 } else {
                     self.position = start;
-                    self.parse_declared_resource_call_with_access(ResourceAccessMode::View)?
+                    self.parse_resource_target(ResourceAccessMode::View)?
                 };
                 self.expect(Token::RParen)?;
                 ProofTactic::ObserveResource(resource)

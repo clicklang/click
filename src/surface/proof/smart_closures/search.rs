@@ -9287,17 +9287,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let ClickProposition::Loadable { segment } = target else {
             return None;
         };
-        let ContractSegmentSurface::Range { end, .. } = &segment.surface else {
+        let ContractSegmentSurface::Range { .. } = &segment.surface else {
             return None;
         };
-        if !wide
-            && !matches!(
-                contract_expression_as_program_expression(end),
-                Some(ProgramExpression::Add(..) | ProgramExpression::Subtract(..))
-            )
-        {
-            return None;
-        }
         let recorded;
         let surfaces = match selected {
             Some(selected) => selected,
@@ -9320,22 +9312,55 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 &recorded
             }
         };
-        for source in surfaces
-            .iter()
-            .filter(|source| matches!(source, ClickProposition::Loadable { .. }))
-        {
+        for recorded_source in surfaces {
+            let mut source = recorded_source;
+            while let ClickProposition::At { proposition, .. } = source {
+                source = proposition;
+            }
+            let ClickProposition::Loadable { segment } = source else {
+                continue;
+            };
+            // A past view suggests a descriptor to try, not evidence that it
+            // is still live. The ordinary observation selects an exact held
+            // permission in the current state; it never follows history.
+            let mut segment = segment.clone();
+            segment.state = ContractSegmentState::Current;
+            let source = ClickProposition::Loadable {
+                segment: segment.clone(),
+            };
+            let prepared = (|| {
+                let scope = search_input.driver().open_have(source.clone())?;
+                let scope = scope
+                    .driver()
+                    .apply_step(ProofStep::Assumption)
+                    .or_else(|_| {
+                        scope.driver().apply_step(ProofStep::ObserveResource(
+                            ResourceClause::ViewMemory(segment),
+                        ))
+                    })?;
+                scope.join()
+            })();
+            let Ok(prepared) = prepared else {
+                continue;
+            };
+            if prepared.is_complete() || prepared.focused_discharged() {
+                return Some(prepared);
+            }
+            let mut premises = surfaces.to_vec();
+            premises.push(source.clone());
             let goals = if *wide {
-                rebased_viewability_restriction_steps(source, target, surfaces)
-                    .or_else(|| native_viewability_restriction_steps(source, target, surfaces))
+                rebased_viewability_restriction_steps(&source, target, &premises)
+                    .or_else(|| native_viewability_restriction_steps(&source, target, &premises))
             } else {
-                computed_viewability_restriction_steps(source, target, surfaces)
+                computed_viewability_restriction_steps(&source, target, &premises)
+                    .or_else(|| native_viewability_restriction_steps(&source, target, &premises))
             };
             let Some(goals) = goals else {
                 continue;
             };
             let candidate = goals
                 .into_iter()
-                .try_fold(search_input.clone(), |proof, (proposition, steps)| {
+                .try_fold(prepared, |proof, (proposition, steps)| {
                     let candidate = (|| {
                         let mut scope = proof
                             .driver()
@@ -9777,6 +9802,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("check_typed_atomic_solve_candidate");
+        // A direct loadability derivation already selected its source range.
+        // Expand that selection through ordinary observation and containment
+        // before the legacy transport planner can consume the derivation.
+        if matches!(goal, Proposition::MemoryLoadable { .. }) {
+            let selected = premise_pairs
+                .iter()
+                .map(|(_, surface)| surface.clone())
+                .collect::<Vec<_>>();
+            if let Some(proof) =
+                Self::try_ordinary_viewability_restriction_closure(search_input, Some(&selected))
+            {
+                return Some(proof);
+            }
+        }
         let surface_goal = search_input.surface_goal();
         let tactics = recorded_signed_order_pairs(derivation, premise_pairs)
             .and_then(|ordered| plan_recorded_signed_order_path(goal, &ordered))
