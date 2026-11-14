@@ -354,6 +354,9 @@ retained word comparisons no longer repeat the same order-fact query. Shared
 and native match readers also preserve scrutinee/guard selection, cold-import
 observation identity and the existing word-arithmetic dispatch policy.
 The full 5,286-fixture Markdown corpus passes with zero fact-stability changes.
+Numeric match imports use the same retained-operand boundary as folds: opaque
+arm expressions, including boolean casts, remain valid arithmetic leaves.
+This fixes the Rust option and example-project storage assertion found by CI.
 
 ## Chunk 5: execution value handoffs
 

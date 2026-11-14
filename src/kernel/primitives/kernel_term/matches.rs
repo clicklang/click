@@ -160,7 +160,12 @@ impl KernelMatch {
         let arms = arms
             .iter()
             .map(|arm| {
-                let body = import.machine(format, &arm.body);
+                // Arithmetic carriers retain unsupported syntax as opaque
+                // leaves, just as they do outside a match arm.
+                let body = KernelTerm::retained_machine_operand(
+                    format,
+                    MachineOperandView::Legacy(&arm.body),
+                );
                 KernelMatchArm::import(
                     import,
                     &arm.variant,
@@ -405,6 +410,39 @@ mod tests {
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert_eq!(KernelTermExport::machine(&a).unwrap(), native);
+        }
+    }
+
+    #[test]
+    fn numeric_match_arms_retain_boolean_casts_in_arithmetic_storage() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let cast = MachineTerm::BoolCast {
+                to: format,
+                value: Box::new(ConditionTerm::Variable(Variable(991982))),
+            };
+            for body in [
+                cast.clone(),
+                MachineTerm::add(cast, MachineTerm::constant(1)),
+            ] {
+                let native = MachineTerm::AlgebraicMatch {
+                    scrutinee: Box::new(scrutinee()),
+                    arms: vec![AlgebraicBitvectorMatchArm {
+                        variant: "Box".into(),
+                        bindings: binding(),
+                        binding_names: names(),
+                        body,
+                    }],
+                };
+                let root = KernelTermImport::default().machine(format, &native);
+                let observed = SharedMachineIntegerTerm::observe_shared(format, root.clone())
+                    .expect("opaque arm leaves fit arithmetic storage");
+                assert_eq!(
+                    observed,
+                    SharedMachineIntegerTerm::intern(format, native.clone())
+                );
+                assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
+            }
         }
     }
 
