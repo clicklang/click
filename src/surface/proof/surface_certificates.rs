@@ -1450,6 +1450,18 @@ fn transport_separation_subject(subject: &ResourceSubject) -> Option<TransportRe
     }
 }
 
+fn viewability_resource(proposition: &ClickProposition) -> Option<ResourceSubject> {
+    match proposition {
+        ClickProposition::Loadable { segment }
+            if segment.state == ContractSegmentState::Current =>
+        {
+            Some(ResourceSubject::Memory(segment.clone()))
+        }
+        ClickProposition::ResourceViewable { resource } => Some(resource.clone()),
+        _ => None,
+    }
+}
+
 /// Ordinary proof of a selected viewability restriction. This visits only
 /// written descriptors and premises; no state, history, or ambient facts.
 pub(super) fn viewability_restriction_steps(
@@ -1457,22 +1469,56 @@ pub(super) fn viewability_restriction_steps(
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<(Vec<ProofStep>, bool)> {
-    fn resource(proposition: &ClickProposition) -> Option<ResourceSubject> {
-        match proposition {
-            ClickProposition::Loadable { segment }
-                if segment.state == ContractSegmentState::Current =>
-            {
-                Some(ResourceSubject::Memory(segment.clone()))
-            }
-            ClickProposition::ResourceViewable { resource } => Some(resource.clone()),
-            _ => None,
-        }
-    }
     if source == target || !premises.contains(source) {
         return None;
     }
-    let parent = resource(source)?;
-    let child = resource(target)?;
+    let parent = viewability_resource(source)?;
+    let child = viewability_resource(target)?;
+    if let (ResourceSubject::Memory(parent_segment), ResourceSubject::Memory(child_segment)) =
+        (&parent, &child)
+    {
+        let range_base = |segment: &ContractSegment| match &segment.surface {
+            ContractSegmentSurface::Range { base, .. }
+            | ContractSegmentSurface::StructRange { base, .. } => Some(base.clone()),
+            _ => None,
+        };
+        if let (Some(parent_base), Some(child_base)) =
+            (range_base(parent_segment), range_base(child_segment))
+            && parent_base != child_base
+        {
+            let equality = ClickProposition::Comparison {
+                left: child_base,
+                operator: ComparisonOperator::Equal,
+                right: parent_base.clone(),
+            };
+            if !premises.contains(&equality) {
+                return None;
+            }
+            let mut segment = child_segment.clone();
+            segment.base = parent_segment.base.clone();
+            match &mut segment.surface {
+                ContractSegmentSurface::Range { base, .. }
+                | ContractSegmentSurface::StructRange { base, .. } => *base = parent_base,
+                _ => unreachable!(),
+            }
+            let intermediate = ClickProposition::Loadable { segment };
+            let (steps, narrow_range) =
+                viewability_restriction_steps(source, &intermediate, premises)?;
+            return Some((
+                vec![
+                    ProofStep::Have {
+                        proposition: intermediate,
+                        proof: Box::new(
+                            ProofCertificate::from_steps(steps).expect("ordinary view restriction"),
+                        ),
+                    },
+                    ProofStep::Rewrite(equality),
+                    ProofStep::Assumption,
+                ],
+                narrow_range,
+            ));
+        }
+    }
     let containment = ClickProposition::Contains {
         parent: parent.clone(),
         child: child.clone(),
@@ -1484,7 +1530,7 @@ pub(super) fn viewability_restriction_steps(
         else {
             return None;
         };
-        if parent.base != child.base || parent.state != child.state {
+        if parent.state != child.state {
             return None;
         }
         fn endpoints(
@@ -1517,10 +1563,32 @@ pub(super) fn viewability_restriction_steps(
                 right: right.clone(),
             }
         });
-        // Other bound arguments remain the planner's responsibility. Do not
-        // smuggle arithmetic discovery into this elementary restriction.
-        if !bounds.iter().all(|bound| premises.contains(bound)) {
-            return None;
+        // Constant endpoint comparisons are ordinary normalization steps.
+        // Nonconstant bounds still have to be explicitly selected by planning.
+        for bound in &bounds {
+            if premises.contains(bound) {
+                continue;
+            }
+            let ClickProposition::Comparison { left, right, .. } = bound else {
+                unreachable!()
+            };
+            let literal = |value: &ContractExpression| {
+                matches!(
+                    value,
+                    ContractExpression::IntegerLiteral(_)
+                        | ContractExpression::CFragment(CExpression::Value(_))
+                )
+            };
+            if !literal(left) || !literal(right) {
+                return None;
+            }
+            steps.push(ProofStep::Have {
+                proposition: bound.clone(),
+                proof: Box::new(
+                    ProofCertificate::from_steps(vec![ProofStep::Normalize])
+                        .expect("constant comparison is an ordinary normalization step"),
+                ),
+            });
         }
         narrow_range = true;
         steps.push(ProofStep::Have {
@@ -1555,6 +1623,66 @@ pub(super) fn viewability_restriction_steps(
         premises: cited,
     });
     Some((steps, narrow_range))
+}
+
+/// The explicit alias and endpoint facts needed by the ordinary subrange law.
+/// Planning proves these; the driver only consumes the selected facts.
+pub(super) fn viewability_restriction_requirements(
+    source: &ClickProposition,
+    target: &ClickProposition,
+) -> Option<Vec<ClickProposition>> {
+    let ResourceSubject::Memory(parent) = viewability_resource(source)? else {
+        return None;
+    };
+    let ResourceSubject::Memory(child) = viewability_resource(target)? else {
+        return None;
+    };
+    if parent.state != child.state {
+        return None;
+    }
+    let endpoints = |segment: ContractSegment| match segment.surface {
+        ContractSegmentSurface::Range { base, start, end }
+        | ContractSegmentSurface::StructRange {
+            base, start, end, ..
+        } => Some((base, start, end)),
+        _ => None,
+    };
+    let (base, lo, hi) = endpoints(parent)?;
+    let (child_base, inner_lo, inner_hi) = endpoints(child)?;
+    // Computed endpoints have mathematical Integer semantics in a range,
+    // while a machine-typed theorem argument can denote a wrapping operation.
+    // Those need an explicit operation-identity bridge, not just order bounds.
+    let direct = |bound: &ContractExpression| {
+        matches!(
+            bound,
+            ContractExpression::IntegerLiteral(_)
+                | ContractExpression::Binding(_)
+                | ContractExpression::CFragment(CExpression::Variable(_) | CExpression::Value(_))
+        )
+    };
+    if ![&lo, &hi, &inner_lo, &inner_hi].into_iter().all(direct) {
+        return None;
+    }
+    let mut requirements = Vec::new();
+    if base != child_base {
+        requirements.push(ClickProposition::Comparison {
+            left: child_base,
+            operator: ComparisonOperator::Equal,
+            right: base,
+        });
+    }
+    for (left, right) in [
+        (lo, inner_lo.clone()),
+        (inner_lo, inner_hi.clone()),
+        (inner_hi, hi),
+    ] {
+        requirements.push(ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::LessEqual,
+            right,
+        });
+    }
+    Some(requirements)
 }
 
 pub(super) fn plan_explicit_loadability_transport(
@@ -1664,17 +1792,43 @@ pub(super) fn plan_explicit_loadability_transport(
         // another success. Do not repeat bounded search as an assertion: its
         // budget can now be exhausted. The emitted transport still goes
         // through the ordinary checked operation before it can prove anything.
-        return Some(vec![
-            ProofTactic::TransportUsing {
-                source: surface_source.clone(),
-                target: surface_goal.clone(),
-                premises: selected
-                    .into_iter()
-                    .map(|(_, surface)| surface.clone())
-                    .collect(),
-            },
-            ProofTactic::Assumption,
-        ]);
+        let mut premises = selected
+            .into_iter()
+            .map(|(_, surface)| surface.clone())
+            .collect::<Vec<_>>();
+        let mut tactics = Vec::new();
+        if let Some(requirements) =
+            viewability_restriction_requirements(surface_source, surface_goal)
+        {
+            for requirement in requirements {
+                if premises.contains(&requirement) {
+                    continue;
+                }
+                let proof = if matches!(
+                    &requirement,
+                    ClickProposition::Comparison {
+                        operator: ComparisonOperator::Equal,
+                        ..
+                    }
+                ) {
+                    ProofTactic::Assumption
+                } else {
+                    ProofTactic::ArithmeticUsing(premises.clone())
+                };
+                tactics.push(ProofTactic::Have(ProofHave {
+                    proposition: requirement.clone(),
+                    proof: SourceProof::Script(vec![proof]),
+                }));
+                premises.push(requirement);
+            }
+        }
+        tactics.push(ProofTactic::TransportUsing {
+            source: surface_source.clone(),
+            target: surface_goal.clone(),
+            premises,
+        });
+        tactics.push(ProofTactic::Assumption);
+        return Some(tactics);
     }
     None
 }

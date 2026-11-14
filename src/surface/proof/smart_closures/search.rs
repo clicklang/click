@@ -9166,13 +9166,49 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .iter()
                 .filter(|surface| matches!(surface, ClickProposition::Loadable { .. }))
             {
-                if let Ok(closed) = search_input.driver().apply_step(ProofStep::TransportUsing {
-                    source: source.clone(),
-                    target: surface_goal.clone(),
-                    premises: surfaces.to_vec(),
-                }) && closed.is_complete()
-                {
-                    return Some(closed);
+                let candidate = (|| {
+                    let mut prepared = search_input.clone();
+                    let mut premises = surfaces.to_vec();
+                    if let Some(requirements) =
+                        viewability_restriction_requirements(source, surface_goal)
+                    {
+                        for requirement in requirements {
+                            if premises.contains(&requirement) {
+                                continue;
+                            }
+                            let step = if matches!(
+                                &requirement,
+                                ClickProposition::Comparison {
+                                    operator: ComparisonOperator::Equal,
+                                    ..
+                                }
+                            ) {
+                                ProofStep::Assumption
+                            } else {
+                                ProofStep::ArithmeticUsing(premises.clone())
+                            };
+                            prepared = prepared
+                                .driver()
+                                .apply_have_step(
+                                    &requirement,
+                                    &ProofCertificate::from_steps(vec![step]).ok()?,
+                                )
+                                .ok()?;
+                            premises.push(requirement);
+                        }
+                    }
+                    prepared
+                        .driver()
+                        .apply_step(ProofStep::TransportUsing {
+                            source: source.clone(),
+                            target: surface_goal.clone(),
+                            premises,
+                        })
+                        .ok()
+                        .filter(|closed| closed.is_complete())
+                })();
+                if candidate.is_some() {
+                    return candidate;
                 }
             }
         }

@@ -179,18 +179,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             target,
             premises,
         } = &step
-            && driver_proof.surface_goal() == Some(target)
             && let Some(steps) = statement_preservation_steps(source, target, premises)
                 .or_else(|| comparison_preservation_steps(source, target, premises))
                 .or_else(|| implication_preservation_steps(source, target, premises))
                 .or_else(|| conjunction_preservation_steps(source, target, premises))
                 .or_else(|| conjunction_projection_preservation_steps(source, target, premises))
         {
-            let mut current = driver_proof.clone();
-            for ordinary in steps {
-                current = current.driver().apply_step(ordinary)?;
-            }
-            return Ok(current);
+            return self.apply_ordinary_transport_steps(target, steps);
         }
 
         // Retain the ordinary derivation, rather than an opaque transport
@@ -209,16 +204,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 driver_proof.lower_surface_proposition_direct(target, "transport target")?;
             let same_snapshot = match (&source_fact, &target_fact) {
                 (
-                    Proposition::CMemoryLoadable {
-                        memory: left,
-                        wide: false,
-                        ..
-                    },
-                    Proposition::CMemoryLoadable {
-                        memory: right,
-                        wide: false,
-                        ..
-                    },
+                    Proposition::CMemoryLoadable { memory: left, .. },
+                    Proposition::CMemoryLoadable { memory: right, .. },
                 ) if narrow_range => left == right,
                 (
                     Proposition::CResourceViewable { memory: left, .. }
@@ -229,11 +216,31 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 _ => false,
             };
             if same_snapshot {
-                let mut current = driver_proof.clone();
-                for ordinary in steps {
-                    current = current.driver().apply_step(ordinary)?;
-                }
-                return Ok(current);
+                return self.apply_ordinary_transport_steps(target, steps);
+            }
+        }
+
+        // A known target needs no transport rule. Keep an ordinary lookup in
+        // the certificate, including when transport merely adds an auxiliary
+        // fact rather than closing the currently focused proposition.
+        if let ProofStep::TransportUsing {
+            source,
+            target,
+            premises,
+        } = &step
+            && (source == target
+                || premises.contains(source)
+                || driver_proof.focused_outcome_data().is_some())
+        {
+            let target_fact =
+                driver_proof.lower_surface_proposition_direct(target, "transport target")?;
+            if driver_proof.facts().contains(&target_fact)
+                || driver_proof
+                    .facts()
+                    .assumptions()
+                    .contains_known(&target_fact)
+            {
+                return self.apply_ordinary_transport_steps(target, vec![ProofStep::Assumption]);
             }
         }
 
@@ -344,6 +351,28 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         driver_proof
             .driver()
             .apply_step_without_outcome_wrapping(step)
+    }
+
+    /// Apply an ordinary derivation to its named target. Auxiliary transports
+    /// use the same `have` scope as a written proof; no transport node remains.
+    fn apply_ordinary_transport_steps(
+        &self,
+        target: &ClickProposition,
+        steps: Vec<ProofStep>,
+    ) -> Result<Proof<'a>, ClickError> {
+        if self.proof.surface_goal() == Some(target) {
+            let mut current = self.proof.clone();
+            for step in steps {
+                if current.focused_discharged() && matches!(step, ProofStep::Assumption) {
+                    continue;
+                }
+                current = current.driver().apply_step(step)?;
+            }
+            return Ok(current);
+        }
+        let certificate = ProofCertificate::from_steps(steps)
+            .expect("ordinary transport steps form a certificate");
+        self.apply_have_step(target, &certificate)
     }
 
     pub(in crate::surface::proof) fn apply_step_without_outcome_wrapping(

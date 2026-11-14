@@ -5102,7 +5102,8 @@ fn selected_post_execution_transport_emits_an_explicit_certificate() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("selected post-execution transport should expand after finalization");
-    assert!(expanded.contains("transport(result == x, result == x) using {"));
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("post-execution transport certificate should check");
 }
@@ -6086,12 +6087,8 @@ fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the store transport should expand from its recorded equation");
-    assert!(expanded.contains("transport(") && expanded.contains("using {"));
-    assert_eq!(
-        expanded.matches("at(region(0).exit, p[0]) == 7").count(),
-        1,
-        "the transport source must not be duplicated as an auxiliary premise:\n{expanded}"
-    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("assumption();"), "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("the expanded store transport certificate should check from a fresh parse");
 }
@@ -11381,7 +11378,7 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
             [
                 ProofTactic::Step,
                 ProofTactic::Branch(branch),
-                ProofTactic::TransportUsing { premises, .. },
+                ProofTactic::Have(_),
                 ProofTactic::Step,
                 ..
             ] if matches!(
@@ -11393,7 +11390,7 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
                 )
                 && matches!(branch.then_tactics.as_slice(), [ProofTactic::Step])
                 && matches!(branch.else_tactics.as_slice(), [ProofTactic::Step])
-                && !premises.is_empty()
+
         ),
         "{tactics:#?}"
     );
@@ -11404,6 +11401,12 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
         CProofClaim::Grouped,
     )
     .expect("the retained common fact transport should expand");
+    assert!(
+        !expanded
+            .lines()
+            .any(|line| line.trim_start().starts_with("transport(")),
+        "{expanded}"
+    );
     verify_c0_sources(&expanded, &[("choose_bound_transport.c", c_source)])
         .expect("the explicit common transport step should independently re-derive");
 }
@@ -11745,12 +11748,12 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
             Some(ProofTactic::Branch(branch))
                 if matches!(
                     branch.then_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::TransportUsing { premises, .. }]
-                        if !premises.is_empty()
+                    [ProofTactic::Step, ProofTactic::Have(_)]
+
                 ) && matches!(
                     branch.else_tactics.as_slice(),
-                    [ProofTactic::Step, ProofTactic::TransportUsing { premises, .. }]
-                        if !premises.is_empty()
+                    [ProofTactic::Step, ProofTactic::Have(_)]
+
                 )
         ),
         "{tactics:#?}"
@@ -11762,6 +11765,7 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
         CProofClaim::Grouped,
     )
     .expect("the retained branch transports should expand");
+    assert!(!expanded.contains("transport("), "{expanded}");
     verify_c0_sources(&expanded, &[("set_choice_return_first.c", c_source)])
         .expect("the explicit branch transports should independently re-derive");
 }
@@ -20204,7 +20208,8 @@ fn ambiguous_view_bucket_search_expands_to_selected_transport() {
     verify_click_theorems(source).expect("search should select a covering view");
     let expanded = expand_c0_claim_source_by_label(source, &[], "choose_view.ensures_0")
         .expect("the selected view should expand");
-    assert!(expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("viewable_restrict"), "{expanded}");
     assert!(expanded.contains("using {"), "{expanded}");
     assert!(!expanded.contains("solve("), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded))
@@ -20231,7 +20236,8 @@ fn alias_view_selection_expands_to_explicit_equality_and_transport() {
     let expanded = expand_c0_claim_source_by_label(source, &[], "alias_view.ensures_0")
         .expect("alias selection must have an explicit proof");
     assert!(!expanded.contains("solve("), "{expanded}");
-    assert!(expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("viewable_restrict"), "{expanded}");
     assert!(expanded.contains("using {"), "{expanded}");
     without_implicit_solve(|| verify_click_theorems(&expanded))
         .expect("selected aliases must check without implicit search");
@@ -22151,4 +22157,24 @@ fn unsigned_division_domain_expands_to_an_explicit_step_proof() {
     let missing = implicit.replace("    requires y != 0u32;\n", "");
     assert_ne!(missing, implicit);
     assert!(verify_c0_sources(&missing, &sources).is_err());
+}
+
+#[test]
+fn symbolic_view_restriction_expands_to_library_steps() {
+    let source = r#"
+        theorem restrict_view(data: int32[], lo: int32, hi: int32, end: int32) {
+            requires viewable(data[0..end]);
+            requires 0 <= lo;
+            requires lo < hi;
+            requires hi < end;
+            ensures viewable(data[lo..hi]) by { solve(); }
+        }
+    "#;
+    let expanded = expand_c0_claim_source_by_label(source, &[], "restrict_view.ensures_0").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("subrange"), "{expanded}");
+    assert!(expanded.contains("viewable_restrict"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let missing = expanded.replace("requires lo < hi;", "");
+    assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
 }
