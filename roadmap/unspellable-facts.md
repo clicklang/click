@@ -294,6 +294,10 @@ atom/storage consumers use the existing cached read-leaf compatibility boundary.
 Integer-free and capture readers follow shared addresses with one memo across
 nested reads, while binder readers keep reads opaque. Descriptor identity and
 nested-read scaling cover shared DAGs without numeric export.
+Read registration retains prepared address components at admission, so later
+descriptor queries do not re-import them after unrelated arena cleanup. Live
+interner hits skip insertion upkeep, and kind-only fingerprints inspect the
+shared read directly. Existing search budgets and scaling limits are unchanged.
 
 ## Chunk 6: folds, binders and algebraic matches
 

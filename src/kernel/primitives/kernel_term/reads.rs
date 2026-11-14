@@ -48,15 +48,18 @@ impl KernelTerm {
         address: &Pointer,
         kind: LoadKind,
     ) -> Option<Self> {
+        let address = Self::scalar_read_address(address)?;
+        Some(Self::shared_scalar_read_descriptor(
+            format, memory, &address, kind,
+        ))
+    }
+
+    /// Prepare the immutable address at a native read's admission boundary.
+    pub(crate) fn scalar_read_address(address: &Pointer) -> Option<SharedPointerAddress> {
         if !exact_address(address) {
             return None;
         }
-        Some(Self::shared_scalar_read_descriptor(
-            format,
-            memory,
-            &SharedPointerAddress::import(address),
-            kind,
-        ))
+        Some(SharedPointerAddress::import(address))
     }
 
     /// Retain the selected common address. This only constructs read syntax;

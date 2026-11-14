@@ -66,6 +66,11 @@ impl SharedPointerOffset {
             .get_or_init(Default::default)
             .lock()
             .expect("offset interner");
+        if let Some(value) = interner.nodes.get(&node).and_then(Weak::upgrade) {
+            return Self(value);
+        }
+        // Only insertion grows the arena. A live hit needs no garbage upkeep.
+        crate::instrumentation::record_deterministic_work(8);
         // As with the common term arena, bounded upkeep never scans the arena.
         for _ in 0..interner.cleanup.len().min(8) {
             let key = interner.cleanup.pop_front().unwrap();
@@ -78,9 +83,6 @@ impl SharedPointerOffset {
             } else {
                 interner.cleanup.push_back(key);
             }
-        }
-        if let Some(value) = interner.nodes.get(&node).and_then(Weak::upgrade) {
-            return Self(value);
         }
         let id = interner.next_id;
         interner.next_id = id.checked_add(1).expect("offset identity exhausted");
@@ -119,9 +121,9 @@ impl KernelPointerOffset {
                 node: self,
             })));
         }
-        // One node plus bounded arena upkeep. Charge its fixed allowance so
-        // an unrelated arena population cannot change deterministic work.
-        crate::instrumentation::record_deterministic_work(9);
+        // One selected node; a new arena entry pays its bounded upkeep inside
+        // intern. Reusing a live node performs no insertion or cleanup.
+        crate::instrumentation::record_deterministic_work(1);
         match &self {
             Self::Int32Scaled { value, .. }
                 if !matches!(

@@ -609,3 +609,58 @@ fn shared_read_descriptor_identity_does_not_expand_offset_dags() {
         }
     }
 }
+
+#[test]
+fn repeated_scalar_read_imports_reuse_live_address_components() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for size in [16, 64, 256] {
+        let mut index =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1017900));
+        for _ in 0..size {
+            index = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [index.clone(), index],
+            );
+        }
+        let pointer = Pointer {
+            block: PointerBlock::Concrete("shared-read-hot".into()),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, index)
+                    .unwrap(),
+                byte_width: 4,
+            },
+        };
+        let memory = intern_memory(Memory::new());
+        let retained = KernelTerm::scalar_read_descriptor(
+            MachineIntegerType::Int32,
+            &memory,
+            &pointer,
+            LoadKind::Int32,
+        )
+        .unwrap();
+        for unrelated in [0, 128, 512] {
+            let _unrelated = (0..unrelated)
+                .map(|n| {
+                    KernelPointerOffset::Variable(Variable(1017901 + n))
+                        .into_shared()
+                        .unwrap()
+                })
+                .collect::<Vec<_>>();
+            let exports = KernelTermExport::machine_export_count();
+            let (again, work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTerm::scalar_read_descriptor(
+                    MachineIntegerType::Int32,
+                    &memory,
+                    &pointer,
+                    LoadKind::Int32,
+                )
+                .unwrap()
+            });
+            assert_eq!(again, retained);
+            assert!(work <= 24, "size={size} unrelated={unrelated} work={work}");
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(again.0.machine_leaf.0.get().is_none());
+        }
+    }
+}

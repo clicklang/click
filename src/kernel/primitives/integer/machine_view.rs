@@ -634,6 +634,21 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
+    /// Read kind alone does not require a native address compatibility view.
+    pub(crate) fn read_kind(self) -> Option<LoadKind> {
+        match self {
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::MemoryLoad { kind, .. } => Some(*kind),
+                KernelTermNode::Legacy(_) => {
+                    Self::Legacy(root.machine_conversion_leaf()?).read_kind()
+                }
+                _ => None,
+            },
+            Self::Legacy(MachineTerm::MemoryLoad(_, _, kind)) => Some(*kind),
+            Self::Legacy(_) => None,
+        }
+    }
+
     /// Native compatibility view of a selected read. Shared addresses are adapted
     /// once at the read leaf; surrounding arithmetic is never exported.
     pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a Pointer, LoadKind)> {

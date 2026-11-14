@@ -2251,6 +2251,9 @@ pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool 
 /// session has learned about it since.
 #[derive(Clone)]
 struct RegisteredLoad {
+    /// Retain prepared components from admission, so a later query never pays
+    /// for their re-insertion after unrelated weak-arena cleanup.
+    address: Option<crate::kernel::SharedPointerAddress>,
     /// Shared structural forms of this immutable descriptor. Capture/restore
     /// keeps them with the entry they describe; origins and widths do not
     /// change the value. None records an unmigrated native address payload.
@@ -2833,12 +2836,14 @@ pub(crate) fn registered_scalar_read_term(
             .terms
             .entry(format)
             .or_insert_with(|| {
-                crate::kernel::KernelTerm::scalar_read_descriptor(
-                    format,
-                    &read.memory,
-                    &read.pointer,
-                    read.kind,
-                )
+                read.address.as_ref().map(|address| {
+                    crate::kernel::KernelTerm::shared_scalar_read_descriptor(
+                        format,
+                        &read.memory,
+                        address,
+                        read.kind,
+                    )
+                })
             })
             .clone();
         Some((term, read.observation))
@@ -4377,6 +4382,7 @@ fn mint_load_variable_identity(
                     registry.insert(
                         variable,
                         RegisteredLoad {
+                            address: crate::kernel::KernelTerm::scalar_read_address(pointer),
                             terms: Default::default(),
                             memory: memory.clone(),
                             pointer: pointer.clone(),

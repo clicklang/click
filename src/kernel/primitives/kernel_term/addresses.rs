@@ -125,12 +125,18 @@ impl SharedPointerBlock {
         }
         // Import reads this selected atom once. Call payloads remain explicit
         // compatibility handles until the pointer-call producer slice.
-        crate::instrumentation::record_deterministic_work(9);
+        crate::instrumentation::record_deterministic_work(1);
         static INTERNER: std::sync::OnceLock<Mutex<BlockInterner>> = std::sync::OnceLock::new();
         let mut arena = INTERNER
             .get_or_init(Default::default)
             .lock()
             .expect("block arena");
+        let key = ExactBlock::new(block);
+        if let Some(node) = arena.nodes.get(&key).and_then(Weak::upgrade) {
+            return Self(BlockStorage::Interned(node));
+        }
+        // Existing live atoms add no entries. Keep bounded cleanup on insertion.
+        crate::instrumentation::record_deterministic_work(8);
         for _ in 0..arena.cleanup.len().min(8) {
             let key = arena.cleanup.pop_front().unwrap();
             if arena
@@ -142,10 +148,6 @@ impl SharedPointerBlock {
             } else {
                 arena.cleanup.push_back(key);
             }
-        }
-        let key = ExactBlock::new(block);
-        if let Some(node) = arena.nodes.get(&key).and_then(Weak::upgrade) {
-            return Self(BlockStorage::Interned(node));
         }
         let id = arena.next_id;
         arena.next_id = id.checked_add(1).expect("block identity exhausted");
