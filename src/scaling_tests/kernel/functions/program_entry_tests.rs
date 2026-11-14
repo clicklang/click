@@ -324,7 +324,11 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
         let pool = Memory::global_pointer("pool");
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
             [
-                program_read(entry.memory(), pool.offset_by_bytes(24 * 7), ProgramType::Int32),
+                program_read(
+                    entry.memory(),
+                    pool.offset_by_bytes(24 * 7),
+                    ProgramType::Int32,
+                ),
                 program_read(
                     entry.memory(),
                     pool.offset_by_bytes(24 * (length - 1) + 20),

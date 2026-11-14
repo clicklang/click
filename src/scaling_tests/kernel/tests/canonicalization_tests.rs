@@ -88,4 +88,3 @@ fn variable_collection_after_a_store_costs_the_store() {
         "a store's collection grows with unrelated cells: {samples:?}"
     );
 }
-
