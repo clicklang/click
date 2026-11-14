@@ -102,6 +102,8 @@ pub(crate) enum SnapshotBlindFloatConditionKey {
     },
 }
 
+#[allow(dead_code)]
+mod fold_keys;
 mod match_keys;
 mod snapshot_operands;
 use snapshot_operands::SnapshotBlindBitvectorKey;
@@ -821,10 +823,10 @@ enum AlphaBitvectorKey {
         else_term: Box<Self>,
     },
     RangeFold {
-        start: Box<Self>,
-        end: Box<Self>,
-        initial: Box<Self>,
-        body: Box<Self>,
+        start: Box<AlphaMachineKey>,
+        end: Box<AlphaMachineKey>,
+        initial: Box<AlphaMachineKey>,
+        body: Box<AlphaMachineKey>,
     },
     PureFunctionApplication {
         name: String,
@@ -1539,22 +1541,7 @@ pub(crate) fn integer_fold_alpha_key(term: &SharedIntegerTerm) -> Option<Integer
     if !matches!(term.as_ref(), IntegerTerm::RangeFold { .. }) {
         return None;
     }
-    let mut environment = AlphaBindings {
-        integer: BTreeMap::new(),
-        bitvector: BTreeMap::new(),
-        algebraic: BTreeMap::new(),
-        integer_scope: 0,
-        bitvector_scope: 0,
-        next_scope_id: 1,
-        snapshot_aware: true,
-        raw_snapshot_load_seen: false,
-        registered_load_stack: BTreeSet::new(),
-        registered_load_memo: HashMap::new(),
-        pointer_load_stack: BTreeSet::new(),
-        pointer_load_memo: HashMap::new(),
-        load_interner: None,
-        work_units: 0,
-    };
+    let mut environment = fold_keys::bindings();
     let mut next_binder = 0;
     alpha_integer_key_with_bindings(term.as_ref(), &mut environment, &mut next_binder).map(|key| {
         IntegerFoldAlphaKey {
@@ -1599,22 +1586,7 @@ fn bitvector_fold_alpha_key(term: &MachineTerm) -> Option<(AlphaBitvectorKey, us
     if !matches!(term, MachineTerm::RangeFold { .. }) {
         return None;
     }
-    let mut environment = AlphaBindings {
-        integer: BTreeMap::new(),
-        bitvector: BTreeMap::new(),
-        algebraic: BTreeMap::new(),
-        integer_scope: 0,
-        bitvector_scope: 0,
-        next_scope_id: 1,
-        snapshot_aware: true,
-        raw_snapshot_load_seen: false,
-        registered_load_stack: BTreeSet::new(),
-        registered_load_memo: HashMap::new(),
-        pointer_load_stack: BTreeSet::new(),
-        pointer_load_memo: HashMap::new(),
-        load_interner: None,
-        work_units: 0,
-    };
+    let mut environment = fold_keys::bindings();
     let mut next_binder = 0;
     let key = alpha_bitvector_key_with_bindings::<false>(term, &mut environment, &mut next_binder)?;
     Some((key, environment.work_units))
@@ -2458,58 +2430,19 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
             accumulator,
             item,
             body,
-        } => {
-            let start = Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                start,
-                bindings,
-                next_binder,
-            )?);
-            let end = Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                end,
-                bindings,
-                next_binder,
-            )?);
-            let initial = Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                initial,
-                bindings,
-                next_binder,
-            )?);
-
-            // Range-fold accumulator and item variables are binders just like
-            // proposition quantifiers. Canonicalize their body under fresh
-            // structural ordinals, then restore any enclosing binding so a
-            // fold cannot change the meaning of a sibling term.
-            let accumulator_ordinal = *next_binder;
-            *next_binder = (*next_binder).checked_add(1)?;
-            let previous_accumulator = bindings.bitvector.insert(*accumulator, accumulator_ordinal);
-            let item_ordinal = *next_binder;
-            *next_binder = (*next_binder).checked_add(1)?;
-            let previous_item = bindings.bitvector.insert(*item, item_ordinal);
-            let previous_bitvector_scope = bindings.bitvector_scope;
-            let bitvector_scope = bindings.next_scope_id;
-            bindings.next_scope_id = bindings.next_scope_id.checked_add(1)?;
-            bindings.bitvector_scope = bitvector_scope;
-            let body =
-                alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder);
-            bindings.bitvector_scope = previous_bitvector_scope;
-            if let Some(previous) = previous_item {
-                bindings.bitvector.insert(*item, previous);
-            } else {
-                bindings.bitvector.remove(item);
-            }
-            if let Some(previous) = previous_accumulator {
-                bindings.bitvector.insert(*accumulator, previous);
-            } else {
-                bindings.bitvector.remove(accumulator);
-            }
-
-            AlphaBitvectorKey::RangeFold {
-                start,
-                end,
-                initial,
-                body: Box::new(body?),
-            }
-        }
+        } => fold_keys::machine_fold_key::<ALLOW_LOADS>(
+            [
+                start.as_ref(),
+                end.as_ref(),
+                initial.as_ref(),
+                body.as_ref(),
+            ]
+            .map(crate::kernel::MachineOperandView::Legacy),
+            *accumulator,
+            *item,
+            bindings,
+            next_binder,
+        )?,
         MachineTerm::PureFunctionApplication { name, arguments } => {
             AlphaBitvectorKey::PureFunctionApplication {
                 name: name.clone(),
@@ -2940,22 +2873,7 @@ fn proposition_identity_key_with_raw_load_flag(
         // without asking the alpha-key builder to recreate their topology.
         return None;
     }
-    let mut environment = AlphaBindings {
-        integer: BTreeMap::new(),
-        bitvector: BTreeMap::new(),
-        algebraic: BTreeMap::new(),
-        integer_scope: 0,
-        bitvector_scope: 0,
-        next_scope_id: 1,
-        snapshot_aware: true,
-        raw_snapshot_load_seen: false,
-        registered_load_stack: BTreeSet::new(),
-        registered_load_memo: HashMap::new(),
-        pointer_load_stack: BTreeSet::new(),
-        pointer_load_memo: HashMap::new(),
-        load_interner: None,
-        work_units: 0,
-    };
+    let mut environment = fold_keys::bindings();
     let key = alpha_proposition_key_with_bindings::<true>(proposition, &mut environment, &mut 0)?;
     Some((
         PropositionIdentityKey(key),
@@ -3524,22 +3442,7 @@ mod proposition_identity_tests {
 fn snapshot_alpha_proposition_key(
     proposition: &Proposition,
 ) -> Option<(AlphaPropositionKey, usize)> {
-    let mut environment = AlphaBindings {
-        integer: BTreeMap::new(),
-        bitvector: BTreeMap::new(),
-        algebraic: BTreeMap::new(),
-        integer_scope: 0,
-        bitvector_scope: 0,
-        next_scope_id: 1,
-        snapshot_aware: true,
-        raw_snapshot_load_seen: false,
-        registered_load_stack: BTreeSet::new(),
-        registered_load_memo: HashMap::new(),
-        pointer_load_stack: BTreeSet::new(),
-        pointer_load_memo: HashMap::new(),
-        load_interner: None,
-        work_units: 0,
-    };
+    let mut environment = fold_keys::bindings();
     let key = alpha_proposition_key_with_bindings::<true>(proposition, &mut environment, &mut 0)?;
     Some((key, environment.work_units))
 }

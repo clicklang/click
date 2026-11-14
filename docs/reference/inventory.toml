@@ -1299,7 +1299,7 @@ path = "reference/tactics/index.md#execution"
 
 [[item]]
 id = "tactic.tactic"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
 id = "tactic.step"
@@ -1404,39 +1404,39 @@ path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
 id = "tactic.transport"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
 id = "tactic.unfold"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
 id = "tactic.fold"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
 id = "tactic.construct"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
 id = "tactic.take"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
 id = "tactic.give"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
 id = "tactic.gather"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
 id = "tactic.scatter"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
 id = "tactic.observe"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
 id = "tactic-form.mark"
@@ -1470,13 +1470,13 @@ path = "reference/tactics/index.md#execution"
 
 [[item]]
 id = "tactic-form.user-tactic"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.step-until"
 path = "reference/tactics/index.md#execution"
 [[item]]
 id = "tactic-form.unfold-predicate"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.unfold-function"
 path = "reference/tactics/index.md#proposition-reasoning"
@@ -1485,25 +1485,25 @@ id = "tactic-form.peel-function"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.unfold-resource"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.fold-resource"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.take-element"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.give-element"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.gather-resource"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.scatter-resource"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.construct-resource"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.induct"
 path = "reference/tactics/index.md#proposition-reasoning"
@@ -1545,7 +1545,7 @@ id = "tactic-form.loop"
 path = "reference/tactics/index.md#execution"
 [[item]]
 id = "tactic-form.observe-resource"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.witness"
 path = "reference/tactics/index.md#proposition-reasoning"
@@ -1593,10 +1593,10 @@ id = "tactic-form.rewrite"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.transport"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.transport-using"
-path = "reference/tactics/index.md#resources-and-snapshots"
+path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.instantiate"
 path = "reference/tactics/index.md#proposition-reasoning"
@@ -3151,6 +3151,18 @@ id = "glossary.proof"
 path = "reference/glossary.md#proof"
 
 [[item]]
+id = "glossary.point"
+path = "reference/glossary.md#point"
+
+[[item]]
+id = "glossary.version-point"
+path = "reference/glossary.md#version-point"
+
+[[item]]
+id = "glossary.location"
+path = "reference/glossary.md#location"
+
+[[item]]
 id = "glossary.proof-mark"
 path = "reference/glossary.md#proof-mark"
 
@@ -3199,14 +3211,6 @@ id = "glossary.smart-tactic"
 path = "reference/glossary.md#smart-tactic"
 
 [[item]]
-id = "glossary.snapshot"
-path = "reference/glossary.md#snapshot"
-
-[[item]]
-id = "glossary.snapshot-selector"
-path = "reference/glossary.md#snapshot-selector"
-
-[[item]]
 id = "glossary.soundness"
 path = "reference/glossary.md#soundness"
 
@@ -3245,10 +3249,6 @@ path = "reference/glossary.md#undefined-behavior"
 [[item]]
 id = "glossary.view"
 path = "reference/glossary.md#view"
-
-[[item]]
-id = "glossary.visit"
-path = "reference/glossary.md#visit"
 
 [[item]]
 id = "glossary.witness"
@@ -3367,10 +3367,6 @@ id = "glossary.memory-range"
 path = "reference/glossary.md#memory-range"
 
 [[item]]
-id = "glossary.memory-snapshot"
-path = "reference/glossary.md#memory-snapshot"
-
-[[item]]
 id = "glossary.obligation"
 path = "reference/glossary.md#obligation"
 
@@ -3389,10 +3385,6 @@ path = "reference/glossary.md#fixed-state-proof"
 [[item]]
 id = "glossary.predicate"
 path = "reference/glossary.md#predicate"
-
-[[item]]
-id = "glossary.program-point"
-path = "reference/glossary.md#program-point"
 
 [[item]]
 id = "glossary.specification-language"
@@ -3469,10 +3461,6 @@ path = "reference/glossary.md#bitvector"
 [[item]]
 id = "glossary.borrow"
 path = "reference/glossary.md#borrow"
-
-[[item]]
-id = "glossary.cell-version"
-path = "reference/glossary.md#cell-version"
 
 [[item]]
 id = "glossary.consumption"

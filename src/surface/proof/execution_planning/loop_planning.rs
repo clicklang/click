@@ -892,6 +892,8 @@ pub(in crate::surface::proof) struct LoopPreservationProofResult {
     /// the value it returned and the state it returned in. The loop rule
     /// exports each as a `Return` outcome of the loop statement.
     pub(in crate::surface::proof) return_exits: Vec<CLoopReturnExit>,
+    /// The points each path that left the loop recorded during its pass.
+    pub(in crate::surface::proof) exit_points: Vec<RecordedRegionPoints>,
     /// Loop rules checked by frontier-local tactics inside this loop's
     /// preservation proof. They are evidence for termination only; the
     /// enclosing contract still uses the outer loop's checked artifact.
@@ -1167,6 +1169,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     let mut certificate_paths = Vec::new();
     let mut final_exit_candidates = Vec::new();
     let mut break_exits = Vec::new();
+    // The points each leaving path recorded during its pass, from the start
+    // of the pass on: after the loop they name that pass's points.
+    let pass_start = enclosing_snapshots.history_mark();
+    let mut exit_points = Vec::new();
     let mut return_exits = Vec::new();
     let mut return_proofs = Vec::new();
     let mut seen_nested_returns = std::collections::HashSet::new();
@@ -1532,6 +1538,12 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 final_exit_candidates.push(exit);
             }
         } else if is_break_exit {
+            exit_points.push(
+                context_execution
+                    .presentation
+                    .recorded_snapshots
+                    .recorded_since(&pass_start),
+            );
             // The exit is this path's own state and the facts it retained
             // there. The loop rule joins it with every other exit into the
             // single successor, so nothing about this path is dropped and
@@ -1688,6 +1700,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         break_exits,
         return_exits,
         nested_loop_rules,
+        exit_points,
     })
 }
 

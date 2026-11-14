@@ -8,7 +8,7 @@ variables live in the same language as executable variables. Click already
 separates `.c` runtime code from `.click` specification code, so "not compiled"
 is not the important distinction. The useful distinction is whether a Click
 name is a simple immutable abbreviation or extra proof/model state across
-program points.
+points.
 
 Click does not yet have general first-class mutable spec state. It does have a
 resource context for viewed and owned memory, allocation authority, and
@@ -48,9 +48,9 @@ but it is not mutable state.
 Click already has a few spec-only mechanisms:
 
 - `old(...)` lets specs refer to function-entry state.
-- `at(region(N).entry, ...)` and `at(region(N).exit, ...)` can name
-  complete statement-state snapshots recorded by deterministic proof
-  execution, including memory and C local values. Their second argument may be
+- `at(region(N).entry, ...)` and `at(region(N).exit, ...)` read at
+  statement points recorded by deterministic proof execution, including
+  memory and C local values. Their second argument may be
   an expression or a complete proposition such as `viewable(p[0..n])`.
 - labels identify guarantee claims.
 - predicates package abstract facts.
@@ -86,7 +86,8 @@ classical predicate facts.
 
 The implemented specification layer has three kinds of state:
 
-1. immutable specification terms, predicates, labels, and snapshots;
+1. immutable specification terms, predicates, labels, and `at(...)` reads at
+   points;
 2. proof-local witnesses introduced by `obtain (...)` and supplied by `witness`; and
 3. a resource context containing viewed, owned, allocation, abstract, and
    composite resource facts.
@@ -96,7 +97,7 @@ steps can transfer, consume, produce, unfold, and fold its facts. That is enough
 to model ownership protocols and the complete allocation, retain, release, and
 free lifecycle in the refcount example. It is still not a general mutable ghost
 store: users cannot declare an arbitrary spec variable and assign it at each
-program point.
+point.
 
 This boundary keeps the kernel independent of application-specific ownership
 models. Libraries define those models with predicates and resources; the

@@ -162,7 +162,7 @@ value `v` is `(v >> 8k) & 0xFF`:
 The containing cell is found by a bounded lookup of the at most seven
 preceding constant offsets in the accessed block; it does no work for cells
 elsewhere in memory. Byte view reads apply to C execution only: a
-specification load reads a snapshot's cells without it.
+specification load reads the cells at its version point without it.
 
 The following stay refused. A byte of a pointer cell has no view: its
 representation is opaque, so a one-byte read of a copied pointer fails as a
@@ -230,8 +230,8 @@ A checked call retains input propositions independently established by the
 incoming context's indexed facts and scalar condition checker. Retention does
 not repeat memory or ownership derivations, and a pending call obligation
 cannot establish its own premise. Retained read terms keep their pre-call
-snapshot; they describe the post-call value only when checked read preservation
-connects the snapshots. See `mdtests/call_checked_input_facts_keep_prestate.md`.
+version point; they describe the post-call value only when checked read preservation
+connects the two points. See `mdtests/call_checked_input_facts_keep_prestate.md`.
 
 Heap arrays of structs are byte-backed allocations whose indexed member
 addresses add `i * sizeof(struct T)` before applying the field offset. This
@@ -270,13 +270,13 @@ storing, or overwriting it is not (see
 that live allocation authority was returned through the contract or freed.
 
 The allocation/null refinement and allocation/free transitions are recorded
-as memory-snapshot edges. Registering the pending result has an explicit
+as memory-derivation edges. Registering the pending result has an explicit
 memory-preserving edge, allowing existing loads and memory resource facts to cross the
 unresolved state. Failed allocation removes that metadata and returns to the
 pre-allocation memory identity without producing allocation authority.
-Successful allocation starts from the pending snapshot but introduces only
+Successful allocation starts from the pending memory but introduces only
 its fresh, uninitialized block. A successful `free` also emits a checked heap
-`CHeapAllocationFreed` effect connecting its before and after snapshots,
+`CHeapAllocationFreed` effect connecting the memory before and after it,
 exact base, and possibly symbolic byte extent. This is deliberately distinct
 from an owned byte range: deallocation changes which allocation identities
 are live, while an owned range bounds ordinary stores. Exact contract
@@ -353,7 +353,7 @@ A same-base prefix
 can be proved from a held view and an explicitly selected unsigned coverage
 bound. For byte elements, `requested <= held` covers the prefix; for wider
 elements, compare the complete nonwrapping byte extents as well. The source
-view must remain live in the destination memory snapshot. A low-word bound
+view must remain live at the destination point. A low-word bound
 supplies no full-width coverage.
 A shifted byte subrange additionally needs its exact nonnegative offset to
 fit the source extent, and the requested count to fit the source extent
@@ -380,7 +380,7 @@ A checked universal fact that reads every `int32` cell under the exact guard
 `0 <= k and k < n` also certifies `viewable(p[0..n])` for that same memory and
 base. This lets a modular copy or initialization postcondition re-establish the
 initialized prefix without an extra ad-hoc viewability proposition. A narrower
-guard, another base, or another memory snapshot does not establish the range.
+guard, another base, or a read at another version point does not establish the range.
 
 Use `viewable(p[lo..hi])` for the same kind of viewability fact when Click
 expects a proposition, for example in a composite resource `fact`. `viewable`
@@ -388,7 +388,7 @@ does not grant read or write authority; it only supplies the pure fact needed
 to justify loads from that range when the index bounds are known.
 
 In an explicit proof, use proposition-level `at(...)` to refer to viewability
-at a recorded program point:
+at a recorded point:
 
 <!-- verified-example: mdtests/viewable_segment_forms.md -->
 ```click
@@ -397,10 +397,10 @@ have at(region(0).entry, viewable(p[0..n])) by {
 }
 ```
 
-This snapshots the whole viewability proposition. In particular, its pointer,
+This reads the whole viewability proposition at that point. In particular, its pointer,
 range bounds, and memory state are all interpreted at `region(0).entry`.
 Writing `viewable(at(region(0).entry, p)[0..n])` is not equivalent: that
-would snapshot the pointer expression but still ask whether it is viewable in
+would read only the pointer expression there but still ask whether it is viewable in
 the current memory.
 
 ## Old memory
@@ -450,7 +450,7 @@ owner selector. A transitive equality between native model pointers can select
 a retained field even when the pointer spellings have different symbolic
 blocks. Coverage still checks the complete byte extent; borrowed views do not
 become owned frames, and a context without the alias has no lookup support.
-Recorded call snapshots can outlive the equality-input lineage that first
+Recorded call states can outlive the equality-input lineage that first
 prepared their frame index. During recheck that index may identify a candidate
 owner, but the current equality graph must establish the candidate's address;
 the earlier graph supplies no equality evidence. This uses only the selected
@@ -535,7 +535,7 @@ predicate same_first(a: int32[], b: int32[]) {
 
 receives pure array refs for `a` and `b`. Each ref carries:
 
-- a `CMemory` snapshot
+- a `CMemory` value, the memory its reads are taken in
 - a C pointer
 - an element type, currently `int32` or `uint8`
 
@@ -543,7 +543,7 @@ Indexing `a[k]` inside the predicate loads from `a`'s carried memory, not from
 some global ambient predicate memory. The element type decides pointer scaling
 and whether the load yields an `int32` or `uint8` value. This lets
 `same_first(p, old(p))`, or the standard `permutation::permutation(p, old(p), lo, hi)`,
-compare post-state `p` to entry-state `p` without copying a snapshot array.
+compare post-state `p` to entry-state `p` without copying an array.
 
 See [Surface Click and Kernel Click](surface-and-kernel.md) for the full C-pointer versus Click-array-ref
 model.

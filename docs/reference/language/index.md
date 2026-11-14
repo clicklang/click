@@ -898,7 +898,7 @@ Steps after `step_until(function.exit)` run in source order on that path.
 Facts established after a closing step do not retroactively affect it. All
 claim proofs for one path use the same finalized specification.
 
-A proof is at one program point at a time. Where the C splits into paths
+A proof is at one point at a time. Where the C splits into paths
 that need different proof work at exit, write `branch` at the C `if`, or a
 proof `if` before the C, each arm stepping to exit on its own path with
 `step_until(function.exit)`. `step_until(function.exit)` never
@@ -957,9 +957,9 @@ evidence for ordinary verification to check.
 
 Fold terms are checked opaque atoms in the supported linear certificate
 fragment. An empty-range or append law supplies the fold step explicitly, and
-the certificate retains the exact fold carrier, endpoints, body, and memory
-snapshot identity. Alpha-equivalent loads from one retained snapshot may
-match; a different snapshot or a changed endpoint, body, or carrier does not.
+the certificate retains the exact fold carrier, endpoints, body, and version
+point of each read. Alpha-equivalent loads at one retained version point may
+match; a different version point or a changed endpoint, body, or carrier does not.
 The bounded affine planner uses selected checked premises and explicit
 constant coefficients. It does not enumerate a range or introduce an
 unchecked arithmetic assumption.
@@ -1174,7 +1174,7 @@ premise
 Resources may declare `field total: Integer;`: folding checks the resource's
 facts, and `old(model.total)` retains the entry value across updates.
 Checked resource pattern bindings retain each field's declared carrier, name,
-entry/current snapshot, and definedness while the pattern is lowered and
+entry or current point, and definedness while the pattern is lowered and
 rechecked. See [resource field examples](https://github.com/clicklang/click/blob/master/mdtests/integer_resource_fields.md).
 
 Pure functions with Integer parameters and results are supported. Calls remain
@@ -1207,7 +1207,7 @@ Integer and mixed C/Integer quantifiers support checked introduction and
 instantiation over their logical, unbounded domains. Integer range folds support
 typed scalar bodies and checked empty and append laws for `Int32` and `Integer`;
 expansion preserves those checked applications. Array- and memory-reading fold
-bodies use scoped definedness and exact snapshot identity. Integer existential
+bodies use scoped definedness and exact version points. Integer existential
 witnesses may contain indexed reads when their viewability and conversion
 obligations are checked. A complete C loop proof still needs its own prefix,
 intermediate definedness, and loop-invariant obligations; range folds do not
@@ -1477,11 +1477,11 @@ retaining hidden path states or searching for an interface.
 Statement IDs are global within a function and follow source preorder. An
 `if` or loop receives its ID before statements nested in its arms or body; a
 sequence does not receive a separate ID. The same IDs name execution targets,
-annotations, and `at(region(N).entry|exit, ...)` snapshots.
+annotations, and the points `at(region(N).entry|exit, ...)` reads at.
 
 A frontier-local loop tactic may give the loop it encounters a stable name
 with `loop as label { ... }`.  The label names that encountered loop's entry
-and exit snapshots; it never searches for or jumps to a source region. A
+and exit points; it never searches for or jumps to a source region. A
 label names one loop on an execution path: a second `loop as label` at a
 different loop is refused. Use
 `at(label.entry, expression_or_proposition)` and
@@ -1690,7 +1690,7 @@ Formation admits scalar comparisons and `defined` over current and
 function-entry memory, the connectives and quantifiers over those, finite
 sequence comparisons, reads of a resource instance's fields on either state,
 algebraic equalities, `match` over an algebraic value, and algebraic arguments
-to a pure function. It excludes `at(...)`, explicit memory snapshots,
+to a pure function. It excludes `at(...)`, reads at any other point,
 population counts, range folds, and mathematical `Integer`
 comparisons.
 
@@ -1751,7 +1751,7 @@ The descriptor grants no ownership and discovers no preservation facts.
 See `mdtests/saved_memory_bases_keep_current_indices.md` and
 `mdtests/saved_memory_indices_do_not_freeze_at_entry.md`.
 
-`viewable(R)` is a pure, snapshot-dependent proposition for a resource
+`viewable(R)` is a pure, point-dependent proposition for a resource
 descriptor `R`, including resource parameters, named resources, and separating
 conjunctions. It grants no ownership. The legacy segment spelling
 `viewable(base[start..end])` is equivalent to
@@ -2004,7 +2004,7 @@ owns amount of permit();
 consumes amount of permit();
 ```
 
-The coefficient must be provably nonnegative at the contract snapshot. Zero is
+The coefficient must be provably nonnegative at the contract's point. Zero is
 the resource identity and grants no authority. Symbolic coefficients are not
 accepted on memory, allocation, or recursively defined composite resources.
 
@@ -2150,7 +2150,7 @@ by the selected contract. `unfold(cell)` exposes an instance's immediate memory
 body and its facts; field names in the body denote that instance's fields.
 For witness-free memory-only bodies, including guarded and matched bodies, unfolding consumes the named
 instance without retaining an open handle. Current field projections require
-owned instances; entry snapshots such as `old(cell.value)` remain available.
+owned instances; entry reads such as `old(cell.value)` remain available.
 The `fold(cell)` form uses the instance's entry-state fields as its
 target, and checks the complete body ownership and facts. It does not require
 an earlier unfold.
@@ -2188,7 +2188,7 @@ The complete declaration and proof are in `mdtests/resource_adt_construction.md`
 Pure-function applications remain symbolic;
 fold checks the resource relation against the proposed value. Initializer
 memory reads must be justified. A consumed name does not supply a current
-field value; use an entry snapshot when that is the intended model.
+field value; use an entry read, `old(...)`, when that is the intended model.
 An ordinary C call transports constructed resources through the explicit
 binder map described under "Calls that transport named instances".
 
@@ -2318,7 +2318,7 @@ A pure function may return a pointer type. Its opaque application retains the
 function and argument values until checked unfolding; equality rewriting can
 enter those arguments. Shared equality closure also establishes equal results
 from equal typed arguments, including model aliases and nested pointer calls.
-Argument order, scalar types, and array-reference snapshots remain distinct;
+Argument order, scalar types, and array-reference version points remain distinct;
 result equality does not imply argument equality. See
 `mdtests/pure_pointer_call_congruence.md` and its missing-argument-equality negative.
 The result has the declared pointer type and grants no
@@ -3592,7 +3592,7 @@ theorem three_is_in_range() {
 ## Propositions
 
 `changes_only(before, after, A)` describes the recorded transition between two
-named snapshots, restricted to the byte footprint of resource `A`. The resource
+named points, restricted to the byte footprint of resource `A`. The resource
 is interpreted at `before`. Naming this proposition does not establish it:
 a certificate premise must match an existing execution fact. The initial
 implementation supports constant-size memory resources. See
@@ -3714,9 +3714,9 @@ to a pure function's machine-integer parameter converts the same way C
 converts a call argument
 (`mdtests/a_pure_function_argument_converts_modulo_its_parameter_type.md`).
 The operand must be a current scalar expression, including a pure-function
-call; put `old(...)` or `at(...)` around the whole cast to select another
-snapshot. Casts retain their selected memory
-snapshot even when the underlying field is subsequently updated.
+call; put `old(...)` or `at(...)` around the whole cast to read at another
+point. Casts retain their selected point
+even when the underlying field is subsequently updated.
 
 A contract may also cast an opaque `void *` parameter of the function under
 contract to a struct pointer and describe the object through the result:
@@ -3739,7 +3739,7 @@ form retains the target layout on the expression and does not assign a layout
 to the source parameter. Integer and function-pointer operands are rejected.
 Source const qualifications survive the conversion; field reads and writes
 still require their ordinary memory permissions. Put `old(...)` or `at(...)`
-around the complete cast or field expression to select a snapshot.
+around the complete cast or field expression to read at another point.
 
 <!-- verified-example: mdtests/contract_object_pointer_casts.md -->
 <!-- verified-example: mdtests/contract_object_pointer_casts_rejects_missing_view.md -->
@@ -3843,7 +3843,7 @@ Use `old(c(result))` or `at(function.entry, c(result))` to refer explicitly to
 the parameter's entry value.
 
 C locals exist only while they are in scope. After function exit, refer to a
-local through a recorded program point:
+local through a recorded point:
 
 <!-- verified-example: mdtests/c_local_named_result_snapshot.md -->
 ```click
@@ -3871,9 +3871,10 @@ pointer to a callee local is rejected.
 
 ## `at(...)`
 
-`at(selector, expression)` evaluates a contract expression at a selected visit
-to a program point. In a proposition position, `at(selector, proposition)`
-evaluates the complete proposition at that visit:
+`at(point, expression)` evaluates a contract expression as it was when the
+proof path was at that point. In a proposition position, `at(point,
+proposition)` evaluates the complete proposition there. A proof path reaches
+each point at most once, so the point fixes the meaning:
 
 ```text
 at(function.entry, x)
@@ -3885,10 +3886,10 @@ at(region(0).entry, viewable(p[0..n]))
 ```
 
 Where a resource is expected, in `separate(...)`, `contains(...)` or a
-`Resource` theorem argument, `at(selector, name)` names the bound resource
-instance `name` as it was held at that visit. It is how a proof names an
+`Resource` theorem argument, `at(point, name)` names the bound resource
+instance `name` as it was held at that point. It is how a proof names an
 instance a call has since consumed, which the current state no longer holds.
-A visit that does not hold `name` is refused with "resource instance `name`
+A point where the path did not hold `name` is refused with "resource instance `name`
 is not owned at this snapshot"
 (`mdtests/a_consumed_resource_instance_is_named_at_a_mark.md`,
 `mdtests/a_resource_instance_is_not_named_at_a_mark_where_it_is_not_held.md`).
@@ -3911,13 +3912,14 @@ before it and counted from zero there:
 | `loop(i).statement(j)` | the `j`th statement of loop `i`'s body |
 | `S.region(j)` | the `j`th atomic region of `S`'s own, in executable order |
 | `S.call(f, j)` | `S`'s `j`th call of `f`, in the order the calls run |
+| `loop(i).test()` | the test of loop `i` whose condition calls a function, after those calls; refused for a pure condition, which is tested at the head |
 | `S.assignment(x, j)` | `S`'s `j`th atomic region of its own that assigns local `x` |
 | `S.read(j)` | `S`'s `j`th atomic region of its own with an explicit scalar memory load |
 
 A statement's `.entry` is before its first atomic region, its own or a
 child's. Its `.exit` is after its `if` or loop region when it is one, after its
 last atomic region otherwise, and after its last statement when it is a block.
-A chained region reads the snapshot `step()` recorded at the atomic region it
+A chained region reads the state `step()` recorded at the atomic region it
 resolves to. One that names a statement, region or call the function does not
 have is refused with what it does have
 (`mdtests/a_statement_region_past_the_written_statements_is_refused.md`).
@@ -3931,7 +3933,7 @@ have at(statement(1).region(1).entry, y) == x + 1 by solve();
 There `y = f(f(y));` is `statement(1)`, and its outer call is both its second
 call of `f` and its second atomic region.
 
-`.region(j)`, `.call(f, j)`, `.assignment(x, j)` and `.read(j)` end a chain
+`.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)` and `.read(j)` end a chain
 and count only `S`'s own atomic regions, not those of statements nested in
 it: an `if`'s own region is its test
 (`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`,
@@ -4030,17 +4032,17 @@ the proof, cannot be rebound, and is not a `step_until` target. Bare
 region.
 
 `at(function.entry, expression)` is equivalent to `old(expression)`. The
-proposition form snapshots every state-relative part of the proposition
-together. This matters for propositions such as `viewable(...)`: both the
+proposition form reads every state-relative part of the proposition at the
+same point. This matters for propositions such as `viewable(...)`: both the
 address expression and the memory in which it is viewable come from the
-selected state.
+selected point.
 
 The contract `result` exists only once the function returns, so `old(...)` and
-`at(...)` at any program point but `function.exit` cannot name it; both are
+`at(...)` at any point but `function.exit` cannot name it; both are
 refused where they are written (`mdtests/old_of_result_is_refused.md`,
 `mdtests/an_entry_snapshot_of_result_is_refused.md`). A proof mark can name it,
 since a proof may place the mark after the return. A C binding named `result`
-is still written `c(result)` inside a snapshot.
+is still written `c(result)` inside `at(...)` or `old(...)`.
 
 `at(function.exit, ...)` reads the state the function returns in. It is
 available where `result` is: in a postcondition and in a proof step after
@@ -4052,26 +4054,27 @@ path (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
 `mdtests/a_function_exit_snapshot_before_the_return_is_refused.md`,
 `mdtests/a_function_exit_transport_of_a_false_result_claim_is_refused.md`).
 
-The selected snapshot is a complete recorded C state, not only a memory
-snapshot. Inside `at(...)`, reassigned parameters and declared scalar, pointer,
-and array locals resolve to their values in that snapshot. Outside `at(...)`,
+`at(...)` reads locals as well as memory at the selected point. Inside
+`at(...)`, reassigned parameters and declared scalar, pointer, and array
+locals resolve to their values at that point. Outside `at(...)`,
 function parameter names retain their ordinary contract meaning.
 
 `at(loop_label.entry, expression)` is supported inside invariants for that
-same labeled loop code region. It evaluates `expression` at the visit just
-before the loop region starts, then reuses that snapshot for invariant entry and
-preservation checks. Inside an explicit `preserve` proof, the same spelling
-continues to denote that pre-loop snapshot; the current arbitrary loop-head
-visit is available through the ordinary unwrapped expression.
+same labeled loop code region. It evaluates `expression` at the loop's entry
+point, just before the loop region starts, and uses that value for invariant
+entry and preservation checks. Inside an explicit `preserve` proof, the same
+spelling continues to denote the value at that pre-loop point; the value at
+the arbitrary loop-head iteration being checked is the ordinary unwrapped
+expression.
 
 The expression and proposition forms of `at(region(N).entry, ...)` and
-`at(region(N).exit, ...)` are supported in explicit proof-script claims after deterministic execution records that statement snapshot.
+`at(region(N).exit, ...)` are supported in explicit proof-script claims after deterministic execution records that statement point.
 `step()`, `step_until(...)`, and the implicit tail all record every
 deterministic statement boundary they cross. Executing an annotated loop uses
 its verified abstract rule and records both `at(loop_label.entry, expression)`
 and the unique post-loop state `at(loop_label.exit, expression)`. Branches still
-require explicit arm proofs and a checked join before a unique exit snapshot
-exists.
+require explicit arm proofs and a checked join before the path reaches a
+unique exit point.
 
 `step_until(region(N))` starts at the current execution frontier, so it can
 follow earlier `step` or joined `branch` steps. The
@@ -4218,8 +4221,8 @@ Click has a contract-wide witness environment.
 
 In pure Click function parameters, `int32 p[]` and `int32* p` are treated as
 array-ref parameters. `uint8 p[]` and `uint8* p` are also array-ref parameters,
-with one-byte indexing and `uint8` loads. Indexing `p[k]` loads from the memory
-snapshot carried by that argument. This is why `count(p, ...)` can be called
+with one-byte indexing and `uint8` loads. Indexing `p[k]` loads at the version
+point carried by that argument. This is why `count(p, ...)` can be called
 with either current `p` or `old(p)`.
 
 Click array refs carry their element type. Passing an `int32[]` ref to a pure
@@ -4304,7 +4307,7 @@ not have a recoverable C source place:
 - `byte_offset(pointer, bytes)`
 
 Typed loads select memory from the surrounding clause independently of the
-pointer value's snapshot. `load_int32(old(p))` reads current memory through
+point the pointer value was read at. `load_int32(old(p))` reads current memory through
 the entry-state pointer, while `old(load_int32(p))` reads entry-state memory.
 Both require the corresponding read permission and initialized storage.
 

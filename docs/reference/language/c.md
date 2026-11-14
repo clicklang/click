@@ -1414,7 +1414,7 @@ String literals are described below.
 Every function sees the linked object through its stable address. Contracts
 name the scalar value directly, and name its one-cell memory footprint with
 `owns counter`.
-`old(counter)` refers to the value in the function-entry memory snapshot.
+`old(counter)` refers to the value at the function's entry point.
 Qualified names follow the same rule for scalar and pointer slots:
 `unit::slot` reads current memory, while `old(unit::slot)` reads entry memory.
 A store changes the current qualified value without changing its entry value.
@@ -2100,7 +2100,7 @@ unless the named preconditions prove that guard. A closed refinement theorem
 can handle guarded post-call memory by explicitly splitting until every
 concrete owned guard is decided, and can compare stateful user predicates by
 explicitly unfolding their definitions. Stateful algebraic,
-resource-relation, explicit-memory-snapshot, and general non-memory resource
+resource-relation, `at(...)` memory, and general non-memory resource
 refinement remain future work.
 
 Named contracts may use ordinary pure `requires` and `ensures`, resource
@@ -2861,10 +2861,12 @@ compound statement. An `else if` is parsed as an `else` arm containing another
 `if`.
 
 A `while`, `for` or `do ... while` condition that calls a function is
-checked again on every pass, `continue` included. Today the call's result
-goes to a `__click_call_result<N>` temporary and the loop becomes `while (1)`
-with an `if` on it, so a proof steps the call and then that `if`. This is a
-known defect, not intended behavior; see
+checked again on every pass, `continue` included. Its calls and its test are
+the loop's own regions, `loop(i).call(f, j)` and `loop(i).test()`: a pass steps
+the calls, then the test, whose false side leaves the loop
+([a loop's points](../../internals/kernel.md#what-stepping-a-statement-means)).
+The call's result still goes to a `__click_call_result<N>` temporary, a known
+defect; see
 [where stepping departs from its model](../../internals/kernel.md#where-the-implementation-departs-from-this).
 
 Symbolic pointer-writing loops should use invariants and explicit loop effects.

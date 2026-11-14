@@ -9008,6 +9008,7 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
         }
         | CStatement::DeclareAggregate { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_) => false,
         // A zero-filled declaration stores into the object it declares, as
@@ -9076,6 +9077,7 @@ pub(super) fn collect_loop_modified_locals(statement: &CStatement, names: &mut B
         }
         | CStatement::DeclareAggregate { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_)
         | CStatement::Store { .. }
@@ -9314,6 +9316,9 @@ fn for_each_statement_expression<'a>(
             condition: expression,
             ..
         }
+        | CStatement::LoopTest {
+            condition: expression,
+        }
         | CStatement::Return(expression)
         | CStatement::Throw(expression) => visit(expression),
         CStatement::CallAssign { arguments, .. } | CStatement::Call { arguments, .. } => {
@@ -9404,7 +9409,7 @@ pub(crate) fn collect_address_taken_locals(statement: &CStatement, names: &mut B
         CStatement::HeapFree { pointer } => {
             collect_address_taken_in_expression(pointer, names);
         }
-        CStatement::Assert { condition, .. } => {
+        CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
             collect_address_taken_in_expression(condition, names)
         }
         CStatement::Return(expression) | CStatement::Throw(expression) => {

@@ -533,6 +533,16 @@ fn prepare_contract_expression_binding_body(
     body: &ContractExpression,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<(String, ContractExpression), String> {
+    if substitutions.fresh_synthesis_binders {
+        let name = match substitutions.value(binder) {
+            Some(ContractExpression::Binding(name)) => name.clone(),
+            _ => binder.to_string(),
+        };
+        return Ok((
+            name,
+            substitute_contract_expression_in(body, substitutions)?,
+        ));
+    }
     if !substitutions_reference_name(substitutions, binder) {
         return Ok((
             binder.to_string(),
@@ -622,6 +632,14 @@ fn prepare_contract_match_arm(
     arm: &AlgebraicMatchArm,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<AlgebraicMatchArm, String> {
+    if substitutions.fresh_synthesis_binders {
+        return Ok(AlgebraicMatchArm {
+            body: substitute_contract_expression_in(&arm.body, substitutions)?,
+            type_name: arm.type_name.clone(),
+            variant: arm.variant.clone(),
+            bindings: arm.bindings.clone(),
+        });
+    }
     let mut shadowed = substitutions.clone();
     for binding in &arm.bindings {
         shadowed = shadowed.without_binding(binding);
@@ -714,6 +732,9 @@ fn refuse_captured_match_arm_substitution(
 }
 
 fn substitutions_reference_name(substitutions: &ContractSubstitutions<'_>, name: &str) -> bool {
+    if substitutions.fresh_synthesis_binders {
+        return false;
+    }
     substitutions.substituted_expressions().any(|expression| {
         let mut names = BTreeSet::new();
         collect_contract_expression_referenced_names(expression, &mut names);
@@ -3108,6 +3129,10 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     body_field_values: Option<&'a BTreeMap<String, ContractExpression>>,
     contract_result_only: bool,
     current_c_values: bool,
+    // Only the marker finalizer enables this. Its globally fresh targets
+    // cannot capture existing names; markers deliberately remain in scope
+    // while their binder declarations and occurrences are renamed together.
+    fresh_synthesis_binders: bool,
 }
 
 impl<'a> ContractSubstitutions<'a> {
@@ -3120,6 +3145,7 @@ impl<'a> ContractSubstitutions<'a> {
             body_field_values: None,
             contract_result_only: false,
             current_c_values: false,
+            fresh_synthesis_binders: false,
         }
     }
 
@@ -3175,6 +3201,7 @@ impl<'a> ContractSubstitutions<'a> {
             body_field_values: None,
             contract_result_only: false,
             current_c_values: false,
+            fresh_synthesis_binders: false,
         }
     }
 
@@ -3241,6 +3268,9 @@ impl<'a> ContractSubstitutions<'a> {
     /// The same pass under a binder that shadows `name`: inside that body the
     /// name is a binding, not something this pass replaces.
     fn without_binding(&self, name: &str) -> ContractSubstitutions<'a> {
+        if self.fresh_synthesis_binders {
+            return self.clone();
+        }
         let mut values = self.values.as_ref().clone();
         values.remove(name);
         let mut instance_renames = self.instance_renames.clone();
@@ -3254,6 +3284,7 @@ impl<'a> ContractSubstitutions<'a> {
             body_field_values: self.body_field_values,
             contract_result_only: self.contract_result_only,
             current_c_values: self.current_c_values,
+            fresh_synthesis_binders: self.fresh_synthesis_binders,
         }
     }
 }
@@ -3633,6 +3664,17 @@ pub(in crate::surface) fn contract_expression_has_explicit_c_result_base(
 }
 
 pub(in crate::surface) fn substitute_contract_expression_in(
+    expression: &ContractExpression,
+    substitutions: &ContractSubstitutions<'_>,
+) -> Result<ContractExpression, String> {
+    if substitutions.fresh_synthesis_binders {
+        return substitute_fresh_synthesis_expression(expression, substitutions);
+    }
+    substitute_contract_expression_node(expression, substitutions)
+}
+
+// Keep the large ordinary expression match out of the frame of each fold.
+fn substitute_contract_expression_node(
     expression: &ContractExpression,
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
@@ -4861,4 +4903,93 @@ mod tests {
         assert!(!changed);
         assert_eq!(rewritten, expression);
     }
+}
+
+/// Resolve private synthesis markers in one pass over the selected output.
+/// Targets avoid every referenced and declared name, so this pass cannot
+/// capture a user binding and need not rescan each nested binder's body.
+pub(in crate::surface) fn name_synthesized_fold_binders(
+    expression: &ContractExpression,
+    markers: &[String],
+) -> Result<ContractExpression, String> {
+    let mut used = BTreeSet::new();
+    collect_contract_expression_referenced_names(expression, &mut used);
+    collect_contract_expression_binding_names(expression, &mut used);
+    let mut values = BTreeMap::new();
+    let mut next = 0usize;
+    for marker in markers {
+        let name = loop {
+            let candidate = format!("__click_binder_{next}");
+            next += 1;
+            if used.insert(candidate.clone()) {
+                break candidate;
+            }
+        };
+        values.insert(marker.clone(), ContractExpression::Binding(name));
+    }
+    let mut substitutions = ContractSubstitutions::new(&values);
+    substitutions.fresh_synthesis_binders = true;
+    substitute_contract_expression_in(expression, &substitutions)
+}
+
+fn substitute_fresh_synthesis_expression(
+    expression: &ContractExpression,
+    substitutions: &ContractSubstitutions<'_>,
+) -> Result<ContractExpression, String> {
+    enum Task<'a> {
+        Visit(&'a ContractExpression),
+        Fold(&'a str, &'a str),
+    }
+    let mut pending = vec![Task::Visit(expression)];
+    let mut values = Vec::new();
+    while let Some(task) = pending.pop() {
+        match task {
+            Task::Visit(ContractExpression::RangeFold {
+                start,
+                end,
+                initial,
+                accumulator,
+                item,
+                body,
+            }) => {
+                crate::instrumentation::record_deterministic_work(1);
+                pending.push(Task::Fold(accumulator, item));
+                pending.extend(
+                    [
+                        body.as_ref(),
+                        initial.as_ref(),
+                        end.as_ref(),
+                        start.as_ref(),
+                    ]
+                    .map(Task::Visit),
+                );
+            }
+            Task::Visit(expression) => {
+                crate::instrumentation::record_deterministic_work(1);
+                values.push(substitute_contract_expression_node(
+                    expression,
+                    substitutions,
+                )?);
+            }
+            Task::Fold(accumulator, item) => {
+                let body = values.pop().unwrap();
+                let initial = values.pop().unwrap();
+                let end = values.pop().unwrap();
+                let start = values.pop().unwrap();
+                let rename = |name: &str| match substitutions.value(name) {
+                    Some(ContractExpression::Binding(name)) => name.clone(),
+                    _ => name.to_string(),
+                };
+                values.push(ContractExpression::RangeFold {
+                    start: Box::new(start),
+                    end: Box::new(end),
+                    initial: Box::new(initial),
+                    accumulator: rename(accumulator),
+                    item: rename(item),
+                    body: Box::new(body),
+                });
+            }
+        }
+    }
+    Ok(values.pop().expect("selected synthesis expression"))
 }

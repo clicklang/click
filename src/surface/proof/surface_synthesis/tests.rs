@@ -4187,3 +4187,96 @@ fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
         }
     }
 }
+
+#[test]
+fn range_fold_surface_preserves_scope_and_alpha_identity() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = CState::new()
+        .with_local("n", CValue::Int32(MachineTerm::Variable(Variable(710003))))
+        .with_local(
+            "__click_binder_0",
+            CValue::Int32(MachineTerm::Variable(Variable(710004))),
+        );
+    for expression in [
+        "(0..n).fold(0, |acc, item| { acc })",
+        "(0..n).fold(__click_binder_0, |acc, item| { item })",
+        "(0..n).fold(0, |acc, item| { (0..item).fold(acc, |a, i| { a }) })",
+        "(0..n).fold(to_integer(0), |acc, item| { acc })",
+        "(0u64..(n as uint64)).fold(to_integer(0), |acc, item| { acc })",
+        "(let lo: Integer = 0; let hi: Integer = to_integer(n); (lo..hi).fold(to_integer(0), |acc, item| { acc }))",
+    ] {
+        let source = format!(
+            "theorem probe(n: int32, __click_binder_0: int32) {{ requires {expression} == 0; ensures true; }}"
+        );
+        let parsed = parser::parse(&source).unwrap();
+        let Requirement::Proposition(written) = &parsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!()
+        };
+        let lowered = relower_written_proposition(written, &state)
+            .unwrap_or_else(|error| panic!("{expression}: {error}"));
+        let spelled = synthesize_surface_proposition(&lowered, ParameterBinding::default(), &state)
+            .unwrap_or_else(|| panic!("cannot spell {expression}"));
+        let text = crate::surface::printing::source_click_proposition(&spelled);
+        assert!(!text.contains('\0'));
+        let reparsed = parser::parse(&format!(
+            "theorem probe(n: int32, __click_binder_0: int32) {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(spelled) = &reparsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!()
+        };
+        assert!(
+            synthesized_surface_matches_proposition(
+                &spelled,
+                &lowered,
+                ParameterBinding::default(),
+                &state
+            ),
+            "{expression}: {spelled:?}"
+        );
+    }
+}
+
+#[test]
+fn range_fold_surface_separates_integer_and_machine_binder_ids() {
+    use crate::kernel::{IntegerRangeFoldIndex, IntegerTerm, SharedIntegerRangeEndpoint};
+    let _session = crate::kernel::VerificationSession::enter();
+    let id = Variable(710005);
+    let n = MachineTerm::Variable(Variable(710006));
+    let state = CState::new().with_local("n", CValue::Int32(n.clone()));
+    let fold = IntegerTerm::RangeFold {
+        index: IntegerRangeFoldIndex::Int32 {
+            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(n),
+        },
+        initial: IntegerTerm::constant_i64(0).into(),
+        accumulator: id,
+        item: id,
+        body: IntegerTerm::Add(
+            IntegerTerm::Variable(id).into(),
+            IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(id))
+                .unwrap()
+                .into(),
+        )
+        .into(),
+    };
+    let proposition = Proposition::ConditionIs(
+        ConditionTerm::integer_equal(fold, IntegerTerm::constant_i64(0)),
+        true,
+    );
+    let spelled =
+        synthesize_surface_proposition(&proposition, ParameterBinding::default(), &state).unwrap();
+    assert!(
+        synthesized_surface_matches_proposition(
+            &spelled,
+            &proposition,
+            ParameterBinding::default(),
+            &state
+        ),
+        "{spelled:?}"
+    );
+    assert!(folds::binder_name(true, id).is_none());
+    assert!(folds::binder_name(false, id).is_none());
+}

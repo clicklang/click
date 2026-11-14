@@ -22201,3 +22201,19 @@ fn symbolic_view_restriction_expands_to_library_steps() {
     let missing = expanded.replace("requires lo < hi;", "");
     assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
 }
+
+#[test]
+fn rewritten_concrete_range_fold_expands_and_replays() {
+    let source = r#"
+        theorem fold_rewrite(n: int32) {
+            requires n == 1;
+            ensures (0..n).fold(0, |acc, item| { acc }) == 0 by {
+                rewrite(n == 1);
+                normalize();
+            }
+        }
+    "#;
+    verify_click_theorems(source).unwrap();
+    let expanded = expand_c0_claim_source_by_label(source, &[], "fold_rewrite.ensures_0").unwrap();
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+}

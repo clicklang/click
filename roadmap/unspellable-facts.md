@@ -83,7 +83,7 @@ not ten aliases for partial progress on one boundary. Keep one PR open at a time
 | 3 | Pure-function arguments and results | In progress. [PR #2643](https://github.com/clicklang/click/pull/2643) retained shared machine values during argument assembly. [PR #2647](https://github.com/clicklang/click/pull/2647) retains them in call payloads and migrates argument collection, rewriting, alpha keys, congruence and fold-read consumers. Typed semantic application identity is separate from exact producer payloads; numeric indexes share native/retained call identities, and comparison cycle guards permit narrow-to-wide checking. Repeated native/shared readings do not accumulate payload versions. The integer machine call-result sequence 3a–3f below completes common result production and its consumers; pointer, algebraic, Boolean and floating-point result families remain separate work. |
 | 4 | Mixed-width arithmetic and casts | Implemented as subchunks 4a–4j below, one PR per subchunk. Numeric producers retain shared operands and results within the existing supported profile. General call and nonnumeric compatibility boundaries belong to the remaining packages; the previous combined branch stays unmerged reference material. |
 | 5 | C/Rust execution result carriers | Supported machine handoffs implemented in 5a–5g below: expression paths, local bindings, returns and caller receipt retain common roots. Native memory-cell, specification and presentation boundaries remain explicit. |
-| 6 | Folds, binders and algebraic matches | Open |
+| 6 | Folds, binders and algebraic matches | In progress |
 | 7 | Complete pointers and read addresses | Open |
 | 8 | Remaining Boolean and opaque expression payloads | Open |
 | 9 | Unified raising/lowering and certificate boundaries | Open |
@@ -207,12 +207,67 @@ and constructor reduction rules. No new search, indexes or larger budgets.
 | 6m | Algebraic match producers | Algebraic result matches retain common structure; other producers have named compatibility boundaries. |
 | 6n | Closure | Remove superseded adapters and validate nested folds/matches/calls, fact stability, exact round trips and scaling. |
 
-6a prepares the typed `KernelFold` payload without registering a live
+6a ([PR #2731](https://github.com/clicklang/click/pull/2731), merged)
+prepares the typed `KernelFold` payload without registering a live
 `KernelTermNode` variant or switching evaluator production. This deliberately
 keeps new roots unavailable until their scoped readers and Surface support are
 ready. Integer results preserve Int32, UInt64 and Integer range kinds; the
 existing symbolic machine fold retains its Int32 range and result profile.
 This is preparation, not closure of the fold boundary.
+
+6b prepares common-child readers for Integer-free, expression-free, C-capture
+and typed binder variables, plus current-memory read dependencies. Variable
+summaries use the existing persistent set representation and a traversal-local
+memo keyed by common node identity; filtering body binders never changes the
+summary of the same root used as an initial value. Native opaque leaves keep
+their existing registry, snapshot and call-connection rules. Dependency queries
+retain selected widths and recheck the current snapshot on each call. These
+readers remain staged until common fold roots are activated. Validation: nine
+focused parity/scaling cases and the full scaling plus related-reader selection
+(1,574 tests) pass.
+
+6c prepares scoped rewriting of the common fold payload. Machine children use
+the retained operand walker directly; Integer children reuse the existing
+capture-safe fold walker through a rewrite-local, memoized Integer compatibility
+bridge. Range endpoints retain shared machine operands, including the existing
+UInt64-range/Int32-endpoint carrier convention. The result reports existing
+scope/work refusals explicitly. Bounds and initial values stay outside binders,
+body rewriting restores the enclosing scope, and pointer substitution preserves
+read snapshots. This remains staged until fold roots are activated; the Integer
+compatibility boundary has not been removed. All four focused parity/scaling
+tests and the full scaling plus rewrite selection (1,682 tests) pass.
+
+6d shares the machine fold alpha-key implementation between native and common
+children. Bound-variable ordinals apply only to the body, with the enclosing
+scope restored on success or refusal; free variables and snapshot identities
+remain distinct. Integer checking uses a named compatibility adapter retaining
+shared endpoints, also reused by scoped rewriting. This does not activate fold
+producers or change fold reduction laws. Fold child keys remain boxed so this
+variant does not enlarge ordinary scalar keys. The full scaling, related fact
+matching/arithmetic, rewrite and registration selection passes 1,676 tests.
+
+6e adds the existing `.fold(...)` Surface spelling for retained Integer and
+machine fold payloads. Body binders use separate Integer/C namespaces;
+bounds and initial values stay outside their scope. A single name-freshening
+pass avoids capture and processes nested folds iteratively. Integer-index
+bounds use existing typed `let` bindings to retain their carrier through
+lowering. Round trips compare exact alpha identity, not printed binder IDs.
+Concrete machine-fold normalization is unchanged: a rewrite-to-concrete proof
+expands and replays without implicit search. This supplies the spelling
+boundary; live common fold producer activation remains 6f and 6g. Validation:
+the full scaling and related Surface selection passes all 1,634 tests.
+
+6f activates Integer `KernelTermNode::Fold` roots and the existing Integer fold
+constructor produces through them. The evaluator's native Integer result
+carrier remains an explicit shallow reading whose operands retain common
+handles. Free-variable/capture collection, current-memory dependencies and
+scoped rewriting now consume the common fold children; nested summaries filter
+only body binders. Internal refusal inspection does not acknowledge a refusal
+on behalf of the external rewrite caller. Existing range evaluation, fold laws
+and scoped obligations are unchanged. Focused checks pass 25 tests, and the
+full scaling plus fold/variable/rewrite selection passes all 1,870 tests.
+Opaque endpoints reuse their existing numeric observation identity. The full
+non-nightly proof corpus passes with zero fact-stability differences.
 
 ## Chunk 5: execution value handoffs
 

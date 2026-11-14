@@ -12,7 +12,8 @@ extract typed compiler input before joining the shared proof and kernel layers.
 3. Validation resolves names, checks types and declaration rules, and rejects
    unsupported C or Click forms.
 4. Elaboration makes contextual Surface Click meaning explicit, including
-   snapshots, C fragments, resources, and proof-site identity.
+   the points reads are taken at, C fragments, resources, and proof-site
+   identity.
 5. Lowering translates propositions, contracts, and executable operations to
    Kernel Click structures.
 6. Proof checking interprets explicit tactics as checked transitions over the

@@ -168,9 +168,9 @@ forward to find one. If the frontier is not at a loop, the tactic fails.
 
 The tactic checks initialization and one arbitrary iteration, constructs a
 kernel-checked loop rule, applies that rule once, and advances the enclosing
-frontier to the loop exit. Since a loop head can be reached more than once, the
-preservation proof is about an arbitrary visit rather than one concrete
-iteration.
+frontier to the loop exit. Since the C can reach a loop head more than once, the
+preservation proof is about one arbitrary iteration rather than one concrete
+iteration; the proof path reaches the head once.
 
 That frontier does not have to be the top level of the script. A C loop
 guarded by an `if` is reached on one path only, and the proof reaches it by
@@ -192,7 +192,7 @@ implicit tail is not an alternative here: it reaches the guarded loop and
 stops, because the loop condition has two feasible paths and the tail invents
 no invariants. `step_until` stops sooner, at the `if` it never splits.
 
-A labeled loop can also expose its entry visit to the invariant:
+A labeled loop can also expose its entry point to the invariant:
 
 <!-- verified-example: mdtests/loop_entry_snapshot.md -->
 ```click
@@ -204,8 +204,8 @@ loop as drain {
 }
 ```
 
-Here `at(drain.entry, n)` means the value of `n` at the visit just before the
-loop region starts.
+Here `at(drain.entry, n)` means the value of `n` at the loop's entry point,
+just before the loop region starts.
 
 For a simple counter loop:
 
@@ -516,7 +516,7 @@ at all and every claim after it held vacuously, which is why both
 A `break` that assigns or stores before leaving stands at a different state
 than the guard-false exit and than the other `break`s. The loop still has one
 successor, and it is described the way the loop head describes an arbitrary
-visit — the rule of [modeled instances in
+iteration — the rule of [modeled instances in
 loops](#modeled-instances-in-loops), applied at the exits:
 
 - the loop's declared binders are bound again at each exit by family and
@@ -752,10 +752,10 @@ none is an error. An instance the loop does not declare stays with the
 enclosing frame: the body can neither read nor write through it, and it is
 returned after the loop.
 
-The head is an arbitrary visit, so the model `c` carries there is arbitrary
+The head is an arbitrary iteration, so the model `c` carries there is arbitrary
 too. Only the invariants say anything about it, and `old(c.count)` still means
 the function-entry model of the function's own binder of that name. There is
-no loop-entry snapshot of a model.
+no loop-entry read of a model.
 
 The body holds `c` and works with the ordinary proof operations. Here one
 iteration first states the model the invariants give the head's arbitrary
@@ -1014,7 +1014,7 @@ itself has no `ensuring` interface
 What follows a split is checked once. Tactics written after a `match` or a
 proof `if` in the body are never run once per arm, because every further
 split would double that again. So when two arms are both still live at the
-same program point, they have to become one path before those tactics run:
+same point, they have to become one path before those tactics run:
 
 - Arms that only reason, or that run the same statements and end holding the
   same resources, rejoin on their own, as they do in a function body
@@ -1027,7 +1027,7 @@ same program point, they have to become one path before those tactics run:
   (`mdtests/loop_body_proof_match_shared_continuation.md`). Give the `match`
   an interface, or write the rest of the iteration inside each arm.
 
-Arms that reach those tactics at different program points are different paths
+Arms that reach those tactics at different points are different paths
 of the C, one having stepped to a `break` and another to the body's end, say.
 Each is finished its own way and nothing is repeated. An arm closed by
 `contradiction` reaches nothing.
@@ -1133,8 +1133,7 @@ does not change what `old(...)` means, even when it opens it before the
 proof's first `step()`, where the C execution starts from a state that does
 not hold the instance at all
 (`mdtests/loop_invariant_old_model_when_the_unfold_precedes_execution.md`); an explicit `at(...)`
-snapshot still names a state, and an instance it does not hold is an error
-there.
+still names a point, and an instance the path did not hold there is an error.
 
 Loop frames do not erase semantic lifetime state. A body that frees or
 allocates heap storage, or calls a function whose contract consumes or
@@ -1150,11 +1149,11 @@ at an earlier loop head.
 
 ## Loop proof tactics
 
-An explicit preservation proof starts at an arbitrary loop-head visit and must
+An explicit preservation proof starts at the loop head of an arbitrary iteration and must
 traverse exactly one complete iteration. Straight-line bodies use one `step()`
 per statement. In a proof-level `if`, `step()` enters a C branch from an exact
 condition fact. Initialization
-is non-executing because its program point is already the first loop entry.
+is non-executing because its point is already the first loop entry.
 
 ### What a `preserve` script accepts
 
@@ -1258,7 +1257,7 @@ with each one (`mdtests/loop_frame_keeps_two_header_cells_of_a_field_map.md`).
 
 When the whole bundle has no source form, for instance because one member is
 at the loop entry beside members at the iteration entry, each member is
-spelled on its own at the one snapshot it names, which is how the expanded
+spelled on its own at the one point it names, which is how the expanded
 proof's `have` writes it, so `intro` names a member's quantified index as that
 `have` does.
 

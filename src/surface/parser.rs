@@ -12387,7 +12387,7 @@ impl Parser {
     }
 
     fn source_path_step_follows(&self) -> bool {
-        self.chained_region_follows(&["statement", "region", "call", "assignment", "read"])
+        self.chained_region_follows(&["statement", "region", "call", "test", "assignment", "read"])
     }
 
     /// Refuses a reference parameter as an assignment's local: binding a
@@ -12438,6 +12438,11 @@ impl Parser {
                     let index = self.expect_index("read occurrence")?;
                     self.expect(Token::RParen)?;
                     steps.push(SourcePathStep::Read(index));
+                    break;
+                }
+                "test" => {
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::Test);
                     break;
                 }
                 _ => {

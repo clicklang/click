@@ -379,7 +379,9 @@ pub(crate) fn child_statements<'a>(
         }
         C0Statement::HeapAllocate { bytes, .. } => expressions.push(bytes),
         C0Statement::HeapFree { pointer, .. } => expressions.push(pointer),
-        C0Statement::Assert { condition, .. } => expressions.push(condition),
+        C0Statement::Assert { condition, .. } | C0Statement::LoopTest { condition, .. } => {
+            expressions.push(condition)
+        }
         C0Statement::Seq(first, second) => {
             statements.push(first);
             statements.push(second);

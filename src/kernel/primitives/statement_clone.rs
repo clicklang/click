@@ -174,6 +174,9 @@ impl CStatement {
                 condition: condition.clone(),
                 label: label.clone(),
             },
+            Self::LoopTest { condition } => Self::LoopTest {
+                condition: condition.clone(),
+            },
             Self::Seq(value) => Self::Seq(value.clone()),
             Self::Return(value) => Self::Return(value.clone()),
             Self::Throw(value) => Self::Throw(value.clone()),
