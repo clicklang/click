@@ -24,6 +24,8 @@ mod graph_condition_tests;
 mod integer_conditional_tests;
 #[cfg(test)]
 mod pointer_application_tests;
+#[allow(dead_code)]
+mod retained_folds;
 mod shared_comparison;
 #[cfg(test)]
 mod shared_source_tests;
@@ -1713,6 +1715,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_context: Option<&'a PureFactContext>,
     collected_conditions: Option<Vec<ConditionTerm>>,
     integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
+    fold_integer_bridge: KernelTermExport,
     pointer_application_cache: HashMap<(u64, u64, bool, bool), PointerBlock>,
     pointer_origin_cache: HashMap<(PointerLoadId, u64, bool, bool), PointerBlock>,
     scope_renaming_max: u64,
@@ -2015,6 +2018,7 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             changed: false,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2117,6 +2121,7 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             changed: false,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2291,6 +2296,7 @@ impl<'a> TermRewrite<'a> {
             collected_conditions: None,
             changed: false,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2437,6 +2443,7 @@ impl<'a> TermRewrite<'a> {
             pointer_addresses_only: false,
             collected_conditions: None,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2533,6 +2540,7 @@ impl<'a> TermRewrite<'a> {
             pointer_addresses_only: false,
             collected_conditions: None,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2723,6 +2731,7 @@ impl<'a> TermRewrite<'a> {
             pointer_addresses_only: false,
             collected_conditions: None,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,

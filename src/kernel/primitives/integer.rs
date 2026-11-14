@@ -378,6 +378,14 @@ impl Hash for SharedIntegerRangeEndpoint {
 }
 
 impl SharedIntegerRangeEndpoint {
+    pub(crate) fn from_shared(root: KernelTerm) -> Option<Self> {
+        SharedMachineIntegerTerm::from_shared(
+            MachineIntegerType::Int32,
+            root.with_machine_observation_type(MachineIntegerType::Int32),
+        )
+        .map(|node| Self { node })
+    }
+
     pub(crate) fn machine_operand(&self) -> &SharedMachineIntegerTerm {
         &self.node
     }

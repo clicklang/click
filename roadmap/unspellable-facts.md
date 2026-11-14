@@ -226,6 +226,17 @@ readers remain staged until common fold roots are activated. Validation: nine
 focused parity/scaling cases and the full scaling plus related-reader selection
 (1,574 tests) pass.
 
+6c prepares scoped rewriting of the common fold payload. Machine children use
+the retained operand walker directly; Integer children reuse the existing
+capture-safe fold walker through a rewrite-local, memoized Integer compatibility
+bridge. Range endpoints retain shared machine operands, including the existing
+UInt64-range/Int32-endpoint carrier convention. The result reports existing
+scope/work refusals explicitly. Bounds and initial values stay outside binders,
+body rewriting restores the enclosing scope, and pointer substitution preserves
+read snapshots. This remains staged until fold roots are activated; the Integer
+compatibility boundary has not been removed. All four focused parity/scaling
+tests and the full scaling plus rewrite selection (1,682 tests) pass.
+
 ## Chunk 5: execution value handoffs
 
 Retain already-supported machine-integer results through execution, one PR per
