@@ -180,7 +180,8 @@ src/surface/proof/driver/state.rs	driver	ProofDriver::complete_fixed_state_oblig
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_have_step	driver	2
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_at	driver	1
-src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_with_origin_inner	driver	16
+src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_ordinary_transport_steps	driver	1
+src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_with_origin_inner	driver	14
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping	apply_arithmetic_using	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping_after_wide	driver	3
@@ -468,7 +469,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_so
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure	try_listed_operation_identities	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure	try_restricted_solve_closure_before_arithmetic	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	check_typed_atomic_solve_candidate	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	driver	10
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	driver	11
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	plan_solve_certificate	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_outcome_anchored_increment_order	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_outcome_anchored_order_transitivity	1
@@ -640,3 +641,10 @@ src/surface/proof/wide_arithmetic/search.rs	search	ProofSearch::wide_arithmetic_
 src/surface/proof/wide_arithmetic/search.rs	search	ProofSearch::wide_arithmetic_with	try_direct_logical_closure	1
 src/surface/validation/definition_validation.rs	operation	::symbolic_segment_covers_index	proves	2
 src/surface/validation/definition_validation.rs	operation	::symbolic_segment_covers_range	proves	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_descriptor_rewrite_closure	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_resource_descriptor_rewrite_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_descriptor_rewrite_closure	requirement_kernel_atoms_for_search	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_viewability_restriction_closure	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_viewability_restriction_closure	requirement_kernel_atoms_for_search	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_ordinary_viewability_restriction_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_ordinary_viewability_restriction_closure	1

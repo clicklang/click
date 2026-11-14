@@ -68,3 +68,4 @@ plan_invariant_bundle_closure
 close_bundle_member_by_solve
 prove_theorem_application_obligations
 observe_step
+apply_ordinary_transport_steps
