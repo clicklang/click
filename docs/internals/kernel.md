@@ -1331,6 +1331,13 @@ statement that holds the expression:
 - A postfix `x++` or `x--` is a `ProgramStatement::Assign` with `prior_result`,
   which keeps the value it replaces. The surface spells that value
   `at(<the assignment's region>.entry, x)`.
+- A `&&`, `||` or ternary operator whose operands make steps is a
+  `ProgramStatement::If` that decides which operand runs, and each arm ends in
+  a `ProgramStatement::StepValue` that records the operator's value on that
+  path. The surface names the decision `S.and(j)`, `S.or(j)` or
+  `S.ternary(j)` and its value `.result`. In a condition such as
+  `if (a() && b())`, the statement's own `if` then reads that value, which each
+  path has already decided.
 
 A step's result stays in the path state by its number
 (`ExecutionState::step_results`), and the statement reads it as
@@ -1341,10 +1348,9 @@ reads it, or with the condition that decides a branch.
 
 Other expressions with effects still move into locals:
 
-- The C front end assigns the value of `?:`, `&&`, `||`, `({ })` and
-  `WRITE_ONCE`, and of a call through a callback, to a temporary
-  `__click_call_result<N>` (`fresh_synthesized_call_name` in
-  `src/languages/c/syntax.rs`).
+- The C front end assigns the value of `({ })` and `WRITE_ONCE`, and of a
+  call through a callback, to a temporary `__click_call_result<N>`
+  (`fresh_synthesized_call_name` in `src/languages/c/syntax.rs`).
 - The Rust importer gives every MIR local the user did not name a local
   `__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR assigns every call's
   result to such a temporary, so a `for` loop's `next` result is one and a

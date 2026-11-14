@@ -4142,6 +4142,10 @@ fn substitute_program_expression_as_contract_with_numerals_in(
                 crate::kernel::StepOrigin::Prior(local) => {
                     format!("the value `{local}` held before its update has no source spelling")
                 }
+                crate::kernel::StepOrigin::Operator(kind) => format!(
+                    "the value of {} has no source spelling",
+                    crate::surface::diagnostics::describe_operator_kind(*kind)
+                ),
             })
         }
         ProgramExpression::Variable(name) => Ok(substitutions
@@ -4431,11 +4435,11 @@ pub(in crate::surface) fn substitute_program_expression_in(
             expression: Box::new(substitute_program_expression_in(expression, substitutions)?),
             classification: *classification,
         }),
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
-        } => Ok(ProgramExpression::Conditional {
+        } => Ok(ProgramExpression::Ternary {
             condition: Box::new(substitute_program_expression_in(condition, substitutions)?),
             then_branch: Box::new(substitute_program_expression_in(
                 then_branch,

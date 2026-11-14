@@ -36,7 +36,7 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
             budget,
         );
     }
-    if let ProgramExpression::Conditional {
+    if let ProgramExpression::Ternary {
         condition,
         then_branch,
         else_branch,
@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn retained_execution_conditional_keeps_selected_value_without_export() {
-        let expression = ProgramExpression::Conditional {
+        let expression = ProgramExpression::Ternary {
             condition: Box::new(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::constant(1),
             ))),

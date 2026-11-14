@@ -1954,7 +1954,7 @@ fn program_expression_steps_for_mode(expression: &ProgramExpression, lvalue: boo
             | ProgramExpression::FunctionAddress(_)
             | ProgramExpression::StepResult { .. } => {}
             ProgramExpression::Cast { expression, .. } => pending.push((expression, false)),
-            ProgramExpression::Conditional {
+            ProgramExpression::Ternary {
                 condition,
                 then_branch,
                 else_branch,
@@ -2045,7 +2045,11 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
                 cost.add_expression(program_expression_source_steps(pointer));
             }
             ProgramStatement::Assert { condition, .. }
-            | ProgramStatement::LoopTest { condition } => {
+            | ProgramStatement::LoopTest { condition }
+            | ProgramStatement::StepValue {
+                expression: condition,
+                ..
+            } => {
                 cost.add_expression(program_expression_source_steps(condition));
             }
             ProgramStatement::Seq(statements) => {

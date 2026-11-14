@@ -2814,7 +2814,7 @@ fn collect_resource_fact_reads_from_program_expression(
                 collect_resource_fact_reads_from_program_expression(field, reads);
             }
         }
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,

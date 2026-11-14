@@ -18577,7 +18577,7 @@ fn resolve_retained_aggregate_fields(
                 resolve_retained_aggregate_fields(entry, state, field, true, assumptions, budget)?;
             }
         }
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,

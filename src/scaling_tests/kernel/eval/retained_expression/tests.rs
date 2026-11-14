@@ -47,7 +47,7 @@ fn c_conditional_handoffs_keep_machine_results_without_exporting_prefixes() {
             ))),
         );
         for _ in 0..size {
-            expression = ProgramExpression::Conditional {
+            expression = ProgramExpression::Ternary {
                 condition: Box::new(ProgramExpression::Value(ProgramValue::Int32(
                     MachineTerm::constant(1),
                 ))),

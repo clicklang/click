@@ -537,7 +537,7 @@ pub(super) fn program_expression_supports_stateful_memory_refinement(
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
             .all(program_expression_supports_stateful_memory_refinement),
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -585,7 +585,7 @@ pub(in crate::kernel) fn program_expression_is_state_independent(
         ProgramExpression::EnumConstruct { fields, .. } => {
             fields.iter().all(program_expression_is_state_independent)
         }
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -670,7 +670,7 @@ pub(super) fn program_expression_mentions_variable(
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
             .any(|field| program_expression_mentions_variable(field, name)),
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -728,7 +728,7 @@ pub(super) fn program_expression_takes_address_of_variable(
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
             .any(|field| program_expression_takes_address_of_variable(field, name)),
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -884,7 +884,7 @@ pub(super) fn program_expression_uses_object_address(
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
             .any(|field| program_expression_uses_object_address(field, name)),
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -1037,6 +1037,7 @@ pub(super) fn statement_writes_aggregate_parameter(
         | ProgramStatement::HeapAllocate { .. }
         | ProgramStatement::HeapFree { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. }
         | ProgramStatement::Throw(_)
         | ProgramStatement::Return(_) => {}

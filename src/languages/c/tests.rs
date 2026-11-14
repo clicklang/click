@@ -5052,7 +5052,7 @@ fn c0_syntax_accepts_scalar_casts_and_conditional_expressions() {
 
     assert!(matches!(
         function.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Conditional {
+        syntax::C0Statement::Return(syntax::C0Expression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -5279,6 +5279,7 @@ fn c0_syntax_models_missing_else_and_empty_statements_as_skip() {
             | syntax::C0Statement::AggregateCopy { .. }
             | syntax::C0Statement::Update { .. }
             | syntax::C0Statement::Assert { .. }
+            | syntax::C0Statement::StepValue { .. }
             | syntax::C0Statement::LoopTest { .. } => false,
         }
     }
@@ -5446,7 +5447,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
             if matches!(right.as_ref(), syntax::C0Expression::Int32Literal(0))
                 && matches!(
                     left.as_ref(),
-                    syntax::C0Expression::Conditional { then_branch, else_branch, .. }
+                    syntax::C0Expression::Ternary { then_branch, else_branch, .. }
                         if matches!(
                             then_branch.as_ref(),
                             syntax::C0Expression::Cast {
@@ -11160,24 +11161,30 @@ fn c0_syntax_lowers_calls_in_conditional_expression_branches() {
         "the selected call is checked"
     );
     assert!(
-        !debug.contains("Conditional {"),
+        !debug.contains("Ternary {"),
         "the lowered body does not evaluate conditional call branches eagerly"
     );
-    fn has_prefix_binding(statement: &syntax::C0Statement) -> bool {
+    fn has_operator_value(statement: &syntax::C0Statement) -> bool {
         match statement {
-            syntax::C0Statement::Declare {
-                interface_type: crate::languages::interface::InterfaceType::Int32,
+            syntax::C0Statement::If {
+                operator: Some(_),
+                then_branch,
                 ..
-            } => true,
+            } => matches!(**then_branch, syntax::C0Statement::Seq(_, ref value)
+                if matches!(**value, syntax::C0Statement::StepValue { .. })),
             syntax::C0Statement::Seq(first, second) => {
-                has_prefix_binding(first) || has_prefix_binding(second)
+                has_operator_value(first) || has_operator_value(second)
             }
             _ => false,
         }
     }
     assert!(
-        has_prefix_binding(function.body()),
-        "the conditional result has a stack binding outside either arm"
+        has_operator_value(function.body()),
+        "the ternary operator decides its arm, and each arm ends in its value"
+    );
+    assert!(
+        !debug.contains("Declare {"),
+        "the ternary operator's value is a step result, not a local"
     );
 }
 
@@ -11245,7 +11252,7 @@ fn c0_syntax_lowers_aggregate_conditional_call_argument() {
     assert!(debug.contains("DeclareStructValue"));
     assert!(debug.contains("If {"));
     assert!(debug.contains("CallAssign"));
-    assert!(!debug.contains("Conditional {"));
+    assert!(!debug.contains("Ternary {"));
 }
 
 #[test]
@@ -13119,7 +13126,7 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
 /// conditional's own common result type; its generated temporary is not
 /// silently retyped to `int32` and cannot truncate a branch's wide value.
 #[test]
-fn c0_conditional_call_temporary_keeps_its_common_type() {
+fn c0_ternary_call_value_keeps_its_common_type() {
     let lowered_functions = syntax::parse_functions(
         r#"
         double scale(double x) { return x; }
@@ -13131,11 +13138,12 @@ fn c0_conditional_call_temporary_keeps_its_common_type() {
     )
     .expect("a conditional with a call in one branch should lower");
     let lowered = lowered_functions.last().expect("pick is parsed");
+    // The ternary operator's value takes the operator's common type.
     fn declared_temporary_type(
         statement: &syntax::C0Statement,
     ) -> Option<crate::languages::interface::InterfaceType> {
         match statement {
-            syntax::C0Statement::Declare { interface_type, .. } => Some(*interface_type),
+            syntax::C0Statement::StepValue { interface_type, .. } => *interface_type,
             syntax::C0Statement::Seq(first, second) => {
                 declared_temporary_type(first).or_else(|| declared_temporary_type(second))
             }

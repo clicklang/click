@@ -5899,6 +5899,26 @@ pub(in crate::surface) fn spells_cast_operand(text: &str) -> bool {
     !text.is_empty()
 }
 
+/// The path step that names an operator of kind `kind`.
+pub(in crate::surface) fn operator_step_name(kind: crate::kernel::OperatorKind) -> &'static str {
+    match kind {
+        crate::kernel::OperatorKind::And => "and",
+        crate::kernel::OperatorKind::Or => "or",
+        crate::kernel::OperatorKind::Ternary => "ternary",
+    }
+}
+
+/// The operator `kind` as a reader names it.
+pub(in crate::surface) fn describe_operator_kind(
+    kind: crate::kernel::OperatorKind,
+) -> &'static str {
+    match kind {
+        crate::kernel::OperatorKind::And => "`&&`",
+        crate::kernel::OperatorKind::Or => "`||`",
+        crate::kernel::OperatorKind::Ternary => "the ternary operator",
+    }
+}
+
 pub(super) fn describe_program_expression(expression: &ProgramExpression) -> String {
     match expression {
         ProgramExpression::Value(value) => {
@@ -5924,6 +5944,10 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             "{} (before its update)",
             rust_variable_spelling(local).unwrap_or_else(|| local.clone())
         ),
+        ProgramExpression::StepResult {
+            origin: crate::kernel::StepOrigin::Operator(kind),
+            ..
+        } => format!("the value of {}", describe_operator_kind(*kind)),
         ProgramExpression::Cast {
             expression,
             target_type,
@@ -6006,7 +6030,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             "is{classification:?}({})",
             describe_program_expression(expression)
         ),
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -6774,6 +6798,9 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         ),
         ProgramStatement::HeapFree { pointer } => {
             format!("free({});", describe_program_expression(pointer))
+        }
+        ProgramStatement::StepValue { expression, .. } => {
+            format!("value {};", describe_program_expression(expression))
         }
         ProgramStatement::Assert { condition, label } => format!(
             "assert{}({});",
@@ -7675,6 +7702,9 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
                 SourcePathStep::Call(function, index) => format!("call({function}, {index})"),
                 SourcePathStep::Test => "test()".to_string(),
                 SourcePathStep::Assignment(local, index) => format!("assignment({local}, {index})"),
+                SourcePathStep::Operator(kind, index) => {
+                    format!("{}({index})", operator_step_name(*kind))
+                }
                 SourcePathStep::Read(index) => format!("read({index})"),
                 SourcePathStep::ReadEvent(index) => format!("read_event({index})"),
             })

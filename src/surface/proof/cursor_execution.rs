@@ -4400,6 +4400,9 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ProgramStatement::Assert { condition, .. } => {
             format!("assert({})", describe_program_expression(condition))
         }
+        ProgramStatement::StepValue { expression, .. } => {
+            format!("value {}", describe_program_expression(expression))
+        }
         ProgramStatement::Return(expression) => {
             format!("return {}", describe_program_expression(expression))
         }

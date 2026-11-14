@@ -112,6 +112,8 @@ struct SourceExecutionLayoutData {
     step_regions: BTreeMap<u32, usize>,
     /// The local whose prior value each such assignment step keeps.
     prior_steps: BTreeMap<u32, String>,
+    /// The operator each operator `if` region decides.
+    operator_regions: BTreeMap<usize, crate::kernel::OperatorKind>,
     /// The local each call region assigns its result to, for
     /// `<region>.result`, and the call region of each frontend result
     /// temporary, which no other name spells.
@@ -205,7 +207,7 @@ fn expression_reads(expression: &ProgramExpression) -> bool {
             }
             ProgramExpression::PointerOffsetBytes { pointer, .. }
             | ProgramExpression::Subobject { pointer, .. } => pending.push((pointer, true)),
-            ProgramExpression::Conditional {
+            ProgramExpression::Ternary {
                 condition,
                 then_branch,
                 else_branch,
@@ -636,6 +638,17 @@ impl SourceExecutionLayout {
             if let syntax::C0Statement::CallResult { call, .. } = statement {
                 layout.call_numbers.insert(index, *call);
                 layout.step_regions.insert(*call, index);
+            }
+            // An operator `if` region makes its operator's value, which its
+            // exit records as the region's result.
+            if let syntax::C0Statement::If {
+                operator: Some(operator),
+                ..
+            } = statement
+            {
+                layout.operator_regions.insert(index, operator.kind);
+                layout.call_numbers.insert(index, operator.step);
+                layout.step_regions.insert(operator.step, index);
             }
             if let syntax::C0Statement::Assign {
                 name,
@@ -1185,6 +1198,21 @@ impl SourceExecutionLayout {
                         )
                     });
                 }
+                SourcePathStep::Operator(kind, index) if last => {
+                    let operators = own(&path)
+                        .iter()
+                        .filter(|region| data.operator_regions.get(region) == Some(kind))
+                        .collect::<Vec<_>>();
+                    let name = crate::surface::diagnostics::operator_step_name(*kind);
+                    return operators.get(*index).map(|region| **region).ok_or_else(|| {
+                        format!(
+                            "`{}` has {} {} operator(s) whose operands run as steps, so it has no `{name}({index})`",
+                            describe(&path),
+                            operators.len(),
+                            crate::surface::diagnostics::describe_operator_kind(*kind)
+                        )
+                    });
+                }
                 SourcePathStep::Test if last => {
                     return own(&path)
                         .iter()
@@ -1225,9 +1253,10 @@ impl SourceExecutionLayout {
                 | SourcePathStep::Call(..)
                 | SourcePathStep::Test
                 | SourcePathStep::Assignment(..)
+                | SourcePathStep::Operator(..)
                 | SourcePathStep::Read(_) => {
                     return Err(
-                        "`region(j)`, `call(f, j)`, `test()`, `assignment(x, j)` and `read(j)` end a chained region"
+                        "`region(j)`, `call(f, j)`, `test()`, `assignment(x, j)`, `read(j)`, `and(j)`, `or(j)` and `ternary(j)` end a chained region"
                             .into(),
                     );
                 }
@@ -1277,6 +1306,15 @@ impl SourceExecutionLayout {
             let position = own.iter().position(|own| *own == region)?;
             steps.push(match data.call_targets.get(&region) {
                 None if data.loop_tests.contains(&region) => SourcePathStep::Test,
+                None if let Some(kind) = data.operator_regions.get(&region) => {
+                    SourcePathStep::Operator(
+                        *kind,
+                        own[..position]
+                            .iter()
+                            .filter(|earlier| data.operator_regions.get(earlier) == Some(kind))
+                            .count(),
+                    )
+                }
                 Some(function) => SourcePathStep::Call(
                     function.clone(),
                     own[..position]
@@ -1440,7 +1478,7 @@ pub(in crate::surface) fn collect_program_expression_referenced_names(
         ProgramExpression::Cast { expression, .. } | ProgramExpression::FloatNegate(expression) => {
             collect_program_expression_referenced_names(expression, names);
         }
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -1967,6 +2005,7 @@ mod source_execution_layout_tests {
                 call_numbers: BTreeMap::new(),
                 step_regions: BTreeMap::new(),
                 prior_steps: BTreeMap::new(),
+                operator_regions: BTreeMap::new(),
                 call_results: BTreeMap::new(),
                 allocation_regions: BTreeSet::new(),
                 temporary_call_regions: BTreeMap::new(),

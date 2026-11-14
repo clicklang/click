@@ -1501,6 +1501,7 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
         | ProgramStatement::InitializeScalarArray { .. }
         | ProgramStatement::Update { .. }
         | ProgramStatement::Assert { .. }
+        | ProgramStatement::StepValue { .. }
         | ProgramStatement::LoopTest { .. } => None,
         ProgramStatement::ForStep { .. } | ProgramStatement::EndAutomaticLifetimes { .. } => None,
     }

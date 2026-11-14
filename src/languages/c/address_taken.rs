@@ -333,7 +333,7 @@ fn child_expressions<'a>(
         | C0Expression::CheckedArrayIndex {
             index: expression, ..
         } => expressions.push(expression),
-        C0Expression::Conditional {
+        C0Expression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -389,9 +389,12 @@ pub(crate) fn child_statements<'a>(
         }
         C0Statement::HeapAllocate { bytes, .. } => expressions.push(bytes),
         C0Statement::HeapFree { pointer, .. } => expressions.push(pointer),
-        C0Statement::Assert { condition, .. } | C0Statement::LoopTest { condition, .. } => {
-            expressions.push(condition)
-        }
+        C0Statement::Assert { condition, .. }
+        | C0Statement::LoopTest { condition, .. }
+        | C0Statement::StepValue {
+            expression: condition,
+            ..
+        } => expressions.push(condition),
         C0Statement::Seq(first, second) => {
             statements.push(first);
             statements.push(second);

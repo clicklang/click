@@ -863,10 +863,13 @@ Supported C surface includes:
   more loosely than `<`, `<=`, `>`, and `>=`, so `a == b < c` is
   `a == (b < c)`
 - C logical `&&`, `||`, and unary `!` with short-circuit C scalar truthiness
-- the scalar conditional operator `condition ? then_expression : else_expression`
+- the scalar ternary operator `condition ? then_expression : else_expression`
   with the usual arithmetic conversion of arithmetic arms and short-circuit
   branch evaluation; array arms, such as string literals of different lengths,
-  convert to pointers to their first elements
+  convert to pointers to their first elements. A `&&`, `||` or ternary
+  operator whose operands make steps decides which run as a region of its
+  statement, `S.and(j)`, `S.or(j)` or `S.ternary(j)`, whose `.result` is its
+  value (`mdtests/an_operator_value_is_named_by_its_operator.md`)
 - assignment, sequencing, empty blocks, and empty `;` statements
 - scalar declaration initializers such as `int32 i = 0;`, and scalar array
   initializers such as `int32 values[3] = {1, 2, 3};` or nested

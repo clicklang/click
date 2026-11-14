@@ -12448,7 +12448,17 @@ impl Parser {
     }
 
     fn source_path_step_follows(&self) -> bool {
-        self.chained_region_follows(&["statement", "region", "call", "test", "assignment", "read"])
+        self.chained_region_follows(&[
+            "statement",
+            "region",
+            "call",
+            "test",
+            "assignment",
+            "read",
+            "and",
+            "or",
+            "ternary",
+        ])
     }
 
     /// Refuses a reference parameter as an assignment's local: binding a
@@ -12504,6 +12514,17 @@ impl Parser {
                 "test" => {
                     self.expect(Token::RParen)?;
                     steps.push(SourcePathStep::Test);
+                    break;
+                }
+                "and" | "or" | "ternary" => {
+                    let kind = match step.as_str() {
+                        "and" => crate::kernel::OperatorKind::And,
+                        "or" => crate::kernel::OperatorKind::Or,
+                        _ => crate::kernel::OperatorKind::Ternary,
+                    };
+                    let index = self.expect_index("operator occurrence")?;
+                    self.expect(Token::RParen)?;
+                    steps.push(SourcePathStep::Operator(kind, index));
                     break;
                 }
                 _ => {

@@ -871,7 +871,7 @@ pub(in crate::kernel) fn collect_program_expression_bitvector_variables(
                 collect_program_expression_bitvector_variables(field, variables);
             }
         }
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,
@@ -943,7 +943,8 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
         }
         | ProgramStatement::LoopTest {
             condition: expression,
-        } => {
+        }
+        | ProgramStatement::StepValue { expression, .. } => {
             collect_program_expression_bitvector_variables(expression, variables);
         }
         ProgramStatement::CallAssign { arguments, .. } => {
@@ -1400,7 +1401,7 @@ fn collect_program_expression_bound_identities(
                 collect_program_expression_bound_identities(field, variables, integer_seen);
             }
         }
-        ProgramExpression::Conditional {
+        ProgramExpression::Ternary {
             condition,
             then_branch,
             else_branch,

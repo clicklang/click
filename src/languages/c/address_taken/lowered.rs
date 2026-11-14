@@ -80,7 +80,11 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             ProgramStatement::HeapAllocate { bytes, .. } => expressions.push((bytes, false)),
             ProgramStatement::HeapFree { pointer } => expressions.push((pointer, false)),
             ProgramStatement::Assert { condition, .. }
-            | ProgramStatement::LoopTest { condition } => expressions.push((condition, false)),
+            | ProgramStatement::LoopTest { condition }
+            | ProgramStatement::StepValue {
+                expression: condition,
+                ..
+            } => expressions.push((condition, false)),
             ProgramStatement::Store { pointer, value }
             | ProgramStatement::TypedStore { pointer, value, .. } => {
                 expressions.extend([(pointer, false), (value, false)]);
@@ -162,7 +166,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
             ProgramExpression::EnumConstruct { fields, .. } => {
                 expressions.extend(fields.iter().map(|field| (field, addressed)))
             }
-            ProgramExpression::Conditional {
+            ProgramExpression::Ternary {
                 condition,
                 then_branch,
                 else_branch,

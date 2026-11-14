@@ -278,7 +278,7 @@ impl Names {
                     self.c(field);
                 }
             }
-            Conditional {
+            Ternary {
                 condition,
                 then_branch,
                 else_branch,
