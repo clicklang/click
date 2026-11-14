@@ -2994,8 +2994,12 @@ thread_local! {
 /// element: see [`declare_symbolic_array_access_widths`].
 #[derive(Clone)]
 struct SymbolicArrayAccessWidths {
-    /// The snapshot every element's load reads.
-    source: SharedCMemory,
+    /// The snapshots whose element loads these widths answer for exactly:
+    /// one per declaration of the array. Each context that constructs the
+    /// array (a function entry, a contract summary) declares it from its own
+    /// base, and a lookup asks for the load's own snapshot, so no context's
+    /// declaration depends on another's having built the identical base.
+    sources: std::sync::Arc<std::collections::HashSet<SharedCMemory>>,
     /// The byte distance between elements.
     stride: i64,
     count: u32,
@@ -3045,9 +3049,12 @@ thread_local! {
 }
 
 /// The declared array element spelled exactly `pointer` (a constant offset in
-/// the array's block, as the element's own load spells it): the snapshot its
-/// load reads, and its width.
-fn declared_array_access_width(pointer: &Pointer) -> Option<(SharedCMemory, u32)> {
+/// the array's block, as the element's own load spells it): its width, and
+/// whether `memory` is a snapshot a declaration of the array reads.
+fn declared_array_access_width(
+    pointer: &Pointer,
+    memory: Option<&SharedCMemory>,
+) -> Option<(u32, bool)> {
     let PointerOffsetTerm::Constant(offset) = pointer.offset else {
         return None;
     };
@@ -3062,18 +3069,21 @@ fn declared_array_access_width(pointer: &Pointer) -> Option<(SharedCMemory, u32)
         if *block != pointer.block {
             return None;
         }
-        array
-            .width_at(*base, offset)
-            .map(|bytes| (array.source.clone(), bytes))
+        array.width_at(*base, offset).map(|bytes| {
+            (
+                bytes,
+                memory.is_some_and(|memory| array.sources.contains(memory)),
+            )
+        })
     })
 }
 
 /// The width the snapshot-keyed record at `(memory, pointer)` would hold for
 /// a declared array element.
 fn declared_exact_access_width(memory: &SharedCMemory, pointer: &Pointer) -> Option<u32> {
-    declared_array_access_width(pointer)
-        .filter(|(source, _)| source == memory)
-        .map(|(_, bytes)| bytes)
+    declared_array_access_width(pointer, Some(memory))
+        .filter(|(_, exact)| *exact)
+        .map(|(bytes, _)| bytes)
 }
 
 /// Says that a load of `bytes` bytes happens at every element `base`,
@@ -3120,7 +3130,7 @@ pub(in crate::kernel) fn declare_symbolic_element_access_widths(
         return false;
     }
     let declared = SymbolicArrayAccessWidths {
-        source: source.clone(),
+        sources: std::sync::Arc::new(std::iter::once(source.clone()).collect()),
         stride: i64::from(stride),
         count,
         loads: loads
@@ -3132,12 +3142,17 @@ pub(in crate::kernel) fn declare_symbolic_element_access_widths(
     SYMBOLIC_ARRAY_ACCESS_WIDTHS.with(|arrays| {
         let mut arrays = arrays.borrow_mut();
         let key = (base.block.clone(), offset);
-        if let Some(held) = arrays.get(&key) {
-            // The same array declared again, as every function entry does.
-            return held.source == declared.source
-                && held.stride == declared.stride
+        if let Some(held) = arrays.get_mut(&key) {
+            // The same array declared again, as every function entry does,
+            // from that context's own base: its widths answer for its
+            // source too.
+            let same_layout = held.stride == declared.stride
                 && held.count == declared.count
                 && held.loads == declared.loads;
+            if same_layout && !held.sources.contains(source) {
+                std::sync::Arc::make_mut(&mut held.sources).insert(source.clone());
+            }
+            return same_layout;
         }
         let below = arrays
             .range(..&key)
@@ -3166,12 +3181,9 @@ pub(in crate::kernel) fn record_load_access_width(memory: &CMemory, pointer: &Po
         crate::kernel::intern_c_memory(memory.clone()),
         pointer.clone(),
     );
-    let declared = declared_array_access_width(pointer);
-    let declared_exact = declared
-        .as_ref()
-        .filter(|(source, _)| *source == key.0)
-        .map(|(_, bytes)| *bytes);
-    let declared_at_address = declared.map(|(_, bytes)| bytes);
+    let declared = declared_array_access_width(pointer, Some(&key.0));
+    let declared_exact = declared.filter(|(_, exact)| *exact).map(|(bytes, _)| bytes);
+    let declared_at_address = declared.map(|(bytes, _)| bytes);
     // A recorded width can only ever widen, and a name computed under the
     // narrower one is stale: the version walk a narrow access takes crosses
     // stores the wider one stops at, so it names the load at an older
@@ -3236,8 +3248,8 @@ pub(in crate::kernel) fn declare_load_access_width(pointer: &Pointer, bytes: u32
             .entry(pointer.clone())
             .and_modify(|known| *known = (*known).max(bytes))
             .or_insert_with(|| {
-                declared_array_access_width(pointer)
-                    .map_or(bytes, |(_, declared)| declared.max(bytes))
+                declared_array_access_width(pointer, None)
+                    .map_or(bytes, |(declared, _)| declared.max(bytes))
             });
     });
 }
@@ -3267,7 +3279,7 @@ pub(crate) fn recorded_load_access_width(memory: &SharedCMemory, pointer: &Point
 fn recorded_load_access_width_at_address(pointer: &Pointer) -> Option<u32> {
     LOAD_ACCESS_WIDTH_AT_ADDRESS
         .with(|widths| widths.borrow().get(pointer).copied())
-        .or_else(|| declared_array_access_width(pointer).map(|(_, bytes)| bytes))
+        .or_else(|| declared_array_access_width(pointer, None).map(|(bytes, _)| bytes))
 }
 
 /// The access width to use for a load named only by a term.

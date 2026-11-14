@@ -369,6 +369,59 @@ fn a_symbolic_global_array_entry_holds_exactly_the_per_element_cells() {
     }
 }
 
+/// A base memory for `buf` other than the one an entry builds, as another
+/// context constructing the array from its own base would hold: the same
+/// block beside an unrelated one.
+fn another_context_base(element_type: CType, length: u32) -> SharedCMemory {
+    let base = CMemory::global_pointer("buf");
+    crate::kernel::intern_c_memory(
+        CMemory::new()
+            .with_block_without_derivation(base.block, length * element_type.byte_width())
+            .with_block_without_derivation(CMemory::global_pointer("unrelated").block, 4),
+    )
+}
+
+/// Each context that constructs a global array declares its element widths
+/// from its own base. A declaration from another base does not refuse the
+/// entry's: the entry is still one run, and both bases answer with the
+/// element width. Refused, the entry fell back to one cell per element.
+#[test]
+fn a_symbolic_global_array_declared_from_another_base_is_still_one_run() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let (element_type, length) = (CType::Int32, 300u32);
+    let base = CMemory::global_pointer("buf");
+    let other = another_context_base(element_type, length);
+    assert!(crate::kernel::eval::declare_symbolic_array_access_widths(
+        &other, &base, 4, length, 4
+    ));
+    let entry = initialize_c_function_globals(
+        &CState::new(),
+        &function_with_global_array(element_type, length),
+    );
+    assert_eq!(entry.memory().cells.representation_len(), 1);
+    let own = crate::kernel::intern_c_memory(symbolic_memory_base(entry.memory(), &base));
+    assert!(own != other);
+    for source in [&own, &other] {
+        for index in [0, length / 2, length - 1] {
+            assert_eq!(
+                crate::kernel::eval::recorded_load_access_width(
+                    source,
+                    &base.offset_by_bytes(index * 4)
+                ),
+                Some(4)
+            );
+        }
+    }
+    // Another layout at the same address is still refused.
+    assert!(!crate::kernel::eval::declare_symbolic_array_access_widths(
+        &other,
+        &base,
+        2,
+        length * 2,
+        2
+    ));
+}
+
 /// A function over a global `int32 buf[length] = {[2] = 7, [length - 1] = 3}`
 /// (`const` when asked) and a static `uint8 counts[length] = {255}`.
 fn function_with_initialized_arrays(length: u32, constant: bool) -> CFunction {
