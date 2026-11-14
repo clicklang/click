@@ -389,7 +389,7 @@ mod memory_tests {
             block: PointerBlock::from("ordered"),
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), stride),
         };
-        let mut memory = CMemory::new().with_block("ordered", 4096);
+        let mut memory = Memory::new().with_block("ordered", 4096);
         for (index, variable) in variables.iter().enumerate() {
             memory = memory.store(pointer(*variable, 4), int32(index as u32));
         }

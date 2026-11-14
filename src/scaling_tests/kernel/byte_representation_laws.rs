@@ -20,7 +20,7 @@ fn target_fact_lowering_ignores_unrelated_state_and_store_history() {
     let costs = [4, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer::symbolic(Variable(8_390_003));
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..size {
             memory = memory.store(
                 base.offset_by_bytes(index * 4),
@@ -42,10 +42,10 @@ fn target_fact_lowering_ignores_unrelated_state_and_store_history() {
             )
         });
         let (fact, _, _) = lowered.unwrap();
-        assert_eq!(fact, CExecutionEnvironment::new().byte_order_fact());
+        assert_eq!(fact, ExecutionEnvironment::new().byte_order_fact());
         assert_ne!(
             fact,
-            CExecutionEnvironment::new()
+            ExecutionEnvironment::new()
                 .with_byte_order(ByteOrder::Big)
                 .byte_order_fact()
         );

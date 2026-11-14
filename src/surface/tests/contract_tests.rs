@@ -434,7 +434,7 @@ fn modular_exceptional_call_completes_both_caller_claim_families() {
             matches!(theorem.claim, VerifiedClaim::ExceptionalEnsure { .. })
                 && matches!(
                     theorem.specification.outcome(),
-                    CFunctionOutcome::Throw { .. }
+                    FunctionOutcome::Throw { .. }
                 )
         })
         .collect::<Vec<_>>();

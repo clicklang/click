@@ -1064,7 +1064,7 @@ struct Parser {
     /// This is an index over the clauses, not a second source for a binder's
     /// spelling: every entry is copied from the `ResourceClause::Named`
     /// binding the clause already carries, which is also the name lowering
-    /// copies into `CResourceSpec::Instance::binder`. The parser cannot read
+    /// copies into `ResourceSpec::Instance::binder`. The parser cannot read
     /// that kernel field instead, because it resolves a call map while
     /// parsing, before any clause is lowered; and it needs each binder's
     /// identity, resource family, and `owns`/`produces` kind keyed by callee,
@@ -2992,7 +2992,7 @@ impl Parser {
             Some(target_type) => ProgramExpression::Cast {
                 expression: Box::new(expression.clone()),
                 target_type,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -14333,7 +14333,7 @@ impl Parser {
             ProgramExpression::Cast {
                 expression: Box::new(operand),
                 target_type: ProgramType::Int32Pointer,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: Some(cast.struct_name),
                 pointee_volatile: false,
                 pointee_constant: cast.pointee_constant,
@@ -14388,9 +14388,9 @@ impl Parser {
                 // marker also used for inserted pointer coercions. Authored
                 // void and byte casts select the enclosing-object view.
                 integer_mode: if target_type.is_pointer() {
-                    crate::kernel::CIntegerCastMode::Standard
+                    crate::kernel::IntegerCastMode::Standard
                 } else {
-                    crate::kernel::CIntegerCastMode::CConversion
+                    crate::kernel::IntegerCastMode::CConversion
                 },
                 pointee_struct: None,
                 pointee_volatile: false,
@@ -15495,7 +15495,7 @@ impl Parser {
             let cast = ProgramExpression::Cast {
                 expression: Box::new(pointer),
                 target_type: ProgramType::UInt64,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -17304,7 +17304,7 @@ fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickPropo
             Box::new(ContractExpression::CFragment(ProgramExpression::Cast {
                 expression: Box::new(pointer),
                 target_type: ProgramType::UInt64,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -17603,7 +17603,7 @@ fn struct_byte_stride(index: ProgramExpression, width: u32) -> ProgramExpression
         Box::new(ProgramExpression::Cast {
             expression: Box::new(index),
             target_type: crate::kernel::ProgramType::Int64,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -17619,7 +17619,7 @@ fn struct_byte_base(base: ProgramExpression) -> ProgramExpression {
     ProgramExpression::Cast {
         expression: Box::new(base),
         target_type: crate::kernel::ProgramType::UInt8Pointer,
-        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+        integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
         pointee_volatile: false,
         pointee_constant: false,

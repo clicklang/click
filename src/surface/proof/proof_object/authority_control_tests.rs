@@ -67,7 +67,7 @@ fn opening_control_retains_loaded_pointer_facts() {
         );
     let (state, arguments, facts, surfaces) =
         initial_claim_context(block, &parsed, &resources, specs, "loaded control").unwrap();
-    let environment = CExecutionEnvironment::new();
+    let environment = ExecutionEnvironment::new();
     let root = Proof::for_execution_frontier(
         "loaded control",
         0,

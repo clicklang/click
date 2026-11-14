@@ -447,7 +447,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
         ),
         None => match refusal.dropped_comparison {
             Some((left, operator, right)) => {
-                use crate::kernel::CComparisonOperator::*;
+                use crate::kernel::ComparisonOperator::*;
                 let operator = match operator {
                     Equal => "==",
                     NotEqual => "!=",
@@ -1430,7 +1430,7 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
     theorem_environment: &TheoremEnvironment,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     tactics: &[ProofTactic],

@@ -10,7 +10,7 @@ fn alias_free_work(selected: u32, unrelated: u32) -> usize {
             block: PointerBlock::Heap(974_000 + u64::from(index)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        resources = resources.unchecked_with_fact(CResourceFact::own_allocation(base.clone(), 4));
+        resources = resources.unchecked_with_fact(ResourceFact::own_allocation(base.clone(), 4));
         if index < selected {
             let alias = Pointer::symbolic(Variable(975_000 + u64::from(index)));
             facts = facts.assume_proposition(Proposition::ConditionIs(
@@ -20,16 +20,18 @@ fn alias_free_work(selected: u32, unrelated: u32) -> usize {
                 ),
                 true,
             ));
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::new(base, 0.into(), 1.into()),
-            ));
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                base,
+                0.into(),
+                1.into(),
+            )));
             state = state.with_local(format!("q{index}"), ProgramValue::pointer(alias));
         }
     }
     state = state.with_resource_context(resources);
     let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
         for index in 0..selected {
-            let CStatementOutcome::Normal(after) = free_once(&state, &format!("q{index}"), &facts)
+            let StatementOutcome::Normal(after) = free_once(&state, &format!("q{index}"), &facts)
             else {
                 panic!("alias free refused");
             };

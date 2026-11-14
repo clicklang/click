@@ -40,7 +40,7 @@ pub struct CheckedScalarReferenceAccess<'a> {
 pub struct CheckedExecutedScalarReferenceAccess<'a, 'e> {
     access: &'a CheckedScalarReferenceAccess<'a>,
     event: crate::kernel::ExecutedReferenceAccess<'e>,
-    execution: &'e crate::kernel::SymbolicCExecution,
+    execution: &'e crate::kernel::SymbolicExecution,
 }
 
 /// A completed borrow assignment and its checked store ending on one selected
@@ -50,7 +50,7 @@ pub struct CheckedExecutedScalarReferenceEnd<'a, 'e> {
     certificate: &'a CheckedScalarReferenceEnd<'a>,
     pointer: &'e crate::kernel::Pointer,
     ending: crate::kernel::ExecutedReferenceAccess<'e>,
-    execution: &'e crate::kernel::SymbolicCExecution,
+    execution: &'e crate::kernel::SymbolicExecution,
     path_index: usize,
 }
 impl CheckedExecutedScalarReferenceEnd<'_, '_> {
@@ -60,7 +60,7 @@ impl CheckedExecutedScalarReferenceEnd<'_, '_> {
     pub fn pointer(&self) -> &crate::kernel::Pointer {
         self.pointer
     }
-    pub fn execution(&self) -> &crate::kernel::SymbolicCExecution {
+    pub fn execution(&self) -> &crate::kernel::SymbolicExecution {
         self.execution
     }
     pub fn path_index(&self) -> usize {
@@ -77,7 +77,7 @@ impl CheckedExecutedScalarReferenceAccess<'_, '_> {
     pub fn pointer(&self) -> &crate::kernel::Pointer {
         self.event.pointer()
     }
-    pub fn execution(&self) -> &crate::kernel::SymbolicCExecution {
+    pub fn execution(&self) -> &crate::kernel::SymbolicExecution {
         self.execution
     }
 }
@@ -137,7 +137,7 @@ impl CheckedScalarReferenceEnd<'_> {
     /// observations is not evidence of a particular dynamic invocation.
     pub fn bind_executed_endings<'a, 'e>(
         &'a self,
-        execution: &'e crate::kernel::SymbolicCExecution,
+        execution: &'e crate::kernel::SymbolicExecution,
     ) -> Vec<CheckedExecutedScalarReferenceEnd<'a, 'e>> {
         use crate::kernel::ExecutedReferenceBoundary;
         #[derive(Default)]
@@ -248,7 +248,7 @@ impl CheckedScalarReferenceEnd<'_> {
     /// sufficient. Each lookup uses the selected certificate's index.
     pub fn bind_executed_accesses<'a, 'e>(
         &'a self,
-        execution: &'e crate::kernel::SymbolicCExecution,
+        execution: &'e crate::kernel::SymbolicExecution,
     ) -> Vec<CheckedExecutedScalarReferenceAccess<'a, 'e>> {
         execution
             .executed_reference_accesses()
@@ -1170,7 +1170,7 @@ mod tests {
         export: &super::super::schema::RustExport,
         identity: &str,
         owned: bool,
-    ) -> crate::kernel::SymbolicCExecution {
+    ) -> crate::kernel::SymbolicExecution {
         execute_export_repeated(export, identity, owned, false)
     }
     fn execute_export_repeated(
@@ -1178,7 +1178,7 @@ mod tests {
         identity: &str,
         owned: bool,
         twice: bool,
-    ) -> crate::kernel::SymbolicCExecution {
+    ) -> crate::kernel::SymbolicExecution {
         use crate::kernel::*;
         let (functions, _) =
             super::super::lowering::lower_with_identity(export, Some(identity)).unwrap();
@@ -1186,7 +1186,7 @@ mod tests {
             block: "executed-child".into(),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new()
+        let memory = Memory::new()
             .with_block(pointer.block.clone(), if owned { 4 } else { 0 })
             .store(pointer.clone(), int32(4));
         let state = ExecutionState::new()
@@ -1201,7 +1201,7 @@ mod tests {
             );
         let state = if owned {
             state.with_resource_context(ResourceContext::new().unchecked_with_fact(
-                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     pointer,
                     0.into(),
                     1.into(),

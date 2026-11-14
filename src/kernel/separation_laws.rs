@@ -23,7 +23,7 @@ pub(crate) fn prove_separation_elements(
         let address = base
             .pointer()
             .offset_by_typed_elements(index, width, unsigned, wide);
-        CResource::Memory(CMemoryRange::from_pointer_value(
+        Resource::Memory(MemoryRange::from_pointer_value(
             &base.clone().with_address(address),
             0u32.into(),
             1u32.into(),
@@ -91,10 +91,10 @@ pub(crate) fn prove_separation_distinct_elements(
 }
 
 pub(crate) fn prove_separation_restrict(
-    left: CResource,
-    right: CResource,
-    left_part: CResource,
-    right_part: CResource,
+    left: Resource,
+    right: Resource,
+    left_part: Resource,
+    right_part: Resource,
 ) -> Theorem {
     let premises = [
         Proposition::CResourceSeparate {
@@ -141,15 +141,15 @@ pub(crate) fn prove_separation_subrange(
         (inner_hi.clone(), hi.clone()),
     ];
     let range = |start, end| match format {
-        MachineIntegerType::Int32 => CMemoryRange::from_pointer_value(&base, start, end, width),
+        MachineIntegerType::Int32 => MemoryRange::from_pointer_value(&base, start, end, width),
         MachineIntegerType::UInt64 => {
-            CMemoryRange::from_pointer_value_wide(&base, start, end, width)
+            MemoryRange::from_pointer_value_wide(&base, start, end, width)
         }
         _ => unreachable!(),
     };
     let conclusion = Proposition::CResourceContains {
-        parent: Box::new(CResource::Memory(range(lo, hi))),
-        child: Box::new(CResource::Memory(range(inner_lo, inner_hi))),
+        parent: Box::new(Resource::Memory(range(lo, hi))),
+        child: Box::new(Resource::Memory(range(inner_lo, inner_hi))),
     };
     Theorem::new(
         premises
@@ -190,22 +190,22 @@ pub(crate) fn prove_separation_contains_element(
     crate::instrumentation::record_deterministic_work(1);
     let wide = format == MachineIntegerType::UInt64;
     let parent = if wide {
-        CMemoryRange::from_pointer_value_wide(&base, lo.clone(), hi.clone(), width)
+        MemoryRange::from_pointer_value_wide(&base, lo.clone(), hi.clone(), width)
     } else {
-        CMemoryRange::from_pointer_value(&base, lo.clone(), hi.clone(), width)
+        MemoryRange::from_pointer_value(&base, lo.clone(), hi.clone(), width)
     };
     let address = base
         .pointer()
         .offset_by_typed_elements(index.clone(), width, wide, wide);
-    let child = CMemoryRange::from_pointer_value(
+    let child = MemoryRange::from_pointer_value(
         &base.with_address(address),
         0u32.into(),
         1u32.into(),
         width,
     );
     let conclusion = Proposition::CResourceContains {
-        parent: Box::new(CResource::Memory(parent)),
-        child: Box::new(CResource::Memory(child)),
+        parent: Box::new(Resource::Memory(parent)),
+        child: Box::new(Resource::Memory(child)),
     };
     Theorem::new(
         [
@@ -233,12 +233,12 @@ mod scaling_tests {
 
 /// Resource laws construct only the explicitly supplied proposition tree.
 /// They neither inspect ownership nor discover containment paths.
-pub(crate) fn prove_resource_law(name: &str, args: &[CResource]) -> Option<Theorem> {
-    let contains = |a: &CResource, b: &CResource| Proposition::CResourceContains {
+pub(crate) fn prove_resource_law(name: &str, args: &[Resource]) -> Option<Theorem> {
+    let contains = |a: &Resource, b: &Resource| Proposition::CResourceContains {
         parent: Box::new(a.clone()),
         child: Box::new(b.clone()),
     };
-    let separate = |a: &CResource, b: &CResource| Proposition::CResourceSeparate {
+    let separate = |a: &Resource, b: &Resource| Proposition::CResourceSeparate {
         left: Box::new(a.clone()),
         right: Box::new(b.clone()),
     };
@@ -249,17 +249,17 @@ pub(crate) fn prove_resource_law(name: &str, args: &[CResource]) -> Option<Theor
             (vec![contains(a, b), contains(b, c)], contains(a, c))
         }
         ("click::separation::contains_left", [a, b]) => {
-            (vec![], contains(&CResource::star(a.clone(), b.clone()), a))
+            (vec![], contains(&Resource::star(a.clone(), b.clone()), a))
         }
         ("click::separation::contains_right", [a, b]) => {
-            (vec![], contains(&CResource::star(a.clone(), b.clone()), b))
+            (vec![], contains(&Resource::star(a.clone(), b.clone()), b))
         }
         ("click::separation::separate_symm", [a, b]) => (vec![separate(a, b)], separate(b, a)),
         ("click::separation::separate_star", [a, b, c]) => (
             vec![separate(a, c), separate(b, c)],
-            separate(&CResource::star(a.clone(), b.clone()), c),
+            separate(&Resource::star(a.clone(), b.clone()), c),
         ),
-        ("click::separation::separate_emp", [a]) => (vec![], separate(&CResource::Emp, a)),
+        ("click::separation::separate_emp", [a]) => (vec![], separate(&Resource::Emp, a)),
         _ => return None,
     };
     Some(Theorem::new(
@@ -274,9 +274,9 @@ pub(crate) fn prove_resource_law(name: &str, args: &[CResource]) -> Option<Theor
 
 /// Viewability is a pure state-indexed fact, not resource ownership. Memory
 /// descriptors use the existing atom so both Surface spellings coincide.
-pub(crate) fn resource_viewable(memory: &CMemory, resource: CResource) -> Proposition {
+pub(crate) fn resource_viewable(memory: &Memory, resource: Resource) -> Proposition {
     match resource {
-        CResource::Memory(range) => range.loadable_fact(memory),
+        Resource::Memory(range) => range.loadable_fact(memory),
         resource => Proposition::CResourceViewable {
             memory: memory.clone(),
             resource: Box::new(resource),
@@ -285,9 +285,9 @@ pub(crate) fn resource_viewable(memory: &CMemory, resource: CResource) -> Propos
 }
 
 pub(crate) fn prove_viewable_restrict(
-    memory: &CMemory,
-    parent: CResource,
-    child: CResource,
+    memory: &Memory,
+    parent: Resource,
+    child: Resource,
 ) -> Theorem {
     crate::instrumentation::record_deterministic_work(1);
     Theorem::new(Proposition::Implies(

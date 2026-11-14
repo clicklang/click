@@ -17,7 +17,7 @@ pub(in crate::kernel) use statements::{
     uint64_heap_extent_bytes_are_exact, without_read_call_results,
 };
 pub(crate) use undefined_site::{
-    CUndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
+    UndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
 
 /// Retain each sequential volatile access as a unique, kernel-certified fact.
@@ -155,4 +155,4 @@ pub(crate) use memory_loads::{pointer_read_over_immediate_store, pointer_read_ov
 
 pub(crate) use memory_loads::loaded_pointer_stored_block;
 
-pub(in crate::kernel) type ExecutionValuePath = CExpressionPath<ExecutionValue>;
+pub(in crate::kernel) type ExecutionValuePath = ExpressionPath<ExecutionValue>;

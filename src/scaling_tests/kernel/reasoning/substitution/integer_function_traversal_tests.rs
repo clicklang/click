@@ -53,13 +53,13 @@ fn public_integer_substitution_keeps_array_ref_snapshots_opaque() {
         ProgramType::VoidPointer,
     ));
     let make_memory = |count: u64| {
-        let mut memory = CMemory::new().with_block("array", 8);
+        let mut memory = Memory::new().with_block("array", 8);
         for index in 0..count {
             memory = memory.with_block(PointerBlock::Heap(index + 1), 8);
         }
         memory
     };
-    let make = |memory: CMemory| {
+    let make = |memory: Memory| {
         Proposition::Equal(
             Term::Integer(IntegerTerm::PureFunctionApplication(
                 SharedPureApplication::intern(

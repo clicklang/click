@@ -186,8 +186,8 @@ fn pointer_index_keys_preserve_quantifiers_free_variables_and_stride() {
 #[test]
 fn pointer_index_keys_erase_snapshots_only_for_candidate_selection() {
     let _session = VerificationSession::enter();
-    let pointer = crate::kernel::CMemory::global_pointer("key-read");
-    let before = crate::kernel::CMemory::new().with_block("key-read", 16);
+    let pointer = crate::kernel::Memory::global_pointer("key-read");
+    let before = crate::kernel::Memory::new().with_block("key-read", 16);
     let after = before.clone().store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant(7)),

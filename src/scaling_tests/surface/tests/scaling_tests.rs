@@ -1985,10 +1985,10 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
 fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        CMemory, MachineTerm, Pointer, PointerOffsetTerm, Proposition, PureFactContext, Variable,
+        MachineTerm, Memory, Pointer, PointerOffsetTerm, Proposition, PureFactContext, Variable,
     };
 
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let at = |block: &str, element: u32| {
         Pointer {
             block: block.into(),
@@ -2104,11 +2104,11 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
 fn read_defined_and_separation_selection_try_indexed_sources_first() {
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        CMemory, CMemoryRange, CResource, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm,
-        ProgramType, Proposition, PureFactContext, Variable,
+        ConditionTerm, MachineTerm, Memory, MemoryRange, Pointer, PointerOffsetTerm, ProgramType,
+        Proposition, PureFactContext, Resource, Variable,
     };
 
-    let memory = CMemory::new().with_block("goal", 64);
+    let memory = Memory::new().with_block("goal", 64);
     let read_defined = |pointer: Pointer| Proposition::CMemoryReadDefined {
         memory: memory.clone(),
         pointer,
@@ -2119,7 +2119,7 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
         offset: PointerOffsetTerm::Variable(Variable(variable)),
     };
     let range = |base: Pointer, start: u32, end: u32| {
-        CResource::Memory(CMemoryRange::new(
+        Resource::Memory(MemoryRange::new(
             base,
             MachineTerm::constant(start),
             MachineTerm::constant(end),
@@ -3899,7 +3899,7 @@ fn expanded_roundtrip_samples(sizes: &[usize]) -> Vec<[(usize, ScalingSample); 2
 /// the largest family member the checked proof drivers' nesting bound admits
 /// (see [`EXPANDED_ROUNDTRIP_MAX_UNRELATED`]). Measured marginals on
 /// 2026-09-23 for 1 through 7 allocations: 912, 912, 912, 912, 916, 920, and
-/// 920 units. The only growth is two `CMemory::eq_relative_to` comparisons
+/// 920 units. The only growth is two `Memory::eq_relative_to` comparisons
 /// at each path's end (`proof completion`, re-deriving the memory without
 /// the function's local block), whose persistent-map walk deepens with the
 /// heap. Before finalization visited a grouped proof's shared execution once,
@@ -6828,11 +6828,11 @@ fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
-        CMemory, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
+        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, Proposition,
         PureFactContext, Variable,
     };
 
-    let memory = CMemory::new();
+    let memory = Memory::new();
     // The address of element `variable` of the goal's array.
     let at = |variable: u64| Pointer {
         block: "goal".into(),
@@ -6985,7 +6985,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
 #[test]
 fn atomic_load_dependencies_ignore_other_snapshot_cells() {
     use crate::kernel::{
-        CMemory, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, ProgramValue, Proposition,
+        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, ProgramValue, Proposition,
         PureFactContext, Variable,
     };
 
@@ -7006,7 +7006,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
     let mut samples = Vec::new();
     for size in [8usize, 16, 32, 64] {
         let mut memory =
-            CMemory::new().store(index_cell.clone(), ProgramValue::Int32(index.clone()));
+            Memory::new().store(index_cell.clone(), ProgramValue::Int32(index.clone()));
         let mut context = PureFactContext::new();
         for i in 0..size {
             let value = MachineTerm::Variable(Variable(491_000 + i as u64));
@@ -7081,11 +7081,11 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
 #[test]
 fn atomic_evidence_without_one_source_cites_connected_facts() {
     use crate::kernel::{
-        CMemory, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
+        ConditionTerm, MachineTerm, Memory, Pointer, PointerOffsetTerm, Proposition,
         PureFactContext, Sort, Variable,
     };
 
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let load = |offset: PointerOffsetTerm| {
         MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
@@ -8005,7 +8005,7 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
     for size in [16usize, 64, 256, 1024] {
         let mut snapshots = RecordedSnapshots::new();
         let mut state = ExecutionState::new()
-            .with_memory(crate::kernel::CMemory::new().with_block("cells", 4 * size as u32));
+            .with_memory(crate::kernel::Memory::new().with_block("cells", 4 * size as u32));
         let mut insert_work = Vec::new();
         for index in 0..size {
             // Each point binds one new local, and from the second on also
@@ -8028,8 +8028,8 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
                 state
                     .resources()
                     .clone()
-                    .unchecked_with_fact(crate::kernel::CResourceFact::own(
-                        crate::kernel::CResource::Instance(
+                    .unchecked_with_fact(crate::kernel::ResourceFact::own(
+                        crate::kernel::Resource::Instance(
                             crate::kernel::ResourceInstance::new(
                                 Variable(900_000 + index as u64),
                                 "object".into(),
@@ -10001,8 +10001,8 @@ fn recorded_algebraic_field_names_use_changed_instances_and_direct_lookups() {
                 state
                     .resources()
                     .clone()
-                    .unchecked_with_fact(crate::kernel::CResourceFact::own(
-                        crate::kernel::CResource::Instance(instance),
+                    .unchecked_with_fact(crate::kernel::ResourceFact::own(
+                        crate::kernel::Resource::Instance(instance),
                     ));
             state = state.with_resource_context(resources);
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

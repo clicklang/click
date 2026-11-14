@@ -54,9 +54,9 @@ fn bitwise_all_promotions_match_native_terms_without_exports() {
             for left in terms(a) {
                 for right in terms(b) {
                     for (op, native) in [
-                        (MachineBinaryOp::BitwiseAnd, CBitwiseOperation::And),
-                        (MachineBinaryOp::BitwiseOr, CBitwiseOperation::Or),
-                        (MachineBinaryOp::BitwiseXor, CBitwiseOperation::Xor),
+                        (MachineBinaryOp::BitwiseAnd, BitwiseOperation::And),
+                        (MachineBinaryOp::BitwiseOr, BitwiseOperation::Or),
+                        (MachineBinaryOp::BitwiseXor, BitwiseOperation::Xor),
                     ] {
                         let expected = apply_c_bitwise_binary(
                             a.value_from_term(left.clone()),
@@ -68,7 +68,7 @@ fn bitwise_all_promotions_match_native_terms_without_exports() {
                         )
                         .pop()
                         .unwrap();
-                        let CExpressionOutcome::Value(expected) = expected.outcome else {
+                        let ExpressionOutcome::Value(expected) = expected.outcome else {
                             panic!()
                         };
                         for (l, r) in [(false, false), (true, false), (false, true), (true, true)] {
@@ -112,7 +112,7 @@ fn bitwise_not_and_annotated_narrow_match_native() {
                 let result = bitwise_not(&value, None).unwrap();
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
                 assert_eq!(
-                    CExpressionOutcome::Value(SpecValue::Shared(result).into_native()),
+                    ExpressionOutcome::Value(SpecValue::Shared(result).into_native()),
                     expected.outcome
                 );
             }

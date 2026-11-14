@@ -7,8 +7,8 @@ use super::*;
 #[test]
 fn frame_exchange_preserves_occurrences_and_does_not_scan_unrelated_frame() {
     let assumptions = PureFactContext::new();
-    let before = CResourceFact::own_composite("before".into(), Vec::new());
-    let after = CResourceFact::own_composite("after".into(), Vec::new());
+    let before = ResourceFact::own_composite("before".into(), Vec::new());
+    let after = ResourceFact::own_composite("after".into(), Vec::new());
     let body = ResourceContext::new().unchecked_with_fact(before.clone());
     let exit = body
         .clone()
@@ -20,7 +20,7 @@ fn frame_exchange_preserves_occurrences_and_does_not_scan_unrelated_frame() {
     for size in [8, 32, 128] {
         let mut frame = body.clone();
         for index in 0..size {
-            frame = frame.unchecked_with_fact(CResourceFact::own_composite(
+            frame = frame.unchecked_with_fact(ResourceFact::own_composite(
                 format!("frame_{index}"),
                 Vec::new(),
             ));
@@ -45,9 +45,9 @@ fn frame_exchange_preserves_occurrences_and_does_not_scan_unrelated_frame() {
 
 #[test]
 fn constructed_exchange_preserves_support_and_scales_with_delta() {
-    let before_fact = CResourceFact::own_composite("before".into(), Vec::new());
-    let after_fact = CResourceFact::own_composite("after".into(), Vec::new());
-    let view = CResourceFact::view_token("body".into(), Vec::new());
+    let before_fact = ResourceFact::own_composite("before".into(), Vec::new());
+    let after_fact = ResourceFact::own_composite("after".into(), Vec::new());
+    let view = ResourceFact::view_token("body".into(), Vec::new());
     let before = ResourceContext::new().unchecked_with_fact(before_fact.clone());
     let after = before
         .clone()
@@ -60,7 +60,7 @@ fn constructed_exchange_preserves_support_and_scales_with_delta() {
     for size in [8, 32, 128] {
         let mut frame = before.clone();
         for index in 0..size {
-            frame = frame.unchecked_with_fact(CResourceFact::own_composite(
+            frame = frame.unchecked_with_fact(ResourceFact::own_composite(
                 format!("unrelated_{index}"),
                 Vec::new(),
             ));
@@ -95,16 +95,13 @@ fn a_resource_delta_refusal_does_not_walk_the_shared_past() {
     let costs = [4, 16, 64, 256].map(|history| {
         let mut shared = ResourceContext::new();
         for index in 0..history {
-            shared = shared.unchecked_with_fact(CResourceFact::own_token(
-                format!("past_{index}"),
-                Vec::new(),
-            ));
+            shared = shared
+                .unchecked_with_fact(ResourceFact::own_token(format!("past_{index}"), Vec::new()));
         }
         let left = shared
             .clone()
-            .unchecked_with_fact(CResourceFact::own_token("left".into(), Vec::new()));
-        let right =
-            shared.unchecked_with_fact(CResourceFact::own_token("right".into(), Vec::new()));
+            .unchecked_with_fact(ResourceFact::own_token("left".into(), Vec::new()));
+        let right = shared.unchecked_with_fact(ResourceFact::own_token("right".into(), Vec::new()));
         let (changed, cost) =
             crate::instrumentation::measure_deterministic_work(|| right.changed_facts_since(&left));
         assert!(changed.is_none());
@@ -122,7 +119,7 @@ fn returned_symbolic_cell_rejoins_without_scanning_unrelated_ownership() {
         let middle = MachineTerm::add(index.clone(), 1u32.into());
         let end = MachineTerm::add(index.clone(), 2u32.into());
         let range = |base, start, end| {
-            CResourceFact::own_memory(CMemoryRange::new_with_element_width(base, start, end, 4))
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(base, start, end, 4))
         };
         let facts = PureFactContext::new()
             .assume_condition(
@@ -179,7 +176,7 @@ fn shared_pointer_load_footprints_keep_depth_refusal_without_tree_expansion() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(1081401));
         let memory = crate::kernel::intern_c_memory(
-            CMemory::new().store(address.clone(), crate::kernel::int32(7)),
+            Memory::new().store(address.clone(), crate::kernel::int32(7)),
         );
         let load = MachineTerm::MemoryLoad(
             memory,

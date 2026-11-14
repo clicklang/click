@@ -5,18 +5,18 @@
 //! certificate builder, diagnostic cursor, or smart-planning state.
 
 use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, SharedVec};
-use crate::kernel::population_authority::c_creation::{
+use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
-use crate::kernel::{
-    CCompositeResourceDefinition, CConditionOutcome, CFunctionExecutionCandidates,
-    CFunctionOutcome, CMemory, CMemoryRange, CResource, CResourceFact, CResourceSpec,
-    CRuntimeError, CStatementOutcome, CVerifiedLoopRule, ExecutionBudget, ExecutionLimit,
-    ExecutionPureFact, ExecutionState, MachineTerm, Pointer, ProgramExpression, ProgramFunction,
-    ProgramStatement, ProgramValue, Proposition, PureFactContext, ResourceContext, SpecProposition,
-    Theorem, Variable,
-};
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{
+    CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
+    ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MachineTerm,
+    Memory, MemoryRange, Pointer, ProgramExpression, ProgramFunction, ProgramStatement,
+    ProgramValue, Proposition, PureFactContext, Resource, ResourceContext, ResourceFact,
+    ResourceSpec, RuntimeError, SpecProposition, StatementOutcome, Theorem, Variable,
+    VerifiedLoopRule,
+};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::kernel::{LoadKind, StoredExecutionValue};
 use crate::persistent::PersistentSet;
@@ -59,7 +59,7 @@ pub(crate) enum LoopControlExit {
     Continue,
     /// The natural cycle's checked forward `goto` leaves the loop at its
     /// named exit target.
-    NaturalExit(crate::kernel::CControlTargetId),
+    NaturalExit(crate::kernel::ControlTargetId),
     /// The loop's own test is false: the path leaves the loop there.
     TestFalse,
 }
@@ -128,7 +128,7 @@ pub(crate) enum CheckedExecutionEvent {
 #[derive(Clone, Default)]
 pub(crate) struct ExecutionEvidence {
     events: PersistentSequence<CheckedExecutionEvent>,
-    origin: Option<Arc<CStatementOutcome>>,
+    origin: Option<Arc<StatementOutcome>>,
     retained: Option<Arc<ExecutionState>>,
     presented: Option<Arc<ExecutionState>>,
 }
@@ -149,12 +149,12 @@ impl ExecutionEvidence {
                 {
                     self.origin = Some(Arc::new(outcome.clone()));
                     self.retained = match outcome {
-                        CStatementOutcome::Normal(state)
-                        | CStatementOutcome::Return { state, .. }
-                        | CStatementOutcome::Throw { state, .. }
-                        | CStatementOutcome::Break(state)
-                        | CStatementOutcome::Continue(state)
-                        | CStatementOutcome::Jump { state, .. } => Some(Arc::new(*state.clone())),
+                        StatementOutcome::Normal(state)
+                        | StatementOutcome::Return { state, .. }
+                        | StatementOutcome::Throw { state, .. }
+                        | StatementOutcome::Break(state)
+                        | StatementOutcome::Continue(state)
+                        | StatementOutcome::Jump { state, .. } => Some(Arc::new(*state.clone())),
                         _ => None,
                     };
                     self.presented = None;
@@ -270,15 +270,15 @@ fn path_context_extended_by(
 /// A kernel-published return, shared by all logical proofs on that path.
 #[derive(Clone)]
 struct CheckedReturnContext {
-    origin: CStatementOutcome,
-    published: CFunctionOutcome,
+    origin: StatementOutcome,
+    published: FunctionOutcome,
     facts: ExecutionFacts,
 }
 
 impl CheckedReturnContext {
     fn from_candidate(
-        origin: CStatementOutcome,
-        candidate: &crate::kernel::CFunctionExecutionCandidate,
+        origin: StatementOutcome,
+        candidate: &crate::kernel::FunctionExecutionCandidate,
     ) -> Self {
         let mut facts = candidate.facts().clone();
         facts.extend_shared(candidate.effect_facts());
@@ -305,21 +305,21 @@ pub(crate) struct CheckedReturnProposition {
 pub(crate) struct CheckedReturnPath {
     index: usize,
     source: Theorem,
-    path: crate::kernel::SymbolicCExecutionPath,
+    path: crate::kernel::SymbolicExecutionPath,
     deferred: bool,
-    error: Option<crate::kernel::CRuntimeError>,
+    error: Option<crate::kernel::RuntimeError>,
 }
 
 impl CheckedReturnPath {
-    pub(crate) fn path(&self) -> &crate::kernel::SymbolicCExecutionPath {
+    pub(crate) fn path(&self) -> &crate::kernel::SymbolicExecutionPath {
         &self.path
     }
 }
 
-impl crate::kernel::CCheckedFunctionExecution {
+impl crate::kernel::CheckedFunctionExecution {
     pub(crate) fn with_closed_exit_obligations(
         mut self,
-        completions: Vec<crate::kernel::CClosedContractExit>,
+        completions: Vec<crate::kernel::ClosedContractExit>,
     ) -> Result<Self, &'static str> {
         for completion in completions {
             let index = completion.path_index();
@@ -370,7 +370,7 @@ impl CheckedReturnProposition {
         base: &ProofFacts,
         context: Arc<CheckedReturnContext>,
     ) -> Result<Self, String> {
-        let CFunctionOutcome::Return { value, state } = &context.published else {
+        let FunctionOutcome::Return { value, state } = &context.published else {
             return Err("return proof requires a published return".into());
         };
         let outcome = proof.outcome().ok_or("return proof has no outcome")?;
@@ -418,7 +418,7 @@ impl CheckedTacticApplication {
         before_facts: &ProofFacts,
         name: &str,
         arguments: &[crate::kernel::ProgramValue],
-        environment: &crate::kernel::CExecutionEnvironment,
+        environment: &crate::kernel::ExecutionEnvironment,
         next_kernel_variable: u64,
     ) -> Result<(Self, u64), crate::kernel::functions::TacticApplicationRefusal> {
         let transition = crate::kernel::functions::apply_verified_tactic_rule(
@@ -754,7 +754,7 @@ pub(crate) struct CheckedResourceRewrite {
     pub(crate) after_state: ExecutionState,
     pub(crate) before_facts: ProofFacts,
     pub(crate) after_facts: ProofFacts,
-    definition: CCompositeResourceDefinition,
+    definition: CompositeResourceDefinition,
     consumption_contract: Option<Arc<CheckedFunctionEntry>>,
     return_context: Option<Arc<CheckedReturnContext>>,
     instance: Option<crate::kernel::ResourceInstance>,
@@ -785,7 +785,7 @@ struct CheckedReturnPresentation {
     /// The selected unfold's outputs are evidence even if already in its input context.
     published_facts: Vec<Proposition>,
     context: Arc<CheckedReturnContext>,
-    selected: CResourceFact,
+    selected: ResourceFact,
     rewrite: CheckedResourceRewrite,
 }
 
@@ -806,7 +806,7 @@ pub(crate) struct CheckedPopulationAuthorityRewrite {
     after_state: ExecutionState,
     before_facts: ProofFacts,
     after_facts: ProofFacts,
-    selected: CResourceFact,
+    selected: ResourceFact,
     establish: bool,
     witness: CheckedPopulationAuthorityExchange,
 }
@@ -819,20 +819,20 @@ pub(crate) struct CheckedPopulationMemberRewrite {
     after_state: ExecutionState,
     before_facts: ProofFacts,
     after_facts: ProofFacts,
-    selected: CResourceFact,
+    selected: ResourceFact,
     produce: bool,
-    definition: CCompositeResourceDefinition,
+    definition: CompositeResourceDefinition,
 }
 
 fn checks_population_authority_exchange(
     before: &ExecutionState,
     after: &ExecutionState,
-    selected: &CResourceFact,
+    selected: &ResourceFact,
     establish: bool,
     witness: &CheckedPopulationAuthorityExchange,
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
-    let CResourceFact::Own(CResource::PopulationAuthority(description), quantity) = selected else {
+    let ResourceFact::Own(Resource::PopulationAuthority(description), quantity) = selected else {
         return Err("population authority rewrite requires an owned authority".into());
     };
     if quantity.as_const() != Some(1) {
@@ -948,7 +948,7 @@ impl CheckedPopulationAuthorityRewrite {
     fn check(
         before_state: &ExecutionState,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         establish: bool,
         witness: &CheckedPopulationAuthorityExchange,
         after_state: &ExecutionState,
@@ -1004,15 +1004,15 @@ impl CheckedPopulationAuthorityRewrite {
 }
 
 fn checks_population_member_exchange(
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
     before: &ExecutionState,
     after: &ExecutionState,
-    selected: &CResourceFact,
+    selected: &ResourceFact,
     produce: bool,
     witness: &CheckedPopulationMemberExchange,
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
-    let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected else {
+    let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
         return Err("population member rewrite requires an owned declared resource".into());
     };
     let batch = quantity.as_const() != Some(1);
@@ -1025,11 +1025,11 @@ fn checks_population_member_exchange(
         || definition.contains.iter().any(|spec| {
             !matches!(
                 spec.term(),
-                crate::kernel::CResourceTerm::Memory(_)
-                    | crate::kernel::CResourceTerm::Token { .. }
-                    | crate::kernel::CResourceTerm::Composite { .. }
-            ) || spec.access() != crate::kernel::CResourceAccessMode::Own
-                || spec.quantity() != &crate::kernel::CResourceQuantity::One
+                crate::kernel::ResourceTerm::Memory(_)
+                    | crate::kernel::ResourceTerm::Token { .. }
+                    | crate::kernel::ResourceTerm::Composite { .. }
+            ) || spec.access() != crate::kernel::ResourceAccessMode::Own
+                || spec.quantity() != &crate::kernel::ResourceQuantity::One
                 || spec.guard().is_some()
                 || !spec.resource_arguments().is_empty()
         })
@@ -1088,7 +1088,7 @@ fn checks_population_member_exchange(
                     .join(", ")
             )
         })?;
-    let authority = CResourceFact::own(CResource::PopulationAuthority(governing));
+    let authority = ResourceFact::own(Resource::PopulationAuthority(governing));
     if !before.resources.satisfies_fact(&authority, assumptions) {
         return Err("Requires owns authority(R(p))".into());
     }
@@ -1165,13 +1165,13 @@ impl CheckedPopulationMemberRewrite {
         function: &ProgramFunction,
         before_state: &ExecutionState,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         produce: bool,
         witness: &CheckedPopulationMemberExchange,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
     ) -> Result<Self, String> {
-        let CResource::Composite { name, .. } = selected.resource() else {
+        let Resource::Composite { name, .. } = selected.resource() else {
             return Err("population member rewrite requires a declared resource".into());
         };
         let definition = function
@@ -1236,8 +1236,8 @@ impl CheckedPopulationMemberRewrite {
 /// naming the offending cell, so the caller can report which cell or field a
 /// rejected rewrite changed.
 fn memory_only_adds_named_cells(
-    before: &crate::kernel::CMemory,
-    after: &crate::kernel::CMemory,
+    before: &crate::kernel::Memory,
+    after: &crate::kernel::Memory,
 ) -> Result<(), String> {
     let mut rebased = after.clone();
     rebased.cells = before.cells.clone();
@@ -1305,7 +1305,7 @@ fn describe_unnamed_cell_addition(
     let expected = truncate_debug(load, 240);
     let (base_arena, base_id) = base.arena_id();
     let version_note = match crate::kernel::resource_tracker::last_same_point(
-        crate::kernel::resource_tracker::Resource::Cell {
+        crate::kernel::resource_tracker::TrackedResource::Cell {
             pointer,
             bytes: crate::kernel::resource_tracker::widest_scalar_access_bytes(),
         },
@@ -1440,7 +1440,7 @@ impl From<&str> for ResourceRewriteCheckError {
 /// and admits no different address, extent, or wide/narrow representation.
 fn cached_body_loadability(
     fact: &Proposition,
-    body_memory: &CMemory,
+    body_memory: &Memory,
     allowed: &std::collections::BTreeSet<Proposition>,
     comparisons: &mut HashMap<((u32, u32), (u32, u32)), bool>,
 ) -> bool {
@@ -1483,7 +1483,7 @@ impl CheckedResourceRewrite {
         function: &ProgramFunction,
         before_state: &ExecutionState,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
         call_events: &CheckedCallEvents,
@@ -1504,14 +1504,13 @@ impl CheckedResourceRewrite {
     fn check_authority_wrapper(
         before_state: &ExecutionState,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
-        definition: &CCompositeResourceDefinition,
+        definition: &CompositeResourceDefinition,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
-        else {
+        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
             return Err("authority control requires one owned composite".into());
         };
         if quantity.as_const() != Some(1) || selected_children.is_some() {
@@ -1553,7 +1552,7 @@ impl CheckedResourceRewrite {
         if children.len() != definition.contains().len()
             || children
                 .iter()
-                .filter(|child| matches!(child.resource(), CResource::PopulationAuthority(_)))
+                .filter(|child| matches!(child.resource(), Resource::PopulationAuthority(_)))
                 .count()
                 == 0
         {
@@ -1770,14 +1769,13 @@ impl CheckedResourceRewrite {
     fn check_transfer_wrapper(
         before_state: &ExecutionState,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
-        definition: &CCompositeResourceDefinition,
+        definition: &CompositeResourceDefinition,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
-        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
-        else {
+        let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected else {
             return Err("transfer wrapper requires one owned resource".into());
         };
         if quantity.as_const() != Some(1)
@@ -1792,8 +1790,8 @@ impl CheckedResourceRewrite {
                 .as_ref()
                 .is_some_and(|schema| !schema.fields().is_empty())
             || definition.contains().iter().any(|spec| {
-                spec.access() != crate::kernel::CResourceAccessMode::Own
-                    || spec.quantity() != &crate::kernel::CResourceQuantity::One
+                spec.access() != crate::kernel::ResourceAccessMode::Own
+                    || spec.quantity() != &crate::kernel::ResourceQuantity::One
                     || spec.guard().is_some()
                     || !spec.resource_arguments().is_empty()
             })
@@ -1967,7 +1965,7 @@ impl CheckedResourceRewrite {
         function: &ProgramFunction,
         before_state: &ExecutionState,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
         call_events: &CheckedCallEvents,
@@ -1992,7 +1990,7 @@ impl CheckedResourceRewrite {
         function: &ProgramFunction,
         before_state: &ExecutionState,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
         call_events: &CheckedCallEvents,
@@ -2015,22 +2013,22 @@ impl CheckedResourceRewrite {
 
     fn check_instance_definition(
         function: &ProgramFunction,
-        definition: &CCompositeResourceDefinition,
+        definition: &CompositeResourceDefinition,
     ) -> Result<(), String> {
         if definition.reaches_population() {
-            let memory_only = |spec: &crate::kernel::CResourceSpec| {
+            let memory_only = |spec: &crate::kernel::ResourceSpec| {
                 matches!(
                     spec.term(),
-                    crate::kernel::CResourceTerm::Memory(_)
-                        | crate::kernel::CResourceTerm::Token { .. }
-                        | crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                    crate::kernel::ResourceTerm::Memory(_)
+                        | crate::kernel::ResourceTerm::Token { .. }
+                        | crate::kernel::ResourceTerm::PopulationAuthority { .. }
                 )
             };
             // A named child is admitted when its own definition reaches no
             // population, so it cannot hide a member or an authority; the
             // exchange then moves only memory, tokens, and this body's own
             // authority, which the ledger equality below checks.
-            let ordinary_child = |child: &crate::kernel::CResourceChildSpec| {
+            let ordinary_child = |child: &crate::kernel::ResourceChildSpec| {
                 function
                     .proof_composite_resource_definition(&child.resource)
                     .is_some_and(|child| !child.reaches_population())
@@ -2055,7 +2053,7 @@ impl CheckedResourceRewrite {
         function: &ProgramFunction,
         before_state: &ExecutionState,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
         call_events: &CheckedCallEvents,
@@ -2088,7 +2086,7 @@ impl CheckedResourceRewrite {
         function: &ProgramFunction,
         before_state: &ExecutionState,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
         call_events: &CheckedCallEvents,
@@ -2128,18 +2126,18 @@ impl CheckedResourceRewrite {
         // A family that reaches no population keeps its ordinary definition
         // law; only population-reaching bodies take the checks below.
         let reaches_population = match selected.resource() {
-            CResource::Composite { name, .. } => function
+            Resource::Composite { name, .. } => function
                 .proof_composite_resource_definition(name)
                 .is_none_or(|definition| definition.reaches_population()),
             _ => true,
         };
-        if !matches!(selected.resource(), CResource::Instance(_)) {
-            if let CResource::Composite { name, .. } = selected.resource()
+        if !matches!(selected.resource(), Resource::Instance(_)) {
+            if let Resource::Composite { name, .. } = selected.resource()
                 && let Some(definition) = function.proof_composite_resource_definition(name)
                 && definition.contains().iter().any(|spec| {
                     matches!(
                         spec.term(),
-                        crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                        crate::kernel::ResourceTerm::PopulationAuthority { .. }
                     )
                 })
             {
@@ -2153,7 +2151,7 @@ impl CheckedResourceRewrite {
                     selected_children,
                 );
             }
-            if let CResourceFact::Own(CResource::Composite { name, arguments }, _) = selected
+            if let ResourceFact::Own(Resource::Composite { name, arguments }, _) = selected
                 && let Some(definition) = function.proof_composite_resource_definition(name)
                 && !before_state.tracks_authority_member(selected)
                 && before_state.population_body_is_open(name, arguments)
@@ -2162,8 +2160,8 @@ impl CheckedResourceRewrite {
                 && definition.contains().iter().all(|spec| {
                     matches!(
                         spec.term(),
-                        crate::kernel::CResourceTerm::Composite { .. }
-                            | crate::kernel::CResourceTerm::Token { .. }
+                        crate::kernel::ResourceTerm::Composite { .. }
+                            | crate::kernel::ResourceTerm::Token { .. }
                     )
                 })
             {
@@ -2187,14 +2185,13 @@ impl CheckedResourceRewrite {
             let ordinary_family = !reaches_population
                 || matches!(
                     selected,
-                    CResourceFact::Own(CResource::Composite { name, .. }, _)
+                    ResourceFact::Own(Resource::Composite { name, .. }, _)
                         if function
                             .proof_composite_resource_definition(name)
                             .is_some_and(|definition| !definition.is_authorized())
                 );
             if !ordinary_family {
-                let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) =
-                    selected
+                let ResourceFact::Own(Resource::Composite { name, arguments }, quantity) = selected
                 else {
                     return Err("member body access requires one owned member".into());
                 };
@@ -2215,10 +2212,10 @@ impl CheckedResourceRewrite {
                     || definition.contains.iter().any(|spec| {
                         !matches!(
                             spec.term(),
-                            crate::kernel::CResourceTerm::Memory(_)
-                                | crate::kernel::CResourceTerm::Composite { .. }
-                        ) || spec.access() != crate::kernel::CResourceAccessMode::Own
-                            || spec.quantity() != &crate::kernel::CResourceQuantity::One
+                            crate::kernel::ResourceTerm::Memory(_)
+                                | crate::kernel::ResourceTerm::Composite { .. }
+                        ) || spec.access() != crate::kernel::ResourceAccessMode::Own
+                            || spec.quantity() != &crate::kernel::ResourceQuantity::One
                             || spec.guard().is_some()
                             || !spec.resource_arguments().is_empty()
                     })
@@ -2275,7 +2272,7 @@ impl CheckedResourceRewrite {
                 // a member by transferring those owned memory ranges into it.
                 for child in children {
                     let Some(range) = child.memory_own_range() else {
-                        if let CResourceFact::Own(CResource::Composite { .. }, quantity) = child
+                        if let ResourceFact::Own(Resource::Composite { .. }, quantity) = child
                             && quantity.as_const() == Some(1)
                         {
                             // The exact child stays folded until its own checked
@@ -2480,7 +2477,7 @@ impl CheckedResourceRewrite {
         let load_equality_capture =
             crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(call_events);
         let assumptions = before_facts.assumptions();
-        if let CResource::Instance(instance) = selected.resource() {
+        if let Resource::Instance(instance) = selected.resource() {
             let definition = function
                 .proof_composite_resource_definition(instance.name())
                 .ok_or_else(|| {
@@ -2612,7 +2609,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 return_observation,
             });
         }
-        let crate::kernel::CResource::Composite { name, .. } = selected.resource() else {
+        let crate::kernel::Resource::Composite { name, .. } = selected.resource() else {
             return Err("resource rewrite evidence requires a composite resource".to_string());
         };
         let definition = function
@@ -2645,7 +2642,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
     }
 
     /// The registered composite definition the event applied.
-    pub(crate) fn definition(&self) -> &CCompositeResourceDefinition {
+    pub(crate) fn definition(&self) -> &CompositeResourceDefinition {
         &self.definition
     }
 }
@@ -2679,14 +2676,14 @@ fn checked_borrowing_fold_hold(
     function: &ProgramFunction,
     before_state: &ExecutionState,
     before_facts: &ProofFacts,
-    selected: &CResourceFact,
+    selected: &ResourceFact,
     after_state: &ExecutionState,
     loan_holds: &[crate::kernel::CheckedLoanTransition],
 ) -> Result<ExecutionState, String> {
     let [hold] = loan_holds else {
         return Err("a fold places at most one loan hold".into());
     };
-    if !matches!(selected, CResourceFact::Own(CResource::Composite { .. }, _)) {
+    if !matches!(selected, ResourceFact::Own(Resource::Composite { .. }, _)) {
         return Err("a loan hold requires the fold of one owned composite".into());
     }
     let assumptions = before_facts.assumptions();
@@ -2800,7 +2797,7 @@ impl CheckedIteratedStep {
 pub(crate) struct CheckedResourceObservation {
     before_state: ExecutionState,
     pub(crate) after_state: ExecutionState,
-    definition: Option<CCompositeResourceDefinition>,
+    definition: Option<CompositeResourceDefinition>,
 }
 
 impl CheckedResourceObservation {
@@ -2812,7 +2809,7 @@ impl CheckedResourceObservation {
         function: &ProgramFunction,
         before_state: &ExecutionState,
         before_facts: &ProofFacts,
-        observed: &CResourceFact,
+        observed: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
         derivations: &PersistentOrderedSet<Theorem>,
@@ -2821,10 +2818,10 @@ impl CheckedResourceObservation {
         // Only an authorized family has a population count to observe; any
         // other observation is an ordinary resource observation.
         let counted = match observed.resource() {
-            crate::kernel::CResource::Composite { name, .. } => function
+            crate::kernel::Resource::Composite { name, .. } => function
                 .proof_composite_resource_definition(name)
                 .is_none_or(|definition| definition.is_authorized()),
-            crate::kernel::CResource::Token { name, .. } => !function
+            crate::kernel::Resource::Token { name, .. } => !function
                 .contract_interface()
                 .is_ordinary_abstract_family(name),
             _ => true,
@@ -2840,7 +2837,7 @@ impl CheckedResourceObservation {
             if !unchanged {
                 return Err("count observation changed execution state or member custody");
             }
-            let crate::kernel::CResource::Composite { name, .. } = observed.resource() else {
+            let crate::kernel::Resource::Composite { name, .. } = observed.resource() else {
                 return Err("count observation requires an owned declared member");
             };
             function
@@ -2907,7 +2904,7 @@ impl CheckedResourceObservation {
         {
             return Err("the observed resource is not available in the input state");
         }
-        let crate::kernel::CResource::Composite { name, .. } = observed.resource() else {
+        let crate::kernel::Resource::Composite { name, .. } = observed.resource() else {
             return Err("resource observation evidence requires a composite resource");
         };
         let definition = function
@@ -2946,7 +2943,7 @@ impl CheckedResourceObservation {
         let (children, raw_children) = if !projects_body {
             (Vec::new(), Vec::new())
         } else {
-            let definition_authority = CResourceFact::own(observed.resource().clone());
+            let definition_authority = ResourceFact::own(observed.resource().clone());
             let temporary = ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_fact(definition_authority.clone());
             let (_, children, raw_children) =
@@ -2960,7 +2957,7 @@ impl CheckedResourceObservation {
                 .ok_or("the observed composite body could not be instantiated")?;
             (children, raw_children)
         };
-        let body_is_already_exposed = raw_children.iter().any(CResourceFact::is_own)
+        let body_is_already_exposed = raw_children.iter().any(ResourceFact::is_own)
             && raw_children
                 .iter()
                 .filter(|fact| fact.is_own())
@@ -3012,7 +3009,7 @@ impl CheckedResourceObservation {
             ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children);
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
         allowed.push(Proposition::CResourceComposition(child_context.clone()));
-        let relation_authority = CResourceFact::own(observed.resource().clone());
+        let relation_authority = ResourceFact::own(observed.resource().clone());
         if projects_body
             && let Some(propositions) =
                 crate::kernel::functions::evaluate_composite_resource_relation_propositions(
@@ -3073,7 +3070,7 @@ impl CheckedResourceObservation {
     }
 
     /// The registered composite definition the event applied.
-    pub(crate) fn definition(&self) -> Option<&CCompositeResourceDefinition> {
+    pub(crate) fn definition(&self) -> Option<&CompositeResourceDefinition> {
         self.definition.as_ref()
     }
 }
@@ -3122,15 +3119,13 @@ impl CheckedFunctionEntry {
         arguments: &[ProgramExpression],
         expected_entry_state: &ExecutionState,
         assumptions: PureFactContext,
-    ) -> Result<Arc<Self>, CRuntimeError> {
+    ) -> Result<Arc<Self>, RuntimeError> {
         let entry_state = crate::kernel::c_function_entry_state(caller_state, function, arguments)
             .ok_or_else(|| {
-                CRuntimeError::FunctionContract(
-                    "could not bind the function entry arguments".into(),
-                )
+                RuntimeError::FunctionContract("could not bind the function entry arguments".into())
             })?;
         if &entry_state != expected_entry_state {
-            return Err(CRuntimeError::FunctionContract(
+            return Err(RuntimeError::FunctionContract(
                 "the checked function entry does not match the proof entry".into(),
             ));
         }
@@ -3147,7 +3142,7 @@ impl CheckedFunctionEntry {
                     &mut ExecutionBudget::beside_live_state(),
                 )
                 .map_err(|limit| {
-                    CRuntimeError::FunctionContract(format!(
+                    RuntimeError::FunctionContract(format!(
                         "checking the function entry resource transfer stopped at {}",
                         limit.describe(),
                     ))
@@ -3549,7 +3544,7 @@ pub(crate) struct CheckedProofCaseJoin {
 struct CheckedProofCaseJoinInterface {
     execution_facts: crate::kernel::ExecutionFacts,
     effect_facts: crate::kernel::ExecutionFacts,
-    resource_definitions: Vec<crate::kernel::CCompositeResourceDefinition>,
+    resource_definitions: Vec<crate::kernel::CompositeResourceDefinition>,
     lowerings: Arc<Vec<[CheckedInterfaceLowering; 3]>>,
     next_kernel_variable: u64,
 }
@@ -3754,7 +3749,7 @@ impl CheckedProofCaseJoin {
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         interface_specs: &[SpecProposition],
-        interface_resource_specs: &[CResourceSpec],
+        interface_resource_specs: &[ResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &ExecutionState,
         successor_facts: &ProofFacts,
@@ -3972,8 +3967,8 @@ impl CheckedProofCaseJoin {
 /// to the interface, what the successor holds for it, and the successor's
 /// whole resource context.
 struct InterfaceJoinResources {
-    arm_interface_resources: [Vec<CResourceFact>; 2],
-    successor_interface_resources: Vec<CResourceFact>,
+    arm_interface_resources: [Vec<ResourceFact>; 2],
+    successor_interface_resources: Vec<ResourceFact>,
     successor_interface_resource_facts: Vec<Proposition>,
     /// What neither arm changed, with the interface resources composed in,
     /// in the one normal form the successor must carry.
@@ -3984,7 +3979,7 @@ fn interface_join_resources(
     parent: &ExecutionProofCore,
     arms: [&ExecutionProofCore; 2],
     arm_facts: [&ProofFacts; 2],
-    interface_resource_specs: &[CResourceSpec],
+    interface_resource_specs: &[ResourceSpec],
     joined_state: &ExecutionState,
     successor_facts: &ProofFacts,
 ) -> Result<InterfaceJoinResources, &'static str> {
@@ -4093,7 +4088,7 @@ fn interface_join_resources(
 struct CheckedInterfaceAbstraction {
     state: ExecutionState,
     next_kernel_variable: u64,
-    arm_interface_resources: [Vec<CResourceFact>; 2],
+    arm_interface_resources: [Vec<ResourceFact>; 2],
     introduced: Vec<Proposition>,
     interface_lowerings: Vec<[CheckedInterfaceLowering; 3]>,
 }
@@ -4106,7 +4101,7 @@ fn construct_interface_abstraction(
     arms: [&ExecutionProofCore; 2],
     arm_facts: [&ProofFacts; 2],
     interface_specs: &[SpecProposition],
-    interface_resource_specs: &[CResourceSpec],
+    interface_resource_specs: &[ResourceSpec],
     joined_state: &ExecutionState,
     successor_facts: &ProofFacts,
     old_reference: Option<&ExecutionState>,
@@ -4318,7 +4313,7 @@ pub(crate) struct CheckedExecutionBranch {
     interface_successor_facts: Option<ProofFacts>,
     interface_execution_facts: crate::kernel::ExecutionFacts,
     interface_effect_facts: crate::kernel::ExecutionFacts,
-    interface_resource_definitions: Option<Vec<crate::kernel::CCompositeResourceDefinition>>,
+    interface_resource_definitions: Option<Vec<crate::kernel::CompositeResourceDefinition>>,
     // Keep the actual selected lowering results, not just their boolean verdicts.
     // Every retained judgment has a completed local proof.
     interface_lowerings: Arc<Vec<[CheckedInterfaceLowering; 3]>>,
@@ -4484,7 +4479,7 @@ impl CheckedExecutionBranch {
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         interface_specs: &[SpecProposition],
-        interface_resource_specs: &[CResourceSpec],
+        interface_resource_specs: &[ResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &ExecutionState,
         successor_facts: &ProofFacts,
@@ -4742,8 +4737,8 @@ fn arm_effect_deltas_are_exact(
 }
 
 fn memory_diff_is_covered_by_writes(
-    before: &CMemory,
-    after: &CMemory,
+    before: &Memory,
+    after: &Memory,
     changed: &[(Pointer, u32)],
     assumptions: &PureFactContext,
     fact: &ExecutionPureFact,
@@ -4784,9 +4779,9 @@ fn memory_diff_is_covered_by_writes(
 }
 
 fn memory_diff_is_covered_by_ranges(
-    before: &CMemory,
-    after: &CMemory,
-    mutable_ranges: &[CMemoryRange],
+    before: &Memory,
+    after: &Memory,
+    mutable_ranges: &[MemoryRange],
     assumptions: &PureFactContext,
 ) -> bool {
     let erased_cells_are_call_havoc_bookkeeping = after.matches_call_memory_havoc_result(
@@ -4827,17 +4822,17 @@ fn memory_diff_is_covered_by_ranges(
 /// and leaves no effect, so the recorded memory may hold tombstones the
 /// effects do not produce. Those objects are ended here the same way before
 /// the comparison. The join carries every arm's tombstones on its own
-/// ([`CMemory::with_interface_memory_havoc_preserving_loans`]), so this
+/// ([`Memory::with_interface_memory_havoc_preserving_loans`]), so this
 /// admits no write the effects do not cover.
 fn interface_chain_memory_matches(
-    produced: &CMemory,
-    recorded: &CMemory,
+    produced: &Memory,
+    recorded: &Memory,
     assumptions: &PureFactContext,
 ) -> bool {
     use crate::kernel::api::contract_certification::c_memories_definitionally_equal;
     // End the lifetimes first: with them the memories are usually the same
     // snapshot, which the comparison answers without looking at a cell.
-    let mut ended: Option<CMemory> = None;
+    let mut ended: Option<Memory> = None;
     for block in recorded.ended_local_blocks() {
         if !produced.is_ended_local_block(block) {
             ended = Some(
@@ -5083,7 +5078,7 @@ fn checked_interface_effect_facts_along(
         }
     } else {
         for (pointer, bytes) in writes {
-            let range = CMemoryRange::new_with_element_width(
+            let range = MemoryRange::new_with_element_width(
                 pointer,
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
@@ -5124,7 +5119,7 @@ fn conditional_heap_frees(
 
 fn interface_resources_guard_heap_frees(
     function: &ProgramFunction,
-    arm_resources: &[Vec<CResourceFact>; 2],
+    arm_resources: &[Vec<ResourceFact>; 2],
     arm_states: [&ExecutionState; 2],
     arm_facts: [&ProofFacts; 2],
     heap_frees: &[Vec<(Pointer, crate::kernel::HeapExtent)>; 2],
@@ -5139,7 +5134,7 @@ fn interface_resources_guard_heap_frees(
             {
                 return true;
             }
-            if !resource.is_own() || !matches!(resource.resource(), CResource::Composite { .. }) {
+            if !resource.is_own() || !matches!(resource.resource(), Resource::Composite { .. }) {
                 return false;
             }
             crate::kernel::functions::expand_composite_resource_fact(
@@ -5234,10 +5229,10 @@ fn interface_spec_paths_with(
 }
 
 fn evaluate_interface_resource_spec(
-    spec: &CResourceSpec,
+    spec: &ResourceSpec,
     state: &ExecutionState,
     facts: &ProofFacts,
-) -> Option<CResourceFact> {
+) -> Option<ResourceFact> {
     (crate::kernel::functions::evaluate_function_resource_spec(
         state,
         spec,
@@ -5249,8 +5244,8 @@ fn evaluate_interface_resource_spec(
 }
 
 fn interface_resource_intrinsic_fact(
-    spec: &CResourceSpec,
-    resource: &CResourceFact,
+    spec: &ResourceSpec,
+    resource: &ResourceFact,
     state: &ExecutionState,
 ) -> Option<Proposition> {
     let segment = spec.memory_segment()?;
@@ -5446,7 +5441,7 @@ impl CheckedInterfaceLowering {
 #[derive(Default)]
 struct InterfaceReadPremises {
     by_base: std::collections::BTreeMap<
-        (crate::kernel::CMemory, crate::kernel::Pointer),
+        (crate::kernel::Memory, crate::kernel::Pointer),
         (u32, Proposition),
     >,
 }
@@ -5557,14 +5552,14 @@ impl CheckedInterfaceLoadDefinition {
 /// One path retained from a complete kernel C-condition evaluation.
 #[derive(Clone)]
 pub(crate) struct CheckedBranchPath {
-    outcome: CConditionOutcome,
+    outcome: ConditionOutcome,
     facts: crate::kernel::ExecutionFacts,
     obligations: Vec<crate::kernel::ProofObligation>,
     theorem: Theorem,
 }
 
 impl CheckedBranchPath {
-    pub(crate) fn outcome(&self) -> &CConditionOutcome {
+    pub(crate) fn outcome(&self) -> &ConditionOutcome {
         &self.outcome
     }
 
@@ -5613,8 +5608,8 @@ pub(crate) struct CheckedCallOutcomeSplit {
     state: ExecutionState,
     statement: ProgramStatement,
     root_facts: ProofFacts,
-    normal: CStatementOutcome,
-    exceptional: CStatementOutcome,
+    normal: StatementOutcome,
+    exceptional: StatementOutcome,
 }
 
 #[derive(Debug)]
@@ -5634,11 +5629,11 @@ impl CheckedCallOutcomeSplit {
         statement: ProgramStatement,
         root_facts: &ProofFacts,
         normal_theorem: &Theorem,
-        normal: &CStatementOutcome,
+        normal: &StatementOutcome,
         normal_path_facts: &[Proposition],
         normal_obligations: &[crate::kernel::ProofObligation],
         exceptional_theorem: &Theorem,
-        exceptional: &CStatementOutcome,
+        exceptional: &StatementOutcome,
         exceptional_path_facts: &[Proposition],
         exceptional_obligations: &[crate::kernel::ProofObligation],
     ) -> Result<Self, CheckedCallOutcomeSplitError> {
@@ -5647,14 +5642,14 @@ impl CheckedCallOutcomeSplit {
             ProgramStatement::Call { .. }
                 | ProgramStatement::CallAssign { .. }
                 | ProgramStatement::CallResult { .. }
-        ) || !matches!(normal, CStatementOutcome::Normal(_))
-            || !matches!(exceptional, CStatementOutcome::Throw { .. })
+        ) || !matches!(normal, StatementOutcome::Normal(_))
+            || !matches!(exceptional, StatementOutcome::Throw { .. })
         {
             return Err(CheckedCallOutcomeSplitError::InvalidEvidence);
         }
         let validates_arm =
             |theorem: &Theorem,
-             expected: &CStatementOutcome,
+             expected: &StatementOutcome,
              path_facts: &[Proposition],
              obligations: &[crate::kernel::ProofObligation]| {
                 let Proposition::CStatementVerifies {
@@ -5835,7 +5830,7 @@ impl CheckedBranchSplit {
             if infeasible {
                 continue;
             }
-            let CConditionOutcome::Value(value) = path.outcome else {
+            let ConditionOutcome::Value(value) = path.outcome else {
                 return false;
             };
             let arm_index = usize::from(!value);
@@ -5884,10 +5879,10 @@ pub(crate) struct ExecutionFrontier {
     /// A proof-only natural cycle's source back edge, when this frontier is
     /// executing that loop body. Matching `goto` evidence reaches the typed
     /// body boundary instead of reopening the source target.
-    pub(crate) natural_backedge_target: Option<crate::kernel::CControlTargetId>,
+    pub(crate) natural_backedge_target: Option<crate::kernel::ControlTargetId>,
     /// A proof-only natural cycle's checked forward exit, when this frontier
     /// is executing that loop body.
-    pub(crate) natural_exit_target: Option<crate::kernel::CControlTargetId>,
+    pub(crate) natural_exit_target: Option<crate::kernel::ControlTargetId>,
 }
 
 impl ExecutionFrontier {
@@ -5971,7 +5966,7 @@ pub(crate) struct PendingLoopReturnPath {
     /// The source loop whose rule returned this path, for the point its
     /// premises are read at.
     pub(crate) loop_index: Option<usize>,
-    pub(crate) outcome: CFunctionOutcome,
+    pub(crate) outcome: FunctionOutcome,
     pub(crate) execution_facts: ExecutionFacts,
     pub(crate) obligations: Vec<crate::kernel::ProofObligation>,
     pub(crate) pure_facts: ProofFacts,
@@ -6073,7 +6068,7 @@ pub(crate) struct ExecutionProofCore {
     /// checked under. A retained return proof's facts descend from it, so
     /// completion checks only what the proof introduced since.
     entry_facts: Option<ProofFacts>,
-    pub(crate) frontier_loop_rules: PersistentSequence<CVerifiedLoopRule>,
+    pub(crate) frontier_loop_rules: PersistentSequence<VerifiedLoopRule>,
     pub(crate) execution_abstraction: bool,
     pub(crate) concrete_loop_execution: bool,
     /// Kernel theorems whose conclusions justify the facts a resource
@@ -6105,18 +6100,18 @@ pub(crate) struct ExecutionProofCore {
 pub(crate) struct CheckedLoopInvariantLowerings {
     pub(super) body: Option<super::object::CheckedInvariantBody>,
     pub(super) snapshot: SharedValue<ExecutionState>,
-    pub(super) checks: Vec<crate::kernel::CLoopInvariantCheck>,
+    pub(super) checks: Vec<crate::kernel::LoopInvariantCheck>,
     /// The loop's declared `decreases` components, whose back-edge members
     /// the retained body also closed. Validation compares them exactly, so a
     /// body checked before a `decreases` clause existed cannot be reused.
-    pub(super) ranking_measures: Vec<crate::kernel::CRankingComponent>,
+    pub(super) ranking_measures: Vec<crate::kernel::RankingComponent>,
     pub(super) facts: super::ProofFacts,
     pub(super) effects: crate::kernel::ExecutionFacts,
 }
 
 #[cfg(test)]
 impl CheckedLoopInvariantLowerings {
-    pub(crate) fn checks(&self) -> &[crate::kernel::CLoopInvariantCheck] {
+    pub(crate) fn checks(&self) -> &[crate::kernel::LoopInvariantCheck] {
         &self.checks
     }
     pub(crate) fn snapshot(&self) -> &SharedValue<ExecutionState> {
@@ -6169,15 +6164,15 @@ fn statement_call_havoc_views(theorem: &Theorem) -> Vec<crate::kernel::SharedMem
         _ => return Vec::new(),
     };
     let after = match outcome {
-        CStatementOutcome::Normal(state)
-        | CStatementOutcome::Break(state)
-        | CStatementOutcome::Continue(state)
-        | CStatementOutcome::Jump { state, .. }
-        | CStatementOutcome::Return { state, .. }
-        | CStatementOutcome::Throw { state, .. } => state.memory(),
-        CStatementOutcome::VerificationDiverges
-        | CStatementOutcome::UndefinedBehavior(_)
-        | CStatementOutcome::RuntimeError(_) => return Vec::new(),
+        StatementOutcome::Normal(state)
+        | StatementOutcome::Break(state)
+        | StatementOutcome::Continue(state)
+        | StatementOutcome::Jump { state, .. }
+        | StatementOutcome::Return { state, .. }
+        | StatementOutcome::Throw { state, .. } => state.memory(),
+        StatementOutcome::VerificationDiverges
+        | StatementOutcome::UndefinedBehavior(_)
+        | StatementOutcome::RuntimeError(_) => return Vec::new(),
     };
     let before = crate::kernel::intern_c_memory_ref(before);
     let mut current = crate::kernel::intern_c_memory_ref(after);
@@ -6188,7 +6183,7 @@ fn statement_call_havoc_views(theorem: &Theorem) -> Vec<crate::kernel::SharedMem
         };
         if matches!(
             derivation.as_ref(),
-            crate::kernel::CMemoryDerivation::CallHavoc { .. }
+            crate::kernel::MemoryDerivation::CallHavoc { .. }
         ) {
             calls.push(current.clone());
         }
@@ -6200,8 +6195,8 @@ fn statement_call_havoc_views(theorem: &Theorem) -> Vec<crate::kernel::SharedMem
 
 fn register_recomputed_call_views(
     events: &CheckedCallEvents,
-    running: &CMemory,
-    recomputed: &CMemory,
+    running: &Memory,
+    recomputed: &Memory,
     assumptions: &PureFactContext,
 ) {
     let Some(pairs) =
@@ -6700,7 +6695,7 @@ fn checked_statement_event(
     theorem: &Theorem,
     state: &ExecutionState,
     statement: &ProgramStatement,
-) -> Option<CStatementOutcome> {
+) -> Option<StatementOutcome> {
     let (proved_state, proved_statement, outcome) = match checked_evidence_conclusion(theorem) {
         Proposition::CStatementExecutes {
             state,
@@ -6728,7 +6723,7 @@ fn checked_condition_event(
         Proposition::CConditionEvaluates {
             state,
             condition,
-            outcome: CConditionOutcome::Value(value),
+            outcome: ConditionOutcome::Value(value),
         } => (state, condition, *value),
         _ => return None,
     };
@@ -6789,7 +6784,7 @@ fn checked_condition_event(
 struct CheckedEvidenceProgress {
     state: ExecutionState,
     remaining: Option<ProgramStatement>,
-    completed: Option<CStatementOutcome>,
+    completed: Option<StatementOutcome>,
     /// Where the walk saw memory change, in order.
     memory_steps: Vec<CheckedMemoryStep>,
 }
@@ -6803,8 +6798,8 @@ struct CheckedEvidenceProgress {
 /// pointer can reach, and it leaves no effect fact.
 #[derive(Clone)]
 struct CheckedMemoryStep {
-    before: CMemory,
-    after: CMemory,
+    before: Memory,
+    after: Memory,
     may_write: bool,
     /// For a statement, how many memory effects its recorder appended.
     statement_effects: Option<usize>,
@@ -6877,7 +6872,7 @@ fn check_evidence_events(
                 | CheckedExecutionEvent::Branch(_)
                 | CheckedExecutionEvent::ProofCaseJoin(_)
         );
-        if let Some(CStatementOutcome::Return {
+        if let Some(StatementOutcome::Return {
             state: returned, ..
         }) = &mut completed
             && let CheckedExecutionEvent::ResourceRewrite(rewrite) = event
@@ -6885,7 +6880,7 @@ fn check_evidence_events(
             **returned = rewrite.after_state.clone();
             continue;
         }
-        if let Some(CStatementOutcome::Return {
+        if let Some(StatementOutcome::Return {
             state: returned, ..
         }) = &mut completed
             && let CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) = event
@@ -6896,11 +6891,11 @@ fn check_evidence_events(
         if let CheckedExecutionEvent::AutomaticLifetimeEnd(end) = event {
             if let Some(outcome) = &mut completed {
                 let returned = match outcome {
-                    CStatementOutcome::Normal(state)
-                    | CStatementOutcome::Break(state)
-                    | CStatementOutcome::Continue(state)
-                    | CStatementOutcome::Return { state, .. }
-                    | CStatementOutcome::Throw { state, .. } => state,
+                    StatementOutcome::Normal(state)
+                    | StatementOutcome::Break(state)
+                    | StatementOutcome::Continue(state)
+                    | StatementOutcome::Return { state, .. }
+                    | StatementOutcome::Throw { state, .. } => state,
                     _ => return None,
                 };
                 **returned = end.after_state.clone();
@@ -6970,7 +6965,7 @@ fn check_evidence_events(
                 matches!(*split_shared_source(source).0, ProgramStatement::Skip)
             })
         {
-            let CStatementOutcome::Normal(next_state) =
+            let StatementOutcome::Normal(next_state) =
                 checked_statement_event(theorem, &state, &ProgramStatement::Skip)?
             else {
                 return None;
@@ -6983,23 +6978,23 @@ fn check_evidence_events(
         match event {
             CheckedExecutionEvent::Statement(theorem) => {
                 match checked_statement_event(theorem, &state, &next_statement)? {
-                    CStatementOutcome::Normal(next_state) => {
+                    StatementOutcome::Normal(next_state) => {
                         state = *next_state;
                         remaining = tail;
                     }
-                    outcome @ (CStatementOutcome::Break(_)
-                    | CStatementOutcome::Continue(_)
-                    | CStatementOutcome::Return { .. }
-                    | CStatementOutcome::Throw { .. }
-                    | CStatementOutcome::VerificationDiverges) => {
+                    outcome @ (StatementOutcome::Break(_)
+                    | StatementOutcome::Continue(_)
+                    | StatementOutcome::Return { .. }
+                    | StatementOutcome::Throw { .. }
+                    | StatementOutcome::VerificationDiverges) => {
                         if tail.is_some() {
                             return None;
                         }
                         completed = Some(outcome);
                     }
-                    CStatementOutcome::UndefinedBehavior(_)
-                    | CStatementOutcome::RuntimeError(_)
-                    | CStatementOutcome::Jump { .. } => return None,
+                    StatementOutcome::UndefinedBehavior(_)
+                    | StatementOutcome::RuntimeError(_)
+                    | StatementOutcome::Jump { .. } => return None,
                 }
             }
             CheckedExecutionEvent::Condition(theorem) => {
@@ -7084,7 +7079,7 @@ fn trace_completion<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     checked_void_fallthrough: bool,
 ) -> Result<
     (
-        CStatementOutcome,
+        StatementOutcome,
         PureFactContext,
         crate::kernel::ExecutionFacts,
     ),
@@ -7104,7 +7099,7 @@ fn trace_completion<E: std::borrow::Borrow<CheckedExecutionEvent>>(
 fn retain_return_context(
     function: &ProgramFunction,
     executed_under: &mut PureFactContext,
-    return_origin: Option<&CStatementOutcome>,
+    return_origin: Option<&StatementOutcome>,
     context: &Arc<CheckedReturnContext>,
     return_context: &mut Option<Arc<CheckedReturnContext>>,
 ) -> Result<(), &'static str> {
@@ -7131,7 +7126,7 @@ fn retain_return_context(
         {
             *executed_under = retain_completed_path_fact(std::mem::take(executed_under), fact);
         }
-        let CFunctionOutcome::Return {
+        let FunctionOutcome::Return {
             state: published, ..
         } = &context.published
         else {
@@ -7151,7 +7146,7 @@ fn retain_return_context(
             .map(|definition| (definition.name(), std::slice::from_ref(definition)))
             .collect();
         for held in published.resources().facts() {
-            let CResource::Composite { name, .. } = held.resource() else {
+            let Resource::Composite { name, .. } = held.resource() else {
                 continue;
             };
             let Some(definition) = definitions.get(name.as_str()) else {
@@ -7160,7 +7155,7 @@ fn retain_return_context(
             if !(held.is_view() || held.has_proven_positive_quantity(executed_under)) {
                 continue;
             }
-            let authority = CResourceFact::own(held.resource().clone());
+            let authority = ResourceFact::own(held.resource().clone());
             // Immutable argument facts of an ordinary held resource
             // survive a return. Instantiate with no memory, resources,
             // or ambient read premises so this cannot import a mutable
@@ -7170,7 +7165,7 @@ fn retain_return_context(
                     crate::kernel::functions::evaluate_composite_resource_fact_propositions(
                         &authority,
                         definition,
-                        &CMemory::new(),
+                        &Memory::new(),
                         &ResourceContext::new(),
                         &PureFactContext::new().require_owned_expression_loads(),
                     )
@@ -7226,7 +7221,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     unjustified: &mut Option<Proposition>,
 ) -> Result<
     (
-        CStatementOutcome,
+        StatementOutcome,
         PureFactContext,
         crate::kernel::ExecutionFacts,
     ),
@@ -7235,7 +7230,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
     if !events_use_the_function_definitions(function, events) {
         return Err("a retained resource event was checked under other composite definitions");
     }
-    let mut completed: Option<(CStatementOutcome, PureFactContext)> = None;
+    let mut completed: Option<(StatementOutcome, PureFactContext)> = None;
     let mut return_origin = None;
     let mut return_context: Option<Arc<CheckedReturnContext>> = None;
     let mut proposition_base: Option<&ProofFacts> = None;
@@ -7263,7 +7258,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                     return Err("retained statement evidence has a non-statement conclusion");
                 };
                 match outcome {
-                    CStatementOutcome::Normal(state) => {
+                    StatementOutcome::Normal(state) => {
                         let context = match events.get(index + 1).map(E::borrow) {
                             Some(CheckedExecutionEvent::Context(context)) => {
                                 context.as_ref().clone()
@@ -7272,7 +7267,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                                 crate::kernel::api::proof_evidence_assumptions(theorem, assumptions)
                             }
                         };
-                        let returning = CStatementOutcome::Return {
+                        let returning = StatementOutcome::Return {
                             value: ProgramValue::Void.into(),
                             state: state.clone(),
                         };
@@ -7283,12 +7278,12 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                             fallthrough = Some((returning, context));
                         }
                     }
-                    CStatementOutcome::Break(_)
-                    | CStatementOutcome::Continue(_)
-                    | CStatementOutcome::Jump { .. } => {
+                    StatementOutcome::Break(_)
+                    | StatementOutcome::Continue(_)
+                    | StatementOutcome::Jump { .. } => {
                         fallthrough = None;
                     }
-                    CStatementOutcome::Throw { .. }
+                    StatementOutcome::Throw { .. }
                         if events[index + 2..].iter().any(|event| {
                             matches!(event.borrow(), CheckedExecutionEvent::Statement(_))
                         }) =>
@@ -7298,9 +7293,9 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                         // control transfer, not this execution path's final
                         // function outcome.
                     }
-                    CStatementOutcome::Return { .. }
-                    | CStatementOutcome::Throw { .. }
-                    | CStatementOutcome::VerificationDiverges => {
+                    StatementOutcome::Return { .. }
+                    | StatementOutcome::Throw { .. }
+                    | StatementOutcome::VerificationDiverges => {
                         // The path completes under the context its final
                         // theorem was proved under, recorded right after it.
                         let executed_under = match events.get(index + 1).map(E::borrow) {
@@ -7314,8 +7309,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                         return_origin = Some(outcome.clone());
                         completed = Some((outcome.clone(), executed_under));
                     }
-                    CStatementOutcome::UndefinedBehavior(_)
-                    | CStatementOutcome::RuntimeError(_) => {
+                    StatementOutcome::UndefinedBehavior(_) | StatementOutcome::RuntimeError(_) => {
                         return Err("a trace completes in an error outcome");
                     }
                 }
@@ -7339,7 +7333,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
             CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => {
                 fallthrough = None;
                 if let Some((outcome, _)) = &mut completed {
-                    let CStatementOutcome::Return { state, .. } = outcome else {
+                    let StatementOutcome::Return { state, .. } = outcome else {
                         return Err("population authority rewrite requires a returned state");
                     };
                     rewrite
@@ -7361,8 +7355,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                 }
             }
             CheckedExecutionEvent::ReturnProposition(retained) => {
-                let Some((CStatementOutcome::Return { state, .. }, executed_under)) =
-                    &mut completed
+                let Some((StatementOutcome::Return { state, .. }, executed_under)) = &mut completed
                 else {
                     return Err("return proof requires a returning path");
                 };
@@ -7427,7 +7420,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
             CheckedExecutionEvent::ResourceRewrite(rewrite) => {
                 fallthrough = None;
                 if let Some((outcome, executed_under)) = &mut completed {
-                    let CStatementOutcome::Return { state, .. } = outcome else {
+                    let StatementOutcome::Return { state, .. } = outcome else {
                         return Err("resource rewriting requires a returned state");
                     };
                     if let Some(context) = &rewrite.return_context {
@@ -7596,8 +7589,8 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
             CheckedExecutionEvent::AutomaticLifetimeEnd(end) => {
                 if let Some((outcome, _)) = completed.as_mut().or(fallthrough.as_mut()) {
                     let state = match outcome {
-                        CStatementOutcome::Return { state, .. }
-                        | CStatementOutcome::Throw { state, .. } => state,
+                        StatementOutcome::Return { state, .. }
+                        | StatementOutcome::Throw { state, .. } => state,
                         _ => return Err("lifetime end follows a stateless outcome"),
                     };
                     **state = end
@@ -7966,7 +7959,7 @@ impl ExecutionProofCore {
         arguments: &[ProgramExpression],
         expected_entry_state: &ExecutionState,
         facts: &ProofFacts,
-    ) -> Result<(), CRuntimeError> {
+    ) -> Result<(), RuntimeError> {
         self.record_checked_function_entry(
             function,
             arguments,
@@ -7992,12 +7985,12 @@ impl ExecutionProofCore {
         arguments: &[ProgramExpression],
         expected_entry_state: &ExecutionState,
         assumptions: PureFactContext,
-    ) -> Result<(), CRuntimeError> {
+    ) -> Result<(), RuntimeError> {
         if !self.frontier.is_at_function_entry()
             || self.execution_evidence.len() != 1
             || !self.execution_evidence[0].is_empty()
         {
-            return Err(CRuntimeError::FunctionContract(
+            return Err(RuntimeError::FunctionContract(
                 "function entry must be checked before executing its body".into(),
             ));
         }
@@ -8156,12 +8149,12 @@ impl ExecutionProofCore {
             _ => None,
         };
         let after = match &outcome {
-            CStatementOutcome::Normal(state)
-            | CStatementOutcome::Return { state, .. }
-            | CStatementOutcome::Break(state)
-            | CStatementOutcome::Continue(state)
-            | CStatementOutcome::Jump { state, .. }
-            | CStatementOutcome::Throw { state, .. } => Some(state.as_ref()),
+            StatementOutcome::Normal(state)
+            | StatementOutcome::Return { state, .. }
+            | StatementOutcome::Break(state)
+            | StatementOutcome::Continue(state)
+            | StatementOutcome::Jump { state, .. }
+            | StatementOutcome::Throw { state, .. } => Some(state.as_ref()),
             _ => None,
         };
         self.last_footprint = before.zip(after).map(|(before, after)| {
@@ -8177,7 +8170,7 @@ impl ExecutionProofCore {
         {
             let fact = Proposition::CResourceContains {
                 parent: Box::new(bound.clone()),
-                child: Box::new(CResource::Footprint(fp.clone())),
+                child: Box::new(Resource::Footprint(fp.clone())),
             };
             self.effect_facts
                 .push(ExecutionPureFact::new(fact.clone()).into_certified());
@@ -8193,7 +8186,7 @@ impl ExecutionProofCore {
             }
             trace.push(CheckedExecutionEvent::StatementEffects(memory_effects));
         }
-        self.evidence_source = matches!(&outcome, CStatementOutcome::Normal(_))
+        self.evidence_source = matches!(&outcome, StatementOutcome::Normal(_))
             .then_some(source_after.clone())
             .flatten();
         // A `break` or `continue` this frontier's own region owns, rather
@@ -8209,15 +8202,15 @@ impl ExecutionProofCore {
                     if matches!(statement.as_ref(), ProgramStatement::LoopTest { .. })
             );
             match &outcome {
-                CStatementOutcome::Break(_) if at_loop_test => Some(LoopControlExit::TestFalse),
-                CStatementOutcome::Break(_) => Some(LoopControlExit::Break),
-                CStatementOutcome::Continue(_) => Some(LoopControlExit::Continue),
+                StatementOutcome::Break(_) if at_loop_test => Some(LoopControlExit::TestFalse),
+                StatementOutcome::Break(_) => Some(LoopControlExit::Break),
+                StatementOutcome::Continue(_) => Some(LoopControlExit::Continue),
                 _ => None,
             }
         } else {
             None
         };
-        if let CStatementOutcome::Throw { .. } = &outcome
+        if let StatementOutcome::Throw { .. } = &outcome
             && let Some(exceptional) = self
                 .frontier
                 .continuations
@@ -8243,7 +8236,7 @@ impl ExecutionProofCore {
             });
         }
         match outcome {
-            CStatementOutcome::Normal(next_state) => {
+            StatementOutcome::Normal(next_state) => {
                 self.evidence_state = Some(*next_state);
                 // A checked final normal statement also completes a void
                 // function. Keep the recorder consistent with the completion
@@ -8258,7 +8251,7 @@ impl ExecutionProofCore {
                     self.record_completed_path_context();
                 }
             }
-            CStatementOutcome::Throw { state, .. }
+            StatementOutcome::Throw { state, .. }
                 if self
                     .frontier
                     .continuations
@@ -8272,12 +8265,12 @@ impl ExecutionProofCore {
                 self.evidence_state = Some(*state);
                 self.evidence_completed = false;
             }
-            CStatementOutcome::Return { state, .. } | CStatementOutcome::Throw { state, .. } => {
+            StatementOutcome::Return { state, .. } | StatementOutcome::Throw { state, .. } => {
                 self.evidence_state = Some(*state);
                 self.evidence_completed = true;
                 self.record_completed_path_context();
             }
-            CStatementOutcome::Break(state) | CStatementOutcome::Continue(state)
+            StatementOutcome::Break(state) | StatementOutcome::Continue(state)
                 if region_loop_control.is_some() =>
             {
                 // A loop-preservation proof executes one body iteration in a
@@ -8293,19 +8286,19 @@ impl ExecutionProofCore {
                 self.evidence_state = Some(*state);
                 self.evidence_completed = true;
             }
-            CStatementOutcome::Break(state) => {
+            StatementOutcome::Break(state) => {
                 let source_after = self.advance_loop_control(false, source_after)?;
                 self.evidence_source = source_after;
                 self.evidence_state = Some(*state);
                 self.evidence_completed = false;
             }
-            CStatementOutcome::Continue(state) => {
+            StatementOutcome::Continue(state) => {
                 let source_after = self.advance_loop_control(true, source_after)?;
                 self.evidence_source = source_after;
                 self.evidence_state = Some(*state);
                 self.evidence_completed = false;
             }
-            CStatementOutcome::Jump { target, state } => {
+            StatementOutcome::Jump { target, state } => {
                 if self.frontier.natural_backedge_target == Some(target)
                     && self.frontier.in_loop_body
                 {
@@ -8336,9 +8329,9 @@ impl ExecutionProofCore {
             // An error outcome is recorded so the driver reports it; it
             // completes the trace without a state a later theorem could
             // start from, and completion will not accept it as a path.
-            CStatementOutcome::VerificationDiverges
-            | CStatementOutcome::UndefinedBehavior(_)
-            | CStatementOutcome::RuntimeError(_) => self.evidence_completed = true,
+            StatementOutcome::VerificationDiverges
+            | StatementOutcome::UndefinedBehavior(_)
+            | StatementOutcome::RuntimeError(_) => self.evidence_completed = true,
         }
         Ok(())
     }
@@ -8425,7 +8418,7 @@ impl ExecutionProofCore {
         for (theorem, _, _) in outcomes {
             let (outcome, _) =
                 self.check_statement_evidence(function, arguments, theorem, &context)?;
-            if matches!(outcome, CStatementOutcome::Normal(_)) {
+            if matches!(outcome, StatementOutcome::Normal(_)) {
                 return Err("an outcome fork records only completing outcomes".into());
             }
         }
@@ -8468,7 +8461,7 @@ impl ExecutionProofCore {
         context: &PureFactContext,
         _execution_facts: &(impl ExecutionFactSource + ?Sized),
         _obligations: &[crate::kernel::ProofObligation],
-        outcome: CFunctionOutcome,
+        outcome: FunctionOutcome,
         completed_execution_facts: ExecutionFacts,
         completed_obligations: Vec<crate::kernel::ProofObligation>,
         pure_facts: ProofFacts,
@@ -8492,14 +8485,14 @@ impl ExecutionProofCore {
         let mut probe = parent.clone();
         let (statement_outcome, _) =
             probe.check_statement_evidence(function, arguments, theorem, context)?;
-        if !matches!(statement_outcome, CStatementOutcome::Return { .. }) {
+        if !matches!(statement_outcome, StatementOutcome::Return { .. }) {
             return Err("a loop's retained terminal path does not return".into());
         }
         if !matches!(
             outcome,
-            CFunctionOutcome::Return { .. }
-                | CFunctionOutcome::RuntimeError(_)
-                | CFunctionOutcome::UndefinedBehavior(_)
+            FunctionOutcome::Return { .. }
+                | FunctionOutcome::RuntimeError(_)
+                | FunctionOutcome::UndefinedBehavior(_)
         ) {
             return Err("a loop's returned path was published with a non-returning outcome".into());
         }
@@ -8597,7 +8590,7 @@ impl ExecutionProofCore {
             })?;
         match checked_evidence_conclusion(theorem) {
             Proposition::CStatementVerifies {
-                outcome: CStatementOutcome::Return { value, .. },
+                outcome: StatementOutcome::Return { value, .. },
                 ..
             } => Some((value.clone(), state)),
             _ => None,
@@ -8990,7 +8983,7 @@ impl ExecutionProofCore {
         arguments: &[ProgramExpression],
         theorem: &Theorem,
         context: &PureFactContext,
-    ) -> Result<(CStatementOutcome, Option<Arc<ProgramStatement>>), EvidenceRefusal> {
+    ) -> Result<(StatementOutcome, Option<Arc<ProgramStatement>>), EvidenceRefusal> {
         // Owned (not borrowed) so try-evidence advancement below can take
         // `&mut self`; `ExecutionState` clones are persistent-structure shares.
         let running_state = self.running_state(function, arguments)?.into_owned();
@@ -9008,7 +9001,7 @@ impl ExecutionProofCore {
         match (&**proved_statement, outcome) {
             (
                 ProgramStatement::Goto { target: expected },
-                CStatementOutcome::Jump { target: actual, .. },
+                StatementOutcome::Jump { target: actual, .. },
             ) if expected == actual && function.control_target(*actual).is_some() => {}
             (ProgramStatement::Goto { .. }, _) => {
                 return Err("goto evidence does not carry its checked function target".into());
@@ -9019,9 +9012,9 @@ impl ExecutionProofCore {
                     natural_exit_target: Some(expected),
                     ..
                 },
-                CStatementOutcome::Jump { target: actual, .. },
+                StatementOutcome::Jump { target: actual, .. },
             ) if expected == actual && function.control_target(*actual).is_some() => {}
-            (_, CStatementOutcome::Jump { .. }) => {
+            (_, StatementOutcome::Jump { .. }) => {
                 return Err("non-goto evidence carries a control-flow jump".into());
             }
             _ => {}
@@ -9151,7 +9144,7 @@ impl ExecutionProofCore {
                 Proposition::CConditionEvaluates {
                     state,
                     condition,
-                    outcome: CConditionOutcome::Value(value),
+                    outcome: ConditionOutcome::Value(value),
                 } => (state, condition, *value),
                 _ => return Err("retained condition evidence has a non-value conclusion".into()),
             };
@@ -9532,7 +9525,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         interface_specs: &[SpecProposition],
-        interface_resource_specs: &[CResourceSpec],
+        interface_resource_specs: &[ResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &ExecutionState,
         successor_facts: &ProofFacts,
@@ -9611,7 +9604,7 @@ impl ExecutionProofCore {
     /// frontier rescans the state.
     fn initial_match_reserved_variables(&self) -> &std::collections::BTreeSet<Variable> {
         self.initial_match_reserved.get_or_init(|| {
-            use crate::kernel::CFunctionOutcome;
+            use crate::kernel::FunctionOutcome;
             #[cfg(test)]
             MATCH_SCOPE_INDEX_BUILDS.with(|count| count.set(count.get() + 1));
             let mut reserved = std::collections::BTreeSet::new();
@@ -9629,7 +9622,7 @@ impl ExecutionProofCore {
                         state: Box::new(entry.caller_state.clone()),
                         function: Box::new(entry.function.as_ref().clone()),
                         arguments: entry.arguments.clone(),
-                        outcome: CFunctionOutcome::Return {
+                        outcome: FunctionOutcome::Return {
                             value: ProgramValue::Void.into(),
                             state: Box::new(entry.entry_state.clone()),
                         },
@@ -9655,8 +9648,8 @@ impl ExecutionProofCore {
         &self,
         facts: &ProofFacts,
         value: &crate::kernel::AlgebraicTerm,
-        environment: &crate::kernel::CExecutionEnvironment,
-        definitions: &[crate::kernel::CCompositeResourceDefinition],
+        environment: &crate::kernel::ExecutionEnvironment,
+        definitions: &[crate::kernel::CompositeResourceDefinition],
         matched_resource_field: Option<&crate::kernel::ResourceFieldProjection>,
         first_variable: u64,
         stride: u64,
@@ -9871,7 +9864,7 @@ impl ExecutionProofCore {
         &self,
         facts: &ProofFacts,
         value: &crate::kernel::AlgebraicTerm,
-        definitions: &[crate::kernel::CCompositeResourceDefinition],
+        definitions: &[crate::kernel::CompositeResourceDefinition],
         matched_resource_field: Option<&crate::kernel::ResourceFieldProjection>,
     ) -> ProofFacts {
         let crate::kernel::AlgebraicTermNode::Variable(variable) = value.node else {
@@ -9912,7 +9905,7 @@ impl ExecutionProofCore {
             return extended;
         }
         for fact in state.resources().facts() {
-            let crate::kernel::CResource::Instance(instance) = fact.resource() else {
+            let crate::kernel::Resource::Instance(instance) = fact.resource() else {
                 continue;
             };
             if !instance.fields().iter().any(|field| {
@@ -10018,7 +10011,7 @@ impl ExecutionProofCore {
         &mut self,
         state: &ExecutionState,
         names: &[String],
-    ) -> Result<ExecutionState, CRuntimeError> {
+    ) -> Result<ExecutionState, RuntimeError> {
         self.last_footprint = None;
         if names.is_empty() {
             return Ok(state.clone());
@@ -10028,7 +10021,7 @@ impl ExecutionProofCore {
             return Ok(after_state);
         }
         if self.reached_state() != state {
-            return Err(CRuntimeError::FunctionContract(
+            return Err(RuntimeError::FunctionContract(
                 "automatic lifetime end does not start from the running state".into(),
             ));
         }
@@ -10083,7 +10076,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         before_facts: &ProofFacts,
-        observed: &CResourceFact,
+        observed: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
     ) -> Result<(), &'static str> {
@@ -10135,7 +10128,7 @@ impl ExecutionProofCore {
         before_facts: &ProofFacts,
         name: &str,
         arguments: &[crate::kernel::ProgramValue],
-        environment: &crate::kernel::CExecutionEnvironment,
+        environment: &crate::kernel::ExecutionEnvironment,
     ) -> Result<(ExecutionState, ProofFacts), crate::kernel::functions::TacticApplicationRefusal>
     {
         use crate::kernel::functions::TacticApplicationRefusal::Refused;
@@ -10194,7 +10187,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
     ) -> Result<(), String> {
@@ -10215,7 +10208,7 @@ impl ExecutionProofCore {
     pub(crate) fn record_population_authority_rewrite(
         &mut self,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         establish: bool,
         witness: &CheckedPopulationAuthorityExchange,
         after_state: &ExecutionState,
@@ -10251,7 +10244,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         produce: bool,
         witness: &CheckedPopulationMemberExchange,
         after_state: &ExecutionState,
@@ -10554,7 +10547,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
         selected_children: Option<Arc<[(String, Variable)]>>,
@@ -10581,7 +10574,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
         selected_children: Option<Arc<[(String, Variable)]>>,
@@ -10642,7 +10635,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         path_index: usize,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_facts: &ProofFacts,
     ) -> Result<(), String> {
         self.record_return_resource_rewrite_with_children(
@@ -10802,7 +10795,7 @@ impl ExecutionProofCore {
         let before = match trace.presented.as_deref() {
             Some(state) => state.clone(),
             None => match &context.published {
-                CFunctionOutcome::Return { state, .. } => *state.clone(),
+                FunctionOutcome::Return { state, .. } => *state.clone(),
                 _ => return Err("return observation requires a returning path".into()),
             },
         };
@@ -10828,7 +10821,7 @@ impl ExecutionProofCore {
             function,
             path_index,
             before_facts,
-            &CResourceFact::own(CResource::Instance(instance.clone())),
+            &ResourceFact::own(Resource::Instance(instance.clone())),
             &facts,
             unfold,
             selected_children,
@@ -10844,7 +10837,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         path_index: usize,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         after_facts: &ProofFacts,
         unfold: bool,
         selected_children: Option<Arc<[(String, Variable)]>>,
@@ -10862,7 +10855,7 @@ impl ExecutionProofCore {
                 .to_string()
                 .into());
         }
-        let CResource::Instance(instance) = selected.resource() else {
+        let Resource::Instance(instance) = selected.resource() else {
             return Err("return rewrite requires a named instance"
                 .to_string()
                 .into());
@@ -10979,7 +10972,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         path_index: usize,
         before_facts: &ProofFacts,
-        selected: &CResourceFact,
+        selected: &ResourceFact,
         outcome: &super::OutcomeProofCore,
         after_state: &ExecutionState,
         after_facts: &ProofFacts,
@@ -11005,7 +10998,7 @@ impl ExecutionProofCore {
         let before_state = trace.retained_state()?.clone();
         // An ordinary macro refold may exist only in the visible outcome;
         // unfolding it again does not change the retained C path's body.
-        if matches!(selected.resource(), CResource::Composite { name, .. }
+        if matches!(selected.resource(), Resource::Composite { name, .. }
             if function.proof_composite_resource_definition(name)
                 .is_some_and(|definition| !definition.reaches_population()))
             && presented_before_state
@@ -11030,7 +11023,7 @@ impl ExecutionProofCore {
             return Ok(());
         }
         let context = self.return_context_for_path(path_index)?;
-        if !matches!(&context.published, CFunctionOutcome::Return { .. }) {
+        if !matches!(&context.published, FunctionOutcome::Return { .. }) {
             return Err("return composite exchange requires a returning path".into());
         }
         let presented = CheckedResourceRewrite::check_with_children(
@@ -11075,12 +11068,12 @@ impl ExecutionProofCore {
                 .clone();
         Arc::make_mut(&mut retained_after_state.population_effects).creation =
             before_state.population_effects.creation.clone();
-        if let CResource::Composite { name, .. } = selected.resource()
+        if let Resource::Composite { name, .. } = selected.resource()
             && let Some(definition) = function.proof_composite_resource_definition(name)
             && definition.contains().iter().any(|spec| {
                 matches!(
                     spec.term(),
-                    crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                    crate::kernel::ResourceTerm::PopulationAuthority { .. }
                 )
             })
         {
@@ -11191,7 +11184,7 @@ impl ExecutionProofCore {
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
         interface_specs: &[SpecProposition],
-        interface_resource_specs: &[CResourceSpec],
+        interface_resource_specs: &[ResourceSpec],
         arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
         joined_state: &ExecutionState,
         successor_facts: &ProofFacts,
@@ -11251,13 +11244,13 @@ impl ExecutionProofCore {
     /// name the traces' outcomes in order.
     pub(crate) fn checked_function_execution(
         &self,
-        candidates: &CFunctionExecutionCandidates,
+        candidates: &FunctionExecutionCandidates,
         checked_function: &ProgramFunction,
         assumptions: PureFactContext,
-        environment: crate::kernel::CExecutionEnvironment,
-        execution_semantics: crate::kernel::CExecutionSemantics,
-        mode: crate::kernel::CFunctionContractExecutionMode,
-    ) -> Result<crate::kernel::CCheckedFunctionExecution, &'static str> {
+        environment: crate::kernel::ExecutionEnvironment,
+        execution_semantics: crate::kernel::ExecutionSemantics,
+        mode: crate::kernel::FunctionContractExecutionMode,
+    ) -> Result<crate::kernel::CheckedFunctionExecution, &'static str> {
         // A function that declares an expression `decreases` measure owes a
         // descent obligation at each self-call, and the environment's anchor
         // is what makes the call step emit one. The proof stepped under the
@@ -11297,7 +11290,7 @@ impl ExecutionProofCore {
                 &mut None,
             )?;
         let path_count = paths.len();
-        Ok(crate::kernel::CCheckedFunctionExecution {
+        Ok(crate::kernel::CheckedFunctionExecution {
             closed_exit_obligations: vec![None; path_count],
             proof_candidates: Some(candidates.clone()),
             state: candidates.state().clone(),
@@ -11307,7 +11300,7 @@ impl ExecutionProofCore {
             environment,
             execution_semantics,
             mode,
-            execution: crate::kernel::SymbolicCExecution { paths, limit: None },
+            execution: crate::kernel::SymbolicExecution { paths, limit: None },
             checked_resource_claims: vec![Vec::new(); path_count],
             checked_resource_transitions: vec![false; path_count],
             deferred_contract_exits,
@@ -11333,7 +11326,7 @@ impl ExecutionProofCore {
     /// execution. The receipt retains the exact path used by its claim proofs.
     pub(crate) fn checked_return_path(
         &self,
-        execution: &crate::kernel::CCheckedFunctionExecution,
+        execution: &crate::kernel::CheckedFunctionExecution,
         path_index: usize,
     ) -> Result<CheckedReturnPath, ReturnPathRefusal> {
         let source = execution.paths().get(path_index).ok_or(ReturnPathRefusal {
@@ -11408,17 +11401,17 @@ impl ExecutionProofCore {
 
     fn checked_execution_paths(
         &self,
-        candidates: &CFunctionExecutionCandidates,
+        candidates: &FunctionExecutionCandidates,
         checked_function: &ProgramFunction,
         assumptions: &PureFactContext,
         selected: Option<usize>,
         unjustified: &mut Option<Proposition>,
     ) -> Result<
         (
-            Vec<crate::kernel::SymbolicCExecutionPath>,
+            Vec<crate::kernel::SymbolicExecutionPath>,
             bool,
             Vec<bool>,
-            Vec<Option<crate::kernel::CRuntimeError>>,
+            Vec<Option<crate::kernel::RuntimeError>>,
         ),
         &'static str,
     > {
@@ -11629,7 +11622,7 @@ impl ExecutionProofCore {
             ) {
                 Ok(Ok(exit)) => exit,
                 Ok(Err(error)) => (
-                    crate::kernel::CFunctionOutcome::RuntimeError(error),
+                    crate::kernel::FunctionOutcome::RuntimeError(error),
                     candidate.obligations().to_vec(),
                     None,
                     false,
@@ -11697,7 +11690,7 @@ impl ExecutionProofCore {
                 candidate.obligations(),
             ));
             drop(premises);
-            paths.push(crate::kernel::SymbolicCExecutionPath {
+            paths.push(crate::kernel::SymbolicExecutionPath {
                 call_parameters: None,
                 completion_origin: Some(candidate.outcome().clone()),
                 call_result: None,
@@ -11752,7 +11745,7 @@ pub(crate) enum FrontierPosition {
         remaining: Arc<ProgramStatement>,
     },
     FunctionExit {
-        execution: CFunctionExecutionCandidates,
+        execution: FunctionExecutionCandidates,
     },
     /// A bounded region exhausted its own statement tree without an enclosing
     /// continuation. Advancing past this typed boundary is unrepresentable.
@@ -11772,7 +11765,7 @@ impl ExecutionFrontier {
         matches!(self.position, FrontierPosition::RegionBoundary)
     }
 
-    pub(crate) fn execution(&self) -> Option<&CFunctionExecutionCandidates> {
+    pub(crate) fn execution(&self) -> Option<&FunctionExecutionCandidates> {
         match &self.position {
             FrontierPosition::FunctionEntry
             | FrontierPosition::StatementEntry { .. }

@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::CStatementStoreSource;
+use crate::kernel::StatementStoreSource;
 use crate::kernel::loans::{CheckedLoanCallEvidenceSequence, empty_checked_loan_evidence_sequence};
 mod scalar_arrays;
 
@@ -8,12 +8,12 @@ pub(in crate::kernel) fn execute_c_statement(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &PureFactContext,
-) -> Option<CStatementOutcome> {
+) -> Option<StatementOutcome> {
     let paths = execute_c_statement_paths(
         state,
         statement,
         assumptions,
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::for_new_execution(),
     )
     .ok()?;
@@ -31,7 +31,7 @@ pub(in crate::kernel) fn execute_c_lvalue_assignment_paths(
     value: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     execute_c_lvalue_assignment_paths_with_source(
         state,
         target,
@@ -48,29 +48,29 @@ fn execute_c_lvalue_assignment_paths_with_source(
     value: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-    store_source: CStatementStoreSource,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    store_source: StatementStoreSource,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
     for target_path in evaluate_c_lvalue_paths(state, target, assumptions, budget)? {
-        let CLValuePath {
+        let LValuePath {
             outcome: target_outcome,
             facts: target_facts,
             obligations: target_obligations,
         } = target_path;
 
         let target_lvalue = match target_outcome {
-            CLValueOutcome::LValue(lvalue) => lvalue,
-            CLValueOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::UndefinedBehavior(undefined_behavior),
+            LValueOutcome::LValue(lvalue) => lvalue,
+            LValueOutcome::UndefinedBehavior(undefined_behavior) => {
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::UndefinedBehavior(undefined_behavior),
                     target_facts,
                     target_obligations,
                 ));
                 continue;
             }
-            CLValueOutcome::RuntimeError(error) => {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(error),
+            LValueOutcome::RuntimeError(error) => {
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(error),
                     target_facts,
                     target_obligations,
                 ));
@@ -93,7 +93,7 @@ fn execute_c_lvalue_assignment_paths_with_source(
             };
 
             match value_path.outcome {
-                CExpressionOutcome::Value(value) => {
+                ExpressionOutcome::Value(value) => {
                     paths.extend(write_c_lvalue_paths_for_initialization(
                         state,
                         target_lvalue.clone(),
@@ -106,20 +106,18 @@ fn execute_c_lvalue_assignment_paths_with_source(
                         store_source.clone(),
                     )?)
                 }
-                CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                    paths.push(CStatementExecutionPath::new(
-                        CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                    paths.push(StatementExecutionPath::new(
+                        StatementOutcome::UndefinedBehavior(undefined_behavior),
                         facts,
                         obligations,
                     ))
                 }
-                CExpressionOutcome::RuntimeError(error) => {
-                    paths.push(CStatementExecutionPath::new(
-                        CStatementOutcome::RuntimeError(error),
-                        facts,
-                        obligations,
-                    ))
-                }
+                ExpressionOutcome::RuntimeError(error) => paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(error),
+                    facts,
+                    obligations,
+                )),
             }
         }
     }
@@ -130,31 +128,31 @@ fn execute_c_lvalue_assignment_paths_with_source(
 fn execute_c_lvalue_update_paths(
     state: &ExecutionState,
     target: &ProgramExpression,
-    operator: CUpdateOperator,
+    operator: UpdateOperator,
     operand: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let source = match target {
         ProgramExpression::TypedLoad { source, .. } => source.as_ref(),
         _ => None,
     };
     let mut paths = Vec::new();
     for target_path in evaluate_c_lvalue_paths(state, target, assumptions, budget)? {
-        let CLValuePath {
+        let LValuePath {
             outcome,
             facts,
             obligations,
         } = target_path;
-        let CLValueOutcome::LValue(lvalue) = outcome else {
+        let LValueOutcome::LValue(lvalue) = outcome else {
             let outcome = match outcome {
-                CLValueOutcome::UndefinedBehavior(error) => {
-                    CStatementOutcome::UndefinedBehavior(error)
+                LValueOutcome::UndefinedBehavior(error) => {
+                    StatementOutcome::UndefinedBehavior(error)
                 }
-                CLValueOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
-                CLValueOutcome::LValue(_) => unreachable!(),
+                LValueOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+                LValueOutcome::LValue(_) => unreachable!(),
             };
-            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
+            paths.push(StatementExecutionPath::new(outcome, facts, obligations));
             continue;
         };
         let supported_integer_update = matches!(
@@ -172,21 +170,21 @@ fn execute_c_lvalue_update_paths(
             (lvalue.value_type, operator),
             (
                 ProgramType::Float32 | ProgramType::Float64,
-                CUpdateOperator::Add
+                UpdateOperator::Add
             ) | (
                 ProgramType::Float32 | ProgramType::Float64,
-                CUpdateOperator::Subtract
+                UpdateOperator::Subtract
             ) | (
                 ProgramType::Float32 | ProgramType::Float64,
-                CUpdateOperator::Multiply
+                UpdateOperator::Multiply
             ) | (
                 ProgramType::Float32 | ProgramType::Float64,
-                CUpdateOperator::Divide
+                UpdateOperator::Divide
             )
         );
         if !supported_integer_update && !supported_float_update {
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                 facts,
                 obligations,
             ));
@@ -195,29 +193,27 @@ fn execute_c_lvalue_update_paths(
 
         for current_path in read_c_lvalue_paths(
             state,
-            CLValueOutcome::LValue(lvalue.clone()),
+            LValueOutcome::LValue(lvalue.clone()),
             facts,
             obligations,
             source,
             assumptions,
             budget,
         )? {
-            let CExpressionPath {
+            let ExpressionPath {
                 outcome: current_outcome,
                 facts: current_facts,
                 obligations: current_obligations,
             } = current_path;
-            let CExpressionOutcome::Value(current) = current_outcome else {
+            let ExpressionOutcome::Value(current) = current_outcome else {
                 let outcome = match current_outcome {
-                    CExpressionOutcome::UndefinedBehavior(error) => {
-                        CStatementOutcome::UndefinedBehavior(error)
+                    ExpressionOutcome::UndefinedBehavior(error) => {
+                        StatementOutcome::UndefinedBehavior(error)
                     }
-                    CExpressionOutcome::RuntimeError(error) => {
-                        CStatementOutcome::RuntimeError(error)
-                    }
-                    CExpressionOutcome::Value(_) => unreachable!(),
+                    ExpressionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+                    ExpressionOutcome::Value(_) => unreachable!(),
                 };
-                paths.push(CStatementExecutionPath::new(
+                paths.push(StatementExecutionPath::new(
                     outcome,
                     current_facts,
                     current_obligations,
@@ -230,7 +226,7 @@ fn execute_c_lvalue_update_paths(
             for operand_path in
                 evaluate_c_expression_paths(state, operand, &operand_assumptions, budget)?
             {
-                let CExpressionPath {
+                let ExpressionPath {
                     outcome: operand_outcome,
                     facts: operand_facts,
                     obligations: operand_obligations,
@@ -244,17 +240,17 @@ fn execute_c_lvalue_update_paths(
                 ) else {
                     continue;
                 };
-                let CExpressionOutcome::Value(operand_value) = operand_outcome else {
+                let ExpressionOutcome::Value(operand_value) = operand_outcome else {
                     let outcome = match operand_outcome {
-                        CExpressionOutcome::UndefinedBehavior(error) => {
-                            CStatementOutcome::UndefinedBehavior(error)
+                        ExpressionOutcome::UndefinedBehavior(error) => {
+                            StatementOutcome::UndefinedBehavior(error)
                         }
-                        CExpressionOutcome::RuntimeError(error) => {
-                            CStatementOutcome::RuntimeError(error)
+                        ExpressionOutcome::RuntimeError(error) => {
+                            StatementOutcome::RuntimeError(error)
                         }
-                        CExpressionOutcome::Value(_) => unreachable!(),
+                        ExpressionOutcome::Value(_) => unreachable!(),
                     };
-                    paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
+                    paths.push(StatementExecutionPath::new(outcome, facts, obligations));
                     continue;
                 };
 
@@ -271,7 +267,7 @@ fn execute_c_lvalue_update_paths(
                     &update_assumptions,
                     budget,
                 )? {
-                    let CExpressionPath {
+                    let ExpressionPath {
                         outcome,
                         facts: result_facts,
                         obligations: result_obligations,
@@ -286,7 +282,7 @@ fn execute_c_lvalue_update_paths(
                         continue;
                     };
                     match outcome {
-                        CExpressionOutcome::Value(value) => paths.extend(write_c_lvalue_paths(
+                        ExpressionOutcome::Value(value) => paths.extend(write_c_lvalue_paths(
                             state,
                             lvalue.clone(),
                             value,
@@ -296,16 +292,16 @@ fn execute_c_lvalue_update_paths(
                             budget,
                             Default::default(),
                         )?),
-                        CExpressionOutcome::UndefinedBehavior(error) => {
-                            paths.push(CStatementExecutionPath::new(
-                                CStatementOutcome::UndefinedBehavior(error),
+                        ExpressionOutcome::UndefinedBehavior(error) => {
+                            paths.push(StatementExecutionPath::new(
+                                StatementOutcome::UndefinedBehavior(error),
                                 facts,
                                 obligations,
                             ))
                         }
-                        CExpressionOutcome::RuntimeError(error) => {
-                            paths.push(CStatementExecutionPath::new(
-                                CStatementOutcome::RuntimeError(error),
+                        ExpressionOutcome::RuntimeError(error) => {
+                            paths.push(StatementExecutionPath::new(
+                                StatementOutcome::RuntimeError(error),
                                 facts,
                                 obligations,
                             ))
@@ -320,23 +316,23 @@ fn execute_c_lvalue_update_paths(
 }
 
 fn c_update_expression(
-    operator: CUpdateOperator,
+    operator: UpdateOperator,
     left: ProgramExpression,
     right: ProgramExpression,
 ) -> ProgramExpression {
     let left = Box::new(left);
     let right = Box::new(right);
     match operator {
-        CUpdateOperator::Add => ProgramExpression::Add(left, right),
-        CUpdateOperator::Subtract => ProgramExpression::Subtract(left, right),
-        CUpdateOperator::Multiply => ProgramExpression::Multiply(left, right),
-        CUpdateOperator::Divide => ProgramExpression::Divide(left, right),
-        CUpdateOperator::Remainder => ProgramExpression::Remainder(left, right),
-        CUpdateOperator::ShiftLeft => ProgramExpression::ShiftLeft(left, right),
-        CUpdateOperator::ShiftRight => ProgramExpression::ShiftRight(left, right),
-        CUpdateOperator::BitwiseAnd => ProgramExpression::BitwiseAnd(left, right),
-        CUpdateOperator::BitwiseOr => ProgramExpression::BitwiseOr(left, right),
-        CUpdateOperator::BitwiseXor => ProgramExpression::BitwiseXor(left, right),
+        UpdateOperator::Add => ProgramExpression::Add(left, right),
+        UpdateOperator::Subtract => ProgramExpression::Subtract(left, right),
+        UpdateOperator::Multiply => ProgramExpression::Multiply(left, right),
+        UpdateOperator::Divide => ProgramExpression::Divide(left, right),
+        UpdateOperator::Remainder => ProgramExpression::Remainder(left, right),
+        UpdateOperator::ShiftLeft => ProgramExpression::ShiftLeft(left, right),
+        UpdateOperator::ShiftRight => ProgramExpression::ShiftRight(left, right),
+        UpdateOperator::BitwiseAnd => ProgramExpression::BitwiseAnd(left, right),
+        UpdateOperator::BitwiseOr => ProgramExpression::BitwiseOr(left, right),
+        UpdateOperator::BitwiseXor => ProgramExpression::BitwiseXor(left, right),
     }
 }
 
@@ -345,7 +341,7 @@ pub(in crate::kernel) fn memory_write_permission_outcome(
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Option<CStatementOutcome> {
+) -> Option<StatementOutcome> {
     memory_write_permission_outcome_for_local(state, pointer, bytes, assumptions, false)
 }
 
@@ -355,15 +351,15 @@ fn memory_write_permission_outcome_for_local(
     bytes: u32,
     assumptions: &PureFactContext,
     private_local: bool,
-) -> Option<CStatementOutcome> {
-    let range = CMemoryRange::new_with_element_width(
+) -> Option<StatementOutcome> {
+    let range = MemoryRange::new_with_element_width(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
         bytes,
     );
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &range, assumptions) {
-        return Some(CStatementOutcome::RuntimeError(error));
+        return Some(StatementOutcome::RuntimeError(error));
     }
     if let Some(outcome) = stable_loan_memory_range_outcome(state, &range, assumptions) {
         return Some(outcome);
@@ -375,16 +371,16 @@ fn memory_write_permission_outcome_for_local(
 /// its explicit proof or ordinary solve; this operation never searches loans.
 fn memory_write_obligation_outcome(
     state: &ExecutionState,
-    range: CMemoryRange,
+    range: MemoryRange,
     storage_pointer: &Pointer,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
-) -> Option<CStatementOutcome> {
+) -> Option<StatementOutcome> {
     let storage_range = range.with_base(storage_pointer.clone());
     if let Some(error) =
         super::super::mutexes::storage_write_refusal(state, &storage_range, assumptions)
     {
-        return Some(CStatementOutcome::RuntimeError(error));
+        return Some(StatementOutcome::RuntimeError(error));
     }
     if let Some(requirement) = state
         .loan_ledger()
@@ -397,10 +393,10 @@ fn memory_write_obligation_outcome(
 
 fn memory_write_ownership_outcome(
     state: &ExecutionState,
-    range: CMemoryRange,
+    range: MemoryRange,
     assumptions: &PureFactContext,
     private_local: bool,
-) -> Option<CStatementOutcome> {
+) -> Option<StatementOutcome> {
     let pointer = range.base();
     let bytes = range.element_width();
     if (state.memory.requires_explicit_scalar_ownership(pointer)
@@ -410,9 +406,9 @@ fn memory_write_ownership_outcome(
             .memory_write_range(pointer, bytes, assumptions)
             .is_none()
     {
-        return Some(CStatementOutcome::RuntimeError(
-            CRuntimeError::MissingResource {
-                resource: Box::new(CResourceFact::own_memory(range)),
+        return Some(StatementOutcome::RuntimeError(
+            RuntimeError::MissingResource {
+                resource: Box::new(ResourceFact::own_memory(range)),
             },
         ));
     }
@@ -421,9 +417,9 @@ fn memory_write_ownership_outcome(
 
 fn stable_loan_memory_range_outcome(
     state: &ExecutionState,
-    range: &CMemoryRange,
+    range: &MemoryRange,
     assumptions: &PureFactContext,
-) -> Option<CStatementOutcome> {
+) -> Option<StatementOutcome> {
     state
         .stable_loan_memory_access_refusal(
             range,
@@ -431,19 +427,19 @@ fn stable_loan_memory_range_outcome(
             crate::kernel::LoanRefusalOperation::MemoryAccess,
         )
         .map(|diagnostic| {
-            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(diagnostic)))
+            StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic)))
         })
 }
 
 fn allocation_retirement_outcome(
     state: &ExecutionState,
-    range: &CMemoryRange,
+    range: &MemoryRange,
     assumptions: &PureFactContext,
-) -> Option<CStatementOutcome> {
+) -> Option<StatementOutcome> {
     if let Some(error) =
         super::super::mutexes::storage_retirement_refusal(state, range, assumptions)
     {
-        return Some(CStatementOutcome::RuntimeError(error));
+        return Some(StatementOutcome::RuntimeError(error));
     }
     stable_loan_memory_range_outcome(state, range, assumptions)
 }
@@ -456,8 +452,8 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-    store_source: CStatementStoreSource,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    store_source: StatementStoreSource,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     write_c_lvalue_paths_for_initialization(
         state,
         lvalue,
@@ -480,8 +476,8 @@ fn write_c_lvalue_paths_for_initialization(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     initialization: bool,
-    store_source: CStatementStoreSource,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    store_source: StatementStoreSource,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     // Local copies preserve the lease. Addressable pointer slots and aggregate
     // transport require a separate reference-storage protocol.
     if value
@@ -491,8 +487,8 @@ fn write_c_lvalue_paths_for_initialization(
             if state.locals.slot(name).is_none_or(|pointer|
                 crate::kernel::block_is_never_address_taken_local(&pointer.block)))
     {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(
                 crate::kernel::loans::LoanRefusal::UnsupportedResource
                     .diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
             ))),
@@ -517,8 +513,8 @@ fn write_c_lvalue_paths_for_initialization(
         let (resources, occurrence) = match result {
             Ok(result) => result,
             Err(error) => {
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(
                         error.diagnostic(crate::kernel::LoanRefusalOperation::MemoryAccess),
                     ))),
                     facts,
@@ -539,7 +535,7 @@ fn write_c_lvalue_paths_for_initialization(
             store_source,
         )?;
         for path in &mut paths {
-            if let CStatementOutcome::Normal(state) = &mut path.outcome {
+            if let StatementOutcome::Normal(state) = &mut path.outcome {
                 let resources = state
                     .resources()
                     .clone()
@@ -573,11 +569,11 @@ fn write_c_lvalue_paths_without_local_reference(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     initialization: bool,
-    store_source: CStatementStoreSource,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    store_source: StatementStoreSource,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     if lvalue.is_constant() && !initialization {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
             facts,
             obligations,
         )]);
@@ -626,8 +622,8 @@ fn write_c_lvalue_paths_without_local_reference(
         && let Some(undefined_behavior) =
             retained_expression::freed_expression_value_pointer_use(state, &value, assumptions)
     {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::UndefinedBehavior(undefined_behavior),
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::UndefinedBehavior(undefined_behavior),
             facts,
             obligations,
         )]);
@@ -656,8 +652,8 @@ fn write_c_lvalue_paths_without_local_reference(
             &mut obligations,
             &effective_assumptions,
         ) else {
-            return Ok(vec![CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            return Ok(vec![StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                 facts,
                 obligations,
             )]);
@@ -686,8 +682,8 @@ fn write_c_lvalue_paths_without_local_reference(
             state
                 .locals
                 .set_typed(name, value.into_native(), lvalue_value_type);
-            Ok(vec![CStatementExecutionPath::new(
-                CStatementOutcome::Normal(Box::new(state)),
+            Ok(vec![StatementExecutionPath::new(
+                StatementOutcome::Normal(Box::new(state)),
                 facts,
                 obligations,
             )])
@@ -703,8 +699,8 @@ fn write_c_lvalue_paths_without_local_reference(
                     assumptions,
                 )
             {
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::UndefinedBehavior(refusal),
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::UndefinedBehavior(refusal),
                     facts,
                     obligations,
                 )]);
@@ -714,8 +710,8 @@ fn write_c_lvalue_paths_without_local_reference(
                 .as_ref()
                 .is_some_and(|pending| pending.protects_local(state, &name))
             {
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
                         "pending pthread create permits only external disjoint stores".to_string(),
                     )),
                     facts,
@@ -737,10 +733,10 @@ fn write_c_lvalue_paths_without_local_reference(
                     )
                     .is_none()
             {
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
-                        resource: Box::new(CResourceFact::own_memory(
-                            CMemoryRange::new_with_element_width(
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::MissingResource {
+                        resource: Box::new(ResourceFact::own_memory(
+                            MemoryRange::new_with_element_width(
                                 pointer.clone(),
                                 0u32.into(),
                                 1u32.into(),
@@ -761,7 +757,7 @@ fn write_c_lvalue_paths_without_local_reference(
                     crate::kernel::block_is_never_address_taken_local(&pointer.block),
                 )
             {
-                return Ok(vec![CStatementExecutionPath::new(
+                return Ok(vec![StatementExecutionPath::new(
                     outcome,
                     facts,
                     obligations,
@@ -787,8 +783,8 @@ fn write_c_lvalue_paths_without_local_reference(
                 constant,
                 pointee_constant,
             );
-            Ok(vec![CStatementExecutionPath::new(
-                CStatementOutcome::Normal(Box::new(state)),
+            Ok(vec![StatementExecutionPath::new(
+                StatementOutcome::Normal(Box::new(state)),
                 facts,
                 obligations,
             )])
@@ -813,19 +809,19 @@ fn write_c_lvalue_paths_without_local_reference(
                     &pointer,
                     lvalue_classes.0.clone(),
                     lvalue_classes.1.clone(),
-                    CAccessKind::Write,
+                    AccessKind::Write,
                 )
             }) {
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::UndefinedBehavior(refusal),
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::UndefinedBehavior(refusal),
                     facts,
                     obligations,
                 )]);
             }
             let pointer = resolve_local_pointer_alias(state, &pointer, &effective_assumptions);
             if state.pending_thread_create.is_some() && !is_external_memory_pointer(&pointer) {
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
                         "pending pthread create permits only external disjoint stores".to_string(),
                     )),
                     facts,
@@ -839,15 +835,15 @@ fn write_c_lvalue_paths_without_local_reference(
                 .values()
                 .any(|pending| pending.old_pointer.block == pointer.block)
             {
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome),
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::UnresolvedAllocationOutcome),
                     facts,
                     obligations,
                 )]);
             }
             if state.memory.is_ended_local_address(&pointer) {
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
                     facts,
                     obligations,
                 )]);
@@ -856,15 +852,15 @@ fn write_c_lvalue_paths_without_local_reference(
                 .memory
                 .is_deallocated_heap_address(&pointer, assumptions)
             {
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
                     facts,
                     obligations,
                 )]);
             }
             if state.memory.is_read_only_block(&pointer.block) {
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
                     facts,
                     obligations,
                 )]);
@@ -909,7 +905,7 @@ fn write_c_lvalue_paths_without_local_reference(
                 .unwrap_or(pointer);
 
             if is_external && !has_external_write_resource {
-                let missing = CMemoryRange::new_with_element_width(
+                let missing = MemoryRange::new_with_element_width(
                     pointer.clone(),
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
@@ -922,18 +918,18 @@ fn write_c_lvalue_paths_without_local_reference(
                     &missing,
                     &effective_assumptions,
                 )
-                .unwrap_or_else(|| CRuntimeError::MissingResource {
-                    resource: Box::new(CResourceFact::own_memory(missing)),
+                .unwrap_or_else(|| RuntimeError::MissingResource {
+                    resource: Box::new(ResourceFact::own_memory(missing)),
                 });
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(error),
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(error),
                     facts,
                     obligations,
                 )]);
             }
             // Ownership was established above. Loan separation is a proof
             // obligation for the driver, not an alias search during the store.
-            let mut write_range = CMemoryRange::new_with_element_width(
+            let mut write_range = MemoryRange::new_with_element_width(
                 source_pointer,
                 0u32.into(),
                 1u32.into(),
@@ -951,7 +947,7 @@ fn write_c_lvalue_paths_without_local_reference(
                 &effective_assumptions,
                 &mut obligations,
             ) {
-                return Ok(vec![CStatementExecutionPath::new(
+                return Ok(vec![StatementExecutionPath::new(
                     outcome,
                     facts,
                     obligations,
@@ -1006,8 +1002,8 @@ fn write_c_lvalue_paths_without_local_reference(
             ) {
                 Ok(plan) => plan,
                 Err(message) => {
-                    return Ok(vec![CStatementExecutionPath::new(
-                        CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
                         facts,
                         obligations,
                     )]);
@@ -1019,10 +1015,8 @@ fn write_c_lvalue_paths_without_local_reference(
                 match iterated_plan.before_store(state.resources().clone()) {
                     Ok(resources) => state = state.with_resource_context(resources),
                     Err(message) => {
-                        return Ok(vec![CStatementExecutionPath::new(
-                            CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                                message,
-                            )),
+                        return Ok(vec![StatementExecutionPath::new(
+                            StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
                             facts,
                             obligations,
                         )]);
@@ -1065,10 +1059,8 @@ fn write_c_lvalue_paths_without_local_reference(
                 match iterated_plan.after_store(state.resources().clone()) {
                     Ok(resources) => state = state.with_resource_context(resources),
                     Err(message) => {
-                        return Ok(vec![CStatementExecutionPath::new(
-                            CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
-                                message,
-                            )),
+                        return Ok(vec![StatementExecutionPath::new(
+                            StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
                             facts,
                             obligations,
                         )]);
@@ -1121,8 +1113,8 @@ fn write_c_lvalue_paths_without_local_reference(
                     budget, true, pointer, value_type, value,
                 )?);
             }
-            Ok(vec![CStatementExecutionPath::new(
-                CStatementOutcome::Normal(Box::new(state)),
+            Ok(vec![StatementExecutionPath::new(
+                StatementOutcome::Normal(Box::new(state)),
                 facts,
                 obligations,
             )])
@@ -1134,19 +1126,18 @@ fn execute_c_aggregate_copy_paths(
     state: &ExecutionState,
     target: &ProgramExpression,
     source: &ProgramExpression,
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
     for target_path in evaluate_c_expression_paths(state, target, assumptions, budget)? {
-        let CExpressionPath {
+        let ExpressionPath {
             outcome: target_outcome,
             facts: target_facts,
             obligations: target_obligations,
         } = target_path;
-        let CExpressionOutcome::Value(ProgramValue::Pointer(target_pointer)) = target_outcome
-        else {
+        let ExpressionOutcome::Value(ProgramValue::Pointer(target_pointer)) = target_outcome else {
             continue;
         };
         if target_pointer.is_null() {
@@ -1155,7 +1146,7 @@ fn execute_c_aggregate_copy_paths(
         let value_assumptions =
             assumptions_with_path_context(assumptions, &target_facts, &target_obligations);
         for source_path in evaluate_c_expression_paths(state, source, &value_assumptions, budget)? {
-            let CExpressionPath {
+            let ExpressionPath {
                 outcome: source_outcome,
                 facts: source_facts,
                 obligations: source_obligations,
@@ -1169,7 +1160,7 @@ fn execute_c_aggregate_copy_paths(
             ) else {
                 continue;
             };
-            let CExpressionOutcome::Value(ProgramValue::Pointer(source_pointer)) = source_outcome
+            let ExpressionOutcome::Value(ProgramValue::Pointer(source_pointer)) = source_outcome
             else {
                 continue;
             };
@@ -1194,8 +1185,8 @@ fn execute_c_aggregate_copy_paths(
                     assumptions,
                 )
             }) {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::UndefinedBehavior(refusal),
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::UndefinedBehavior(refusal),
                     facts,
                     obligations,
                 ));
@@ -1207,8 +1198,8 @@ fn execute_c_aggregate_copy_paths(
                 layout,
                 &assumptions_with_path_context(assumptions, &facts, &obligations),
             ) {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::MissingResource {
                         resource: Box::new(resource),
                     }),
                     facts,
@@ -1222,7 +1213,7 @@ fn execute_c_aggregate_copy_paths(
                 layout.size_bytes(),
                 &assumptions_with_path_context(assumptions, &facts, &obligations),
             ) {
-                paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
+                paths.push(StatementExecutionPath::new(outcome, facts, obligations));
                 continue;
             }
             if let Some(resource) = missing_aggregate_copy_write_resource(
@@ -1231,8 +1222,8 @@ fn execute_c_aggregate_copy_paths(
                 layout,
                 &assumptions_with_path_context(assumptions, &facts, &obligations),
             ) {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::MissingResource {
                         resource: Box::new(resource),
                     }),
                     facts,
@@ -1249,8 +1240,8 @@ fn execute_c_aggregate_copy_paths(
             ) {
                 Ok(memory) => memory,
                 Err(undefined_behavior) => {
-                    paths.push(CStatementExecutionPath::new(
-                        CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                    paths.push(StatementExecutionPath::new(
+                        StatementOutcome::UndefinedBehavior(undefined_behavior),
                         facts,
                         obligations,
                     ));
@@ -1258,8 +1249,8 @@ fn execute_c_aggregate_copy_paths(
                 }
             };
             state.set_memory(next_memory);
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::Normal(Box::new(state)),
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::Normal(Box::new(state)),
                 facts,
                 obligations,
             ));
@@ -1272,9 +1263,9 @@ fn execute_c_aggregate_copy_paths(
 fn missing_aggregate_copy_write_resource(
     state: &ExecutionState,
     target: &PointerValue,
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
     assumptions: &PureFactContext,
-) -> Option<CResourceFact> {
+) -> Option<ResourceFact> {
     if !is_external_memory_pointer(target)
         && target.extent_is_known()
         && assumptions.designations_equal(target.designation(), &target.pointer().object_identity())
@@ -1303,8 +1294,8 @@ fn missing_aggregate_copy_write_resource(
             )
             .is_none()
         {
-            return Some(CResourceFact::own_memory(
-                CMemoryRange::new_with_element_width(
+            return Some(ResourceFact::own_memory(
+                MemoryRange::new_with_element_width(
                     pointer,
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
@@ -1319,9 +1310,9 @@ fn missing_aggregate_copy_write_resource(
 pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     state: &ExecutionState,
     source: &PointerValue,
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
     assumptions: &PureFactContext,
-) -> Option<CResourceFact> {
+) -> Option<ResourceFact> {
     if (!crate::kernel::eval::is_external_memory_pointer(source)
         && source.extent_is_known()
         && assumptions
@@ -1341,8 +1332,8 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
             field.c_type().byte_width(),
             assumptions,
         ) {
-            return Some(CResourceFact::view_memory(
-                CMemoryRange::new_with_element_width(
+            return Some(ResourceFact::view_memory(
+                MemoryRange::new_with_element_width(
                     source.offset_by_bytes(field.offset_bytes()),
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
@@ -1362,8 +1353,8 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
             union.size_bytes(),
             assumptions,
         ) {
-            return Some(CResourceFact::view_memory(
-                CMemoryRange::new_with_element_width(
+            return Some(ResourceFact::view_memory(
+                MemoryRange::new_with_element_width(
                     pointer,
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
@@ -1384,7 +1375,7 @@ pub(super) fn execute_c_heap_allocate_paths(
     ends_program_on_failure: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let Some(
         target_type @ (ProgramType::Int32Pointer
         | ProgramType::UInt8Pointer
@@ -1406,8 +1397,8 @@ pub(super) fn execute_c_heap_allocate_paths(
         | ProgramType::UInt64PointerPointer),
     ) = state.local_object_type(target)
     else {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             Vec::new().into(),
             Vec::new(),
         )]);
@@ -1433,30 +1424,30 @@ pub(super) fn execute_c_heap_allocate_paths(
     for size_path in
         evaluate_c_expression_paths(state, evaluated_size_expression, assumptions, budget)?
     {
-        let CExpressionPath {
+        let ExpressionPath {
             outcome,
             facts,
             obligations,
         } = size_path;
-        let CExpressionOutcome::Value(value) = outcome else {
+        let ExpressionOutcome::Value(value) = outcome else {
             let outcome = match outcome {
-                CExpressionOutcome::UndefinedBehavior(error) => {
-                    CStatementOutcome::UndefinedBehavior(error)
+                ExpressionOutcome::UndefinedBehavior(error) => {
+                    StatementOutcome::UndefinedBehavior(error)
                 }
-                CExpressionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
-                CExpressionOutcome::Value(_) => {
-                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+                ExpressionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+                ExpressionOutcome::Value(_) => {
+                    StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
                 }
             };
-            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
+            paths.push(StatementExecutionPath::new(outcome, facts, obligations));
             continue;
         };
         let effective_assumptions =
             assumptions_with_path_context(assumptions, &facts, &obligations);
         let refusal = allocation_size_refusal(&value);
         let Some(size) = allocation_size_value(value, &effective_assumptions) else {
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(refusal),
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(refusal),
                 facts,
                 obligations,
             ));
@@ -1470,7 +1461,7 @@ pub(super) fn execute_c_heap_allocate_paths(
             && element_count_expression.is_none()
             && size.kind == HeapExtentKind::UInt64
         {
-            (size.into_extent(), Some(CRuntimeError::HeapAllocationSize))
+            (size.into_extent(), Some(RuntimeError::HeapAllocationSize))
         } else if element_count_expression.is_some() {
             let refusal =
                 allocation_size_validity_refusal(&size, count_width, true, &effective_assumptions);
@@ -1501,8 +1492,8 @@ pub(super) fn execute_c_heap_allocate_paths(
             (size.into_extent(), refusal)
         };
         if let Some(refusal) = size_refusal {
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(refusal),
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(refusal),
                 facts,
                 obligations,
             ));
@@ -1571,8 +1562,8 @@ pub(super) fn execute_c_heap_allocate_paths(
             };
             // Its success already known, the allocation is a live block now.
             let outcome = match assigned_path.outcome {
-                CStatementOutcome::Normal(state) if ends_program_on_failure => {
-                    CStatementOutcome::Normal(Box::new(resolve_pending_heap_allocations(
+                StatementOutcome::Normal(state) if ends_program_on_failure => {
+                    StatementOutcome::Normal(Box::new(resolve_pending_heap_allocations(
                         &state,
                         &assumptions_with_path_context(
                             assumptions,
@@ -1583,7 +1574,7 @@ pub(super) fn execute_c_heap_allocate_paths(
                 }
                 outcome => outcome,
             };
-            paths.push(CStatementExecutionPath::new(
+            paths.push(StatementExecutionPath::new(
                 outcome,
                 merged_facts,
                 merged_obligations,
@@ -1600,7 +1591,7 @@ fn heap_allocation_element_width(state: &ExecutionState, base: &Pointer) -> u32 
         .bindings
         .values()
         .find_map(|binding| {
-            let CLocalBinding::Object { value, c_type, .. } = binding else {
+            let LocalBinding::Object { value, c_type, .. } = binding else {
                 return None;
             };
             let pointer = value.pointer()?;
@@ -1628,7 +1619,7 @@ fn heap_block_range(
     base: Pointer,
     extent: &HeapExtent,
     requested_width: u32,
-) -> (CMemoryRange, u32) {
+) -> (MemoryRange, u32) {
     let (count, width) = heap_range_element_count(extent, requested_width);
     (extent.range(base, count, width), width)
 }
@@ -1814,10 +1805,10 @@ fn realloc_zeroed_prefix(
 /// The refusal for a size [`allocation_size_value`] does not accept, or
 /// `realloc` does not resize to: a 64-bit size is named as such, not as a
 /// type error.
-fn allocation_size_refusal(value: &ProgramValue) -> CRuntimeError {
+fn allocation_size_refusal(value: &ProgramValue) -> RuntimeError {
     match value.numeric_value() {
-        ProgramValue::Int64(_) | ProgramValue::UInt64(_) => CRuntimeError::HeapAllocationSize,
-        _ => CRuntimeError::TypeMismatch,
+        ProgramValue::Int64(_) | ProgramValue::UInt64(_) => RuntimeError::HeapAllocationSize,
+        _ => RuntimeError::TypeMismatch,
     }
 }
 
@@ -2100,13 +2091,13 @@ fn allocation_size_validity_refusal(
     element_width: u32,
     element_count: bool,
     assumptions: &PureFactContext,
-) -> Option<CRuntimeError> {
+) -> Option<RuntimeError> {
     if size.kind == HeapExtentKind::UInt64 {
         return (!uint64_allocation_size_is_exact(size, element_width, element_count, assumptions))
-            .then_some(CRuntimeError::HeapAllocationSize);
+            .then_some(RuntimeError::HeapAllocationSize);
     }
     if !allocation_size_is_positive(size, assumptions) {
-        return Some(CRuntimeError::TypeMismatch);
+        return Some(RuntimeError::TypeMismatch);
     }
     let fits = if element_count || size.needs_extent_bound {
         allocation_size_fits_element_width(size, element_width, assumptions)
@@ -2116,9 +2107,9 @@ fn allocation_size_validity_refusal(
     if fits {
         None
     } else if size.needs_extent_bound {
-        Some(CRuntimeError::HeapAllocationSizeAboveInt32)
+        Some(RuntimeError::HeapAllocationSizeAboveInt32)
     } else {
-        Some(CRuntimeError::TypeMismatch)
+        Some(RuntimeError::TypeMismatch)
     }
 }
 
@@ -2128,10 +2119,10 @@ pub(crate) fn execute_c_realloc_assign_paths(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let [old_expression, size_expression] = arguments else {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::RuntimeError(CRuntimeError::WrongArity {
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::WrongArity {
                 expected: 2,
                 actual: arguments.len(),
             }),
@@ -2160,8 +2151,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
         | ProgramType::UInt64PointerPointer),
     ) = state.local_object_type(target)
     else {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             Vec::new().into(),
             Vec::new(),
         )]);
@@ -2174,20 +2165,20 @@ pub(crate) fn execute_c_realloc_assign_paths(
 
     let mut paths = Vec::new();
     for old_path in evaluate_c_expression_paths(state, old_expression, assumptions, budget)? {
-        let CExpressionPath {
+        let ExpressionPath {
             outcome,
             facts,
             obligations,
         } = old_path;
-        let CExpressionOutcome::Value(old_value) = outcome else {
+        let ExpressionOutcome::Value(old_value) = outcome else {
             let outcome = match outcome {
-                CExpressionOutcome::UndefinedBehavior(error) => {
-                    CStatementOutcome::UndefinedBehavior(error)
+                ExpressionOutcome::UndefinedBehavior(error) => {
+                    StatementOutcome::UndefinedBehavior(error)
                 }
-                CExpressionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
-                CExpressionOutcome::Value(_) => unreachable!(),
+                ExpressionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+                ExpressionOutcome::Value(_) => unreachable!(),
             };
-            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
+            paths.push(StatementExecutionPath::new(outcome, facts, obligations));
             continue;
         };
 
@@ -2197,8 +2188,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
             ProgramValue::Pointer(pointer) => pointer.into_pointer(),
             ProgramValue::Int32(bits) if bits.as_const() == Some(0) => Pointer::null(),
             _ => {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                     facts,
                     obligations,
                 ));
@@ -2231,7 +2222,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 else {
                     continue;
                 };
-                paths.push(CStatementExecutionPath::new(
+                paths.push(StatementExecutionPath::new(
                     allocation_path.outcome,
                     merged_facts,
                     merged_obligations,
@@ -2245,14 +2236,14 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 .memory
                 .is_deallocated_heap_address(&old_pointer, assumptions)
             {
-                CInvalidFree::DoubleFree
+                InvalidFree::DoubleFree
             } else if state.memory.is_live_heap_address(&old_pointer, assumptions) {
-                CInvalidFree::InteriorPointer
+                InvalidFree::InteriorPointer
             } else {
-                CInvalidFree::NonHeapPointer
+                InvalidFree::NonHeapPointer
             };
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(error)),
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::InvalidFree(error)),
                 facts,
                 obligations,
             ));
@@ -2267,21 +2258,19 @@ pub(crate) fn execute_c_realloc_assign_paths(
             &effective_assumptions,
             budget,
         )? {
-            let CExpressionPath {
+            let ExpressionPath {
                 outcome: new_size_outcome,
                 facts: size_facts,
                 obligations: size_obligations,
             } = new_size_path;
-            let CExpressionOutcome::Value(new_size_value) = new_size_outcome else {
+            let ExpressionOutcome::Value(new_size_value) = new_size_outcome else {
                 let outcome = match new_size_outcome {
-                    CExpressionOutcome::UndefinedBehavior(error) => {
-                        CStatementOutcome::UndefinedBehavior(error)
+                    ExpressionOutcome::UndefinedBehavior(error) => {
+                        StatementOutcome::UndefinedBehavior(error)
                     }
-                    CExpressionOutcome::RuntimeError(error) => {
-                        CStatementOutcome::RuntimeError(error)
-                    }
-                    CExpressionOutcome::Value(_) => {
-                        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+                    ExpressionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+                    ExpressionOutcome::Value(_) => {
+                        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
                     }
                 };
                 let Some((merged_facts, merged_obligations)) =
@@ -2295,7 +2284,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 else {
                     continue;
                 };
-                paths.push(CStatementExecutionPath::new(
+                paths.push(StatementExecutionPath::new(
                     outcome,
                     merged_facts,
                     merged_obligations,
@@ -2309,8 +2298,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
             );
             let refusal = allocation_size_refusal(&new_size_value);
             let Some(size) = allocation_size_value(new_size_value, &size_assumptions) else {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(refusal),
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(refusal),
                     size_facts,
                     size_obligations,
                 ));
@@ -2320,8 +2309,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 if let Some(refusal) =
                     allocation_size_validity_refusal(&size, element_width, true, &size_assumptions)
                 {
-                    paths.push(CStatementExecutionPath::new(
-                        CStatementOutcome::RuntimeError(refusal),
+                    paths.push(StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(refusal),
                         size_facts,
                         size_obligations,
                     ));
@@ -2345,8 +2334,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
             if let Some(refusal) =
                 allocation_size_validity_refusal(&new_bytes, 1, false, &effective_assumptions)
             {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(refusal),
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(refusal),
                     all_facts,
                     all_obligations,
                 ));
@@ -2370,8 +2359,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
                     let Some(prefix) =
                         realloc_zeroed_prefix(&old_prefix, &new_bytes, &effective_assumptions)
                     else {
-                        paths.push(CStatementExecutionPath::new(
-                            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        paths.push(StatementExecutionPath::new(
+                            StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                             all_facts,
                             all_obligations,
                         ));
@@ -2381,14 +2370,14 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 }
             };
 
-            let allocation = CResourceFact::own_heap_allocation(old_pointer.clone(), &old_bytes);
+            let allocation = ResourceFact::own_heap_allocation(old_pointer.clone(), &old_bytes);
             let Some(resources) = state
                 .resources
                 .clone()
                 .without_fact_incrementally(&allocation, &effective_assumptions)
             else {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::MissingResource {
                         resource: Box::new(allocation),
                     }),
                     all_facts,
@@ -2396,7 +2385,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 ));
                 continue;
             };
-            let complete_access = CResourceFact::own_memory(old_complete_range.clone());
+            let complete_access = ResourceFact::own_memory(old_complete_range.clone());
             let Some(resources) =
                 resources.without_fact_incrementally(&complete_access, &effective_assumptions)
             else {
@@ -2407,11 +2396,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                     &old_allocation_range,
                     &effective_assumptions,
                 )
-                .unwrap_or(CRuntimeError::MissingResource {
+                .unwrap_or(RuntimeError::MissingResource {
                     resource: Box::new(complete_access),
                 });
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(error),
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(error),
                     all_facts,
                     all_obligations,
                 ));
@@ -2423,7 +2412,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
             if let Some(outcome) =
                 allocation_retirement_outcome(state, &old_allocation_range, &effective_assumptions)
             {
-                paths.push(CStatementExecutionPath::new(
+                paths.push(StatementExecutionPath::new(
                     outcome,
                     all_facts,
                     all_obligations,
@@ -2452,12 +2441,10 @@ pub(crate) fn execute_c_realloc_assign_paths(
                             &resource_assumptions,
                         )
                     }) {
-                        paths.push(CStatementExecutionPath::new(
-                            CStatementOutcome::RuntimeError(
-                                CRuntimeError::StaleResourceAfterFree {
-                                    resource: Box::new(stale.clone()),
-                                },
-                            ),
+                        paths.push(StatementExecutionPath::new(
+                            StatementOutcome::RuntimeError(RuntimeError::StaleResourceAfterFree {
+                                resource: Box::new(stale.clone()),
+                            }),
                             all_facts,
                             all_obligations,
                         ));
@@ -2527,8 +2514,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 }
             }
             if copy_is_unsupported {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                     all_facts,
                     all_obligations,
                 ));
@@ -2585,7 +2572,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 else {
                     continue;
                 };
-                paths.push(CStatementExecutionPath::new(
+                paths.push(StatementExecutionPath::new(
                     assigned_path.outcome,
                     merged_facts,
                     merged_obligations,
@@ -2602,34 +2589,34 @@ fn execute_c_heap_free_paths(
     expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
     for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
-        let CExpressionPath {
+        let ExpressionPath {
             outcome,
             mut facts,
             obligations,
         } = path;
         let outcome = match outcome {
-            CExpressionOutcome::Value(ProgramValue::Int32(bits)) if bits.as_const() == Some(0) => {
-                CExpressionOutcome::Value(ProgramValue::typed_pointer(
+            ExpressionOutcome::Value(ProgramValue::Int32(bits)) if bits.as_const() == Some(0) => {
+                ExpressionOutcome::Value(ProgramValue::typed_pointer(
                     Pointer::null(),
                     ProgramType::Int32Pointer,
                 ))
             }
             outcome => outcome,
         };
-        let CExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = outcome else {
+        let ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = outcome else {
             let outcome = match outcome {
-                CExpressionOutcome::UndefinedBehavior(error) => {
-                    CStatementOutcome::UndefinedBehavior(error)
+                ExpressionOutcome::UndefinedBehavior(error) => {
+                    StatementOutcome::UndefinedBehavior(error)
                 }
-                CExpressionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
-                CExpressionOutcome::Value(_) => {
-                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+                ExpressionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+                ExpressionOutcome::Value(_) => {
+                    StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
                 }
             };
-            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
+            paths.push(StatementExecutionPath::new(outcome, facts, obligations));
             continue;
         };
 
@@ -2639,8 +2626,8 @@ fn execute_c_heap_free_paths(
             || effective_assumptions.decide(&pointer_is_null_condition(pointer.pointer().clone()))
                 == Some(true)
         {
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::Normal(Box::new(state.clone())),
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::Normal(Box::new(state.clone())),
                 facts,
                 obligations,
             ));
@@ -2652,12 +2639,12 @@ fn execute_c_heap_free_paths(
         // allocation; it must not create a second lifetime under the alias.
         // The query's byte count is a placeholder: candidates match by base.
         let allocation_query =
-            CResourceFact::own_designated_allocation(pointer.clone(), &HeapExtent::int32(0));
+            ResourceFact::own_designated_allocation(pointer.clone(), &HeapExtent::int32(0));
         let declared_allocation = state
             .resources
             .direct_match_candidates_for(&allocation_query, &effective_assumptions)
             .into_iter()
-            .filter_map(CResourceFact::allocation_extent)
+            .filter_map(ResourceFact::allocation_extent)
             .find(|(base, _)| {
                 crate::kernel::resource_arguments_proven_equal(
                     &ProgramValue::Pointer((*base).clone().with_type(ProgramType::Int32Pointer))
@@ -2678,8 +2665,8 @@ fn execute_c_heap_free_paths(
             .values()
             .any(|pending| pending.old_pointer.block == pointer.block)
         {
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome),
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::UnresolvedAllocationOutcome),
                 facts,
                 obligations,
             ));
@@ -2698,17 +2685,17 @@ fn execute_c_heap_free_paths(
         } else if working_memory
             .is_deallocated_heap_address(pointer.pointer(), &effective_assumptions)
         {
-            let error = CInvalidFree::DoubleFree;
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(error)),
+            let error = InvalidFree::DoubleFree;
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::InvalidFree(error)),
                 facts,
                 obligations,
             ));
             continue;
         } else if working_memory.is_live_heap_address(pointer.pointer(), &effective_assumptions) {
-            let error = CInvalidFree::InteriorPointer;
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(error)),
+            let error = InvalidFree::InteriorPointer;
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::InvalidFree(error)),
                 facts,
                 obligations,
             ));
@@ -2717,9 +2704,9 @@ fn execute_c_heap_free_paths(
             let Some(memory) =
                 working_memory.with_heap_allocation_claim(pointer.pointer().clone(), bytes.clone())
             else {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(
-                        CInvalidFree::NonHeapPointer,
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::InvalidFree(
+                        InvalidFree::NonHeapPointer,
                     )),
                     facts,
                     obligations,
@@ -2729,9 +2716,9 @@ fn execute_c_heap_free_paths(
             working_memory = memory;
             bytes
         } else {
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(CRuntimeError::InvalidFree(
-                    CInvalidFree::NonHeapPointer,
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::InvalidFree(
+                    InvalidFree::NonHeapPointer,
                 )),
                 facts,
                 obligations,
@@ -2739,22 +2726,22 @@ fn execute_c_heap_free_paths(
             continue;
         };
         if let Some(error) = state.population_storage_retirement_refusal(&pointer.block) {
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(error),
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
             ));
             continue;
         }
         let full_allocation_range = bytes.byte_range(pointer.pointer().clone());
-        let allocation = CResourceFact::own_designated_allocation(pointer.clone(), &bytes);
+        let allocation = ResourceFact::own_designated_allocation(pointer.clone(), &bytes);
         let Some(resources) = state
             .resources
             .clone()
             .without_fact_delaying_normalization(&allocation, &effective_assumptions)
         else {
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::MissingResource {
                     resource: Box::new(allocation),
                 }),
                 facts,
@@ -2764,7 +2751,7 @@ fn execute_c_heap_free_paths(
         };
         let (complete_range, range_width) =
             heap_block_range(pointer.pointer().clone(), &bytes, element_width);
-        let complete_access = CResourceFact::own_memory(complete_range);
+        let complete_access = ResourceFact::own_memory(complete_range);
         // Single-supplier consumption keeps unrelated holdings untouched.
         // Split and supported owners still need their composition checked.
         let consumed = resources
@@ -2788,11 +2775,11 @@ fn execute_c_heap_free_paths(
                 &full_allocation_range,
                 &effective_assumptions,
             )
-            .unwrap_or(CRuntimeError::MissingResource {
+            .unwrap_or(RuntimeError::MissingResource {
                 resource: Box::new(complete_access),
             });
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(error),
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
             ));
@@ -2803,7 +2790,7 @@ fn execute_c_heap_free_paths(
         if let Some(outcome) =
             allocation_retirement_outcome(state, &full_allocation_range, &effective_assumptions)
         {
-            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
+            paths.push(StatementExecutionPath::new(outcome, facts, obligations));
             continue;
         }
         // A free can invalidate only resources that refer to this block.
@@ -2829,8 +2816,8 @@ fn execute_c_heap_free_paths(
                         &resource_assumptions,
                     )
                 }) {
-                    paths.push(CStatementExecutionPath::new(
-                        CStatementOutcome::RuntimeError(CRuntimeError::StaleResourceAfterFree {
+                    paths.push(StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(RuntimeError::StaleResourceAfterFree {
                             resource: Box::new(stale.clone()),
                         }),
                         facts,
@@ -2878,15 +2865,15 @@ fn execute_c_heap_free_paths(
             .with_memory(memory)
             .with_resource_context(resources);
         if let Err(error) = next.retire_population_storage(&pointer.block) {
-            paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(error),
+            paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
             ));
             continue;
         }
-        paths.push(CStatementExecutionPath::new(
-            CStatementOutcome::Normal(Box::new(next)),
+        paths.push(StatementExecutionPath::new(
+            StatementOutcome::Normal(Box::new(next)),
             facts,
             obligations,
         ));
@@ -2931,7 +2918,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                 .iter()
                 .filter_map(|(name, binding)| {
                     let mut binding = binding.clone();
-                    let CLocalBinding::Object { value, .. } = &mut binding else {
+                    let LocalBinding::Object { value, .. } = &mut binding else {
                         return None;
                     };
                     if value.pointer()?.pointer() != &base {
@@ -2954,7 +2941,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                 state.locals.insert_binding(name, binding);
             }
             if !is_null {
-                let old_memory = CResourceFact::own_memory(
+                let old_memory = ResourceFact::own_memory(
                     heap_block_range(
                         pending_reallocation.old_pointer.clone(),
                         &pending_reallocation.old_bytes,
@@ -2962,7 +2949,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                     )
                     .0,
                 );
-                let old_allocation = CResourceFact::own_heap_allocation(
+                let old_allocation = ResourceFact::own_heap_allocation(
                     pending_reallocation.old_pointer,
                     &pending_reallocation.old_bytes,
                 );
@@ -2973,11 +2960,11 @@ pub(crate) fn resolve_pending_heap_allocations(
                     .expect("validated realloc allocation resource should remain available")
                     .without_fact(&old_memory, assumptions)
                     .expect("validated realloc memory resource should remain available")
-                    .unchecked_with_fact(CResourceFact::own_heap_allocation(
+                    .unchecked_with_fact(ResourceFact::own_heap_allocation(
                         resolved_base.clone(),
                         &bytes,
                     ))
-                    .unchecked_with_fact(CResourceFact::own_memory(
+                    .unchecked_with_fact(ResourceFact::own_memory(
                         heap_block_range(resolved_base, &bytes, element_width).0,
                     ));
             }
@@ -2999,7 +2986,7 @@ pub(crate) fn resolve_pending_heap_allocations(
             .iter()
             .filter_map(|(name, binding)| {
                 let mut binding = binding.clone();
-                let CLocalBinding::Object { value, .. } = &mut binding else {
+                let LocalBinding::Object { value, .. } = &mut binding else {
                     return None;
                 };
                 if value.pointer()?.pointer() != &base {
@@ -3024,11 +3011,11 @@ pub(crate) fn resolve_pending_heap_allocations(
         if !is_null {
             state.resources = state
                 .resources
-                .unchecked_with_fact(CResourceFact::own_heap_allocation(
+                .unchecked_with_fact(ResourceFact::own_heap_allocation(
                     resolved_base.clone(),
                     &bytes,
                 ))
-                .unchecked_with_fact(CResourceFact::own_memory(
+                .unchecked_with_fact(ResourceFact::own_memory(
                     heap_block_range(resolved_base, &bytes, element_width).0,
                 ));
         }
@@ -3044,8 +3031,8 @@ fn has_live_thread_completion(state: &ExecutionState) -> bool {
             .is_some_and(|ledger| ledger.has_live_rights())
 }
 
-fn live_thread_return_refusal() -> CStatementOutcome {
-    CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+fn live_thread_return_refusal() -> StatementOutcome {
+    StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
         "a function cannot return with a live pthread completion right".to_string(),
     ))
 }
@@ -3063,8 +3050,8 @@ fn has_live_mutex(state: &ExecutionState) -> bool {
                 .is_some_and(super::super::mutexes::MutexLedger::has_return_obligation))
 }
 
-fn live_mutex_return_refusal() -> CStatementOutcome {
-    CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+fn live_mutex_return_refusal() -> StatementOutcome {
+    StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
         "a function cannot return with a held mutex or an unpublished guarded resource; unlock or destroy it first".to_string(),
     ))
 }
@@ -3072,9 +3059,9 @@ fn live_mutex_return_refusal() -> CStatementOutcome {
 /// The same authority obligations apply to explicit returns and void fallthrough.
 pub(in crate::kernel) fn return_authority_refusal(
     state: &ExecutionState,
-) -> Option<CStatementOutcome> {
+) -> Option<StatementOutcome> {
     if state.has_local_scalar_references() || state.has_local_reference_scope() {
-        Some(CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(
+        Some(StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(
             Box::new(
                 crate::kernel::loans::LoanRefusal::ActiveDependency
                     .diagnostic(crate::kernel::LoanRefusalOperation::Recovery),
@@ -3094,7 +3081,7 @@ fn execute_c_return_expression_paths(
     expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
     for expression_path in evaluate_expression_value_paths(state, expression, assumptions, budget)?
     {
@@ -3104,7 +3091,7 @@ fn execute_c_return_expression_paths(
             obligations,
         } = expression_path;
         match outcome {
-            CExpressionOutcome::Value(ExecutionValue::Native(ProgramValue::Pointer(pointer)))
+            ExpressionOutcome::Value(ExecutionValue::Native(ProgramValue::Pointer(pointer)))
                 if state.memory.heap.pending_allocations.contains_key(&pointer) =>
             {
                 for truthiness_path in pending_allocation_outcome_paths(
@@ -3133,9 +3120,9 @@ fn execute_c_return_expression_paths(
                     let outcome = if let Some(refusal) = return_authority_refusal(&resolved_state) {
                         refusal
                     } else if resolved_state.memory.has_pending_heap_allocation() {
-                        CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
+                        StatementOutcome::RuntimeError(RuntimeError::UnresolvedAllocationOutcome)
                     } else {
-                        CStatementOutcome::Return {
+                        StatementOutcome::Return {
                             value: ProgramValue::typed_pointer(resolved_pointer, pointer.c_type())
                                 .with_pointer_object_type_evidence(
                                     pointer.object_type_evidence().cloned(),
@@ -3144,35 +3131,35 @@ fn execute_c_return_expression_paths(
                             state: Box::new(resolved_state),
                         }
                     };
-                    paths.push(CStatementExecutionPath::new(
+                    paths.push(StatementExecutionPath::new(
                         outcome,
                         truthiness_path.facts,
                         truthiness_path.obligations,
                     ));
                 }
             }
-            CExpressionOutcome::Value(value) => {
+            ExpressionOutcome::Value(value) => {
                 let outcome = if let Some(refusal) = return_authority_refusal(state) {
                     refusal
                 } else if state.memory.has_pending_heap_allocation() {
-                    CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
+                    StatementOutcome::RuntimeError(RuntimeError::UnresolvedAllocationOutcome)
                 } else {
-                    CStatementOutcome::Return {
+                    StatementOutcome::Return {
                         value: value.into(),
                         state: Box::new(state.clone()),
                     }
                 };
-                paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
+                paths.push(StatementExecutionPath::new(outcome, facts, obligations));
             }
-            CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::UndefinedBehavior(undefined_behavior),
+            ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::UndefinedBehavior(undefined_behavior),
                     facts,
                     obligations,
                 ));
             }
-            CExpressionOutcome::RuntimeError(error) => paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(error),
+            ExpressionOutcome::RuntimeError(error) => paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
             )),
@@ -3186,15 +3173,15 @@ fn pending_allocation_outcome_paths(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CTruthinessPath> {
+) -> Vec<TruthinessPath> {
     let is_null = pointer_is_null_condition(pointer);
     match decide_with_facts(assumptions, &facts, &is_null) {
-        Some(true) => vec![CTruthinessPath {
+        Some(true) => vec![TruthinessPath {
             is_true: false,
             facts,
             obligations,
         }],
-        Some(false) => vec![CTruthinessPath {
+        Some(false) => vec![TruthinessPath {
             is_true: true,
             facts,
             obligations,
@@ -3219,12 +3206,12 @@ fn pending_allocation_outcome_paths(
                 .expect("unknown malloc failure fact should be consistent");
 
             vec![
-                CTruthinessPath {
+                TruthinessPath {
                     is_true: true,
                     facts: success_facts,
                     obligations: obligations.clone(),
                 },
-                CTruthinessPath {
+                TruthinessPath {
                     is_true: false,
                     facts: failure_facts,
                     obligations,
@@ -3311,7 +3298,7 @@ pub(in crate::kernel) fn scope_declared_names(statement: &ProgramStatement) -> V
 pub(in crate::kernel) fn end_scope_automatic_lifetimes(
     state: &ExecutionState,
     declared: &[String],
-) -> Result<ExecutionState, CRuntimeError> {
+) -> Result<ExecutionState, RuntimeError> {
     let mut state = state.clone();
     let mut memory = state.memory.clone();
     let mut retired = false;
@@ -3329,7 +3316,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
             {
                 return Err(error);
             }
-            let range = CMemoryRange::new_with_element_width(
+            let range = MemoryRange::new_with_element_width(
                 slot.clone(),
                 0.into(),
                 memory
@@ -3343,7 +3330,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
                 &PureFactContext::default(),
                 crate::kernel::LoanRefusalOperation::MemoryAccess,
             ) {
-                return Err(CRuntimeError::LoanRefusal(Box::new(refusal)));
+                return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
             }
             retire_automatic_storage_owner(&mut state, &range);
             memory = memory.without_local_block(&slot.block);
@@ -3364,9 +3351,9 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
 /// outcomes that carry no state — divergence, undefined behaviour, a runtime
 /// error — have no successor to retire anything in.
 pub(in crate::kernel) fn paths_after_scope_exit(
-    paths: Vec<CStatementExecutionPath>,
+    paths: Vec<StatementExecutionPath>,
     declared: &[String],
-) -> Vec<CStatementExecutionPath> {
+) -> Vec<StatementExecutionPath> {
     if declared.is_empty() {
         return paths;
     }
@@ -3374,44 +3361,44 @@ pub(in crate::kernel) fn paths_after_scope_exit(
         .into_iter()
         .map(|path| {
             let outcome = match path.outcome {
-                CStatementOutcome::Normal(state) => end_scope_automatic_lifetimes(&state, declared)
-                    .map(|state| CStatementOutcome::Normal(Box::new(state))),
-                CStatementOutcome::Break(state) => end_scope_automatic_lifetimes(&state, declared)
-                    .map(|state| CStatementOutcome::Break(Box::new(state))),
-                CStatementOutcome::Continue(state) => {
+                StatementOutcome::Normal(state) => end_scope_automatic_lifetimes(&state, declared)
+                    .map(|state| StatementOutcome::Normal(Box::new(state))),
+                StatementOutcome::Break(state) => end_scope_automatic_lifetimes(&state, declared)
+                    .map(|state| StatementOutcome::Break(Box::new(state))),
+                StatementOutcome::Continue(state) => {
                     end_scope_automatic_lifetimes(&state, declared)
-                        .map(|state| CStatementOutcome::Continue(Box::new(state)))
+                        .map(|state| StatementOutcome::Continue(Box::new(state)))
                 }
-                CStatementOutcome::Jump { target, state } => {
+                StatementOutcome::Jump { target, state } => {
                     end_scope_automatic_lifetimes(&state, declared).map(|state| {
-                        CStatementOutcome::Jump {
+                        StatementOutcome::Jump {
                             target,
                             state: Box::new(state),
                         }
                     })
                 }
-                CStatementOutcome::Return { value, state } => {
+                StatementOutcome::Return { value, state } => {
                     end_scope_automatic_lifetimes(&state, declared).map(|state| {
-                        CStatementOutcome::Return {
+                        StatementOutcome::Return {
                             value,
                             state: Box::new(state),
                         }
                     })
                 }
-                CStatementOutcome::Throw { value, state } => {
+                StatementOutcome::Throw { value, state } => {
                     end_scope_automatic_lifetimes(&state, declared).map(|state| {
-                        CStatementOutcome::Throw {
+                        StatementOutcome::Throw {
                             value,
                             state: Box::new(state),
                         }
                     })
                 }
-                outcome @ (CStatementOutcome::VerificationDiverges
-                | CStatementOutcome::UndefinedBehavior(_)
-                | CStatementOutcome::RuntimeError(_)) => Ok(outcome),
+                outcome @ (StatementOutcome::VerificationDiverges
+                | StatementOutcome::UndefinedBehavior(_)
+                | StatementOutcome::RuntimeError(_)) => Ok(outcome),
             }
-            .unwrap_or_else(CStatementOutcome::RuntimeError);
-            CStatementExecutionPath {
+            .unwrap_or_else(StatementOutcome::RuntimeError);
+            StatementExecutionPath {
                 loop_invariant_correspondence: Default::default(),
                 call_result: None,
                 outcome,
@@ -3442,9 +3429,9 @@ pub(in crate::kernel) fn execute_c_statement_paths(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     execute_statement_paths(
         state,
         statement,
@@ -3462,10 +3449,10 @@ pub(in crate::kernel) fn execute_statement_paths(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     // Keep a source block's sequence spine out of the large leaf-operation
     // frame. Adding a fact index must not multiply stack use per statement.
     if let ProgramStatement::Seq(statements) = statement {
@@ -3479,7 +3466,7 @@ pub(in crate::kernel) fn execute_statement_paths(
             budget,
             judgment,
         )? {
-            let CStatementExecutionPath {
+            let StatementExecutionPath {
                 call_parameters: _,
                 loop_invariant_correspondence: _,
                 call_result: _,
@@ -3489,7 +3476,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                 loan_evidence,
             } = first_path;
             match outcome {
-                CStatementOutcome::Normal(state) => {
+                StatementOutcome::Normal(state) => {
                     paths.extend(execute_statement_paths_with_prefix(
                         &state,
                         &second,
@@ -3504,14 +3491,14 @@ pub(in crate::kernel) fn execute_statement_paths(
                 }
                 // Control leaves the sequence with everything the first
                 // statement's path established, its loan evidence included.
-                outcome @ (CStatementOutcome::Break(_)
-                | CStatementOutcome::Continue(_)
-                | CStatementOutcome::Jump { .. }
-                | CStatementOutcome::Return { .. }
-                | CStatementOutcome::Throw { .. }
-                | CStatementOutcome::VerificationDiverges
-                | CStatementOutcome::UndefinedBehavior(_)
-                | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
+                outcome @ (StatementOutcome::Break(_)
+                | StatementOutcome::Continue(_)
+                | StatementOutcome::Jump { .. }
+                | StatementOutcome::Return { .. }
+                | StatementOutcome::Throw { .. }
+                | StatementOutcome::VerificationDiverges
+                | StatementOutcome::UndefinedBehavior(_)
+                | StatementOutcome::RuntimeError(_)) => paths.push(StatementExecutionPath {
                     call_parameters: None,
                     loop_invariant_correspondence: Default::default(),
                     call_result: None,
@@ -3566,13 +3553,13 @@ pub(in crate::kernel) fn execute_statement_paths_with_prefix(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     prefix_loan_evidence: &CheckedLoanCallEvidenceSequence,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let effective_assumptions =
         assumptions_with_path_context(assumptions, prefix_facts, prefix_obligations);
     let paths = execute_statement_paths(
@@ -3592,7 +3579,7 @@ pub(in crate::kernel) fn execute_statement_paths_with_prefix(
             &path.obligations,
             assumptions,
         )?;
-        Some(CStatementExecutionPath {
+        Some(StatementExecutionPath {
             call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: None,
@@ -3672,10 +3659,10 @@ fn execute_c_statement_leaf_paths(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     budget.install_c_byte_order(execution_context.environment.byte_order());
     if let Some(pending) = &state.pending_thread_create {
         if let Some(resolved) = pending.resolve(state, assumptions) {
@@ -3714,7 +3701,7 @@ fn execute_c_statement_leaf_paths(
                     judgment,
                 )?;
                 for path in &mut paths {
-                    if let CStatementOutcome::Normal(next) = &mut path.outcome {
+                    if let StatementOutcome::Normal(next) = &mut path.outcome {
                         if let Some(slot) = next.locals.slot(name)
                             && let Some(bytes) = next
                                 .memory
@@ -3729,7 +3716,7 @@ fn execute_c_statement_leaf_paths(
                             ));
                         } else {
                             path.outcome =
-                                CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
                                     "pending pthread create cannot retain this local declaration"
                                         .to_string(),
                                 ));
@@ -3757,7 +3744,7 @@ fn execute_c_statement_leaf_paths(
                     judgment,
                 )?;
                 for path in &mut paths {
-                    if let CStatementOutcome::Normal(next) = &mut path.outcome {
+                    if let StatementOutcome::Normal(next) = &mut path.outcome {
                         if let (Some(slot), Some(value)) =
                             (next.locals.slot(name), next.locals.get(name))
                         {
@@ -3769,7 +3756,7 @@ fn execute_c_statement_leaf_paths(
                             ));
                         } else {
                             path.outcome =
-                                CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
                                     "pending pthread create cannot retain this local assignment"
                                         .to_string(),
                                 ));
@@ -3784,8 +3771,8 @@ fn execute_c_statement_leaf_paths(
                 if super::super::functions::c_expression_is_state_independent(condition) => {}
             _ => {
                 budget.consume_statement_step()?;
-                return Ok(vec![CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                return Ok(vec![StatementExecutionPath::new(
+                    StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
                         "resolve the pending pthread create status before this C operation"
                             .to_string(),
                     )),
@@ -3820,8 +3807,8 @@ fn execute_c_statement_leaf_paths(
                 | ProgramStatement::EndAutomaticLifetimes { .. }
         )
     {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(Box::new(
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(
                 crate::kernel::loans::LoanRefusal::UnsupportedResource
                     .diagnostic(crate::kernel::LoanRefusalOperation::Transition),
             ))),
@@ -3840,8 +3827,8 @@ fn execute_c_statement_leaf_paths(
         _ => true,
     };
     if !valid_source_operation {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::RuntimeError(crate::kernel::source_loans::source_loan_error(
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::RuntimeError(crate::kernel::source_loans::source_loan_error(
                 crate::kernel::loans::LoanRefusal::InvalidEvidence,
             )),
             Vec::new().into(),
@@ -3849,33 +3836,33 @@ fn execute_c_statement_leaf_paths(
         )]);
     }
     let paths = match statement {
-        ProgramStatement::ScalarReferenceScope(source) => vec![CStatementExecutionPath::new(
+        ProgramStatement::ScalarReferenceScope(source) => vec![StatementExecutionPath::new(
             match source.execute(state) {
-                Ok(next) => CStatementOutcome::Normal(Box::new(next)),
-                Err(error) => CStatementOutcome::RuntimeError(
+                Ok(next) => StatementOutcome::Normal(Box::new(next)),
+                Err(error) => StatementOutcome::RuntimeError(
                     crate::kernel::source_loans::source_loan_error(error),
                 ),
             },
             Vec::new().into(),
             Vec::new(),
         )],
-        ProgramStatement::EndScalarReference(source) => vec![CStatementExecutionPath::new(
+        ProgramStatement::EndScalarReference(source) => vec![StatementExecutionPath::new(
             match source.execute(state, assumptions) {
-                Ok(next) => CStatementOutcome::Normal(Box::new(next)),
-                Err(error) => CStatementOutcome::RuntimeError(
+                Ok(next) => StatementOutcome::Normal(Box::new(next)),
+                Err(error) => StatementOutcome::RuntimeError(
                     crate::kernel::source_loans::source_loan_error(error),
                 ),
             },
             Vec::new().into(),
             Vec::new(),
         )],
-        ProgramStatement::Skip => vec![CStatementExecutionPath::new(
-            CStatementOutcome::Normal(Box::new(state.clone())),
+        ProgramStatement::Skip => vec![StatementExecutionPath::new(
+            StatementOutcome::Normal(Box::new(state.clone())),
             Vec::new().into(),
             Vec::new(),
         )],
-        ProgramStatement::Break => vec![CStatementExecutionPath::new(
-            CStatementOutcome::Break(Box::new(state.clone())),
+        ProgramStatement::Break => vec![StatementExecutionPath::new(
+            StatementOutcome::Break(Box::new(state.clone())),
             Vec::new().into(),
             Vec::new(),
         )],
@@ -3894,23 +3881,23 @@ fn execute_c_statement_leaf_paths(
             budget,
             judgment,
         )?,
-        ProgramStatement::Continue => vec![CStatementExecutionPath::new(
-            CStatementOutcome::Continue(Box::new(state.clone())),
+        ProgramStatement::Continue => vec![StatementExecutionPath::new(
+            StatementOutcome::Continue(Box::new(state.clone())),
             Vec::new().into(),
             Vec::new(),
         )],
-        ProgramStatement::Goto { target } => vec![CStatementExecutionPath::new(
-            CStatementOutcome::Jump {
+        ProgramStatement::Goto { target } => vec![StatementExecutionPath::new(
+            StatementOutcome::Jump {
                 target: *target,
                 state: Box::new(state.clone()),
             },
             Vec::new().into(),
             Vec::new(),
         )],
-        ProgramStatement::EndAutomaticLifetimes { names } => vec![CStatementExecutionPath::new(
+        ProgramStatement::EndAutomaticLifetimes { names } => vec![StatementExecutionPath::new(
             match end_scope_automatic_lifetimes(state, names) {
-                Ok(state) => CStatementOutcome::Normal(Box::new(state)),
-                Err(refusal) => CStatementOutcome::RuntimeError(refusal),
+                Ok(state) => StatementOutcome::Normal(Box::new(state)),
+                Err(refusal) => StatementOutcome::RuntimeError(refusal),
             },
             Vec::new().into(),
             Vec::new(),
@@ -3923,8 +3910,8 @@ fn execute_c_statement_leaf_paths(
             let retired = match end_scope_automatic_lifetimes(state, exited_locals) {
                 Ok(state) => state,
                 Err(refusal) => {
-                    return Ok(vec![CStatementExecutionPath::new(
-                        CStatementOutcome::RuntimeError(refusal),
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(refusal),
                         Vec::new().into(),
                         Vec::new(),
                     )]);
@@ -3940,12 +3927,12 @@ fn execute_c_statement_leaf_paths(
                 judgment,
             )? {
                 let outcome = match step_path.outcome {
-                    CStatementOutcome::Normal(next_state) if *continue_after => {
-                        CStatementOutcome::Continue(next_state)
+                    StatementOutcome::Normal(next_state) if *continue_after => {
+                        StatementOutcome::Continue(next_state)
                     }
                     outcome => outcome,
                 };
-                paths.push(CStatementExecutionPath::new(
+                paths.push(StatementExecutionPath::new(
                     outcome,
                     step_path.facts,
                     step_path.obligations,
@@ -3965,7 +3952,7 @@ fn execute_c_statement_leaf_paths(
             declared_class,
         } => {
             let outcome = if *c_type == ProgramType::Void {
-                CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+                StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
             } else {
                 match declare_local(
                     state,
@@ -3981,13 +3968,13 @@ fn execute_c_statement_leaf_paths(
                     Some(zero_fill) => zero_fill_declared_array(state, name, zero_fill),
                     None => Ok(state),
                 }) {
-                    Ok(state) => CStatementOutcome::Normal(Box::new(
+                    Ok(state) => StatementOutcome::Normal(Box::new(
                         note_declared_population_storage(state, name),
                     )),
-                    Err(refusal) => CStatementOutcome::RuntimeError(refusal),
+                    Err(refusal) => StatementOutcome::RuntimeError(refusal),
                 }
             };
-            if let (Some(expression), CStatementOutcome::Normal(declared)) = (initializer, &outcome)
+            if let (Some(expression), StatementOutcome::Normal(declared)) = (initializer, &outcome)
             {
                 if zero_fill.is_some()
                     || matches!(
@@ -4007,8 +3994,8 @@ fn execute_c_statement_leaf_paths(
                             | ProgramType::PointerArray(_, _)
                     )
                 {
-                    return Ok(vec![CStatementExecutionPath::new(
-                        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    return Ok(vec![StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         Vec::new().into(),
                         Vec::new(),
                     )]);
@@ -4018,7 +4005,7 @@ fn execute_c_statement_leaf_paths(
                     evaluate_expression_value_paths(declared, expression, assumptions, budget)?
                 {
                     match path.outcome {
-                        CExpressionOutcome::Value(value) => {
+                        ExpressionOutcome::Value(value) => {
                             let lvalue = LValue::local_with_qualifiers(
                                 name.clone(),
                                 *c_type,
@@ -4039,16 +4026,16 @@ fn execute_c_statement_leaf_paths(
                                 Default::default(),
                             )?);
                         }
-                        CExpressionOutcome::UndefinedBehavior(error) => {
-                            paths.push(CStatementExecutionPath::new(
-                                CStatementOutcome::UndefinedBehavior(error),
+                        ExpressionOutcome::UndefinedBehavior(error) => {
+                            paths.push(StatementExecutionPath::new(
+                                StatementOutcome::UndefinedBehavior(error),
                                 path.facts,
                                 path.obligations,
                             ))
                         }
-                        CExpressionOutcome::RuntimeError(error) => {
-                            paths.push(CStatementExecutionPath::new(
-                                CStatementOutcome::RuntimeError(error),
+                        ExpressionOutcome::RuntimeError(error) => {
+                            paths.push(StatementExecutionPath::new(
+                                StatementOutcome::RuntimeError(error),
                                 path.facts,
                                 path.obligations,
                             ))
@@ -4057,7 +4044,7 @@ fn execute_c_statement_leaf_paths(
                 }
                 if *constant {
                     for path in &mut paths {
-                        if let CStatementOutcome::Normal(state) = &mut path.outcome {
+                        if let StatementOutcome::Normal(state) = &mut path.outcome {
                             let block = state
                                 .locals
                                 .slot(name)
@@ -4071,7 +4058,7 @@ fn execute_c_statement_leaf_paths(
                 paths
             } else {
                 let outcome = match outcome {
-                    CStatementOutcome::Normal(mut state)
+                    StatementOutcome::Normal(mut state)
                         if *constant
                             && initializer.is_none()
                             && zero_fill.is_none()
@@ -4084,11 +4071,11 @@ fn execute_c_statement_leaf_paths(
                             .block
                             .clone();
                         state.set_memory(state.memory.clone().freeze_declared_scalar(&block));
-                        CStatementOutcome::Normal(state)
+                        StatementOutcome::Normal(state)
                     }
                     outcome => outcome,
                 };
-                vec![CStatementExecutionPath::new(
+                vec![StatementExecutionPath::new(
                     outcome,
                     Vec::new().into(),
                     Vec::new(),
@@ -4102,21 +4089,21 @@ fn execute_c_statement_leaf_paths(
             declared_class,
         } => {
             let declared = match kind {
-                CAggregateDeclarationKind::Local
-                | CAggregateDeclarationKind::ConstructionDestination => {
+                AggregateDeclarationKind::Local
+                | AggregateDeclarationKind::ConstructionDestination => {
                     declare_aggregate_local(state, name, layout, declared_class.clone())
                 }
-                CAggregateDeclarationKind::Constructor => {
+                AggregateDeclarationKind::Constructor => {
                     begin_aggregate_construction(state, name, layout, budget)?
                 }
             };
             let outcome = match declared {
-                Ok(state) => CStatementOutcome::Normal(Box::new(note_declared_population_storage(
+                Ok(state) => StatementOutcome::Normal(Box::new(note_declared_population_storage(
                     state, name,
                 ))),
-                Err(refusal) => CStatementOutcome::RuntimeError(refusal),
+                Err(refusal) => StatementOutcome::RuntimeError(refusal),
             };
-            vec![CStatementExecutionPath::new(
+            vec![StatementExecutionPath::new(
                 outcome,
                 Vec::new().into(),
                 Vec::new(),
@@ -4158,7 +4145,7 @@ fn execute_c_statement_leaf_paths(
                 budget,
             )?;
             for path in &mut paths {
-                if let CStatementOutcome::Normal(after) = &mut path.outcome {
+                if let StatementOutcome::Normal(after) = &mut path.outcome {
                     if let Some(plan) = source.lease_plan() {
                         let effective_assumptions = assumptions_with_path_context(
                             assumptions,
@@ -4169,7 +4156,7 @@ fn execute_c_statement_leaf_paths(
                         match transition {
                             Ok(next) => **after = next,
                             Err(error) => {
-                                path.outcome = CStatementOutcome::RuntimeError(
+                                path.outcome = StatementOutcome::RuntimeError(
                                     crate::kernel::source_loans::source_loan_error(error),
                                 );
                                 continue;
@@ -4248,14 +4235,14 @@ fn execute_c_statement_leaf_paths(
                             Some(value) => value,
                             None => {
                                 path.outcome =
-                                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch);
+                                    StatementOutcome::RuntimeError(RuntimeError::TypeMismatch);
                                 continue;
                             }
                         }
                     }
                     None => value,
                 };
-                if let CStatementOutcome::Normal(state) = &mut path.outcome {
+                if let StatementOutcome::Normal(state) = &mut path.outcome {
                     state.set_call_result(*call, value);
                 }
             }
@@ -4288,14 +4275,14 @@ fn execute_c_statement_leaf_paths(
             let outcome = if let Some(refusal) = return_authority_refusal(state) {
                 refusal
             } else if state.memory.has_pending_heap_allocation() {
-                CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
+                StatementOutcome::RuntimeError(RuntimeError::UnresolvedAllocationOutcome)
             } else {
-                CStatementOutcome::Return {
+                StatementOutcome::Return {
                     value: ProgramValue::Void.into(),
                     state: Box::new(state.clone()),
                 }
             };
-            vec![CStatementExecutionPath::new(
+            vec![StatementExecutionPath::new(
                 outcome,
                 Vec::new().into(),
                 Vec::new(),
@@ -4308,27 +4295,25 @@ fn execute_c_statement_leaf_paths(
             let mut paths = Vec::new();
             for path in evaluate_expression_value_paths(state, expression, assumptions, budget)? {
                 let outcome = match path.outcome {
-                    CExpressionOutcome::Value(value) if value.c_type() == ProgramType::Int32 => {
+                    ExpressionOutcome::Value(value) if value.c_type() == ProgramType::Int32 => {
                         if let Some(refusal) = return_authority_refusal(state) {
                             refusal
                         } else {
-                            CStatementOutcome::Throw {
+                            StatementOutcome::Throw {
                                 value: value.into(),
                                 state: Box::new(state.clone()),
                             }
                         }
                     }
-                    CExpressionOutcome::Value(_) => {
-                        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+                    ExpressionOutcome::Value(_) => {
+                        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
                     }
-                    CExpressionOutcome::UndefinedBehavior(error) => {
-                        CStatementOutcome::UndefinedBehavior(error)
+                    ExpressionOutcome::UndefinedBehavior(error) => {
+                        StatementOutcome::UndefinedBehavior(error)
                     }
-                    CExpressionOutcome::RuntimeError(error) => {
-                        CStatementOutcome::RuntimeError(error)
-                    }
+                    ExpressionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
                 };
-                paths.push(CStatementExecutionPath::new(
+                paths.push(StatementExecutionPath::new(
                     outcome,
                     path.facts,
                     path.obligations,
@@ -4351,19 +4336,19 @@ fn execute_c_statement_leaf_paths(
                 budget,
                 judgment,
             )? {
-                if let CStatementOutcome::Throw {
+                if let StatementOutcome::Throw {
                     value,
                     state: thrown_state,
                 } = &try_path.outcome
                     && value.c_type() == ProgramType::Int32
                 {
                     if thrown_state.locals.bindings.contains_key(binding) {
-                        paths.push(CStatementExecutionPath {
+                        paths.push(StatementExecutionPath {
                             call_parameters: None,
                             loop_invariant_correspondence: Default::default(),
                             call_result: None,
-                            outcome: CStatementOutcome::RuntimeError(
-                                CRuntimeError::FunctionContract(format!(
+                            outcome: StatementOutcome::RuntimeError(
+                                RuntimeError::FunctionContract(format!(
                                     "int32 handler binding `{binding}` is not fresh"
                                 )),
                             ),
@@ -4443,13 +4428,13 @@ fn execute_c_statement_leaf_paths(
             let mut paths = Vec::new();
             for condition_path in evaluate_c_condition_paths(state, condition, assumptions, budget)?
             {
-                let CExpressionPath {
+                let ExpressionPath {
                     outcome,
                     facts,
                     obligations,
                 } = condition_path;
                 match outcome {
-                    CExpressionOutcome::Value(value) => {
+                    ExpressionOutcome::Value(value) => {
                         let truthiness_paths =
                             c_truthiness_paths(value, facts, obligations, assumptions);
                         for truthiness_path in truthiness_paths {
@@ -4476,7 +4461,7 @@ fn execute_c_statement_leaf_paths(
                                 match pending.resolve(&branch_state, &path_assumptions) {
                                     Some(resolved) => resolved,
                                     None => {
-                                        paths.push(CStatementExecutionPath::new(CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                                        paths.push(StatementExecutionPath::new(StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
                                                 "C branch does not decide the pending pthread create status".to_string(),
                                             )), truthiness_path.facts, truthiness_path.obligations));
                                         continue;
@@ -4506,16 +4491,16 @@ fn execute_c_statement_leaf_paths(
                             ));
                         }
                     }
-                    CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                        paths.push(CStatementExecutionPath::new(
-                            CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                    ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                        paths.push(StatementExecutionPath::new(
+                            StatementOutcome::UndefinedBehavior(undefined_behavior),
                             facts,
                             obligations,
                         ))
                     }
-                    CExpressionOutcome::RuntimeError(error) => {
-                        paths.push(CStatementExecutionPath::new(
-                            CStatementOutcome::RuntimeError(error),
+                    ExpressionOutcome::RuntimeError(error) => {
+                        paths.push(StatementExecutionPath::new(
+                            StatementOutcome::RuntimeError(error),
                             facts,
                             obligations,
                         ))
@@ -4617,14 +4602,14 @@ fn statement_reads_call_result(statement: &ProgramStatement) -> bool {
 }
 
 /// The state an outcome continues in, when it has one.
-fn c_statement_outcome_state_mut(outcome: &mut CStatementOutcome) -> Option<&mut ExecutionState> {
+fn c_statement_outcome_state_mut(outcome: &mut StatementOutcome) -> Option<&mut ExecutionState> {
     match outcome {
-        CStatementOutcome::Normal(state)
-        | CStatementOutcome::Break(state)
-        | CStatementOutcome::Continue(state)
-        | CStatementOutcome::Jump { state, .. }
-        | CStatementOutcome::Return { state, .. }
-        | CStatementOutcome::Throw { state, .. } => Some(state),
+        StatementOutcome::Normal(state)
+        | StatementOutcome::Break(state)
+        | StatementOutcome::Continue(state)
+        | StatementOutcome::Jump { state, .. }
+        | StatementOutcome::Return { state, .. }
+        | StatementOutcome::Throw { state, .. } => Some(state),
         _ => None,
     }
 }
@@ -4632,12 +4617,12 @@ fn c_statement_outcome_state_mut(outcome: &mut CStatementOutcome) -> Option<&mut
 fn execute_c_switch_paths(
     state: &ExecutionState,
     expression: &ProgramExpression,
-    cases: &[CSwitchCase],
+    cases: &[SwitchCase],
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     // A `switch` body is one scope: cases fall through into each other, so a
     // declaration in one case is in scope in the next and stops existing only
     // where control leaves the switch.
@@ -4647,16 +4632,16 @@ fn execute_c_switch_paths(
     }
     let mut paths = Vec::new();
     for selector_path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
-        let CExpressionPath {
+        let ExpressionPath {
             outcome,
             facts,
             obligations,
         } = selector_path;
         match outcome {
-            CExpressionOutcome::Value(value) => {
+            ExpressionOutcome::Value(value) => {
                 let Some(selector) = promote_c_path_value(value, MachineIntegerType::Int32) else {
-                    paths.push(CStatementExecutionPath::new(
-                        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    paths.push(StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts,
                         obligations,
                     ));
@@ -4675,15 +4660,13 @@ fn execute_c_switch_paths(
                     judgment,
                 )?);
             }
-            CExpressionOutcome::UndefinedBehavior(error) => {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::UndefinedBehavior(error),
-                    facts,
-                    obligations,
-                ))
-            }
-            CExpressionOutcome::RuntimeError(error) => paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(error),
+            ExpressionOutcome::UndefinedBehavior(error) => paths.push(StatementExecutionPath::new(
+                StatementOutcome::UndefinedBehavior(error),
+                facts,
+                obligations,
+            )),
+            ExpressionOutcome::RuntimeError(error) => paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
             )),
@@ -4695,15 +4678,15 @@ fn execute_c_switch_paths(
 fn execute_c_switch_dispatch_paths(
     state: &ExecutionState,
     selector: &MachineTerm,
-    cases: &[CSwitchCase],
+    cases: &[SwitchCase],
     case_index: usize,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     if case_index == cases.len() {
         let default_index = cases.iter().position(|case| case.value.is_none());
         return match default_index {
@@ -4718,8 +4701,8 @@ fn execute_c_switch_dispatch_paths(
                 budget,
                 judgment,
             ),
-            None => Ok(vec![CStatementExecutionPath::new(
-                CStatementOutcome::Normal(Box::new(state.clone())),
+            None => Ok(vec![StatementExecutionPath::new(
+                StatementOutcome::Normal(Box::new(state.clone())),
                 facts,
                 obligations,
             )]),
@@ -4744,12 +4727,12 @@ fn execute_c_switch_dispatch_paths(
     let condition = ConditionTerm::equal(selector.clone(), MachineTerm::constant(value));
     let mut paths = Vec::new();
     for condition_path in condition_as_c_int32_paths(condition, facts, obligations, assumptions) {
-        let CExpressionPath {
+        let ExpressionPath {
             outcome,
             facts,
             obligations,
         } = condition_path;
-        let CExpressionOutcome::Value(ProgramValue::Int32(result)) = outcome else {
+        let ExpressionOutcome::Value(ProgramValue::Int32(result)) = outcome else {
             unreachable!("switch case conditions produce promoted int32 values");
         };
         if result.as_const() == Some(1) {
@@ -4784,18 +4767,18 @@ fn execute_c_switch_dispatch_paths(
 
 fn execute_c_switch_suffix_paths(
     state: &ExecutionState,
-    cases: &[CSwitchCase],
+    cases: &[SwitchCase],
     case_index: usize,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     if case_index == cases.len() {
-        return Ok(vec![CStatementExecutionPath::new(
-            CStatementOutcome::Normal(Box::new(state.clone())),
+        return Ok(vec![StatementExecutionPath::new(
+            StatementOutcome::Normal(Box::new(state.clone())),
             facts,
             obligations,
         )]);
@@ -4820,7 +4803,7 @@ fn execute_c_switch_suffix_paths(
             continue;
         };
         match case_path.outcome {
-            CStatementOutcome::Normal(next_state) => paths.extend(execute_c_switch_suffix_paths(
+            StatementOutcome::Normal(next_state) => paths.extend(execute_c_switch_suffix_paths(
                 &next_state,
                 cases,
                 case_index + 1,
@@ -4831,18 +4814,18 @@ fn execute_c_switch_suffix_paths(
                 budget,
                 judgment,
             )?),
-            CStatementOutcome::Break(next_state) => paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::Normal(next_state),
+            StatementOutcome::Break(next_state) => paths.push(StatementExecutionPath::new(
+                StatementOutcome::Normal(next_state),
                 case_facts,
                 case_obligations,
             )),
-            outcome @ (CStatementOutcome::Continue(_)
-            | CStatementOutcome::Jump { .. }
-            | CStatementOutcome::Return { .. }
-            | CStatementOutcome::Throw { .. }
-            | CStatementOutcome::VerificationDiverges
-            | CStatementOutcome::UndefinedBehavior(_)
-            | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath::new(
+            outcome @ (StatementOutcome::Continue(_)
+            | StatementOutcome::Jump { .. }
+            | StatementOutcome::Return { .. }
+            | StatementOutcome::Throw { .. }
+            | StatementOutcome::VerificationDiverges
+            | StatementOutcome::UndefinedBehavior(_)
+            | StatementOutcome::RuntimeError(_)) => paths.push(StatementExecutionPath::new(
                 outcome,
                 case_facts,
                 case_obligations,
@@ -4858,38 +4841,38 @@ pub(in crate::kernel) fn execute_c_assert_paths(
     label: Option<&str>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
     for condition_path in evaluate_c_condition_paths(state, condition, assumptions, budget)? {
-        let CExpressionPath {
+        let ExpressionPath {
             outcome,
             facts,
             obligations,
         } = condition_path;
         match outcome {
-            CExpressionOutcome::Value(value) => {
+            ExpressionOutcome::Value(value) => {
                 let assertion_obligation = assertion_truthiness_obligation(&value, label);
                 for truthiness_path in c_truthiness_paths(value, facts, obligations, assumptions) {
                     let mut obligations = truthiness_path.obligations;
                     if !truthiness_path.is_true {
                         obligations.push(assertion_obligation.clone());
                     }
-                    paths.push(CStatementExecutionPath::new(
-                        CStatementOutcome::Normal(Box::new(state.clone())),
+                    paths.push(StatementExecutionPath::new(
+                        StatementOutcome::Normal(Box::new(state.clone())),
                         truthiness_path.facts,
                         obligations,
                     ));
                 }
             }
-            CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::UndefinedBehavior(undefined_behavior),
+            ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                paths.push(StatementExecutionPath::new(
+                    StatementOutcome::UndefinedBehavior(undefined_behavior),
                     facts,
                     obligations,
                 ))
             }
-            CExpressionOutcome::RuntimeError(error) => paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(error),
+            ExpressionOutcome::RuntimeError(error) => paths.push(StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(error),
                 facts,
                 obligations,
             )),
@@ -4922,10 +4905,10 @@ pub(in crate::kernel) fn execute_c_while_paths(
     do_while: bool,
     body: &ProgramStatement,
     assumptions: &PureFactContext,
-    execution_context: CExecutionContext<'_>,
+    execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
-) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
     struct PendingLoopPath {
         state: ExecutionState,
         facts: ExecutionFacts,
@@ -4977,8 +4960,8 @@ pub(in crate::kernel) fn execute_c_while_paths(
         let condition_paths = if check_condition {
             evaluate_c_condition_paths(&current_state, condition, &loop_assumptions, budget)?
         } else {
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1))),
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1))),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }]
@@ -4988,7 +4971,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
             let mut may_exit = false;
             for path in &condition_paths {
                 crate::instrumentation::record_deterministic_work(1);
-                if let CExpressionOutcome::Value(value) = &path.outcome {
+                if let ExpressionOutcome::Value(value) = &path.outcome {
                     for truth in c_truthiness_paths(
                         value.clone(),
                         path.facts.clone(),
@@ -5001,7 +4984,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
                 }
             }
             if may_continue && may_exit {
-                paths.push(CStatementExecutionPath::new(CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+                paths.push(StatementExecutionPath::new(StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
                         format!("inline helper `{helper}`: loop guard cannot be decided at the call site; give the helper a Click contract with a checked loop proof"),
                     )), accumulated_facts, accumulated_obligations));
                 continue;
@@ -5021,7 +5004,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
             };
 
             match condition_path.outcome {
-                CExpressionOutcome::Value(value) => {
+                ExpressionOutcome::Value(value) => {
                     let truthiness_paths = c_truthiness_paths(
                         value,
                         condition_facts,
@@ -5041,8 +5024,8 @@ pub(in crate::kernel) fn execute_c_while_paths(
                             else {
                                 continue;
                             };
-                            paths.push(CStatementExecutionPath::new(
-                                CStatementOutcome::Normal(Box::new(current_state.clone())),
+                            paths.push(StatementExecutionPath::new(
+                                StatementOutcome::Normal(Box::new(current_state.clone())),
                                 facts,
                                 obligations,
                             ));
@@ -5091,8 +5074,8 @@ pub(in crate::kernel) fn execute_c_while_paths(
                                 continue;
                             };
                             match body_path.outcome {
-                                CStatementOutcome::Normal(next_state)
-                                | CStatementOutcome::Continue(next_state) => {
+                                StatementOutcome::Normal(next_state)
+                                | StatementOutcome::Continue(next_state) => {
                                     pending.push(PendingLoopPath {
                                         state: *next_state,
                                         facts,
@@ -5100,20 +5083,20 @@ pub(in crate::kernel) fn execute_c_while_paths(
                                         check_condition: true,
                                     });
                                 }
-                                CStatementOutcome::Break(next_state) => {
-                                    paths.push(CStatementExecutionPath::new(
-                                        CStatementOutcome::Normal(next_state),
+                                StatementOutcome::Break(next_state) => {
+                                    paths.push(StatementExecutionPath::new(
+                                        StatementOutcome::Normal(next_state),
                                         facts,
                                         obligations,
                                     ));
                                 }
-                                outcome @ (CStatementOutcome::Return { .. }
-                                | CStatementOutcome::Throw { .. }
-                                | CStatementOutcome::Jump { .. }
-                                | CStatementOutcome::VerificationDiverges
-                                | CStatementOutcome::UndefinedBehavior(_)
-                                | CStatementOutcome::RuntimeError(_)) => {
-                                    paths.push(CStatementExecutionPath::new(
+                                outcome @ (StatementOutcome::Return { .. }
+                                | StatementOutcome::Throw { .. }
+                                | StatementOutcome::Jump { .. }
+                                | StatementOutcome::VerificationDiverges
+                                | StatementOutcome::UndefinedBehavior(_)
+                                | StatementOutcome::RuntimeError(_)) => {
+                                    paths.push(StatementExecutionPath::new(
                                         outcome,
                                         facts,
                                         obligations,
@@ -5123,7 +5106,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
                         }
                     }
                 }
-                CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
                     let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                         &accumulated_facts,
                         &accumulated_obligations,
@@ -5133,13 +5116,13 @@ pub(in crate::kernel) fn execute_c_while_paths(
                     ) else {
                         continue;
                     };
-                    paths.push(CStatementExecutionPath::new(
-                        CStatementOutcome::UndefinedBehavior(undefined_behavior),
+                    paths.push(StatementExecutionPath::new(
+                        StatementOutcome::UndefinedBehavior(undefined_behavior),
                         facts,
                         obligations,
                     ));
                 }
-                CExpressionOutcome::RuntimeError(error) => {
+                ExpressionOutcome::RuntimeError(error) => {
                     let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                         &accumulated_facts,
                         &accumulated_obligations,
@@ -5149,8 +5132,8 @@ pub(in crate::kernel) fn execute_c_while_paths(
                     ) else {
                         continue;
                     };
-                    paths.push(CStatementExecutionPath::new(
-                        CStatementOutcome::RuntimeError(error),
+                    paths.push(StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(error),
                         facts,
                         obligations,
                     ));
@@ -5189,7 +5172,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
 fn local_declaration_pointer(
     state: &mut ExecutionState,
     name: &str,
-) -> Result<Pointer, CRuntimeError> {
+) -> Result<Pointer, RuntimeError> {
     let previous = state.locals.slot(name).cloned();
     if let Some(previous) = previous
         && previous.block.is_local_block()
@@ -5204,24 +5187,20 @@ fn local_declaration_pointer(
             .block_size(&previous.block)
             .cloned()
             .unwrap_or(MachineTerm::Variable(Variable(u64::MAX)));
-        let old_range = CMemoryRange::new_with_element_width(
-            previous.clone(),
-            MachineTerm::constant(0),
-            end,
-            1,
-        );
+        let old_range =
+            MemoryRange::new_with_element_width(previous.clone(), MachineTerm::constant(0), end, 1);
         if let Some(refusal) = state.stable_loan_memory_access_refusal(
             &old_range,
             &PureFactContext::default(),
             crate::kernel::LoanRefusalOperation::MemoryAccess,
         ) {
-            return Err(CRuntimeError::LoanRefusal(Box::new(refusal)));
+            return Err(RuntimeError::LoanRefusal(Box::new(refusal)));
         }
         retire_automatic_storage_owner(state, &old_range);
         state.set_memory(state.memory.without_local_block(&previous.block));
         return Ok(fresh_local_object_identity(state, name));
     }
-    let unnumbered = CMemory::local_pointer(name);
+    let unnumbered = Memory::local_pointer(name);
     if state.enclosing_frame_holds_locals()
         || state.memory.local_block_is_occupied(&unnumbered.block)
     {
@@ -5236,9 +5215,9 @@ fn local_declaration_pointer(
 /// Live loans and protocol reservations must be checked before calling this.
 pub(in crate::kernel) fn retire_automatic_storage_owner(
     state: &mut ExecutionState,
-    range: &CMemoryRange,
+    range: &MemoryRange,
 ) {
-    let owner = CResourceFact::own_memory(range.clone());
+    let owner = ResourceFact::own_memory(range.clone());
     let assumptions = PureFactContext::default();
     let resources = if state.resources.exact_count(&owner) != 0 {
         state
@@ -5272,7 +5251,7 @@ fn fresh_local_object_identity(state: &mut ExecutionState, name: &str) -> Pointe
         *state = state
             .clone()
             .with_next_local_lifetime(lifetime.saturating_add(1));
-        let pointer = CMemory::local_lifetime_pointer(lifetime, name);
+        let pointer = Memory::local_lifetime_pointer(lifetime, name);
         if !state.memory.local_block_is_occupied(&pointer.block) {
             return pointer;
         }
@@ -5308,25 +5287,25 @@ fn note_declared_population_storage(mut state: ExecutionState, name: &str) -> Ex
 fn zero_fill_declared_array(
     mut state: ExecutionState,
     name: &str,
-    zero_fill: &CZeroFill,
-) -> Result<ExecutionState, CRuntimeError> {
+    zero_fill: &ZeroFill,
+) -> Result<ExecutionState, RuntimeError> {
     let slot = state
         .locals
         .slot(name)
         .cloned()
         .filter(|slot| slot.block.is_local_block() && state.memory.has_block(&slot.block))
-        .ok_or(CRuntimeError::TypeMismatch)?;
+        .ok_or(RuntimeError::TypeMismatch)?;
     let object_bytes = zero_fill
         .stride
         .checked_mul(zero_fill.count)
-        .ok_or(CRuntimeError::TypeMismatch)?;
+        .ok_or(RuntimeError::TypeMismatch)?;
     if state
         .memory
         .block_size(&slot.block)
         .and_then(MachineTerm::as_const)
         != Some(object_bytes)
     {
-        return Err(CRuntimeError::TypeMismatch);
+        return Err(RuntimeError::TypeMismatch);
     }
     let mut runs = Vec::with_capacity(zero_fill.cells.len());
     let mut element_end = 0u32;
@@ -5341,15 +5320,15 @@ fn zero_fill_declared_array(
             &PureFactContext::new(),
         )
         .filter(|_| obligations.is_empty())
-        .ok_or(CRuntimeError::TypeMismatch)?;
+        .ok_or(RuntimeError::TypeMismatch)?;
         // The cells of one element are ascending and disjoint, and lie in it.
         let end = cell
             .offset
             .checked_add(value.byte_width())
             .filter(|end| cell.offset >= element_end && *end <= zero_fill.stride)
-            .ok_or(CRuntimeError::TypeMismatch)?;
+            .ok_or(RuntimeError::TypeMismatch)?;
         element_end = end;
-        runs.push(CConstantRun {
+        runs.push(ConstantRun {
             offset: cell.offset,
             stride: zero_fill.stride,
             count: zero_fill.count,
@@ -5365,7 +5344,7 @@ fn zero_fill_declared_array(
                     let offset = index
                         .checked_mul(run.stride)
                         .and_then(|offset| offset.checked_add(run.offset))
-                        .ok_or(CRuntimeError::TypeMismatch)?;
+                        .ok_or(RuntimeError::TypeMismatch)?;
                     memory = memory.store(slot.offset_by_bytes(offset), run.value.clone());
                 }
             }
@@ -5387,8 +5366,8 @@ fn own_local_array(state: &mut ExecutionState, pointer: &Pointer, bytes: u32) {
     state.resources = state
         .resources
         .clone()
-        .unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(
+        .unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(
                 pointer.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(bytes),
@@ -5406,7 +5385,7 @@ pub(in crate::kernel) fn declare_local(
     constant: bool,
     pointee_constant: bool,
     declared_class: Option<crate::kernel::effective_type::CAccessClass>,
-) -> Result<ExecutionState, CRuntimeError> {
+) -> Result<ExecutionState, RuntimeError> {
     let mut state = state.clone();
     let pointer = local_declaration_pointer(&mut state, name)?;
     // A declared local's block is placed at its type's alignment; record it
@@ -5674,8 +5653,8 @@ pub(in crate::kernel) fn declare_local(
     state.resources = state
         .resources
         .clone()
-        .unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(
+        .unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(
                 pointer.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(byte_width),
@@ -5709,9 +5688,9 @@ pub(in crate::kernel) fn declare_local(
 pub(in crate::kernel) fn declare_aggregate_local(
     state: &ExecutionState,
     name: &str,
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
     declared_class: Option<crate::kernel::effective_type::CAccessClass>,
-) -> Result<ExecutionState, CRuntimeError> {
+) -> Result<ExecutionState, RuntimeError> {
     let mut state = state.clone();
     let pointer = local_declaration_pointer(&mut state, name)?;
     register_block_alignment(&pointer.block, layout.alignment_bytes());
@@ -5742,8 +5721,8 @@ pub(in crate::kernel) fn declare_aggregate_local(
     state.resources = state
         .resources
         .clone()
-        .unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(
+        .unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(
                 pointer,
                 MachineTerm::constant(0),
                 MachineTerm::constant(layout.size_bytes()),
@@ -5756,9 +5735,9 @@ pub(in crate::kernel) fn declare_aggregate_local(
 fn begin_aggregate_construction(
     state: &ExecutionState,
     name: &str,
-    layout: &CAggregateLayout,
+    layout: &AggregateLayout,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<ExecutionState, CRuntimeError>> {
+) -> ExecutionResult<Result<ExecutionState, RuntimeError>> {
     let mut state = match declare_aggregate_local(state, name, layout, None) {
         Ok(state) => state,
         Err(refusal) => return Ok(Err(refusal)),
@@ -5883,13 +5862,13 @@ fn refresh_scalar_local_binding(
     };
     let (object_volatile, object_pointee_volatile, object_pointee_constant) =
         match state.locals.binding(&name) {
-            Some(CLocalBinding::Object {
+            Some(LocalBinding::Object {
                 volatile,
                 pointee_volatile,
                 pointee_constant,
                 ..
             })
-            | Some(CLocalBinding::UninitializedObject {
+            | Some(LocalBinding::UninitializedObject {
                 volatile,
                 pointee_volatile,
                 pointee_constant,

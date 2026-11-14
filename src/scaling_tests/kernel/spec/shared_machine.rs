@@ -293,7 +293,7 @@ fn opaque_results_observe_and_compare_without_expanding_prefixes() {
                 assert!(value.observe().is_some());
                 assert!(
                     value
-                        .comparison(CComparisonOperator::Equal, &value)
+                        .comparison(ComparisonOperator::Equal, &value)
                         .unwrap()
                         .is_some()
                 );

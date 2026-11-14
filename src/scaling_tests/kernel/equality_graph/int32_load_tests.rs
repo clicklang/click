@@ -97,12 +97,12 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
         let _session = crate::kernel::VerificationSession::enter();
         let owner = address(87);
         let field = owner.offset_by_bytes(8);
-        let before = CMemory::new();
+        let before = Memory::new();
         let execution = before.with_block("local:raw-read", 8).store(
-            CMemory::local_pointer("raw-read"),
+            Memory::local_pointer("raw-read"),
             ProgramValue::Int32(0u32.into()),
         );
-        let load = |memory: &CMemory| {
+        let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
                 intern_c_memory_ref(memory),
                 Box::new(field.clone()),
@@ -227,7 +227,7 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
         let mut baseline = None;
         for size in [0u64, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let mut history = CMemory::new().with_block("array", 4096);
+            let mut history = Memory::new().with_block("array", 4096);
             for index in 0..size {
                 history = history.store(
                     address(500_000 + index),

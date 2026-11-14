@@ -17,12 +17,12 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
     );
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
-        let held = CResourceFact::view_memory(range(&base, 0u32.into(), n.clone()));
+        let held = ResourceFact::view_memory(range(&base, 0u32.into(), n.clone()));
         let mut resources =
             ResourceContext::new_with_equalities(&empty).unchecked_with_fact(held.clone());
         for i in 0..size {
             let end = MachineTerm::Variable(Variable(921_000 + i));
-            resources = resources.unchecked_with_fact(CResourceFact::view_memory(range(
+            resources = resources.unchecked_with_fact(ResourceFact::view_memory(range(
                 &base,
                 0u32.into(),
                 end,
@@ -90,10 +90,10 @@ fn symbolic_byte_read_consumer_refuses_ambiguous_suppliers_without_search() {
         .assume_condition(ConditionTerm::signed_less_equal(m.clone(), n.clone()), true);
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
-        let held = CResourceFact::view_memory(range(&base, 0u32.into(), n.clone()));
+        let held = ResourceFact::view_memory(range(&base, 0u32.into(), n.clone()));
         let mut resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(held);
         for i in 0..size {
-            resources = resources.unchecked_with_fact(CResourceFact::view_memory(range(
+            resources = resources.unchecked_with_fact(ResourceFact::view_memory(range(
                 &base,
                 0u32.into(),
                 MachineTerm::Variable(Variable(961_000 + i)),

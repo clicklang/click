@@ -12,15 +12,15 @@ fn heap_variable_counts_follow_local_edits_and_keep_siblings_isolated() {
             block: PointerBlock::Symbolic(Variable(id)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut heap = crate::kernel::primitives::CHeapMemory::default();
+        let mut heap = crate::kernel::primitives::HeapMemory::default();
         for id in 1..=size {
             heap.uninitialized_objects.insert(pointer(id), 4);
         }
         let heap = std::sync::Arc::new(heap);
         let original = heap_variable_counts(&heap, WholeCount::Charged);
-        let selected = CMemory {
+        let selected = Memory {
             heap: heap.clone(),
-            ..CMemory::new().with_block("selected:read", 4)
+            ..Memory::new().with_block("selected:read", 4)
         };
         let (projected, work) = crate::instrumentation::measure_deterministic_work(|| {
             counts_whole(&selected, WholeCount::Charged)
@@ -39,7 +39,7 @@ fn heap_variable_counts_follow_local_edits_and_keep_siblings_isolated() {
         assert_eq!(counts.len(), size as usize);
         assert!(work <= 4, "local heap edit walked {size} objects: {work}");
         assert_eq!(heap_variable_counts(&heap, WholeCount::Charged), original);
-        let empty = std::sync::Arc::new(crate::kernel::primitives::CHeapMemory::default());
+        let empty = std::sync::Arc::new(crate::kernel::primitives::HeapMemory::default());
         assert!(heap_variable_counts(&empty, WholeCount::Charged).is_empty());
         assert_eq!(heap_variable_counts(&changed, WholeCount::Charged), counts);
     }
@@ -95,7 +95,7 @@ fn shared_machine_variable_collection_keeps_snapshot_deferral_and_load_addresses
     };
     let _session = crate::kernel::VerificationSession::enter();
     let address = Variable(crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE + 124);
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_c_memory(Memory::new());
     let load = crate::kernel::eval::load_variable_for_exact_cell(
         &memory,
         &Pointer::symbolic(address),

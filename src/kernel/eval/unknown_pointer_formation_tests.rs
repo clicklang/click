@@ -4,8 +4,8 @@ fn pointer(id: u64) -> PointerValue {
     PointerValue::new(Pointer::symbolic(Variable(id)), ProgramType::Int32Pointer)
 }
 
-fn view(value: &PointerValue, start: u32, end: u32) -> CResourceFact {
-    CResourceFact::view_memory(CMemoryRange::from_pointer_value(
+fn view(value: &PointerValue, start: u32, end: u32) -> ResourceFact {
+    ResourceFact::view_memory(MemoryRange::from_pointer_value(
         value,
         start.into(),
         end.into(),
@@ -77,7 +77,7 @@ fn formation_requires_the_original_domain_and_includes_one_past() {
         &ResourceContext::new().unchecked_with_fact(view(&p, 1, 1))
     ));
     let empty_coverage = p
-        .opaque_coverage_fact(&CMemoryRange::from_pointer_value(
+        .opaque_coverage_fact(&MemoryRange::from_pointer_value(
             &p,
             1u32.into(),
             1u32.into(),
@@ -98,7 +98,7 @@ fn member_coverage_does_not_follow_numeric_aliases() {
     let p = pointer(930_200);
     let q = pointer(930_201);
     let coverage = q
-        .opaque_coverage_fact(&CMemoryRange::from_pointer_value(
+        .opaque_coverage_fact(&MemoryRange::from_pointer_value(
             &q,
             0u32.into(),
             3u32.into(),
@@ -136,7 +136,7 @@ mod scaling_tests {
 fn allocation_bounds_require_positive_ownership_and_grant_no_read_permission() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = pointer(930_400);
-    let allocation = CResourceFact::own_designated_allocation(p.clone(), &HeapExtent::int32(12u32));
+    let allocation = ResourceFact::own_designated_allocation(p.clone(), &HeapExtent::int32(12u32));
     let root = PureFactContext::new();
     let coverage = allocation.allocation_bounds_fact(&root).unwrap();
     let context = root.clone().assume_proposition(coverage);
@@ -144,7 +144,7 @@ fn allocation_bounds_require_positive_ownership_and_grant_no_read_permission() {
     assert!(!permits(&p, 16, &context, &ResourceContext::new()));
     let resources = ResourceContext::new().unchecked_with_fact(allocation.clone());
     assert!(!resources.permits_memory_read(p.pointer(), 4, &context));
-    let empty = CResourceFact::own_quantity(allocation.resource().clone(), 0u32.into());
+    let empty = ResourceFact::own_quantity(allocation.resource().clone(), 0u32.into());
     assert!(empty.allocation_bounds_fact(&root).is_none());
 }
 
@@ -226,7 +226,7 @@ fn fixed_array_reference_bounds_allow_formation_without_read_authority() {
 fn well_formed_range_terms_do_not_establish_an_opaque_domain() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = pointer(930_500);
-    let range = CMemoryRange::from_pointer_value(&p, 0u32.into(), 3u32.into(), 4);
+    let range = MemoryRange::from_pointer_value(&p, 0u32.into(), 3u32.into(), 4);
     let state = |facts: Vec<Proposition>| {
         facts
             .into_iter()
@@ -246,7 +246,7 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = pointer(930_600);
     let start = 1u64 << 32;
-    let range = CMemoryRange::from_pointer_value_wide(
+    let range = MemoryRange::from_pointer_value_wide(
         &p,
         MachineTerm::uint64_constant(start),
         MachineTerm::uint64_constant(start + 2),
@@ -267,7 +267,7 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
     });
     assert!(allowed && used.contains(&coverage));
     assert!(!PureFactContext::new().opaque_pointer_covers(&p, &position(start + 1), 0));
-    let record = CMemoryRange::from_pointer_value_wide(
+    let record = MemoryRange::from_pointer_value_wide(
         &p,
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(2),
@@ -284,7 +284,7 @@ fn split_formation_fixture() -> (
     Pointer,
     PureFactContext,
     ResourceContext,
-    CResourceFact,
+    ResourceFact,
 ) {
     let p = PointerValue::new(
         Pointer {
@@ -311,20 +311,26 @@ fn split_formation_fixture() -> (
             true,
         );
     let position = p.pointer().offset_by_elements(i, 4);
-    let owner = CResourceFact::own_memory(CMemoryRange::from_pointer_value(
+    let owner = ResourceFact::own_memory(MemoryRange::from_pointer_value(
         &p,
         from.clone(),
         to.clone(),
         4,
     ));
     let resources = ResourceContext::new_with_equalities(&facts)
-        .unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::from_pointer_value(&p, 0u32.into(), from.clone(), 4),
-        ))
+        .unchecked_with_fact(ResourceFact::view_memory(MemoryRange::from_pointer_value(
+            &p,
+            0u32.into(),
+            from.clone(),
+            4,
+        )))
         .unchecked_with_fact(owner.clone())
-        .unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::from_pointer_value(&p, to, 8u32.into(), 4),
-        ));
+        .unchecked_with_fact(ResourceFact::view_memory(MemoryRange::from_pointer_value(
+            &p,
+            to,
+            8u32.into(),
+            4,
+        )));
     resources.synchronize_memory_equalities(&facts);
     (p, position, facts, resources, owner)
 }
@@ -341,7 +347,7 @@ fn formation_selects_the_containing_symbolic_piece_beside_prefix_and_suffix_view
         .clone()
         .without_exact_representation(&owner)
         .unwrap()
-        .unchecked_with_fact(CResourceFact::own_quantity(
+        .unchecked_with_fact(ResourceFact::own_quantity(
             owner.resource().clone(),
             0u32.into(),
         ));
@@ -405,13 +411,13 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
                 // The facts permit the formation; the result keeps its
                 // written offset rather than being respelled as null.
                 assert!(matches!(&result[0].outcome,
-                    CExpressionOutcome::Value(ProgramValue::Pointer(value))
+                    ExpressionOutcome::Value(ProgramValue::Pointer(value))
                         if value.pointer().is_in_null_block()
                             && value.pointer() != &Pointer::null()));
             } else {
                 assert!(matches!(
                     &result[0].outcome,
-                    CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic)
+                    ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic)
                 ));
             }
         }
@@ -421,7 +427,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
 #[test]
 fn a_registered_zero_index_permits_null_pointer_formation() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_c_memory(Memory::new());
     let address = Pointer::symbolic(Variable(933_100));
     let load =
         crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Int32, 4);
@@ -440,7 +446,7 @@ fn a_registered_zero_index_permits_null_pointer_formation() {
         Vec::new(),
         &facts,
     );
-    assert!(matches!(result.as_slice(), [CExpressionPath {
-        outcome: CExpressionOutcome::Value(ProgramValue::Pointer(value)), ..
+    assert!(matches!(result.as_slice(), [ExpressionPath {
+        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(value)), ..
     }] if value.pointer().is_in_null_block()));
 }

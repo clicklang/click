@@ -1190,7 +1190,7 @@ impl<'a> Proof<'a> {
                     return Err(self.step_error("`choose` source has no function-entry snapshot"));
                 };
                 if selection.entry_snapshot
-                    != crate::kernel::CMemorySnapshotIdentity::of(entry_state.memory())
+                    != crate::kernel::MemorySnapshotIdentity::of(entry_state.memory())
                 {
                     return Err(self.step_error(format!(
                         "requirement {source_ordinal} does not match the function-entry snapshot"
@@ -1553,7 +1553,7 @@ impl<'a> Proof<'a> {
             chosen_body: chosen_body.clone(),
             chosen_name: name.clone(),
             chosen_variable,
-            source_snapshot: crate::kernel::CMemorySnapshotIdentity::of(entry_state.memory()),
+            source_snapshot: crate::kernel::MemorySnapshotIdentity::of(entry_state.memory()),
             leaves,
         }))
     }
@@ -1678,8 +1678,8 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let source_snapshot =
-            crate::kernel::CMemorySnapshotIdentity::of(view.fixed_state.pre_state.memory());
-        if source_snapshot != crate::kernel::CMemorySnapshotIdentity::of(entry_state.memory()) {
+            crate::kernel::MemorySnapshotIdentity::of(view.fixed_state.pre_state.memory());
+        if source_snapshot != crate::kernel::MemorySnapshotIdentity::of(entry_state.memory()) {
             return Ok(None);
         }
         let source_selector = SnapshotSelector::ProgramPoint(ProgramPointRef {
@@ -3284,7 +3284,7 @@ impl<'a> Proof<'a> {
         let entry_snapshot = self
             .execution_context()
             .and_then(|context| context.constants.function_entry_state.as_ref())
-            .map(|state| crate::kernel::CMemorySnapshotIdentity::of(state.memory()));
+            .map(|state| crate::kernel::MemorySnapshotIdentity::of(state.memory()));
         let expected_selector = SnapshotSelector::ProgramPoint(ProgramPointRef {
             region: CodeRegionRef::Function,
             kind: ProgramPointKind::Entry,
@@ -3389,7 +3389,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         if projection.source_snapshot
-            != crate::kernel::CMemorySnapshotIdentity::of(entry_state.memory())
+            != crate::kernel::MemorySnapshotIdentity::of(entry_state.memory())
             || !self.facts().contains_top_level(&projection.chosen_body)
         {
             return Ok(None);

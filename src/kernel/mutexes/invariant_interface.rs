@@ -18,7 +18,7 @@ impl MutexInvariantInterface {
     pub(super) fn check_definition(
         instance: &ResourceInstance,
         mutex: &Pointer,
-        definition: &crate::kernel::CCompositeResourceDefinition,
+        definition: &crate::kernel::CompositeResourceDefinition,
     ) -> Result<Self, &'static str> {
         if definition.name() != instance.name()
             || definition.instance_field_schema() != Some(instance.schema())
@@ -76,8 +76,8 @@ mod tests {
         Pointer::symbolic(Variable(70)).offset_by_bytes(8)
     }
 
-    fn definitions() -> BTreeMap<String, crate::kernel::CCompositeResourceDefinition> {
-        let definition = crate::kernel::CCompositeResourceDefinition::new(
+    fn definitions() -> BTreeMap<String, crate::kernel::CompositeResourceDefinition> {
+        let definition = crate::kernel::CompositeResourceDefinition::new(
             "counter_state",
             vec![crate::kernel::ProgramParameter::new(
                 "p",
@@ -98,10 +98,10 @@ mod tests {
         let resource = instance(1, 7);
         let definitions = definitions();
         let context = MutexContext::new(
-            ExecutionState::new()
-                .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                    CResourceFact::own(CResource::Instance(resource.clone())),
-                )),
+            ExecutionState::new().with_resource_context(
+                ResourceContext::new()
+                    .unchecked_with_fact(ResourceFact::own(Resource::Instance(resource.clone()))),
+            ),
         );
         let mutex = Pointer::symbolic(Variable(99));
         let published = context
@@ -131,7 +131,7 @@ mod tests {
         let released = held
             .release(
                 guard,
-                CResourceFact::own(CResource::Instance(resource.clone())),
+                ResourceFact::own(Resource::Instance(resource.clone())),
                 &assumptions,
             )
             .unwrap();
@@ -150,10 +150,10 @@ mod tests {
         let assumptions = PureFactContext::new();
         let resource = instance(1, 7);
         let context = MutexContext::new(
-            ExecutionState::new()
-                .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                    CResourceFact::own(CResource::Instance(resource.clone())),
-                )),
+            ExecutionState::new().with_resource_context(
+                ResourceContext::new()
+                    .unchecked_with_fact(ResourceFact::own(Resource::Instance(resource.clone()))),
+            ),
         );
         assert!(
             context
@@ -238,7 +238,7 @@ mod tests {
                 )
                 .is_err()
         );
-        let fact = CResourceFact::own(CResource::Instance(resource.clone()));
+        let fact = ResourceFact::own(Resource::Instance(resource.clone()));
         let context = MutexContext::new(
             ExecutionState::new()
                 .with_resource_context(ResourceContext::new().unchecked_with_fact(fact.clone())),
@@ -261,9 +261,9 @@ mod tests {
         let (held, _) = published.acquire(&address(), &assumptions).unwrap();
         assert!(held.state.resources.contains_exact_representation(&fact));
     }
-    fn published() -> (MutexContext, CResourceFact) {
+    fn published() -> (MutexContext, ResourceFact) {
         let resource = instance(1, 10);
-        let fact = CResourceFact::own(CResource::Instance(resource.clone()));
+        let fact = ResourceFact::own(Resource::Instance(resource.clone()));
         let context = MutexContext::new(
             ExecutionState::new()
                 .with_resource_context(ResourceContext::new().unchecked_with_fact(fact.clone())),
@@ -299,7 +299,7 @@ mod tests {
     fn declared_release_accepts_owned_replacement_with_the_full_description() {
         let assumptions = PureFactContext::new();
         let (published, original) = published();
-        let replacement = CResourceFact::own(CResource::Instance(instance(2, 99)));
+        let replacement = ResourceFact::own(Resource::Instance(instance(2, 99)));
         let (mut held, guard) = published.acquire(&address(), &assumptions).unwrap();
         held.state.resources = held
             .state
@@ -341,7 +341,7 @@ mod tests {
         let mut replacement = instance(2, 99);
         let other = Pointer::symbolic(Variable(71));
         replacement.arguments = vec![ProgramValue::pointer(other.clone()).into()].into();
-        let replacement = CResourceFact::own(CResource::Instance(replacement));
+        let replacement = ResourceFact::own(Resource::Instance(replacement));
         let (mut held, guard) = published.acquire(&address(), &assumptions).unwrap();
         held.state.resources = held
             .state
@@ -392,7 +392,7 @@ mod tests {
         let assumptions = PureFactContext::new();
         let (published, original) = published();
         // An equal description alone is insufficient: this instance is not owned.
-        let absent = CResourceFact::own(CResource::Instance(instance(2, 99)));
+        let absent = ResourceFact::own(Resource::Instance(instance(2, 99)));
         let (held, guard) = published.acquire(&address(), &assumptions).unwrap();
         assert_eq!(
             held.release(guard, absent.clone(), &assumptions).err(),
@@ -411,7 +411,7 @@ mod tests {
         .unwrap();
         for candidate in [wrong_family, wrong_arguments, wrong_schema] {
             let (mut held, guard) = published.acquire(&address(), &assumptions).unwrap();
-            let candidate = CResourceFact::own(CResource::Instance(candidate));
+            let candidate = ResourceFact::own(Resource::Instance(candidate));
             held.state.resources = held
                 .state
                 .resources

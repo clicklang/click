@@ -26,7 +26,7 @@ fn clause(value: ProgramValue) -> SpecProposition {
                 object_class: class(),
             }],
         },
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
     }
 }

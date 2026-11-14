@@ -1494,7 +1494,7 @@ impl ExecutionBudget {
     /// The first runtime error an evaluation under this budget dropped
     /// because every path of a sub-evaluation ended in one, for the message
     /// a caller writes when the evaluation produced no value path at all.
-    pub fn dropped_runtime_error(&self) -> Option<&CRuntimeError> {
+    pub fn dropped_runtime_error(&self) -> Option<&RuntimeError> {
         self.dropped_runtime_error.as_ref()
     }
 
@@ -1741,7 +1741,7 @@ impl ExecutionBudget {
         self.with_c_source_cost(cost)
     }
 
-    fn with_c_source_cost(mut self, cost: CSourceCost) -> Self {
+    fn with_c_source_cost(mut self, cost: ProgramSourceCost) -> Self {
         self.expression_steps = self.expression_steps.saturating_add(cost.expression_steps);
         self.statement_steps = self.statement_steps.saturating_add(cost.statement_steps);
         self
@@ -1902,12 +1902,12 @@ impl ExecutionBudget {
 /// to consume the fixed dynamic reserve and the independent call, loop, and
 /// path limits.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct CSourceCost {
+struct ProgramSourceCost {
     expression_steps: usize,
     statement_steps: usize,
 }
 
-impl CSourceCost {
+impl ProgramSourceCost {
     fn expression(expression_steps: usize) -> Self {
         Self {
             expression_steps,
@@ -1921,8 +1921,8 @@ impl CSourceCost {
 }
 
 /// Expression visits made by one non-amplified rvalue evaluation.
-fn c_expression_source_cost(expression: &ProgramExpression) -> CSourceCost {
-    CSourceCost::expression(c_expression_steps_for_mode(expression, false))
+fn c_expression_source_cost(expression: &ProgramExpression) -> ProgramSourceCost {
+    ProgramSourceCost::expression(c_expression_steps_for_mode(expression, false))
 }
 
 fn c_expression_source_steps(expression: &ProgramExpression) -> usize {
@@ -1996,8 +1996,8 @@ fn c_expression_steps_for_mode(expression: &ProgramExpression, lvalue: bool) -> 
     steps
 }
 
-fn c_statement_source_cost(statement: &ProgramStatement) -> CSourceCost {
-    let mut cost = CSourceCost::default();
+fn c_statement_source_cost(statement: &ProgramStatement) -> ProgramSourceCost {
+    let mut cost = ProgramSourceCost::default();
     let mut pending = vec![statement];
     while let Some(statement) = pending.pop() {
         if !matches!(statement, ProgramStatement::Seq(_)) {

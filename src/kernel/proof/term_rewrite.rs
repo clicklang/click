@@ -128,7 +128,7 @@ pub(crate) enum BindingCarrier {
 /// that distinction while rewriting so a same-ID binding in another carrier
 /// cannot be substituted accidentally.
 #[derive(Clone)]
-pub(crate) enum TypedCReplacement {
+pub(crate) enum TypedProgramValueReplacement {
     Bitvector(MachineTerm),
     /// The whole value: a use of the bound variable's address adopts its
     /// subobject extent.
@@ -136,7 +136,7 @@ pub(crate) enum TypedCReplacement {
 }
 
 type MatchFieldReplacements = (
-    BTreeMap<Variable, TypedCReplacement>,
+    BTreeMap<Variable, TypedProgramValueReplacement>,
     BTreeMap<Variable, IntegerTerm>,
     BTreeMap<Variable, AlgebraicTerm>,
 );
@@ -181,7 +181,7 @@ fn match_field_replacements(
 }
 
 struct TypedVariableReplacements<'a> {
-    c: &'a BTreeMap<Variable, TypedCReplacement>,
+    c: &'a BTreeMap<Variable, TypedProgramValueReplacement>,
     integer: &'a BTreeMap<Variable, IntegerTerm>,
     algebraic: &'a BTreeMap<Variable, AlgebraicTerm>,
 }
@@ -289,10 +289,10 @@ fn c_value_variable(value: &ProgramValue) -> Option<Variable> {
     }
 }
 
-fn typed_c_replacement(value: &ProgramValue) -> Option<TypedCReplacement> {
+fn typed_c_replacement(value: &ProgramValue) -> Option<TypedProgramValueReplacement> {
     match value {
         ProgramValue::PointerInteger(record) => typed_c_replacement(&record.numeric),
-        ProgramValue::Int8(term) => Some(TypedCReplacement::Bitvector(term.clone())),
+        ProgramValue::Int8(term) => Some(TypedProgramValueReplacement::Bitvector(term.clone())),
         ProgramValue::Bool(term)
         | ProgramValue::Int16(term)
         | ProgramValue::UInt8(term)
@@ -304,8 +304,12 @@ fn typed_c_replacement(value: &ProgramValue) -> Option<TypedCReplacement> {
         | ProgramValue::Int128(term)
         | ProgramValue::UInt128(term)
         | ProgramValue::Float32(term)
-        | ProgramValue::Float64(term) => Some(TypedCReplacement::Bitvector(term.clone())),
-        ProgramValue::Pointer(pointer) => Some(TypedCReplacement::Pointer(pointer.clone())),
+        | ProgramValue::Float64(term) => {
+            Some(TypedProgramValueReplacement::Bitvector(term.clone()))
+        }
+        ProgramValue::Pointer(pointer) => {
+            Some(TypedProgramValueReplacement::Pointer(pointer.clone()))
+        }
         ProgramValue::Parameter(_) => None,
         ProgramValue::Void => None,
     }
@@ -412,7 +416,7 @@ fn bool_binder_variable(value: &ProgramValue) -> Option<Variable> {
 fn typed_field_replacement(
     binding: &AlgebraicValue,
     field: &ProgramValue,
-) -> Option<TypedCReplacement> {
+) -> Option<TypedProgramValueReplacement> {
     if let AlgebraicValue::C(binding) = binding
         && bool_binder_variable(binding).is_some()
     {
@@ -422,13 +426,13 @@ fn typed_field_replacement(
         if let ProgramValue::Bool(binder) = binding
             && matches!(binder.bool_cast_operand(), Some(ConditionTerm::Variable(_)))
         {
-            return Some(TypedCReplacement::Bitvector(term.clone()));
+            return Some(TypedProgramValueReplacement::Bitvector(term.clone()));
         }
         let operand = match term {
             int32_constant!(0 | 1) => term,
             _ => bool_operand(term)?,
         };
-        return Some(TypedCReplacement::Bitvector(operand.clone()));
+        return Some(TypedProgramValueReplacement::Bitvector(operand.clone()));
     }
     typed_c_replacement(field)
 }
@@ -1151,8 +1155,8 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
 ///
 /// *Union overlays.* A typed union overlay outranks the raw cell for an exact
 /// typed load, so a raw cell read while an overlay is present would be the
-/// wrong value rather than a missing one. `CMemory::store_with_context` drops
-/// every overlay at the pointer it writes and `CMemory::store_union` drops the
+/// wrong value rather than a missing one. `Memory::store_with_context` drops
+/// every overlay at the pointer it writes and `Memory::store_union` drops the
 /// raw cell at the pointer it overlays, so the two never coexist at one
 /// pointer — an invariant this helper depends on and does not enforce
 /// elsewhere. It is asserted in debug builds and refused in release ones, and
@@ -1416,22 +1420,22 @@ fn collect_integer_substitution_variables_with_carriers(
 
 // Visit only the explicitly named footprint and arguments. Stored cells,
 // sealed resource identities and binder-bearing bodies remain opaque.
-fn collect_resource_carriers(resource: &CResource, carriers: &mut CarrierVariables) {
+fn collect_resource_carriers(resource: &Resource, carriers: &mut CarrierVariables) {
     let mut pending = vec![resource];
     while let Some(resource) = pending.pop() {
         if !carriers.visit() {
             return;
         }
         match resource {
-            CResource::Star(pair) => {
+            Resource::Star(pair) => {
                 pending.extend([&pair.0, &pair.1]);
             }
-            CResource::Memory(range) => {
+            Resource::Memory(range) => {
                 collect_c_value_carriers(&ProgramValue::Pointer(range.pointer_carrier()), carriers);
                 collect_bitvector_carriers(range.bound_terms().0, carriers);
                 collect_bitvector_carriers(range.bound_terms().1, carriers);
             }
-            CResource::Composite { arguments, .. } | CResource::Token { arguments, .. } => {
+            Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
                 for argument in arguments.iter() {
                     match argument {
                         AlgebraicValue::C(value) => collect_c_value_carriers(value, carriers),
@@ -1617,7 +1621,7 @@ pub(crate) struct IntegerSubstitutionScope {
 /// Integer proposition substitution walker.  C and Integer binders share the
 /// numeric variable namespace in the term representation, but their lexical
 /// mappings must remain separate.
-pub(crate) struct CSubstitutionScope {
+pub(crate) struct ProgramValueSubstitutionScope {
     variable: Variable,
     previous: Option<Variable>,
     scope_id: u64,
@@ -2026,7 +2030,7 @@ impl<'a> TermRewrite<'a> {
             } else if let MachineTerm::Variable(variable) = source {
                 // Registered names use the exact read table, including its
                 // lexical address dependencies, just like structural reads.
-                named.insert(variable, TypedCReplacement::Bitvector(value));
+                named.insert(variable, TypedProgramValueReplacement::Bitvector(value));
             }
         }
         if named.is_empty() && reads.is_empty() && algebraic_reads.is_empty() {
@@ -2764,20 +2768,20 @@ impl<'a> TermRewrite<'a> {
         &mut self,
         variable: Variable,
         mapped: Variable,
-    ) -> CSubstitutionScope {
+    ) -> ProgramValueSubstitutionScope {
         let previous = self.scope.c.insert(variable, mapped);
         let scope_id = self.scope_id;
         if previous != Some(mapped) {
             self.bump_scope_id();
         }
-        CSubstitutionScope {
+        ProgramValueSubstitutionScope {
             variable,
             previous,
             scope_id,
         }
     }
 
-    pub(crate) fn pop_c_substitution_scope(&mut self, scope: CSubstitutionScope) {
+    pub(crate) fn pop_c_substitution_scope(&mut self, scope: ProgramValueSubstitutionScope) {
         restore_mapping(&mut self.scope.c, scope.variable, scope.previous);
         self.scope_id = scope.scope_id;
     }
@@ -2786,7 +2790,7 @@ impl<'a> TermRewrite<'a> {
     /// once.  The replacement terms are inserted unchanged, so a field that
     /// mentions another binder is not rewritten by the later field mapping.
     pub(crate) fn for_typed_variables(
-        c: &'a BTreeMap<Variable, TypedCReplacement>,
+        c: &'a BTreeMap<Variable, TypedProgramValueReplacement>,
         integer: &'a BTreeMap<Variable, IntegerTerm>,
         algebraic: &'a BTreeMap<Variable, AlgebraicTerm>,
     ) -> Self {
@@ -3116,10 +3120,10 @@ impl<'a> TermRewrite<'a> {
                 Term::Algebraic(value) => {
                     collect_algebraic_carriers_seen(value, &mut variables, &mut seen)
                 }
-                Term::CExpressionOutcome(_)
-                | Term::CStatementOutcome(_)
-                | Term::CFunctionOutcome(_)
-                | Term::CMemory(_)
+                Term::ExpressionOutcome(_)
+                | Term::StatementOutcome(_)
+                | Term::FunctionOutcome(_)
+                | Term::Memory(_)
                 | Term::ExecutionState(_) => {}
             }
             if variables.exhausted() {
@@ -3164,7 +3168,7 @@ impl<'a> TermRewrite<'a> {
         self.reserve_source_variables(variables);
     }
 
-    fn reserve_resource_variables_once(&mut self, resources: &[&CResource]) {
+    fn reserve_resource_variables_once(&mut self, resources: &[&Resource]) {
         if self.source_variables_reserved {
             return;
         }
@@ -3172,7 +3176,7 @@ impl<'a> TermRewrite<'a> {
         let mut seen = BTreeSet::new();
         for resource in resources {
             match resource {
-                CResource::Memory(range) => {
+                Resource::Memory(range) => {
                     collect_c_value_carriers(
                         &ProgramValue::Pointer(range.pointer_carrier()),
                         &mut variables,
@@ -3180,7 +3184,7 @@ impl<'a> TermRewrite<'a> {
                     collect_bitvector_carriers(range.bound_terms().0, &mut variables);
                     collect_bitvector_carriers(range.bound_terms().1, &mut variables);
                 }
-                CResource::Composite { arguments, .. } | CResource::Token { arguments, .. } => {
+                Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
                     for argument in arguments.iter() {
                         collect_algebraic_value_carriers(argument, &mut variables, &mut seen);
                     }
@@ -3191,17 +3195,15 @@ impl<'a> TermRewrite<'a> {
         self.reserve_source_variables(variables);
     }
 
-    fn resource(&mut self, resource: &CResource) -> CResource {
+    fn resource(&mut self, resource: &Resource) -> Resource {
         self.visit();
         if self.checked_work_exhausted() {
             return resource.clone();
         }
         match resource {
-            CResource::Star(pair) => {
-                CResource::star(self.resource(&pair.0), self.resource(&pair.1))
-            }
+            Resource::Star(pair) => Resource::star(self.resource(&pair.0), self.resource(&pair.1)),
 
-            CResource::Memory(range) => {
+            Resource::Memory(range) => {
                 let carrier = range.pointer_carrier();
                 let ProgramValue::Pointer(mut mapped) = self.value(&ProgramValue::Pointer(carrier))
                 else {
@@ -3226,21 +3228,21 @@ impl<'a> TermRewrite<'a> {
                     )
                     .with_pointer_carrier(&mapped);
                 result.typed_carrier = range.typed_carrier;
-                CResource::Memory(result)
+                Resource::Memory(result)
             }
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 self.charge_rewrite_work(arguments.len());
                 let arguments = arguments
                     .iter()
                     .map(|argument| self.field(argument))
                     .collect();
-                if matches!(resource, CResource::Composite { .. }) {
-                    CResource::Composite {
+                if matches!(resource, Resource::Composite { .. }) {
+                    Resource::Composite {
                         name: name.clone(),
                         arguments,
                     }
                 } else {
-                    CResource::Token {
+                    Resource::Token {
                         name: name.clone(),
                         arguments,
                     }
@@ -3908,7 +3910,7 @@ impl<'a> TermRewrite<'a> {
                             .and(self.typed_variables.as_ref())
                             .and_then(|values| values.c.get(variable))
                             .and_then(|value| match value {
-                                TypedCReplacement::Pointer(pointer) => Some(pointer.clone()),
+                                TypedProgramValueReplacement::Pointer(pointer) => Some(pointer.clone()),
                                 _ => None,
                             })
                     }
@@ -4923,10 +4925,10 @@ impl<'a> TermRewrite<'a> {
         {
             for replacement in replacements.c.values() {
                 match replacement {
-                    TypedCReplacement::Bitvector(value) => {
+                    TypedProgramValueReplacement::Bitvector(value) => {
                         collect_bitvector_carriers(value, &mut variables)
                     }
-                    TypedCReplacement::Pointer(pointer) => {
+                    TypedProgramValueReplacement::Pointer(pointer) => {
                         for address in pointer.pointers() {
                             collect_pointer_carriers(address, &mut variables);
                         }
@@ -5082,7 +5084,7 @@ impl<'a> TermRewrite<'a> {
                     offset: self.offset(&p.offset),
                 };
             }
-            if let Some(TypedCReplacement::Pointer(replacement)) = self
+            if let Some(TypedProgramValueReplacement::Pointer(replacement)) = self
                 .typed_variables
                 .as_ref()
                 .and_then(|values| values.c.get(variable))
@@ -5125,7 +5127,8 @@ impl<'a> TermRewrite<'a> {
         if let PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) =
             &p.block
             && let Some(replacements) = &self.typed_variables
-            && let Some(TypedCReplacement::Pointer(replacement)) = replacements.c.get(variable)
+            && let Some(TypedProgramValueReplacement::Pointer(replacement)) =
+                replacements.c.get(variable)
         {
             self.changed = true;
             let offset = self.offset(&p.offset);
@@ -5480,7 +5483,7 @@ impl<'a> TermRewrite<'a> {
                 return ConditionTerm::Variable(*mapped);
             }
             if let Some(replacements) = &self.typed_variables
-                && let Some(TypedCReplacement::Bitvector(replacement)) =
+                && let Some(TypedProgramValueReplacement::Bitvector(replacement)) =
                     replacements.c.get(variable)
             {
                 self.changed = true;
@@ -6157,7 +6160,8 @@ impl<'a> TermRewrite<'a> {
         }
         if let MachineTerm::Variable(variable) = v
             && let Some(replacements) = &self.typed_variables
-            && let Some(TypedCReplacement::Bitvector(replacement)) = replacements.c.get(variable)
+            && let Some(TypedProgramValueReplacement::Bitvector(replacement)) =
+                replacements.c.get(variable)
         {
             self.changed = true;
             return replacement.clone();
@@ -7089,13 +7093,13 @@ mod tests {
             offset: PointerOffsetTerm::Constant(1),
         };
         let memory_with_unrelated_blocks = |count: u64| {
-            let mut memory = CMemory::new().with_block("array", 8);
+            let mut memory = Memory::new().with_block("array", 8);
             for index in 0..count {
                 memory = memory.with_block(PointerBlock::Heap(index + 1), 8);
             }
             memory
         };
-        let observed_array = |memory: CMemory, pointer: Pointer| {
+        let observed_array = |memory: Memory, pointer: Pointer| {
             Term::Integer(IntegerTerm::PureFunctionApplication(
                 SharedPureApplication::intern(
                     "observe_array".into(),
@@ -7123,7 +7127,7 @@ mod tests {
         let (large, large_work) =
             crate::instrumentation::measure_deterministic_work(|| rewrite(&large_input));
 
-        let assert_rewrite = |output: &Term, original_memory: &CMemory| {
+        let assert_rewrite = |output: &Term, original_memory: &Memory| {
             let Term::Integer(IntegerTerm::PureFunctionApplication(application)) = output else {
                 unreachable!()
             };
@@ -7164,7 +7168,7 @@ mod tests {
         let mut c_replacements = BTreeMap::new();
         c_replacements.insert(
             source,
-            TypedCReplacement::Pointer(PointerValue::new(
+            TypedProgramValueReplacement::Pointer(PointerValue::new(
                 replacement.clone(),
                 ProgramType::Int32Pointer,
             )),
@@ -7202,7 +7206,7 @@ mod tests {
             block: PointerBlock::Symbolic(source),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let condition_for = |memory: CMemory, depth: usize, fanout: usize| {
+        let condition_for = |memory: Memory, depth: usize, fanout: usize| {
             let mut right = MachineTerm::Variable(source);
             for index in 0..depth as u64 {
                 let mut arguments = Vec::with_capacity(fanout + 1);
@@ -7237,7 +7241,7 @@ mod tests {
             }
         };
         let memory_with_unrelated_blocks = |count: u64| {
-            let mut memory = CMemory::new().with_block("array", 8);
+            let mut memory = Memory::new().with_block("array", 8);
             for index in 0..count {
                 memory = memory.with_block(PointerBlock::Heap(index + 1), 8);
             }
@@ -7246,7 +7250,7 @@ mod tests {
         let run = |condition: ConditionTerm, tactic: crate::instrumentation::TacticEvent| {
             let c_replacements = BTreeMap::from([(
                 source,
-                TypedCReplacement::Bitvector(MachineTerm::Variable(replacement)),
+                TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(replacement)),
             )]);
             let integer_replacements = BTreeMap::new();
             let algebraic_replacements = BTreeMap::new();
@@ -7521,7 +7525,7 @@ mod tests {
     fn a_loaded_pointer_carries_its_defining_address_variables() {
         let _session = crate::kernel::VerificationSession::enter();
         let index = Variable(9_904);
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         let address = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(index), 8),
@@ -7567,7 +7571,7 @@ mod tests {
         let mut c_replacements = BTreeMap::new();
         c_replacements.insert(
             c_source,
-            TypedCReplacement::Bitvector(MachineTerm::Variable(replacement)),
+            TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(replacement)),
         );
         let mut integer_replacements = BTreeMap::new();
         integer_replacements.insert(integer_source, IntegerTerm::var(replacement));
@@ -8231,7 +8235,7 @@ mod tests {
         };
         let c_replacements = BTreeMap::from([(
             c_source,
-            TypedCReplacement::Bitvector(MachineTerm::Variable(collision_c)),
+            TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(collision_c)),
         )]);
         let integer_replacements =
             BTreeMap::from([(integer_source, IntegerTerm::var(collision_integer))]);
@@ -8487,10 +8491,13 @@ mod tests {
             }],
         };
         let c_replacements = BTreeMap::from([
-            (c_x, TypedCReplacement::Bitvector(MachineTerm::constant(0))),
+            (
+                c_x,
+                TypedProgramValueReplacement::Bitvector(MachineTerm::constant(0)),
+            ),
             (
                 c_y,
-                TypedCReplacement::Bitvector(MachineTerm::Variable(c_x)),
+                TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(c_x)),
             ),
         ]);
         let integer_replacements = BTreeMap::from([
@@ -8611,7 +8618,7 @@ mod tests {
     fn checked_substitution_collector_rejects_work_exhaustion() {
         let source = Variable(3_104_100);
         let atom = Proposition::CMemoryLoadable {
-            memory: CMemory::new(),
+            memory: Memory::new(),
             base: Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(source), 4),
@@ -8662,7 +8669,7 @@ mod pointer_integer_rewrite_tests {
             algebraic_type: parameter.algebraic_type(),
             node: AlgebraicTermNode::Variable(Variable(996_022)),
         }));
-        let memory = crate::kernel::intern_c_memory(CMemory::new().store(
+        let memory = crate::kernel::intern_c_memory(Memory::new().store(
             Pointer {
                 block: PointerBlock::Heap(996_023),
                 offset: PointerOffsetTerm::Constant(0),
@@ -8703,7 +8710,7 @@ mod pointer_integer_rewrite_tests {
             ProgramType::Int32PointerPointer,
         );
         let stored = ProgramValue::pointer(Pointer::symbolic(Variable(996_012)));
-        let memory = CMemory::new().store(to.pointer().clone(), stored.clone());
+        let memory = Memory::new().store(to.pointer().clone(), stored.clone());
         let read = memory.symbolic_pointer_version_load(from.pointer(), ProgramType::Int32Pointer);
         let expected =
             memory.symbolic_pointer_version_load(to.pointer(), ProgramType::Int32Pointer);
@@ -8735,7 +8742,7 @@ mod pointer_integer_rewrite_tests {
         };
         let destination = address(to.clone());
         let stored = ProgramValue::pointer(Pointer::symbolic(Variable(996_022)));
-        let memory = CMemory::new().store(destination.clone(), stored.clone());
+        let memory = Memory::new().store(destination.clone(), stored.clone());
         let shared = crate::kernel::intern_c_memory(memory.clone());
         let mut input = address(from.clone());
         let mut expected = destination.clone();
@@ -8816,7 +8823,7 @@ mod comparison_read_batch_tests {
     #[test]
     fn batch_read_comparison_retains_literal_machine_truth_and_falsehood() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         for (format, kind) in [
             (MachineIntegerType::Int32, LoadKind::Int32),
             (MachineIntegerType::UInt32, LoadKind::UInt32),
@@ -8872,7 +8879,7 @@ mod comparison_read_batch_tests {
     #[test]
     fn batch_read_comparison_is_simultaneous_and_capture_avoiding() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         let read = |index| {
             MachineTerm::MemoryLoad(
                 memory.clone(),
@@ -9025,7 +9032,7 @@ mod comparison_read_batch_tests {
         let binder = Variable(403_001);
         let accumulator = Variable(403_002);
         let pointer = Pointer::symbolic(binder);
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         let raw =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
         let named = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
@@ -9114,12 +9121,12 @@ mod comparison_read_batch_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Variable(402_001);
         let pointer = Pointer::symbolic(Variable(402_002));
-        let memory = crate::kernel::intern_c_memory(CMemory::new().store(
+        let memory = crate::kernel::intern_c_memory(Memory::new().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::Variable(source)),
         ));
         let untouched = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
-        let sealed = CResource::MutexGuard(MutexIdentity {
+        let sealed = Resource::MutexGuard(MutexIdentity {
             epoch: Some(123),
             mutex: Pointer {
                 block: "sealed".into(),
@@ -9130,7 +9137,7 @@ mod comparison_read_batch_tests {
             Box::new(atom(untouched)),
             Box::new(Proposition::CResourceContains {
                 parent: Box::new(sealed),
-                child: Box::new(CResource::Emp),
+                child: Box::new(Resource::Emp),
             }),
         );
         assert_eq!(

@@ -179,14 +179,14 @@ fn missing_condition_prerequisite_error(
 
 fn proof_condition_runtime_error(
     context_label: &str,
-    error: &crate::kernel::CRuntimeError,
+    error: &crate::kernel::RuntimeError,
     state: &ExecutionState,
     function: Option<&syntax::C0Function>,
 ) -> ClickError {
     let (parameters, arguments) =
         crate::surface::diagnostics::local_naming_tables_with_source(state, function);
     let (detail, guidance) = match error {
-        crate::kernel::CRuntimeError::MissingResource { resource }
+        crate::kernel::RuntimeError::MissingResource { resource }
             if resource.memory_view_range().is_some() =>
         {
             let required =
@@ -298,13 +298,13 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                 }
             }
             match path.outcome() {
-                CConditionOutcome::Value(is_true) => Ok(CertifiedProofConditionTransition {
+                ConditionOutcome::Value(is_true) => Ok(CertifiedProofConditionTransition {
                     is_true: *is_true,
                     pure_facts: successor_facts,
                     path_facts,
                     theorem: path.theorem().clone(),
                 }),
-                CConditionOutcome::UndefinedBehavior(kind) => Err(ClickError::new(format!(
+                ConditionOutcome::UndefinedBehavior(kind) => Err(ClickError::new(format!(
                     "{context_label} could not evaluate the C condition because it has undefined behavior: {}{}{}",
                     kind.description(),
                     crate::surface::diagnostics::describe_undefined_behavior_site(
@@ -315,7 +315,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                     ),
                     crate::surface::diagnostics::describe_c_statement_site()
                 )).with_reported_assertion_goal(kind.required_goal().cloned())),
-                CConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
+                ConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
                     context_label,
                     error,
                     state,
@@ -431,7 +431,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
             }
             match implication_body(path.theorem().proposition()) {
                 Proposition::CConditionEvaluates {
-                    outcome: CConditionOutcome::Value(is_true),
+                    outcome: ConditionOutcome::Value(is_true),
                     ..
                 } => Ok(CertifiedConditionTransition {
                     is_true: *is_true,
@@ -445,7 +445,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     theorem: path.theorem().clone(),
                 }),
                 Proposition::CConditionEvaluates {
-                    outcome: CConditionOutcome::UndefinedBehavior(kind),
+                    outcome: ConditionOutcome::UndefinedBehavior(kind),
                     ..
                 } => Err(ClickError::new(format!(
                     "{context_label} produced undefined behavior while evaluating the condition: {}{}{}",
@@ -459,7 +459,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     crate::surface::diagnostics::describe_c_statement_site()
                 )).with_reported_assertion_goal(kind.required_goal().cloned())),
                 Proposition::CConditionEvaluates {
-                    outcome: CConditionOutcome::RuntimeError(error),
+                    outcome: ConditionOutcome::RuntimeError(error),
                     ..
                 } => Err(ClickError::new(format!(
                     "{context_label} could not verify the C condition: {}{}",
@@ -479,15 +479,15 @@ pub(in crate::surface) fn certified_statement_transitions(
     state: &ExecutionState,
     pure_facts: &PureFactList,
     statement: &ProgramStatement,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
-    execution_semantics: CExecutionSemantics,
+    execution_semantics: ExecutionSemantics,
     context_label: &str,
     next_opaque_call: &mut u64,
     next_kernel_variable: &mut u64,
     prerequisite_policy: StatementPrerequisitePolicy,
     context: Option<&PureFactContext>,
-) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
+) -> Result<(Vec<CertifiedStatementTransition>, Option<VerifiedLoopRule>), ClickError> {
     // A statement executed in a proof context sees that context as the
     // kernel already keeps it: incrementally indexed, shared by clone. The
     // slice then carries only the statement-local delta bookkeeping.
@@ -540,17 +540,17 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     state: &ExecutionState,
     pure_facts: &PureFactList,
     statement: &ProgramStatement,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
     context_label: &str,
     initialization_proven: bool,
     preservation_proven: bool,
-    final_exit_candidates: &[CLoopFinalExitCandidate],
-    break_exits: &[CLoopBreakExit],
-    return_exits: &[CLoopReturnExit],
+    final_exit_candidates: &[LoopFinalExitCandidate],
+    break_exits: &[LoopBreakExit],
+    return_exits: &[LoopReturnExit],
     next_opaque_call: &mut u64,
     next_kernel_variable: &mut u64,
-) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
+) -> Result<(Vec<CertifiedStatementTransition>, Option<VerifiedLoopRule>), ClickError> {
     let assumptions = assumptions_from_propositions(pure_facts);
     let executed_under = assumptions.clone();
     let mut budget = ExecutionBudget::continuing_from(*next_kernel_variable)
@@ -636,18 +636,18 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
 
 #[allow(clippy::too_many_arguments)]
 fn certified_transitions_from_execution(
-    execution: SymbolicCExecution,
+    execution: SymbolicExecution,
     state: &ExecutionState,
     statement: &ProgramStatement,
-    loop_rule: Option<CVerifiedLoopRule>,
+    loop_rule: Option<VerifiedLoopRule>,
     pure_facts: &PureFactList,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
     context_label: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
     context: Option<&PureFactContext>,
     executed_under: &PureFactContext,
-) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
+) -> Result<(Vec<CertifiedStatementTransition>, Option<VerifiedLoopRule>), ClickError> {
     if let Some(limit) = execution.limit() {
         if matches!(limit, crate::kernel::ExecutionLimit::Deadline) {
             return Err(ClickError::new(format!(
@@ -662,7 +662,7 @@ fn certified_transitions_from_execution(
     }
     // `exact_facts_directly_conflict` against every listed fact, decided
     // through the list's conjunct index.
-    let feasible = |path: &&crate::kernel::SymbolicCExecutionPath| {
+    let feasible = |path: &&crate::kernel::SymbolicExecutionPath| {
         !path
             .facts()
             .iter()
@@ -707,10 +707,10 @@ fn certified_transitions_from_execution(
             let rejected_contract_call = matches!(
                 implication_body(path.theorem().proposition()),
                 Proposition::CStatementVerifies {
-                    outcome: CStatementOutcome::RuntimeError(
-                        crate::kernel::CRuntimeError::FunctionContract(_)
-                            | crate::kernel::CRuntimeError::UnsuppliedResourceValue(_)
-                            | crate::kernel::CRuntimeError::PendingCallObligations(_)
+                    outcome: StatementOutcome::RuntimeError(
+                        crate::kernel::RuntimeError::FunctionContract(_)
+                            | crate::kernel::RuntimeError::UnsuppliedResourceValue(_)
+                            | crate::kernel::RuntimeError::PendingCallObligations(_)
                     ),
                     ..
                 }
@@ -796,7 +796,7 @@ fn certified_transitions_from_execution(
                         // by a search whose answer nothing records.
                         // Load names are not preserved across call-havoc and
                         // store edges by path assumptions (see
-                        // `CMemoryDerivation`). A prerequisite naming a cell
+                        // `MemoryDerivation`). A prerequisite naming a cell
                         // whose load the assumption-free naming walk left
                         // symbolic is checked in the form this context
                         // decides: each such load is resolved along the
@@ -920,7 +920,7 @@ fn certified_transitions_from_execution(
                     "{context_label} saw an unexpected execution theorem"
                 )));
             };
-            if matches!(outcome, CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. })
+            if matches!(outcome, StatementOutcome::Normal(_) | StatementOutcome::Return { .. })
             {
                 // Publish the producer's facts at their original snapshots.
                 // Extra current-state consequences belong to explicit proof or
@@ -1071,7 +1071,7 @@ fn generated_load_source_events_from_facts(
 #[cfg(test)]
 mod condition_transition_tests {
     use super::*;
-    use crate::kernel::{CRuntimeError, c_load, c_variable};
+    use crate::kernel::{RuntimeError, c_load, c_variable};
 
     #[test]
     fn condition_transition_still_checks_execution_obligations() {
@@ -1106,7 +1106,7 @@ mod condition_transition_tests {
 
     #[test]
     fn generated_load_binding_collection_tombstones_conflicting_keys() {
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -1171,7 +1171,7 @@ mod condition_transition_tests {
         let state = ExecutionState::new()
             .with_local("owner", ProgramValue::pointer(pointer.clone()))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                CResourceFact::own_memory(CMemoryRange::new(
+                ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
@@ -1183,9 +1183,9 @@ mod condition_transition_tests {
             &state,
             &PureFactList::default(),
             &statement,
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             None,
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
             "real load transition test",
             &mut next_opaque_call,
             &mut next_kernel_variable,
@@ -1199,7 +1199,7 @@ mod condition_transition_tests {
         assert!(transition.generated_load_bindings.is_empty());
         assert!(transition.generated_load_source_events.is_empty());
         assert!(matches!(&transition.outcome,
-            CStatementOutcome::Return { value, .. }
+            StatementOutcome::Return { value, .. }
                 if matches!(value.native().as_ref(), ProgramValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
 
         // Feed the producer-issued transition metadata through the same
@@ -1254,7 +1254,7 @@ mod condition_transition_tests {
         let state = ExecutionState::new()
             .with_local("counter", ProgramValue::pointer(pointer.clone()))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                CResourceFact::own_memory(CMemoryRange::new(
+                ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
@@ -1266,9 +1266,9 @@ mod condition_transition_tests {
             &state,
             &PureFactList::default(),
             &statement,
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             None,
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
             "compound field update source-event test",
             &mut next_opaque_call,
             &mut next_kernel_variable,
@@ -1281,12 +1281,12 @@ mod condition_transition_tests {
         };
         assert!(transition.generated_load_source_events.is_empty());
         let after = match &transition.outcome {
-            CStatementOutcome::Normal(after) | CStatementOutcome::Return { state: after, .. } => {
+            StatementOutcome::Normal(after) | StatementOutcome::Return { state: after, .. } => {
                 after
             }
             other => panic!("completed update: {other:?}"),
         };
-        let CExpressionOutcome::Value(ProgramValue::UInt32(value)) = after.memory().load(&pointer)
+        let ExpressionOutcome::Value(ProgramValue::UInt32(value)) = after.memory().load(&pointer)
         else {
             panic!("unsigned field");
         };
@@ -1313,7 +1313,7 @@ mod condition_transition_tests {
             volatile: false,
             pointee_constant: false,
             access_class: None,
-            source: crate::kernel::CExpressionLoadSource::new(crate::kernel::LoadSourceId {
+            source: crate::kernel::ExpressionLoadSource::new(crate::kernel::LoadSourceId {
                 owner: crate::kernel::LoadSourceOwnerId {
                     source_unit: std::sync::Arc::from("bad.c"),
                     function: std::sync::Arc::from("bad"),
@@ -1328,9 +1328,9 @@ mod condition_transition_tests {
             &ExecutionState::new(),
             &PureFactList::default(),
             &statement,
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             None,
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
             "failed load source-event test",
             &mut next_opaque_call,
             &mut next_kernel_variable,
@@ -1343,7 +1343,7 @@ mod condition_transition_tests {
         };
         assert!(matches!(
             transition.outcome,
-            CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            StatementOutcome::RuntimeError(RuntimeError::TypeMismatch)
         ));
         assert!(transition.generated_load_source_events.is_empty());
     }
@@ -1356,7 +1356,7 @@ mod condition_transition_tests {
             offset: PointerOffsetTerm::Constant(8),
         }));
         let source = |occurrence| {
-            crate::kernel::CExpressionLoadSource::new(crate::kernel::LoadSourceId {
+            crate::kernel::ExpressionLoadSource::new(crate::kernel::LoadSourceId {
                 owner: crate::kernel::LoadSourceOwnerId {
                     source_unit: std::sync::Arc::from("f.c"),
                     function: std::sync::Arc::from("f"),

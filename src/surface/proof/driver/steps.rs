@@ -161,9 +161,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let fact = driver_proof
                 .lower_surface_proposition_direct(&separation, "transport separation")?;
             if let Proposition::CResourceSeparate { left, .. } = fact
-                && let crate::kernel::CResource::Footprint(footprint) = left.as_ref()
-                && crate::kernel::CMemorySnapshotIdentity::of(&footprint.after)
-                    == crate::kernel::CMemorySnapshotIdentity::of(execution.core.state.memory())
+                && let crate::kernel::Resource::Footprint(footprint) = left.as_ref()
+                && crate::kernel::MemorySnapshotIdentity::of(&footprint.after)
+                    == crate::kernel::MemorySnapshotIdentity::of(execution.core.state.memory())
                 && footprint
                     .after_resources
                     .shares_storage_with(execution.core.state.resources())

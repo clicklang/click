@@ -58,7 +58,7 @@ fn normal_evidence_completes_only_exhausted_void_function_source() {
         let theorem = Theorem::new(Proposition::CStatementVerifies {
             state: Box::new(before.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Normal(Box::new(before)),
+            outcome: StatementOutcome::Normal(Box::new(before)),
         });
         core.record_statement_transition(
             &function,

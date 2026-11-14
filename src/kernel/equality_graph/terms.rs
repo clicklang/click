@@ -814,7 +814,7 @@ impl TermClasses {
                 PointerFactKey::FunctionContracts,
                 crate::kernel::Proposition::Predicate { name, arguments },
             ) => function_contract_group(
-                crate::kernel::CFunctionContract::surface_name_from_predicate(name)
+                crate::kernel::FunctionContract::surface_name_from_predicate(name)
                     .expect("contract predicate"),
                 &arguments[2..],
             ),
@@ -3744,7 +3744,7 @@ mod tests {
         assert!(!graph.are_offsets_equal(&scaled(value.clone(), 8, false), &target));
         assert!(!graph.are_offsets_equal(&scaled(value, 4, true), &target));
         let before =
-            crate::kernel::intern_c_memory(crate::kernel::CMemory::new().with_block("offset", 8));
+            crate::kernel::intern_c_memory(crate::kernel::Memory::new().with_block("offset", 8));
         let address = Pointer::symbolic(Variable(12));
         let after = crate::kernel::intern_c_memory(before.memory().clone().store(
             address.clone(),

@@ -155,7 +155,7 @@ impl EqualityGraph {
         source: &std::sync::Arc<dyn terms::PointerFactSource>,
         insert: bool,
     ) {
-        use crate::kernel::{CFunctionContract, ProgramValue, Proposition, Term};
+        use crate::kernel::{FunctionContract, ProgramValue, Proposition, Term};
         let proposition = source.proposition();
         if self.adjust_address_separation_source(source, insert) {
             return;
@@ -195,7 +195,7 @@ impl EqualityGraph {
         // A contract fact names its function value first; the values after
         // it fix the contract's value parameters.
         if let Proposition::Predicate { name, arguments } = proposition
-            && CFunctionContract::surface_name_from_predicate(name).is_some()
+            && FunctionContract::surface_name_from_predicate(name).is_some()
             && matches!(
                 arguments.as_slice(),
                 [Term::ExecutionState(_), Term::ProgramValue(ProgramValue::Pointer(_)), values @ ..]

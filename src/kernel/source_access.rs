@@ -19,11 +19,11 @@ pub(crate) struct ReferenceBorrowSourceId {
 /// Source observations compare neutrally. A checked lease plan participates in
 /// statement identity and executes an actual checked birth.
 #[derive(Clone, Debug, Default)]
-pub struct CStatementAssignSource(
+pub struct StatementAssignSource(
     Option<Arc<ReferenceBorrowSourceId>>,
     Option<Arc<ScalarReferenceSourcePlan>>,
 );
-impl CStatementAssignSource {
+impl StatementAssignSource {
     pub(crate) fn new(source: ReferenceBorrowSourceId) -> Self {
         Self(Some(Arc::new(source)), None)
     }
@@ -79,23 +79,23 @@ impl CStatementAssignSource {
         Some(fact)
     }
 }
-impl PartialEq for CStatementAssignSource {
+impl PartialEq for StatementAssignSource {
     fn eq(&self, other: &Self) -> bool {
         self.semantic_key() == other.semantic_key()
     }
 }
-impl Eq for CStatementAssignSource {}
-impl std::hash::Hash for CStatementAssignSource {
+impl Eq for StatementAssignSource {}
+impl std::hash::Hash for StatementAssignSource {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         std::hash::Hash::hash(&self.semantic_key(), state);
     }
 }
-impl Ord for CStatementAssignSource {
+impl Ord for StatementAssignSource {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.semantic_key().cmp(&other.semantic_key())
     }
 }
-impl PartialOrd for CStatementAssignSource {
+impl PartialOrd for StatementAssignSource {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -126,8 +126,8 @@ pub(crate) struct ReferenceAccessSourceId {
 /// Store observations compare neutrally and never authorize a store or end.
 /// Checked borrow endings are explicit statements with semantic identity.
 #[derive(Clone, Debug, Default)]
-pub struct CStatementStoreSource(Option<Arc<ReferenceAccessSourceId>>);
-impl CStatementStoreSource {
+pub struct StatementStoreSource(Option<Arc<ReferenceAccessSourceId>>);
+impl StatementStoreSource {
     pub(crate) fn new(source: ReferenceAccessSourceId) -> Self {
         Self(Some(Arc::new(source)))
     }
@@ -135,21 +135,21 @@ impl CStatementStoreSource {
         self.0.as_deref()
     }
 }
-impl PartialEq for CStatementStoreSource {
+impl PartialEq for StatementStoreSource {
     fn eq(&self, _: &Self) -> bool {
         true
     }
 }
-impl Eq for CStatementStoreSource {}
-impl std::hash::Hash for CStatementStoreSource {
+impl Eq for StatementStoreSource {}
+impl std::hash::Hash for StatementStoreSource {
     fn hash<H: std::hash::Hasher>(&self, _: &mut H) {}
 }
-impl Ord for CStatementStoreSource {
+impl Ord for StatementStoreSource {
     fn cmp(&self, _: &Self) -> std::cmp::Ordering {
         std::cmp::Ordering::Equal
     }
 }
-impl PartialOrd for CStatementStoreSource {
+impl PartialOrd for StatementStoreSource {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -182,7 +182,7 @@ enum ReferenceObservation {
     Read {
         source: Arc<ReferenceAccessSourceId>,
         pointer: Pointer,
-        snapshot: CMemorySnapshotIdentity,
+        snapshot: MemorySnapshotIdentity,
         value_type: ProgramType,
     },
     Borrow(ReferenceBorrowObservation),
@@ -191,13 +191,13 @@ impl ReferenceObservationSource {
     pub(super) fn new(
         source: Arc<ReferenceAccessSourceId>,
         pointer: Pointer,
-        memory: &CMemory,
+        memory: &Memory,
         value_type: ProgramType,
     ) -> Self {
         Self(Some(Arc::new(ReferenceObservation::Read {
             source,
             pointer,
-            snapshot: CMemorySnapshotIdentity::of(memory),
+            snapshot: MemorySnapshotIdentity::of(memory),
             value_type,
         })))
     }
@@ -212,7 +212,7 @@ impl ReferenceObservationSource {
         self.0.as_deref().is_none_or(|observation| match observation {
             ReferenceObservation::Read { source: _, pointer: expected, snapshot, value_type: expected_type } => matches!(proposition,
                 Proposition::CMemoryReadDefined { memory, pointer, value_type }
-                if *snapshot == CMemorySnapshotIdentity::of(memory) && expected == pointer && expected_type == value_type),
+                if *snapshot == MemorySnapshotIdentity::of(memory) && expected == pointer && expected_type == value_type),
             ReferenceObservation::Borrow(birth) => matches!(proposition,
                 Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true)
                 if left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer),
@@ -247,7 +247,7 @@ impl ExecutedReferenceAccess<'_> {
     }
 }
 
-impl SymbolicCExecution {
+impl SymbolicExecution {
     /// Selected producer order, grouped by the execution path that actually
     /// completed each operation. A label alone cannot construct a boundary.
     pub(crate) fn executed_reference_boundaries(
@@ -340,7 +340,7 @@ mod tests {
             "child",
             ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
         );
-        CStatementAssignSource::new(ReferenceBorrowSourceId {
+        StatementAssignSource::new(ReferenceBorrowSourceId {
             import_identity: "locked".into(),
             function: "borrow".into(),
             block: 0,
@@ -385,7 +385,7 @@ mod tests {
             "parent",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         );
-        let source = CStatementAssignSource::new(ReferenceBorrowSourceId {
+        let source = StatementAssignSource::new(ReferenceBorrowSourceId {
             import_identity: "locked".into(),
             function: "borrow".into(),
             block: 0,
@@ -427,7 +427,7 @@ mod tests {
             block: "source-read".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new()
+        let memory = Memory::new()
             .with_block(pointer.block.clone(), 4)
             .store(pointer.clone(), int32(7));
         let source = Arc::new(ReferenceAccessSourceId {

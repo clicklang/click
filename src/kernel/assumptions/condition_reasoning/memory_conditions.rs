@@ -210,8 +210,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn memory_snapshots_directly_proven_equal_for_memory_resolution(
         &self,
-        left: &CMemory,
-        right: &CMemory,
+        left: &Memory,
+        right: &Memory,
         pointer: &Pointer,
     ) -> bool {
         // Memories match up to the load's pointer, not exactly, so every
@@ -250,7 +250,7 @@ impl PureFactContext {
                     // composition-backed alias search per differing cell per
                     // candidate dominated a simple step's budget on bounded-pool
                     // (370k of 500k units).
-                    let endpoint_matches = |expected: &CMemory, actual: &CMemory| {
+                    let endpoint_matches = |expected: &Memory, actual: &Memory| {
                         memory_matches_effect_summary_endpoint(expected, actual, pointer)
                             || memories_match_for_pointer_load_bounded_alias(
                                 expected, actual, pointer, self,
@@ -278,7 +278,7 @@ impl PureFactContext {
                     bytes,
                 } => {
                     // Bounded for the same reason as the effect-summary arm.
-                    let endpoint_matches = |expected: &CMemory, actual: &CMemory| {
+                    let endpoint_matches = |expected: &Memory, actual: &Memory| {
                         memory_matches_effect_summary_endpoint(expected, actual, pointer)
                             || memories_match_for_pointer_load_bounded_alias(
                                 expected, actual, pointer, self,
@@ -350,7 +350,7 @@ impl PureFactContext {
     /// the same kind, when no cell may alias it.
     pub(in crate::kernel) fn resolve_memory_load_value(
         &self,
-        memory: &CMemory,
+        memory: &Memory,
         pointer: &Pointer,
         kind: LoadKind,
     ) -> Option<ProgramValue> {
@@ -541,7 +541,7 @@ mod tests {
     fn held_word_read_equality_accepts_named_raw_and_mixed_atoms() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_c_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block("held-read-left", 4)
                 .with_block("held-read-right", 4),
         );

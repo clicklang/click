@@ -6,7 +6,7 @@ fn memory_load_queries_retain_growing_shared_arithmetic() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
-        let memory = CMemory::new().store(pointer(), ProgramValue::Int32((size as u32).into()));
+        let memory = Memory::new().store(pointer(), ProgramValue::Int32((size as u32).into()));
         let other = memory
             .clone()
             .store(pointer(), ProgramValue::Int32(1u32.into()));

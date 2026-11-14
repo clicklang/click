@@ -198,8 +198,7 @@ fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> O
     let Proposition::CResourceSeparate { left, right } = separation else {
         return None;
     };
-    let (CResource::Memory(left), CResource::Memory(right)) = (left.as_ref(), right.as_ref())
-    else {
+    let (Resource::Memory(left), Resource::Memory(right)) = (left.as_ref(), right.as_ref()) else {
         return None;
     };
     let left_footprint = left.byte_footprint();
@@ -223,8 +222,8 @@ fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Propos
         return None;
     };
     let (footprint, kept) = match (left.as_ref(), right.as_ref()) {
-        (CResource::Footprint(fp), CResource::Memory(kept))
-        | (CResource::Memory(kept), CResource::Footprint(fp)) => (fp, kept),
+        (Resource::Footprint(fp), Resource::Memory(kept))
+        | (Resource::Memory(kept), Resource::Footprint(fp)) => (fp, kept),
         _ => return None,
     };
     if kept.wide_bounds().is_some() {
@@ -246,8 +245,8 @@ fn preserve_definedness(
         return None;
     };
     let (footprint, kept) = match (left.as_ref(), right.as_ref()) {
-        (CResource::Footprint(fp), CResource::Memory(kept))
-        | (CResource::Memory(kept), CResource::Footprint(fp)) => (fp, kept),
+        (Resource::Footprint(fp), Resource::Memory(kept))
+        | (Resource::Memory(kept), Resource::Footprint(fp)) => (fp, kept),
         _ => return None,
     };
     if kept.wide_bounds().is_some() {
@@ -257,7 +256,7 @@ fn preserve_definedness(
     if bytes.as_const()? != value_type.byte_width() {
         return None;
     }
-    let defined = |memory: &CMemory| Proposition::CMemoryReadDefined {
+    let defined = |memory: &Memory| Proposition::CMemoryReadDefined {
         memory: memory.clone(),
         pointer: pointer.clone(),
         value_type,
@@ -276,8 +275,8 @@ fn preserve_field(
         return None;
     };
     let (footprint, kept) = match (left.as_ref(), right.as_ref()) {
-        (CResource::Footprint(fp), CResource::Instance(kept))
-        | (CResource::Instance(kept), CResource::Footprint(fp)) => (fp, kept),
+        (Resource::Footprint(fp), Resource::Instance(kept))
+        | (Resource::Instance(kept), Resource::Footprint(fp)) => (fp, kept),
         _ => return None,
     };
     if kept.identity() != field.identity {
@@ -351,8 +350,8 @@ fn observation_type(comparison: ReadType, bytes: u32) -> Option<ReadType> {
 }
 
 fn observation_equality(
-    before: &CMemory,
-    after: &CMemory,
+    before: &Memory,
+    after: &Memory,
     address: Pointer,
     kind: ReadType,
     comparison: ReadType,
@@ -548,7 +547,7 @@ mod tests {
         ty: ProgramType,
     ) -> (TransportCertificate, Proposition, Proposition, Proposition) {
         let pointer = Pointer::symbolic(Variable(8_410_000));
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for i in 0..history {
             // Grow both related history and unrelated memory.
             memory = memory.store(
@@ -572,8 +571,8 @@ mod tests {
             &Vec::<ExecutionPureFact>::new(),
         );
         let separation = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Footprint(footprint)),
-            right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            left: Box::new(Resource::Footprint(footprint)),
+            right: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
                 pointer.clone(),
                 0u32.into(),
                 1u32.into(),
@@ -642,7 +641,7 @@ mod tests {
                     unreachable!()
                 };
                 match corruption {
-                    0 => *memory = CMemory::new(),
+                    0 => *memory = Memory::new(),
                     1 => *pointer = Pointer::symbolic(Variable(8_499_000)),
                     _ => {
                         *value_type = if ty == ProgramType::UInt8 {
@@ -692,17 +691,17 @@ mod tests {
         let kept = instance(8_390_900, 8_390_901);
         let mut resources = ResourceContext::new();
         for i in 0..size {
-            resources = resources.unchecked_with_fact(CResourceFact::own(CResource::Instance(
+            resources = resources.unchecked_with_fact(ResourceFact::own(Resource::Instance(
                 instance(9_000_000 + i, 10_000_000 + i),
             )));
         }
         let before = ExecutionState::new().with_resource_context(
             resources
                 .clone()
-                .unchecked_with_fact(CResourceFact::own(CResource::Instance(kept.clone()))),
+                .unchecked_with_fact(ResourceFact::own(Resource::Instance(kept.clone()))),
         );
         let after = ExecutionState::new().with_resource_context(resources.unchecked_with_fact(
-            CResourceFact::own(CResource::Instance(instance(8_390_900, 8_390_902))),
+            ResourceFact::own(Resource::Instance(instance(8_390_900, 8_390_902))),
         ));
         // A supplied frame premise relates these symbolic endpoint values.
         // As with the memory fixture, establishing the premise is a separate
@@ -714,8 +713,8 @@ mod tests {
             &Vec::<ExecutionPureFact>::new(),
         );
         let separation = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Footprint(footprint)),
-            right: Box::new(CResource::Instance(kept)),
+            left: Box::new(Resource::Footprint(footprint)),
+            right: Box::new(Resource::Instance(kept)),
         };
         let goal = Proposition::ConditionIs(
             ConditionTerm::equal(
@@ -759,15 +758,15 @@ mod tests {
         let Proposition::CResourceSeparate { left, right } = proposition else {
             unreachable!()
         };
-        let CResource::Footprint(fp) = left.as_ref() else {
+        let Resource::Footprint(fp) = left.as_ref() else {
             unreachable!()
         };
-        let CResource::Instance(kept) = right.as_ref() else {
+        let Resource::Instance(kept) = right.as_ref() else {
             unreachable!()
         };
         let mut resources = fp.before_resources.clone();
         for _ in 0..history {
-            let fact = CResourceFact::own(CResource::Instance(kept.clone()));
+            let fact = ResourceFact::own(Resource::Instance(kept.clone()));
             resources = resources
                 .without_exact_representation(&fact)
                 .unwrap()
@@ -775,7 +774,7 @@ mod tests {
         }
         let before = ExecutionState::new().with_resource_context(resources);
         let after = ExecutionState::new().with_resource_context(fp.after_resources.clone());
-        **left = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+        **left = Resource::Footprint(crate::kernel::RegionFootprint::transition(
             "selected".into(),
             &before,
             &after,
@@ -827,7 +826,7 @@ mod tests {
         );
     }
 
-    pub(super) fn observe(memory: &CMemory, address: &Pointer, ty: ProgramType) -> ProgramValue {
+    pub(super) fn observe(memory: &Memory, address: &Pointer, ty: ProgramType) -> ProgramValue {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
@@ -839,7 +838,7 @@ mod tests {
         let [path] = paths.as_slice() else {
             panic!("one logical read");
         };
-        let CExpressionOutcome::Value(value) = &path.outcome else {
+        let ExpressionOutcome::Value(value) = &path.outcome else {
             panic!("logical value");
         };
         value.clone()
@@ -848,7 +847,7 @@ mod tests {
     pub(super) fn fixture(history: u64, cached: bool) -> (TransportCertificate, Proposition) {
         let address = Pointer::symbolic(Variable(8_310_000));
         let changed = Pointer::symbolic(Variable(8_310_001));
-        let mut before = CMemory::new();
+        let mut before = Memory::new();
         for i in 0..history {
             before = before.store(
                 Pointer::symbolic(Variable(8_320_000 + i)),
@@ -872,7 +871,7 @@ mod tests {
                 ProgramValue::Int32(MachineTerm::constant(1)),
             );
         let resource = |p, bytes| {
-            Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            Box::new(Resource::Memory(MemoryRange::new_with_element_width(
                 p,
                 0u32.into(),
                 1u32.into(),
@@ -1038,7 +1037,7 @@ mod tests {
     #[test]
     fn typed_read_observations_are_scoped_and_keep_the_selected_width() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let address = Pointer::symbolic(Variable(8_399_010));
         let kind = ReadType::Integer(MachineIntegerType::Int64);
         observe(&memory, &address, ProgramType::UInt64);
@@ -1102,11 +1101,11 @@ mod tests {
             let Proposition::CResourceSeparate { right, .. } = proposition else {
                 unreachable!()
             };
-            let CResource::Memory(range) = right.as_ref() else {
+            let Resource::Memory(range) = right.as_ref() else {
                 unreachable!()
             };
             let (address, _) = range.byte_footprint();
-            **right = CResource::Memory(CMemoryRange::new_with_element_width(
+            **right = Resource::Memory(MemoryRange::new_with_element_width(
                 address,
                 0u32.into(),
                 1u32.into(),
@@ -1139,8 +1138,8 @@ mod tests {
                     1 => writes.push(writes[0].clone()),
                     2 => writes[0].0 = Pointer::symbolic(Variable(8_310_099)),
                     _ => {
-                        *before = CMemory::new();
-                        *after = CMemory::new();
+                        *before = Memory::new();
+                        *after = Memory::new();
                     }
                 }
                 *result = proposition.clone();

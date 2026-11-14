@@ -7,12 +7,12 @@ fn pointer(block: &str, offset: i64) -> Pointer {
         offset: PointerOffsetTerm::Constant(offset),
     }
 }
-fn fresh(count: u32) -> CMemory {
-    CMemory::new()
+fn fresh(count: u32) -> Memory {
+    Memory::new()
         .with_block("local:array-source", count * 4)
         .with_block("local:array-target", count * 4)
 }
-fn seeded(count: u32) -> CMemory {
+fn seeded(count: u32) -> Memory {
     fresh(count)
         .initialize_scalar_array(
             &pointer("local:array-source", 0),
@@ -28,7 +28,7 @@ fn seeded(count: u32) -> CMemory {
 fn scalar_array_copy_after_partial_call_keeps_known_lanes_and_rejects_bad_storage() {
     let source = pointer("local:array-source", 0);
     let target = pointer("local:array-target", 0);
-    let range = CMemoryRange::new_with_element_width(source.clone(), 4u32.into(), 12u32.into(), 1);
+    let range = MemoryRange::new_with_element_width(source.clone(), 4u32.into(), 12u32.into(), 1);
     let after_call = seeded(4).with_call_memory_havoc(
         Variable(912_348),
         std::slice::from_ref(&range),
@@ -47,7 +47,7 @@ fn scalar_array_copy_after_partial_call_keeps_known_lanes_and_rejects_bad_storag
         .unwrap();
     assert_eq!(
         copied.load(&target),
-        CExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+        ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
             912_345
         )),))
     );
@@ -182,14 +182,14 @@ fn compact_scalar_array_operations_require_complete_read_and_write_authority() {
             };
             if complete {
                 assert!(
-                    matches!(outcome, CStatementOutcome::Normal(_)),
+                    matches!(outcome, StatementOutcome::Normal(_)),
                     "{outcome:?}"
                 );
             } else {
                 assert!(
                     matches!(
                         outcome,
-                        CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+                        StatementOutcome::RuntimeError(RuntimeError::MissingResource { .. })
                     ),
                     "{outcome:?}"
                 );
@@ -216,7 +216,7 @@ fn compact_scalar_array_operations_require_complete_read_and_write_authority() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. }),
+            outcome: StatementOutcome::RuntimeError(RuntimeError::MissingResource { .. }),
             ..
         }
     ));
@@ -245,7 +245,7 @@ fn compact_scalar_array_zero_length_needs_no_byte_authority() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::Normal(_),
+            outcome: StatementOutcome::Normal(_),
             ..
         }
     ));
@@ -256,7 +256,7 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
     let target = pointer("local:array-target", 0);
     for readonly_block in [false, true] {
         let memory =
-            CMemory::new().with_block_or_read_only(target.block.clone(), 16, readonly_block);
+            Memory::new().with_block_or_read_only(target.block.clone(), 16, readonly_block);
         let state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(own_memory_context(target.clone(), 0, 4));
@@ -276,7 +276,7 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
         assert!(matches!(
             theorem.proposition(),
             Proposition::CStatementExecutes {
-                outcome: CStatementOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory),
+                outcome: StatementOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
                 ..
             }
         ));
@@ -295,7 +295,7 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
     assert!(matches!(
         theorem.proposition(),
         Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+            outcome: StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
             ..
         }
     ));
@@ -353,7 +353,7 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
         assert!(matches!(
             theorem.proposition(),
             Proposition::CStatementExecutes {
-                outcome: CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_)),
+                outcome: StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_)),
                 ..
             }
         ));
@@ -365,7 +365,7 @@ fn compact_array_regions_check_source_type_extent_alignment_and_initialization()
     let context = PureFactContext::new();
     let source = pointer("local:source", 4);
     let target = pointer("local:target", 4);
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_block(source.block.clone(), 24)
         .with_block(target.block.clone(), 24)
         .write_scalar_array_region(
@@ -419,9 +419,9 @@ fn compact_array_regions_check_source_type_extent_alignment_and_initialization()
         .unwrap();
     assert_eq!(
         copied.load(&target),
-        CExpressionOutcome::Value(ProgramValue::UInt32(9u32.into()))
+        ExpressionOutcome::Value(ProgramValue::UInt32(9u32.into()))
     );
-    let fresh = CMemory::new()
+    let fresh = Memory::new()
         .with_block(source.block.clone(), 24)
         .with_block(target.block.clone(), 24);
     assert!(
@@ -451,7 +451,7 @@ fn compact_array_regions_check_source_type_extent_alignment_and_initialization()
         .unwrap();
     assert_eq!(
         copied.load(&pointer("local:source", 16)),
-        CExpressionOutcome::Value(ProgramValue::UInt32(7u32.into()))
+        ExpressionOutcome::Value(ProgramValue::UInt32(7u32.into()))
     );
 }
 
@@ -470,7 +470,7 @@ fn compact_array_region_execution_requires_full_authority_and_mutable_storage() 
             view_memory_fact(target.clone(), 0, 4)
         };
         let state = ExecutionState::new()
-            .with_memory(CMemory::new().with_block_or_read_only(target.block.clone(), 24, readonly))
+            .with_memory(Memory::new().with_block_or_read_only(target.block.clone(), 24, readonly))
             .with_resource_context(ResourceContext::new().unchecked_with_facts(vec![resource]));
         let statement = c_write_scalar_array_region(
             c_pointer_value(target),
@@ -484,7 +484,7 @@ fn compact_array_region_execution_requires_full_authority_and_mutable_storage() 
             panic!()
         };
         assert_eq!(
-            matches!(outcome, CStatementOutcome::Normal(_)),
+            matches!(outcome, StatementOutcome::Normal(_)),
             writable && complete && !readonly
         );
     }
@@ -501,7 +501,7 @@ fn compact_array_region_write_refreshes_an_addressed_scalar_local() {
     )
     .unwrap();
     let Proposition::CStatementExecutes {
-        outcome: CStatementOutcome::Normal(state),
+        outcome: StatementOutcome::Normal(state),
         ..
     } = declaration.proposition()
     else {
@@ -523,7 +523,7 @@ fn compact_array_region_write_refreshes_an_addressed_scalar_local() {
     )
     .unwrap();
     let Proposition::CStatementExecutes {
-        outcome: CStatementOutcome::Normal(state),
+        outcome: StatementOutcome::Normal(state),
         ..
     } = theorem.proposition()
     else {
@@ -559,7 +559,7 @@ fn scalar_array_snapshots_check_explicit_coverage_types_and_overlap() {
     for index in 0..4 {
         assert_eq!(
             copied.load(&pointer("local:array-target", index * 4)),
-            CExpressionOutcome::Value(ProgramValue::UInt32((index as u32 + 1).into()))
+            ExpressionOutcome::Value(ProgramValue::UInt32((index as u32 + 1).into()))
         );
     }
     let overlap = memory
@@ -577,7 +577,7 @@ fn scalar_array_snapshots_check_explicit_coverage_types_and_overlap() {
     for index in 1..4 {
         assert_eq!(
             overlap.load(&pointer("local:array-source", index * 4)),
-            CExpressionOutcome::Value(ProgramValue::UInt32((index as u32).into()))
+            ExpressionOutcome::Value(ProgramValue::UInt32((index as u32).into()))
         );
     }
     let wrong_type = memory.clone().store(

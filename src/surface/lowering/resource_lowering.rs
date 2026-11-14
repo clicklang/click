@@ -1,12 +1,12 @@
 use super::*;
-use crate::kernel::{CResourceTerm, ResourceFieldSchema, c_int32_literal, c_variable};
+use crate::kernel::{ResourceFieldSchema, ResourceTerm, c_int32_literal, c_variable};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 pub(in crate::surface) fn construction_result_layout(
     parsed: &syntax::C0Function,
-) -> Option<&crate::kernel::CAggregateLayout> {
+) -> Option<&crate::kernel::AggregateLayout> {
     let interface = parsed.prelowered_kernel_function()?.contract_interface();
-    (interface.aggregate_return_mode() == crate::kernel::CAggregateReturnMode::Construction)
+    (interface.aggregate_return_mode() == crate::kernel::AggregateReturnMode::Construction)
         .then(|| interface.return_aggregate_layout())
         .flatten()
 }
@@ -15,7 +15,7 @@ pub(in crate::surface) fn construction_result_layout(
 /// originates with the caller's storage, not with the destination binding.
 pub(in crate::surface) fn construction_result_resource(
     parsed: &syntax::C0Function,
-) -> Result<Option<CResourceSpec>, ClickError> {
+) -> Result<Option<ResourceSpec>, ClickError> {
     let Some(layout) = construction_result_layout(parsed) else {
         return Ok(None);
     };
@@ -24,8 +24,8 @@ pub(in crate::surface) fn construction_result_resource(
             "construction result exceeds the supported byte-range size",
         ));
     }
-    Ok(Some(CResourceSpec::owned_memory(
-        CMemorySegment::new(
+    Ok(Some(ResourceSpec::owned_memory(
+        MemorySegment::new(
             c_variable(crate::kernel::C_CONTRACT_RESULT_NAME),
             c_int32_literal(0),
             c_int32_literal(layout.size_bytes()),
@@ -478,7 +478,7 @@ pub(in crate::surface) fn initial_call_state(
     requires: &[Requirement],
     parameters: &[syntax::C0Parameter],
     function: &ProgramFunction,
-    composite_definitions: &[CCompositeResourceDefinition],
+    composite_definitions: &[CompositeResourceDefinition],
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(ExecutionState, Vec<ProgramExpression>, PureFactContext), ClickError> {
     if parameters.len() as u64 >= POINTER_ARGUMENT_VARIABLE_BASE {
@@ -515,7 +515,7 @@ pub(in crate::surface) fn initial_call_state(
     let initial = ExecutionState::new().with_population_creation_tracking();
     let mut state = crate::kernel::initialize_c_function_globals(&initial, function);
     if function.contract_interface().aggregate_return_mode()
-        == crate::kernel::CAggregateReturnMode::Construction
+        == crate::kernel::AggregateReturnMode::Construction
     {
         let layout = function
             .contract_interface()
@@ -536,7 +536,7 @@ pub(in crate::surface) fn initial_call_state(
             crate::kernel::C_CONTRACT_RESULT_NAME,
             ProgramValue::typed_pointer(destination.clone(), function.return_type()),
         );
-        let storage = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        let storage = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             destination,
             0.into(),
             layout.size_bytes().into(),
@@ -643,9 +643,9 @@ pub(in crate::surface) fn initial_call_state(
         // evidence for this pool's population. Include unsupported quantities
         // so they fail checked import instead of becoming authority-only input.
         let mut wildcard_members =
-            BTreeMap::<crate::kernel::ResourceDescription, Vec<CResourceFact>>::new();
+            BTreeMap::<crate::kernel::ResourceDescription, Vec<ResourceFact>>::new();
         for fact in state.resources().facts() {
-            let CResourceFact::Own(CResource::Composite { name, arguments }, _) = fact else {
+            let ResourceFact::Own(Resource::Composite { name, arguments }, _) = fact else {
                 continue;
             };
             if arguments.len() < 2 {
@@ -668,11 +668,11 @@ pub(in crate::surface) fn initial_call_state(
             .resources()
             .facts()
             .iter()
-            .filter(|fact| matches!(fact.resource(), CResource::PopulationAuthority(_)))
+            .filter(|fact| matches!(fact.resource(), Resource::PopulationAuthority(_)))
             .cloned()
             .collect::<Vec<_>>();
         for authority in authorities {
-            let CResource::PopulationAuthority(description) = authority.resource() else {
+            let Resource::PopulationAuthority(description) = authority.resource() else {
                 unreachable!();
             };
             if description.population_arity().is_some() {
@@ -701,7 +701,7 @@ pub(in crate::surface) fn initial_call_state(
             .facts()
             .iter()
             .filter_map(|fact| {
-                let CResource::Composite { name, .. } = fact.resource() else {
+                let Resource::Composite { name, .. } = fact.resource() else {
                     return None;
                 };
                 let definition = composite_definitions
@@ -710,7 +710,7 @@ pub(in crate::surface) fn initial_call_state(
                 definition
                     .contains()
                     .iter()
-                    .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+                    .any(|child| matches!(child.term(), ResourceTerm::PopulationAuthority { .. }))
                     .then(|| (fact.clone(), definition))
             })
             .collect::<Vec<_>>();
@@ -793,9 +793,9 @@ fn reject_aggregate_parameter_storage_resource(
 }
 
 pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
-    mut memory: CMemory,
+    mut memory: Memory,
     loadable_ranges: &BTreeMap<String, ConcreteMemoryRangeSeed>,
-) -> CMemory {
+) -> Memory {
     let base_memory = memory.clone();
     for range in loadable_ranges.values() {
         if let Some(layout) = &range.struct_layout {
@@ -816,7 +816,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
                         memory,
                         |memory, pointer, element_type| {
                             if !seeds_symbolic_field_cell(element_type)
-                                || matches!(memory.load(&pointer), CExpressionOutcome::Value(_))
+                                || matches!(memory.load(&pointer), ExpressionOutcome::Value(_))
                             {
                                 return memory;
                             }
@@ -868,9 +868,9 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
 pub(in crate::surface) fn visit_struct_field_cells(
     field: &syntax::C0StructField,
     element_pointer: &Pointer,
-    mut memory: CMemory,
-    mut visit: impl FnMut(CMemory, Pointer, ProgramType) -> CMemory,
-) -> CMemory {
+    mut memory: Memory,
+    mut visit: impl FnMut(Memory, Pointer, ProgramType) -> Memory,
+) -> Memory {
     let field_pointer = element_pointer.offset_by_bytes(field.offset_bytes());
     let field_type = field.c_type().to_kernel_type();
     let Some((element_type, length)) = array_field_elements(field_type) else {
@@ -920,10 +920,10 @@ fn seeds_symbolic_field_cell(element_type: ProgramType) -> bool {
 }
 
 fn materialize_symbolic_access_resource_cells(
-    mut memory: CMemory,
+    mut memory: Memory,
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
-) -> Result<CMemory, ClickError> {
+) -> Result<Memory, ClickError> {
     for requirement in requires {
         let Requirement::Resource(resource) = requirement else {
             continue;
@@ -960,10 +960,10 @@ fn materialize_symbolic_access_resource_cells(
 /// initialized, so the proof starts with them unwritten: a read needs a store
 /// or `defined` evidence first, as for a fresh local.
 fn mark_uninitialized_resource_memory(
-    mut memory: CMemory,
+    mut memory: Memory,
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
-) -> Result<CMemory, ClickError> {
+) -> Result<Memory, ClickError> {
     for requirement in requires {
         let Requirement::Resource(resource) = requirement else {
             continue;
@@ -993,7 +993,7 @@ fn mark_uninitialized_resource_memory(
                                         )
                                     })?
                             }
-                            _ => CMemory::UNBOUNDED_UNWRITTEN_EXTENT,
+                            _ => Memory::UNBOUNDED_UNWRITTEN_EXTENT,
                         };
                         let start = offset_pointer_by_elements(
                             evaluated.base,
@@ -1013,7 +1013,7 @@ fn mark_uninitialized_resource_memory(
                                     crate::surface::diagnostics::describe_contract_segment(segment)
                                 ))
                             })?;
-                        (base, CMemory::UNBOUNDED_UNWRITTEN_EXTENT)
+                        (base, Memory::UNBOUNDED_UNWRITTEN_EXTENT)
                     }
                 };
             memory = memory.with_uninitialized_object(start, extent);
@@ -1235,7 +1235,7 @@ pub(in crate::surface) fn folded_matched_instance_note(
         .facts()
         .iter()
         .filter_map(|fact| match fact.resource() {
-            CResource::Instance(instance) => Some(instance),
+            Resource::Instance(instance) => Some(instance),
             _ => None,
         })
         .find_map(|instance| {
@@ -1245,7 +1245,7 @@ pub(in crate::surface) fn folded_matched_instance_note(
         return String::new();
     };
     let declared = crate::surface::proof_diagnostics::render::render_resource_diagnostic(
-        &CResource::Instance(instance.clone()),
+        &Resource::Instance(instance.clone()),
         parameter_binding,
     );
     // The premises may have refuted some arms without deciding one. Then the
@@ -1270,10 +1270,10 @@ pub(in crate::surface) fn folded_matched_instance_note(
 }
 
 fn materialize_access_segment_cells(
-    mut memory: CMemory,
+    mut memory: Memory,
     segment: &ContractSegment,
     parameter_binding: ParameterBinding<'_>,
-) -> Result<CMemory, ClickError> {
+) -> Result<Memory, ClickError> {
     let state = ExecutionState::new().with_memory(memory.clone());
     let source_segment = segment;
     let Ok(segment) = evaluate_requirement_segment(parameter_binding, &state, source_segment)
@@ -1303,7 +1303,7 @@ fn materialize_access_segment_cells(
                 memory,
                 |memory, pointer, element_type| {
                     if !seeds_symbolic_field_cell(element_type)
-                        || matches!(memory.load(&pointer), CExpressionOutcome::Value(_))
+                        || matches!(memory.load(&pointer), ExpressionOutcome::Value(_))
                     {
                         return memory;
                     }
@@ -1334,7 +1334,7 @@ fn materialize_access_segment_cells(
                     memory,
                     |memory, pointer, element_type| {
                         if !seeds_symbolic_field_cell(element_type)
-                            || matches!(memory.load(&pointer), CExpressionOutcome::Value(_))
+                            || matches!(memory.load(&pointer), ExpressionOutcome::Value(_))
                         {
                             return memory;
                         }
@@ -1758,8 +1758,8 @@ pub(in crate::surface) fn resource_context_from_requirements(
 pub(in crate::surface) fn lower_resource_clause(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &CMemory,
-) -> Result<CResourceFact, ClickError> {
+    memory: &Memory,
+) -> Result<ResourceFact, ClickError> {
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts(resource, parameter_binding, memory)?;
         if facts.len() != 1 {
@@ -1779,8 +1779,8 @@ pub(in crate::surface) fn lower_resource_clause(
 pub(in crate::surface) fn lower_resource_clause_facts(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &CMemory,
-) -> Result<Vec<CResourceFact>, ClickError> {
+    memory: &Memory,
+) -> Result<Vec<ResourceFact>, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
     let state = ExecutionState::new().with_memory(memory.clone());
     lower_resource_clause_facts_with_values(resource, parameter_binding, &values, &state, None)
@@ -1790,7 +1790,7 @@ pub(in crate::surface) fn lower_resource_clause_at_state(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_at_state(resource, parameter_binding, state)?;
         if facts.len() != 1 {
@@ -1809,7 +1809,7 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-) -> Result<Vec<CResourceFact>, ClickError> {
+) -> Result<Vec<ResourceFact>, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
     lower_resource_clause_facts_with_values(resource, parameter_binding, &values, state, None)
 }
@@ -1819,7 +1819,7 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_result(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     result: &ProgramValue,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     lower_resource_clause_at_state_with_assumptions(
         resource,
         parameter_binding,
@@ -1838,7 +1838,7 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
         let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
@@ -1878,7 +1878,7 @@ pub(in crate::surface) fn lower_interface_resource_clause(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     lower_resource_clause_at_current_locals_with_assumptions(
         resource,
         parameter_binding,
@@ -1897,7 +1897,7 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_assumptio
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     lower_resource_clause_at_current_locals_with_entry_and_assumptions(
         resource,
         parameter_binding,
@@ -1918,7 +1918,7 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals_with_entry_and
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
     let array_refs =
         array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
@@ -1961,7 +1961,7 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
     state: &ExecutionState,
     result: &ProgramValue,
     base_assumptions: &PureFactContext,
-) -> Result<Vec<CResourceFact>, ClickError> {
+) -> Result<Vec<ResourceFact>, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
@@ -1982,7 +1982,7 @@ pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_e
 struct ClauseParameters<'a> {
     parameters: &'a [syntax::C0Parameter],
     values: &'a BTreeMap<String, ProgramValue>,
-    memory: &'a CMemory,
+    memory: &'a Memory,
     index: Option<&'a crate::surface::ParameterIndex>,
     array_refs: std::cell::OnceCell<ClickArrayRefs>,
 }
@@ -1991,7 +1991,7 @@ impl<'a> ClauseParameters<'a> {
     fn new(
         parameters: &'a [syntax::C0Parameter],
         values: &'a BTreeMap<String, ProgramValue>,
-        memory: &'a CMemory,
+        memory: &'a Memory,
     ) -> Self {
         Self {
             parameters,
@@ -2027,7 +2027,7 @@ fn lower_resource_clause_with_values(
     values: &BTreeMap<String, ProgramValue>,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     lower_resource_clause_with_values_mode(
         resource,
         parameter_binding,
@@ -2045,7 +2045,7 @@ fn lower_resource_clause_with_values_mode(
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     allow_symbolic_resource_arguments: bool,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     let base_assumptions = PureFactContext::new();
     lower_resource_clause_with_values_mode_at_entry(
         resource,
@@ -2067,7 +2067,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
     result: Option<&ProgramValue>,
     allow_symbolic_resource_arguments: bool,
     base_assumptions: &PureFactContext,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     let (parameters, values) = (clause_parameters.parameters, clause_parameters.values);
     match resource {
         ResourceClause::Conditional { .. } => Err(ClickError::new(
@@ -2085,13 +2085,13 @@ fn lower_resource_clause_with_values_mode_at_entry(
             )?;
             if matches!(
                 lowered.resource(),
-                CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_)
+                Resource::MutexGuard(_) | Resource::MutexLive(_) | Resource::MutexUse(_)
             ) {
                 // This lowering constructs the independent precondition. The
                 // kernel subsequently binds its name to the rooted occurrence.
                 return Ok(lowered);
             }
-            let CResourceFact::Own(CResource::Composite { name, arguments }, _) = lowered else {
+            let ResourceFact::Own(Resource::Composite { name, arguments }, _) = lowered else {
                 return Err(ClickError::new(
                     "named instance requires an owned resource definition",
                 ));
@@ -2125,7 +2125,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
             .ok_or_else(|| {
                 ClickError::new("resource instance fields do not match the declared schema")
             })?;
-            Ok(CResourceFact::own(CResource::Instance(instance)))
+            Ok(ResourceFact::own(Resource::Instance(instance)))
         }
         ResourceClause::MemoryAggregate { .. } => Err(ClickError::new(
             "aggregate resource clauses require batch lowering",
@@ -2193,12 +2193,12 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 allow_symbolic_resource_arguments,
                 base_assumptions,
             )?;
-            let CResourceFact::Own(resource, _) = lowered else {
+            let ResourceFact::Own(resource, _) = lowered else {
                 return Err(ClickError::new(
                     "declared resource quantity requires owned authority",
                 ));
             };
-            Ok(CResourceFact::own_quantity(resource, quantity))
+            Ok(ResourceFact::own_quantity(resource, quantity))
         }
         ResourceClause::ViewMemory(segment) => {
             let range = lower_resource_segment_with_values(
@@ -2217,7 +2217,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 ),
                 base_assumptions,
             )?;
-            Ok(CResourceFact::view_memory(range))
+            Ok(ResourceFact::view_memory(range))
         }
         ResourceClause::OwnMemory(segment) => {
             let range = lower_resource_segment_with_values(
@@ -2236,7 +2236,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 ),
                 base_assumptions,
             )?;
-            Ok(CResourceFact::own_memory(range))
+            Ok(ResourceFact::own_memory(range))
         }
         ResourceClause::Declared {
             type_schema: _,
@@ -2295,10 +2295,9 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         "could not lower resource `{name}` argument {index}: {message}"
                     ))
                 })?;
-                let matches_type = if name == CResourceFact::ALLOCATION_RESOURCE_NAME && index == 0
-                {
+                let matches_type = if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 0 {
                     c_value_matches_allocation_pointer(&value)
-                } else if name == CResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
+                } else if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
                     c_value_matches_allocation_extent(&value)
                 } else {
                     c_value_matches_click_type(&value, *parameter_type)
@@ -2333,7 +2332,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 .ok_or_else(|| ClickError::new("mutex_guard requires a live acquisition"))?;
                 return Ok(match access {
                     ResourceAccessMode::Own => guard,
-                    ResourceAccessMode::View => CResourceFact::View(guard.resource().clone()),
+                    ResourceAccessMode::View => ResourceFact::View(guard.resource().clone()),
                 });
             }
             if name == "authority" {
@@ -2379,8 +2378,8 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     base_assumptions,
                 )?;
                 let (family, arguments) = match protected_fact.resource() {
-                    CResource::Composite { name, arguments }
-                    | CResource::Token { name, arguments } => (name, arguments),
+                    Resource::Composite { name, arguments }
+                    | Resource::Token { name, arguments } => (name, arguments),
                     _ => {
                         return Err(ClickError::new(
                             "authority requires a declared resource type",
@@ -2398,7 +2397,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         .map_err(ClickError::new)?,
                     None => description,
                 };
-                return Ok(CResourceFact::own(CResource::PopulationAuthority(
+                return Ok(ResourceFact::own(Resource::PopulationAuthority(
                     description,
                 )));
             }
@@ -2414,7 +2413,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 .ok_or_else(|| ClickError::new("mutex_live requires a live initialization"))?;
                 return Ok(match access {
                     ResourceAccessMode::Own => guard,
-                    ResourceAccessMode::View => CResourceFact::View(guard.resource().clone()),
+                    ResourceAccessMode::View => ResourceFact::View(guard.resource().clone()),
                 });
             }
             if let Some(side) = crate::kernel::PublicationSide::for_keyword(name) {
@@ -2443,7 +2442,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     allow_symbolic_resource_arguments,
                     base_assumptions,
                 )?;
-                let CResource::Composite {
+                let Resource::Composite {
                     name: payload_name,
                     arguments,
                 } = fact.resource()
@@ -2452,7 +2451,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         "the published resource type must be a composite resource",
                     ));
                 };
-                let right = CResource::Publication(crate::kernel::PublicationRight::new(
+                let right = Resource::Publication(crate::kernel::PublicationRight::new(
                     side,
                     flag.pointer().clone(),
                     crate::kernel::ResourceDescription::new(
@@ -2462,8 +2461,8 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     ),
                 ));
                 return Ok(match access {
-                    ResourceAccessMode::Own => CResourceFact::own(right),
-                    ResourceAccessMode::View => CResourceFact::View(right),
+                    ResourceAccessMode::Own => ResourceFact::own(right),
+                    ResourceAccessMode::View => ResourceFact::View(right),
                 });
             }
             if name == "mutex_use" {
@@ -2489,7 +2488,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         allow_symbolic_resource_arguments,
                         base_assumptions,
                     )?;
-                    let CResource::Composite { name, arguments } = fact.resource() else {
+                    let Resource::Composite { name, arguments } = fact.resource() else {
                         return Err(ClickError::new(
                             "protected resource type must be a composite resource",
                         ));
@@ -2508,22 +2507,22 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 };
                 return Ok(match access {
                     ResourceAccessMode::Own => guard,
-                    ResourceAccessMode::View => CResourceFact::View(guard.resource().clone()),
+                    ResourceAccessMode::View => ResourceFact::View(guard.resource().clone()),
                 });
             }
             let resource = match kind {
-                ResourceKind::Composite => CResource::Composite {
+                ResourceKind::Composite => Resource::Composite {
                     name: name.clone(),
                     arguments: resource_values.into_iter().map(AlgebraicValue::C).collect(),
                 },
-                ResourceKind::Token => CResource::Token {
+                ResourceKind::Token => Resource::Token {
                     name: name.clone(),
                     arguments: resource_values.into_iter().map(AlgebraicValue::C).collect(),
                 },
             };
             Ok(match access {
-                ResourceAccessMode::Own => CResourceFact::own(resource),
-                ResourceAccessMode::View => CResourceFact::View(resource),
+                ResourceAccessMode::Own => ResourceFact::own(resource),
+                ResourceAccessMode::View => ResourceFact::View(resource),
             })
         }
     }
@@ -2532,14 +2531,14 @@ fn lower_resource_clause_with_values_mode_at_entry(
 fn evaluate_resource_argument_with_snapshot(
     original: &ContractExpression,
     lowered: &ProgramExpression,
-    snapshot: crate::kernel::CResourceSnapshot,
+    snapshot: crate::kernel::ResourceSnapshot,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     entry_state: &ExecutionState,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
 ) -> Result<ProgramValue, String> {
-    if snapshot == crate::kernel::CResourceSnapshot::Entry {
+    if snapshot == crate::kernel::ResourceSnapshot::Entry {
         let direct = crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
             original,
             assumptions,
@@ -2569,7 +2568,7 @@ fn lower_resource_clause_facts_with_values(
     values: &BTreeMap<String, ProgramValue>,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
-) -> Result<Vec<CResourceFact>, ClickError> {
+) -> Result<Vec<ResourceFact>, ClickError> {
     lower_resource_clause_facts_with_values_mode(
         resource,
         parameter_binding,
@@ -2587,7 +2586,7 @@ fn lower_resource_clause_facts_with_values_mode(
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     allow_symbolic_resource_arguments: bool,
-) -> Result<Vec<CResourceFact>, ClickError> {
+) -> Result<Vec<ResourceFact>, ClickError> {
     let base_assumptions = PureFactContext::new();
     lower_resource_clause_facts_with_values_mode_at_entry(
         resource,
@@ -2609,7 +2608,7 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
     result: Option<&ProgramValue>,
     allow_symbolic_resource_arguments: bool,
     base_assumptions: &PureFactContext,
-) -> Result<Vec<CResourceFact>, ClickError> {
+) -> Result<Vec<ResourceFact>, ClickError> {
     let values = clause_parameters.values;
     match resource {
         ResourceClause::MemoryAggregate { access, segments } => segments
@@ -2677,12 +2676,12 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
             )?
             .into_iter()
             .map(|lowered| {
-                let CResourceFact::Own(resource, _) = lowered else {
+                let ResourceFact::Own(resource, _) = lowered else {
                     return Err(ClickError::new(
                         "declared resource quantity requires owned authority",
                     ));
                 };
-                Ok(CResourceFact::own_quantity(resource, quantity.clone()))
+                Ok(ResourceFact::own_quantity(resource, quantity.clone()))
             })
             .collect()
         }
@@ -2740,16 +2739,16 @@ pub(in crate::surface) fn resource_argument_to_typed_c_expression(
 pub(in crate::surface) fn resource_argument_to_typed_c_expression_with_snapshot(
     argument: &ContractExpression,
     parameter_type: C0Type,
-) -> Result<(ProgramExpression, crate::kernel::CResourceSnapshot), ClickError> {
+) -> Result<(ProgramExpression, crate::kernel::ResourceSnapshot), ClickError> {
     if let ContractExpression::Old(inner) = argument {
         return Ok((
             resource_argument_to_typed_c_expression(inner, parameter_type)?,
-            crate::kernel::CResourceSnapshot::Entry,
+            crate::kernel::ResourceSnapshot::Entry,
         ));
     }
     Ok((
         resource_argument_to_typed_c_expression(argument, parameter_type)?,
-        crate::kernel::CResourceSnapshot::Current,
+        crate::kernel::ResourceSnapshot::Current,
     ))
 }
 
@@ -2904,7 +2903,7 @@ fn lower_resource_segment_with_values(
     result: Option<&ProgramValue>,
     element_width: u32,
     base_assumptions: &PureFactContext,
-) -> Result<CMemoryRange, ClickError> {
+) -> Result<MemoryRange, ClickError> {
     if segment.state != ContractSegmentState::Current {
         return Err(ClickError::new(format!(
             "could not lower `{resource_name}` resource: resource segments cannot use `old(...)`"
@@ -2969,7 +2968,7 @@ fn lower_resource_segment_with_values(
     // (`design/pointer-subobject-extents.md`, D1). Constant bounds are
     // refused here by name; the kernel decides the rest when it checks
     // the step.
-    let refuse_past_extent = |range: CMemoryRange| {
+    let refuse_past_extent = |range: MemoryRange| {
         let (start, end) = match range.wide_bounds() {
             Some(bounds) => bounds,
             None => (range.start(), range.end()),
@@ -3012,7 +3011,7 @@ fn lower_resource_segment_with_values(
     };
     // The same rule as the kernel's resource and proposition lowering.
     if let Some((start, end)) = crate::kernel::wide_range_bounds(&start_value, &end_value) {
-        return refuse_past_extent(CMemoryRange::from_pointer_value_wide(
+        return refuse_past_extent(MemoryRange::from_pointer_value_wide(
             &base_value,
             start,
             end,
@@ -3030,7 +3029,7 @@ fn lower_resource_segment_with_values(
             end = constant_u32(*end)
         )));
     }
-    refuse_past_extent(CMemoryRange::from_pointer_value(
+    refuse_past_extent(MemoryRange::from_pointer_value(
         &base_value,
         start,
         end,
@@ -3041,7 +3040,7 @@ fn lower_resource_segment_with_values(
 fn loadable_requirement_props(
     requirement: &Requirement,
     parameter_binding: ParameterBinding<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     assumptions: &PureFactContext,
 ) -> Result<Vec<Proposition>, ClickError> {
     if let Requirement::LoadableSegment { segment } = requirement
@@ -3094,7 +3093,7 @@ fn loadable_requirement_props(
 pub(in crate::surface) fn resource_clause_loadable_prop(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
-    memory: &CMemory,
+    memory: &Memory,
 ) -> Result<Option<Proposition>, ClickError> {
     resource_clause_loadable_prop_at_state(
         resource,
@@ -3180,7 +3179,7 @@ pub(in crate::surface) fn resource_clause_memory_ranges_at_state(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-) -> Result<Option<Vec<CMemoryRange>>, ClickError> {
+) -> Result<Option<Vec<MemoryRange>>, ClickError> {
     let ranges = match resource {
         ResourceClause::Conditional { .. } => return Ok(None),
         ResourceClause::Named { .. } => return Ok(None),
@@ -3214,15 +3213,15 @@ pub(in crate::surface) fn resource_clause_memory_ranges_at_state(
 }
 
 pub(in crate::surface) fn memory_range_loadable_prop(
-    memory: &CMemory,
-    range: &CMemoryRange,
+    memory: &Memory,
+    range: &MemoryRange,
 ) -> Proposition {
     memory_range_loadable_atom_prop(memory, range)
 }
 
 pub(in crate::surface) fn memory_range_loadable_atom_prop(
-    memory: &CMemory,
-    range: &CMemoryRange,
+    memory: &Memory,
+    range: &MemoryRange,
 ) -> Proposition {
     if range.wide_bounds().is_some() {
         return range.loadable_fact(memory);
@@ -3236,7 +3235,7 @@ pub(in crate::surface) fn memory_range_loadable_atom_prop(
     }
 }
 
-pub(in crate::surface) fn memory_range_loadable_guards(range: &CMemoryRange) -> Vec<Proposition> {
+pub(in crate::surface) fn memory_range_loadable_guards(range: &MemoryRange) -> Vec<Proposition> {
     crate::kernel::memory_range_extent_guard_spellings(range)
 }
 
@@ -3411,7 +3410,7 @@ pub(in crate::surface) fn loadable_base_and_bytes(
             // spellings (`memory_range_loadable_guards`): the endpoint form
             // memory reasoning reads and the signed count form a proof can
             // write, such as `n <= 1073741823` for `p[0..n]` of `int32`.
-            let guards = memory_range_loadable_guards(&CMemoryRange::new_with_element_width(
+            let guards = memory_range_loadable_guards(&MemoryRange::new_with_element_width(
                 segment.base.clone(),
                 segment.start.clone(),
                 segment.end.clone(),
@@ -3949,7 +3948,7 @@ pub(in crate::surface) fn parameter_values_named(
 pub(in crate::surface) fn array_refs_for_values(
     parameter_binding: ParameterBinding<'_>,
     values: &BTreeMap<String, ProgramValue>,
-    memory: &CMemory,
+    memory: &Memory,
 ) -> ClickArrayRefs {
     let Some(index) = parameter_binding.index else {
         return array_refs_for_parameters(parameter_binding.parameters, values, memory);
@@ -4025,7 +4024,7 @@ fn resource_clause_parameter_values(
 pub(in crate::surface) fn array_refs_for_parameters(
     parameters: &[syntax::C0Parameter],
     values: &BTreeMap<String, ProgramValue>,
-    memory: &CMemory,
+    memory: &Memory,
 ) -> ClickArrayRefs {
     crate::instrumentation::record_deterministic_work(parameters.len());
     parameters

@@ -11,7 +11,7 @@ fn loop_guard_projection_uses_indexed_definition_lookup() {
     for size in [16usize, 64, 256, 1024] {
         let mut definitions = (0..size)
             .map(|index| {
-                CCompositeResourceDefinition::new(
+                CompositeResourceDefinition::new(
                     format!("unrelated-{index:05}"),
                     vec![],
                     None,
@@ -28,7 +28,7 @@ fn loop_guard_projection_uses_indexed_definition_lookup() {
             state.resources = state
                 .resources
                 .clone()
-                .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                .unchecked_with_fact(ResourceFact::own(Resource::Token {
                     name: format!("unrelated-token-{index}"),
                     arguments: vec![].into(),
                 }));

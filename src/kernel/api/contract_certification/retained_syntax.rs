@@ -438,7 +438,7 @@ mod tests {
 
     #[test]
     fn algebraic_call_certification_ignores_allocation_but_keeps_written_inputs() {
-        use crate::kernel::{AlgebraicTermNode, AlgebraicType, CMemory, Pointer, Variable};
+        use crate::kernel::{AlgebraicTermNode, AlgebraicType, Memory, Pointer, Variable};
         let _session = VerificationSession::enter();
         let ty = AlgebraicType::parameter("T".into());
         let variable = AlgebraicTerm {
@@ -466,11 +466,11 @@ mod tests {
             node: AlgebraicTermNode::Variable(Variable(995951)),
         };
         assert!(!algebraic_equal(&left, &algebraic_call(changed, "wrap")));
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let other = memory
             .clone()
             .store(Pointer::null(), ProgramValue::Int32(1u32.into()));
-        let read = |memory: &CMemory| AlgebraicTerm {
+        let read = |memory: &Memory| AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::MemoryLoad {
                 memory: crate::kernel::intern_c_memory_ref(memory),
@@ -538,12 +538,12 @@ mod tests {
     #[test]
     fn retained_syntax_keeps_snapshots_and_pointer_qualifiers_exact() {
         let _session = VerificationSession::enter();
-        let memory = crate::kernel::CMemory::new();
+        let memory = crate::kernel::Memory::new();
         let changed = memory.clone().store(
             crate::kernel::Pointer::null(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         );
-        let read = |memory: &crate::kernel::CMemory| {
+        let read = |memory: &crate::kernel::Memory| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(crate::kernel::Pointer::null()),
@@ -628,15 +628,15 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_captured_and_pointer_index_snapshots() {
         use crate::kernel::{
-            CMemory, LoadKind, Pointer, PointerOffsetTerm, PointerValue, ProgramType, Variable,
+            LoadKind, Memory, Pointer, PointerOffsetTerm, PointerValue, ProgramType, Variable,
         };
         let _session = VerificationSession::enter();
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let other = memory.clone().store(
             Pointer::null(),
             ProgramValue::Int32(MachineTerm::constant(5)),
         );
-        let pointer = |snapshot: &CMemory| {
+        let pointer = |snapshot: &Memory| {
             PointerValue::new(
                 Pointer {
                     block: "indexed".into(),
@@ -655,7 +655,7 @@ mod tests {
                 ProgramType::Int32Pointer,
             )
         };
-        let captured = |snapshot: &CMemory, address| A::ArrayRef {
+        let captured = |snapshot: &Memory, address| A::ArrayRef {
             memory: snapshot.clone(),
             pointer: ProgramValue::Pointer(address),
             element_type: ProgramType::Int32,

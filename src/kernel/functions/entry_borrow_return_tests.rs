@@ -17,14 +17,14 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
         }
     };
     let clause = |name: &str| {
-        CResourceSpec::declared(
+        ResourceSpec::declared(
             ResourceFamily::Composite,
-            CResourceAccessMode::Own,
+            ResourceAccessMode::Own,
             "child_ref".into(),
             vec![field(name)],
             vec![ProgramType::Int32Pointer],
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         )
         .unwrap()
     };
@@ -33,7 +33,7 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
     let function = c_function(ProgramType::Void, "borrow", Vec::new(), c_skip())
         .with_resource_summary(vec![left.clone(), right.clone()], vec![right, left]);
     let children = ["child:left", "child:right"].map(|name| {
-        CResourceFact::own_composite(
+        ResourceFact::own_composite(
             "child_ref".into(),
             vec![ProgramValue::pointer(Pointer {
                 block: name.into(),
@@ -44,10 +44,10 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
     let checked = children
         .iter()
         .enumerate()
-        .map(|(index, fact)| CCheckedResourceFact {
+        .map(|(index, fact)| CheckedResourceFact {
             fact: fact.clone(),
-            role: CResourceTransferRole::Borrow,
-            snapshot: CResourceSnapshot::Entry,
+            role: ResourceTransferRole::Borrow,
+            snapshot: ResourceSnapshot::Entry,
             clause_position: None,
             section_index: Some(index),
             selected_mutex_source: None,

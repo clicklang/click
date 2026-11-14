@@ -65,7 +65,7 @@ impl<'a> Proof<'a> {
                 definition.contains().iter().any(|spec| {
                     matches!(
                         spec.term(),
-                        crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                        crate::kernel::ResourceTerm::PopulationAuthority { .. }
                     )
                 })
             })
@@ -455,7 +455,7 @@ impl<'a> Proof<'a> {
                 outcome.map(|goal| &*goal.data.core.result),
                 self.facts().assumptions(),
             )?;
-            let CResourceFact::Own(CResource::Composite { name, arguments }, _) = lowered else {
+            let ResourceFact::Own(Resource::Composite { name, arguments }, _) = lowered else {
                 return Err(self.step_error("fold construction requires an owned resource"));
             };
             let definition = context
@@ -554,7 +554,7 @@ impl<'a> Proof<'a> {
             .function
             .composite_resource_definition(instance.name())
             .ok_or_else(|| self.step_error("resource instance has no registered body"))?;
-        let selected = CResourceFact::own(CResource::Instance(instance.clone()));
+        let selected = ResourceFact::own(Resource::Instance(instance.clone()));
         // `let { field: name } = unfold(instance)` names the folded value of a
         // scalar field, as a matched constructor payload names its value. The
         // instance is consumed by this unfold, so the binder is the only
@@ -1124,8 +1124,8 @@ impl<'a> Proof<'a> {
         &self,
         before: &ExecutionState,
         instance: &crate::kernel::ResourceInstance,
-        definition: &crate::kernel::CCompositeResourceDefinition,
-        definitions: &[crate::kernel::CCompositeResourceDefinition],
+        definition: &crate::kernel::CompositeResourceDefinition,
+        definitions: &[crate::kernel::CompositeResourceDefinition],
         explicit: Arc<[(String, Variable)]>,
         defaults: &[(String, String, Variable)],
     ) -> Result<Arc<[(String, Variable)]>, ClickError> {
@@ -2436,7 +2436,7 @@ impl<'a> Proof<'a> {
         let state = &*execution.core.state;
         let parameters = context.parsed_function.parameters();
         let element =
-            |element: &IteratedElement| -> Result<crate::kernel::CMemoryRange, ClickError> {
+            |element: &IteratedElement| -> Result<crate::kernel::MemoryRange, ClickError> {
                 let captured;
                 let segment = match element {
                     IteratedElement::Current(segment) => segment,
@@ -3085,7 +3085,7 @@ impl<'a> Proof<'a> {
             .core
             .frontier
             .execution_start_state(&execution.core.state);
-        let outcome = CFunctionOutcome::Return {
+        let outcome = FunctionOutcome::Return {
             value: (*goal.data.core.result).clone().into(),
             state: Box::new((*goal.data.core.state).clone()),
         };
@@ -3105,7 +3105,7 @@ impl<'a> Proof<'a> {
             closure,
             family_reaches_population,
         )?;
-        let CFunctionOutcome::Return { value, state } = checked.outcome else {
+        let FunctionOutcome::Return { value, state } = checked.outcome else {
             unreachable!("folding a return outcome preserves its outcome kind")
         };
         // Ordinary macro folds keep their final contract-definition law.
@@ -3114,15 +3114,15 @@ impl<'a> Proof<'a> {
         // ordinary refold, including a static wrapper with no guarded body.
         // Contracts with only ordinary outputs retain their definition law.
         let operational_exchange = match checked.selected.resource() {
-            CResource::Composite { name, .. } => context
+            Resource::Composite { name, .. } => context
                 .function
                 .composite_resource_definition(name)
                 .is_some_and(|definition| {
                     definition.contains().iter().any(|spec| {
                         matches!(
                             spec.term(),
-                            crate::kernel::CResourceTerm::PopulationAuthority { .. }
-                                | crate::kernel::CResourceTerm::Iterated(_)
+                            crate::kernel::ResourceTerm::PopulationAuthority { .. }
+                                | crate::kernel::ResourceTerm::Iterated(_)
                         )
                     })
                 }),
@@ -3142,7 +3142,7 @@ impl<'a> Proof<'a> {
                     .any(|spec| spec.is_instance())
                 || (self.is_authority_transfer_wrapper(resource) && family_reaches_population))
         {
-            let viewed = CResourceFact::View(checked.selected.resource().clone());
+            let viewed = ResourceFact::View(checked.selected.resource().clone());
             let selected = if state
                 .resources()
                 .directly_supporting_fact(&checked.selected, self.facts().assumptions())

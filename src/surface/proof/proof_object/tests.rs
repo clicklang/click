@@ -30,7 +30,7 @@ fn unfinished_callback_error_does_not_execute_the_next_statement() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let resources = ResourceEnvironment::new(&[]);
-    let environment = CExecutionEnvironment::new();
+    let environment = ExecutionEnvironment::new();
     let root = Proof::for_execution_frontier(
         "unfinished callback",
         0,
@@ -83,7 +83,7 @@ fn implicit_tail_budget_errors_check_boundaries_without_exploring_paths() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let resources = ResourceEnvironment::new(&[]);
-    let environment = CExecutionEnvironment::new();
+    let environment = ExecutionEnvironment::new();
     let root = Proof::for_execution_frontier(
         "bounded implicit tail",
         0,
@@ -494,7 +494,7 @@ fn pure_identity_fixture() -> PureTheoremContext {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -533,7 +533,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                 )),
             )),
             Box::new(Proposition::CMemoryLoadable {
-                memory: CMemory::new().with_block("sum", 16),
+                memory: Memory::new().with_block("sum", 16),
                 base: pointer,
                 bytes: MachineTerm::Variable(Variable(30)),
                 wide: false,
@@ -658,7 +658,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 block: "atomic-extract-cell".into(),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let old_memory = CMemory::new().with_block("atomic-extract-cell", 4).store(
+            let old_memory = Memory::new().with_block("atomic-extract-cell", 4).store(
                 pointer.clone(),
                 ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_100))),
             );
@@ -1063,7 +1063,7 @@ fn both_and_preserves_exact_binders_and_saved_snapshots() {
         block: "cell".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("cell", 4).store(
+    let memory = Memory::new().with_block("cell", 4).store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(11))),
     );
@@ -1507,7 +1507,7 @@ fn proof_failure_preserves_ancestor_and_selected_provenance() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: vec![goal.clone()],
@@ -1553,7 +1553,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1619,7 +1619,7 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1694,7 +1694,7 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -1792,7 +1792,7 @@ fn pure_have_presentation_root(surface: ClickProposition) -> Proof<'static> {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -2142,7 +2142,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let kernel = lower_pure_theorem_proposition(
         "smart have scaling",
         &proposition,
@@ -2267,7 +2267,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
     let parsed_function =
         syntax::parse_function("int32 idle() { return 0; }").expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment =
@@ -2404,7 +2404,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
-            memory: CMemory::new(),
+            memory: Memory::new(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
             requires,
@@ -2686,7 +2686,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Value(int32(7))),
             target_type: ProgramType::Int32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -2702,7 +2702,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::new(),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3241,7 +3241,7 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),
             integer_values: crate::persistent::PersistentMap::default(),
-            memory: CMemory::new(),
+            memory: Memory::new(),
             values: BTreeMap::new(),
             array_refs: BTreeMap::new(),
             requires,
@@ -3737,7 +3737,7 @@ fn initial_entry_provenance_keeps_nonzero_requirement_identity_after_derived_ins
         parsed_function.parameters(),
         &context.pure_facts,
         &context.entry_fact_origins,
-        crate::kernel::CMemorySnapshotIdentity::of(context.state.memory()),
+        crate::kernel::MemorySnapshotIdentity::of(context.state.memory()),
     );
     let source_arguments = vec![ContractExpression::CFragment(ProgramExpression::Variable(
         "x".to_string(),
@@ -3749,7 +3749,7 @@ fn initial_entry_provenance_keeps_nonzero_requirement_identity_after_derived_ins
             0,
             0,
             &source_arguments,
-            crate::kernel::CMemorySnapshotIdentity::of(context.state.memory()),
+            crate::kernel::MemorySnapshotIdentity::of(context.state.memory()),
         )
         .expect("the real entry pipeline should preserve the selected caller requirement");
     assert_eq!(indexed.source_id.outer_ordinal, 1);
@@ -3792,7 +3792,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3951,7 +3951,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values,
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -4146,7 +4146,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         diagnostic_names: Default::default(),
         declaration_bindings: BTreeMap::new(),
         integer_values: crate::persistent::PersistentMap::default(),
-        memory: CMemory::new(),
+        memory: Memory::new(),
         values: BTreeMap::from([(
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000))),
@@ -4460,7 +4460,7 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let state = ExecutionState::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000)));
@@ -4639,7 +4639,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
         syntax::parse_function("int32 identity(int32 x) { int32 y = x; return y; }")
             .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
     let arguments = [ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::constant(7),
@@ -4836,10 +4836,10 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         .expect("test callback should parse")
         .to_kernel_function()
         .with_contract(vec![], vec![], vec![], vec![], true);
-    let callback_contract = CFunctionContract::new("Need", callback)
-        .expect("callback contract should be representable");
+    let callback_contract =
+        FunctionContract::new("Need", callback).expect("callback contract should be representable");
     let function_environment =
-        CExecutionEnvironment::new().with_function_contract(callback_contract);
+        ExecutionEnvironment::new().with_function_contract(callback_contract);
     let resource_environment = ResourceEnvironment::new(&[]);
     let (state, arguments, pure_facts, _) = initial_claim_context(
         function_block,
@@ -5046,7 +5046,7 @@ fn supported_source_refusal_on_branch_does_not_enter_planning() {
         syntax::parse_function("int32 identity(int32 x) { if (x) { return x; } return x; }")
             .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
     let arguments = [ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::constant(7),
@@ -5138,12 +5138,12 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
         syntax::parse_function("int32 identity(int32 x) { int32 y = x; return y; }")
             .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
     let arguments = [ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::constant(7),
     ))];
-    let state = ExecutionState::new().with_memory(CMemory::new().with_block(
+    let state = ExecutionState::new().with_memory(Memory::new().with_block(
         block,
         4 * u32::try_from(cells).expect("test array size should fit in a block"),
     ));
@@ -5300,7 +5300,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let state = ExecutionState::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_000_000)));
@@ -5445,7 +5445,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
     )
     .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let state = ExecutionState::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_050_000)));
@@ -6290,7 +6290,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard order theorems should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let terms = [
         MachineTerm::Variable(Variable(8_150_000)),
         MachineTerm::Variable(Variable(8_150_001)),
@@ -6439,7 +6439,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let value = MachineTerm::Variable(Variable(8_174_000));
     let named = [value.clone()];
     let named_values = named_int32_values(&named);
@@ -6529,7 +6529,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let selected_term = MachineTerm::Variable(Variable(8_174_050));
     let named = [selected_term.clone()];
     let named_values = named_int32_values(&named);
@@ -6642,7 +6642,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let left = MachineTerm::Variable(Variable(8_174_060));
     let right = MachineTerm::Variable(Variable(8_174_061));
     let named = [left.clone(), right.clone()];
@@ -9087,7 +9087,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_000)));
     let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_200_001)));
     let premise = ClickProposition::Comparison {
@@ -9230,7 +9230,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
     let theorem_definitions =
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let left = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_000)));
     let right = ProgramValue::Int32(MachineTerm::Variable(Variable(8_210_001)));
     let premise = ClickProposition::Comparison {
@@ -9372,7 +9372,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let state = ExecutionState::new();
     let argument = ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(7)));
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
@@ -9488,7 +9488,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
     let click_functions = ClickFunctionEnvironment::new(click_file.click_function_definitions());
     let theorems = TheoremEnvironment::new(click_file.theorem_definitions());
     let resources = ResourceEnvironment::new(click_file.resource_definitions());
-    let execution_environment = CExecutionEnvironment::new();
+    let execution_environment = ExecutionEnvironment::new();
     let state = ExecutionState::new();
     let argument = ProgramExpression::Value(int32(7));
     let arguments = vec![argument.clone()];
@@ -9516,7 +9516,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         parsed_function.parameters(),
         std::slice::from_ref(&source),
         &entry_origins,
-        crate::kernel::CMemorySnapshotIdentity::of(state.memory()),
+        crate::kernel::MemorySnapshotIdentity::of(state.memory()),
     );
     let root = Proof::for_execution_frontier(
         "chosen projection",
@@ -9705,7 +9705,7 @@ fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
             )
             .expect("the marker resource definition should lower"),
         );
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let empty_state = ExecutionState::new();
     let lowered = lower_resource_clause(
@@ -9819,7 +9819,7 @@ fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
             )
             .expect("the marker resource definition should lower"),
         );
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let empty_state = ExecutionState::new();
     let lowered = lower_resource_clause(
@@ -9934,7 +9934,7 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
             )
             .expect("the marker resource definition should lower"),
         );
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let empty_state = ExecutionState::new();
     let lowered = lower_resource_clause(
@@ -10062,7 +10062,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             )
             .expect("the marker resource definition should lower"),
         );
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let empty_state = ExecutionState::new();
     let lowered = lower_resource_clause(
@@ -10243,7 +10243,7 @@ fn execution_transport_forks_without_copying_unrelated_state() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let state = ExecutionState::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
@@ -10357,7 +10357,7 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
     )
     .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let state = ExecutionState::new();
     let arguments = vec![
@@ -10500,7 +10500,7 @@ fn statement_assignment_step_ignores_unrelated_proof_facts() {
     let parsed_function = syntax::parse_function("int32 set_one(int32 x) { x = 1; return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let mut samples = Vec::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
@@ -10592,7 +10592,7 @@ fn contextual_store_step_scales_with_unrelated_named_facts() {
     )
     .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let (state, arguments, base_facts, base_surfaces) = initial_claim_context(
         function_block,
         &parsed_function,
@@ -10698,7 +10698,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
     let parsed_function = syntax::parse_function("int32 constant(int32 x) { return 1; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let mut samples = Vec::new();
@@ -10824,7 +10824,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
     let parsed_function = syntax::parse_function("int32 loop_region(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
 
@@ -10873,10 +10873,10 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
         assert!(outside_loop.certificate().steps().is_empty());
 
         let root = make_root(true);
-        let checks = vec![crate::kernel::CLoopInvariantCheck::new(
+        let checks = vec![crate::kernel::LoopInvariantCheck::new(
             crate::kernel::SpecProposition::Comparison {
                 left: crate::kernel::SpecExpression::Value(int32(0)),
-                operator: crate::kernel::CComparisonOperator::LessEqual,
+                operator: crate::kernel::ComparisonOperator::LessEqual,
                 right: crate::kernel::SpecExpression::Value(int32(0)),
             },
             None,
@@ -11096,7 +11096,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
     let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::Variable(Variable(71_000)),
     ))];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let condition = ClickProposition::Comparison {
         left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::GreaterEqual,
@@ -11319,7 +11319,7 @@ fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
     let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::Variable(Variable(72_000)),
     ))];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let nonnegative = ClickProposition::Comparison {
         left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::GreaterEqual,
@@ -11426,7 +11426,7 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
     let argument =
         ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(60_000))));
     let arguments = vec![argument];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let mut allocation_samples = Vec::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let mut statement_delta: Option<Vec<Proposition>> = None;
@@ -11554,7 +11554,7 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -11564,7 +11564,7 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
         ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(60_001)))),
         ProgramExpression::Value(ProgramValue::pointer(pointer.clone())),
     ];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment =
         ClickFunctionEnvironment::new(click_file.click_function_definitions());
@@ -11640,7 +11640,7 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     }
     for path in terminal_view.frontier.execution().unwrap().paths() {
         assert!(matches!(path.outcome(),
-            CFunctionOutcome::Return { value, .. }
+            FunctionOutcome::Return { value, .. }
                 if matches!(value.native().as_ref(), ProgramValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)) if **at == pointer)));
     }
 
@@ -11727,10 +11727,10 @@ fn generated_load_source_event_fixture(
         },
         crate::kernel::GeneratedLoadBinding::Exact {
             variable: Variable(variable.into()),
-            snapshot: crate::kernel::CMemorySnapshotIdentity::of(&CMemory::new()),
+            snapshot: crate::kernel::MemorySnapshotIdentity::of(&Memory::new()),
             pointer: pointer.clone(),
             load: MachineTerm::MemoryLoad(
-                CMemory::new().into(),
+                Memory::new().into(),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -11959,7 +11959,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
         name: "missing".to_string(),
         arguments: application.arguments.clone(),
     };
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let mut allocation_samples = Vec::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     for size in LOCAL_PROOF_FACT_SIZES {
@@ -12261,7 +12261,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::Variable(Variable(72_000)),
     ))];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let variable =
         |name: &str| ContractExpression::CFragment(ProgramExpression::Variable(name.to_string()));
     let value = |constant| ContractExpression::CFragment(ProgramExpression::Value(int32(constant)));
@@ -12524,12 +12524,12 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         arguments: Vec::new(),
         parameter_types: Vec::new(),
     };
-    let marker_fact = CResourceFact::own_token("marker".to_string(), Vec::new());
+    let marker_fact = ResourceFact::own_token("marker".to_string(), Vec::new());
     let mut ownership_samples = Vec::new();
     for size in [16_u32, 64, 256, 1024, 4096] {
         let resources = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| {
-                CResourceFact::own_token(format!("unrelated_{index}"), vec![int32(index)])
+                ResourceFact::own_token(format!("unrelated_{index}"), vec![int32(index)])
             }))
             .unchecked_with_fact(marker_fact.clone());
         let (split, record) = make_root(16, ExecutionState::new().with_resource_context(resources))
@@ -12587,12 +12587,12 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         arguments: Vec::new(),
         parameter_types: Vec::new(),
     };
-    let permit_fact = CResourceFact::own_token("permit".to_string(), Vec::new());
+    let permit_fact = ResourceFact::own_token("permit".to_string(), Vec::new());
     let mut changed_snapshot_samples = Vec::new();
     for size in [16_u32, 64, 256, 1024, 4096] {
         let resources = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| {
-                CResourceFact::own_token(format!("unrelated_{index}"), vec![int32(index)])
+                ResourceFact::own_token(format!("unrelated_{index}"), vec![int32(index)])
             }))
             .unchecked_with_fact(permit_fact.clone());
         let (split, record) = make_root(16, ExecutionState::new().with_resource_context(resources))
@@ -12665,8 +12665,8 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
                 [ProofStep::Step, ProofStep::FoldResource(_)]
             )
         ));
-        let ready_fact = CResourceFact::own_composite("ready".to_string(), Vec::new());
-        let permit_view = CResourceFact::view_token("permit".to_string(), Vec::new());
+        let ready_fact = ResourceFact::own_composite("ready".to_string(), Vec::new());
+        let permit_view = ResourceFact::view_token("permit".to_string(), Vec::new());
         let contains = Proposition::CResourceContains {
             parent: Box::new(ready_fact.resource().clone()),
             child: Box::new(permit_fact.resource().clone()),
@@ -12724,8 +12724,8 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         );
     }
 
-    let represented_quantity = CResourceFact::own_quantity(
-        CResource::Token {
+    let represented_quantity = ResourceFact::own_quantity(
+        Resource::Token {
             name: "marker".to_string(),
             arguments: Vec::new().into(),
         },
@@ -12735,7 +12735,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     for size in [16_u32, 64, 256, 1024, 4096] {
         let resources = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| {
-                CResourceFact::own_token(format!("quantity_unrelated_{index}"), Vec::new())
+                ResourceFact::own_token(format!("quantity_unrelated_{index}"), Vec::new())
             }))
             .unchecked_with_fact(represented_quantity.clone());
         let (split, record) = make_root(16, ExecutionState::new().with_resource_context(resources))
@@ -12845,7 +12845,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
         ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(73_000)))),
         ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(73_001)))),
     ];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let nonnegative = ClickProposition::Comparison {
         left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
@@ -13008,7 +13008,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         vec![],
         vec![],
         vec![],
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     );
     let helper_arguments = vec![ProgramExpression::Value(bool_value(MachineTerm::Variable(
@@ -13019,24 +13019,24 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         helper.clone(),
         helper_arguments.clone(),
         PureFactContext::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
+        FunctionContractExecutionMode::VerifyLoops,
     );
     let certified = prove_c_function_contract_execution_paths_with_checked_artifacts(
         ExecutionState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments,
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
+        FunctionContractExecutionMode::VerifyLoops,
         &[artifacts],
     );
     let claims = crate::kernel::c_verified_function_contract_claims(&helper, &certified)
         .expect("helper body safety should certify");
     let helper_rule = c_verified_function_rule(helper.clone(), &claims)
         .expect("the checked helper should have a modular rule");
-    let function_environment = CExecutionEnvironment::new()
+    let function_environment = ExecutionEnvironment::new()
         .with_function(helper)
         .with_verified_function_rule(helper_rule);
 
@@ -13199,7 +13199,7 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
     let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::Variable(Variable(75_000)),
     ))];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let make_root = |facts: Vec<Proposition>| {
         let frontier = ExecutionFrontier {
@@ -13469,7 +13469,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
     let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
         MachineTerm::Variable(Variable(80_000)),
     ))];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let mut allocation_samples = Vec::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let mut expected_outcome_fact_sizes = None;
@@ -14011,7 +14011,7 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
             )
             .expect("the marker resource definition should lower"),
         );
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
     let empty_state = ExecutionState::new();
     let lowered = lower_resource_clause(
@@ -14106,12 +14106,12 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
             );
             assert_eq!(root.certificate().steps(), terminal.certificate().steps());
             assert_eq!(root.outcome_result(), current.outcome_result());
-            let CFunctionOutcome::Return { state: initial, .. } =
+            let FunctionOutcome::Return { state: initial, .. } =
                 root.focused_outcome_snapshot().unwrap()
             else {
                 unreachable!()
             };
-            let CFunctionOutcome::Return {
+            let FunctionOutcome::Return {
                 state: final_state, ..
             } = current.focused_outcome_snapshot().unwrap()
             else {
@@ -14159,7 +14159,7 @@ fn execution_entry_retains_prepared_symbolic_write_selection() {
         .resources()
         .facts()
         .iter()
-        .find_map(CResourceFact::memory_own_range)
+        .find_map(ResourceFact::memory_own_range)
         .expect("the written ownership clause remains live")
         .clone();
     let assumptions = facts.context();
@@ -14246,7 +14246,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let target = Pointer::function("callback");
-    let memory = CMemory::new().store(
+    let memory = Memory::new().store(
         table.clone(),
         ProgramValue::typed_pointer(target.clone(), c_type),
     );
@@ -14255,7 +14255,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     let state = ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+            ResourceFact::view_memory(MemoryRange::new_with_element_width(
                 argument.clone(),
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
@@ -14265,7 +14265,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     let arguments = vec![ProgramExpression::Value(ProgramValue::pointer(
         argument.clone(),
     ))];
-    let function_environment = CExecutionEnvironment::new();
+    let function_environment = ExecutionEnvironment::new();
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment =
         ClickFunctionEnvironment::new(click_file.click_function_definitions());
@@ -14947,7 +14947,7 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
 #[test]
 fn partition_assumption_uses_the_fixed_state_not_its_entry_partition() {
     let cell = |name: &str| {
-        CResource::Memory(CMemoryRange::new(
+        Resource::Memory(MemoryRange::new(
             Pointer {
                 block: name.into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -14960,8 +14960,8 @@ fn partition_assumption_uses_the_fixed_state_not_its_entry_partition() {
     let right = cell("partition-right");
     let entry =
         ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_facts([
-            CResourceFact::own(left.clone()),
-            CResourceFact::View(right.clone()),
+            ResourceFact::own(left.clone()),
+            ResourceFact::View(right.clone()),
         ]));
     let goal = Proposition::CResourceSeparate {
         left: Box::new(left.clone()),
@@ -14977,7 +14977,7 @@ fn partition_assumption_uses_the_fixed_state_not_its_entry_partition() {
             entry.clone()
         } else {
             ExecutionState::new().with_resource_context(
-                ResourceContext::new().unchecked_with_facts([CResourceFact::own(left.clone())]),
+                ResourceContext::new().unchecked_with_facts([ResourceFact::own(left.clone())]),
             )
         };
         let root = Proof::for_fixed_state_frontier(

@@ -19,7 +19,7 @@ type ValidShiftCountEvaluator = fn(
     ExecutionFacts,
     Vec<ProofObligation>,
     &PureFactContext,
-) -> Vec<CExpressionPath>;
+) -> Vec<ExpressionPath>;
 
 type ValidInt64ShiftCountEvaluator = fn(
     MachineTerm,
@@ -27,14 +27,14 @@ type ValidInt64ShiftCountEvaluator = fn(
     ExecutionFacts,
     Vec<ProofObligation>,
     &PureFactContext,
-) -> Vec<CExpressionPath>;
+) -> Vec<ExpressionPath>;
 
 fn c_type_mismatch_expression_path(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
-) -> CExpressionPath {
-    CExpressionPath {
-        outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+) -> ExpressionPath {
+    ExpressionPath {
+        outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
         facts,
         obligations,
     }
@@ -46,15 +46,15 @@ fn c_type_mismatch_expression_path(
 /// undefined path under the condition itself.
 fn split_on_undefined_behavior(
     undefined: ConditionTerm,
-    behavior: CUndefinedBehavior,
+    behavior: UndefinedBehavior,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    defined: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
-) -> Vec<CExpressionPath> {
+    defined: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
+) -> Vec<ExpressionPath> {
     match decide_with_facts(assumptions, &facts, &undefined) {
-        Some(true) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(behavior),
+        Some(true) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(behavior),
             facts,
             obligations,
         }],
@@ -67,8 +67,8 @@ fn split_on_undefined_behavior(
             add_arithmetic_branch_fact(&mut undefined_facts, assumptions, undefined, true)
                 .expect("an undecided undefined-behavior condition should be consistent");
             let mut paths = defined(defined_facts, obligations.clone());
-            paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(behavior),
+            paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(behavior),
                 facts: undefined_facts,
                 obligations,
             });
@@ -140,7 +140,7 @@ enum ScalarWidth {
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::kernel) enum CBitwiseOperation {
+pub(in crate::kernel) enum BitwiseOperation {
     And,
     Or,
     Xor,
@@ -236,24 +236,24 @@ fn apply_c_float_binary(
     left: ProgramValue,
     right: ProgramValue,
     target_type: ProgramType,
-    operator: CFloatBinaryOperator,
+    operator: FloatBinaryOperator,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let outcome = match (target_type, left, right) {
         (ProgramType::Float32, ProgramValue::Float32(left), ProgramValue::Float32(right)) => {
-            CExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::float32_binary(
+            ExpressionOutcome::Value(ProgramValue::Float32(MachineTerm::float32_binary(
                 left, right, operator,
             )))
         }
         (ProgramType::Float64, ProgramValue::Float64(left), ProgramValue::Float64(right)) => {
-            CExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::float64_binary(
+            ExpressionOutcome::Value(ProgramValue::Float64(MachineTerm::float64_binary(
                 left, right, operator,
             )))
         }
-        _ => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+        _ => ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
     };
-    vec![CExpressionPath {
+    vec![ExpressionPath {
         outcome,
         facts,
         obligations,
@@ -264,11 +264,11 @@ fn apply_c_float_comparison(
     left: ProgramValue,
     right: ProgramValue,
     target_type: ProgramType,
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let condition = match (target_type, left, right) {
         (ProgramType::Float32, ProgramValue::Float32(left), ProgramValue::Float32(right)) => {
             ConditionTerm::float32_compare(left, right, operator)
@@ -287,30 +287,30 @@ pub(in crate::kernel) fn evaluate_c_add_paths(
     right: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let mut paths = Vec::new();
     let left_step_width = c_expression_pointer_step_width(state, left);
     let right_step_width = c_expression_pointer_step_width(state, right);
     for left_path in evaluate_c_expression_paths(state, left, assumptions, budget)? {
-        let CExpressionPath {
+        let ExpressionPath {
             outcome: left_outcome,
             facts: left_facts,
             obligations: left_obligations,
         } = left_path;
 
         let left = match left_outcome {
-            CExpressionOutcome::Value(value) => value,
-            CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+            ExpressionOutcome::Value(value) => value,
+            ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                     facts: left_facts,
                     obligations: left_obligations,
                 });
                 continue;
             }
-            CExpressionOutcome::RuntimeError(error) => {
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::RuntimeError(error),
+            ExpressionOutcome::RuntimeError(error) => {
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::RuntimeError(error),
                     facts: left_facts,
                     obligations: left_obligations,
                 });
@@ -321,8 +321,8 @@ pub(in crate::kernel) fn evaluate_c_add_paths(
         // A binary operator operating on a freed pointer uses its
         // indeterminate value; see `freed_pointer_use`.
         if let Some(undefined_behavior) = freed_pointer_use(state, &left, assumptions) {
-            paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+            paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                 facts: left_facts,
                 obligations: left_obligations,
             });
@@ -346,18 +346,18 @@ pub(in crate::kernel) fn evaluate_c_add_paths(
             };
 
             let right = match right_path.outcome {
-                CExpressionOutcome::Value(value) => value,
-                CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                    paths.push(CExpressionPath {
-                        outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+                ExpressionOutcome::Value(value) => value,
+                ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                    paths.push(ExpressionPath {
+                        outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                         facts,
                         obligations,
                     });
                     continue;
                 }
-                CExpressionOutcome::RuntimeError(error) => {
-                    paths.push(CExpressionPath {
-                        outcome: CExpressionOutcome::RuntimeError(error),
+                ExpressionOutcome::RuntimeError(error) => {
+                    paths.push(ExpressionPath {
+                        outcome: ExpressionOutcome::RuntimeError(error),
                         facts,
                         obligations,
                     });
@@ -393,8 +393,8 @@ pub(in crate::kernel) fn evaluate_c_add_paths(
 /// Only executed C folds: a written proposition is lowered through
 /// [`apply_c_add`] directly and keeps the shape its proof names, in which a
 /// compound operand can be an opaque affine atom.
-pub(super) fn fold_c_int32_constant_increment(mut path: CExpressionPath) -> CExpressionPath {
-    if let CExpressionOutcome::Value(ProgramValue::Int32(binary_term!(Int32, Add, base, increment))) =
+pub(super) fn fold_c_int32_constant_increment(mut path: ExpressionPath) -> ExpressionPath {
+    if let ExpressionOutcome::Value(ProgramValue::Int32(binary_term!(Int32, Add, base, increment))) =
         &path.outcome
         && let (binary_term!(Int32, Add, inner, addend), bits32_constant!(increment)) =
             (base.as_ref(), increment.as_ref())
@@ -402,7 +402,7 @@ pub(super) fn fold_c_int32_constant_increment(mut path: CExpressionPath) -> CExp
         && let Some(sum) =
             (constant_u32(*addend) as i32).checked_add(constant_u32(*increment) as i32)
     {
-        path.outcome = CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::add(
+        path.outcome = ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::add(
             inner.as_ref().clone(),
             MachineTerm::constant(sum as u32),
         )));
@@ -413,15 +413,15 @@ pub(super) fn fold_c_int32_constant_increment(mut path: CExpressionPath) -> CExp
 /// Preserve only a producer-retained carrier through checked tag operations.
 /// The numeric address graph may justify bit identities but cannot supply it.
 fn retain_tagged_representation(
-    mut paths: Vec<CExpressionPath>,
+    mut paths: Vec<ExpressionPath>,
     record: Option<PointerIntegerValue>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let Some(mut record) = record else {
         return paths;
     };
     for path in &mut paths {
-        let CExpressionOutcome::Value(value) = &path.outcome else {
+        let ExpressionOutcome::Value(value) = &path.outcome else {
             continue;
         };
         if !matches!(value, ProgramValue::Int64(_) | ProgramValue::UInt64(_)) {
@@ -444,7 +444,7 @@ fn retain_tagged_representation(
         }
         let mut retained = record.clone();
         retained.numeric = Box::new(value.clone());
-        path.outcome = CExpressionOutcome::Value(ProgramValue::PointerInteger(retained));
+        path.outcome = ExpressionOutcome::Value(ProgramValue::PointerInteger(retained));
     }
     paths
 }
@@ -458,7 +458,7 @@ pub(in crate::kernel) fn apply_c_add(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     if let Some((left, right, target_type, obligations)) =
         coerce_c_float_operands(&left, &right, &obligations, assumptions)
     {
@@ -466,7 +466,7 @@ pub(in crate::kernel) fn apply_c_add(
             left,
             right,
             target_type,
-            CFloatBinaryOperator::Add,
+            FloatBinaryOperator::Add,
             facts,
             obligations,
         );
@@ -517,8 +517,8 @@ pub(in crate::kernel) fn apply_c_add(
             let Some(right) = promote_c_path_value(right, MachineIntegerType::UInt32) else {
                 return Vec::new();
             };
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(uint32(MachineTerm::add_at(
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(uint32(MachineTerm::add_at(
                     crate::kernel::MachineIntegerType::UInt32,
                     left,
                     right,
@@ -546,9 +546,9 @@ pub(in crate::kernel) fn apply_c_add(
                 return Vec::new();
             };
             let Some(byte_width) = pointer_value_step_width(&pointer, left_step_width) else {
-                return vec![CExpressionPath {
-                    outcome: CExpressionOutcome::RuntimeError(
-                        CRuntimeError::IndeterminatePointeeType,
+                return vec![ExpressionPath {
+                    outcome: ExpressionOutcome::RuntimeError(
+                        RuntimeError::IndeterminatePointeeType,
                     ),
                     facts,
                     obligations,
@@ -573,9 +573,9 @@ pub(in crate::kernel) fn apply_c_add(
                 return Vec::new();
             };
             let Some(byte_width) = pointer_value_step_width(&pointer, right_step_width) else {
-                return vec![CExpressionPath {
-                    outcome: CExpressionOutcome::RuntimeError(
-                        CRuntimeError::IndeterminatePointeeType,
+                return vec![ExpressionPath {
+                    outcome: ExpressionOutcome::RuntimeError(
+                        RuntimeError::IndeterminatePointeeType,
                     ),
                     facts,
                     obligations,
@@ -604,8 +604,8 @@ pub(in crate::kernel) fn evaluate_c_comparison_paths(
     right: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-    operator: CComparisonOperator,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+    operator: ComparisonOperator,
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let left_step_width = c_expression_pointer_step_width(state, left);
     let right_step_width = c_expression_pointer_step_width(state, right);
     evaluate_c_value_binary_paths(
@@ -636,7 +636,7 @@ pub(in crate::kernel) fn evaluate_c_subtract_paths(
     right: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let left_step_width = c_expression_pointer_step_width(state, left);
     let right_step_width = c_expression_pointer_step_width(state, right);
     evaluate_c_value_binary_paths(
@@ -671,28 +671,28 @@ pub(in crate::kernel) fn evaluate_c_value_binary_paths(
         ProgramValue,
         ExecutionFacts,
         Vec<ProofObligation>,
-    ) -> Vec<CExpressionPath>,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+    ) -> Vec<ExpressionPath>,
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let mut paths = Vec::new();
     for left_path in evaluate_c_expression_paths(state, left, assumptions, budget)? {
-        let CExpressionPath {
+        let ExpressionPath {
             outcome: left_outcome,
             facts: left_facts,
             obligations: left_obligations,
         } = left_path;
         let left = match left_outcome {
-            CExpressionOutcome::Value(value) => value,
-            CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+            ExpressionOutcome::Value(value) => value,
+            ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                     facts: left_facts,
                     obligations: left_obligations,
                 });
                 continue;
             }
-            CExpressionOutcome::RuntimeError(error) => {
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::RuntimeError(error),
+            ExpressionOutcome::RuntimeError(error) => {
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::RuntimeError(error),
                     facts: left_facts,
                     obligations: left_obligations,
                 });
@@ -703,8 +703,8 @@ pub(in crate::kernel) fn evaluate_c_value_binary_paths(
         // A binary operator operating on a freed pointer uses its
         // indeterminate value; see `freed_pointer_use`.
         if let Some(undefined_behavior) = freed_pointer_use(state, &left, assumptions) {
-            paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+            paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                 facts: left_facts,
                 obligations: left_obligations,
             });
@@ -728,19 +728,19 @@ pub(in crate::kernel) fn evaluate_c_value_binary_paths(
             };
 
             match right_path.outcome {
-                CExpressionOutcome::Value(value) => {
+                ExpressionOutcome::Value(value) => {
                     paths.extend(apply(left.clone(), value, facts, obligations));
                 }
-                CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                    paths.push(CExpressionPath {
-                        outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+                ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                    paths.push(ExpressionPath {
+                        outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                         facts,
                         obligations,
                     });
                 }
-                CExpressionOutcome::RuntimeError(error) => {
-                    paths.push(CExpressionPath {
-                        outcome: CExpressionOutcome::RuntimeError(error),
+                ExpressionOutcome::RuntimeError(error) => {
+                    paths.push(ExpressionPath {
+                        outcome: ExpressionOutcome::RuntimeError(error),
                         facts,
                         obligations,
                     });
@@ -784,7 +784,7 @@ impl WideArithmetic {
         facts: ExecutionFacts,
         obligations: Vec<ProofObligation>,
         assumptions: &PureFactContext,
-    ) -> Vec<CExpressionPath> {
+    ) -> Vec<ExpressionPath> {
         let Some((left, right, _)) = apply_c_scalar_terms(left, right) else {
             return Vec::new();
         };
@@ -864,8 +864,8 @@ impl WideArithmetic {
                         );
                     }
                 };
-                vec![CExpressionPath {
-                    outcome: CExpressionOutcome::Value(ProgramValue::UInt64(result(left, right))),
+                vec![ExpressionPath {
+                    outcome: ExpressionOutcome::Value(ProgramValue::UInt64(result(left, right))),
                     facts,
                     obligations,
                 }]
@@ -876,50 +876,50 @@ impl WideArithmetic {
 }
 
 fn apply_c_wide_comparison(
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     left: ProgramValue,
     right: ProgramValue,
     width: ScalarWidth,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let Some((left, right, _)) = apply_c_scalar_terms(left, right) else {
         return Vec::new();
     };
     let condition = match (width, operator) {
-        (ScalarWidth::Int64, CComparisonOperator::LessThan) => {
+        (ScalarWidth::Int64, ComparisonOperator::LessThan) => {
             ConditionTerm::int64_signed_less_than(left, right)
         }
-        (ScalarWidth::Int64, CComparisonOperator::LessEqual) => {
+        (ScalarWidth::Int64, ComparisonOperator::LessEqual) => {
             ConditionTerm::int64_signed_less_equal(left, right)
         }
-        (ScalarWidth::Int64, CComparisonOperator::GreaterThan) => {
+        (ScalarWidth::Int64, ComparisonOperator::GreaterThan) => {
             ConditionTerm::int64_signed_greater_than(left, right)
         }
-        (ScalarWidth::Int64, CComparisonOperator::GreaterEqual) => {
+        (ScalarWidth::Int64, ComparisonOperator::GreaterEqual) => {
             ConditionTerm::int64_signed_greater_equal(left, right)
         }
-        (ScalarWidth::UInt64, CComparisonOperator::LessThan) => {
+        (ScalarWidth::UInt64, ComparisonOperator::LessThan) => {
             ConditionTerm::uint64_less_than(left, right)
         }
-        (ScalarWidth::UInt64, CComparisonOperator::LessEqual) => {
+        (ScalarWidth::UInt64, ComparisonOperator::LessEqual) => {
             ConditionTerm::uint64_less_equal(left, right)
         }
-        (ScalarWidth::UInt64, CComparisonOperator::GreaterThan) => {
+        (ScalarWidth::UInt64, ComparisonOperator::GreaterThan) => {
             ConditionTerm::uint64_greater_than(left, right)
         }
-        (ScalarWidth::UInt64, CComparisonOperator::GreaterEqual) => {
+        (ScalarWidth::UInt64, ComparisonOperator::GreaterEqual) => {
             ConditionTerm::uint64_greater_equal(left, right)
         }
-        (ScalarWidth::Int64 | ScalarWidth::UInt64, CComparisonOperator::Equal) => {
+        (ScalarWidth::Int64 | ScalarWidth::UInt64, ComparisonOperator::Equal) => {
             if matches!(width, ScalarWidth::Int64) {
                 ConditionTerm::int64_equal(left, right)
             } else {
                 ConditionTerm::uint64_equal(left, right)
             }
         }
-        (ScalarWidth::Int64 | ScalarWidth::UInt64, CComparisonOperator::NotEqual) => {
+        (ScalarWidth::Int64 | ScalarWidth::UInt64, ComparisonOperator::NotEqual) => {
             let equal = if matches!(width, ScalarWidth::Int64) {
                 ConditionTerm::int64_equal(left, right)
             } else {
@@ -938,7 +938,7 @@ pub(in crate::kernel) fn apply_c_multiply(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     if matches!(left, ProgramValue::Int128(_)) || matches!(right, ProgramValue::Int128(_)) {
         return apply_c_int128_multiply(left, right, facts, obligations, assumptions);
     }
@@ -949,7 +949,7 @@ pub(in crate::kernel) fn apply_c_multiply(
             left,
             right,
             target_type,
-            CFloatBinaryOperator::Multiply,
+            FloatBinaryOperator::Multiply,
             facts,
             obligations,
         );
@@ -968,8 +968,8 @@ pub(in crate::kernel) fn apply_c_multiply(
         return Vec::new();
     };
     if matches!(width, ScalarWidth::UInt32) {
-        vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(uint32(MachineTerm::multiply_at(
+        vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(uint32(MachineTerm::multiply_at(
                 crate::kernel::MachineIntegerType::UInt32,
                 left,
                 right,
@@ -992,7 +992,7 @@ fn apply_c_int128_multiply(
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     fn observe(value: ProgramValue, assumptions: &PureFactContext) -> Option<IntegerTerm> {
         let ty = match value.c_type() {
             // Boolean operands are normalized 0/1. The other narrow types
@@ -1061,9 +1061,9 @@ fn apply_c_int128_multiply(
             .or_else(|| decide_with_facts(assumptions, &facts, &equivalent))
         {
             Some(false) => {
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::SignedOverflow,
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(
+                        UndefinedBehavior::SignedOverflow,
                     ),
                     facts,
                     obligations,
@@ -1075,9 +1075,9 @@ fn apply_c_int128_multiply(
                 let mut overflow_facts = facts.clone();
                 add_condition_path_fact(&mut overflow_facts, assumptions, guard.clone(), false)
                     .expect("unknown wide multiplication bound must have a consistent false path");
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::SignedOverflow,
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(
+                        UndefinedBehavior::SignedOverflow,
                     ),
                     facts: overflow_facts,
                     obligations: obligations.clone(),
@@ -1110,8 +1110,8 @@ fn apply_c_int128_multiply(
             definition, true,
         )));
     }
-    paths.push(CExpressionPath {
-        outcome: CExpressionOutcome::Value(ProgramValue::Int128(term)),
+    paths.push(ExpressionPath {
+        outcome: ExpressionOutcome::Value(ProgramValue::Int128(term)),
         facts,
         obligations,
     });
@@ -1121,33 +1121,33 @@ fn apply_c_int128_multiply(
 /// Compare already-resolved wide operands by their full mathematical values.
 /// Signedness belongs to the observer, and promotions remain caller-owned.
 fn apply_c_int128_comparison(
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     left: ProgramValue,
     right: ProgramValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let Some(condition) = wide_integer_comparison_condition(operator, &left, &right) else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     };
     // Complementary relations have separate Integer nodes. Query the two
     // exact keys without scanning unrelated premises or changing the guard.
     let complement = match operator {
-        CComparisonOperator::Equal => CComparisonOperator::NotEqual,
-        CComparisonOperator::NotEqual => CComparisonOperator::Equal,
-        CComparisonOperator::LessThan => CComparisonOperator::GreaterEqual,
-        CComparisonOperator::LessEqual => CComparisonOperator::GreaterThan,
-        CComparisonOperator::GreaterThan => CComparisonOperator::LessEqual,
-        CComparisonOperator::GreaterEqual => CComparisonOperator::LessThan,
+        ComparisonOperator::Equal => ComparisonOperator::NotEqual,
+        ComparisonOperator::NotEqual => ComparisonOperator::Equal,
+        ComparisonOperator::LessThan => ComparisonOperator::GreaterEqual,
+        ComparisonOperator::LessEqual => ComparisonOperator::GreaterThan,
+        ComparisonOperator::GreaterThan => ComparisonOperator::LessEqual,
+        ComparisonOperator::GreaterEqual => ComparisonOperator::LessThan,
     };
     let known = decide_with_facts(assumptions, &facts, &condition).or_else(|| {
         let opposite = wide_integer_comparison_condition(complement, &left, &right)?;
         decide_with_facts(assumptions, &facts, &opposite).map(|truth| !truth)
     });
     if let Some(truth) = known {
-        return vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(int32(u32::from(truth))),
+        return vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(int32(u32::from(truth))),
             facts,
             obligations,
         }];
@@ -1157,7 +1157,7 @@ fn apply_c_int128_comparison(
 
 /// One condition representation for native execution and pure-spec transport.
 pub(in crate::kernel) fn wide_integer_comparison_condition(
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     left: &ProgramValue,
     right: &ProgramValue,
 ) -> Option<ConditionTerm> {
@@ -1169,12 +1169,12 @@ pub(in crate::kernel) fn wide_integer_comparison_condition(
     let left = IntegerTerm::from_machine(ty, left.clone())?;
     let right = IntegerTerm::from_machine(ty, right.clone())?;
     Some(match operator {
-        CComparisonOperator::Equal => ConditionTerm::integer_equal(left, right),
-        CComparisonOperator::NotEqual => ConditionTerm::integer_not_equal(left, right),
-        CComparisonOperator::LessThan => ConditionTerm::integer_less_than(left, right),
-        CComparisonOperator::LessEqual => ConditionTerm::integer_less_equal(left, right),
-        CComparisonOperator::GreaterThan => ConditionTerm::integer_greater_than(left, right),
-        CComparisonOperator::GreaterEqual => ConditionTerm::integer_greater_equal(left, right),
+        ComparisonOperator::Equal => ConditionTerm::integer_equal(left, right),
+        ComparisonOperator::NotEqual => ConditionTerm::integer_not_equal(left, right),
+        ComparisonOperator::LessThan => ConditionTerm::integer_less_than(left, right),
+        ComparisonOperator::LessEqual => ConditionTerm::integer_less_equal(left, right),
+        ComparisonOperator::GreaterThan => ConditionTerm::integer_greater_than(left, right),
+        ComparisonOperator::GreaterEqual => ConditionTerm::integer_greater_equal(left, right),
     })
 }
 
@@ -1210,7 +1210,7 @@ fn apply_c_int128_division_like(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     remainder: bool,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let (destination, left, right) = match (left, right) {
         (ProgramValue::Int128(a), ProgramValue::Int128(b)) => (MachineIntegerType::Int128, a, b),
         (ProgramValue::UInt128(a), ProgramValue::UInt128(b)) => (MachineIntegerType::UInt128, a, b),
@@ -1231,8 +1231,8 @@ fn apply_c_int128_division_like(
         IntegerTerm::constant_i64(0),
     ) {
         Some(true) => {
-            return vec![CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero),
+            return vec![ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero),
                 facts,
                 obligations,
             }];
@@ -1242,8 +1242,8 @@ fn apply_c_int128_division_like(
             let mut bad = facts.clone();
             add_condition_path_fact(&mut bad, assumptions, zero.clone(), true)
                 .expect("unknown divisor has a zero path");
-            paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero),
+            paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero),
                 facts: bad,
                 obligations: obligations.clone(),
             });
@@ -1339,9 +1339,9 @@ fn apply_c_int128_division_like(
         });
         match known {
             Some(true) => {
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::SignedOverflow,
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(
+                        UndefinedBehavior::SignedOverflow,
                     ),
                     facts,
                     obligations,
@@ -1353,9 +1353,9 @@ fn apply_c_int128_division_like(
                 let mut bad = facts.clone();
                 add_path_fact(&mut bad, assumptions, overflow.unwrap())
                     .expect("unknown signed overflow has an overflow path");
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::SignedOverflow,
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(
+                        UndefinedBehavior::SignedOverflow,
                     ),
                     facts: bad,
                     obligations: obligations.clone(),
@@ -1392,8 +1392,8 @@ fn apply_c_int128_division_like(
             definition, true,
         )));
     }
-    paths.push(CExpressionPath {
-        outcome: CExpressionOutcome::Value(match destination {
+    paths.push(ExpressionPath {
+        outcome: ExpressionOutcome::Value(match destination {
             MachineIntegerType::Int128 => ProgramValue::Int128(term),
             MachineIntegerType::UInt128 => ProgramValue::UInt128(term),
             _ => unreachable!(),
@@ -1410,7 +1410,7 @@ pub(in crate::kernel) fn apply_c_divide(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     if matches!(left, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
         || matches!(right, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
     {
@@ -1424,7 +1424,7 @@ pub(in crate::kernel) fn apply_c_divide(
             left,
             right,
             target_type,
-            CFloatBinaryOperator::Divide,
+            FloatBinaryOperator::Divide,
             facts,
             obligations,
         );
@@ -1461,7 +1461,7 @@ pub(in crate::kernel) fn apply_c_remainder(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     if matches!(left, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
         || matches!(right, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
     {
@@ -1580,14 +1580,14 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    operation: CBitwiseOperation,
-) -> Vec<CExpressionPath> {
+    operation: BitwiseOperation,
+) -> Vec<ExpressionPath> {
     let tag_source = |value: &ProgramValue, mask: &ProgramValue| match value {
         ProgramValue::PointerInteger(record) => {
             let mask =
                 promote_c_path_value(mask.clone(), MachineIntegerType::UInt64).and_then(|bits| {
                     bits.uint64_as_const().or_else(|| {
-                        matches!(operation, CBitwiseOperation::Or)
+                        matches!(operation, BitwiseOperation::Or)
                             .then(|| {
                                 super::pointer_tags::tag_bound_citing(
                                     crate::kernel::MachineOperandView::Legacy(&bits),
@@ -1599,11 +1599,11 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
                     })
                 });
             let supported = match (operation, mask) {
-                (CBitwiseOperation::And, Some(mask)) => {
+                (BitwiseOperation::And, Some(mask)) => {
                     (!mask).checked_add(1).is_some_and(u64::is_power_of_two)
                 }
-                (CBitwiseOperation::Or, Some(mask)) if mask < 8 => true,
-                (CBitwiseOperation::Or, _)
+                (BitwiseOperation::Or, Some(mask)) if mask < 8 => true,
+                (BitwiseOperation::Or, _)
                     if !matches!(record.kind, PointerIntegerKind::Word { .. }) =>
                 {
                     true
@@ -1615,9 +1615,9 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
                 if let PointerIntegerKind::Word { changed_bits } = &mut retained.kind {
                     let mask = mask.expect("opaque words only retain bounded tag operations");
                     match operation {
-                        CBitwiseOperation::And => *changed_bits &= mask,
-                        CBitwiseOperation::Or => *changed_bits |= mask,
-                        CBitwiseOperation::Xor => unreachable!(),
+                        BitwiseOperation::And => *changed_bits &= mask,
+                        BitwiseOperation::Or => *changed_bits |= mask,
+                        BitwiseOperation::Xor => unreachable!(),
                     }
                 }
                 retained
@@ -1634,37 +1634,37 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
             return Vec::new();
         };
         let value = match (width, operation) {
-            (ScalarWidth::Int64, CBitwiseOperation::And) => {
+            (ScalarWidth::Int64, BitwiseOperation::And) => {
                 MachineTerm::int64_bitwise_and(left, right)
             }
-            (ScalarWidth::Int64, CBitwiseOperation::Or) => {
+            (ScalarWidth::Int64, BitwiseOperation::Or) => {
                 MachineTerm::int64_bitwise_or(left, right)
             }
-            (ScalarWidth::Int64, CBitwiseOperation::Xor) => {
+            (ScalarWidth::Int64, BitwiseOperation::Xor) => {
                 MachineTerm::int64_bitwise_xor(left, right)
             }
-            (ScalarWidth::UInt64, CBitwiseOperation::And) => {
+            (ScalarWidth::UInt64, BitwiseOperation::And) => {
                 MachineTerm::uint64_bitwise_and(left, right)
             }
-            (ScalarWidth::UInt64, CBitwiseOperation::Or) => {
+            (ScalarWidth::UInt64, BitwiseOperation::Or) => {
                 MachineTerm::uint64_bitwise_or(left, right)
             }
-            (ScalarWidth::UInt64, CBitwiseOperation::Xor) => {
+            (ScalarWidth::UInt64, BitwiseOperation::Xor) => {
                 MachineTerm::uint64_bitwise_xor(left, right)
             }
             (ScalarWidth::Int32 | ScalarWidth::UInt32, _) => unreachable!(),
         };
         if matches!(
             (width, operation),
-            (ScalarWidth::UInt64, CBitwiseOperation::And)
+            (ScalarWidth::UInt64, BitwiseOperation::And)
         ) && let Some(equation) = bounded_uint64_tag_equation(&value, assumptions)
         {
             facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
                 equation, true,
             )));
         }
-        let paths = vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(match width {
+        let paths = vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(match width {
                 ScalarWidth::Int64 => ProgramValue::Int64(value),
                 ScalarWidth::UInt64 => ProgramValue::UInt64(value),
                 ScalarWidth::Int32 | ScalarWidth::UInt32 => unreachable!(),
@@ -1685,20 +1685,20 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
     let Some((left, right, width)) = apply_c_scalar_terms(left, right) else {
         return Vec::new();
     };
-    vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(if matches!(width, ScalarWidth::UInt32) {
+    vec![ExpressionPath {
+        outcome: ExpressionOutcome::Value(if matches!(width, ScalarWidth::UInt32) {
             uint32(match operation {
-                CBitwiseOperation::And => MachineTerm::bitwise_and_at(
+                BitwiseOperation::And => MachineTerm::bitwise_and_at(
                     crate::kernel::MachineIntegerType::UInt32,
                     left,
                     right,
                 ),
-                CBitwiseOperation::Or => MachineTerm::bitwise_or_at(
+                BitwiseOperation::Or => MachineTerm::bitwise_or_at(
                     crate::kernel::MachineIntegerType::UInt32,
                     left,
                     right,
                 ),
-                CBitwiseOperation::Xor => MachineTerm::bitwise_xor_at(
+                BitwiseOperation::Xor => MachineTerm::bitwise_xor_at(
                     crate::kernel::MachineIntegerType::UInt32,
                     left,
                     right,
@@ -1706,9 +1706,9 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
             })
         } else {
             int32(match operation {
-                CBitwiseOperation::And => MachineTerm::bitwise_and(left, right),
-                CBitwiseOperation::Or => MachineTerm::bitwise_or(left, right),
-                CBitwiseOperation::Xor => MachineTerm::bitwise_xor(left, right),
+                BitwiseOperation::And => MachineTerm::bitwise_and(left, right),
+                BitwiseOperation::Or => MachineTerm::bitwise_or(left, right),
+                BitwiseOperation::Xor => MachineTerm::bitwise_xor(left, right),
             })
         }),
         facts,
@@ -1720,26 +1720,26 @@ pub(in crate::kernel) fn apply_c_bitwise_not(
     value: ProgramValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     match value.numeric_value().clone() {
         // Rule C1: C promotes a `Bool` to its cast at `int32` first.
-        ProgramValue::Bool(value) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(int32(MachineTerm::bitwise_not(
+        ProgramValue::Bool(value) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(int32(MachineTerm::bitwise_not(
                 MachineTerm::bool_word_as(MachineIntegerType::Int32, &value),
             ))),
             facts,
             obligations,
         }],
-        ProgramValue::UInt32(value) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(uint32(MachineTerm::bitwise_not_at(
+        ProgramValue::UInt32(value) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(uint32(MachineTerm::bitwise_not_at(
                 crate::kernel::MachineIntegerType::UInt32,
                 value,
             ))),
             facts,
             obligations,
         }],
-        ProgramValue::Int32(value) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(int32(MachineTerm::bitwise_not(value))),
+        ProgramValue::Int32(value) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(int32(MachineTerm::bitwise_not(value))),
             facts,
             obligations,
         }],
@@ -1751,21 +1751,21 @@ pub(in crate::kernel) fn apply_c_bitwise_not(
             let Some(value) = promote_c_path_value(narrow, MachineIntegerType::Int32) else {
                 return Vec::new();
             };
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(int32(MachineTerm::bitwise_not(value))),
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(int32(MachineTerm::bitwise_not(value))),
                 facts,
                 obligations,
             }]
         }
-        ProgramValue::Int64(value) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(ProgramValue::Int64(
-                MachineTerm::int64_bitwise_not(value),
-            )),
+        ProgramValue::Int64(value) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(ProgramValue::Int64(MachineTerm::int64_bitwise_not(
+                value,
+            ))),
             facts,
             obligations,
         }],
-        ProgramValue::UInt64(value) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(ProgramValue::UInt64(
+        ProgramValue::UInt64(value) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(ProgramValue::UInt64(
                 MachineTerm::uint64_bitwise_not(value),
             )),
             facts,
@@ -1836,14 +1836,14 @@ fn pointer_element_indices(
 pub(in crate::kernel) fn pointer_order_condition(
     left: MachineTerm,
     right: MachineTerm,
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
 ) -> ConditionTerm {
     match operator {
-        CComparisonOperator::LessThan => ConditionTerm::signed_less_than(left, right),
-        CComparisonOperator::LessEqual => ConditionTerm::signed_less_equal(left, right),
-        CComparisonOperator::GreaterThan => ConditionTerm::signed_greater_than(left, right),
-        CComparisonOperator::GreaterEqual => ConditionTerm::signed_greater_equal(left, right),
-        CComparisonOperator::Equal | CComparisonOperator::NotEqual => {
+        ComparisonOperator::LessThan => ConditionTerm::signed_less_than(left, right),
+        ComparisonOperator::LessEqual => ConditionTerm::signed_less_equal(left, right),
+        ComparisonOperator::GreaterThan => ConditionTerm::signed_greater_than(left, right),
+        ComparisonOperator::GreaterEqual => ConditionTerm::signed_greater_equal(left, right),
+        ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
             unreachable!("pointer order condition received equality operator")
         }
     }
@@ -1852,14 +1852,14 @@ pub(in crate::kernel) fn pointer_order_condition(
 fn uint32_order_condition(
     left: MachineTerm,
     right: MachineTerm,
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
 ) -> ConditionTerm {
     match operator {
-        CComparisonOperator::LessThan => ConditionTerm::unsigned_less_than(left, right),
-        CComparisonOperator::LessEqual => ConditionTerm::unsigned_less_equal(left, right),
-        CComparisonOperator::GreaterThan => ConditionTerm::unsigned_greater_than(left, right),
-        CComparisonOperator::GreaterEqual => ConditionTerm::unsigned_greater_equal(left, right),
-        CComparisonOperator::Equal | CComparisonOperator::NotEqual => {
+        ComparisonOperator::LessThan => ConditionTerm::unsigned_less_than(left, right),
+        ComparisonOperator::LessEqual => ConditionTerm::unsigned_less_equal(left, right),
+        ComparisonOperator::GreaterThan => ConditionTerm::unsigned_greater_than(left, right),
+        ComparisonOperator::GreaterEqual => ConditionTerm::unsigned_greater_equal(left, right),
+        ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
             unreachable!("uint32 order condition received equality operator")
         }
     }
@@ -1872,8 +1872,8 @@ fn apply_same_object_pointer_operation(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply: impl FnOnce(Pointer, Pointer, ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
-) -> Vec<CExpressionPath> {
+    apply: impl FnOnce(Pointer, Pointer, ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
+) -> Vec<ExpressionPath> {
     let left_is_null = pointer_object_is_null_condition(&left);
     apply_pointer_object_nonnull_guard(
         state,
@@ -1914,8 +1914,8 @@ fn apply_pointer_object_nonnull_guard(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
-) -> Vec<CExpressionPath> {
+    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
+) -> Vec<ExpressionPath> {
     if pointer_has_object_provenance_evidence(state, pointer, assumptions, &facts) {
         let mut facts = facts;
         if add_condition_path_fact(&mut facts, assumptions, is_null, false).is_none() {
@@ -1934,7 +1934,7 @@ fn pointer_has_object_provenance_evidence(
 ) -> bool {
     let decide =
         |condition: ConditionTerm| decide_with_facts(assumptions, facts, &condition) == Some(true);
-    let establishes_object = |fact: &CResourceFact| {
+    let establishes_object = |fact: &ResourceFact| {
         let Some(range) = fact.memory_range() else {
             return false;
         };
@@ -1986,12 +1986,12 @@ fn apply_pointer_provenance_guard(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
-) -> Vec<CExpressionPath> {
+    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
+) -> Vec<ExpressionPath> {
     match decide_with_facts(assumptions, &facts, &condition) {
         Some(value) if value == expected => apply(facts, obligations),
-        Some(_) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
+        Some(_) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
             facts,
             obligations,
         }],
@@ -2004,10 +2004,8 @@ fn apply_pointer_provenance_guard(
             let mut invalid_facts = facts;
             add_condition_path_fact(&mut invalid_facts, assumptions, condition, !expected)
                 .expect("invalid pointer provenance guard should be consistent");
-            paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(
-                    CUndefinedBehavior::PointerArithmetic,
-                ),
+            paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
                 facts: invalid_facts,
                 obligations,
             });
@@ -2088,14 +2086,14 @@ fn compared_pointer_holders_composition(
         return None;
     }
     let separation = Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(left_member.clone())),
-        right: Box::new(CResource::Memory(right_member.clone())),
+        left: Box::new(Resource::Memory(left_member.clone())),
+        right: Box::new(Resource::Memory(right_member.clone())),
     };
     let composition = ResourceContext::new()
         .try_compose_with_facts_delaying_normalization(
             [left_member, right_member]
                 .into_iter()
-                .map(CResourceFact::own_memory),
+                .map(ResourceFact::own_memory),
             assumptions,
         )
         .ok()?;
@@ -2104,7 +2102,7 @@ fn compared_pointer_holders_composition(
 
 pub(super) fn apply_c_comparison(
     state: &ExecutionState,
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     left: ProgramValue,
     right: ProgramValue,
     left_step_width: Option<u32>,
@@ -2112,7 +2110,7 @@ pub(super) fn apply_c_comparison(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     if matches!(left, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
         || matches!(right, ProgramValue::Int128(_) | ProgramValue::UInt128(_))
     {
@@ -2163,9 +2161,9 @@ pub(super) fn apply_c_comparison(
                 move |left, right, facts, obligations| {
                     let Some((left, right)) = pointer_element_indices(&left, &right, byte_width)
                     else {
-                        return vec![CExpressionPath {
-                            outcome: CExpressionOutcome::RuntimeError(
-                                CRuntimeError::IndeterminatePointeeType,
+                        return vec![ExpressionPath {
+                            outcome: ExpressionOutcome::RuntimeError(
+                                RuntimeError::IndeterminatePointeeType,
                             ),
                             facts,
                             obligations,
@@ -2241,7 +2239,7 @@ pub(in crate::kernel) fn apply_c_subtract(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     if let Some((left, right, target_type, obligations)) =
         coerce_c_float_operands(&left, &right, &obligations, assumptions)
     {
@@ -2249,7 +2247,7 @@ pub(in crate::kernel) fn apply_c_subtract(
             left,
             right,
             target_type,
-            CFloatBinaryOperator::Subtract,
+            FloatBinaryOperator::Subtract,
             facts,
             obligations,
         );
@@ -2283,8 +2281,8 @@ pub(in crate::kernel) fn apply_c_subtract(
             let Some(right) = promote_c_path_value(right, MachineIntegerType::UInt32) else {
                 return Vec::new();
             };
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(uint32(MachineTerm::subtract_at(
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(uint32(MachineTerm::subtract_at(
                     crate::kernel::MachineIntegerType::UInt32,
                     left,
                     right,
@@ -2368,7 +2366,7 @@ pub(in crate::kernel) fn apply_c_subtract(
             guarded
                 .into_iter()
                 .flat_map(|path| {
-                    let CExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = path.outcome
+                    let ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = path.outcome
                     else {
                         return vec![path];
                     };
@@ -2411,9 +2409,9 @@ pub(in crate::kernel) fn apply_c_subtract(
                 move |left, right, facts, obligations| {
                     let Some((left, right)) = pointer_element_indices(&left, &right, byte_width)
                     else {
-                        return vec![CExpressionPath {
-                            outcome: CExpressionOutcome::RuntimeError(
-                                CRuntimeError::IndeterminatePointeeType,
+                        return vec![ExpressionPath {
+                            outcome: ExpressionOutcome::RuntimeError(
+                                RuntimeError::IndeterminatePointeeType,
                             ),
                             facts,
                             obligations,
@@ -2476,7 +2474,7 @@ fn pointer_offset_by_elements_paths(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let value = pointer;
     let pointer = value.pointer().clone();
 
@@ -2515,8 +2513,8 @@ fn pointer_offset_by_elements_paths(
         || (!facts.is_empty()
             && zero_is_known(&assumptions_with_path_context(assumptions, &facts, &[]))));
     if pointer.is_in_null_block() && displaces {
-        return vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::PointerArithmetic),
+        return vec![ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
             facts,
             obligations,
         }];
@@ -2617,11 +2615,11 @@ fn pointer_offset_by_elements_paths(
                         &facts,
                         &obligations,
                         assumptions,
-                        &CUndefinedBehavior::PointerArithmetic,
+                        &UndefinedBehavior::PointerArithmetic,
                     ) else {
-                        return vec![CExpressionPath {
-                            outcome: CExpressionOutcome::UndefinedBehavior(
-                                CUndefinedBehavior::PointerArithmetic,
+                        return vec![ExpressionPath {
+                            outcome: ExpressionOutcome::UndefinedBehavior(
+                                UndefinedBehavior::PointerArithmetic,
                             ),
                             facts,
                             obligations,
@@ -2630,9 +2628,9 @@ fn pointer_offset_by_elements_paths(
                     owed = refused;
                 }
                 HeldRangeMembership::Outside => {
-                    return vec![CExpressionPath {
-                        outcome: CExpressionOutcome::UndefinedBehavior(
-                            CUndefinedBehavior::PointerArithmetic,
+                    return vec![ExpressionPath {
+                        outcome: ExpressionOutcome::UndefinedBehavior(
+                            UndefinedBehavior::PointerArithmetic,
                         ),
                         facts,
                         obligations,
@@ -2654,10 +2652,8 @@ fn pointer_offset_by_elements_paths(
     ) {
         Ok(subobject) => guards.extend(subobject),
         Err(()) => {
-            owed.push(CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(
-                    CUndefinedBehavior::PointerArithmetic,
-                ),
+            owed.push(ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
                 facts,
                 obligations,
             });
@@ -2721,12 +2717,12 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let value = pointer;
     let pointer = value.pointer().clone();
     if pointer.block.is_function() && bytes != 0 {
-        return vec![CExpressionPath {
-            outcome: CExpressionOutcome::RuntimeError(CRuntimeError::IndeterminatePointeeType),
+        return vec![ExpressionPath {
+            outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
             facts,
             obligations,
         }];
@@ -2745,10 +2741,8 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     ) {
         Ok(subobject) => guards.extend(subobject),
         Err(()) => {
-            return vec![CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(
-                    CUndefinedBehavior::PointerArithmetic,
-                ),
+            return vec![ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
                 facts,
                 obligations,
             }];
@@ -3681,9 +3675,9 @@ fn apply_pointer_formation_guards(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
-    let mut normal = vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(ProgramValue::Pointer(
+) -> Vec<ExpressionPath> {
+    let mut normal = vec![ExpressionPath {
+        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(
             pointer.with_pointee_constant(false),
         )),
         facts,
@@ -3696,9 +3690,9 @@ fn apply_pointer_formation_guards(
         for path in normal {
             match decide_with_facts(assumptions, &path.facts, &guard.condition) {
                 Some(known) if known == guard.value => next.push(path),
-                Some(_) => paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::PointerArithmetic,
+                Some(_) => paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(
+                        UndefinedBehavior::PointerArithmetic,
                     ),
                     facts: path.facts,
                     obligations: path.obligations,
@@ -3712,7 +3706,7 @@ fn apply_pointer_formation_guards(
                         guard.value,
                     )
                     .expect("pointer formation guard should be consistent");
-                    next.push(CExpressionPath {
+                    next.push(ExpressionPath {
                         outcome: path.outcome.clone(),
                         facts: valid_facts,
                         obligations: path.obligations.clone(),
@@ -3727,9 +3721,9 @@ fn apply_pointer_formation_guards(
                         invalid_value,
                     )
                     .expect("pointer formation guard should be consistent");
-                    paths.push(CExpressionPath {
-                        outcome: CExpressionOutcome::UndefinedBehavior(
-                            CUndefinedBehavior::PointerArithmetic,
+                    paths.push(ExpressionPath {
+                        outcome: ExpressionOutcome::UndefinedBehavior(
+                            UndefinedBehavior::PointerArithmetic,
                         ),
                         facts: invalid_facts,
                         obligations: path.obligations,
@@ -3759,8 +3753,8 @@ fn owed_guard_paths(
     facts: &(impl ExecutionFactSource + ?Sized),
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
-    refusal: &CUndefinedBehavior,
-) -> Option<Vec<CExpressionPath>> {
+    refusal: &UndefinedBehavior,
+) -> Option<Vec<ExpressionPath>> {
     let mut refused = Vec::new();
     for guard in guards {
         match decide_with_facts(assumptions, facts, &guard.condition) {
@@ -3775,8 +3769,8 @@ fn owed_guard_paths(
                     !guard.value,
                 )
                 .expect("an undecided guard's negation should be consistent");
-                refused.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(refusal.clone()),
+                refused.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(refusal.clone()),
                     facts: refused_facts,
                     obligations: obligations.to_vec(),
                 });
@@ -3807,7 +3801,7 @@ pub(in crate::kernel) fn apply_c_int32_add(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let overflow = ConditionTerm::signed_add_overflows(
         simplify_c_int32_add_operand(assumptions, &left),
         simplify_c_int32_add_operand(assumptions, &right),
@@ -3819,13 +3813,13 @@ pub(in crate::kernel) fn apply_c_int32_add(
         || decide_with_facts(assumptions, &facts, &overflow),
     );
     match decision {
-        Some(true) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
+        Some(true) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow),
             facts,
             obligations,
         }],
-        Some(false) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(int32(c_int32_add_value(left, right))),
+        Some(false) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::Value(int32(c_int32_add_value(left, right))),
             facts,
             obligations,
         }],
@@ -3839,14 +3833,14 @@ pub(in crate::kernel) fn apply_c_int32_add(
                 .expect("unknown overflow fact should be consistent");
 
             vec![
-                CExpressionPath {
-                    outcome: CExpressionOutcome::Value(int32(c_int32_add_value(left, right))),
+                ExpressionPath {
+                    outcome: ExpressionOutcome::Value(int32(c_int32_add_value(left, right))),
                     facts: normal_facts,
                     obligations: obligations.clone(),
                 },
-                CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::SignedOverflow,
+                ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(
+                        UndefinedBehavior::SignedOverflow,
                     ),
                     facts: overflow_facts,
                     obligations,
@@ -3862,17 +3856,17 @@ pub(in crate::kernel) fn apply_c_int32_subtract(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let overflow = ConditionTerm::signed_subtract_overflows(left.clone(), right.clone());
     split_on_undefined_behavior(
         overflow,
-        CUndefinedBehavior::SignedOverflow,
+        UndefinedBehavior::SignedOverflow,
         facts,
         obligations,
         assumptions,
         |facts, obligations| {
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(int32(MachineTerm::subtract(left, right))),
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(int32(MachineTerm::subtract(left, right))),
                 facts,
                 obligations,
             }]
@@ -3886,20 +3880,20 @@ pub(in crate::kernel) fn apply_c_int32_multiply(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let overflow = ConditionTerm::signed_multiply_overflows(
         normalize_exact_memory_loads_in_bitvector(&left, assumptions),
         normalize_exact_memory_loads_in_bitvector(&right, assumptions),
     );
     split_on_undefined_behavior(
         overflow,
-        CUndefinedBehavior::SignedOverflow,
+        UndefinedBehavior::SignedOverflow,
         facts,
         obligations,
         assumptions,
         |facts, obligations| {
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(int32(MachineTerm::multiply(left, right))),
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(int32(MachineTerm::multiply(left, right))),
                 facts,
                 obligations,
             }]
@@ -3913,7 +3907,7 @@ pub(in crate::kernel) fn apply_c_int32_divide(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     apply_c_int32_division_like(
         left,
         right,
@@ -3930,7 +3924,7 @@ pub(in crate::kernel) fn apply_c_int32_remainder(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     apply_c_int32_division_like(
         left,
         right,
@@ -3948,13 +3942,13 @@ fn apply_c_int32_division_like(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let zero = MachineTerm::constant(0);
     let divides_by_zero = ConditionTerm::equal(right.clone(), zero);
     match decide_with_facts(assumptions, &facts, &divides_by_zero) {
         Some(true) => {
-            return vec![CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero),
+            return vec![ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero),
                 facts,
                 obligations,
             }];
@@ -3993,8 +3987,8 @@ fn apply_c_int32_division_like(
         assumptions,
         result,
     );
-    paths.push(CExpressionPath {
-        outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero),
+    paths.push(ExpressionPath {
+        outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero),
         facts: zero_facts,
         obligations,
     });
@@ -4008,7 +4002,7 @@ fn apply_c_int32_division_nonzero(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     division_domains::apply_nonzero(
         MachineIntegerType::Int32,
         left,
@@ -4028,16 +4022,16 @@ fn apply_c_int64_overflowing(
     assumptions: &PureFactContext,
     overflow: ConditionTerm,
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     split_on_undefined_behavior(
         overflow,
-        CUndefinedBehavior::SignedOverflow,
+        UndefinedBehavior::SignedOverflow,
         facts,
         obligations,
         assumptions,
         |facts, obligations| {
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(ProgramValue::Int64(result(left, right))),
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(ProgramValue::Int64(result(left, right))),
                 facts,
                 obligations,
             }]
@@ -4052,12 +4046,12 @@ fn apply_c_int64_division_like(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let zero = ConditionTerm::int64_equal(right.clone(), MachineTerm::int64_constant(0));
     match decide_with_facts(assumptions, &facts, &zero) {
         Some(true) => {
-            return vec![CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero),
+            return vec![ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero),
                 facts,
                 obligations,
             }];
@@ -4078,8 +4072,8 @@ fn apply_c_int64_division_like(
                 assumptions,
                 result,
             );
-            paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero),
+            paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero),
                 facts: zero_facts,
                 obligations,
             });
@@ -4096,7 +4090,7 @@ fn apply_c_int64_division_nonzero(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     division_domains::apply_nonzero(
         MachineIntegerType::Int64,
         left,
@@ -4115,17 +4109,17 @@ fn apply_c_uint64_division_like(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let zero = ConditionTerm::uint64_equal(right.clone(), MachineTerm::uint64_constant(0));
     split_on_undefined_behavior(
         zero,
-        CUndefinedBehavior::DivisionByZero,
+        UndefinedBehavior::DivisionByZero,
         facts,
         obligations,
         assumptions,
         |facts, obligations| {
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(ProgramValue::UInt64(result(left, right))),
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(ProgramValue::UInt64(result(left, right))),
                 facts,
                 obligations,
             }]
@@ -4141,7 +4135,7 @@ fn apply_c_uint32_division_like(
     facts: ExecutionFacts,
     mut obligations: Vec<ProofObligation>,
     result: fn(MachineTerm, MachineTerm) -> MachineTerm,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     #[cfg(test)]
     let _fast = crate::kernel::search::FastOperationScope::enter("unsigned division domain");
     let zero = ConditionTerm::machine_compare(
@@ -4154,8 +4148,8 @@ fn apply_c_uint32_division_like(
         ProofObligation::verification_condition(Proposition::ConditionIs(zero, false))
             .with_context("unsigned division requires a nonzero divisor"),
     );
-    vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(uint32(result(left, right))),
+    vec![ExpressionPath {
+        outcome: ExpressionOutcome::Value(uint32(result(left, right))),
         facts,
         obligations,
     }]
@@ -4201,7 +4195,7 @@ fn apply_rust_shift(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let inherited_count = obligations.len();
     let Some(mut path) = apply_spec_rust_shift(op, &left, &right, &facts, &obligations) else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
@@ -4231,7 +4225,7 @@ pub(in crate::kernel) fn apply_rust_shift_left(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     apply_rust_shift(
         crate::kernel::MachineBinaryOp::ShiftLeft,
         left,
@@ -4248,7 +4242,7 @@ pub(in crate::kernel) fn apply_rust_shift_right(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     apply_rust_shift(
         crate::kernel::MachineBinaryOp::ShiftRight,
         left,
@@ -4265,7 +4259,7 @@ pub(in crate::kernel) fn apply_c_shift_left(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let facts = facts;
     let Some((right, unsigned_count, right_is_64_bit)) = promote_c_shift_count(right) else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
@@ -4322,8 +4316,8 @@ pub(in crate::kernel) fn apply_c_shift_left(
             unsigned_count,
             right_is_64_bit,
             |left, right, facts, obligations, _| {
-                vec![CExpressionPath {
-                    outcome: CExpressionOutcome::Value(uint32(MachineTerm::uint32_shift_left(
+                vec![ExpressionPath {
+                    outcome: ExpressionOutcome::Value(uint32(MachineTerm::uint32_shift_left(
                         left, right,
                     ))),
                     facts,
@@ -4359,7 +4353,7 @@ pub(in crate::kernel) fn apply_c_shift_right(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let facts = facts;
     let Some((right, unsigned_count, right_is_64_bit)) = promote_c_shift_count(right) else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
@@ -4416,8 +4410,8 @@ pub(in crate::kernel) fn apply_c_shift_right(
             unsigned_count,
             right_is_64_bit,
             |left, right, facts, obligations, _| {
-                vec![CExpressionPath {
-                    outcome: CExpressionOutcome::Value(uint32(MachineTerm::logical_shift_right(
+                vec![ExpressionPath {
+                    outcome: ExpressionOutcome::Value(uint32(MachineTerm::logical_shift_right(
                         left, right,
                     ))),
                     facts,
@@ -4434,8 +4428,8 @@ pub(in crate::kernel) fn apply_c_shift_right(
             unsigned_count,
             right_is_64_bit,
             |left, right, facts, obligations, _| {
-                vec![CExpressionPath {
-                    outcome: CExpressionOutcome::Value(int32(MachineTerm::arithmetic_shift_right(
+                vec![ExpressionPath {
+                    outcome: ExpressionOutcome::Value(int32(MachineTerm::arithmetic_shift_right(
                         left, right,
                     ))),
                     facts,
@@ -4464,7 +4458,7 @@ fn apply_c_int64_with_valid_shift_count(
     unsigned_count: bool,
     right_is_64_bit: bool,
     apply_valid_count: ValidInt64ShiftCountEvaluator,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let count = if right_is_64_bit {
         right
     } else if unsigned_count {
@@ -4478,8 +4472,8 @@ fn apply_c_int64_with_valid_shift_count(
         ConditionTerm::int64_signed_less_than(count.clone(), MachineTerm::int64_constant(0))
     };
     match decide_with_facts(assumptions, &facts, &invalid_count) {
-        Some(true) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidShift),
+        Some(true) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidShift),
             facts,
             obligations,
         }],
@@ -4539,8 +4533,8 @@ fn apply_c_int64_with_valid_shift_count(
                     apply_valid_count,
                 )
             };
-            paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidShift),
+            paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidShift),
                 facts: invalid_facts,
                 obligations,
             });
@@ -4557,10 +4551,10 @@ fn apply_c_int64_shift_count_upper_bound(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     apply_valid_count: ValidInt64ShiftCountEvaluator,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     split_on_undefined_behavior(
         too_large,
-        CUndefinedBehavior::InvalidShift,
+        UndefinedBehavior::InvalidShift,
         facts,
         obligations,
         assumptions,
@@ -4574,12 +4568,12 @@ fn apply_c_int64_shift_left_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let negative_left =
         ConditionTerm::int64_signed_less_than(left.clone(), MachineTerm::int64_constant(0));
     split_on_undefined_behavior(
         negative_left,
-        CUndefinedBehavior::InvalidShift,
+        UndefinedBehavior::InvalidShift,
         facts,
         obligations,
         assumptions,
@@ -4595,7 +4589,7 @@ fn apply_c_int64_shift_left_nonnegative(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let overflow = ConditionTerm::bool_not(ConditionTerm::signed_shift_result_fits(
         MachineIntegerType::Int64,
         left.clone(),
@@ -4603,13 +4597,13 @@ fn apply_c_int64_shift_left_nonnegative(
     ));
     split_on_undefined_behavior(
         overflow,
-        CUndefinedBehavior::SignedOverflow,
+        UndefinedBehavior::SignedOverflow,
         facts,
         obligations,
         assumptions,
         |facts, obligations| {
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(ProgramValue::Int64(
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(ProgramValue::Int64(
                     MachineTerm::int64_shift_left(left, right),
                 )),
                 facts,
@@ -4625,9 +4619,9 @@ fn apply_c_uint64_shift_left_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
-    vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_shift_left(
+) -> Vec<ExpressionPath> {
+    vec![ExpressionPath {
+        outcome: ExpressionOutcome::Value(ProgramValue::UInt64(MachineTerm::uint64_shift_left(
             left, right,
         ))),
         facts,
@@ -4641,9 +4635,9 @@ fn apply_c_int64_shift_right_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
-    vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(ProgramValue::Int64(
+) -> Vec<ExpressionPath> {
+    vec![ExpressionPath {
+        outcome: ExpressionOutcome::Value(ProgramValue::Int64(
             MachineTerm::int64_arithmetic_shift_right(left, right),
         )),
         facts,
@@ -4657,9 +4651,9 @@ fn apply_c_uint64_shift_right_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     _assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
-    vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(ProgramValue::UInt64(
+) -> Vec<ExpressionPath> {
+    vec![ExpressionPath {
+        outcome: ExpressionOutcome::Value(ProgramValue::UInt64(
             MachineTerm::uint64_logical_shift_right(left, right),
         )),
         facts,
@@ -4676,7 +4670,7 @@ fn apply_c_int32_with_valid_shift_count(
     unsigned_count: bool,
     right_is_64_bit: bool,
     apply_valid_count: ValidShiftCountEvaluator,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     if right_is_64_bit {
         return apply_c_int32_with_valid_wide_shift_count(
             left,
@@ -4702,8 +4696,8 @@ fn apply_c_int32_with_valid_shift_count(
     let negative_count = ConditionTerm::signed_less_than(right.clone(), MachineTerm::constant(0));
     match decide_with_facts(assumptions, &facts, &negative_count) {
         Some(true) => {
-            return vec![CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidShift),
+            return vec![ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidShift),
                 facts,
                 obligations,
             }];
@@ -4744,8 +4738,8 @@ fn apply_c_int32_with_valid_shift_count(
         false,
         apply_valid_count,
     );
-    paths.push(CExpressionPath {
-        outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidShift),
+    paths.push(ExpressionPath {
+        outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidShift),
         facts: invalid_facts,
         obligations,
     });
@@ -4760,7 +4754,7 @@ fn apply_c_int32_with_valid_wide_shift_count(
     assumptions: &PureFactContext,
     unsigned_count: bool,
     apply_valid_count: ValidShiftCountEvaluator,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     if unsigned_count {
         return apply_c_int32_with_nonnegative_wide_shift_count(
             left,
@@ -4777,7 +4771,7 @@ fn apply_c_int32_with_valid_wide_shift_count(
         ConditionTerm::int64_signed_less_than(right.clone(), MachineTerm::int64_constant(0));
     split_on_undefined_behavior(
         negative_count,
-        CUndefinedBehavior::InvalidShift,
+        UndefinedBehavior::InvalidShift,
         facts,
         obligations,
         assumptions,
@@ -4803,7 +4797,7 @@ fn apply_c_int32_with_nonnegative_wide_shift_count(
     assumptions: &PureFactContext,
     unsigned_count: bool,
     apply_valid_count: ValidShiftCountEvaluator,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let too_large_count = if unsigned_count {
         ConditionTerm::uint64_greater_equal(right.clone(), MachineTerm::uint64_constant(32))
     } else {
@@ -4811,7 +4805,7 @@ fn apply_c_int32_with_nonnegative_wide_shift_count(
     };
     split_on_undefined_behavior(
         too_large_count,
-        CUndefinedBehavior::InvalidShift,
+        UndefinedBehavior::InvalidShift,
         facts,
         obligations,
         assumptions,
@@ -4835,7 +4829,7 @@ fn apply_c_int32_with_nonnegative_shift_count(
     assumptions: &PureFactContext,
     unsigned_count: bool,
     apply_valid_count: ValidShiftCountEvaluator,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let too_large_count = if unsigned_count {
         ConditionTerm::unsigned_greater_equal(right.clone(), MachineTerm::constant(32))
     } else {
@@ -4843,7 +4837,7 @@ fn apply_c_int32_with_nonnegative_shift_count(
     };
     split_on_undefined_behavior(
         too_large_count,
-        CUndefinedBehavior::InvalidShift,
+        UndefinedBehavior::InvalidShift,
         facts,
         obligations,
         assumptions,
@@ -4857,12 +4851,12 @@ fn apply_c_int32_shift_left_valid_count(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let negative_left = ConditionTerm::signed_less_than(left.clone(), MachineTerm::constant(0));
     match decide_with_facts(assumptions, &facts, &negative_left) {
         Some(true) => {
-            return vec![CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidShift),
+            return vec![ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidShift),
                 facts,
                 obligations,
             }];
@@ -4894,8 +4888,8 @@ fn apply_c_int32_shift_left_valid_count(
         obligations.clone(),
         assumptions,
     );
-    paths.push(CExpressionPath {
-        outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidShift),
+    paths.push(ExpressionPath {
+        outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidShift),
         facts: invalid_facts,
         obligations,
     });
@@ -4908,7 +4902,7 @@ fn apply_c_int32_shift_left_nonnegative(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     let overflow = ConditionTerm::bool_not(ConditionTerm::signed_shift_result_fits(
         MachineIntegerType::Int32,
         left.clone(),
@@ -4916,13 +4910,13 @@ fn apply_c_int32_shift_left_nonnegative(
     ));
     split_on_undefined_behavior(
         overflow,
-        CUndefinedBehavior::SignedOverflow,
+        UndefinedBehavior::SignedOverflow,
         facts,
         obligations,
         assumptions,
         |facts, obligations| {
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(int32(MachineTerm::shift_left(left, right))),
+            vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(int32(MachineTerm::shift_left(left, right))),
                 facts,
                 obligations,
             }]
@@ -4936,10 +4930,10 @@ pub(in crate::kernel) fn evaluate_c_equal_paths(
     right: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     evaluate_c_equality_paths(
         state,
-        CComparisonOperator::Equal,
+        ComparisonOperator::Equal,
         left,
         right,
         assumptions,
@@ -4953,10 +4947,10 @@ pub(in crate::kernel) fn evaluate_c_not_equal_paths(
     right: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     evaluate_c_equality_paths(
         state,
-        CComparisonOperator::NotEqual,
+        ComparisonOperator::NotEqual,
         left,
         right,
         assumptions,
@@ -4966,12 +4960,12 @@ pub(in crate::kernel) fn evaluate_c_not_equal_paths(
 
 fn evaluate_c_equality_paths(
     state: &ExecutionState,
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     left: &ProgramExpression,
     right: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     evaluate_c_value_binary_paths(
         state,
         left,
@@ -4995,14 +4989,14 @@ fn evaluate_c_equality_paths(
 /// `==` or `!=` (`operator` is one of the two) over two C values.
 fn apply_c_equality(
     state: &ExecutionState,
-    operator: CComparisonOperator,
+    operator: ComparisonOperator,
     left: ProgramValue,
     right: ProgramValue,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-) -> Vec<CExpressionPath> {
-    let negated = operator == CComparisonOperator::NotEqual;
+) -> Vec<ExpressionPath> {
+    let negated = operator == ComparisonOperator::NotEqual;
     // Two values of one abstract type are equal exactly when the values of
     // that rigid type they are are; a value of an abstract type compares
     // with nothing else.
@@ -5194,33 +5188,31 @@ pub(in crate::kernel) fn evaluate_c_not_paths(
     expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     let mut paths = Vec::new();
     for path in evaluate_c_condition_paths(state, expression, assumptions, budget)? {
         match path.outcome {
             // A Rust `Bool` value (decision D5): `not c`, with no split.
-            CExpressionOutcome::Value(value)
+            ExpressionOutcome::Value(value)
                 if super::ConditionValueScope::is_active()
                     && ConditionTerm::nonzero_test(&value).is_some() =>
             {
                 let condition = ConditionTerm::nonzero_test(&value).expect("tested above");
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::Value(ProgramValue::Int32(
-                        MachineTerm::bool_cast(
-                            MachineIntegerType::Int32,
-                            ConditionTerm::bool_not(condition),
-                        ),
-                    )),
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::bool_cast(
+                        MachineIntegerType::Int32,
+                        ConditionTerm::bool_not(condition),
+                    ))),
                     facts: path.facts,
                     obligations: path.obligations,
                 });
             }
-            CExpressionOutcome::Value(value) => {
+            ExpressionOutcome::Value(value) => {
                 paths.extend(
                     c_truthiness_paths(value, path.facts, path.obligations, assumptions)
                         .into_iter()
-                        .map(|truthiness| CExpressionPath {
-                            outcome: CExpressionOutcome::Value(int32(if truthiness.is_true {
+                        .map(|truthiness| ExpressionPath {
+                            outcome: ExpressionOutcome::Value(int32(if truthiness.is_true {
                                 0
                             } else {
                                 1
@@ -5230,15 +5222,15 @@ pub(in crate::kernel) fn evaluate_c_not_paths(
                         }),
                 );
             }
-            CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+            ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                     facts: path.facts,
                     obligations: path.obligations,
                 })
             }
-            CExpressionOutcome::RuntimeError(error) => paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::RuntimeError(error),
+            ExpressionOutcome::RuntimeError(error) => paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::RuntimeError(error),
                 facts: path.facts,
                 obligations: path.obligations,
             }),
@@ -5262,7 +5254,7 @@ fn connective_bool_value_paths(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     combine: impl Fn(ConditionTerm, ConditionTerm) -> ConditionTerm,
-) -> ExecutionResult<Option<Vec<CExpressionPath>>> {
+) -> ExecutionResult<Option<Vec<ExpressionPath>>> {
     let simple = |operand: &ProgramExpression| {
         matches!(
             operand,
@@ -5277,7 +5269,7 @@ fn connective_bool_value_paths(
     let ([left_path], [right_path]) = (left_paths.as_slice(), right_paths.as_slice()) else {
         return Ok(None);
     };
-    let (CExpressionOutcome::Value(left_value), CExpressionOutcome::Value(right_value)) =
+    let (ExpressionOutcome::Value(left_value), ExpressionOutcome::Value(right_value)) =
         (&left_path.outcome, &right_path.outcome)
     else {
         return Ok(None);
@@ -5297,8 +5289,8 @@ fn connective_bool_value_paths(
     ) else {
         return Ok(None);
     };
-    Ok(Some(vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::bool_cast(
+    Ok(Some(vec![ExpressionPath {
+        outcome: ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::bool_cast(
             MachineIntegerType::Int32,
             combine(left_condition, right_condition),
         ))),
@@ -5313,7 +5305,7 @@ pub(in crate::kernel) fn evaluate_c_logical_and_paths(
     right: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     if super::ConditionValueScope::is_active()
         && let Some(paths) =
             connective_bool_value_paths(state, left, right, assumptions, budget, |left, right| {
@@ -5325,7 +5317,7 @@ pub(in crate::kernel) fn evaluate_c_logical_and_paths(
     let mut paths = Vec::new();
     for left_path in evaluate_c_condition_paths(state, left, assumptions, budget)? {
         match left_path.outcome {
-            CExpressionOutcome::Value(left_value) => {
+            ExpressionOutcome::Value(left_value) => {
                 for left_truthiness in c_truthiness_paths(
                     left_value,
                     left_path.facts,
@@ -5333,8 +5325,8 @@ pub(in crate::kernel) fn evaluate_c_logical_and_paths(
                     assumptions,
                 ) {
                     if !left_truthiness.is_true {
-                        paths.push(CExpressionPath {
-                            outcome: CExpressionOutcome::Value(int32(0)),
+                        paths.push(ExpressionPath {
+                            outcome: ExpressionOutcome::Value(int32(0)),
                             facts: left_truthiness.facts,
                             obligations: left_truthiness.obligations,
                         });
@@ -5360,7 +5352,7 @@ pub(in crate::kernel) fn evaluate_c_logical_and_paths(
                         };
 
                         match right_path.outcome {
-                            CExpressionOutcome::Value(value) => {
+                            ExpressionOutcome::Value(value) => {
                                 paths.extend(c_truthiness_as_c_int32_paths(
                                     value,
                                     facts,
@@ -5368,34 +5360,33 @@ pub(in crate::kernel) fn evaluate_c_logical_and_paths(
                                     assumptions,
                                 ))
                             }
-                            CExpressionOutcome::UndefinedBehavior(undefined_behavior) => paths
-                                .push(CExpressionPath {
-                                    outcome: CExpressionOutcome::UndefinedBehavior(
+                            ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                                paths.push(ExpressionPath {
+                                    outcome: ExpressionOutcome::UndefinedBehavior(
                                         undefined_behavior,
                                     ),
                                     facts,
                                     obligations,
-                                }),
-                            CExpressionOutcome::RuntimeError(error) => {
-                                paths.push(CExpressionPath {
-                                    outcome: CExpressionOutcome::RuntimeError(error),
-                                    facts,
-                                    obligations,
                                 })
                             }
+                            ExpressionOutcome::RuntimeError(error) => paths.push(ExpressionPath {
+                                outcome: ExpressionOutcome::RuntimeError(error),
+                                facts,
+                                obligations,
+                            }),
                         }
                     }
                 }
             }
-            CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+            ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                     facts: left_path.facts,
                     obligations: left_path.obligations,
                 })
             }
-            CExpressionOutcome::RuntimeError(error) => paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::RuntimeError(error),
+            ExpressionOutcome::RuntimeError(error) => paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::RuntimeError(error),
                 facts: left_path.facts,
                 obligations: left_path.obligations,
             }),
@@ -5412,7 +5403,7 @@ pub(in crate::kernel) fn evaluate_c_logical_or_paths(
     right: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<CExpressionPath>> {
+) -> ExecutionResult<Vec<ExpressionPath>> {
     if super::ConditionValueScope::is_active()
         && let Some(paths) =
             connective_bool_value_paths(state, left, right, assumptions, budget, |left, right| {
@@ -5424,7 +5415,7 @@ pub(in crate::kernel) fn evaluate_c_logical_or_paths(
     let mut paths = Vec::new();
     for left_path in evaluate_c_condition_paths(state, left, assumptions, budget)? {
         match left_path.outcome {
-            CExpressionOutcome::Value(left_value) => {
+            ExpressionOutcome::Value(left_value) => {
                 for left_truthiness in c_truthiness_paths(
                     left_value,
                     left_path.facts,
@@ -5432,8 +5423,8 @@ pub(in crate::kernel) fn evaluate_c_logical_or_paths(
                     assumptions,
                 ) {
                     if left_truthiness.is_true {
-                        paths.push(CExpressionPath {
-                            outcome: CExpressionOutcome::Value(int32(1)),
+                        paths.push(ExpressionPath {
+                            outcome: ExpressionOutcome::Value(int32(1)),
                             facts: left_truthiness.facts,
                             obligations: left_truthiness.obligations,
                         });
@@ -5459,7 +5450,7 @@ pub(in crate::kernel) fn evaluate_c_logical_or_paths(
                         };
 
                         match right_path.outcome {
-                            CExpressionOutcome::Value(value) => {
+                            ExpressionOutcome::Value(value) => {
                                 paths.extend(c_truthiness_as_c_int32_paths(
                                     value,
                                     facts,
@@ -5467,34 +5458,33 @@ pub(in crate::kernel) fn evaluate_c_logical_or_paths(
                                     assumptions,
                                 ))
                             }
-                            CExpressionOutcome::UndefinedBehavior(undefined_behavior) => paths
-                                .push(CExpressionPath {
-                                    outcome: CExpressionOutcome::UndefinedBehavior(
+                            ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                                paths.push(ExpressionPath {
+                                    outcome: ExpressionOutcome::UndefinedBehavior(
                                         undefined_behavior,
                                     ),
                                     facts,
                                     obligations,
-                                }),
-                            CExpressionOutcome::RuntimeError(error) => {
-                                paths.push(CExpressionPath {
-                                    outcome: CExpressionOutcome::RuntimeError(error),
-                                    facts,
-                                    obligations,
                                 })
                             }
+                            ExpressionOutcome::RuntimeError(error) => paths.push(ExpressionPath {
+                                outcome: ExpressionOutcome::RuntimeError(error),
+                                facts,
+                                obligations,
+                            }),
                         }
                     }
                 }
             }
-            CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                paths.push(CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(undefined_behavior),
+            ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(undefined_behavior),
                     facts: left_path.facts,
                     obligations: left_path.obligations,
                 })
             }
-            CExpressionOutcome::RuntimeError(error) => paths.push(CExpressionPath {
-                outcome: CExpressionOutcome::RuntimeError(error),
+            ExpressionOutcome::RuntimeError(error) => paths.push(ExpressionPath {
+                outcome: ExpressionOutcome::RuntimeError(error),
                 facts: left_path.facts,
                 obligations: left_path.obligations,
             }),
@@ -5528,8 +5518,8 @@ fn apply_pointer_adjacency_guard(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<CExpressionPath>,
-) -> Vec<CExpressionPath> {
+    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
+) -> Vec<ExpressionPath> {
     if !left.blocks_proven_distinct(right) || left.is_in_null_block() || right.is_in_null_block() {
         return apply(facts, obligations);
     }
@@ -5561,11 +5551,11 @@ fn apply_pointer_adjacency_guard(
     if !one_past_end {
         return apply(facts, obligations);
     }
-    let refusal = CUndefinedBehavior::OnePastEndComparison;
+    let refusal = UndefinedBehavior::OnePastEndComparison;
     let Some(mut paths) = owed_guard_paths(guards, &facts, &obligations, assumptions, &refusal)
     else {
-        return vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(refusal),
+        return vec![ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(refusal),
             facts,
             obligations,
         }];
@@ -5737,7 +5727,7 @@ pub(in crate::kernel) fn subobject_access_refusal(
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
-) -> Option<CUndefinedBehavior> {
+) -> Option<UndefinedBehavior> {
     let extent = extent?;
     if subobject_extent_proven(pointer, extent, bytes, facts, obligations, assumptions) {
         return None;
@@ -5745,20 +5735,20 @@ pub(in crate::kernel) fn subobject_access_refusal(
     // Retain the selected access and its actual designated extent. Construct
     // this diagnostic only after checking has refused the access.
     let required = Proposition::CResourceContains {
-        parent: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+        parent: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
             extent.start.clone(),
             0u32.into(),
             extent.width.clone(),
             1,
         ))),
-        child: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+        child: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
             pointer.clone(),
             0u32.into(),
             bytes.into(),
             1,
         ))),
     };
-    Some(CUndefinedBehavior::SubobjectAccess {
+    Some(UndefinedBehavior::SubobjectAccess {
         required: Box::new(required),
     })
 }
@@ -5769,16 +5759,16 @@ pub(in crate::kernel) fn subobject_access_refusal(
 /// it is used. An access whose class, or whose object's class, is unknown is
 /// not checked.
 pub(in crate::kernel) fn effective_type_refusal(
-    memory: &CMemory,
+    memory: &Memory,
     pointer: &Pointer,
     lvalue: &LValue,
-) -> Option<CUndefinedBehavior> {
+) -> Option<UndefinedBehavior> {
     effective_type_refusal_of(
         memory,
         pointer,
         lvalue.access_class(),
         lvalue.object_class(),
-        CAccessKind::Read,
+        AccessKind::Read,
     )
 }
 
@@ -5786,30 +5776,30 @@ pub(in crate::kernel) fn effective_type_refusal(
 /// a new effective type (C11 6.5p6), so only a read is checked against the
 /// type an earlier store gave it.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(in crate::kernel) enum CAccessKind {
+pub(in crate::kernel) enum AccessKind {
     Read,
     Write,
 }
 
 /// [`effective_type_refusal`] given the lvalue's two classes.
 pub(in crate::kernel) fn effective_type_refusal_of(
-    memory: &CMemory,
+    memory: &Memory,
     pointer: &Pointer,
     access: Option<crate::kernel::effective_type::CAccessClass>,
     object_class: Option<crate::kernel::effective_type::CAccessClass>,
-    kind: CAccessKind,
-) -> Option<CUndefinedBehavior> {
+    kind: AccessKind,
+) -> Option<UndefinedBehavior> {
     let access = access?;
     let object = memory
         .declared_class(pointer)
         .or_else(|| {
-            (kind == CAccessKind::Read)
+            (kind == AccessKind::Read)
                 .then(|| memory.heap_effective_class(pointer))
                 .flatten()
         })
         .or(object_class)?;
     (!access.may_access(&object))
-        .then_some(CUndefinedBehavior::IncompatibleAccess { access, object })
+        .then_some(UndefinedBehavior::IncompatibleAccess { access, object })
 }
 
 /// The formation guards a pointer arithmetic result owes to its operand's
@@ -5870,7 +5860,7 @@ pub(in crate::kernel) fn subobject_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     resources: &ResourceContext,
-) -> Vec<CExpressionPath> {
+) -> Vec<ExpressionPath> {
     // A pointer type alone does not establish the extent of an enclosing
     // object. Entry clauses establish their selected member's full bounds;
     // subsequent selections consume that evidence or a matching held range.
@@ -5878,7 +5868,7 @@ pub(in crate::kernel) fn subobject_paths(
     {
         if assumptions.should_assume_entry_clause_extents() {
             if let Some(coverage) =
-                pointer.opaque_coverage_fact(&CMemoryRange::new_with_element_width(
+                pointer.opaque_coverage_fact(&MemoryRange::new_with_element_width(
                     pointer.pointer().clone(),
                     0u32.into(),
                     width.into(),
@@ -5897,12 +5887,12 @@ pub(in crate::kernel) fn subobject_paths(
                     &context,
                 )
             {
-                return vec![CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::SubobjectAccess {
+                return vec![ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(
+                        UndefinedBehavior::SubobjectAccess {
                             required: Box::new(
                                 pointer
-                                    .opaque_coverage_fact(&CMemoryRange::new_with_element_width(
+                                    .opaque_coverage_fact(&MemoryRange::new_with_element_width(
                                         pointer.pointer().clone(),
                                         0u32.into(),
                                         width.into(),
@@ -5926,16 +5916,16 @@ pub(in crate::kernel) fn subobject_paths(
         &obligations,
         assumptions,
     ) {
-        return vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(refusal),
+        return vec![ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(refusal),
             facts,
             obligations,
         }];
     }
     let start = pointer.pointer().clone();
     let narrowed = pointer.with_extent(Some(SubobjectExtent::constant(start, width)));
-    vec![CExpressionPath {
-        outcome: CExpressionOutcome::Value(ProgramValue::Pointer(narrowed)),
+    vec![ExpressionPath {
+        outcome: ExpressionOutcome::Value(ProgramValue::Pointer(narrowed)),
         facts,
         obligations,
     }]
@@ -5948,14 +5938,14 @@ mod wide_range_reader_tests {
     #[test]
     fn wide_nonempty_owned_range_supplies_object_provenance() {
         let base = Pointer::symbolic(Variable(985_100));
-        let wide = CMemoryRange::new_wide(
+        let wide = MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_constant(1 << 33),
             4,
         );
         let state = ExecutionState::new().with_resource_context(
-            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(wide)),
+            ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(wide)),
         );
         assert!(pointer_has_object_provenance_evidence(
             &state,
@@ -6006,7 +5996,7 @@ mod word_tag_tests {
                 assumptions,
             );
             assert_eq!(paths.len(), 1);
-            let CExpressionOutcome::Value(result) = &paths[0].outcome else {
+            let ExpressionOutcome::Value(result) = &paths[0].outcome else {
                 panic!("word addition");
             };
             assert_eq!(matches!(result, ProgramValue::PointerInteger(_)), retained);
@@ -6077,7 +6067,7 @@ mod held_range_scaling_tests {
 
     fn owner_of(base: &Pointer) -> Proposition {
         Proposition::CResourceComposition(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 base.clone(),
                 0u32.into(),
                 2u32.into(),

@@ -1427,12 +1427,12 @@ fn trace_text(text: &str, max_bytes: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{CMemory, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
+    use crate::kernel::{MachineTerm, Memory, Pointer, PointerBlock, PointerOffsetTerm};
 
     #[test]
     fn admitted_read_equalities_share_the_fact_printer_and_read_labels() {
         let address = Pointer::symbolic(crate::kernel::Variable(303_000));
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         let read = Pointer::loaded_value(&memory, &address);
         let target = Pointer::function("callback");
         let fact = TraceFact {
@@ -1477,8 +1477,8 @@ mod tests {
     #[test]
     fn child_comparison_keeps_read_values_distinct_from_source_spelling() {
         let address = Pointer::symbolic(crate::kernel::Variable(700_001));
-        let first = crate::kernel::intern_c_memory(CMemory::new());
-        let second = crate::kernel::intern_c_memory(CMemory::new().store(
+        let first = crate::kernel::intern_c_memory(Memory::new());
+        let second = crate::kernel::intern_c_memory(Memory::new().store(
             address.clone(),
             crate::kernel::ProgramValue::Int32(MachineTerm::constant(1)),
         ));
@@ -1584,7 +1584,7 @@ mod tests {
             }
         }
         let pointer = Pointer::symbolic(Variable(782001));
-        let first = CMemory::new();
+        let first = Memory::new();
         let second = first.clone().store(
             pointer.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
@@ -1662,7 +1662,7 @@ mod tests {
         );
     }
 
-    fn loadable_at(memory: CMemory) -> Proposition {
+    fn loadable_at(memory: Memory) -> Proposition {
         Proposition::CMemoryLoadable {
             memory,
             base: Pointer {
@@ -1677,8 +1677,8 @@ mod tests {
     #[test]
     fn trace_and_goal_share_snapshot_labels_without_conflating_distinct_memories() {
         with_proof_trace("f", || {
-            let first = CMemory::default();
-            let second = CMemory::new().with_block("different", 1);
+            let first = Memory::default();
+            let second = Memory::new().with_block("different", 1);
             record(
                 1,
                 TraceStep {
@@ -1828,7 +1828,7 @@ mod tests {
 
     #[test]
     fn trace_omits_generated_load_binding_beside_surface_branch_fact() {
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -2110,7 +2110,7 @@ mod tests {
                         kernel: Proposition::ConditionIs(
                             ConditionTerm::pointer_equal(
                                 Pointer::loaded_value(
-                                    &crate::kernel::intern_c_memory(CMemory::new()),
+                                    &crate::kernel::intern_c_memory(Memory::new()),
                                     &Pointer::null(),
                                 ),
                                 Pointer::null(),

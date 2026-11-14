@@ -8,7 +8,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
     next_statement_index: &mut usize,
     next_loop_index: &mut usize,
     environment: &ExecutionProofEnvironment<'_>,
-    verified_loop_rules: &mut Vec<CVerifiedLoopRule>,
+    verified_loop_rules: &mut Vec<VerifiedLoopRule>,
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
     match statement {
         ProgramStatement::Seq(statements) => {
@@ -617,12 +617,12 @@ fn advance_execution_proof_statement(
     statement_index: usize,
     loop_index: Option<usize>,
     environment: &ExecutionProofEnvironment<'_>,
-    verified_loop_rules: &mut Vec<CVerifiedLoopRule>,
+    verified_loop_rules: &mut Vec<VerifiedLoopRule>,
     loop_preservation_source: LoopPreservationSource,
     initializations: Option<&[CheckedLoopInitialization]>,
-    loop_final_exit_candidates: Option<&[Vec<CLoopFinalExitCandidate>]>,
-    loop_break_exits: Option<&[Vec<CLoopBreakExit>]>,
-    loop_return_exits: Option<&[Vec<CLoopReturnExit>]>,
+    loop_final_exit_candidates: Option<&[Vec<LoopFinalExitCandidate>]>,
+    loop_break_exits: Option<&[Vec<LoopBreakExit>]>,
+    loop_return_exits: Option<&[Vec<LoopReturnExit>]>,
     loop_exit_points: Option<&[Vec<RecordedRegionPoints>]>,
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
     let mut advanced = Vec::new();
@@ -672,7 +672,7 @@ fn advance_execution_proof_statement(
                 statement,
                 environment.function_environment,
                 Some(environment.spec_definitions.predicates),
-                CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
+                ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
                 &label,
                 &mut context.next_opaque_call,
                 &mut context.next_kernel_variable,
@@ -731,8 +731,8 @@ fn advance_execution_proof_statement(
         for transition in transitions {
             let mut surface_propositions = context.surface_propositions.clone();
             let mut recorded_snapshots = context.recorded_snapshots.clone();
-            if let CStatementOutcome::Normal(exit_state)
-            | CStatementOutcome::Return {
+            if let StatementOutcome::Normal(exit_state)
+            | StatementOutcome::Return {
                 state: exit_state, ..
             } = &transition.outcome
             {
@@ -782,7 +782,7 @@ fn advance_execution_proof_statement(
                     kind: ProgramPointKind::Entry,
                 };
                 recorded_snapshots.insert(entry_point, context.state.clone());
-                if let CStatementOutcome::Normal(exit_state) = &transition.outcome {
+                if let StatementOutcome::Normal(exit_state) = &transition.outcome {
                     let exit_point = ProgramPointRef {
                         region: CodeRegionRef::Loop(loop_index),
                         kind: ProgramPointKind::Exit,
@@ -839,7 +839,7 @@ fn advance_execution_proof_statement(
                 }
             }
             match transition.outcome {
-                CStatementOutcome::Normal(state) => advanced.push(PlanningExecutionContext {
+                StatementOutcome::Normal(state) => advanced.push(PlanningExecutionContext {
                     state: *state,
                     pure_facts: transition.pure_facts,
                     surface_propositions,
@@ -849,7 +849,7 @@ fn advance_execution_proof_statement(
                     next_kernel_variable: context.next_kernel_variable,
                     resume_at_statement: None,
                 }),
-                CStatementOutcome::Jump { target, state } => {
+                StatementOutcome::Jump { target, state } => {
                     let target = environment.function.control_target(target).ok_or_else(|| {
                         ClickError::new("execution proof traversal produced an unknown goto target")
                     })?;
@@ -864,12 +864,12 @@ fn advance_execution_proof_statement(
                         resume_at_statement: Some(target.statement_index),
                     });
                 }
-                CStatementOutcome::Break(_)
-                | CStatementOutcome::Continue(_)
-                | CStatementOutcome::Throw { .. }
-                | CStatementOutcome::Return { .. } => {}
-                CStatementOutcome::VerificationDiverges => {}
-                CStatementOutcome::UndefinedBehavior(kind) => {
+                StatementOutcome::Break(_)
+                | StatementOutcome::Continue(_)
+                | StatementOutcome::Throw { .. }
+                | StatementOutcome::Return { .. } => {}
+                StatementOutcome::VerificationDiverges => {}
+                StatementOutcome::UndefinedBehavior(kind) => {
                     return Err(ClickError::new(format!(
                         "execution proof traversal for {} region({statement_index}) produced undefined behavior: {}{}",
                         environment.function_block.signature().name(),
@@ -877,7 +877,7 @@ fn advance_execution_proof_statement(
                         crate::surface::diagnostics::describe_c_statement_site()
                     )).with_reported_assertion_goal(kind.required_goal().cloned()));
                 }
-                CStatementOutcome::RuntimeError(error) => {
+                StatementOutcome::RuntimeError(error) => {
                     return Err(ClickError::new(format!(
                         "execution proof traversal for {} region({statement_index}) could not verify C operation: {}{}\nresource facts in context: {}",
                         environment.function_block.signature().name(),
@@ -908,7 +908,7 @@ fn locate_loop_phase_error(
 /// Rebuild the decision tree from the guard facts produced by the entry check.
 /// Only these explicit deltas are indexed; ambient proof facts are never read.
 fn loop_entry_branches(
-    entries: &[crate::kernel::CLoopPreservationContext],
+    entries: &[crate::kernel::LoopPreservationContext],
     environment: &ExecutionProofEnvironment<'_>,
     loop_index: usize,
 ) -> Result<LoopEntryBranches, ClickError> {
@@ -920,7 +920,7 @@ fn loop_entry_branches(
         })
         .collect::<Vec<_>>();
     fn build(
-        entries: &[crate::kernel::CLoopPreservationContext],
+        entries: &[crate::kernel::LoopPreservationContext],
         guards: &[BTreeSet<Proposition>],
         indices: Vec<usize>,
         mut decided: BTreeSet<crate::kernel::ConditionTerm>,

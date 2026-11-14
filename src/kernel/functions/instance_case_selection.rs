@@ -16,7 +16,7 @@ pub(in crate::kernel) fn matched_resource_instance_case_clauses(
     projection: &ResourceFieldProjection,
     model: &AlgebraicTerm,
     constructor: &AlgebraicTerm,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
 ) -> Vec<ResourceBodyClauseRecord> {
     matched_resource_instance_case_read_projection(
@@ -35,7 +35,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
     projection: &ResourceFieldProjection,
     model: &AlgebraicTerm,
     constructor: &AlgebraicTerm,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
 ) -> (Vec<ResourceBodyClauseRecord>, Vec<Proposition>) {
     if projection.at_entry {
@@ -171,7 +171,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
     for fact in evaluation.resources.facts() {
         if let Some(child) = fact.owned_resource() {
             read_projection.push(Proposition::CResourceContains {
-                parent: Box::new(CResource::Instance(instance.clone())),
+                parent: Box::new(Resource::Instance(instance.clone())),
                 child: Box::new(child.clone()),
             });
         }
@@ -215,7 +215,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
 /// ownership or permanent view is published.
 pub(super) fn checked_returned_instance_body_facts(
     outputs: &ResourceContext,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     state: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> Vec<Proposition> {
@@ -227,7 +227,7 @@ pub(super) fn checked_returned_instance_body_facts(
     let mut facts = Vec::new();
     let mut seen = BTreeSet::new();
     for fact in outputs.facts() {
-        let CResourceFact::Own(CResource::Instance(instance), _) = fact else {
+        let ResourceFact::Own(Resource::Instance(instance), _) = fact else {
             continue;
         };
         let Some(definition) = interface.composite_resource_definition(instance.name()) else {
@@ -296,7 +296,7 @@ pub(super) fn checked_returned_instance_body_facts(
 pub(super) fn selected_resource_instance_case_facts(
     state: &ExecutionState,
     bound_instances: Option<&BTreeMap<Variable, Variable>>,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
 ) -> Vec<Proposition> {
     let Some(bound_instances) = bound_instances else {
@@ -307,7 +307,7 @@ pub(super) fn selected_resource_instance_case_facts(
         .facts()
         .iter()
         .filter_map(|fact| match fact.resource() {
-            CResource::Instance(instance)
+            Resource::Instance(instance)
                 if fact.is_own() && bound_instances.values().any(|id| *id == instance.identity) =>
             {
                 Some(instance)
@@ -366,7 +366,7 @@ pub(super) fn selected_resource_instance_case_facts(
 /// resource unit after the argument is resolved.
 pub(super) fn selected_instance_resource_load_values(
     state: &ExecutionState,
-    definitions: &[CCompositeResourceDefinition],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
 ) -> BTreeMap<(Pointer, ProgramType), ProgramValue> {
     let Some(bindings) = state.resource_bindings.as_ref() else {
@@ -430,7 +430,7 @@ pub(super) fn selected_instance_resource_load_values(
         let mut budget = ExecutionBudget::beside_live_state();
         let mut owned_memory = ResourceContext::new_with_equalities(assumptions);
         for resource in &arm.contains {
-            let Ok(Ok(fact @ CResourceFact::Own(CResource::Memory(_), _))) =
+            let Ok(Ok(fact @ ResourceFact::Own(Resource::Memory(_), _))) =
                 evaluate_function_resource_spec(&evaluation, resource, assumptions, &mut budget)
             else {
                 continue;
@@ -440,7 +440,7 @@ pub(super) fn selected_instance_resource_load_values(
         for fact in &arm.facts {
             let SpecProposition::Comparison {
                 left,
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right,
             } = fact
             else {
@@ -519,8 +519,8 @@ pub(super) fn selected_instance_resource_load_values(
 /// type. The work is this body's children and their schemas.
 pub(super) fn check_unmatched_instance_children(
     instance: &ResourceInstance,
-    definition: &CCompositeResourceDefinition,
-    definitions: &[CCompositeResourceDefinition],
+    definition: &CompositeResourceDefinition,
+    definitions: &[CompositeResourceDefinition],
 ) -> Result<(), &'static str> {
     let mut names = BTreeSet::new();
     let mut bindings = BTreeSet::new();
@@ -555,10 +555,10 @@ pub(super) fn check_unmatched_instance_children(
             || child.field_bindings.len() != child_schema.fields().len()
             || child_schema.fields().iter().zip(&child.field_bindings).any(
                 |((_, field_type), source)| match source {
-                    CResourceChildField::Parent(index) => {
+                    ResourceChildField::Parent(index) => {
                         instance.schema().fields().get(*index).map(|(_, ty)| ty) != Some(field_type)
                     }
-                    CResourceChildField::Constructor(_) => true,
+                    ResourceChildField::Constructor(_) => true,
                 },
             )
         {
@@ -573,7 +573,7 @@ pub(super) fn check_unmatched_instance_children(
 /// resource stays folded inside the body, exactly as the parent's caller
 /// would hold it. Quantities use the ordinary checked resource evaluation
 /// and exact consumption rules; views cannot be exchanged as ownership.
-pub(super) fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec]) -> bool {
+pub(super) fn instance_body_clauses_are_exchangeable(contains: &[ResourceSpec]) -> bool {
     contains.iter().all(|body| {
         !body.is_view()
             && match body.family() {
@@ -594,10 +594,10 @@ pub(super) fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec])
 
 pub(in crate::kernel) fn selected_instance_match_arm<'a>(
     instance: &ResourceInstance,
-    definition: &'a CCompositeResourceDefinition,
-    definitions: &'a [CCompositeResourceDefinition],
+    definition: &'a CompositeResourceDefinition,
+    definitions: &'a [CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> Result<(&'a CResourceMatchArm, AlgebraicTerm), &'static str> {
+) -> Result<(&'a ResourceMatchArm, AlgebraicTerm), &'static str> {
     let body = definition
         .matched
         .as_ref()
@@ -697,7 +697,7 @@ pub(in crate::kernel) fn selected_instance_match_arm<'a>(
             for ((_, field_type), source) in child_schema.fields().iter().zip(&child.field_bindings)
             {
                 let matches = match source {
-                    CResourceChildField::Constructor(index) => {
+                    ResourceChildField::Constructor(index) => {
                         let expected = match field_type {
                             ResourceFieldType::Integer => AlgebraicValueType::Integer,
                             ResourceFieldType::C(ty) => AlgebraicValueType::C(*ty),
@@ -705,7 +705,7 @@ pub(in crate::kernel) fn selected_instance_match_arm<'a>(
                         };
                         arm.binding_types.get(*index) == Some(&expected)
                     }
-                    CResourceChildField::Parent(index) => {
+                    ResourceChildField::Parent(index) => {
                         instance.schema().fields().get(*index).map(|(_, ty)| ty) == Some(field_type)
                     }
                 };
@@ -723,7 +723,7 @@ pub(in crate::kernel) fn selected_instance_match_arm<'a>(
             if child_definition.name() == definition.name()
                 && !matches!(
                     child.field_bindings[body.field_index],
-                    CResourceChildField::Constructor(index)
+                    ResourceChildField::Constructor(index)
                         if arm.binding_types.get(index)
                             == Some(&body.algebraic_type.value_type())
                 )
@@ -905,7 +905,7 @@ pub fn select_resource_model_arm(
 pub(in crate::kernel) fn instance_body_evaluation(
     state: &ExecutionState,
     instance: &ResourceInstance,
-    definition: &CCompositeResourceDefinition,
+    definition: &CompositeResourceDefinition,
 ) -> Result<ExecutionState, &'static str> {
     let mut evaluation = state.clone();
     {
@@ -913,12 +913,12 @@ pub(in crate::kernel) fn instance_body_evaluation(
         // persistent open handle. Guards may refer to these fields as well.
         evaluation.instance_field_scope = evaluation
             .instance_field_scope
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone())));
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone())));
     }
     if definition.matched.is_some() {
         // An arm's C names are lexical parameters and constructor bindings,
         // never incidental locals of the function currently opening it.
-        evaluation.locals = CLocalEnvironment::default();
+        evaluation.locals = LocalEnvironment::default();
     }
     evaluation.resource_bindings = Some(std::sync::Arc::new(BTreeMap::from([(
         Variable(u64::MAX),

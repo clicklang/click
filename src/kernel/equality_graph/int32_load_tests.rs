@@ -19,7 +19,7 @@ fn load(memory: &SharedMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
     ))
 }
 fn memory() -> SharedMemory {
-    intern_c_memory(CMemory::new().with_block("array", 4096))
+    intern_c_memory(Memory::new().with_block("array", 4096))
 }
 
 #[test]
@@ -235,11 +235,7 @@ fn explicit_cross_snapshot_load_equality_composes_without_merging_snapshots() {
 #[test]
 fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = intern_c_memory(
-        CMemory::new()
-            .with_block("left", 64)
-            .with_block("right", 64),
-    );
+    let memory = intern_c_memory(Memory::new().with_block("left", 64).with_block("right", 64));
     let at = |block: &str, bytes: i64| Pointer {
         block: block.into(),
         offset: PointerOffsetTerm::Constant(bytes),

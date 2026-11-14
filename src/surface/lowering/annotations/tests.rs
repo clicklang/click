@@ -116,7 +116,7 @@ fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
     let cast = ProgramExpression::Cast {
         expression: Box::new(pointer_add),
         target_type: ProgramType::UInt64,
-        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+        integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
         pointee_volatile: false,
         pointee_constant: false,

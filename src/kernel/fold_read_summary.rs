@@ -56,7 +56,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use super::primitives::*;
-use super::resource_tracker::{Resource, step_effect};
+use super::resource_tracker::{TrackedResource, step_effect};
 
 /// One declared `Integer` function body, in the kernel's specification
 /// vocabulary, with its parameters left as the names the body refers to.
@@ -64,13 +64,13 @@ use super::resource_tracker::{Resource, step_effect};
 /// This is program data: registering it states nothing. The kernel decides
 /// whether it admits a read summary.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct CFoldReadDefinition {
+pub struct FoldReadDefinition {
     name: String,
     parameters: Vec<(String, ProgramType)>,
     body: SpecIntegerExpression,
 }
 
-impl CFoldReadDefinition {
+impl FoldReadDefinition {
     pub fn new(
         name: impl Into<String>,
         parameters: Vec<(String, ProgramType)>,
@@ -176,7 +176,7 @@ impl std::fmt::Display for FoldReadDecline {
 /// `base + element_width * k` for `start <= k < end`, read at `memory`.
 #[derive(Clone, Debug)]
 pub(crate) struct FoldReadInterval {
-    pub(crate) memory: CMemory,
+    pub(crate) memory: Memory,
     pub(crate) base: Pointer,
     pub(crate) start: SharedMachineIntegerTerm,
     pub(crate) end: SharedMachineIntegerTerm,
@@ -204,7 +204,7 @@ impl CheckedFoldReadSummary {
     /// Validates one declared body and returns its read summary, or the reason
     /// the definition declines. Work is one unit per visited specification
     /// node, so the check is linear in the selected body.
-    pub fn check(definition: &CFoldReadDefinition) -> Result<Self, FoldReadDecline> {
+    pub fn check(definition: &FoldReadDefinition) -> Result<Self, FoldReadDecline> {
         let parameters = &definition.parameters;
         let mut array_parameter = None;
         for (index, (name, c_type)) in parameters.iter().enumerate() {
@@ -632,7 +632,7 @@ thread_local! {
 /// verification session. Registering a *different* body under a name already
 /// registered poisons the name for the rest of the session: framing must
 /// never follow a summary of a body other than the one unfolding states.
-pub fn register_fold_read_definition(definition: CFoldReadDefinition) {
+pub fn register_fold_read_definition(definition: FoldReadDefinition) {
     let fingerprint = definition.fingerprint();
     let checked = match CheckedFoldReadSummary::check(&definition) {
         Ok(summary) => RegisteredFoldRead::Checked(Arc::new(summary)),
@@ -977,7 +977,7 @@ fn later_than(left: &SharedMemory, right: &SharedMemory) -> bool {
 
 /// Whether one recorded step leaves every cell of the interval unchanged.
 fn step_misses_interval(
-    step: &CMemoryDerivation,
+    step: &MemoryDerivation,
     produced: &SharedMemory,
     interval: &FoldReadInterval,
     empty: bool,
@@ -990,7 +990,7 @@ fn step_misses_interval(
         step_effect::affects(
             step,
             produced,
-            Resource::Block(&interval.base.block),
+            TrackedResource::Block(&interval.base.block),
             &step_effect::Evidence {
                 assumptions: &PureFactContext::new(),
                 cross_loop_havoc: false,
@@ -1005,8 +1005,8 @@ fn step_misses_interval(
         // This edge changes only cached knowledge, not any byte or lifetime.
         // Its producer records it only for unconditional forgetting, never
         // for havoc or assumption-dependent pruning.
-        CMemoryDerivation::CellsForgotten { .. } => Ok(()),
-        CMemoryDerivation::Store { pointer, value, .. } => {
+        MemoryDerivation::CellsForgotten { .. } => Ok(()),
+        MemoryDerivation::Store { pointer, value, .. } => {
             if empty || access_misses_interval(pointer, value.byte_width(), interval, assumptions) {
                 Ok(())
             } else {
@@ -1017,7 +1017,7 @@ fn step_misses_interval(
             }
         }
         // A seeded run is the stores it stands for, each framed as one.
-        CMemoryDerivation::CellsSeeded { .. } => {
+        MemoryDerivation::CellsSeeded { .. } => {
             let stores = step.seeded_stores().expect("a CellsSeeded edge");
             if empty
                 || stores.iter().all(|(pointer, value)| {
@@ -1032,7 +1032,7 @@ fn step_misses_interval(
                 ))
             }
         }
-        CMemoryDerivation::CallHavoc { mutable_ranges, .. } => {
+        MemoryDerivation::CallHavoc { mutable_ranges, .. } => {
             if empty
                 || mutable_ranges
                     .iter()
@@ -1294,7 +1294,7 @@ fn access_misses_interval(
 
 /// Whether one range a callee may write misses every cell of the interval.
 fn range_misses_interval(
-    written: &CMemoryRange,
+    written: &MemoryRange,
     interval: &FoldReadInterval,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -1341,8 +1341,8 @@ fn range_misses_interval(
 /// A stated `separate(memory(L), memory(R))` with the interval inside one side
 /// and the write inside the other, both decided by exact order facts.
 fn separated_by_stated_fact(
-    holds_interval: impl Fn(&CMemoryRange) -> bool,
-    holds_write: impl Fn(&CMemoryRange) -> bool,
+    holds_interval: impl Fn(&MemoryRange) -> bool,
+    holds_write: impl Fn(&MemoryRange) -> bool,
     interval_block: &PointerBlock,
     write_block: &PointerBlock,
     assumptions: &PureFactContext,
@@ -1365,7 +1365,7 @@ fn separated_by_stated_fact(
 /// The interval's cells lie inside `range`: the same base and element width,
 /// `range.start <= start` and `end <= range.end`.
 fn range_contains_interval(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     interval: &FoldReadInterval,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -1391,7 +1391,7 @@ fn range_contains_interval(
 
 /// The `bytes` bytes at `pointer` lie inside one cell of `range`.
 fn range_contains_access(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     pointer: &Pointer,
     bytes: u32,
     assumptions: &PureFactContext,
@@ -1421,8 +1421,8 @@ fn range_contains_access(
 /// `inner` lies inside `outer`: the same base and element width and nested
 /// endpoints.
 fn range_contains_range(
-    outer: &CMemoryRange,
-    inner: &CMemoryRange,
+    outer: &MemoryRange,
+    inner: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
     // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.

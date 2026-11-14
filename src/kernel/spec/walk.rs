@@ -406,7 +406,7 @@ mod tests {
     fn comparison(left: SpecExpression, right: SpecExpression) -> SpecProposition {
         SpecProposition::Comparison {
             left,
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right,
         }
     }

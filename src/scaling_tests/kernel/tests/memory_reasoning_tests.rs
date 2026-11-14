@@ -12,7 +12,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
     let saved = crate::kernel::capture_block_registries();
     let base = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Variable(Variable(93_600)),
@@ -20,7 +20,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
             0u32.into(),
             1u32.into(),
         )))
-        .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Variable(Variable(93_601)),
@@ -37,9 +37,9 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
         );
         let mut resources = base.clone();
         for i in 0..count {
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::new_with_element_width(
-                    CMemory::local_pointer(&format!("hidden_{i}")),
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::new_with_element_width(
+                    Memory::local_pointer(&format!("hidden_{i}")),
                     0u32.into(),
                     4u32.into(),
                     1,
@@ -52,8 +52,8 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
         assert_eq!(observed, expected);
         measured_work.push((count, work));
         assert_eq!(resources.facts().len(), count + 2);
-        let addressed = CResourceFact::own_memory(CMemoryRange::new(
-            CMemory::local_pointer("addressed"),
+        let addressed = ResourceFact::own_memory(MemoryRange::new(
+            Memory::local_pointer("addressed"),
             0u32.into(),
             1u32.into(),
         ));
@@ -84,7 +84,7 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
             );
         }
         let resource = |index| {
-            CResource::Memory(CMemoryRange::new(
+            Resource::Memory(MemoryRange::new(
                 Pointer::symbolic(Variable(43_000)),
                 MachineTerm::constant(0),
                 MachineTerm::add(variable(index), MachineTerm::constant(1)),
@@ -109,7 +109,7 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
 
 #[test]
 fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let storage = Pointer {
         block: "viewed-storage".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -177,8 +177,8 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         "alias transport work: {samples:?}"
     );
 
-    let local = CMemory::local_pointer("expired-view");
-    let before = CMemory::new().with_block("local:expired-view", 4);
+    let local = Memory::local_pointer("expired-view");
+    let before = Memory::new().with_block("local:expired-view", 4);
     let after = before.without_local_block(&local.block);
     let context = PureFactContext::new()
         .assume_proposition(Proposition::ConditionIs(
@@ -204,7 +204,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
 
 #[test]
 fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let target = Pointer {
         block: "indexed-viewable-shapes".into(),
         offset: PointerOffsetTerm::Constant(10_000),
@@ -283,8 +283,8 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
                 owned_composition_store_separated_evidence(&write, 4, &read, 4, &assumptions)
             });
             let hop = hop.expect("the store's exact alias names its owned member");
-            let store = CMemoryDerivation::Store {
-                base: crate::kernel::intern_c_memory(CMemory::new()),
+            let store = MemoryDerivation::Store {
+                base: crate::kernel::intern_c_memory(Memory::new()),
                 pointer: write.clone(),
                 value: int32(7),
             };
@@ -303,8 +303,8 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
                 owned_composition_store_separated_evidence(&write, 4, &read, 8, &assumptions)
                     .is_none()
             );
-            let wider_store = CMemoryDerivation::Store {
-                base: crate::kernel::intern_c_memory(CMemory::new()),
+            let wider_store = MemoryDerivation::Store {
+                base: crate::kernel::intern_c_memory(Memory::new()),
                 pointer: write.clone(),
                 value: int64(7),
             };
@@ -340,14 +340,14 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
     let mut samples = Vec::new();
     for length in [32usize, 64, 96, 128] {
         let mut memory =
-            CMemory::new().store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
+            Memory::new().store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
         for index in (0..length).rev() {
             let next = MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(cell(index + 1)),
                 crate::kernel::LoadKind::Int32,
             );
-            memory = CMemory::new().store(cell(index), ProgramValue::Int32(next));
+            memory = Memory::new().store(cell(index), ProgramValue::Int32(next));
         }
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory),
@@ -379,7 +379,7 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn shifted_constant_view_extents_match_without_ambient_search() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let base = Pointer::symbolic(Variable(9_319_000));
     let index = MachineTerm::Variable(Variable(9_319_001));
     let count = |length| {
@@ -553,7 +553,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
 fn ordering_snapshots_of_one_path_does_not_walk_their_shared_entries() {
     let object = |index: u32| Pointer::symbolic(Variable(99_400 + u64::from(index)));
     for size in [16u32, 64, 256] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         let mut resources = ResourceContext::new();
         for index in 0..size {
             memory = memory.store(object(index), int32(index));
@@ -746,8 +746,8 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
             offset: PointerOffsetTerm::Variable(Variable(id)),
         };
         let fact = |id| Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(memory_range(pointer(id, false), 0, 1))),
-            right: Box::new(CResource::Memory(memory_range(pointer(id + 1, true), 0, 1))),
+            left: Box::new(Resource::Memory(memory_range(pointer(id, false), 0, 1))),
+            right: Box::new(Resource::Memory(memory_range(pointer(id + 1, true), 0, 1))),
         };
         let left = pointer(1, false);
         let right = pointer(2, true);
@@ -818,7 +818,7 @@ fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
         )
         .assume_condition(ConditionTerm::pointer_equal(middle, owner.clone()), true);
     let fact = |base| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
             0u32.into(),
             1u32.into(),
@@ -890,10 +890,10 @@ fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inpu
         let recheck = inputs();
         let control = inputs();
         let mut ranges = ResourceContext::new_with_equalities(&first).unchecked_with_fact(
-            CResourceFact::own_memory(CMemoryRange::new(owner.clone(), 2u32.into(), 4u32.into())),
+            ResourceFact::own_memory(MemoryRange::new(owner.clone(), 2u32.into(), 4u32.into())),
         );
         for index in 0..size {
-            ranges = ranges.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            ranges = ranges.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 pointer(955_000 + index),
                 0u32.into(),
                 1u32.into(),
@@ -1005,8 +1005,8 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(9_893_000)), 4),
         };
-        let outer = CMemoryRange::new(base.clone(), 0u32.into(), 6u32.into());
-        let inner = CMemoryRange::new(base, 2u32.into(), 4u32.into());
+        let outer = MemoryRange::new(base.clone(), 0u32.into(), 6u32.into());
+        let inner = MemoryRange::new(base, 2u32.into(), 4u32.into());
         let mut facts = PureFactContext::new();
         for index in 0..size {
             let a = Pointer {
@@ -1024,12 +1024,12 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
                 ),
             };
             facts = facts.assume_proposition(Proposition::CResourceSeparate {
-                left: Box::new(CResource::Memory(CMemoryRange::new(
+                left: Box::new(Resource::Memory(MemoryRange::new(
                     a,
                     0u32.into(),
                     1u32.into(),
                 ))),
-                right: Box::new(CResource::Memory(CMemoryRange::new(
+                right: Box::new(Resource::Memory(MemoryRange::new(
                     b,
                     0u32.into(),
                     1u32.into(),

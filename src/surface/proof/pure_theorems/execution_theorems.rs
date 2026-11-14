@@ -26,7 +26,7 @@ pub(super) fn verify_execution_theorem(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
     theorems: &TheoremEnvironment,
-    environment: Option<&CExecutionEnvironment>,
+    environment: Option<&ExecutionEnvironment>,
     resources: &ResourceEnvironment,
     function_source_registry: std::sync::Arc<FunctionSourceRegistry>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
@@ -420,7 +420,7 @@ pub(super) fn verify_execution_theorem(
     )?;
     let artifacts = crate::surface::verification::distinct_checked_executions(&verified)
         .into_iter()
-        .map(|execution| CCheckedFunctionExecution::clone(execution))
+        .map(|execution| CheckedFunctionExecution::clone(execution))
         .collect::<Vec<_>>();
     let execution =
         prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
@@ -428,8 +428,8 @@ pub(super) fn verify_execution_theorem(
             function.clone(),
             arguments,
             environment.clone(),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
-            CFunctionContractExecutionMode::VerifyLoops,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
+            FunctionContractExecutionMode::VerifyLoops,
             &artifacts,
             &[],
         );

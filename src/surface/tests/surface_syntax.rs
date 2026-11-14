@@ -2664,7 +2664,7 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
     );
     assert_eq!(
         synthesize(
-            crate::kernel::CFunctionContract::predicate_name_for("ordered"),
+            crate::kernel::FunctionContract::predicate_name_for("ordered"),
             vec![
                 state.clone(),
                 Term::ProgramValue(ProgramValue::pointer(Pointer::function(
@@ -2714,7 +2714,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_c_memory(Memory::new()),
                 Box::new(owner.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2743,7 +2743,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     assert_eq!(describe_contract_expression(&left), "owner->len");
 
     let data_pointer = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(CMemory::new()),
+        crate::kernel::intern_c_memory(Memory::new()),
         Box::new(owner.offset_by_bytes(8)),
         crate::kernel::LoadKind::Int32,
     );
@@ -2756,7 +2756,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(CMemory::new()),
+                crate::kernel::intern_c_memory(Memory::new()),
                 Box::new(first_data_cell),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -5039,7 +5039,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
-        CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
+        MachineTerm, MemoryRange, Pointer, PointerBlock, PointerOffsetTerm, PointerValue,
         ProgramType,
     };
     let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
@@ -5063,7 +5063,7 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
         (0, 10, 4, "p[0..2]"),
         (1, 3, 1, "((char *)p)[1..3]"),
     ] {
-        let range = CMemoryRange::new_with_element_width(
+        let range = MemoryRange::new_with_element_width(
             base.clone(),
             MachineTerm::constant(low),
             MachineTerm::constant(high),
@@ -6222,7 +6222,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
     )
     .unwrap();
     let Proposition::CStatementExecutes {
-        outcome: crate::kernel::CStatementOutcome::Normal(state),
+        outcome: crate::kernel::StatementOutcome::Normal(state),
         ..
     } = declaration.proposition()
     else {
@@ -6231,9 +6231,9 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
     let local = state.resources().facts()[0].resource().clone();
     let original = Proposition::CResourceSeparate {
         left: Box::new(local.clone()),
-        right: Box::new(crate::kernel::CResource::star(
+        right: Box::new(crate::kernel::Resource::star(
             local,
-            crate::kernel::CResource::Emp,
+            crate::kernel::Resource::Emp,
         )),
     };
     let surface = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)

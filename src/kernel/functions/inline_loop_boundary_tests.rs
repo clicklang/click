@@ -17,16 +17,16 @@ fn helper() -> ProgramFunction {
     .with_inline_body()
 }
 
-fn call(value: ProgramValue, budget: &mut ExecutionBudget) -> ExecutionResult<Vec<CFunctionPath>> {
+fn call(value: ProgramValue, budget: &mut ExecutionBudget) -> ExecutionResult<Vec<FunctionPath>> {
     let function = helper();
     execute_c_function_call_paths(
         &ExecutionState::new(),
         &function,
         &[ProgramExpression::Value(value)],
         &PureFactContext::new(),
-        CExecutionContext::new(
-            &CExecutionEnvironment::new().with_function(function.clone()),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionContext::new(
+            &ExecutionEnvironment::new().with_function(function.clone()),
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
         ),
         budget,
     )
@@ -38,8 +38,8 @@ fn concrete_inline_loops_still_unroll_and_restore_the_call_context_on_error() {
     for count in [0, 4, 16, 64] {
         let mut budget = ExecutionBudget::new();
         let paths = call(int32(count), &mut budget).unwrap();
-        assert!(matches!(paths.as_slice(), [CFunctionPath {
-                outcome: CFunctionOutcome::Return { value, .. }, ..
+        assert!(matches!(paths.as_slice(), [FunctionPath {
+                outcome: FunctionOutcome::Return { value, .. }, ..
             }] if matches!(value.native().as_ref(), ProgramValue::Int32(bits) if bits.as_const() == Some(0))));
         assert!(budget.inline_call_name.is_none());
     }

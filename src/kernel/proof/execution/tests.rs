@@ -60,15 +60,15 @@ use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 // These operation tests also exercise kernel proposition search explicitly.
 use crate::kernel::{
-    CComparisonOperator, CCompositeResourceDefinition, CMemory, CResourceAccessMode, CResourceFact,
-    CResourceSpec, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, ProgramType,
-    ProgramValue, SpecExpression, c_function, int32,
+    ComparisonOperator, CompositeResourceDefinition, MachineTerm, Memory, Pointer, PointerBlock,
+    PointerOffsetTerm, ProgramType, ProgramValue, ResourceAccessMode, ResourceFact, ResourceSpec,
+    SpecExpression, c_function, int32,
 };
 
 /// One arm state holding a checked view rooted in a fresh loan.
 fn arm_holding_a_view(name: &str) -> (ExecutionState, crate::kernel::loans::LoanViewBinding) {
-    let support_fact = CResourceFact::own_token(format!("{name}_support"), Vec::new());
-    let viewed = CResourceFact::view_token(format!("{name}_view"), Vec::new());
+    let support_fact = ResourceFact::own_token(format!("{name}_support"), Vec::new());
+    let viewed = ResourceFact::view_token(format!("{name}_view"), Vec::new());
     let resources = crate::kernel::ResourceContext::new()
         .unchecked_with_facts([support_fact.clone(), viewed.clone()]);
     let support = resources.owned_occurrences_for_fact(&support_fact)[0];
@@ -106,7 +106,7 @@ fn frame_exchange_retains_the_exits_exact_stable_view_dependency() {
         .unchecked_with_facts_and_occurrences([binding.viewed.clone()]);
     let final_occurrence = inserted[0].1;
     let exit = exit.with_loan_dependency(final_occurrence, binding.clone());
-    let outside = CResourceFact::own_composite("outside".into(), Vec::new());
+    let outside = ResourceFact::own_composite("outside".into(), Vec::new());
     let frame = body.clone().unchecked_with_fact(outside.clone());
     let restored = exit
         .restore_frame_after_exchange(body, &frame, &PureFactContext::new())
@@ -220,7 +220,7 @@ fn constructor_partition_checks_complete_coverage_and_exact_scopes() {
             .algebraic_case_partition(
                 &root,
                 &value,
-                &crate::kernel::CExecutionEnvironment::new(),
+                &crate::kernel::ExecutionEnvironment::new(),
                 &[],
                 None,
                 4_000_000,
@@ -265,7 +265,7 @@ fn constructor_partition_checks_complete_coverage_and_exact_scopes() {
             .algebraic_case_partition(
                 &root,
                 &value,
-                &crate::kernel::CExecutionEnvironment::new(),
+                &crate::kernel::ExecutionEnvironment::new(),
                 &[],
                 None,
                 4_000_000,
@@ -289,7 +289,7 @@ fn constructor_partition_exclusion_requires_its_exact_contradiction() {
         .algebraic_case_partition(
             &root,
             &value,
-            &crate::kernel::CExecutionEnvironment::new(),
+            &crate::kernel::ExecutionEnvironment::new(),
             &[],
             None,
             4_000_000,
@@ -344,7 +344,7 @@ fn constructor_partition_witnesses_avoid_source_facts_and_previous_matches() {
         crate::kernel::Term::ProgramValue(ProgramValue::Int32(MachineTerm::Variable(occupied))),
         crate::kernel::Term::ProgramValue(int32(0)),
     )]);
-    let env = crate::kernel::CExecutionEnvironment::new();
+    let env = crate::kernel::ExecutionEnvironment::new();
     let (partition, fields, next) = core
         .algebraic_case_partition(&root, &value, &env, &[], None, 4_000_000, 65_536)
         .unwrap();
@@ -377,7 +377,7 @@ fn constructor_partition_witnesses_avoid_the_region_state_and_issued_variables()
     );
     let core = ExecutionProofCore::at_entry(state, ExecutionFrontier::default());
     let root = ProofFacts::default();
-    let env = crate::kernel::CExecutionEnvironment::new();
+    let env = crate::kernel::ExecutionEnvironment::new();
     let (_, fields, _) = core
         .algebraic_case_partition(&root, &value, &env, &[], None, 4_000_000, 65_536)
         .expect("a loop-body frontier issues its partition");
@@ -436,7 +436,7 @@ fn an_execution_counter_cannot_be_rewound() {
 
 #[test]
 fn constructor_partition_reserves_algebraic_variables_in_opaque_environment_terms() {
-    use crate::kernel::{AlgebraicTermNode, CExecutionEnvironment, PureFunctionArgument};
+    use crate::kernel::{AlgebraicTermNode, ExecutionEnvironment, PureFunctionArgument};
     let (core, mut value) = constructor_partition_fixture(2);
     value.node = AlgebraicTermNode::Variable(Variable(4_065_536));
     let function = c_function(
@@ -450,7 +450,7 @@ fn constructor_partition_reserves_algebraic_variables_in_opaque_environment_term
             },
         ))),
     );
-    let environment = CExecutionEnvironment::new().with_function(function);
+    let environment = ExecutionEnvironment::new().with_function(function);
     value.node = AlgebraicTermNode::Variable(Variable(8));
     let (_, fields, _) = core
         .algebraic_case_partition(
@@ -478,7 +478,7 @@ fn constructor_partition_freshness_is_indexed_and_output_linear() {
                 })
                 .collect::<Vec<_>>(),
         );
-        let environment = crate::kernel::CExecutionEnvironment::new();
+        let environment = crate::kernel::ExecutionEnvironment::new();
         let builds = MATCH_SCOPE_INDEX_BUILDS.with(std::cell::Cell::get);
         let probes = MATCH_FRESHNESS_PROBES.with(std::cell::Cell::get);
         let mut next = 4_000_000;
@@ -503,7 +503,7 @@ fn constructor_partition_freshness_is_indexed_and_output_linear() {
 
 #[test]
 fn cached_body_loadability_preserves_exact_range_and_snapshot_barriers() {
-    let before = CMemory::new();
+    let before = Memory::new();
     let at = |block: &str| Pointer {
         block: block.into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
@@ -549,7 +549,7 @@ fn cached_body_loadability_preserves_exact_range_and_snapshot_barriers() {
 #[test]
 fn instance_rewrite_refusal_retains_rejected_and_allowed_facts() {
     use crate::kernel::{
-        CComparisonOperator, ResourceFieldSchema, ResourceFieldType, ResourceInstance,
+        ComparisonOperator, ResourceFieldSchema, ResourceFieldType, ResourceInstance,
         SpecExpression,
     };
     let schema = ResourceFieldSchema::new(vec![(
@@ -565,7 +565,7 @@ fn instance_rewrite_refusal_retains_rejected_and_allowed_facts() {
         vec![int32(7).into()].into(),
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "cell",
         vec![],
         None,
@@ -573,12 +573,12 @@ fn instance_rewrite_refusal_retains_rejected_and_allowed_facts() {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::Value(int32(7)),
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(7)),
         }],
     )
     .with_instance_schema(Some(schema));
-    let selected = CResourceFact::own(CResource::Instance(instance.clone()));
+    let selected = ResourceFact::own(Resource::Instance(instance.clone()));
     let before = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let facts = ProofFacts::default();
@@ -657,7 +657,7 @@ fn returned_proposition_trace(
         CheckedExecutionEvent::Statement(Theorem::new(Proposition::CStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
-            outcome: CStatementOutcome::Return {
+            outcome: StatementOutcome::Return {
                 value: int32(0).into(),
                 state: Box::new(state.clone()),
             },
@@ -690,9 +690,9 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
             },
         )]
         .into();
-        let candidate = crate::kernel::CFunctionExecutionCandidate {
-            data: Arc::new(crate::kernel::CFunctionExecutionCandidateData {
-                outcome: Arc::new(CFunctionOutcome::Return {
+        let candidate = crate::kernel::FunctionExecutionCandidate {
+            data: Arc::new(crate::kernel::FunctionExecutionCandidateData {
+                outcome: Arc::new(FunctionOutcome::Return {
                     value: int32(0).into(),
                     state: Box::new(state.clone()),
                 }),
@@ -704,7 +704,7 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
             }),
         };
         let context = CheckedReturnContext::from_candidate(
-            CStatementOutcome::Return {
+            StatementOutcome::Return {
                 value: int32(0).into(),
                 state: Box::new(state),
             },
@@ -725,11 +725,11 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
 
 fn returned_proposition_context(state: &ExecutionState) -> Arc<CheckedReturnContext> {
     Arc::new(CheckedReturnContext {
-        origin: CStatementOutcome::Return {
+        origin: StatementOutcome::Return {
             value: int32(0).into(),
             state: Box::new(state.clone()),
         },
-        published: CFunctionOutcome::Return {
+        published: FunctionOutcome::Return {
             value: int32(0).into(),
             state: Box::new(state.clone()),
         },
@@ -807,7 +807,7 @@ fn return_proposition_rejects_sibling_assumptions_and_other_memory() {
     }
     let (function, mut events) = returned_proposition_trace(&state, &sibling);
     let mut other_state = state.clone();
-    other_state.memory = CMemory::new().with_block("other_snapshot", 4);
+    other_state.memory = Memory::new().with_block("other_snapshot", 4);
     let other_context = returned_proposition_context(&other_state);
     let wrong_snapshot =
         returned_proposition_event(&other_context, &other_state, &sibling, &sibling, fact);
@@ -831,12 +831,12 @@ fn return_proposition_checks_resource_compositions_without_granting_ownership() 
         let pointer = crate::kernel::Pointer::symbolic(Variable(42));
         let fact =
             Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts([
-                CResourceFact::own_memory(crate::kernel::CMemoryRange::new(
+                ResourceFact::own_memory(crate::kernel::MemoryRange::new(
                     pointer.clone(),
                     0.into(),
                     1.into(),
                 )),
-                CResourceFact::own_memory(crate::kernel::CMemoryRange::new(
+                ResourceFact::own_memory(crate::kernel::MemoryRange::new(
                     pointer,
                     if overlaps { 0.into() } else { 1.into() },
                     2.into(),
@@ -854,7 +854,7 @@ fn return_proposition_checks_resource_compositions_without_granting_ownership() 
                 Some("return proof assumes an unjustified path fact")
             );
         } else {
-            let (CStatementOutcome::Return { state: after, .. }, _, _) = result.unwrap() else {
+            let (StatementOutcome::Return { state: after, .. }, _, _) = result.unwrap() else {
                 panic!("expected a returned state");
             };
             assert_eq!(after.resources(), state.resources());
@@ -865,7 +865,7 @@ fn return_proposition_checks_resource_compositions_without_granting_ownership() 
 #[test]
 fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts() {
     let pointer = Pointer::symbolic(Variable(42));
-    let memory = CMemory::new().store(pointer.clone(), int32(7));
+    let memory = Memory::new().store(pointer.clone(), int32(7));
     let state = ExecutionState::new().with_memory(memory.clone());
     let empty = ProofFacts::default();
     let (function, original) = returned_proposition_trace(&state, &empty);
@@ -899,7 +899,7 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
             false,
         ),
         (
-            read(CMemory::new(), pointer.clone(), MachineTerm::constant(4)),
+            read(Memory::new(), pointer.clone(), MachineTerm::constant(4)),
             false,
         ),
         (
@@ -920,7 +920,7 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
         ));
         let result = trace_completion(&function, &events, empty.assumptions(), false);
         assert_eq!(result.is_ok(), accepted);
-        if let Ok((CStatementOutcome::Return { state: after, .. }, _, _)) = result {
+        if let Ok((StatementOutcome::Return { state: after, .. }, _, _)) = result {
             assert_eq!(after.resources(), state.resources());
             assert_eq!(after.memory(), state.memory());
         }
@@ -935,11 +935,11 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
 fn return_proposition_accepts_the_store_loadability_of_a_pointer_cell() {
     let pointer = Pointer::symbolic(Variable(42));
     let value = ProgramValue::pointer(Pointer::symbolic(Variable(43)));
-    let memory = CMemory::new().store(pointer.clone(), value.clone());
+    let memory = Memory::new().store(pointer.clone(), value.clone());
     let state = ExecutionState::new().with_memory(memory.clone());
     let empty = ProofFacts::default();
     let store = crate::kernel::ExecutionPureFact::certified_store(
-        CMemory::new(),
+        Memory::new(),
         memory,
         pointer,
         value,
@@ -960,7 +960,7 @@ fn return_proposition_accepts_the_store_loadability_of_a_pointer_cell() {
 #[test]
 fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
     use crate::kernel::{
-        CComparisonOperator, SpecExpression, SpecProposition, c_parameter, c_variable,
+        ComparisonOperator, SpecExpression, SpecProposition, c_parameter, c_variable,
     };
     let value = ProgramValue::Int32(MachineTerm::Variable(Variable(42)));
     let fact = Proposition::ConditionIs(
@@ -970,7 +970,7 @@ fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
         ),
         true,
     );
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "positive",
         vec![c_parameter("n", ProgramType::Int32)],
         None,
@@ -978,13 +978,13 @@ fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::Value(int32(1)),
-            operator: CComparisonOperator::LessEqual,
+            operator: ComparisonOperator::LessEqual,
             right: SpecExpression::ProgramExpression(c_variable("n")),
         }],
     );
-    let owned = CResourceFact::own_composite("positive".into(), vec![value.clone()]);
-    let viewed = CResourceFact::view_composite("positive".into(), vec![value]);
-    let zero = CResourceFact::Own(owned.resource().clone(), Box::new(0.into()));
+    let owned = ResourceFact::own_composite("positive".into(), vec![value.clone()]);
+    let viewed = ResourceFact::view_composite("positive".into(), vec![value]);
+    let zero = ResourceFact::Own(owned.resource().clone(), Box::new(0.into()));
     for (resource, authorized, accepted) in [
         (Some(owned.clone()), false, true),
         (Some(viewed), false, true),
@@ -1014,7 +1014,7 @@ fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
         ));
         let result = trace_completion(&function, &events, empty.assumptions(), false);
         assert_eq!(result.is_ok(), accepted);
-        if let Ok((CStatementOutcome::Return { state: after, .. }, _, _)) = result {
+        if let Ok((StatementOutcome::Return { state: after, .. }, _, _)) = result {
             assert_eq!(after.resources(), state.resources());
         }
     }
@@ -1023,30 +1023,30 @@ fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
 #[test]
 fn return_argument_facts_do_not_project_mutable_memory_invariants() {
     use crate::kernel::{
-        CComparisonOperator, CMemorySegment, SpecExpression, SpecProposition, c_index,
+        ComparisonOperator, MemorySegment, SpecExpression, SpecProposition, c_index,
         c_int32_literal, c_parameter, c_variable,
     };
     let pointer = Pointer::symbolic(Variable(42));
-    let held = CResourceFact::own_composite(
+    let held = ResourceFact::own_composite(
         "cell".into(),
         vec![ProgramValue::typed_pointer(
             pointer.clone(),
             ProgramType::Int32Pointer,
         )],
     );
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "cell",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(CMemorySegment::new(
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
         ))],
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(c_index(c_variable("p"), c_int32_literal(0))),
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(7)),
         }],
     );
@@ -1054,14 +1054,14 @@ fn return_argument_facts_do_not_project_mutable_memory_invariants() {
         crate::kernel::functions::evaluate_composite_resource_fact_propositions(
             &held,
             std::slice::from_ref(&definition),
-            &CMemory::new(),
+            &Memory::new(),
             &ResourceContext::new(),
             &PureFactContext::new().require_owned_expression_loads()
         )
         .is_none()
     );
     let state = ExecutionState::new()
-        .with_memory(CMemory::new().store(pointer, int32(9)))
+        .with_memory(Memory::new().store(pointer, int32(9)))
         .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
     let empty = ProofFacts::default();
     let false_fact = Proposition::ConditionIs(
@@ -1081,13 +1081,12 @@ fn return_argument_facts_do_not_project_mutable_memory_invariants() {
 #[test]
 fn return_composite_presentations_reject_other_execution_paths() {
     let before = ExecutionState::new();
-    let selected = CResourceFact::own_composite("empty".into(), vec![]);
+    let selected = ResourceFact::own_composite("empty".into(), vec![]);
     let after = before
         .clone()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let facts = ProofFacts::default();
-    let definition =
-        CCompositeResourceDefinition::new("empty", vec![], None, false, vec![], vec![]);
+    let definition = CompositeResourceDefinition::new("empty", vec![], None, false, vec![], vec![]);
     let (function, events) = returned_proposition_trace(&before, &facts);
     let function = function.with_composite_resource_definitions(vec![definition]);
     let checked = CheckedResourceRewrite::check_with_children(
@@ -1115,7 +1114,7 @@ fn return_composite_presentations_reject_other_execution_paths() {
     };
     assert!(check_trace(Box::new(rewrite.clone())).is_ok());
     Arc::make_mut(rewrite.return_presentation.as_mut().unwrap()).context =
-        returned_proposition_context(&before.with_memory(CMemory::new().with_block("other", 4)));
+        returned_proposition_context(&before.with_memory(Memory::new().with_block("other", 4)));
     assert_eq!(
         check_trace(Box::new(rewrite)).err(),
         Some("return composite presentation belongs to a different execution path")
@@ -1138,9 +1137,9 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
         vec![int32(7).into()].into(),
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new("cell", vec![], None, false, vec![], vec![])
+    let definition = CompositeResourceDefinition::new("cell", vec![], None, false, vec![], vec![])
         .with_instance_schema(Some(schema));
-    let selected = CResourceFact::own(CResource::Instance(instance.clone()));
+    let selected = ResourceFact::own(Resource::Instance(instance.clone()));
     let before = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let facts = ProofFacts::default();
@@ -1219,7 +1218,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     }
     let mut wrong_path = checked;
     let mut other = before.clone();
-    other.memory = CMemory::new().with_block("other", 4);
+    other.memory = Memory::new().with_block("other", 4);
     Arc::make_mut(wrong_path.return_observation.as_mut().unwrap()).context =
         returned_proposition_context(&other);
     let mut invalid = events;
@@ -1249,7 +1248,7 @@ fn return_exchange_keeps_the_published_body_snapshot() {
         vec![int32(7).into()].into(),
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "observed",
         vec![],
         None,
@@ -1263,7 +1262,7 @@ fn return_exchange_keeps_the_published_body_snapshot() {
                 ))),
                 value_type: ProgramType::Int32,
             },
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(7)),
         }],
     )
@@ -1295,7 +1294,7 @@ fn return_exchange_keeps_the_published_body_snapshot() {
     core.execution_evidence = vec![trace].into();
     core.evidence_completed = true;
     let mut context = returned_proposition_context(&physical);
-    Arc::make_mut(&mut context).published = CFunctionOutcome::Return {
+    Arc::make_mut(&mut context).published = FunctionOutcome::Return {
         value: int32(0).into(),
         state: Box::new(published.clone()),
     };
@@ -1307,7 +1306,7 @@ fn return_exchange_keeps_the_published_body_snapshot() {
         .unwrap();
     let events = core.return_resource_rewrites.get(&0).unwrap().to_vec();
     let (outcome, _, _) = trace_completion(&function, &events, facts.assumptions(), false).unwrap();
-    let CStatementOutcome::Return { state, .. } = outcome else {
+    let StatementOutcome::Return { state, .. } = outcome else {
         panic!("return expected")
     };
     assert_eq!(state.memory(), physical.memory());
@@ -1318,8 +1317,8 @@ fn return_exchange_keeps_the_published_body_snapshot() {
 fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
     use crate::kernel::{
         AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue,
-        AlgebraicValueType, AlgebraicVariantType, CResourceMatchArm, CResourceMatchBody,
-        ConditionTerm, ResourceFieldSchema, ResourceFieldType, ResourceInstance, Term, Variable,
+        AlgebraicValueType, AlgebraicVariantType, ConditionTerm, ResourceFieldSchema,
+        ResourceFieldType, ResourceInstance, ResourceMatchArm, ResourceMatchBody, Term, Variable,
     };
     let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![
         AlgebraicVariantType {
@@ -1366,13 +1365,13 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
     let guard = ConditionTerm::equal(word.clone(), MachineTerm::constant(0));
     let condition = SpecProposition::Comparison {
         left: SpecExpression::Value(ProgramValue::Int32(word)),
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(int32(0)),
     };
     for mode in 0..3 {
         let guarded = mode == 0;
         let matched = mode == 2;
-        let definition = CCompositeResourceDefinition::new(
+        let definition = CompositeResourceDefinition::new(
             "cell",
             vec![],
             guarded.then(|| condition.clone()),
@@ -1386,12 +1385,12 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
         )
         .with_instance_schema(Some(schema.clone()))
         .with_resource_match_body(matched.then(|| {
-            CResourceMatchBody {
+            ResourceMatchBody {
                 field_index: 1,
                 algebraic_type: ty.clone(),
                 arms: ["Left", "Right"]
                     .into_iter()
-                    .map(|variant| CResourceMatchArm {
+                    .map(|variant| ResourceMatchArm {
                         children: vec![],
                         variant: variant.into(),
                         bindings: vec![],
@@ -1403,7 +1402,7 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
                     .collect(),
             }
         }));
-        let selected = CResourceFact::own(CResource::Instance(instance.clone()));
+        let selected = ResourceFact::own(Resource::Instance(instance.clone()));
         let before = ExecutionState::new()
             .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
         let case_fact = |variant: &str| {
@@ -1445,7 +1444,7 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
             Proposition::CStatementVerifies {
                 state: Box::new(open.clone()),
                 statement: Box::new(statement),
-                outcome: CStatementOutcome::Return {
+                outcome: StatementOutcome::Return {
                     value: int32(0).into(),
                     state: Box::new(open),
                 },
@@ -1488,7 +1487,7 @@ fn condition_event(
     CheckedExecutionEvent::Condition(Theorem::new(Proposition::CConditionEvaluates {
         state: Box::new(state.clone()),
         condition: condition.clone(),
-        outcome: CConditionOutcome::Value(value),
+        outcome: ConditionOutcome::Value(value),
     }))
 }
 
@@ -1499,8 +1498,8 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let range = CMemoryRange::new(pointer, MachineTerm::constant(0), MachineTerm::constant(1));
-    let before = ExecutionState::new().with_memory(CMemory::new().with_block("arg-memory", 4));
+    let range = MemoryRange::new(pointer, MachineTerm::constant(0), MachineTerm::constant(1));
+    let before = ExecutionState::new().with_memory(Memory::new().with_block("arg-memory", 4));
     let after = before
         .clone()
         .with_memory(before.memory().clone().with_call_memory_havoc(
@@ -1512,7 +1511,7 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
     let theorem = Theorem::new(Proposition::CStatementVerifies {
         state: Box::new(before.clone()),
         statement: Box::new(ProgramStatement::Skip),
-        outcome: CStatementOutcome::Normal(Box::new(after)),
+        outcome: StatementOutcome::Normal(Box::new(after)),
     });
     let views = statement_call_havoc_views(&theorem);
     let [view] = views.as_slice() else {
@@ -1547,9 +1546,9 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
 
 #[test]
 fn checked_call_authority_is_path_local_across_forks() {
-    let ancestor_view = crate::kernel::intern_c_memory(CMemory::new());
+    let ancestor_view = crate::kernel::intern_c_memory(Memory::new());
     let sibling_view = crate::kernel::intern_c_memory(
-        CMemory::new().with_block_without_derivation("local:sibling", 4),
+        Memory::new().with_block_without_derivation("local:sibling", 4),
     );
     let mut ancestor = CheckedCallEvents::default();
     ancestor.new_event(ancestor_view);
@@ -1572,7 +1571,7 @@ fn checked_call_view_lookup_does_not_scan_unrelated_events() {
         let mut selected = None;
         for index in 0..event_count {
             let view = crate::kernel::intern_c_memory(
-                CMemory::new().with_block_without_derivation(format!("local:call-{index}"), 4),
+                Memory::new().with_block_without_derivation(format!("local:call-{index}"), 4),
             );
             let event = events.new_event(view.clone());
             if index + 1 == event_count {
@@ -1616,7 +1615,7 @@ fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
     assert!(!checked_interface_pointer_equality(
         &arm,
         &Proposition::CMemoryLoadable {
-            memory: CMemory::new(),
+            memory: Memory::new(),
             base: a,
             bytes: MachineTerm::constant(8),
             wide: false,
@@ -1687,9 +1686,9 @@ fn checked_entry_accepts_only_body_annotations_with_identical_entry_metadata() {
     for changed in [
         annotated.clone().with_source_body(returned),
         annotated.clone().with_recursion_measure(vec![
-            crate::kernel::CRankingComponent::ProgramExpression(condition),
+            crate::kernel::RankingComponent::ProgramExpression(condition),
         ]),
-        annotated.with_global_variables(vec![crate::kernel::CGlobal::new(
+        annotated.with_global_variables(vec![crate::kernel::Global::new(
             "g",
             ProgramType::Int32,
             int32(7),
@@ -1707,21 +1706,19 @@ fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes(
         Vec::new(),
         ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
     )
-    .with_composite_resource_definitions(vec![
-        CCompositeResourceDefinition::authority_control(
-            "item",
-            Vec::new(),
-            None,
-            Vec::new(),
-            Vec::new(),
-        ),
-    ]);
+    .with_composite_resource_definitions(vec![CompositeResourceDefinition::authority_control(
+        "item",
+        Vec::new(),
+        None,
+        Vec::new(),
+        Vec::new(),
+    )]);
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
     let caller = ExecutionState::new()
-        .with_memory(CMemory::new().store(
+        .with_memory(Memory::new().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         ))
@@ -1745,7 +1742,7 @@ fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes(
 
     let changed_memory = caller
         .clone()
-        .with_memory(CMemory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(2))));
+        .with_memory(Memory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(2))));
     assert!(
         checked
             .entry_state_for(&changed_memory, &function, &[], &assumptions)
@@ -1764,13 +1761,13 @@ fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes(
 
 #[test]
 fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions() {
-    let child_spec = CResourceSpec::token(
-        CResourceAccessMode::Own,
+    let child_spec = ResourceSpec::token(
+        ResourceAccessMode::Own,
         "child".to_string(),
         Vec::new(),
         Vec::new(),
     );
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "bundle",
         Vec::new(),
         None,
@@ -1785,9 +1782,9 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
         ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
     )
     .with_composite_resource_definitions(vec![definition.clone()]);
-    let selected = CResourceFact::own_composite("bundle".to_string(), Vec::new());
-    let child = CResourceFact::own_token("child".to_string(), Vec::new());
-    let child_view = CResourceFact::view_token("child".to_string(), Vec::new());
+    let selected = ResourceFact::own_composite("bundle".to_string(), Vec::new());
+    let child = ResourceFact::own_token("child".to_string(), Vec::new());
+    let child_view = ResourceFact::view_token("child".to_string(), Vec::new());
     let before = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let facts = ProofFacts::default();
@@ -1835,7 +1832,7 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
         observed
             .resources()
             .clone()
-            .unchecked_with_fact(CResourceFact::view_token("forged".to_string(), Vec::new())),
+            .unchecked_with_fact(ResourceFact::view_token("forged".to_string(), Vec::new())),
     );
     assert!(
         CheckedResourceObservation::check(
@@ -1875,7 +1872,7 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
     };
     let changed_memory = observed
         .clone()
-        .with_memory(CMemory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(1))));
+        .with_memory(Memory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(1))));
     assert!(
         CheckedResourceObservation::check(
             &function,
@@ -1944,7 +1941,7 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
         Vec::new(),
         ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
     )
-    .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+    .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
         "bundle",
         Vec::new(),
         None,
@@ -2118,7 +2115,7 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     let summary = ExecutionPureFact::certified(Proposition::CMemoryEffectSummary {
         before: before.memory().clone(),
         after: after.memory().clone(),
-        mutable_ranges: vec![CMemoryRange::new(
+        mutable_ranges: vec![MemoryRange::new(
             declared_pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -2139,7 +2136,7 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     );
 
     let erased_before =
-        ExecutionState::new().with_memory(CMemory::new().store(changed_pointer.clone(), int32(1)));
+        ExecutionState::new().with_memory(Memory::new().store(changed_pointer.clone(), int32(1)));
     let erased_after = erased_before.clone().with_memory(
         erased_before
             .memory()
@@ -2151,7 +2148,7 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     let erased_summary = ExecutionPureFact::certified(Proposition::CMemoryEffectSummary {
         before: erased_before.memory().clone(),
         after: erased_after.memory().clone(),
-        mutable_ranges: vec![CMemoryRange::new(
+        mutable_ranges: vec![MemoryRange::new(
             declared_pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -2179,7 +2176,7 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let before = ExecutionState::new().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_heap_allocation_claim(
                 allocation_base.clone(),
                 crate::kernel::HeapExtent::int32(16),
@@ -2228,7 +2225,7 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
     );
     let free_facts = [
         Vec::new(),
-        vec![CResourceFact::own_allocation(allocation_base.clone(), 16)],
+        vec![ResourceFact::own_allocation(allocation_base.clone(), 16)],
     ];
     let states = [&freed, &retained];
     assert!(interface_resources_guard_heap_frees(
@@ -2543,13 +2540,13 @@ fn checked_branch_join_accepts_empty_arms_only_at_the_artifact_tail() {
         root_facts: root_facts.clone(),
         paths: vec![
             CheckedBranchPath {
-                outcome: CConditionOutcome::Value(true),
+                outcome: ConditionOutcome::Value(true),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
                 theorem: then_theorem.clone(),
             },
             CheckedBranchPath {
-                outcome: CConditionOutcome::Value(false),
+                outcome: ConditionOutcome::Value(false),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
                 theorem: else_theorem.clone(),
@@ -2660,7 +2657,7 @@ fn branch_split_obligations_require_evidence_on_each_named_arm() {
             .into_iter()
             .enumerate()
             .map(|(index, value)| CheckedBranchPath {
-                outcome: CConditionOutcome::Value(value),
+                outcome: ConditionOutcome::Value(value),
                 facts: Vec::new().into(),
                 obligations: vec![ProofObligation::new(required.clone())],
                 theorem: theorems[index].clone(),
@@ -2721,7 +2718,7 @@ fn interface_logical_read_does_not_establish_validity() {
     };
     let spec = SpecProposition::Comparison {
         left: load.clone(),
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: load.clone(),
     };
     let path = interface_spec_paths(&spec, &state, &state, &PureFactContext::new())
@@ -2781,7 +2778,7 @@ fn interface_assertion_requires_an_available_proof_not_derivability() {
     let state = ExecutionState::new().with_local("x", ProgramValue::Int32(term.clone()));
     let spec = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
-        operator: CComparisonOperator::GreaterEqual,
+        operator: ComparisonOperator::GreaterEqual,
         right: SpecExpression::Value(int32(0)),
     };
     let goal = Proposition::ConditionIs(
@@ -2822,8 +2819,8 @@ fn interface_assertion_requires_an_available_proof_not_derivability() {
 
 #[test]
 fn interface_load_definition_rejects_wrong_variable_address_and_snapshot() {
-    use crate::kernel::{CMemory, ConditionTerm, Pointer};
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    use crate::kernel::{ConditionTerm, Memory, Pointer};
+    let memory = crate::kernel::intern_c_memory(Memory::new());
     let pointer = Pointer {
         block: "interface_definition".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -2862,7 +2859,7 @@ fn interface_load_definition_rejects_wrong_variable_address_and_snapshot() {
     );
     let wrong_snapshot = equation(
         variable,
-        crate::kernel::intern_c_memory(CMemory::new().with_block("different", 4)),
+        crate::kernel::intern_c_memory(Memory::new().with_block("different", 4)),
         pointer,
     );
     for wrong in [wrong_variable, wrong_address, wrong_snapshot] {
@@ -2908,13 +2905,13 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
         root_facts: root_facts.clone(),
         paths: vec![
             CheckedBranchPath {
-                outcome: CConditionOutcome::Value(true),
+                outcome: ConditionOutcome::Value(true),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
                 theorem: then_theorem.clone(),
             },
             CheckedBranchPath {
-                outcome: CConditionOutcome::Value(false),
+                outcome: ConditionOutcome::Value(false),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
                 theorem: else_theorem.clone(),
@@ -2958,7 +2955,7 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
     else_arm.frontier.position = FrontierPosition::RegionBoundary;
     let spec = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
     };
     let checked_fact = interface_spec_paths(&spec, &state, &state, &PureFactContext::new())
@@ -3039,7 +3036,7 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
         "an unrelated successor fact must not gain interface authority"
     );
 
-    let forged_resource = CResourceFact::own_token("missing".to_string(), Vec::new());
+    let forged_resource = ResourceFact::own_token("missing".to_string(), Vec::new());
     let forged_state = state
         .clone()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(forged_resource));
@@ -3073,10 +3070,10 @@ mod scaling_tests {
 
 #[test]
 fn named_pointer_cell_requires_its_complete_read_and_provenance() {
-    use crate::kernel::{CMemory, LoadKind, Pointer, VerificationSession};
+    use crate::kernel::{LoadKind, Memory, Pointer, VerificationSession};
     let _session = VerificationSession::enter();
     let address = Pointer::symbolic(Variable(986_101));
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let name = crate::kernel::canonical_form_of_load(
         crate::kernel::intern_c_memory(memory.clone()),
         address.clone(),

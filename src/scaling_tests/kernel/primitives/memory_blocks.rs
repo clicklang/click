@@ -5,7 +5,7 @@ fn scalar_declaration_and_retirement_do_not_reindex_heap_blocks() {
     let mut curves = Vec::new();
     for count in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..count {
             memory = memory.with_block(Pointer::symbolic(Variable(9_393_000 + index)).block, 16);
         }

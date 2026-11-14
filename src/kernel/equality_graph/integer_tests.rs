@@ -121,7 +121,7 @@ fn integer_observations_keep_machine_types_and_read_snapshots() {
     assert!(!graph.are_integer_equal(&signed, &unsigned));
     let p = Pointer::symbolic(Variable(920_132));
     let before = intern_c_memory(
-        CMemory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+        Memory::new().store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
     );
     let after = intern_c_memory(
         before

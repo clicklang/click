@@ -41,31 +41,31 @@ fn wide_matched_instance_projection_keeps_native_loadability() {
         vec![AlgebraicValue::Algebraic(model.clone())].into(),
     )
     .unwrap();
-    let segment = CMemorySegment::new(
+    let segment = MemorySegment::new(
         ProgramExpression::Value(ProgramValue::pointer(base)),
         c_uint64_literal(0),
         c_uint64_literal(1 << 33),
     )
     .with_element_width(1);
     let mut definition =
-        CCompositeResourceDefinition::new("matched_wide", vec![], None, false, vec![], vec![])
+        CompositeResourceDefinition::new("matched_wide", vec![], None, false, vec![], vec![])
             .with_instance_schema(Some(schema));
-    definition.matched = Some(CResourceMatchBody {
+    definition.matched = Some(ResourceMatchBody {
         field_index: 0,
         algebraic_type: ty,
-        arms: vec![CResourceMatchArm {
+        arms: vec![ResourceMatchArm {
             variant: "Held".into(),
             bindings: vec![],
             binding_types: vec![],
             binding_variables: vec![],
-            contains: vec![CResourceSpec::owned_memory(segment)],
+            contains: vec![ResourceSpec::owned_memory(segment)],
             facts: vec![],
             children: vec![],
         }],
     });
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
     );
     let projection = ResourceFieldProjection {
         identity: instance.identity(),

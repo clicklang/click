@@ -20,7 +20,7 @@ fn verified_loop_rule_selection_is_flat_in_unrelated_ambient_facts() {
     // The inapplicable rule comes first, so every lookup rejects one rule's
     // prerequisite and accepts the other's.
     let environment =
-        CExecutionEnvironment::new().with_verified_loop_rules([inapplicable, applicable]);
+        ExecutionEnvironment::new().with_verified_loop_rules([inapplicable, applicable]);
 
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
@@ -62,10 +62,10 @@ fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts()
     for size in [8usize, 16, 32] {
         let checks = (0..size)
             .map(|index| {
-                CLoopInvariantCheck::new(
+                LoopInvariantCheck::new(
                     SpecProposition::Comparison {
                         left: SpecExpression::ProgramExpression(c_variable("i")),
-                        operator: CComparisonOperator::LessEqual,
+                        operator: ComparisonOperator::LessEqual,
                         right: SpecExpression::Value(int32(1000 + index as u32)),
                     },
                     None,
@@ -150,7 +150,7 @@ fn a_zero_filled_automatic_array_costs_the_same_whatever_its_length() {
                 load_items_field(&stored, last - 16, ProgramType::Int32),
             ]
         });
-        let value = CExpressionOutcome::Value;
+        let value = ExpressionOutcome::Value;
         assert_eq!(
             loads,
             [
@@ -205,8 +205,8 @@ fn statement_theorems_do_not_list_the_context_they_executed_under() {
             state.clone(),
             statement.clone(),
             assumptions,
-            CExecutionEnvironment::new(),
-            CExecutionSemantics::EXECUTE_BODIES,
+            ExecutionEnvironment::new(),
+            ExecutionSemantics::EXECUTE_BODIES,
         );
         let path = &execution.paths()[0];
         let mut premises = 0;

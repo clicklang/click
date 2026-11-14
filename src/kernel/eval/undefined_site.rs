@@ -11,7 +11,7 @@ use super::*;
 /// The part of a statement whose evaluation has the reported undefined
 /// behavior.
 #[derive(Clone, Debug)]
-pub(crate) enum CUndefinedBehaviorSite {
+pub(crate) enum UndefinedBehaviorSite {
     /// An expression the statement evaluates.
     Expression(ProgramExpression),
     /// The store through this pointer expression, when no operand of the
@@ -31,18 +31,18 @@ pub(crate) fn locate_undefined_behavior(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &PureFactContext,
-    kind: &CUndefinedBehavior,
-) -> Option<CUndefinedBehaviorSite> {
+    kind: &UndefinedBehavior,
+) -> Option<UndefinedBehaviorSite> {
     let mut expressions = Vec::new();
     statement_expressions(statement, &mut expressions);
     for (expression, condition) in expressions {
         if let Some(site) = innermost_site(state, expression, condition, assumptions, kind) {
-            return Some(CUndefinedBehaviorSite::Expression(site.clone()));
+            return Some(UndefinedBehaviorSite::Expression(site.clone()));
         }
     }
     match statement {
         ProgramStatement::Store { pointer, .. } | ProgramStatement::TypedStore { pointer, .. } => {
-            Some(CUndefinedBehaviorSite::Store(pointer.clone()))
+            Some(UndefinedBehaviorSite::Store(pointer.clone()))
         }
         _ => None,
     }
@@ -54,10 +54,10 @@ pub(crate) fn locate_undefined_behavior_in_condition(
     state: &ExecutionState,
     condition: &ProgramExpression,
     assumptions: &PureFactContext,
-    kind: &CUndefinedBehavior,
-) -> Option<CUndefinedBehaviorSite> {
+    kind: &UndefinedBehavior,
+) -> Option<UndefinedBehaviorSite> {
     innermost_site(state, condition, true, assumptions, kind)
-        .map(|site| CUndefinedBehaviorSite::Expression(site.clone()))
+        .map(|site| UndefinedBehaviorSite::Expression(site.clone()))
 }
 
 /// The expressions `statement` evaluates itself, each with whether its value
@@ -123,7 +123,7 @@ fn innermost_site<'a>(
     expression: &'a ProgramExpression,
     condition: bool,
     assumptions: &PureFactContext,
-    kind: &CUndefinedBehavior,
+    kind: &UndefinedBehavior,
 ) -> Option<&'a ProgramExpression> {
     let mut children = Vec::new();
     unconditional_operands(expression, &mut children);
@@ -140,7 +140,7 @@ fn has_undefined_behavior(
     expression: &ProgramExpression,
     condition: bool,
     assumptions: &PureFactContext,
-    kind: &CUndefinedBehavior,
+    kind: &UndefinedBehavior,
 ) -> bool {
     let mut budget = ExecutionBudget::beside_live_state();
     let paths = if condition {
@@ -150,7 +150,7 @@ fn has_undefined_behavior(
     };
     paths.is_ok_and(|paths| {
         paths.iter().any(|path| {
-            matches!(&path.outcome, CExpressionOutcome::UndefinedBehavior(found)
+            matches!(&path.outcome, ExpressionOutcome::UndefinedBehavior(found)
                 if std::mem::discriminant(found) == std::mem::discriminant(kind))
         })
     })

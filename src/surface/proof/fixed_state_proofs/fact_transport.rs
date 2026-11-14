@@ -504,7 +504,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             // The frontier's certified effect facts (call postconditions and
             // effect summaries) may relate a load at one snapshot to the same
             // cell at another: load names are not preserved across call-havoc
-            // and store edges by path assumptions (see `CMemoryDerivation`).
+            // and store edges by path assumptions (see `MemoryDerivation`).
             // They are certified facts, not user premises.
             chain_facts.extend(
                 effect_facts
@@ -959,7 +959,7 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
     fn erase_term(term: &MachineTerm) -> MachineTerm {
         match term {
             MachineTerm::MemoryLoad(_, pointer, kind) => MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(CMemory::default()),
+                crate::kernel::intern_c_memory(Memory::default()),
                 Box::new(Pointer {
                     block: pointer.block.clone(),
                     offset: erase_offset(&pointer.offset),
@@ -1142,7 +1142,7 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
 pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
     source: &Proposition,
     target: &Proposition,
-    after: &CMemory,
+    after: &Memory,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
@@ -1167,7 +1167,7 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
 fn certified_fact_transport_reaches_through_unmemoized(
     source: &Proposition,
     target: &Proposition,
-    after: &CMemory,
+    after: &Memory,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
@@ -1200,7 +1200,7 @@ fn certified_fact_transport_reaches_through_unmemoized(
 pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     source: &Proposition,
     target: &Proposition,
-    after: Option<&CMemory>,
+    after: Option<&Memory>,
     assumptions: &PureFactContext,
 ) -> bool {
     // A checked read at a computed address includes its address-definedness
@@ -1399,7 +1399,7 @@ mod path_condition_tests {
 
     #[test]
     fn compound_read_transport_requires_every_address_guard_and_range() {
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let base = Pointer {
             block: "bytes".into(),
             offset: PointerOffsetTerm::Constant(0),

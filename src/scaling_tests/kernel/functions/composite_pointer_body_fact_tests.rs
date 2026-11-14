@@ -267,7 +267,7 @@ fn binding_free_scalar_facts_do_not_prepare_unused_arm_memory() {
             "p",
             ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
         );
-        let arm = CResourceMatchArm {
+        let arm = ResourceMatchArm {
             variant: "Held".into(),
             bindings: vec![],
             binding_types: vec![],
@@ -275,7 +275,7 @@ fn binding_free_scalar_facts_do_not_prepare_unused_arm_memory() {
             children: vec![],
             contains: (0..size)
                 .map(|index| {
-                    CResourceSpec::owned_memory(CMemorySegment::new(
+                    ResourceSpec::owned_memory(MemorySegment::new(
                         ProgramExpression::Value(ProgramValue::typed_pointer(
                             Pointer::symbolic(Variable(719_000 + index)),
                             ProgramType::Int32Pointer,
@@ -287,7 +287,7 @@ fn binding_free_scalar_facts_do_not_prepare_unused_arm_memory() {
                 .collect(),
             facts: vec![SpecProposition::Comparison {
                 left: SpecExpression::ProgramExpression(c_variable("p")),
-                operator: CComparisonOperator::NotEqual,
+                operator: ComparisonOperator::NotEqual,
                 right: SpecExpression::ProgramExpression(c_int32_literal(0)),
             }],
         };
@@ -308,7 +308,7 @@ fn arm_refutation_stops_before_unneeded_memory_facts() {
             "p",
             ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
         );
-        let arm = CResourceMatchArm {
+        let arm = ResourceMatchArm {
             variant: "Held".into(),
             bindings: vec![],
             binding_types: vec![],
@@ -316,7 +316,7 @@ fn arm_refutation_stops_before_unneeded_memory_facts() {
             children: vec![],
             contains: (0..size)
                 .map(|index| {
-                    CResourceSpec::owned_memory(CMemorySegment::new(
+                    ResourceSpec::owned_memory(MemorySegment::new(
                         ProgramExpression::Value(ProgramValue::typed_pointer(
                             Pointer::symbolic(Variable(719_000 + index)),
                             ProgramType::Int32Pointer,
@@ -329,14 +329,14 @@ fn arm_refutation_stops_before_unneeded_memory_facts() {
             facts: vec![
                 SpecProposition::Comparison {
                     left: SpecExpression::ProgramExpression(c_variable("p")),
-                    operator: CComparisonOperator::NotEqual,
+                    operator: ComparisonOperator::NotEqual,
                     right: SpecExpression::ProgramExpression(c_int32_literal(0)),
                 },
                 SpecProposition::Comparison {
                     left: SpecExpression::ProgramExpression(ProgramExpression::Load(Box::new(
                         c_variable("p"),
                     ))),
-                    operator: CComparisonOperator::Equal,
+                    operator: ComparisonOperator::Equal,
                     right: SpecExpression::ProgramExpression(c_int32_literal(0)),
                 },
             ],
@@ -368,12 +368,12 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             .allow_symbolic_contract_loads()
             .keep_spec_loads_symbolic()
             .prefer_symbolic_external_loads();
-        let definition = CCompositeResourceDefinition::new(
+        let definition = CompositeResourceDefinition::new(
             "unrelated_word",
             vec![c_parameter("slot", ProgramType::UInt64Pointer)],
             None,
             false,
-            vec![CResourceSpec::owned_memory(CMemorySegment {
+            vec![ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
                 base: c_variable("slot"),
@@ -385,7 +385,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             vec![],
         );
         let residual = ResourceContext::new().unchecked_with_facts((0..size).map(|i| {
-            CResourceFact::own(CResource::Composite {
+            ResourceFact::own(Resource::Composite {
                 name: "unrelated_word".into(),
                 arguments: vec![
                     ProgramValue::typed_pointer(input(720_000 + i), ProgramType::UInt64Pointer)
@@ -403,9 +403,9 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             ),
             &context,
         );
-        let memory = CMemory::new().with_call_memory_havoc(
+        let memory = Memory::new().with_call_memory_havoc(
             Variable(719_101),
-            &[CMemoryRange::new_with_element_width(
+            &[MemoryRange::new_with_element_width(
                 input(719_102),
                 0u32.into(),
                 1u32.into(),
@@ -427,13 +427,13 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
             "p",
             ProgramValue::typed_pointer(word, ProgramType::UInt64Pointer),
         );
-        let arm = CResourceMatchArm {
+        let arm = ResourceMatchArm {
             variant: "Held".into(),
             bindings: vec![],
             binding_types: vec![],
             binding_variables: vec![],
             children: vec![],
-            contains: vec![CResourceSpec::owned_memory(CMemorySegment {
+            contains: vec![ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
                 base: c_variable("p"),
@@ -446,7 +446,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
                 left: SpecExpression::ProgramExpression(ProgramExpression::Load(Box::new(
                     c_variable("p"),
                 ))),
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right: SpecExpression::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
                 )),

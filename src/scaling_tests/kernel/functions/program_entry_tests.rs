@@ -76,7 +76,7 @@ fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
                 entry
             });
             let entry_named = registered() - before_entry;
-            let base = CMemory::global_pointer("buf");
+            let base = Memory::global_pointer("buf");
             let element = |index: i64| Pointer {
                 block: base.block.clone(),
                 offset: PointerOffsetTerm::Constant(index * width),
@@ -96,7 +96,7 @@ fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
                 read
             });
             assert!(
-                matches!(read, CExpressionOutcome::Value(_)),
+                matches!(read, ExpressionOutcome::Value(_)),
                 "{element_type:?}[{length}] element 6 reads its entry value: {read:?}"
             );
             let statement_named = registered() - before_statement;
@@ -139,8 +139,8 @@ fn an_initialized_array_at_startup_costs_the_same_whatever_its_length() {
         let (startup, startup_work) = crate::instrumentation::measure_deterministic_work(|| {
             initialize_c_program_storage([function.clone()]).expect("no run limit is installed")
         });
-        let buf = CMemory::global_pointer("buf");
-        let counts = CMemory::static_pointer("main", "counts");
+        let buf = Memory::global_pointer("buf");
+        let counts = Memory::static_pointer("main", "counts");
         let element = |index: u32| buf.offset_by_bytes(index * 4);
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
             let memory = startup.memory();
@@ -155,7 +155,7 @@ fn an_initialized_array_at_startup_costs_the_same_whatever_its_length() {
                 stored.load(&element(6)),
             ]
         });
-        let value = CExpressionOutcome::Value;
+        let value = ExpressionOutcome::Value;
         assert_eq!(
             loads,
             [
@@ -198,15 +198,15 @@ fn a_constant_array_at_function_entry_costs_the_same_whatever_its_length() {
         let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
             initialize_c_function_globals(&ExecutionState::new(), &function)
         });
-        let buf = CMemory::global_pointer("buf");
+        let buf = Memory::global_pointer("buf");
         assert_eq!(
             entry.memory().load(&buf.offset_by_bytes(8)),
-            CExpressionOutcome::Value(int32(7)),
+            ExpressionOutcome::Value(int32(7)),
             "[{length}] element 2"
         );
         assert_eq!(
             entry.memory().load(&buf.offset_by_bytes(12)),
-            CExpressionOutcome::Value(int32(0)),
+            ExpressionOutcome::Value(int32(0)),
             "[{length}] element 3"
         );
         (length, work, entry.memory().cells.representation_len())
@@ -231,8 +231,8 @@ fn an_aggregate_array_at_startup_costs_the_same_whatever_its_length() {
         let (startup, startup_work) = crate::instrumentation::measure_deterministic_work(|| {
             initialize_c_program_storage([function.clone()]).expect("no run limit is installed")
         });
-        let pool = CMemory::global_pointer("pool");
-        let slots = CMemory::static_pointer("main", "slots");
+        let pool = Memory::global_pointer("pool");
+        let slots = Memory::static_pointer("main", "slots");
         let field = |element: u32, offset: u32| pool.offset_by_bytes(element * 24 + offset);
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
             let memory = startup.memory();
@@ -249,7 +249,7 @@ fn an_aggregate_array_at_startup_costs_the_same_whatever_its_length() {
                 stored.load(&field(6, 0)),
             ]
         });
-        let value = CExpressionOutcome::Value;
+        let value = ExpressionOutcome::Value;
         assert_eq!(
             loads,
             [
@@ -300,7 +300,7 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
         let (entry, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
             initialize_c_function_globals(&ExecutionState::new(), &function)
         });
-        let pool = CMemory::global_pointer("pool");
+        let pool = Memory::global_pointer("pool");
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
             [
                 entry.memory().load(&pool.offset_by_bytes(24 * 7)),
@@ -312,7 +312,7 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
         assert!(
             loads.iter().all(|load| matches!(
                 load,
-                CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::MemoryLoad(..)))
+                ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::MemoryLoad(..)))
             )),
             "[{length}] a field reads as its load: {loads:?}"
         );
@@ -343,7 +343,7 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
 fn a_symbolic_global_array_declared_from_another_base_costs_the_same_whatever_its_length() {
     let samples = [8u32, 1_000, 1_000_000].map(|length| {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = CMemory::global_pointer("buf");
+        let base = Memory::global_pointer("buf");
         let other = another_context_base(ProgramType::Int32, length);
         assert!(crate::kernel::eval::declare_symbolic_array_access_widths(
             &other, &base, 4, length, 4

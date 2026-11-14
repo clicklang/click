@@ -16,7 +16,7 @@
 //! (`docs/internals/memory-dag.md`).
 
 use super::cell_source::{MemoryDagAssumptionKind, MemoryDagHopJustification};
-use super::{Resource, SeparationCheck};
+use super::{SeparationCheck, TrackedResource};
 use crate::kernel::memory_provenance::*;
 use crate::kernel::primitives::*;
 use crate::kernel::reasoning::*;
@@ -159,21 +159,21 @@ pub(in crate::kernel) struct Evidence<'a> {
 /// column reads only `PointerBlock::proven_distinct` and the write set the edge
 /// itself carries.
 pub(in crate::kernel) fn affects(
-    step: &CMemoryDerivation,
+    step: &MemoryDerivation,
     _produced: &SharedMemory,
-    resource: Resource<'_>,
+    resource: TrackedResource<'_>,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
     match resource {
-        Resource::Cell { pointer, bytes } => cell_effect(step, pointer, bytes, evidence),
+        TrackedResource::Cell { pointer, bytes } => cell_effect(step, pointer, bytes, evidence),
         // The block arm is handed no evidence, which is how "assumption-free"
         // is enforced rather than remembered: it has no parameter a fact
         // could arrive through.
-        Resource::Block(block) => block_effect(step, block),
+        TrackedResource::Block(block) => block_effect(step, block),
         // A footprint's answer is spent dropping resource projections, which
         // record no premise, so it is handed no evidence either.
-        Resource::Ranges(ranges) => footprint_effect(step, Some(ranges)),
-        Resource::AnyMemory => footprint_effect(step, None),
+        TrackedResource::Ranges(ranges) => footprint_effect(step, Some(ranges)),
+        TrackedResource::AnyMemory => footprint_effect(step, None),
         // A recorded memory edge says nothing about a model field: it is not
         // memory, and its versions are values in saved states rather than
         // points on this history. Answering
@@ -181,7 +181,7 @@ pub(in crate::kernel) fn affects(
         // model) and `Separate` would be a claim no edge supports, so the one
         // rule has nothing to decide here and these kinds never reach a walk.
         // `resource_tracker::same_at_states` is its whole interface.
-        Resource::ModelField { .. } => {
+        TrackedResource::ModelField { .. } => {
             unreachable!("a saved-state resource is answered by `same_at_states`, not by a walk")
         }
     }
@@ -194,92 +194,92 @@ pub(in crate::kernel) fn affects(
 /// classification of a stop a diagnostic reports, so the check the walk wanted
 /// and the check the refusal names are one thing.
 pub(in crate::kernel) fn separation_check(
-    step: &CMemoryDerivation,
-    resource: Resource<'_>,
+    step: &MemoryDerivation,
+    resource: TrackedResource<'_>,
 ) -> SeparationCheck {
     match resource {
-        Resource::Cell { .. } => match step {
-            CMemoryDerivation::BranchJoin { .. }
-            | CMemoryDerivation::CallHavoc { .. }
-            | CMemoryDerivation::LoopHavoc {
+        TrackedResource::Cell { .. } => match step {
+            MemoryDerivation::BranchJoin { .. }
+            | MemoryDerivation::CallHavoc { .. }
+            | MemoryDerivation::LoopHavoc {
                 mutable_ranges: Some(_),
                 ..
             } => SeparationCheck::RangeDisjointness,
-            CMemoryDerivation::LoopHavoc {
+            MemoryDerivation::LoopHavoc {
                 mutable_ranges: None,
                 ..
             } => SeparationCheck::NoCheckedWriteSet,
-            CMemoryDerivation::HeapFreed { .. }
-            | CMemoryDerivation::ContractAllocationRetired { .. } => {
+            MemoryDerivation::HeapFreed { .. }
+            | MemoryDerivation::ContractAllocationRetired { .. } => {
                 SeparationCheck::HeapAllocationSeparation
             }
-            CMemoryDerivation::Store { .. }
-            | CMemoryDerivation::CellsSeeded { .. }
-            | CMemoryDerivation::BlockDeclared { .. }
-            | CMemoryDerivation::HeapAllocated { .. }
-            | CMemoryDerivation::HeapAllocationPending { .. }
-            | CMemoryDerivation::HeapAllocationFailed { .. }
-            | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
-            | CMemoryDerivation::ObjectInitializationRecorded { .. }
-            | CMemoryDerivation::CellObserved { .. }
-            | CMemoryDerivation::CellsForgotten { .. }
-            | CMemoryDerivation::LocalLifetimeEnded { .. } => SeparationCheck::PointerDistinctness,
+            MemoryDerivation::Store { .. }
+            | MemoryDerivation::CellsSeeded { .. }
+            | MemoryDerivation::BlockDeclared { .. }
+            | MemoryDerivation::HeapAllocated { .. }
+            | MemoryDerivation::HeapAllocationPending { .. }
+            | MemoryDerivation::HeapAllocationFailed { .. }
+            | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | MemoryDerivation::ObjectInitializationRecorded { .. }
+            | MemoryDerivation::CellObserved { .. }
+            | MemoryDerivation::CellsForgotten { .. }
+            | MemoryDerivation::LocalLifetimeEnded { .. } => SeparationCheck::PointerDistinctness,
         },
         // A block's footprint is everything the object contains, so one check
         // covers its extent, liveness and heap status as well as its cells;
         // only a store has a single address to be distinct from.
-        Resource::Block(_) => match step {
-            CMemoryDerivation::Store { .. } | CMemoryDerivation::CellsSeeded { .. } => {
+        TrackedResource::Block(_) => match step {
+            MemoryDerivation::Store { .. } | MemoryDerivation::CellsSeeded { .. } => {
                 SeparationCheck::PointerDistinctness
             }
-            CMemoryDerivation::BlockDeclared { .. }
-            | CMemoryDerivation::HeapAllocated { .. }
-            | CMemoryDerivation::HeapAllocationPending { .. }
-            | CMemoryDerivation::HeapAllocationFailed { .. }
-            | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
-            | CMemoryDerivation::ObjectInitializationRecorded { .. }
-            | CMemoryDerivation::CellObserved { .. }
-            | CMemoryDerivation::CellsForgotten { .. }
-            | CMemoryDerivation::LocalLifetimeEnded { .. }
-            | CMemoryDerivation::HeapFreed { .. }
-            | CMemoryDerivation::ContractAllocationRetired { .. }
-            | CMemoryDerivation::BranchJoin { .. }
-            | CMemoryDerivation::CallHavoc { .. }
-            | CMemoryDerivation::LoopHavoc { .. } => SeparationCheck::WholeBlockAgreement,
+            MemoryDerivation::BlockDeclared { .. }
+            | MemoryDerivation::HeapAllocated { .. }
+            | MemoryDerivation::HeapAllocationPending { .. }
+            | MemoryDerivation::HeapAllocationFailed { .. }
+            | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | MemoryDerivation::ObjectInitializationRecorded { .. }
+            | MemoryDerivation::CellObserved { .. }
+            | MemoryDerivation::CellsForgotten { .. }
+            | MemoryDerivation::LocalLifetimeEnded { .. }
+            | MemoryDerivation::HeapFreed { .. }
+            | MemoryDerivation::ContractAllocationRetired { .. }
+            | MemoryDerivation::BranchJoin { .. }
+            | MemoryDerivation::CallHavoc { .. }
+            | MemoryDerivation::LoopHavoc { .. } => SeparationCheck::WholeBlockAgreement,
         },
         // A footprint is a list of byte ranges, so the check is always "is the
         // step's own write set outside all of them"; only the two kinds that
         // name no write set at all answer otherwise.
-        Resource::Ranges(_) | Resource::AnyMemory => match step {
-            CMemoryDerivation::LoopHavoc {
+        TrackedResource::Ranges(_) | TrackedResource::AnyMemory => match step {
+            MemoryDerivation::LoopHavoc {
                 mutable_ranges: None,
                 ..
             } => SeparationCheck::NoCheckedWriteSet,
-            CMemoryDerivation::HeapFreed { .. }
-            | CMemoryDerivation::ContractAllocationRetired { .. } => {
+            MemoryDerivation::HeapFreed { .. }
+            | MemoryDerivation::ContractAllocationRetired { .. } => {
                 SeparationCheck::HeapAllocationSeparation
             }
-            CMemoryDerivation::Store { .. }
-            | CMemoryDerivation::CellsSeeded { .. }
-            | CMemoryDerivation::BlockDeclared { .. }
-            | CMemoryDerivation::HeapAllocated { .. }
-            | CMemoryDerivation::HeapAllocationPending { .. }
-            | CMemoryDerivation::HeapAllocationFailed { .. }
-            | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
-            | CMemoryDerivation::ObjectInitializationRecorded { .. }
-            | CMemoryDerivation::CellObserved { .. }
-            | CMemoryDerivation::CellsForgotten { .. }
-            | CMemoryDerivation::LocalLifetimeEnded { .. }
-            | CMemoryDerivation::BranchJoin { .. }
-            | CMemoryDerivation::CallHavoc { .. }
-            | CMemoryDerivation::LoopHavoc {
+            MemoryDerivation::Store { .. }
+            | MemoryDerivation::CellsSeeded { .. }
+            | MemoryDerivation::BlockDeclared { .. }
+            | MemoryDerivation::HeapAllocated { .. }
+            | MemoryDerivation::HeapAllocationPending { .. }
+            | MemoryDerivation::HeapAllocationFailed { .. }
+            | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | MemoryDerivation::ObjectInitializationRecorded { .. }
+            | MemoryDerivation::CellObserved { .. }
+            | MemoryDerivation::CellsForgotten { .. }
+            | MemoryDerivation::LocalLifetimeEnded { .. }
+            | MemoryDerivation::BranchJoin { .. }
+            | MemoryDerivation::CallHavoc { .. }
+            | MemoryDerivation::LoopHavoc {
                 mutable_ranges: Some(_),
                 ..
             } => SeparationCheck::RangeDisjointness,
         },
         // No separation check carries a model field across a memory edge,
         // because no memory edge is between them; see `affects`.
-        Resource::ModelField { .. } => {
+        TrackedResource::ModelField { .. } => {
             unreachable!("a saved-state resource is answered by `same_at_states`, not by a walk")
         }
     }
@@ -293,17 +293,21 @@ pub(in crate::kernel) fn separation_check(
 /// that crosses and a caller that only classifies a stop reach the same
 /// verdict from the same premises.
 fn cell_effect(
-    step: &CMemoryDerivation,
+    step: &MemoryDerivation,
     pointer: &Pointer,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
     let assumptions = evidence.assumptions;
     let hop = |justification| StepEffect::Separate(Separation::Cell(justification));
-    let unknown =
-        || StepEffect::NotShownSeparate(separation_check(step, Resource::Cell { pointer, bytes }));
+    let unknown = || {
+        StepEffect::NotShownSeparate(separation_check(
+            step,
+            TrackedResource::Cell { pointer, bytes },
+        ))
+    };
     match step {
-        CMemoryDerivation::BranchJoin { base, incoming } => {
+        MemoryDerivation::BranchJoin { base, incoming } => {
             let arms = incoming
                 .iter()
                 .map(|memory| {
@@ -316,12 +320,12 @@ fn cell_effect(
                 None => unknown(),
             }
         }
-        CMemoryDerivation::Store {
+        MemoryDerivation::Store {
             pointer: write,
             value,
             ..
         } => store_cell_effect(step, write, value, pointer, bytes, evidence),
-        CMemoryDerivation::CellsSeeded { .. } => {
+        MemoryDerivation::CellsSeeded { .. } => {
             match seeded_cell_effect(step, pointer, bytes, evidence) {
                 SeededCellEffect::Written(..) => StepEffect::Affected,
                 SeededCellEffect::Separate(mut hops)
@@ -346,20 +350,20 @@ fn cell_effect(
         // writes nothing, so every load is untouched — but only the
         // extended-bridging scope may exploit that: elsewhere these edges
         // must look like the pre-arc absence of an edge.
-        CMemoryDerivation::BlockDeclared { .. }
-        | CMemoryDerivation::HeapAllocationPending { .. }
-        | CMemoryDerivation::HeapAllocationFailed { .. }
-        | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
-        | CMemoryDerivation::ObjectInitializationRecorded { .. }
-        | CMemoryDerivation::CellObserved { .. }
-        | CMemoryDerivation::CellsForgotten { .. } => {
+        MemoryDerivation::BlockDeclared { .. }
+        | MemoryDerivation::HeapAllocationPending { .. }
+        | MemoryDerivation::HeapAllocationFailed { .. }
+        | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+        | MemoryDerivation::ObjectInitializationRecorded { .. }
+        | MemoryDerivation::CellObserved { .. }
+        | MemoryDerivation::CellsForgotten { .. } => {
             if extended_dag_bridging_active() {
                 hop(MemoryDagHopJustification::IntrinsicNoWrite)
             } else {
                 unknown()
             }
         }
-        CMemoryDerivation::HeapAllocated { block, .. } => {
+        MemoryDerivation::HeapAllocated { block, .. } => {
             if pointer.block != *block && extended_dag_bridging_active() {
                 hop(MemoryDagHopJustification::AllocationOfOtherBlock)
             } else if pointer.block == *block {
@@ -368,7 +372,7 @@ fn cell_effect(
                 unknown()
             }
         }
-        CMemoryDerivation::LocalLifetimeEnded { block, .. } => {
+        MemoryDerivation::LocalLifetimeEnded { block, .. } => {
             // Cleanup can name a private object while the surviving result
             // uses a symbolic block. Frame the full retired extent, not just
             // its base address, using retained range membership evidence: a
@@ -434,12 +438,12 @@ fn cell_effect(
                 unknown()
             }
         }
-        CMemoryDerivation::HeapFreed {
+        MemoryDerivation::HeapFreed {
             allocation_base,
             bytes,
             ..
         }
-        | CMemoryDerivation::ContractAllocationRetired {
+        | MemoryDerivation::ContractAllocationRetired {
             allocation_base,
             bytes,
             ..
@@ -489,7 +493,7 @@ fn cell_effect(
                 unknown()
             }
         }
-        CMemoryDerivation::CallHavoc {
+        MemoryDerivation::CallHavoc {
             mutable_ranges,
             kept_by_caller,
             ..
@@ -551,7 +555,7 @@ fn cell_effect(
                 unknown()
             }
         }
-        CMemoryDerivation::LoopHavoc {
+        MemoryDerivation::LoopHavoc {
             mutable_ranges: Some(mutable_ranges),
             kept_by_function,
             ..
@@ -602,7 +606,7 @@ fn cell_effect(
                 unknown()
             }
         }
-        CMemoryDerivation::LoopHavoc {
+        MemoryDerivation::LoopHavoc {
             mutable_ranges: None,
             ..
         } => unknown(),
@@ -612,7 +616,7 @@ fn cell_effect(
 /// The `Store` arm of [`cell_effect`], for one write. A `CellsSeeded` edge is
 /// the same question asked of each store it stands for.
 fn store_cell_effect(
-    step: &CMemoryDerivation,
+    step: &MemoryDerivation,
     write: &Pointer,
     value: &ProgramValue,
     pointer: &Pointer,
@@ -621,8 +625,12 @@ fn store_cell_effect(
 ) -> StepEffect {
     let assumptions = evidence.assumptions;
     let hop = |justification| StepEffect::Separate(Separation::Cell(justification));
-    let unknown =
-        || StepEffect::NotShownSeparate(separation_check(step, Resource::Cell { pointer, bytes }));
+    let unknown = || {
+        StepEffect::NotShownSeparate(separation_check(
+            step,
+            TrackedResource::Cell { pointer, bytes },
+        ))
+    };
     if write_is_at_read_address(write, pointer, assumptions) {
         return StepEffect::Affected;
     }
@@ -814,12 +822,12 @@ pub(in crate::kernel) enum SeededCellEffect {
 /// the cell answers, and the edge is crossed only when every store is
 /// separate.
 pub(in crate::kernel) fn seeded_cell_effect(
-    step: &CMemoryDerivation,
+    step: &MemoryDerivation,
     pointer: &Pointer,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> SeededCellEffect {
-    let CMemoryDerivation::CellsSeeded { run, .. } = step else {
+    let MemoryDerivation::CellsSeeded { run, .. } = step else {
         unreachable!("seeded_cell_effect is asked about a CellsSeeded edge");
     };
     crate::instrumentation::record_deterministic_work(1);
@@ -871,8 +879,8 @@ pub(in crate::kernel) fn seeded_cell_effect(
 /// caching four observed bytes every eight bytes leaves the intervening bytes
 /// unchanged too. Overlapping representations remain excluded. The comparison
 /// and run metadata do not depend on run size.
-pub(in crate::kernel) fn seeded_loads_preserve_base(step: &CMemoryDerivation) -> bool {
-    let CMemoryDerivation::CellsSeeded { base, run } = step else {
+pub(in crate::kernel) fn seeded_loads_preserve_base(step: &MemoryDerivation) -> bool {
+    let MemoryDerivation::CellsSeeded { base, run } = step else {
         return false;
     };
     crate::instrumentation::record_deterministic_work(1);
@@ -884,7 +892,7 @@ pub(in crate::kernel) fn seeded_loads_preserve_base(step: &CMemoryDerivation) ->
 
 /// The stores of a `CellsSeeded` edge asked one by one, newest first.
 fn seeded_cell_effect_store_by_store(
-    step: &CMemoryDerivation,
+    step: &MemoryDerivation,
     run: &crate::kernel::primitives::CellRun,
     pointer: &Pointer,
     bytes: u32,
@@ -1011,8 +1019,9 @@ fn seeded_cell_effect_store_by_store(
 /// No arm consults a fact, a stated `separate(..)` or ownership, because this
 /// answer is memoized per `(snapshot, block)` and an interned edge is shared
 /// by paths with different assumptions.
-fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
-    let unknown = || StepEffect::NotShownSeparate(separation_check(step, Resource::Block(block)));
+fn block_effect(step: &MemoryDerivation, block: &PointerBlock) -> StepEffect {
+    let unknown =
+        || StepEffect::NotShownSeparate(separation_check(step, TrackedResource::Block(block)));
     // An arm that names one object answers in one order: proven distinct from
     // this block, else this very block, else the check that failed.
     let one_object = |changed: &PointerBlock, separation| {
@@ -1035,39 +1044,39 @@ fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
         }
     };
     match step {
-        CMemoryDerivation::Store { pointer, .. } => {
+        MemoryDerivation::Store { pointer, .. } => {
             one_object(&pointer.block, BlockSeparation::StoreInDistinctBlock)
         }
         // Every store of a run writes the run's own block.
-        CMemoryDerivation::CellsSeeded { run, .. } => {
+        MemoryDerivation::CellsSeeded { run, .. } => {
             one_object(&run.base().block, BlockSeparation::StoreInDistinctBlock)
         }
-        CMemoryDerivation::BlockDeclared {
+        MemoryDerivation::BlockDeclared {
             block: declared, ..
         } => one_object(declared, BlockSeparation::DeclarationOfDistinctBlock),
-        CMemoryDerivation::HeapAllocated {
+        MemoryDerivation::HeapAllocated {
             block: allocated, ..
         } => one_object(allocated, BlockSeparation::AllocationOfDistinctBlock),
-        CMemoryDerivation::HeapAllocationPending { .. }
-        | CMemoryDerivation::HeapAllocationFailed { .. } => StepEffect::Separate(
-            Separation::Block(BlockSeparation::PendingAllocationMetadata),
-        ),
-        CMemoryDerivation::HeapFreed {
+        MemoryDerivation::HeapAllocationPending { .. }
+        | MemoryDerivation::HeapAllocationFailed { .. } => StepEffect::Separate(Separation::Block(
+            BlockSeparation::PendingAllocationMetadata,
+        )),
+        MemoryDerivation::HeapFreed {
             allocation_base, ..
         }
-        | CMemoryDerivation::ContractAllocationRetired {
+        | MemoryDerivation::ContractAllocationRetired {
             allocation_base, ..
         } => one_object(
             &allocation_base.block,
             BlockSeparation::ReleaseOfDistinctBlock,
         ),
-        CMemoryDerivation::LocalLifetimeEnded { block: retired, .. } => {
+        MemoryDerivation::LocalLifetimeEnded { block: retired, .. } => {
             one_object(retired, BlockSeparation::ReleaseOfDistinctBlock)
         }
         // It writes no bytes, but the claims it moves are what authorize a
         // read, and the edge names no allocation they could belong to.
-        CMemoryDerivation::ContractAllocationClaimsChanged { .. } => stops(None),
-        CMemoryDerivation::ObjectInitializationRecorded { pointer, .. } => {
+        MemoryDerivation::ContractAllocationClaimsChanged { .. } => stops(None),
+        MemoryDerivation::ObjectInitializationRecorded { pointer, .. } => {
             // Initialization status changes only in this object's block.
             one_object(
                 &pointer.block,
@@ -1076,12 +1085,12 @@ fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
         }
         // The state is the same but the cell map is not, and the edge names no
         // cell, so nothing states agreement of its cached representation.
-        CMemoryDerivation::CellObserved { .. } | CMemoryDerivation::CellsForgotten { .. } => {
+        MemoryDerivation::CellObserved { .. } | MemoryDerivation::CellsForgotten { .. } => {
             stops(None)
         }
-        CMemoryDerivation::BranchJoin { .. } => unknown(),
-        CMemoryDerivation::CallHavoc { mutable_ranges, .. }
-        | CMemoryDerivation::LoopHavoc {
+        MemoryDerivation::BranchJoin { .. } => unknown(),
+        MemoryDerivation::CallHavoc { mutable_ranges, .. }
+        | MemoryDerivation::LoopHavoc {
             mutable_ranges: Some(mutable_ranges),
             ..
         } => {
@@ -1099,7 +1108,7 @@ fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
         // Without a checked write set the edge is an unconditional barrier:
         // nothing can be shown separate from a body that may write anything it
         // can reach.
-        CMemoryDerivation::LoopHavoc {
+        MemoryDerivation::LoopHavoc {
             mutable_ranges: None,
             ..
         } => stops(None),
@@ -1110,7 +1119,7 @@ fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
 /// is outside every range of it, decided from the edge alone.
 ///
 /// `ranges` is `None` for a footprint the kernel could not name
-/// ([`Resource::AnyMemory`]), and then only the kinds that write no byte are
+/// ([`TrackedResource::AnyMemory`]), and then only the kinds that write no byte are
 /// separate — nothing bounds what such a footprint covers, so there is no
 /// range to be outside of.
 ///
@@ -1146,10 +1155,10 @@ fn block_effect(step: &CMemoryDerivation, block: &PointerBlock) -> StepEffect {
 ///   stated over objects that already existed; the fresh object's own bytes
 ///   are in no range of it.
 /// * `LoopHavoc` without a write set is an unconditional barrier.
-fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -> StepEffect {
+fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> StepEffect {
     let resource = match ranges {
-        Some(ranges) => Resource::Ranges(ranges),
-        None => Resource::AnyMemory,
+        Some(ranges) => TrackedResource::Ranges(ranges),
+        None => TrackedResource::AnyMemory,
     };
     let unknown = || StepEffect::NotShownSeparate(separation_check(step, resource));
     let separate = |separation| StepEffect::Separate(Separation::Footprint(separation));
@@ -1157,14 +1166,14 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
     // footprint, named or not.
     if matches!(
         step,
-        CMemoryDerivation::BlockDeclared { .. }
-            | CMemoryDerivation::HeapAllocated { .. }
-            | CMemoryDerivation::HeapAllocationPending { .. }
-            | CMemoryDerivation::HeapAllocationFailed { .. }
-            | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
-            | CMemoryDerivation::ObjectInitializationRecorded { .. }
-            | CMemoryDerivation::CellObserved { .. }
-            | CMemoryDerivation::CellsForgotten { .. }
+        MemoryDerivation::BlockDeclared { .. }
+            | MemoryDerivation::HeapAllocated { .. }
+            | MemoryDerivation::HeapAllocationPending { .. }
+            | MemoryDerivation::HeapAllocationFailed { .. }
+            | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+            | MemoryDerivation::ObjectInitializationRecorded { .. }
+            | MemoryDerivation::CellObserved { .. }
+            | MemoryDerivation::CellsForgotten { .. }
     ) {
         return separate(FootprintSeparation::WritesNothing);
     }
@@ -1173,8 +1182,8 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
         return unknown();
     };
     match step {
-        CMemoryDerivation::BranchJoin { .. } => unknown(),
-        CMemoryDerivation::Store { pointer, value, .. } => {
+        MemoryDerivation::BranchJoin { .. } => unknown(),
+        MemoryDerivation::Store { pointer, value, .. } => {
             if !memory_block_may_alias(&pointer.block)
                 && !ranges
                     .iter()
@@ -1185,7 +1194,7 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
                 unknown()
             }
         }
-        CMemoryDerivation::CellsSeeded { .. } => {
+        MemoryDerivation::CellsSeeded { .. } => {
             let stores = step.seeded_stores().expect("a CellsSeeded edge");
             if stores.iter().all(|(pointer, value)| {
                 !memory_block_may_alias(&pointer.block)
@@ -1198,8 +1207,8 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
                 unknown()
             }
         }
-        CMemoryDerivation::CallHavoc { mutable_ranges, .. }
-        | CMemoryDerivation::LoopHavoc {
+        MemoryDerivation::CallHavoc { mutable_ranges, .. }
+        | MemoryDerivation::LoopHavoc {
             mutable_ranges: Some(mutable_ranges),
             ..
         } => {
@@ -1217,12 +1226,12 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
                 unknown()
             }
         }
-        CMemoryDerivation::HeapFreed {
+        MemoryDerivation::HeapFreed {
             allocation_base,
             bytes,
             ..
         }
-        | CMemoryDerivation::ContractAllocationRetired {
+        | MemoryDerivation::ContractAllocationRetired {
             allocation_base,
             bytes,
             ..
@@ -1241,7 +1250,7 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
                 unknown()
             }
         }
-        CMemoryDerivation::LocalLifetimeEnded { block, .. } => {
+        MemoryDerivation::LocalLifetimeEnded { block, .. } => {
             let retired = Pointer {
                 block: block.clone(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -1255,18 +1264,18 @@ fn footprint_effect(step: &CMemoryDerivation, ranges: Option<&[CMemoryRange]>) -
                 unknown()
             }
         }
-        CMemoryDerivation::LoopHavoc {
+        MemoryDerivation::LoopHavoc {
             mutable_ranges: None,
             ..
         } => unknown(),
         // Answered above, before the footprint had to be named.
-        CMemoryDerivation::BlockDeclared { .. }
-        | CMemoryDerivation::HeapAllocated { .. }
-        | CMemoryDerivation::HeapAllocationPending { .. }
-        | CMemoryDerivation::HeapAllocationFailed { .. }
-        | CMemoryDerivation::ContractAllocationClaimsChanged { .. }
-        | CMemoryDerivation::ObjectInitializationRecorded { .. }
-        | CMemoryDerivation::CellObserved { .. }
-        | CMemoryDerivation::CellsForgotten { .. } => separate(FootprintSeparation::WritesNothing),
+        MemoryDerivation::BlockDeclared { .. }
+        | MemoryDerivation::HeapAllocated { .. }
+        | MemoryDerivation::HeapAllocationPending { .. }
+        | MemoryDerivation::HeapAllocationFailed { .. }
+        | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+        | MemoryDerivation::ObjectInitializationRecorded { .. }
+        | MemoryDerivation::CellObserved { .. }
+        | MemoryDerivation::CellsForgotten { .. } => separate(FootprintSeparation::WritesNothing),
     }
 }

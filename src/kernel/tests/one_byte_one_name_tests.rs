@@ -13,7 +13,7 @@ fn byte(offset: i64) -> Pointer {
 }
 
 fn read(offset: i64, kind: LoadKind) -> MachineTerm {
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_c_memory(Memory::new());
     MachineTerm::memory_read(memory, byte(offset), kind)
 }
 
@@ -40,7 +40,7 @@ const BYTE_PAIRS: [(i64, i64); 7] = [
 #[test]
 fn a_signed_byte_read_is_its_own_load() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_c_memory(Memory::new());
     let signed = MachineTerm::memory_read(memory.clone(), byte(0), LoadKind::Int8);
     assert!(matches!(
         signed,
@@ -63,7 +63,7 @@ fn a_signed_byte_read_is_its_own_load() {
 #[test]
 fn signed_and_unsigned_symbolic_reads_of_one_byte_are_two_loads() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_block("global:bytes", 4)
         .store(byte(1), crate::kernel::uint8(7));
     let read = |value_type| {
@@ -81,7 +81,7 @@ fn signed_and_unsigned_symbolic_reads_of_one_byte_are_two_loads() {
         );
         assert_eq!(paths.len(), 1);
         match &paths[0].outcome {
-            CExpressionOutcome::Value(value) => value.clone(),
+            ExpressionOutcome::Value(value) => value.clone(),
             other => panic!("{other:?}"),
         }
     };

@@ -48,7 +48,7 @@ pub(in crate::surface) fn verify_theorem_definitions(
     dependencies: TheoremEnvironment,
     theorem_definitions: &[TheoremDefinition],
     spec_definitions: SpecDefinitions<'_>,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
     resource_environment: &ResourceEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
@@ -106,7 +106,7 @@ pub(in crate::surface) fn verify_theorem_definition(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     if theorem.type_parameters().is_empty() {
         return verify_concrete_theorem_definition(
@@ -193,7 +193,7 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     #[cfg(test)]
     crate::kernel::search::record_discovery("verify_concrete_theorem_definition");
@@ -235,7 +235,7 @@ pub(super) struct PureTheoremContext {
     /// Immutable specification parameter names, retained for diagnostics.
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
     pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
-    pub(super) memory: CMemory,
+    pub(super) memory: Memory,
     pub(super) values: BTreeMap<String, ProgramValue>,
     pub(super) integer_values:
         crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
@@ -1343,7 +1343,7 @@ pub(super) fn pure_theorem_context(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<PureTheoremContext, ClickError> {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let values = pure_theorem_parameter_values_with_generic_pointers(
         theorem.parameters(),
         &theorem.generic_pointer_parameters,
@@ -1453,7 +1453,7 @@ pub(super) fn pure_theorem_context(
 pub(in crate::surface) fn assumed_theorem_certification_authorities(
     theorems: &[TheoremDefinition],
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<Vec<(String, Proposition, CVerifiedPureTheorem)>, ClickError> {
+) -> Result<Vec<(String, Proposition, KernelVerifiedPureTheorem)>, ClickError> {
     let mut assumptions = Vec::new();
     for theorem in theorems {
         if !theorem.type_parameters().is_empty()
@@ -1853,7 +1853,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
 pub(in crate::surface) fn pure_theorem_array_refs(
     parameters: &[FunctionParameter],
     values: &BTreeMap<String, ProgramValue>,
-    memory: &CMemory,
+    memory: &Memory,
 ) -> ClickArrayRefs {
     parameters
         .iter()
@@ -1883,7 +1883,7 @@ fn verify_theorem_ensure(
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
     let _automation_scope = super::implicit_solve_scope::ClaimScope::enter(claim_label);
     // Resolve declaration aliases against the outer parameter values once.
@@ -2160,7 +2160,7 @@ fn verify_contract_refinement_theorem(
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
-    function_environment: Option<&CExecutionEnvironment>,
+    function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Option<VerifiedPureTheorem>, ClickError> {
     let ClickProposition::PredicateCall { name, arguments } = surface_goal else {
         return Ok(None);
@@ -2855,7 +2855,7 @@ fn verify_kernel_standard_theorem_axiom(
             ));
         }
         let args = (0..theorem.parameters().len())
-            .map(|i| crate::kernel::CResource::Parameter(Variable(i as u64)))
+            .map(|i| crate::kernel::Resource::Parameter(Variable(i as u64)))
             .collect::<Vec<_>>();
         if theorem.name() == "click::separation::viewable_restrict" {
             crate::kernel::prove_viewable_restrict(
@@ -2878,10 +2878,10 @@ fn verify_kernel_standard_theorem_axiom(
             ));
         }
         crate::kernel::prove_separation_restrict(
-            crate::kernel::CResource::Parameter(Variable(0)),
-            crate::kernel::CResource::Parameter(Variable(1)),
-            crate::kernel::CResource::Parameter(Variable(2)),
-            crate::kernel::CResource::Parameter(Variable(3)),
+            crate::kernel::Resource::Parameter(Variable(0)),
+            crate::kernel::Resource::Parameter(Variable(1)),
+            crate::kernel::Resource::Parameter(Variable(2)),
+            crate::kernel::Resource::Parameter(Variable(3)),
         )
     } else if crate::kernel::integer_truncation_law_requirements(theorem.name()).is_some() {
         let parameter = |index: usize| {
@@ -3367,7 +3367,7 @@ pub(super) fn lower_pure_theorem_proposition(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_opaque_calls(
@@ -3385,7 +3385,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_algebraic_and_integer_values(
@@ -3406,7 +3406,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_recording_introductions(
@@ -3433,7 +3433,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
     let state = ExecutionState::new().with_memory(memory.clone());
@@ -3458,7 +3458,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_values(
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     lower_pure_theorem_proposition_with_algebraic_and_integer_values(
@@ -3479,7 +3479,7 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
     theorem_name: &str,
     proposition: &ClickProposition,
     contract_environment: ContractEnvironment<'_>,
-    memory: &CMemory,
+    memory: &Memory,
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &BTreeSet<String>,
 ) -> Result<Proposition, String> {

@@ -490,7 +490,7 @@ fn listed_context_pure_facts(
 fn describe_step_proof_context(
     delta: &[Proposition],
     context: Option<&PureFactContext>,
-    resources: &[CResourceFact],
+    resources: &[ResourceFact],
     binding: ParameterBinding<'_>,
     execution: &(impl ExecutionFactSource + ?Sized),
 ) -> String {
@@ -617,7 +617,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
         // The path facts of an undecided C condition carry the whole memory
         // snapshot each load reads. Spelling them in the bounded source
         // vocabulary keeps the useful part -- which condition each arm
-        // assumes -- without the repeated `CMemory` dump.
+        // assumes -- without the repeated `Memory` dump.
         let paths = condition_transitions
             .iter()
             .enumerate()
@@ -890,7 +890,7 @@ fn execute_concrete_loop_head_step(
                 &ProgramStatement::Skip,
                 proof_context.function_environment,
                 Some(proof_context.spec_definitions.predicates),
-                CExecutionSemantics::APPLY_VERIFIED_RULES,
+                ExecutionSemantics::APPLY_VERIFIED_RULES,
                 &transition_label,
                 &mut next_opaque_call,
                 &mut next_kernel_variable,
@@ -1531,7 +1531,7 @@ pub(super) fn route_throw_to_handler(
     function: &ProgramFunction,
     parameter_binding: ParameterBinding<'_>,
     function_block: &FunctionBlock,
-    function_environment: &CExecutionEnvironment,
+    function_environment: &ExecutionEnvironment,
     claim_label: &str,
     tactic_index: usize,
     tactic_name: &str,
@@ -1576,7 +1576,7 @@ pub(super) fn route_throw_to_handler(
             &statement,
             function_environment,
             Some(proof_context.spec_definitions.predicates),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
             &transition_label,
             &mut execution.core.next_opaque_call,
             &mut kernel_variable,
@@ -1592,7 +1592,7 @@ pub(super) fn route_throw_to_handler(
                 "{transition_label}: handler binding transition did not complete"
             ))
         })?;
-        let CStatementOutcome::Normal(next_state) = &transition.outcome else {
+        let StatementOutcome::Normal(next_state) = &transition.outcome else {
             return Err(ClickError::new(format!(
                 "{transition_label}: handler binding transition did not complete normally"
             )));
@@ -1873,7 +1873,7 @@ pub(super) fn prepare_call_outcome_split(
         &statement,
         proof_context.function_environment,
         Some(proof_context.spec_definitions.predicates),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
         &transition_label,
         &mut next_opaque_call,
         &mut next_kernel_variable,
@@ -1882,11 +1882,11 @@ pub(super) fn prepare_call_outcome_split(
     )?;
     let normal = transitions
         .iter()
-        .filter(|transition| matches!(transition.outcome, CStatementOutcome::Normal(_)))
+        .filter(|transition| matches!(transition.outcome, StatementOutcome::Normal(_)))
         .count();
     let thrown = transitions
         .iter()
-        .filter(|transition| matches!(transition.outcome, CStatementOutcome::Throw { .. }))
+        .filter(|transition| matches!(transition.outcome, StatementOutcome::Throw { .. }))
         .count();
     if normal != 1 || thrown != 1 || transitions.len() != 2 {
         return Ok(None);
@@ -1980,8 +1980,8 @@ pub(super) fn apply_prepared_call_outcome_transition(
     introduced_facts.extend(transition.introduced_facts.iter().cloned());
 
     let (next_state, is_throw) = match &transition.outcome {
-        CStatementOutcome::Normal(state) => (state.clone(), false),
-        CStatementOutcome::Throw { state, .. } => (state.clone(), true),
+        StatementOutcome::Normal(state) => (state.clone(), false),
+        StatementOutcome::Throw { state, .. } => (state.clone(), true),
         _ => {
             return Err(ClickError::new(
                 "`outcomes` received a non-returned/non-thrown call transition",
@@ -1997,7 +1997,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
     );
 
     if is_throw {
-        let CStatementOutcome::Throw { value, state } = &transition.outcome else {
+        let StatementOutcome::Throw { value, state } = &transition.outcome else {
             unreachable!("the outcome was checked as a throw");
         };
         if !route_throw_to_handler(
@@ -2148,7 +2148,7 @@ pub(super) fn execute_step_successor_from_frontier_position(
 /// the locals live before the operation too. Recognize the shared printer's
 /// explicit placeholders as well as legacy source-place elisions.
 fn describe_runtime_error_before_statement(
-    error: &crate::kernel::CRuntimeError,
+    error: &crate::kernel::RuntimeError,
     state: &ExecutionState,
     function: &syntax::C0Function,
     parameter_binding: ParameterBinding<'_>,
@@ -2476,7 +2476,7 @@ fn execute_step_from_frontier_position_selecting_path(
         &step_statement,
         function_environment,
         Some(proof_context.spec_definitions.predicates),
-        CExecutionSemantics::APPLY_VERIFIED_RULES,
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
         &transition_label,
         &mut execution.core.next_opaque_call,
         &mut stepped_kernel_variable,
@@ -2514,7 +2514,7 @@ fn execute_step_from_frontier_position_selecting_path(
         && transitions.len() == 2
         && transitions
             .iter()
-            .filter(|transition| matches!(transition.outcome, CStatementOutcome::Normal(_)))
+            .filter(|transition| matches!(transition.outcome, StatementOutcome::Normal(_)))
             .count()
             == 1
         && transitions.iter().any(|transition| {
@@ -2524,10 +2524,10 @@ fn execute_step_from_frontier_position_selecting_path(
                     ProgramStatement::Call { .. }
                         | ProgramStatement::CallAssign { .. }
                         | ProgramStatement::CallResult { .. },
-                    CStatementOutcome::Throw { .. }
+                    StatementOutcome::Throw { .. }
                 ) | (
                     ProgramStatement::TryCatchInt32 { .. },
-                    CStatementOutcome::Return { .. }
+                    StatementOutcome::Return { .. }
                 )
             )
         })
@@ -2542,7 +2542,7 @@ fn execute_step_from_frontier_position_selecting_path(
             &whole_suffix,
             function_environment,
             Some(proof_context.spec_definitions.predicates),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
             &transition_label,
             &mut next_opaque_call,
             &mut next_kernel_variable,
@@ -2557,10 +2557,10 @@ fn execute_step_from_frontier_position_selecting_path(
                         ProgramStatement::Call { .. }
                             | ProgramStatement::CallAssign { .. }
                             | ProgramStatement::CallResult { .. },
-                        CStatementOutcome::Return { .. } | CStatementOutcome::Throw { .. }
+                        StatementOutcome::Return { .. } | StatementOutcome::Throw { .. }
                     ) | (
                         ProgramStatement::TryCatchInt32 { .. },
-                        CStatementOutcome::Return { .. }
+                        StatementOutcome::Return { .. }
                     )
                 )
             })
@@ -2568,7 +2568,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 || suffix_transitions
                     .iter()
                     .filter(|transition| {
-                        matches!(transition.outcome, CStatementOutcome::Throw { .. })
+                        matches!(transition.outcome, StatementOutcome::Throw { .. })
                     })
                     .count()
                     == 1)
@@ -2587,8 +2587,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 let edges = transitions
                     .iter()
                     .map(|transition| match transition.outcome {
-                        CStatementOutcome::Normal(_) => Some(true),
-                        CStatementOutcome::Return { .. } => Some(false),
+                        StatementOutcome::Normal(_) => Some(true),
+                        StatementOutcome::Return { .. } => Some(false),
                         _ => None,
                     })
                     .collect::<Option<Vec<_>>>();
@@ -2611,8 +2611,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 let edges = transitions
                     .iter()
                     .map(|transition| match transition.outcome {
-                        CStatementOutcome::Normal(_) => Some(true),
-                        CStatementOutcome::Throw { .. } => Some(false),
+                        StatementOutcome::Normal(_) => Some(true),
+                        StatementOutcome::Throw { .. } => Some(false),
                         _ => None,
                     })
                     .collect::<Option<Vec<_>>>();
@@ -2649,7 +2649,7 @@ fn execute_step_from_frontier_position_selecting_path(
             loop_index.and_then(|index| execution.presentation.loop_return_proofs.get(&index))
         && transitions
             .iter()
-            .filter(|transition| matches!(transition.outcome, CStatementOutcome::Return { .. }))
+            .filter(|transition| matches!(transition.outcome, StatementOutcome::Return { .. }))
             .count()
             != planned.paths.len()
     {
@@ -2665,7 +2665,7 @@ fn execute_step_from_frontier_position_selecting_path(
             .filter(|transition| {
                 matches!(
                     transition.outcome,
-                    CStatementOutcome::Normal(_) | CStatementOutcome::Jump { .. }
+                    StatementOutcome::Normal(_) | StatementOutcome::Jump { .. }
                 )
             })
             .count()
@@ -2673,15 +2673,15 @@ fn execute_step_from_frontier_position_selecting_path(
         && transitions.iter().all(|transition| {
             matches!(
                 transition.outcome,
-                CStatementOutcome::Normal(_)
-                    | CStatementOutcome::Jump { .. }
-                    | CStatementOutcome::Return { .. }
+                StatementOutcome::Normal(_)
+                    | StatementOutcome::Jump { .. }
+                    | StatementOutcome::Return { .. }
             )
         })
     {
         let (returned, continuing): (Vec<_>, Vec<_>) = transitions
             .into_iter()
-            .partition(|transition| matches!(transition.outcome, CStatementOutcome::Return { .. }));
+            .partition(|transition| matches!(transition.outcome, StatementOutcome::Return { .. }));
         transitions = continuing;
         loop_return_transitions = returned;
     }
@@ -2689,7 +2689,7 @@ fn execute_step_from_frontier_position_selecting_path(
         && transitions.iter().all(|transition| {
             matches!(
                 transition.outcome,
-                CStatementOutcome::Return { .. } | CStatementOutcome::Throw { .. }
+                StatementOutcome::Return { .. } | StatementOutcome::Throw { .. }
             )
         })
     {
@@ -2751,7 +2751,7 @@ fn execute_step_from_frontier_position_selecting_path(
             transitions
                 .iter()
                 .find_map(|transition| match &transition.outcome {
-                    CStatementOutcome::Return { state, .. } => Some((**state).clone()),
+                    StatementOutcome::Return { state, .. } => Some((**state).clone()),
                     _ => None,
                 })
         });
@@ -2852,12 +2852,12 @@ fn execute_step_from_frontier_position_selecting_path(
         && transitions.len() == 2
         && transitions
             .iter()
-            .filter(|transition| matches!(transition.outcome, CStatementOutcome::Normal(_)))
+            .filter(|transition| matches!(transition.outcome, StatementOutcome::Normal(_)))
             .count()
             == 1
         && transitions
             .iter()
-            .filter(|transition| matches!(transition.outcome, CStatementOutcome::Throw { .. }))
+            .filter(|transition| matches!(transition.outcome, StatementOutcome::Throw { .. }))
             .count()
             == 1
     {
@@ -2892,7 +2892,7 @@ fn execute_step_from_frontier_position_selecting_path(
         && matches!(step_statement, ProgramStatement::Assert { .. })
         && transitions
             .iter()
-            .all(|transition| matches!(transition.outcome, CStatementOutcome::Normal(_)))
+            .all(|transition| matches!(transition.outcome, StatementOutcome::Normal(_)))
     {
         let succeeds = |transition: &CertifiedStatementTransition| {
             !transition
@@ -2917,7 +2917,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     .filter(|transition| {
                         matches!(
                             transition.outcome,
-                            CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
+                            StatementOutcome::Normal(_) | StatementOutcome::Return { .. }
                         )
                     })
                     .collect::<Vec<_>>();
@@ -2940,7 +2940,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 transitions
                     .iter()
                     .find_map(|transition| match &transition.outcome {
-                        CStatementOutcome::UndefinedBehavior(kind) => Some(kind.clone()),
+                        StatementOutcome::UndefinedBehavior(kind) => Some(kind.clone()),
                         _ => None,
                     })
             {
@@ -2949,7 +2949,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 let mut defined = transitions.iter().filter(|transition| {
                     matches!(
                         transition.outcome,
-                        CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
+                        StatementOutcome::Normal(_) | StatementOutcome::Return { .. }
                     )
                 });
                 // One definedness check (a shift count in range) can need
@@ -2967,9 +2967,9 @@ fn execute_step_from_frontier_position_selecting_path(
                     && transitions.iter().all(|transition| {
                         matches!(
                             transition.outcome,
-                            CStatementOutcome::Normal(_)
-                                | CStatementOutcome::Return { .. }
-                                | CStatementOutcome::UndefinedBehavior(_)
+                            StatementOutcome::Normal(_)
+                                | StatementOutcome::Return { .. }
+                                | StatementOutcome::UndefinedBehavior(_)
                         )
                     })
                     && let Some(goal) = goal.as_ref()
@@ -2986,7 +2986,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     transitions.retain(|transition| {
                         matches!(
                             transition.outcome,
-                            CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
+                            StatementOutcome::Normal(_) | StatementOutcome::Return { .. }
                         )
                     });
                     break 'select_prepared;
@@ -3000,7 +3000,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     &kind,
                 );
                 let required = kind.required_goal().cloned();
-                let outcome = CFunctionOutcome::UndefinedBehavior(kind);
+                let outcome = FunctionOutcome::UndefinedBehavior(kind);
                 let error = ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
                     describe_function_outcome(&outcome, parameter_binding),
@@ -3041,7 +3041,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 transitions
                     .iter()
                     .find_map(|transition| match &transition.outcome {
-                        CStatementOutcome::RuntimeError(error) => Some(error),
+                        StatementOutcome::RuntimeError(error) => Some(error),
                         _ => None,
                     })
             {
@@ -3077,8 +3077,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 });
                 if matches!(
                     error,
-                    crate::kernel::CRuntimeError::UninitializedMutex { .. }
-                        | crate::kernel::CRuntimeError::UnsupportedConcurrentMutex
+                    crate::kernel::RuntimeError::UninitializedMutex { .. }
+                        | crate::kernel::RuntimeError::UnsupportedConcurrentMutex
                 ) {
                     return Err(ClickError::new(detail).with_kind(kind));
                 }
@@ -3133,7 +3133,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     transitions
                         .iter()
                         .filter(|transition| {
-                            matches!(transition.outcome, CStatementOutcome::Throw { .. })
+                            matches!(transition.outcome, StatementOutcome::Throw { .. })
                         })
                         .count()
                         == 1,
@@ -3167,7 +3167,7 @@ fn execute_step_from_frontier_position_selecting_path(
     let loop_return_parent = (!loop_return_transitions.is_empty()).then(|| execution.core.clone());
     if matches!(loop_step_policy, LoopStepPolicy::ApplyVerifiedRule)
         && let Some(loop_index) = loop_index
-        && matches!(transition.outcome, CStatementOutcome::Normal(_))
+        && matches!(transition.outcome, StatementOutcome::Normal(_))
         && let Some(loop_clause) = function_block.structural_clauses().for_loop(loop_index)
     {
         record_loop_exit_invariants(
@@ -3351,13 +3351,13 @@ fn execute_step_from_frontier_position_selecting_path(
     // A source-less one-call proof can reach this boundary without the
     // explicit return node normally inserted by C parsing.
     let outcome = match transition.outcome {
-        CStatementOutcome::Normal(state)
+        StatementOutcome::Normal(state)
             if function.return_type() == crate::kernel::ProgramType::Void
                 && remaining.is_none()
                 && execution.core.frontier.region == ExecutionRegionKind::Function
                 && execution.core.frontier.continuations.is_empty() =>
         {
-            CStatementOutcome::Return {
+            StatementOutcome::Return {
                 value: ProgramValue::Void.into(),
                 state,
             }
@@ -3365,7 +3365,7 @@ fn execute_step_from_frontier_position_selecting_path(
         outcome => outcome,
     };
     if let Some(loop_index) = loop_index
-        && let CStatementOutcome::Normal(state) = &outcome
+        && let StatementOutcome::Normal(state) = &outcome
     {
         record_loop_program_snapshot_state(
             &mut execution.presentation.recorded_snapshots,
@@ -3376,18 +3376,18 @@ fn execute_step_from_frontier_position_selecting_path(
         );
     }
     let mut outcome = outcome;
-    let abrupt = !matches!(outcome, CStatementOutcome::Normal(_));
+    let abrupt = !matches!(outcome, StatementOutcome::Normal(_));
     let ended = proof_context
         .constants
         .source_layout
         .automatic_exits(statement_index, abrupt);
     match &mut outcome {
-        CStatementOutcome::Normal(state)
-        | CStatementOutcome::Break(state)
-        | CStatementOutcome::Continue(state)
-        | CStatementOutcome::Return { state, .. }
-        | CStatementOutcome::Throw { state, .. }
-        | CStatementOutcome::Jump { state, .. } => {
+        StatementOutcome::Normal(state)
+        | StatementOutcome::Break(state)
+        | StatementOutcome::Continue(state)
+        | StatementOutcome::Return { state, .. }
+        | StatementOutcome::Throw { state, .. }
+        | StatementOutcome::Jump { state, .. } => {
             **state = execution
                 .core
                 .record_automatic_lifetime_end(state, ended)
@@ -3419,14 +3419,14 @@ fn execute_step_from_frontier_position_selecting_path(
         .recorded_snapshots
         .record_effect(execution.core.last_footprint.as_ref());
     if let Some(statement_exit_state) = match &outcome {
-        CStatementOutcome::Normal(state)
-        | CStatementOutcome::Break(state)
-        | CStatementOutcome::Continue(state)
-        | CStatementOutcome::Jump { state, .. }
-        | CStatementOutcome::Return { state, .. }
-        | CStatementOutcome::Throw { state, .. } => Some(state.clone()),
-        CStatementOutcome::UndefinedBehavior(_) | CStatementOutcome::RuntimeError(_) => None,
-        CStatementOutcome::VerificationDiverges => None,
+        StatementOutcome::Normal(state)
+        | StatementOutcome::Break(state)
+        | StatementOutcome::Continue(state)
+        | StatementOutcome::Jump { state, .. }
+        | StatementOutcome::Return { state, .. }
+        | StatementOutcome::Throw { state, .. } => Some(state.clone()),
+        StatementOutcome::UndefinedBehavior(_) | StatementOutcome::RuntimeError(_) => None,
+        StatementOutcome::VerificationDiverges => None,
     } {
         record_statement_program_snapshot_state(
             &mut execution.presentation.recorded_snapshots,
@@ -3452,7 +3452,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 kind: ProgramPointKind::Parameters,
             });
         }
-        if matches!(outcome, CStatementOutcome::Normal(_))
+        if matches!(outcome, StatementOutcome::Normal(_))
             && let Some(result) = &transition.call_result
         {
             execution
@@ -3461,7 +3461,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 .record_call_result(statement_index, Some(result.clone()));
         }
         if let Some(loop_index) = loop_index
-            && !matches!(outcome, CStatementOutcome::Normal(_))
+            && !matches!(outcome, StatementOutcome::Normal(_))
         {
             record_loop_program_snapshot_state(
                 &mut execution.presentation.recorded_snapshots,
@@ -3469,22 +3469,22 @@ fn execute_step_from_frontier_position_selecting_path(
                 loop_index,
                 ProgramPointKind::Exit,
                 match &outcome {
-                    CStatementOutcome::Normal(state)
-                    | CStatementOutcome::Break(state)
-                    | CStatementOutcome::Continue(state)
-                    | CStatementOutcome::Jump { state, .. }
-                    | CStatementOutcome::Return { state, .. }
-                    | CStatementOutcome::Throw { state, .. } => *state.clone(),
-                    CStatementOutcome::UndefinedBehavior(_)
-                    | CStatementOutcome::RuntimeError(_)
-                    | CStatementOutcome::VerificationDiverges => unreachable!(),
+                    StatementOutcome::Normal(state)
+                    | StatementOutcome::Break(state)
+                    | StatementOutcome::Continue(state)
+                    | StatementOutcome::Jump { state, .. }
+                    | StatementOutcome::Return { state, .. }
+                    | StatementOutcome::Throw { state, .. } => *state.clone(),
+                    StatementOutcome::UndefinedBehavior(_)
+                    | StatementOutcome::RuntimeError(_)
+                    | StatementOutcome::VerificationDiverges => unreachable!(),
                 },
             );
         }
     }
 
     match outcome {
-        CStatementOutcome::Normal(next_state) => {
+        StatementOutcome::Normal(next_state) => {
             // Completing this statement statically completes the recorded
             // chain of enclosing branch regions it ends.
             for exited in proof_context
@@ -3542,14 +3542,14 @@ fn execute_step_from_frontier_position_selecting_path(
                 }
             }
         }
-        CStatementOutcome::Return { .. } | CStatementOutcome::Throw { .. } => {
+        StatementOutcome::Return { .. } | StatementOutcome::Throw { .. } => {
             // A `Throw` inside an entered `try` body resumes at the handler
             // entry instead of terminating the path. Only entered `try`
             // bodies push handler continuations, so C execution (and throws
             // outside any `try`) always takes the termination path below.
             // Routed paths fall through to the shared epilogue like normally
             // completed steps.
-            let routed = if let CStatementOutcome::Throw { value, state } = &outcome {
+            let routed = if let StatementOutcome::Throw { value, state } = &outcome {
                 route_throw_to_handler(
                     execution,
                     proof_context,
@@ -3622,7 +3622,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 // A plain `return x;` adds nothing here and loses nothing.
                 *available_pure_facts = successor_pure_facts;
                 if let Some(loop_index) = loop_index
-                    && matches!(outcome, CStatementOutcome::Return { .. })
+                    && matches!(outcome, StatementOutcome::Return { .. })
                 {
                     // Those facts are stated over the loop's iteration
                     // identities. The loop's exit snapshot, recorded above
@@ -3647,7 +3647,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 execution.core.state = execution_state.into();
             }
         }
-        CStatementOutcome::Break(next_state) | CStatementOutcome::Continue(next_state) => {
+        StatementOutcome::Break(next_state) | StatementOutcome::Continue(next_state) => {
             // The control statement's own successor facts are this path's:
             // `if (i == 3) break;` leaves the loop knowing `i == 3`, and a
             // `break` exit that lost its guard would state nothing at all.
@@ -3659,7 +3659,7 @@ fn execute_step_from_frontier_position_selecting_path(
             execution.core.frontier.execution_start_state = Some(execution_start_state);
             execution.core.state = (*next_state).into();
         }
-        CStatementOutcome::Jump {
+        StatementOutcome::Jump {
             target,
             state: next_state,
         } => {
@@ -3716,11 +3716,11 @@ fn execute_step_from_frontier_position_selecting_path(
             );
             execution.core.state = (*next_state).into();
         }
-        CStatementOutcome::VerificationDiverges => {
+        StatementOutcome::VerificationDiverges => {
             let completed_execution_facts =
                 completed_execution_facts(&execution.core, &execution_pure_facts);
             let mut completed_outcomes = vec![(
-                CFunctionOutcome::VerificationDiverges,
+                FunctionOutcome::VerificationDiverges,
                 completed_execution_facts,
                 transition_obligations,
                 execution.core.loan_evidence().clone(),
@@ -3745,7 +3745,7 @@ fn execute_step_from_frontier_position_selecting_path(
             execution.core.frontier.next_statement_index = source_region.continuation_node;
             execution.core.state = execution_state.into();
         }
-        CStatementOutcome::UndefinedBehavior(kind) => {
+        StatementOutcome::UndefinedBehavior(kind) => {
             let site = crate::surface::diagnostics::describe_undefined_behavior_site(
                 &current_state,
                 &step_statement,
@@ -3755,7 +3755,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 &kind,
             );
             let required = kind.required_goal().cloned();
-            let outcome = CFunctionOutcome::UndefinedBehavior(kind);
+            let outcome = FunctionOutcome::UndefinedBehavior(kind);
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
                 describe_function_outcome(&outcome, parameter_binding),
@@ -3777,7 +3777,7 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
             .with_reported_assertion_goal(required));
         }
-        CStatementOutcome::RuntimeError(error) => {
+        StatementOutcome::RuntimeError(error) => {
             let kind = runtime_refusal_kind(&error);
             let unsupported = kind == crate::surface::ClickErrorKind::Internal;
             let description = if unsupported {
@@ -3806,8 +3806,8 @@ fn execute_step_from_frontier_position_selecting_path(
             });
             if matches!(
                 error,
-                crate::kernel::CRuntimeError::UninitializedMutex { .. }
-                    | crate::kernel::CRuntimeError::UnsupportedConcurrentMutex
+                crate::kernel::RuntimeError::UninitializedMutex { .. }
+                    | crate::kernel::RuntimeError::UnsupportedConcurrentMutex
             ) {
                 return Err(ClickError::new(detail).with_kind(kind));
             }
@@ -3932,8 +3932,8 @@ fn statement_successors_are_path_cases(
     transitions.iter().all(|transition| {
         (matches!(
             transition.outcome,
-            CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
-        ) || (loop_test && matches!(transition.outcome, CStatementOutcome::Break(_))))
+            StatementOutcome::Normal(_) | StatementOutcome::Return { .. }
+        ) || (loop_test && matches!(transition.outcome, StatementOutcome::Break(_))))
             && !distinguishing_path_facts(&transition.path_facts, &facts).is_empty()
     })
 }
@@ -4188,7 +4188,7 @@ pub(super) fn sequence_from_statements(
 fn append_pending_loop_returns(
     core: &mut crate::kernel::proof::ExecutionProofCore,
     completed_outcomes: &mut Vec<(
-        CFunctionOutcome,
+        FunctionOutcome,
         ExecutionFacts,
         Vec<ProofObligation>,
         crate::kernel::CheckedLoanCallEvidenceSequence,
@@ -4210,7 +4210,7 @@ fn set_function_exit_execution(
     tactic_index: usize,
     tactic_name: &str,
     execution_start_state: ExecutionState,
-    execution: CFunctionExecutionCandidates,
+    execution: FunctionExecutionCandidates,
 ) -> Result<(), ClickError> {
     if frontier.is_at_function_exit() {
         return Err(ClickError::new(format!(
@@ -4255,7 +4255,7 @@ pub(super) fn describe_evidence_refusal(
 /// when a call fails; no symbolic heap value is guessed for this diagnostic.
 fn describe_call_bindings(
     statement: &ProgramStatement,
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
 ) -> String {
     let (name, arguments) = match statement {
         ProgramStatement::Call {

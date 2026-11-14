@@ -88,7 +88,7 @@ impl Gen {
             0 => SpecMemory::Current,
             1 => SpecMemory::FunctionEntry,
             2 => SpecMemory::LoopEntry,
-            _ => SpecMemory::Fixed(CMemory::new()),
+            _ => SpecMemory::Fixed(Memory::new()),
         }
     }
 
@@ -401,7 +401,7 @@ impl Gen {
         match choice {
             0 => SpecProposition::Comparison {
                 left: self.expr(d),
-                operator: CComparisonOperator::LessThan,
+                operator: ComparisonOperator::LessThan,
                 right: self.expr(d),
             },
             1 => SpecProposition::Defined(self.expr(d)),
@@ -467,7 +467,7 @@ impl Gen {
             },
             14 => SpecProposition::FloatClassification {
                 expression: self.expr(d),
-                classification: CFloatClassification::Finite,
+                classification: FloatClassification::Finite,
             },
             15 => SpecProposition::Or(Box::new(self.prop(d)), Box::new(self.prop(d))),
             16 => SpecProposition::ResourceViewable {

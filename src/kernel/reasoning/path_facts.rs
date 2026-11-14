@@ -12,8 +12,8 @@ use crate::kernel::{
 /// The second condition is what distinguishes the snapshots for an
 /// `ExternalArgument` allocation, whose block survives `free`.
 pub(in crate::kernel) fn memory_range_still_available(
-    range_memory: &CMemory,
-    current_memory: &CMemory,
+    range_memory: &Memory,
+    current_memory: &Memory,
     base: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2366,7 +2366,7 @@ mod mandatory_integer_obligation_tests {
                 interface,
                 0,
                 &[],
-                &CMemory::new(),
+                &Memory::new(),
             )),
             ordinal,
             Some(ordinal),
@@ -2575,7 +2575,7 @@ mod mandatory_integer_obligation_tests {
         let base = PureFactContext::new();
         let left = vec![ProofObligation::condition(condition.clone(), true)];
         let prepared = assumptions_with_path_context(&base, &[], &left);
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let right = ExecutionFacts::from(vec![
             ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
                 before: memory.clone(),

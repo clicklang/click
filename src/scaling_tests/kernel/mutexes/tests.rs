@@ -17,7 +17,7 @@ fn assumed_guard_lookup_does_not_scan_unrelated_resources() {
             state.resources =
                 state
                     .resources
-                    .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                    .unchecked_with_fact(ResourceFact::own(Resource::Token {
                         name: format!("unrelated{index}"),
                         arguments: vec![].into(),
                     }));
@@ -41,7 +41,7 @@ fn assumed_guard_lookup_does_not_scan_unrelated_resources() {
 #[test]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn symbolic_guard_lookup_and_exchange_use_indexed_paths() {
-    use super::super::super::CResourceSnapshot;
+    use super::super::super::ResourceSnapshot;
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [16usize, 64, 256, 1024] {
@@ -51,13 +51,13 @@ fn symbolic_guard_lookup_and_exchange_use_indexed_paths() {
         // Assemble and validate that frame once; the measured exchange below
         // still consumes and reinstalls its selected guard through checked APIs.
         let guards = (0..size)
-            .map(|index| evaluate_guard(&state, &state, mutex(index), CResourceSnapshot::Current))
+            .map(|index| evaluate_guard(&state, &state, mutex(index), ResourceSnapshot::Current))
             .collect::<Vec<_>>();
         state.resources = ResourceContext::new()
             .try_compose_with_facts(guards, &assumptions)
             .unwrap();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let fact = evaluate_guard(&state, &state, mutex(size / 2), CResourceSnapshot::Current);
+            let fact = evaluate_guard(&state, &state, mutex(size / 2), ResourceSnapshot::Current);
             assert!(state.resources.satisfies_fact(&fact, &assumptions));
             let removed = state
                 .resources
@@ -280,8 +280,8 @@ fn initialization_storage_lookup_is_indexed_within_one_object() {
         for index in 0..size {
             // Alternate units, so the index must compare bytes, not element indices.
             let width = if index % 2 == 0 { 1 } else { 8 };
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::new_with_element_width(
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::new_with_element_width(
                     base.clone(),
                     ((index * 64) as u32 / width).into(),
                     ((index * 64 + 40) as u32 / width).into(),
@@ -377,7 +377,7 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
                 );
                 assert!(matches!(
                     storage_retirement_refusal(context.state(), &range, &assumptions),
-                    Some(CRuntimeError::MutexStorageSeparationRequired { .. })
+                    Some(RuntimeError::MutexStorageSeparationRequired { .. })
                 ));
             }
         });
@@ -488,7 +488,7 @@ fn automatic_use_acquisition_does_not_scan_the_resource_frame() {
                 context
                     .state
                     .resources
-                    .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                    .unchecked_with_fact(ResourceFact::own(Resource::Token {
                         name: format!("frame{index}"),
                         arguments: vec![].into(),
                     }));

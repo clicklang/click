@@ -1,8 +1,8 @@
 use super::*;
 use crate::kernel::PointerOffsetTerm;
 
-fn scalar(name: &str) -> CResourceFact {
-    CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+fn scalar(name: &str) -> ResourceFact {
+    ResourceFact::own_memory(MemoryRange::new_with_element_width(
         Pointer {
             block: name.into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -37,7 +37,7 @@ fn register(
     ledger: &LoanLedger,
     holder: LoanParticipantId,
     resources: &ResourceContext,
-    fact: &CResourceFact,
+    fact: &ResourceFact,
 ) -> (LocalReferenceBinding, LoanLedger) {
     let support = resources.unique_owned_occurrence_for_fact(fact).unwrap().0;
     let (root, transition) = ledger
@@ -275,7 +275,7 @@ fn local_reference_requires_exact_live_owned_occurrence_at_access_and_recovery()
             .unwrap_err(),
         LoanRefusal::MissingBacking
     );
-    let view = CResourceFact::view_memory(root.backing.owned.memory_own_range().unwrap().clone());
+    let view = ResourceFact::view_memory(root.backing.owned.memory_own_range().unwrap().clone());
     let views = ResourceContext::new().unchecked_with_fact(view.clone());
     let support = views.occurrences_for_fact(&view)[0];
     assert_eq!(
@@ -310,7 +310,7 @@ fn local_reference_registration_rejects_duplicate_or_unsupported_backing() {
             .unwrap_err(),
         LoanRefusal::MissingBacking
     );
-    let fact = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let fact = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         Pointer {
             block: "local:array".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -467,7 +467,7 @@ fn local_reference_scalar_registration_checks_width_and_support_type() {
             block: format!("local:{value_type:?}").into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let fact = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        let fact = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             pointer.clone(),
             0u32.into(),
             1u32.into(),

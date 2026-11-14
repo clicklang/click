@@ -12,7 +12,7 @@ pub(super) fn with_contract_argument_views(
 
 pub(super) fn with_contract_interface_argument_views(
     state: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     values: &[ProgramValue],
 ) -> ExecutionState {
     let mut state = state.clone();
@@ -59,8 +59,8 @@ pub(super) fn with_contract_interface_argument_views(
             };
             state.resources = state
                 .resources
-                .unchecked_with_fact(CResourceFact::view_memory(
-                    CMemoryRange::new_with_element_width(
+                .unchecked_with_fact(ResourceFact::view_memory(
+                    MemoryRange::new_with_element_width(
                         pointer.pointer().clone(),
                         MachineTerm::constant(0),
                         MachineTerm::constant(i32::MAX as u32),
@@ -82,7 +82,7 @@ pub(super) fn set_function_result(
 
 pub(super) fn set_contract_result(
     state: &mut ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     value: impl Into<StoredExecutionValue>,
 ) {
     let value = value.into();
@@ -102,7 +102,7 @@ pub(super) fn set_contract_result(
     if let Some(layout) = interface.return_aggregate_layout()
         && let ProgramValue::Pointer(pointer) = &value
     {
-        if interface.aggregate_return_mode() == CAggregateReturnMode::Copy {
+        if interface.aggregate_return_mode() == AggregateReturnMode::Copy {
             state.set_memory(
                 // A returned-by-value temporary is fresh caller storage. Its
                 // declaration must remain in the memory history so copying
@@ -155,7 +155,7 @@ pub(super) fn complete_aggregate_return(
     function: &ProgramFunction,
     value: ProgramValue,
 ) -> Result<ProgramValue, AggregateReturnRefusal> {
-    if function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Construction {
+    if function.contract_interface().aggregate_return_mode() == AggregateReturnMode::Construction {
         return construction_return::complete(state, function.contract_interface(), value);
     }
     let layout = function
@@ -172,7 +172,7 @@ pub(super) fn complete_aggregate_return(
         return Err(AggregateReturnRefusal::UninitializedRead);
     }
     let frame = state.next_local_frame;
-    let destination = CMemory::frame_local_pointer(frame, "__return");
+    let destination = Memory::frame_local_pointer(frame, "__return");
     state.set_memory(
         state
             .memory
@@ -202,7 +202,7 @@ pub(super) fn freed_pointer_return_conversion(
     function: &ProgramFunction,
     value: &StoredExecutionValue,
     assumptions: &PureFactContext,
-) -> Option<CUndefinedBehavior> {
+) -> Option<UndefinedBehavior> {
     let value = value.native_payload()?;
     let return_type = function.return_type();
     if return_type == ProgramType::Void
@@ -222,10 +222,10 @@ pub(super) fn freed_pointer_return_conversion(
 /// arguments were evaluated in.
 pub(super) fn freed_pointer_argument_conversion(
     state: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     values: &[ProgramValue],
     assumptions: &PureFactContext,
-) -> Option<CUndefinedBehavior> {
+) -> Option<UndefinedBehavior> {
     if state.memory().heap_has_no_deallocations() {
         return None;
     }
@@ -246,10 +246,10 @@ pub(super) fn freed_pointer_argument_conversion(
 pub(super) fn incompatible_pointer_argument(
     state: &ExecutionState,
     function_name: &str,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     values: &[ProgramValue],
     assumptions: &PureFactContext,
-) -> Option<CRuntimeError> {
+) -> Option<RuntimeError> {
     interface
         .parameters()
         .iter()
@@ -274,7 +274,7 @@ pub(super) fn incompatible_pointer_argument(
                 return None;
             }
             Some({
-                CRuntimeError::FunctionContract(format!(
+                RuntimeError::FunctionContract(format!(
                     "call to `{function_name}` passes an object of type `{}` to parameter \
                      `{}`, which points to `{}`: the callee accesses it through that type, \
                      and an object may be accessed only through its own type, up to \
@@ -295,7 +295,7 @@ pub(super) fn incompatible_pointer_return(
     function: &ProgramFunction,
     value: &StoredExecutionValue,
     assumptions: &PureFactContext,
-) -> Option<CRuntimeError> {
+) -> Option<RuntimeError> {
     let value = value.native_payload()?;
     let pointee = function.contract_interface().return_pointee_class()?;
     let ProgramValue::Pointer(pointer) = value else {
@@ -316,7 +316,7 @@ pub(super) fn incompatible_pointer_return(
         return None;
     }
     Some({
-        CRuntimeError::FunctionContract(format!(
+        RuntimeError::FunctionContract(format!(
             "`{}` returns a pointer to an object of type `{}` as a pointer to `{}`: its \
              callers access the object through that type, and an object may be accessed \
              only through its own type, up to signedness and qualifiers, or a character \
@@ -419,7 +419,7 @@ pub(super) fn symbolic_function_result(
 }
 
 pub(super) fn symbolic_contract_result(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     variable: Variable,
 ) -> ProgramValue {
     // An aggregate returned by value is not a pointer the callee handed over:
@@ -525,7 +525,7 @@ pub(crate) fn symbolic_call_result(c_type: ProgramType, variable: Variable) -> P
 }
 
 pub(in crate::kernel) fn add_memory_store_obligation(
-    memory: &CMemory,
+    memory: &Memory,
     pointer: &Pointer,
     value: &ProgramValue,
     mut obligations: Vec<ProofObligation>,
@@ -552,9 +552,9 @@ pub(in crate::kernel) fn evaluate_c_arguments_paths(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-    environment: Option<&CExecutionEnvironment>,
-) -> ExecutionResult<Vec<CArgumentsPath>> {
-    let mut paths = vec![CArgumentsPath {
+    environment: Option<&ExecutionEnvironment>,
+) -> ExecutionResult<Vec<ArgumentsPath>> {
+    let mut paths = vec![ArgumentsPath {
         values: Vec::new(),
         outcome: None,
         facts: Vec::new().into(),
@@ -585,28 +585,28 @@ pub(in crate::kernel) fn evaluate_c_arguments_paths(
                 };
 
                 match argument_path.outcome {
-                    CExpressionOutcome::Value(value) => {
+                    ExpressionOutcome::Value(value) => {
                         let value = type_function_address_value(argument, value, environment);
                         let mut values = path.values.clone();
                         values.push(value);
-                        next_paths.push(CArgumentsPath {
+                        next_paths.push(ArgumentsPath {
                             values,
                             outcome: None,
                             facts,
                             obligations,
                         });
                     }
-                    CExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
-                        next_paths.push(CArgumentsPath {
+                    ExpressionOutcome::UndefinedBehavior(undefined_behavior) => {
+                        next_paths.push(ArgumentsPath {
                             values: path.values.clone(),
-                            outcome: Some(CFunctionOutcome::UndefinedBehavior(undefined_behavior)),
+                            outcome: Some(FunctionOutcome::UndefinedBehavior(undefined_behavior)),
                             facts,
                             obligations,
                         })
                     }
-                    CExpressionOutcome::RuntimeError(error) => next_paths.push(CArgumentsPath {
+                    ExpressionOutcome::RuntimeError(error) => next_paths.push(ArgumentsPath {
                         values: path.values.clone(),
-                        outcome: Some(CFunctionOutcome::RuntimeError(error)),
+                        outcome: Some(FunctionOutcome::RuntimeError(error)),
                         facts,
                         obligations,
                     }),
@@ -624,7 +624,7 @@ pub(in crate::kernel) fn evaluate_c_arguments_paths(
 pub(super) fn type_function_address_value(
     expression: &ProgramExpression,
     value: ProgramValue,
-    environment: Option<&CExecutionEnvironment>,
+    environment: Option<&ExecutionEnvironment>,
 ) -> ProgramValue {
     let ProgramExpression::FunctionAddress(name) = expression else {
         return value;
@@ -657,7 +657,7 @@ pub(super) fn argument_binding_error(
 }
 
 pub(super) fn contract_argument_binding_error(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     name: &str,
     values: &[ProgramValue],
 ) -> String {
@@ -689,16 +689,15 @@ pub(super) fn contract_argument_binding_error(
 /// cannot accidentally certify an unrelated block.
 pub(super) fn append_string_literal_loadable_facts(
     function: &ProgramFunction,
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     facts: &mut ExecutionFacts,
 ) {
     let state = match outcome {
-        CFunctionOutcome::Return { state, .. } | CFunctionOutcome::Throw { state, .. } => state,
+        FunctionOutcome::Return { state, .. } | FunctionOutcome::Throw { state, .. } => state,
         _ => return,
     };
     for literal in function.string_literals() {
-        let base =
-            CMemory::string_literal_pointer(function.name(), literal.name(), literal.bytes());
+        let base = Memory::string_literal_pointer(function.name(), literal.name(), literal.bytes());
         let proposition = Proposition::CMemoryLoadable {
             memory: state.memory.clone(),
             base,
@@ -820,7 +819,7 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
                 return None;
             }
             let source = pointer.pointer().clone();
-            let slot = CMemory::frame_local_pointer(frame, parameter.name());
+            let slot = Memory::frame_local_pointer(frame, parameter.name());
             register_block_alignment(&slot.block, layout.alignment_bytes());
             // A proof's input object holds its own entry values: each field
             // is the read of that field before the object is declared, so
@@ -867,7 +866,7 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
             .with_pointer_declared_object_class(parameter.pointee_class());
         if address_taken_parameters.contains(parameter.name()) {
-            let slot = CMemory::frame_local_pointer(frame, parameter.name());
+            let slot = Memory::frame_local_pointer(frame, parameter.name());
             register_block_alignment(&slot.block, parameter.c_type().abi_alignment());
             callee_state.set_memory(
                 callee_state
@@ -891,7 +890,7 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
                 parameter.name().to_string(),
                 value,
                 parameter.c_type(),
-                CMemory::value_parameter_pointer(parameter.name()),
+                Memory::value_parameter_pointer(parameter.name()),
                 parameter.is_volatile(),
                 parameter.pointee_is_volatile(),
                 parameter.is_constant(),
@@ -927,7 +926,7 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
 /// evidence. Named callbacks supply no concrete storage.
 pub(super) fn bind_c_contract_arguments(
     caller_state: &ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     values: &[ProgramValue],
     storage: Option<&ProgramFunction>,
 ) -> Option<ExecutionState> {
@@ -984,7 +983,7 @@ pub(super) fn bind_c_contract_arguments(
                 return None;
             }
             let source = pointer.pointer().clone();
-            let slot = CMemory::frame_local_pointer(frame, parameter.name());
+            let slot = Memory::frame_local_pointer(frame, parameter.name());
             register_block_alignment(&slot.block, layout.alignment_bytes());
             callee_state.set_memory(copy_aggregate_fields(
                 callee_state.memory.clone(),
@@ -1013,7 +1012,7 @@ pub(super) fn bind_c_contract_arguments(
             parameter.name().to_string(),
             value,
             parameter.c_type(),
-            CMemory::value_parameter_pointer(parameter.name()),
+            Memory::value_parameter_pointer(parameter.name()),
             parameter.is_volatile(),
             parameter.pointee_is_volatile(),
             parameter.is_constant(),
@@ -1061,7 +1060,7 @@ pub(super) fn coerce_c_function_arguments(
 }
 
 pub(super) fn coerce_c_contract_arguments(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     values: &[ProgramValue],
     existing_obligations: &[ProofObligation],
     assumptions: &PureFactContext,

@@ -35,7 +35,7 @@
 //! snapshot holding both whenever any stated composition does. The answer it
 //! derives from that snapshot is the one `S` would give: owned members of a
 //! valid composition are disjoint, so each object finds the same member.
-use super::{CMemoryRange, OwnedMemberKey, Pointer, PointerBlock, ResourceContext};
+use super::{MemoryRange, OwnedMemberKey, Pointer, PointerBlock, ResourceContext};
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// How far in size a predecessor candidate may be from the snapshot it
@@ -150,7 +150,7 @@ impl CompositionMemberIndex {
         )
     }
 
-    fn list(&mut self, range: &CMemoryRange, ordinal: u32) {
+    fn list(&mut self, range: &MemoryRange, ordinal: u32) {
         let base = range.base();
         let at_base = self.by_base.get(base).cloned().unwrap_or_default();
         self.by_base = self
@@ -253,7 +253,7 @@ fn listed_size(resources: &ResourceContext) -> usize {
 fn added_beyond(
     prior: &ResourceContext,
     resources: &ResourceContext,
-) -> Option<Vec<super::CResourceFact>> {
+) -> Option<Vec<super::ResourceFact>> {
     let held = resources.memory_input_facts();
     let held_members = resources.owned_non_memory_input_facts();
     let size = listed_size(resources);

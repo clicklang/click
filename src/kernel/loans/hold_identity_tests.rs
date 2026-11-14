@@ -8,7 +8,7 @@ fn holding_a_scope_mints_a_distinct_ledger_identity() {
         block: PointerBlock::Concrete("global:g".to_string()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let fact = CResourceFact::own_memory(CMemoryRange::new(
+    let fact = ResourceFact::own_memory(MemoryRange::new(
         base,
         MachineTerm::constant(0),
         MachineTerm::constant(8),
@@ -29,7 +29,7 @@ fn holding_a_scope_mints_a_distinct_ledger_identity() {
         scope: opening.scope,
         share: opening.root_share,
         support,
-        viewed: CResourceFact::View(fact.resource().clone()),
+        viewed: ResourceFact::View(fact.resource().clone()),
         hold: None,
     };
     let (with_hold, _) = ledger.hold(&binding, reader).expect("the hold opens");

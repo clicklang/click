@@ -26,7 +26,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
         offset: PointerOffsetTerm::scale_int32(value, 4),
     };
     let owner = |pointer| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             pointer,
             0u32.into(),
             3u32.into(),
@@ -34,7 +34,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
         ))
     };
     let query = |pointer| {
-        CResource::Memory(CMemoryRange::new_with_element_width(
+        Resource::Memory(MemoryRange::new_with_element_width(
             pointer,
             1u32.into(),
             2u32.into(),
@@ -86,7 +86,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
     // No condition names `a`: the owner's loaded base must remain a
     // candidate because the memory edge itself resolves it to `a`.
     let slot = Pointer::symbolic(Variable(989_799));
-    let snapshot = CMemory::new().store(slot.clone(), ProgramValue::Int32(a.clone()));
+    let snapshot = Memory::new().store(slot.clone(), ProgramValue::Int32(a.clone()));
     let loaded = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(snapshot),
         Box::new(slot),
@@ -115,15 +115,15 @@ fn separation_candidates_follow_a_block_alias_to_the_owner() {
     let loaded = Pointer::symbolic(Variable(989_801));
     let target = Pointer::symbolic(Variable(989_802));
     let range = |pointer: Pointer, start: u32, end: u32| {
-        CMemoryRange::new_with_element_width(pointer, start.into(), end.into(), 4)
+        MemoryRange::new_with_element_width(pointer, start.into(), end.into(), 4)
     };
     let frame = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_memory(range(parameter.clone(), 1, 2)))
-        .unchecked_with_fact(CResourceFact::own_memory(range(target.clone(), 1, 2)));
+        .unchecked_with_fact(ResourceFact::own_memory(range(parameter.clone(), 1, 2)))
+        .unchecked_with_fact(ResourceFact::own_memory(range(target.clone(), 1, 2)));
     let query = |context: &PureFactContext| {
         context.proves_resource_separate(
-            &CResource::Memory(range(target.clone(), 1, 2)),
-            &CResource::Memory(range(loaded.clone(), 1, 2)),
+            &Resource::Memory(range(target.clone(), 1, 2)),
+            &Resource::Memory(range(loaded.clone(), 1, 2)),
         )
     };
     let unrelated =
@@ -138,104 +138,104 @@ fn separation_candidates_follow_a_block_alias_to_the_owner() {
 
 #[test]
 fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() {
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(2));
-    let memory_view = CResourceSpec::new(
-        CResourceTerm::Memory(segment.clone()),
-        CResourceAccessMode::View,
-        CResourceQuantity::One,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(2));
+    let memory_view = ResourceSpec::new(
+        ResourceTerm::Memory(segment.clone()),
+        ResourceAccessMode::View,
+        ResourceQuantity::One,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
     assert_eq!(memory_view.family(), ResourceFamily::Memory);
-    assert_eq!(memory_view.access(), CResourceAccessMode::View);
-    assert_eq!(memory_view.role(), CResourceTransferRole::Borrow);
-    assert_eq!(memory_view.snapshot(), CResourceSnapshot::Entry);
+    assert_eq!(memory_view.access(), ResourceAccessMode::View);
+    assert_eq!(memory_view.role(), ResourceTransferRole::Borrow);
+    assert_eq!(memory_view.snapshot(), ResourceSnapshot::Entry);
     assert_eq!(
         memory_view.clone().with_clause_position(0, 2),
         memory_view.clone().with_clause_position(1, 9)
     );
 
-    let memory_owner = CResourceSpec::new(
-        CResourceTerm::Memory(segment),
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Current,
+    let memory_owner = ResourceSpec::new(
+        ResourceTerm::Memory(segment),
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Current,
     )
     .unwrap();
     assert!(memory_owner.memory_segment().is_some());
 
-    let composite_view = CResourceSpec::declared(
+    let composite_view = ResourceSpec::declared(
         ResourceFamily::Composite,
-        CResourceAccessMode::View,
+        ResourceAccessMode::View,
         "box".into(),
         vec![],
         vec![],
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
-    let token_owner = CResourceSpec::declared(
+    let token_owner = ResourceSpec::declared(
         ResourceFamily::Token,
-        CResourceAccessMode::Own,
+        ResourceAccessMode::Own,
         "permit".into(),
         vec![],
         vec![],
-        CResourceTransferRole::Produce,
-        CResourceSnapshot::Post,
+        ResourceTransferRole::Produce,
+        ResourceSnapshot::Post,
     )
     .unwrap();
     assert_eq!(composite_view.family(), ResourceFamily::Composite);
     assert_eq!(token_owner.family(), ResourceFamily::Token);
-    assert_eq!(token_owner.role(), CResourceTransferRole::Produce);
-    assert_eq!(token_owner.snapshot(), CResourceSnapshot::Post);
+    assert_eq!(token_owner.role(), ResourceTransferRole::Produce);
+    assert_eq!(token_owner.snapshot(), ResourceSnapshot::Post);
 
-    let counted = CResourceSpec::quantified(
+    let counted = ResourceSpec::quantified(
         c_int32_literal(3),
         token_owner.clone(),
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Current,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Current,
     )
     .unwrap();
-    assert!(matches!(counted.quantity(), CResourceQuantity::Count(_)));
+    assert!(matches!(counted.quantity(), ResourceQuantity::Count(_)));
 
     assert!(matches!(
-        CResourceSpec::new(
-            CResourceTerm::Memory(CMemorySegment::new(
+        ResourceSpec::new(
+            ResourceTerm::Memory(MemorySegment::new(
                 c_variable("p"),
                 c_int32_literal(0),
                 c_int32_literal(1),
             )),
-            CResourceAccessMode::Own,
-            CResourceQuantity::Count(c_int32_literal(2)),
-            CResourceTransferRole::Consume,
-            CResourceSnapshot::Entry,
+            ResourceAccessMode::Own,
+            ResourceQuantity::Count(c_int32_literal(2)),
+            ResourceTransferRole::Consume,
+            ResourceSnapshot::Entry,
         ),
-        Err(CResourceSpecError::InvalidQuantity {
+        Err(ResourceSpecError::InvalidQuantity {
             family: ResourceFamily::Memory,
             ..
         })
     ));
     assert!(matches!(
-        CResourceSpec::quantified(
+        ResourceSpec::quantified(
             c_int32_literal(2),
             composite_view,
-            CResourceTransferRole::Consume,
-            CResourceSnapshot::Current,
+            ResourceTransferRole::Consume,
+            ResourceSnapshot::Current,
         ),
-        Err(CResourceSpecError::InvalidAccess {
+        Err(ResourceSpecError::InvalidAccess {
             family: ResourceFamily::Composite,
-            access: CResourceAccessMode::View,
+            access: ResourceAccessMode::View,
         })
     ));
 
     let schema = ResourceFieldSchema::new(vec![]).unwrap();
-    let instance_term = CResourceTerm::Instance {
+    let instance_term = ResourceTerm::Instance {
         identity: Variable(77),
         binder: "cell".into(),
         schema: schema.clone(),
-        resource: Box::new(CResourceTerm::Composite {
+        resource: Box::new(ResourceTerm::Composite {
             name: "cell".into(),
             arguments: vec![],
             argument_snapshots: vec![],
@@ -243,47 +243,47 @@ fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() 
         }),
     };
     assert!(matches!(
-        CResourceSpec::new(
+        ResourceSpec::new(
             instance_term.clone(),
-            CResourceAccessMode::View,
-            CResourceQuantity::One,
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            ResourceAccessMode::View,
+            ResourceQuantity::One,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         ),
-        Err(CResourceSpecError::InvalidAccess {
+        Err(ResourceSpecError::InvalidAccess {
             family: ResourceFamily::Instance,
-            access: CResourceAccessMode::View,
+            access: ResourceAccessMode::View,
         })
     ));
     assert!(
-        CResourceSpec::new(
+        ResourceSpec::new(
             instance_term,
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            ResourceAccessMode::Own,
+            ResourceQuantity::One,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         )
         .is_ok()
     );
     assert!(matches!(
-        CResourceSpec::new(
-            CResourceTerm::Instance {
+        ResourceSpec::new(
+            ResourceTerm::Instance {
                 identity: Variable(78),
                 binder: "token".into(),
                 schema,
-                resource: Box::new(CResourceTerm::Token {
+                resource: Box::new(ResourceTerm::Token {
                     name: "token".into(),
                     arguments: vec![],
                     argument_snapshots: vec![],
                     parameter_types: vec![],
                 }),
             },
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            ResourceAccessMode::Own,
+            ResourceQuantity::One,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         ),
-        Err(CResourceSpecError::InvalidNestedTerm(_))
+        Err(ResourceSpecError::InvalidNestedTerm(_))
     ));
 }
 
@@ -291,17 +291,17 @@ fn normalized_resource_specs_validate_families_and_preserve_transfer_metadata() 
 fn validated_resource_rebuilds_preserve_metadata_and_instance_bodies() {
     let variable = Variable(77_700);
     let quantity = ProgramExpression::Value(int32(MachineTerm::Variable(variable)));
-    let spec = CResourceSpec::new(
-        CResourceTerm::Token {
+    let spec = ResourceSpec::new(
+        ResourceTerm::Token {
             name: "permit".into(),
             arguments: vec![quantity.clone()],
-            argument_snapshots: vec![CResourceSnapshot::Current],
+            argument_snapshots: vec![ResourceSnapshot::Current],
             parameter_types: vec![ProgramType::Int32],
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::Count(quantity),
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceAccessMode::Own,
+        ResourceQuantity::Count(quantity),
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
     let substituted = crate::kernel::reasoning::substitute_bitvector_variable_in_resource_spec(
@@ -309,60 +309,60 @@ fn validated_resource_rebuilds_preserve_metadata_and_instance_bodies() {
         variable,
         &MachineTerm::constant(3),
     );
-    assert_eq!(substituted.access(), CResourceAccessMode::Own);
-    assert_eq!(substituted.role(), CResourceTransferRole::Borrow);
-    assert_eq!(substituted.snapshot(), CResourceSnapshot::Entry);
+    assert_eq!(substituted.access(), ResourceAccessMode::Own);
+    assert_eq!(substituted.role(), ResourceTransferRole::Borrow);
+    assert_eq!(substituted.snapshot(), ResourceSnapshot::Entry);
     assert!(matches!(
         substituted.quantity(),
-        CResourceQuantity::Count(ProgramExpression::Value(ProgramValue::Int32(
+        ResourceQuantity::Count(ProgramExpression::Value(ProgramValue::Int32(
             int32_constant!(3)
         )))
     ));
     assert!(matches!(
         substituted.term(),
-        CResourceTerm::Token { arguments, .. }
+        ResourceTerm::Token { arguments, .. }
             if matches!(arguments.as_slice(), [ProgramExpression::Value(ProgramValue::Int32(int32_constant!(3)))])
     ));
 
     let schema = ResourceFieldSchema::new(vec![]).unwrap();
-    let instance = CResourceSpec::instance(
+    let instance = ResourceSpec::instance(
         variable,
         "cell".into(),
         schema,
-        CResourceSpec::composite(CResourceAccessMode::Own, "cell".into(), vec![], vec![]),
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceSpec::composite(ResourceAccessMode::Own, "cell".into(), vec![], vec![]),
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
     let inner = instance
         .instance_resource_spec()
         .expect("validated instance has a reconstructible inner term");
-    assert_eq!(inner.access(), CResourceAccessMode::Own);
-    assert_eq!(inner.quantity(), &CResourceQuantity::One);
-    assert_eq!(inner.role(), CResourceTransferRole::Borrow);
-    assert_eq!(inner.snapshot(), CResourceSnapshot::Entry);
+    assert_eq!(inner.access(), ResourceAccessMode::Own);
+    assert_eq!(inner.quantity(), &ResourceQuantity::One);
+    assert_eq!(inner.role(), ResourceTransferRole::Borrow);
+    assert_eq!(inner.snapshot(), ResourceSnapshot::Entry);
 
     assert!(matches!(
-        CResourceSpec::new(
-            CResourceTerm::Instance {
+        ResourceSpec::new(
+            ResourceTerm::Instance {
                 identity: variable,
                 binder: "cell".into(),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
-                resource: Box::new(CResourceTerm::Composite {
+                resource: Box::new(ResourceTerm::Composite {
                     name: "cell".into(),
                     arguments: vec![],
                     argument_snapshots: vec![],
                     parameter_types: vec![],
                 }),
             },
-            CResourceAccessMode::View,
-            CResourceQuantity::One,
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            ResourceAccessMode::View,
+            ResourceQuantity::One,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         ),
-        Err(CResourceSpecError::InvalidAccess {
+        Err(ResourceSpecError::InvalidAccess {
             family: ResourceFamily::Instance,
-            access: CResourceAccessMode::View,
+            access: ResourceAccessMode::View,
         })
     ));
 }
@@ -375,12 +375,12 @@ fn owned_range_access_survives_learning_a_symbolic_pointer_alias() {
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(101)), 4),
     };
     let unrelated = Pointer::symbolic(Variable(102));
-    let range = CMemoryRange::new(
+    let range = MemoryRange::new(
         cell.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     );
-    let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range));
+    let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range));
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::pointer_equal(cell.clone(), slot.clone()),
         true,
@@ -419,12 +419,12 @@ fn owned_range_read_survives_learning_a_symbolic_pointer_alias() {
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(101)), 4),
     };
     let unrelated = Pointer::symbolic(Variable(102));
-    let range = CMemoryRange::new(
+    let range = MemoryRange::new(
         cell.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     );
-    let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range));
+    let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range));
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::pointer_equal(slot.clone(), cell.clone()),
         true,
@@ -455,7 +455,7 @@ fn owned_memory_consumption_survives_a_late_transitive_displaced_alias() {
         offset: PointerOffsetTerm::Constant(8),
     };
     let cell = |base| {
-        CResourceFact::own_memory(CMemoryRange::new(
+        ResourceFact::own_memory(MemoryRange::new(
             base,
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -515,7 +515,7 @@ fn owned_memory_consumption_survives_a_late_transitive_displaced_alias() {
 #[test]
 fn paired_memory_index_tracks_resource_deltas_and_displaced_merges() {
     let cell = |base| {
-        CResourceFact::own_memory(CMemoryRange::new(
+        ResourceFact::own_memory(MemoryRange::new(
             base,
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -592,14 +592,14 @@ fn paired_memory_index_consumes_inside_a_displaced_aliased_range() {
     let owner = Pointer::symbolic(Variable(830_000));
     let alias = Pointer::symbolic(Variable(830_001));
     let resources =
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             owner.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(4),
         )));
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::pointer_equal(owner, alias.clone()), true);
-    let required = CResourceFact::own_memory(CMemoryRange::new(
+    let required = ResourceFact::own_memory(MemoryRange::new(
         Pointer {
             block: alias.block.clone(),
             offset: PointerOffsetTerm::Constant(4),
@@ -616,7 +616,7 @@ fn paired_memory_index_consumes_inside_a_displaced_aliased_range() {
             .without_fact_incrementally(&required, &assumptions)
             .is_none()
     );
-    let remaining_cell = CResourceFact::own_memory(CMemoryRange::new(
+    let remaining_cell = ResourceFact::own_memory(MemoryRange::new(
         alias,
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -633,7 +633,7 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
     let base = Pointer::symbolic(Variable(862_000));
     let returned = Pointer::symbolic(Variable(862_001));
     let bytes = |start: u32, end: u32| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base.clone(),
             start.into(),
             end.into(),
@@ -641,7 +641,7 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
         ))
     };
     // A returned i32 field sits beside padding still spelled in bytes.
-    let field = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let field = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         returned.clone(),
         0u32.into(),
         1u32.into(),
@@ -690,7 +690,7 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
             .is_none()
     );
     let viewed = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::view_memory(
+        .unchecked_with_fact(ResourceFact::view_memory(
             field.memory_own_range().unwrap().clone(),
         ))
         .unchecked_with_fact(bytes(12, 16));
@@ -710,13 +710,13 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
 #[test]
 fn owned_fragment_reservation_preserves_native_supplier_bounds() {
     let base = Pointer::symbolic(Variable(862_019));
-    let owner = CResourceFact::own_memory(CMemoryRange::new_wide(
+    let owner = ResourceFact::own_memory(MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(16),
         1,
     ));
-    let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let required = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base.clone(),
         0u32.into(),
         4u32.into(),
@@ -732,7 +732,7 @@ fn owned_fragment_reservation_preserves_native_supplier_bounds() {
     assert_eq!(supports.len(), 1);
     assert_eq!(
         remaining.facts(),
-        [CResourceFact::own_memory(CMemoryRange::new_wide(
+        [ResourceFact::own_memory(MemoryRange::new_wide(
             base,
             MachineTerm::uint64_constant(4),
             MachineTerm::uint64_constant(16),
@@ -758,7 +758,7 @@ fn owned_fragment_reservation_joins_mixed_width_fields_at_symbolic_bases() {
         },
     ] {
         let memory = |start: u32, end: u32, width| {
-            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 base.clone(),
                 start.into(),
                 end.into(),
@@ -773,7 +773,7 @@ fn owned_fragment_reservation_joins_mixed_width_fields_at_symbolic_bases() {
             memory(7, 8, 1),
         ];
         let whole = memory(0, 2, 4);
-        let context = |fields: Vec<CResourceFact>| {
+        let context = |fields: Vec<ResourceFact>| {
             let resources = ResourceContext::new().unchecked_with_facts(fields);
             resources.synchronize_memory_equalities(&facts);
             resources
@@ -808,7 +808,7 @@ fn owned_fragment_reservation_joins_mixed_width_fields_at_symbolic_bases() {
             );
         }
         let mut viewed = fields.to_vec();
-        viewed[4] = CResourceFact::view_memory(fields[4].memory_own_range().unwrap().clone());
+        viewed[4] = ResourceFact::view_memory(fields[4].memory_own_range().unwrap().clone());
         assert!(
             context(viewed)
                 .reserve_owned_memory_fragments(&whole, &facts)
@@ -825,7 +825,7 @@ fn owned_fragment_reservation_joins_mixed_width_fields_at_symbolic_bases() {
 
 fn instance_memory_fixture() -> (
     ResourceInstance,
-    CCompositeResourceDefinition,
+    CompositeResourceDefinition,
     ExecutionState,
 ) {
     let schema = ResourceFieldSchema::new(vec![(
@@ -845,12 +845,12 @@ fn instance_memory_fixture() -> (
         vec![int32(7).into()].into(),
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "cell",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(CMemorySegment {
+        vec![ResourceSpec::owned_memory(MemorySegment {
             base: c_variable("p"),
             start: c_int32_literal(0),
             end: c_int32_literal(1),
@@ -864,7 +864,7 @@ fn instance_memory_fixture() -> (
     .with_instance_schema(Some(schema));
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
     );
     (instance, definition, state)
 }
@@ -873,27 +873,27 @@ fn instance_memory_fixture() -> (
 fn inactive_instance_quantity_does_not_imply_nonnegativity() {
     let (mut instance, mut definition, _) = instance_memory_fixture();
     instance.fields = vec![int32(u32::MAX).into()].into();
-    let unit = CResourceSpec::declared(
+    let unit = ResourceSpec::declared(
         ResourceFamily::Token,
-        CResourceAccessMode::Own,
+        ResourceAccessMode::Own,
         "credit".into(),
         vec![],
         vec![],
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Current,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Current,
     )
     .unwrap();
     definition.contains = vec![
-        CResourceSpec::quantified(
+        ResourceSpec::quantified(
             c_variable("value"),
             unit,
-            CResourceTransferRole::Consume,
-            CResourceSnapshot::Current,
+            ResourceTransferRole::Consume,
+            ResourceSnapshot::Current,
         )
         .unwrap()
         .with_guard(SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(c_int32_literal(0)),
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: SpecExpression::ProgramExpression(c_int32_literal(1)),
         }),
     ];
@@ -922,7 +922,7 @@ fn inactive_instance_quantity_does_not_imply_nonnegativity() {
 
 fn recursive_child_fixture() -> (
     ResourceInstance,
-    CCompositeResourceDefinition,
+    CompositeResourceDefinition,
     ExecutionState,
 ) {
     let (mut instance, mut definition, _) = instance_memory_fixture();
@@ -965,11 +965,11 @@ fn recursive_child_fixture() -> (
     })]
     .into();
     definition.instance_schema = Some(instance.schema.clone());
-    definition.matched = Some(CResourceMatchBody {
+    definition.matched = Some(ResourceMatchBody {
         field_index: 0,
         algebraic_type: ty.clone(),
         arms: vec![
-            CResourceMatchArm {
+            ResourceMatchArm {
                 variant: "Clear".into(),
                 bindings: vec![],
                 binding_types: vec![],
@@ -978,7 +978,7 @@ fn recursive_child_fixture() -> (
                 facts: vec![],
                 children: vec![],
             },
-            CResourceMatchArm {
+            ResourceMatchArm {
                 variant: "Set".into(),
                 bindings: vec!["lp".into(), "lm".into(), "rp".into(), "rm".into()],
                 binding_types: ty.variants[1].fields.clone(),
@@ -986,19 +986,19 @@ fn recursive_child_fixture() -> (
                 contains: std::mem::take(&mut definition.contains),
                 facts: vec![],
                 children: vec![
-                    CResourceChildSpec {
+                    ResourceChildSpec {
                         name: "left".into(),
                         resource: "cell".into(),
                         binding: Variable(90),
                         arguments: vec![SpecExpression::ProgramExpression(c_variable("lp"))],
-                        field_bindings: vec![CResourceChildField::Constructor(1)],
+                        field_bindings: vec![ResourceChildField::Constructor(1)],
                     },
-                    CResourceChildSpec {
+                    ResourceChildSpec {
                         name: "right".into(),
                         resource: "cell".into(),
                         binding: Variable(91),
                         arguments: vec![SpecExpression::ProgramExpression(c_variable("rp"))],
-                        field_bindings: vec![CResourceChildField::Constructor(3)],
+                        field_bindings: vec![ResourceChildField::Constructor(3)],
                     },
                 ],
             },
@@ -1006,7 +1006,7 @@ fn recursive_child_fixture() -> (
     });
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
     );
     (instance, definition, state)
 }
@@ -1131,7 +1131,7 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
         unreachable!()
     };
     let stored = PointerValue::new(Pointer::symbolic(Variable(559)), ProgramType::Int32Pointer);
-    let state = state.with_memory(CMemory::new().store(
+    let state = state.with_memory(Memory::new().store(
         parent.pointer().clone(),
         ProgramValue::Pointer(stored.clone()),
     ));
@@ -1153,7 +1153,7 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
     let sibling_before = sibling.equality_graph.knows_condition(condition, *truth);
     let mut invalid = definition.clone();
     invalid.matched.as_mut().unwrap().arms[1].children[0].field_bindings =
-        vec![CResourceChildField::Parent(999)];
+        vec![ResourceChildField::Parent(999)];
     assert!(
         crate::kernel::rewrite_resource_instance_selecting_children(
             &state,
@@ -1232,7 +1232,7 @@ fn recursive_child_kernel_rejects_implicit_parent_handles() {
     );
     let mut invalid = definition.clone();
     invalid.matched.as_mut().unwrap().arms[1].children[0].field_bindings =
-        vec![CResourceChildField::Constructor(0)];
+        vec![ResourceChildField::Constructor(0)];
     assert!(
         crate::kernel::rewrite_resource_instance_selecting_children(
             &state,
@@ -1268,7 +1268,7 @@ fn recursive_child_kernel_keeps_unknown_submodels_folded() {
     instance.fields = vec![AlgebraicValue::Algebraic(model)].into();
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
     );
     let assumptions = PureFactContext::new();
     let children = [
@@ -1314,7 +1314,7 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
     let (instance, mut definition, state) = instance_memory_fixture();
     definition.condition = Some(SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(c_variable("p")),
-        operator: CComparisonOperator::NotEqual,
+        operator: ComparisonOperator::NotEqual,
         right: SpecExpression::ProgramExpression(c_int32_literal(0)),
     });
     let ProgramValue::Pointer(pointer) = instance.arguments()[0].as_c_value().unwrap() else {
@@ -1378,11 +1378,11 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
     .unwrap();
     instance.fields = vec![AlgebraicValue::Algebraic(model.clone())].into();
     definition.instance_schema = Some(instance.schema.clone());
-    definition.matched = Some(CResourceMatchBody {
+    definition.matched = Some(ResourceMatchBody {
         field_index: 0,
         algebraic_type: ty.clone(),
         arms: vec![
-            CResourceMatchArm {
+            ResourceMatchArm {
                 children: vec![],
                 variant: "Clear".into(),
                 bindings: vec![],
@@ -1391,7 +1391,7 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
                 contains: vec![],
                 facts: vec![],
             },
-            CResourceMatchArm {
+            ResourceMatchArm {
                 variant: "Set".into(),
                 children: vec![],
                 bindings: vec![],
@@ -1404,7 +1404,7 @@ fn resource_match_kernel_checks_schema_case_and_ownership() {
     });
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
     );
     let unknown = PureFactContext::new();
     let set = unknown.clone().assume_proposition(Proposition::Equal(
@@ -1606,15 +1606,15 @@ fn resource_instances_are_exclusive_not_counted_or_viewable() {
     let assumptions = PureFactContext::new();
     let ty = resource_index_type("Mark", vec![]);
     let instance = field_instance(2, resource_index_variable(&ty, 1), 0);
-    let owned = CResourceFact::own(CResource::Instance(instance.clone()));
+    let owned = ResourceFact::own(Resource::Instance(instance.clone()));
     let context = ResourceContext::new()
         .try_compose_with_fact(owned.clone(), &assumptions)
         .unwrap();
     assert!(owned.core().is_none());
     assert!(owned.core_with_assumptions(&assumptions).is_none());
-    let mut invalid = vec![CResourceFact::View(owned.resource().clone())];
-    invalid.extend([0, 2].map(|q| CResourceFact::own_quantity(owned.resource().clone(), q.into())));
-    invalid.push(CResourceFact::own_quantity(
+    let mut invalid = vec![ResourceFact::View(owned.resource().clone())];
+    invalid.extend([0, 2].map(|q| ResourceFact::own_quantity(owned.resource().clone(), q.into())));
+    invalid.push(ResourceFact::own_quantity(
         owned.resource().clone(),
         MachineTerm::Variable(Variable(8)),
     ));
@@ -1648,7 +1648,7 @@ fn resource_instances_are_exclusive_not_counted_or_viewable() {
         instance,
         field_instance(2, resource_index_variable(&ty, 9), 1),
     ] {
-        let fact = CResourceFact::own(CResource::Instance(duplicate));
+        let fact = ResourceFact::own(Resource::Instance(duplicate));
         assert!(
             context
                 .clone()
@@ -1671,10 +1671,10 @@ fn resource_instances_distinguish_identity_from_equal_field_state() {
     let ty = resource_index_type("Mark", vec![]);
     let m = resource_index_variable(&ty, 1);
     let n = resource_index_variable(&ty, 2);
-    let owned = CResourceFact::own(CResource::Instance(field_instance(10, m.clone(), 0)));
-    let equal_state = CResourceFact::own(CResource::Instance(field_instance(10, n.clone(), 0)));
-    let other_identity = CResourceFact::own(CResource::Instance(field_instance(11, m.clone(), 0)));
-    let changed_scalar = CResourceFact::own(CResource::Instance(field_instance(10, m.clone(), 1)));
+    let owned = ResourceFact::own(Resource::Instance(field_instance(10, m.clone(), 0)));
+    let equal_state = ResourceFact::own(Resource::Instance(field_instance(10, n.clone(), 0)));
+    let other_identity = ResourceFact::own(Resource::Instance(field_instance(11, m.clone(), 0)));
+    let changed_scalar = ResourceFact::own(Resource::Instance(field_instance(10, m.clone(), 1)));
     let empty = PureFactContext::new();
     let context = ResourceContext::new().unchecked_with_fact(owned.clone());
     assert!(!context.satisfies_fact(&equal_state, &empty));
@@ -1716,7 +1716,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
     let n = resource_index_variable(&ty, 2);
     let state = |model, revision| {
         ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own(CResource::Instance(field_instance(10, model, revision))),
+            ResourceFact::own(Resource::Instance(field_instance(10, model, revision))),
         ))
     };
     let entry = state(m.clone(), 3);
@@ -1863,22 +1863,22 @@ fn resource_instance_contract_selects_current_fields_without_promising_preservat
     let ty = resource_index_type("Mark", vec![]);
     let before = field_instance(10, resource_index_variable(&ty, 1), 3);
     let after = field_instance(10, resource_index_variable(&ty, 2), 4);
-    let requirement = CResourceSpec::instance(
+    let requirement = ResourceSpec::instance(
         before.identity(),
         "cell".into(),
         before.schema().clone(),
-        CResourceSpec::composite(
-            CResourceAccessMode::Own,
+        ResourceSpec::composite(
+            ResourceAccessMode::Own,
             "marked_cell".into(),
             vec![ProgramExpression::Value(int32(7))],
             vec![ProgramType::Int32],
         ),
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Current,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Current,
     )
     .unwrap();
     for instance in [before, after] {
-        let fact = CResourceFact::own(CResource::Instance(instance));
+        let fact = ResourceFact::own(Resource::Instance(instance));
         let state = ExecutionState::new()
             .with_resource_context(ResourceContext::new().unchecked_with_fact(fact.clone()));
         let selected = crate::kernel::functions::evaluate_function_resource_spec(
@@ -1927,14 +1927,14 @@ fn resource_instance_substitution_preserves_identity_without_memory_authority() 
         };
         let mut instance = field_instance(10, model, 0);
         instance.arguments = vec![ProgramValue::pointer(p).into()].into();
-        CResource::Instance(instance)
+        Resource::Instance(instance)
     };
     let source = make(pointer.clone(), MachineTerm::Variable(Variable(11)));
-    let context = ResourceContext::new().unchecked_with_fact(CResourceFact::own(source.clone()));
+    let context = ResourceContext::new().unchecked_with_fact(ResourceFact::own(source.clone()));
     let assumptions = PureFactContext::new();
     for required in [
-        CResourceFact::view_memory(memory_range(pointer.clone(), 0, 1)),
-        CResourceFact::own_memory(memory_range(pointer, 0, 1)),
+        ResourceFact::view_memory(memory_range(pointer.clone(), 0, 1)),
+        ResourceFact::own_memory(memory_range(pointer, 0, 1)),
     ] {
         assert!(!context.satisfies_fact(&required, &assumptions));
     }
@@ -1945,14 +1945,14 @@ fn resource_instance_substitution_preserves_identity_without_memory_authority() 
     );
     let substituted = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
         &Proposition::CResourceComposition(
-            ResourceContext::new().unchecked_with_fact(CResourceFact::own(numeric)),
+            ResourceContext::new().unchecked_with_fact(ResourceFact::own(numeric)),
         ),
         Variable(10),
         &target,
     );
     let expected = Proposition::CResourceComposition(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(make(target, MachineTerm::constant(7)))),
+            .unchecked_with_fact(ResourceFact::own(make(target, MachineTerm::constant(7)))),
     );
     assert_eq!(
         substituted, expected,
@@ -2060,15 +2060,15 @@ fn resource_index_variable(ty: &AlgebraicType, id: u64) -> AlgebraicTerm {
     }
 }
 
-fn indexed_resource(index: AlgebraicTerm, composite: bool) -> CResource {
+fn indexed_resource(index: AlgebraicTerm, composite: bool) -> Resource {
     let arguments = vec![AlgebraicValue::Algebraic(index)].into();
     if composite {
-        CResource::Composite {
+        Resource::Composite {
             name: "indexed".into(),
             arguments,
         }
     } else {
-        CResource::Token {
+        Resource::Token {
             name: "indexed".into(),
             arguments,
         }
@@ -2082,21 +2082,21 @@ fn symbolic_resource_indices_preserve_types_equality_and_linear_transfer() {
     let n = resource_index_variable(&ty, 990_002);
     let other = resource_index_variable(&resource_index_type("Other", vec![]), 990_001);
     for composite in [false, true] {
-        let owned = CResourceFact::own(indexed_resource(m.clone(), composite));
-        let renamed = CResourceFact::own(indexed_resource(n.clone(), composite));
-        let wrong_type = CResourceFact::own(indexed_resource(other.clone(), composite));
+        let owned = ResourceFact::own(indexed_resource(m.clone(), composite));
+        let renamed = ResourceFact::own(indexed_resource(n.clone(), composite));
+        let wrong_type = ResourceFact::own(indexed_resource(other.clone(), composite));
         let facts = ResourceContext::new().unchecked_with_fact(owned.clone());
         let empty = PureFactContext::new();
         assert!(facts.satisfies_fact(&owned, &empty));
         assert!(!facts.satisfies_fact(&renamed, &empty));
         assert!(!facts.satisfies_fact(&wrong_type, &empty));
         assert!(!facts.satisfies_fact(
-            &CResourceFact::own_quantity(owned.resource().clone(), MachineTerm::constant(2)),
+            &ResourceFact::own_quantity(owned.resource().clone(), MachineTerm::constant(2)),
             &empty,
         ));
         assert!(
             !ResourceContext::new()
-                .unchecked_with_fact(CResourceFact::View(owned.resource().clone()))
+                .unchecked_with_fact(ResourceFact::View(owned.resource().clone()))
                 .satisfies_fact(&owned, &empty)
         );
 
@@ -2171,11 +2171,11 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
     };
     let value = MachineTerm::Variable(Variable(990_021));
     let original = indexed_resource(model(pointer.clone(), value.clone()), false);
-    let context = ResourceContext::new().unchecked_with_fact(CResourceFact::own(original.clone()));
+    let context = ResourceContext::new().unchecked_with_fact(ResourceFact::own(original.clone()));
     let empty = PureFactContext::new();
     let memory = memory_range(pointer, 0, 1);
-    assert!(!context.satisfies_fact(&CResourceFact::view_memory(memory.clone()), &empty));
-    assert!(!context.satisfies_fact(&CResourceFact::own_memory(memory), &empty));
+    assert!(!context.satisfies_fact(&ResourceFact::view_memory(memory.clone()), &empty));
+    assert!(!context.satisfies_fact(&ResourceFact::own_memory(memory), &empty));
 
     let numeric = crate::kernel::reasoning::substitute_bitvector_variable_in_c_resource(
         &original,
@@ -2183,7 +2183,7 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
         &MachineTerm::constant(7),
     );
     let source = Proposition::CResourceComposition(
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own(numeric)),
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own(numeric)),
     );
     let substituted = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(
         &source,
@@ -2191,7 +2191,7 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
         &target,
     );
     let expected = Proposition::CResourceComposition(ResourceContext::new().unchecked_with_fact(
-        CResourceFact::own(indexed_resource(
+        ResourceFact::own(indexed_resource(
             model(target, MachineTerm::constant(7)),
             false,
         )),
@@ -2229,10 +2229,10 @@ fn symbolic_resource_indices_clone_recursive_models_by_sharing() {
         let resource = indexed_resource(model, false);
         let cloned = resource.clone();
         let (
-            CResource::Token {
+            Resource::Token {
                 arguments: left, ..
             },
-            CResource::Token {
+            Resource::Token {
                 arguments: right, ..
             },
         ) = (&resource, &cloned)
@@ -2246,7 +2246,7 @@ fn symbolic_resource_indices_clone_recursive_models_by_sharing() {
 fn unrelated_token_context(size: usize) -> ResourceContext {
     ResourceContext::new().unchecked_with_facts(
         (0..size).map(|index| {
-            CResourceFact::own_token(format!("token_{index}"), vec![int32(index as u32)])
+            ResourceFact::own_token(format!("token_{index}"), vec![int32(index as u32)])
         }),
     )
 }
@@ -2270,8 +2270,8 @@ fn zero_owned_resource_is_identity_after_symbolic_resolution() {
     let assumptions = PureFactContext::new()
         .assume_proposition(equality(quantity.clone(), intermediate.clone()))
         .assume_proposition(equality(intermediate, MachineTerm::constant(0)));
-    let required = CResourceFact::own_quantity(
-        CResource::Token {
+    let required = ResourceFact::own_quantity(
+        Resource::Token {
             name: "empty".to_string(),
             arguments: vec![int32(7).into()].into(),
         },
@@ -2287,7 +2287,7 @@ fn zero_owned_resource_is_identity_after_symbolic_resolution() {
     assert!(remaining.is_empty());
 
     let positive =
-        CResourceFact::own_quantity(required.resource().clone(), MachineTerm::constant(1));
+        ResourceFact::own_quantity(required.resource().clone(), MachineTerm::constant(1));
     assert!(!empty.satisfies_fact(&positive, &assumptions));
     assert!(
         empty
@@ -2304,7 +2304,7 @@ fn resource_context_fork_updates_are_persistent_and_logarithmic() {
         assert!(context.shares_storage_with(&ancestor));
         assert!(context.storage.materialized.get().is_none());
 
-        let added = CResourceFact::own_token("target".to_string(), vec![int32(size as u32)]);
+        let added = ResourceFact::own_token("target".to_string(), vec![int32(size as u32)]);
         let before_insert = crate::persistent::persistent_node_allocations();
         let successor = context.unchecked_with_fact(added.clone());
         let insert_allocations = crate::persistent::persistent_node_allocations() - before_insert;
@@ -2337,7 +2337,7 @@ fn resource_context_fork_updates_are_persistent_and_logarithmic() {
         );
         assert_eq!(removed.facts(), ancestor.facts());
         assert!(ancestor.satisfies_fact(
-            &CResourceFact::own_token("token_0".to_string(), vec![int32(0)]),
+            &ResourceFact::own_token("token_0".to_string(), vec![int32(0)]),
             &PureFactContext::new(),
         ));
     }
@@ -2345,10 +2345,10 @@ fn resource_context_fork_updates_are_persistent_and_logarithmic() {
 
 #[test]
 fn consuming_support_removes_only_its_derived_views() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
-    let view = CResourceFact::view_token("derived".to_string(), vec![int32(7)]);
-    let other_authority = CResourceFact::own_composite("other".to_string(), Vec::new());
-    let other_view = CResourceFact::view_token("other_derived".to_string(), vec![int32(8)]);
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
+    let view = ResourceFact::view_token("derived".to_string(), vec![int32(7)]);
+    let other_authority = ResourceFact::own_composite("other".to_string(), Vec::new());
+    let other_view = ResourceFact::view_token("other_derived".to_string(), vec![int32(8)]);
     let context = ResourceContext::new()
         .unchecked_with_fact(view.clone())
         .unchecked_with_fact(authority.clone())
@@ -2390,9 +2390,9 @@ fn consuming_support_removes_only_its_derived_views() {
 
 #[test]
 fn equal_support_occurrences_keep_their_own_projections() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
-    let first_view = CResourceFact::view_token("first_derived".to_string(), vec![int32(7)]);
-    let second_view = CResourceFact::view_token("second_derived".to_string(), vec![int32(8)]);
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
+    let first_view = ResourceFact::view_token("first_derived".to_string(), vec![int32(7)]);
+    let second_view = ResourceFact::view_token("second_derived".to_string(), vec![int32(8)]);
     let context = ResourceContext::new()
         .unchecked_with_fact(authority.clone())
         .unchecked_with_fact(authority.clone())
@@ -2414,8 +2414,8 @@ fn equal_support_occurrences_keep_their_own_projections() {
 
 #[test]
 fn resource_equality_and_exchange_preserve_support_occurrence_identity() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
-    let view = CResourceFact::view_token("derived".to_string(), Vec::new());
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
+    let view = ResourceFact::view_token("derived".to_string(), Vec::new());
     let root = ResourceContext::new()
         .unchecked_with_fact(authority.clone())
         .unchecked_with_fact(authority.clone());
@@ -2432,7 +2432,7 @@ fn resource_equality_and_exchange_preserve_support_occurrence_identity() {
         .unchecked_with_supported_facts_from_entry(
             0,
             &authority,
-            [CResourceFact::view_token("derived".to_string(), Vec::new())],
+            [ResourceFact::view_token("derived".to_string(), Vec::new())],
         );
     assert_eq!(
         left, independently_allocated_same_topology,
@@ -2451,7 +2451,7 @@ fn resource_equality_and_exchange_preserve_support_occurrence_identity() {
 
 #[test]
 fn forked_siblings_allocate_distinct_occurrence_identity() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
     let root = ResourceContext::new();
     let left = root.clone().unchecked_with_fact(authority.clone());
     let right = root.unchecked_with_fact(authority.clone());
@@ -2466,8 +2466,8 @@ fn forked_siblings_allocate_distinct_occurrence_identity() {
 
 #[test]
 fn owned_support_lookup_follows_observation_projection() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
-    let projected = CResourceFact::view_composite("nested".to_string(), vec![int32(7)]);
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
+    let projected = ResourceFact::view_composite("nested".to_string(), vec![int32(7)]);
     let context = ResourceContext::new()
         .unchecked_with_fact(projected.clone())
         .unchecked_with_fact(authority.clone())
@@ -2484,9 +2484,9 @@ fn owned_support_lookup_follows_observation_projection() {
 
 #[test]
 fn normalization_preserves_projection_support() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
-    let view = CResourceFact::view_token("derived".to_string(), vec![int32(7)]);
-    let expanded = CResourceFact::own_token("expanded".to_string(), vec![int32(9)]);
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
+    let view = ResourceFact::view_token("derived".to_string(), vec![int32(7)]);
+    let expanded = ResourceFact::own_token("expanded".to_string(), vec![int32(9)]);
     let context = ResourceContext::new()
         .unchecked_with_fact(authority.clone())
         .unchecked_with_supported_facts(&authority, [view])
@@ -2522,9 +2522,9 @@ fn normalization_preserves_projection_support() {
 
 #[test]
 fn normalization_preserves_support_through_unrelated_merge() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
-    let view = CResourceFact::view_token("derived".to_string(), vec![int32(7)]);
-    let unit = CResourceFact::own_token("mergeable".to_string(), Vec::new());
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
+    let view = ResourceFact::view_token("derived".to_string(), vec![int32(7)]);
+    let unit = ResourceFact::own_token("mergeable".to_string(), Vec::new());
     let context = ResourceContext::new()
         .unchecked_with_fact(authority.clone())
         .unchecked_with_supported_facts(&authority, [view.clone()])
@@ -2543,19 +2543,19 @@ fn normalization_preserves_support_through_unrelated_merge() {
 
 #[test]
 fn duplicate_authority_occurrences_survive_normalization_in_order() {
-    let authority = CResourceFact::own(CResource::Instance(field_instance(
+    let authority = ResourceFact::own(Resource::Instance(field_instance(
         900,
         resource_index_variable(&resource_index_type("Marker", vec![]), 1),
         0,
     )));
-    let first_view = CResourceFact::view_token("first_view".to_string(), Vec::new());
-    let second_view = CResourceFact::view_token("second_view".to_string(), Vec::new());
+    let first_view = ResourceFact::view_token("first_view".to_string(), Vec::new());
+    let second_view = ResourceFact::view_token("second_view".to_string(), Vec::new());
     let base = Pointer {
         block: "unrelated".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let first_range = CResourceFact::own_memory(memory_range(base.clone(), 0, 1));
-    let second_range = CResourceFact::own_memory(memory_range(base, 1, 2));
+    let first_range = ResourceFact::own_memory(memory_range(base.clone(), 0, 1));
+    let second_range = ResourceFact::own_memory(memory_range(base, 1, 2));
     let context = ResourceContext::new()
         .unchecked_with_fact(authority.clone())
         .unchecked_with_fact(authority.clone())
@@ -2594,9 +2594,9 @@ fn duplicate_authority_occurrences_survive_normalization_in_order() {
 
 #[test]
 fn duplicate_cached_authorities_rekey_after_remove_and_reinsert() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
-    let first_expansion = vec![CResourceFact::own_token("first".to_string(), Vec::new())];
-    let second_expansion = vec![CResourceFact::own_token("second".to_string(), Vec::new())];
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
+    let first_expansion = vec![ResourceFact::own_token("first".to_string(), Vec::new())];
+    let second_expansion = vec![ResourceFact::own_token("second".to_string(), Vec::new())];
     let context = ResourceContext::new()
         .unchecked_with_fact(authority.clone())
         .unchecked_with_fact(authority.clone());
@@ -2626,7 +2626,7 @@ fn duplicate_cached_authorities_rekey_after_remove_and_reinsert() {
     let context = context.with_cached_supported_expansion_for_occurrence(
         reinserted,
         &authority,
-        vec![CResourceFact::own_token(
+        vec![ResourceFact::own_token(
             "reinserted".to_string(),
             Vec::new(),
         )],
@@ -2645,9 +2645,9 @@ fn duplicate_cached_authorities_rekey_after_remove_and_reinsert() {
 
 #[test]
 fn cached_projection_finds_the_owned_resource_that_packages_a_fact() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
-    let allocation = CResourceFact::own_token(
-        CResourceFact::ALLOCATION_RESOURCE_NAME.to_string(),
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
+    let allocation = ResourceFact::own_token(
+        ResourceFact::ALLOCATION_RESOURCE_NAME.to_string(),
         vec![
             ProgramValue::pointer(Pointer {
                 block: "allocation".into(),
@@ -2671,9 +2671,9 @@ fn cached_projection_finds_the_owned_resource_that_packages_a_fact() {
 
 #[test]
 fn resource_join_preserves_only_common_projection_support() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
-    let view = CResourceFact::view_token("derived".to_string(), Vec::new());
-    let expansion = vec![CResourceFact::own_token("expanded".to_string(), Vec::new())];
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
+    let view = ResourceFact::view_token("derived".to_string(), Vec::new());
+    let expansion = vec![ResourceFact::own_token("expanded".to_string(), Vec::new())];
     let root = ResourceContext::new().unchecked_with_fact(authority.clone());
     let left = root
         .clone()
@@ -2706,9 +2706,9 @@ fn resource_join_preserves_only_common_projection_support() {
 
 #[test]
 fn resource_join_drops_projection_when_memory_footprints_diverge() {
-    let support = CResourceFact::own_composite("join_memory_support".into(), Vec::new());
+    let support = ResourceFact::own_composite("join_memory_support".into(), Vec::new());
     let view = |block: &str| {
-        CResourceFact::view_memory(CMemoryRange::new(
+        ResourceFact::view_memory(MemoryRange::new(
             Pointer {
                 block: block.into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -2719,8 +2719,8 @@ fn resource_join_drops_projection_when_memory_footprints_diverge() {
     };
     let root = ResourceContext::new().unchecked_with_fact(support.clone());
     let support_occurrence = root.owned_occurrences_for_fact(&support)[0];
-    let left_memory = CMemory::new().with_block("left-join", 8);
-    let right_memory = CMemory::new().with_block("right-join", 8);
+    let left_memory = Memory::new().with_block("left-join", 8);
+    let right_memory = Memory::new().with_block("right-join", 8);
     let left = root
         .clone()
         .unchecked_with_supported_facts_from_occurrence_with_memory(
@@ -2754,10 +2754,10 @@ fn resource_join_drops_projection_when_memory_footprints_diverge() {
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn resource_common_descendant_visits_only_branch_local_changes() {
-    let left_path = CResourceFact::own_token("left_path".to_string(), Vec::new());
-    let right_path = CResourceFact::own_token("right_path".to_string(), Vec::new());
-    let permit = CResourceFact::own_token("permit".to_string(), Vec::new());
-    let ready = CResourceFact::own_composite("ready".to_string(), Vec::new());
+    let left_path = ResourceFact::own_token("left_path".to_string(), Vec::new());
+    let right_path = ResourceFact::own_token("right_path".to_string(), Vec::new());
+    let permit = ResourceFact::own_token("permit".to_string(), Vec::new());
+    let ready = ResourceFact::own_composite("ready".to_string(), Vec::new());
     let mut samples = Vec::new();
 
     for size in [16_usize, 64, 256, 1024, 4096] {
@@ -2804,7 +2804,7 @@ fn resource_common_descendant_visits_only_branch_local_changes() {
         assert!(!common.contains_exact_representation(&permit));
         for index in [0, size / 2, size - 1] {
             assert!(
-                common.contains_exact_representation(&CResourceFact::own_token(
+                common.contains_exact_representation(&ResourceFact::own_token(
                     format!("token_{index}"),
                     vec![int32(index as u32)],
                 ))
@@ -2825,9 +2825,9 @@ fn resource_common_descendant_visits_only_branch_local_changes() {
     let root = ResourceContext::new();
     assert!(ResourceContext::common_exact_descendant(&unrelated, &unrelated, &root).is_none());
 
-    let unit = CResourceFact::own_token("mergeable".to_string(), Vec::new());
-    let merged = CResourceFact::own_quantity(
-        CResource::Token {
+    let unit = ResourceFact::own_token("mergeable".to_string(), Vec::new());
+    let merged = ResourceFact::own_quantity(
+        Resource::Token {
             name: "mergeable".to_string(),
             arguments: Vec::new().into(),
         },
@@ -2849,7 +2849,7 @@ fn resource_common_descendant_visits_only_branch_local_changes() {
         .expect("normalization should preserve changed-fact ancestry");
     assert!(common.contains_exact_representation(&merged));
 
-    let duplicate = CResourceFact::own_token("duplicate".to_string(), Vec::new());
+    let duplicate = ResourceFact::own_token("duplicate".to_string(), Vec::new());
     let duplicate_root = ResourceContext::new()
         .unchecked_with_fact(duplicate.clone())
         .unchecked_with_fact(duplicate.clone());
@@ -2897,7 +2897,7 @@ fn resource_common_descendant_visits_only_branch_local_changes() {
 fn resource_memory_block_and_interval_indexes_update_logarithmically() {
     for size in [16_usize, 64, 256, 1024, 4096] {
         let context = ResourceContext::new().unchecked_with_facts((0..size).map(|index| {
-            CResourceFact::own_memory(memory_range(
+            ResourceFact::own_memory(memory_range(
                 Pointer {
                     block: format!("unrelated-{index}").into(),
                     offset: PointerOffsetTerm::Constant(0),
@@ -2906,7 +2906,7 @@ fn resource_memory_block_and_interval_indexes_update_logarithmically() {
                 1,
             ))
         }));
-        let target = CResourceFact::own_memory(memory_range(
+        let target = ResourceFact::own_memory(memory_range(
             Pointer {
                 block: "target-block".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -2938,8 +2938,8 @@ fn resource_memory_block_and_interval_indexes_update_logarithmically() {
 
 #[test]
 fn direct_resource_match_candidates_ignore_unrelated_shapes_and_blocks() {
-    let target = CResourceFact::own_token("target".to_string(), vec![int32(0)]);
-    let target_memory = CResourceFact::view_memory(memory_range(
+    let target = ResourceFact::own_token("target".to_string(), vec![int32(0)]);
+    let target_memory = ResourceFact::view_memory(memory_range(
         Pointer {
             block: "target-block".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -2949,7 +2949,7 @@ fn direct_resource_match_candidates_ignore_unrelated_shapes_and_blocks() {
     ));
     let context = unrelated_token_context(128)
         .unchecked_with_facts((0..128).map(|index| {
-            CResourceFact::view_memory(memory_range(
+            ResourceFact::view_memory(memory_range(
                 Pointer {
                     block: format!("unrelated-{index}").into(),
                     offset: PointerOffsetTerm::Constant(0),
@@ -2972,8 +2972,8 @@ fn installing_a_certified_resource_group_still_checks_the_existing_frame() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let existing = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_memory(memory_range(base.clone(), 0, 2)));
-    let overlapping = CResourceFact::own_memory(memory_range(base, 1, 3));
+        .unchecked_with_fact(ResourceFact::own_memory(memory_range(base.clone(), 0, 2)));
+    let overlapping = ResourceFact::own_memory(memory_range(base, 1, 3));
     let result = existing.try_compose_certified_group_into_valid_context_delaying_normalization(
         [overlapping],
         &PureFactContext::new(),
@@ -3078,15 +3078,15 @@ fn resource_family_cores_are_view_facts() {
         Some(view_memory_fact(base, 0, 1))
     );
     assert_eq!(
-        CResourceFact::own_token("token".to_string(), vec![int32(0)]).core(),
-        Some(CResourceFact::view_token(
+        ResourceFact::own_token("token".to_string(), vec![int32(0)]).core(),
+        Some(ResourceFact::view_token(
             "token".to_string(),
             vec![int32(0)]
         ))
     );
     assert_eq!(
-        CResourceFact::own_composite("box".to_string(), vec![int32(1)]).core(),
-        Some(CResourceFact::view_composite(
+        ResourceFact::own_composite("box".to_string(), vec![int32(1)]).core(),
+        Some(ResourceFact::view_composite(
             "box".to_string(),
             vec![int32(1)]
         ))
@@ -3096,8 +3096,8 @@ fn resource_family_cores_are_view_facts() {
 #[test]
 fn declared_resource_families_accumulate_equal_owned_units() {
     for fact in [
-        CResourceFact::own_token("token".to_string(), vec![int32(0)]),
-        CResourceFact::own_composite("box".to_string(), vec![int32(1)]),
+        ResourceFact::own_token("token".to_string(), vec![int32(0)]),
+        ResourceFact::own_composite("box".to_string(), vec![int32(1)]),
     ] {
         let context = ResourceContext::new()
             .try_compose_with_facts([fact.clone(), fact.clone()], &PureFactContext::new())
@@ -3111,12 +3111,12 @@ fn declared_resource_families_accumulate_equal_owned_units() {
 fn exact_resource_views_are_preserved_when_satisfied() {
     for (owned, viewed) in [
         (
-            CResourceFact::own_token("token".to_string(), vec![int32(0)]),
-            CResourceFact::view_token("token".to_string(), vec![int32(0)]),
+            ResourceFact::own_token("token".to_string(), vec![int32(0)]),
+            ResourceFact::view_token("token".to_string(), vec![int32(0)]),
         ),
         (
-            CResourceFact::own_composite("box".to_string(), vec![int32(1)]),
-            CResourceFact::view_composite("box".to_string(), vec![int32(1)]),
+            ResourceFact::own_composite("box".to_string(), vec![int32(1)]),
+            ResourceFact::view_composite("box".to_string(), vec![int32(1)]),
         ),
     ] {
         let context = ResourceContext::new().unchecked_with_fact(owned.clone());
@@ -3129,7 +3129,7 @@ fn exact_resource_views_are_preserved_when_satisfied() {
 
 #[test]
 fn declared_resources_normalize_and_consume_one_unit_at_a_time() {
-    let unit = CResourceFact::own_token("object_ref".to_string(), vec![int32(7)]);
+    let unit = ResourceFact::own_token("object_ref".to_string(), vec![int32(7)]);
     let context = ResourceContext::new()
         .try_compose_with_facts([unit.clone(), unit.clone()], &PureFactContext::new())
         .expect("equal counted facts should compose");
@@ -3146,12 +3146,12 @@ fn declared_resources_normalize_and_consume_one_unit_at_a_time() {
 #[test]
 fn symbolic_declared_resource_quantity_splits_without_materializing_units() {
     let quantity = MachineTerm::var(Variable(700));
-    let resource = CResource::Token {
+    let resource = Resource::Token {
         name: "permit".to_string(),
         arguments: vec![int32(9).into()].into(),
     };
-    let symbolic = CResourceFact::own_quantity(resource.clone(), quantity.clone());
-    let unit = CResourceFact::own(resource.clone());
+    let symbolic = ResourceFact::own_quantity(resource.clone(), quantity.clone());
+    let unit = ResourceFact::own(resource.clone());
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -3169,7 +3169,7 @@ fn symbolic_declared_resource_quantity_splits_without_materializing_units() {
 
     assert_eq!(
         remaining.facts(),
-        &[CResourceFact::own_quantity(
+        &[ResourceFact::own_quantity(
             resource,
             MachineTerm::subtract(quantity, MachineTerm::constant(1)),
         )]
@@ -3178,7 +3178,7 @@ fn symbolic_declared_resource_quantity_splits_without_materializing_units() {
 
 #[test]
 fn declared_resource_quantity_work_ignores_the_numeric_coefficient() {
-    let resource = CResource::Token {
+    let resource = Resource::Token {
         name: "permit".to_string(),
         arguments: vec![int32(9).into()].into(),
     };
@@ -3208,18 +3208,18 @@ fn declared_resource_quantity_work_ignores_the_numeric_coefficient() {
             false,
         );
         let context = ResourceContext::new().unchecked_with_facts([
-            CResourceFact::own_quantity(resource.clone(), quantity.clone()),
-            CResourceFact::own(resource.clone()),
+            ResourceFact::own_quantity(resource.clone(), quantity.clone()),
+            ResourceFact::own(resource.clone()),
         ]);
         let (normalized, normalization_work) =
             crate::instrumentation::measure_deterministic_work(|| context.normalized(&assumptions));
         assert_eq!(normalized.facts().len(), 1);
 
         let available = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_quantity(resource.clone(), quantity));
+            .unchecked_with_fact(ResourceFact::own_quantity(resource.clone(), quantity));
         let (remaining, consumption_work) =
             crate::instrumentation::measure_deterministic_work(|| {
-                available.without_fact(&CResourceFact::own(resource.clone()), &assumptions)
+                available.without_fact(&ResourceFact::own(resource.clone()), &assumptions)
             });
         assert!(remaining.is_some(), "{label} units should contain one unit");
 
@@ -3246,8 +3246,8 @@ fn declared_resource_quantity_work_ignores_the_numeric_coefficient() {
 
 #[test]
 fn zero_declared_resource_quantity_is_the_composition_identity() {
-    let zero = CResourceFact::own_quantity(
-        CResource::Token {
+    let zero = ResourceFact::own_quantity(
+        Resource::Token {
             name: "permit".to_string(),
             arguments: vec![int32(9).into()].into(),
         },
@@ -3262,7 +3262,7 @@ fn zero_declared_resource_quantity_is_the_composition_identity() {
 
 #[test]
 fn declared_resource_quantities_are_part_of_context_equality() {
-    let unit = CResourceFact::own_token("object_ref".to_string(), vec![int32(7)]);
+    let unit = ResourceFact::own_token("object_ref".to_string(), vec![int32(7)]);
     let one = ResourceContext::new()
         .try_compose_with_fact(unit.clone(), &PureFactContext::new())
         .unwrap();
@@ -3270,28 +3270,28 @@ fn declared_resource_quantities_are_part_of_context_equality() {
         .try_compose_with_facts([unit.clone(), unit], &PureFactContext::new())
         .unwrap();
     let two_uncompacted = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_token(
+        .unchecked_with_fact(ResourceFact::own_token(
             "object_ref".to_string(),
             vec![int32(7)],
         ))
-        .unchecked_with_fact(CResourceFact::own_token(
+        .unchecked_with_fact(ResourceFact::own_token(
             "object_ref".to_string(),
             vec![int32(7)],
         ));
 
     assert!(!resource_contexts_definitionally_equal_with_definitions(
         &[],
-        &CMemory::new(),
+        &Memory::new(),
         &one,
-        &CMemory::new(),
+        &Memory::new(),
         &two,
         &PureFactContext::new(),
     ));
     assert!(resource_contexts_definitionally_equal_with_definitions(
         &[],
-        &CMemory::new(),
+        &Memory::new(),
         &two_uncompacted,
-        &CMemory::new(),
+        &Memory::new(),
         &two,
         &PureFactContext::new(),
     ));
@@ -3307,34 +3307,34 @@ fn definitional_equality_reassembles_a_composite_only_where_its_facts_hold() {
         block: "reassembled-cell".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "zero_cell",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(CMemorySegment::new(
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
         ))],
         vec![SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(c_index(c_variable("p"), c_int32_literal(0))),
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(0)),
         }],
     );
-    let folded = ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
+    let folded = ResourceContext::new().unchecked_with_fact(ResourceFact::own_composite(
         "zero_cell".into(),
         vec![ProgramValue::typed_pointer(
             pointer.clone(),
             ProgramType::Int32Pointer,
         )],
     ));
-    let pieces = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-        CMemoryRange::new(pointer.clone(), 0.into(), 1.into()),
+    let pieces = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+        MemoryRange::new(pointer.clone(), 0.into(), 1.into()),
     ));
     let memory = |value: u32| {
-        CMemory::new()
+        Memory::new()
             .with_block(pointer.block.clone(), 4)
             .store(pointer.clone(), int32(value))
     };
@@ -3362,20 +3362,20 @@ fn missing_composite_query_ignores_ambient_memory_splits() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let context = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_memory(memory_range(base.clone(), 0, 1)))
-        .unchecked_with_fact(CResourceFact::own_memory(memory_range(base, 1, 2)));
-    let required = CResourceFact::own_composite("allocated".to_string(), vec![int32(0)]);
+        .unchecked_with_fact(ResourceFact::own_memory(memory_range(base.clone(), 0, 1)))
+        .unchecked_with_fact(ResourceFact::own_memory(memory_range(base, 1, 2)));
+    let required = ResourceFact::own_composite("allocated".to_string(), vec![int32(0)]);
 
     assert!(!context.satisfies_fact(&required, &PureFactContext::new()));
 }
 
 #[test]
 fn owned_memory_query_without_owned_memory_is_rejected_structurally() {
-    let context = ResourceContext::new().unchecked_with_fact(CResourceFact::view_composite(
+    let context = ResourceContext::new().unchecked_with_fact(ResourceFact::view_composite(
         "tree".to_string(),
         vec![int32(0)],
     ));
-    let required = CResourceFact::own_memory(memory_range(
+    let required = ResourceFact::own_memory(memory_range(
         Pointer {
             block: "p".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -3394,10 +3394,10 @@ fn batch_resource_consumption_splits_without_repeated_normalization() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let context = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_memory(memory_range(base.clone(), 0, 3)));
+        .unchecked_with_fact(ResourceFact::own_memory(memory_range(base.clone(), 0, 3)));
     let required = [
-        CResourceFact::own_memory(memory_range(base.clone(), 0, 1)),
-        CResourceFact::own_memory(memory_range(base, 1, 3)),
+        ResourceFact::own_memory(memory_range(base.clone(), 0, 1)),
+        ResourceFact::own_memory(memory_range(base, 1, 3)),
     ];
 
     let remaining = context
@@ -3414,9 +3414,9 @@ fn incremental_memory_merge_retires_dependent_entries_once() {
         block: "supported-merge".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let first = CResourceFact::own_memory(memory_range(base.clone(), 0, 1));
-    let second = CResourceFact::own_memory(memory_range(base.clone(), 1, 2));
-    let unrelated = CResourceFact::own_token("unrelated".into(), Vec::new());
+    let first = ResourceFact::own_memory(memory_range(base.clone(), 0, 1));
+    let second = ResourceFact::own_memory(memory_range(base.clone(), 1, 2));
+    let unrelated = ResourceFact::own_token("unrelated".into(), Vec::new());
     let resources =
         ResourceContext::new().unchecked_with_facts([first.clone(), second, unrelated.clone()]);
     let occurrence = *resources
@@ -3429,14 +3429,14 @@ fn incremental_memory_merge_retires_dependent_entries_once() {
         .next()
         .and_then(|entry| resources.storage.occurrence_by_entry.get(entry))
         .unwrap();
-    let memory = CMemory::new().with_block("supported-merge", 8);
+    let memory = Memory::new().with_block("supported-merge", 8);
     let resources = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
         occurrence,
         &first,
-        [CResourceFact::view_memory(memory_range(base.clone(), 0, 1))],
+        [ResourceFact::view_memory(memory_range(base.clone(), 0, 1))],
         &memory,
     );
-    let required = CResourceFact::own_memory(memory_range(base, 0, 2));
+    let required = ResourceFact::own_memory(memory_range(base, 0, 2));
     let remaining = resources
         .without_fact_incrementally(&required, &assumptions)
         .expect("merging the selected owner bucket retires each supported entry once");
@@ -3462,9 +3462,9 @@ fn batch_resource_consumption_normalizes_when_a_requirement_needs_a_merge() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let context = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_memory(memory_range(base.clone(), 0, 1)))
-        .unchecked_with_fact(CResourceFact::own_memory(memory_range(base.clone(), 1, 2)));
-    let required = [CResourceFact::own_memory(memory_range(base, 0, 2))];
+        .unchecked_with_fact(ResourceFact::own_memory(memory_range(base.clone(), 0, 1)))
+        .unchecked_with_fact(ResourceFact::own_memory(memory_range(base.clone(), 1, 2)));
+    let required = [ResourceFact::own_memory(memory_range(base, 0, 2))];
 
     let remaining = context
         .without_facts(&required, &PureFactContext::new())
@@ -3482,8 +3482,8 @@ fn resource_context_observes_write_separation() {
     let left = memory_range(base.clone(), 0, 1);
     let right = memory_range(base.clone(), 1, 2);
     let facts = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own_memory(left.clone()))
-        .unchecked_with_fact(CResourceFact::own_memory(right.clone()))
+        .unchecked_with_fact(ResourceFact::own_memory(left.clone()))
+        .unchecked_with_fact(ResourceFact::own_memory(right.clone()))
         .observable_facts(&PureFactContext::new())
         .expect("adjacent writes should be a valid resource context");
 
@@ -3492,15 +3492,15 @@ fn resource_context_observes_write_separation() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(PureFactContext::new()),
         &Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(left)),
-            right: Box::new(CResource::Memory(right)),
+            left: Box::new(Resource::Memory(left)),
+            right: Box::new(Resource::Memory(right)),
         }
     ));
 }
 
 #[test]
 fn resource_context_observes_same_and_cross_family_separation() {
-    let memory = CResource::Memory(memory_range(
+    let memory = Resource::Memory(memory_range(
         Pointer {
             block: "p".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -3508,18 +3508,18 @@ fn resource_context_observes_same_and_cross_family_separation() {
         0,
         1,
     ));
-    let token = CResource::Token {
+    let token = Resource::Token {
         name: "left".to_string(),
         arguments: vec![].into(),
     };
-    let other_token = CResource::Token {
+    let other_token = Resource::Token {
         name: "right".to_string(),
         arguments: vec![].into(),
     };
     let facts = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::own(memory.clone()))
-        .unchecked_with_fact(CResourceFact::own(token.clone()))
-        .unchecked_with_fact(CResourceFact::own(other_token.clone()))
+        .unchecked_with_fact(ResourceFact::own(memory.clone()))
+        .unchecked_with_fact(ResourceFact::own(token.clone()))
+        .unchecked_with_fact(ResourceFact::own(other_token.clone()))
         .observable_facts(&PureFactContext::new())
         .expect("distinct owned resources should compose validly");
 
@@ -3548,7 +3548,7 @@ fn resource_context_observes_same_and_cross_family_separation() {
 fn observable_abstract_resources_use_one_indexed_composition() {
     for size in [16, 32, 64, 128] {
         let context = ResourceContext::new().unchecked_with_facts((0..size).map(|index| {
-            CResourceFact::own(CResource::Token {
+            ResourceFact::own(Resource::Token {
                 name: format!("token_{index}"),
                 arguments: vec![].into(),
             })
@@ -3582,11 +3582,11 @@ fn composite_resource_arguments_respect_proven_pointer_equality() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(40_001)), 4),
     };
-    let left = CResourceFact::own(CResource::Composite {
+    let left = ResourceFact::own(Resource::Composite {
         name: "list".to_string(),
         arguments: vec![ProgramValue::pointer(left_pointer.clone()).into()].into(),
     });
-    let right = CResourceFact::own(CResource::Composite {
+    let right = ResourceFact::own(Resource::Composite {
         name: "list".to_string(),
         arguments: vec![ProgramValue::pointer(right_pointer.clone()).into()].into(),
     });
@@ -3618,10 +3618,10 @@ fn resource_separation_covers_larger_memory_range() {
         block: "p".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let left_first = CResource::Memory(memory_range(base.clone(), 0, 1));
-    let left_second = CResource::Memory(memory_range(base.clone(), 1, 2));
-    let left_combined = CResource::Memory(memory_range(base.clone(), 0, 2));
-    let right = CResource::Memory(memory_range(base, 10, 11));
+    let left_first = Resource::Memory(memory_range(base.clone(), 0, 1));
+    let left_second = Resource::Memory(memory_range(base.clone(), 1, 2));
+    let left_combined = Resource::Memory(memory_range(base.clone(), 0, 2));
+    let right = Resource::Memory(memory_range(base, 10, 11));
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
             left: Box::new(left_first),
@@ -3648,14 +3648,14 @@ fn resource_separation_transports_across_equal_memory_ranges() {
     let equal_data = Pointer::symbolic(Variable(20_102));
     let original_length = MachineTerm::Variable(Variable(20_103));
     let equal_length = MachineTerm::Variable(Variable(20_104));
-    let target_resource = CResource::Memory(memory_range(target, 0, 4));
-    let original_resource = CResource::Memory(memory_range(
+    let target_resource = Resource::Memory(memory_range(target, 0, 4));
+    let original_resource = Resource::Memory(memory_range(
         original_data.clone(),
         0,
         original_length.clone(),
     ));
     let equal_resource =
-        CResource::Memory(memory_range(equal_data.clone(), 0, equal_length.clone()));
+        Resource::Memory(memory_range(equal_data.clone(), 0, equal_length.clone()));
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
             left: Box::new(target_resource.clone()),
@@ -3682,12 +3682,12 @@ fn resource_contains_projects_separation_to_children() {
         block: "p".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let parent = CResource::Token {
+    let parent = Resource::Token {
         name: "parent".to_string(),
         arguments: vec![].into(),
     };
-    let child = CResource::Memory(memory_range(base.clone(), 0, 1));
-    let other = CResource::Memory(memory_range(base.clone(), 1, 2));
+    let child = Resource::Memory(memory_range(base.clone(), 0, 1));
+    let other = Resource::Memory(memory_range(base.clone(), 1, 2));
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CResourceSeparate {
             left: Box::new(parent.clone()),
@@ -3755,12 +3755,12 @@ fn equal_cross_block_pointer_bases_cannot_be_owned_twice() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let symbolic_range = CMemoryRange::new(
+    let symbolic_range = MemoryRange::new(
         symbolic.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     );
-    let argument_range = CMemoryRange::new(
+    let argument_range = MemoryRange::new(
         argument.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -3776,8 +3776,8 @@ fn equal_cross_block_pointer_bases_cannot_be_owned_twice() {
         &assumptions,
     ));
 
-    let symbolic_owner = CResourceFact::own_memory(symbolic_range.clone());
-    let argument_owner = CResourceFact::own_memory(argument_range.clone());
+    let symbolic_owner = ResourceFact::own_memory(symbolic_range.clone());
+    let argument_owner = ResourceFact::own_memory(argument_range.clone());
     let existing = ResourceContext::new().unchecked_with_fact(symbolic_owner.clone());
     assert!(matches!(
         existing
@@ -3792,7 +3792,7 @@ fn equal_cross_block_pointer_bases_cannot_be_owned_twice() {
         Some(ResourceContextValidityError::OverlappingOwnedMemoryResources { .. })
     ));
 
-    let adjacent = CResourceFact::own_memory(CMemoryRange::new(
+    let adjacent = ResourceFact::own_memory(MemoryRange::new(
         argument,
         MachineTerm::constant(1),
         MachineTerm::constant(2),
@@ -3816,7 +3816,7 @@ fn equal_content_string_literals_remain_readable_without_separation_evidence() {
     let first = literal("first");
     let second = literal("second");
     let range = |base| {
-        CMemoryRange::new_with_element_width(
+        MemoryRange::new_with_element_width(
             base,
             MachineTerm::constant(0),
             MachineTerm::constant(3),
@@ -3834,12 +3834,9 @@ fn equal_content_string_literals_remain_readable_without_separation_evidence() {
         &assumptions,
     ));
     let resources = ResourceContext::new()
-        .try_compose_with_fact(CResourceFact::own_memory(first_range.clone()), &assumptions)
+        .try_compose_with_fact(ResourceFact::own_memory(first_range.clone()), &assumptions)
         .unwrap()
-        .try_compose_with_fact(
-            CResourceFact::own_memory(second_range.clone()),
-            &assumptions,
-        )
+        .try_compose_with_fact(ResourceFact::own_memory(second_range.clone()), &assumptions)
         .expect("equal read-only literals may share their bytes");
     assert!(resources.is_valid(&assumptions));
     assert!(!resources.proves_owned_memory_ranges_separate_shallow(&first_range, &second_range,));
@@ -3894,13 +3891,13 @@ fn matched_resource_integer_binding_is_checked_and_substituted() {
     .unwrap();
     let binding = Variable(9_100_000_000);
     let mut definition =
-        CCompositeResourceDefinition::new("integer_box", vec![], None, false, vec![], vec![])
+        CompositeResourceDefinition::new("integer_box", vec![], None, false, vec![], vec![])
             .with_instance_schema(Some(schema));
-    definition.matched = Some(CResourceMatchBody {
+    definition.matched = Some(ResourceMatchBody {
         field_index: 0,
         algebraic_type: ty.clone(),
         arms: vec![
-            CResourceMatchArm {
+            ResourceMatchArm {
                 variant: "Clear".into(),
                 bindings: vec![],
                 binding_types: vec![],
@@ -3909,7 +3906,7 @@ fn matched_resource_integer_binding_is_checked_and_substituted() {
                 facts: vec![],
                 children: vec![],
             },
-            CResourceMatchArm {
+            ResourceMatchArm {
                 variant: "Set".into(),
                 bindings: vec!["value".into()],
                 binding_types: vec![AlgebraicValueType::Integer],
@@ -3926,7 +3923,7 @@ fn matched_resource_integer_binding_is_checked_and_substituted() {
     });
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
     );
     let assumptions = PureFactContext::new().assume_proposition(Proposition::Equal(
         Term::Algebraic(model),
@@ -4025,7 +4022,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
         field_index: 1,
         at_entry: false,
     });
-    let mut definition = CCompositeResourceDefinition::new(
+    let mut definition = CompositeResourceDefinition::new(
         "integer_capture_box",
         vec![],
         None,
@@ -4034,11 +4031,11 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
         vec![],
     )
     .with_instance_schema(Some(schema));
-    definition.matched = Some(CResourceMatchBody {
+    definition.matched = Some(ResourceMatchBody {
         field_index: 0,
         algebraic_type: ty.clone(),
         arms: vec![
-            CResourceMatchArm {
+            ResourceMatchArm {
                 variant: "Clear".into(),
                 bindings: vec![],
                 binding_types: vec![],
@@ -4047,7 +4044,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
                 facts: vec![],
                 children: vec![],
             },
-            CResourceMatchArm {
+            ResourceMatchArm {
                 variant: "Set".into(),
                 bindings: vec!["value".into()],
                 binding_types: vec![AlgebraicValueType::Integer],
@@ -4064,7 +4061,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
     });
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance.clone()))),
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
     );
     let assumptions = PureFactContext::new().assume_proposition(Proposition::Equal(
         Term::Algebraic(model),
@@ -4139,8 +4136,8 @@ fn unrelated_order_fact_context(size: usize) -> PureFactContext {
 
 fn dependent_pair_entry_fixture() -> (
     ExecutionState,
-    CCompositeResourceDefinition,
-    Vec<CResourceSpec>,
+    CompositeResourceDefinition,
+    Vec<ResourceSpec>,
 ) {
     let next = |pointer: ProgramExpression| ProgramExpression::TypedLoad {
         pointer: Box::new(ProgramExpression::Subobject {
@@ -4154,13 +4151,13 @@ fn dependent_pair_entry_fixture() -> (
         source: Default::default(),
     };
     let cell = |base| {
-        CResourceSpec::owned_memory(CMemorySegment::new(
+        ResourceSpec::owned_memory(MemorySegment::new(
             base,
             c_int32_literal(0),
             c_int32_literal(2),
         ))
     };
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "dependent_pair",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
@@ -4174,14 +4171,14 @@ fn dependent_pair_entry_fixture() -> (
     };
     let state = ExecutionState::new().with_local("node", ProgramValue::pointer(pointer));
     let clause = |argument| {
-        CResourceSpec::declared(
+        ResourceSpec::declared(
             ResourceFamily::Composite,
-            CResourceAccessMode::Own,
+            ResourceAccessMode::Own,
             "dependent_pair".into(),
             vec![argument],
             vec![ProgramType::Int32Pointer],
-            CResourceTransferRole::Borrow,
-            CResourceSnapshot::Entry,
+            ResourceTransferRole::Borrow,
+            ResourceSnapshot::Entry,
         )
         .unwrap()
     };
@@ -4207,20 +4204,20 @@ fn folded_composite_body_cells_supply_dependent_entry_arguments_without_opening(
     )
     .unwrap()
     .expect("typed body views address the second and third folded clauses");
-    assert_eq!(resources.facts().iter().filter(|fact| matches!(fact.resource(), CResource::Composite { name, .. } if name == "dependent_pair")).count(), 3);
+    assert_eq!(resources.facts().iter().filter(|fact| matches!(fact.resource(), Resource::Composite { name, .. } if name == "dependent_pair")).count(), 3);
     assert!(
         resources
             .facts()
             .iter()
-            .all(|fact| !matches!(fact.resource(), CResource::Memory(_)) || fact.is_view())
+            .all(|fact| !matches!(fact.resource(), Resource::Memory(_)) || fact.is_view())
     );
 }
 
 #[test]
 fn zero_folded_composite_quantity_supplies_no_body_read_authority() {
     let (state, definition, _) = dependent_pair_entry_fixture();
-    let parent = CResourceFact::own_quantity(
-        CResource::Composite {
+    let parent = ResourceFact::own_quantity(
+        Resource::Composite {
             name: "dependent_pair".into(),
             arguments: vec![
                 state
@@ -4243,7 +4240,7 @@ fn zero_folded_composite_quantity_supplies_no_body_read_authority() {
     );
     assert!(
         supply.facts().iter().all(|fact| {
-            !matches!(fact.resource(), CResource::Memory(_))
+            !matches!(fact.resource(), Resource::Memory(_))
                 || state
                     .resources()
                     .satisfies_fact(fact, &PureFactContext::new())
@@ -4258,7 +4255,7 @@ fn zero_folded_composite_quantity_supplies_no_body_read_authority() {
 #[test]
 fn resource_clauses_with_no_evaluable_order_name_two_positions() {
     let unowned = |variable| {
-        CResourceSpec::owned_memory(CMemorySegment {
+        ResourceSpec::owned_memory(MemorySegment {
             value_runs: Default::default(),
             base: ProgramExpression::Load(Box::new(ProgramExpression::Value(
                 ProgramValue::pointer(Pointer {
@@ -4276,7 +4273,7 @@ fn resource_clauses_with_no_evaluable_order_name_two_positions() {
             uninitialized: false,
         })
     };
-    let evaluate = |clauses: &[CResourceSpec]| {
+    let evaluate = |clauses: &[ResourceSpec]| {
         let error = crate::kernel::functions::evaluate_function_resource_context(
             &ExecutionState::new(),
             clauses,
@@ -4469,7 +4466,7 @@ fn resource_model_possible_arms_are_the_unrefuted_ones() {
 #[test]
 fn expanded_resource_clause_diagnostics_keep_source_positions() {
     let unowned = |variable| {
-        CResourceSpec::owned_memory(CMemorySegment {
+        ResourceSpec::owned_memory(MemorySegment {
             value_runs: Default::default(),
             base: ProgramExpression::Load(Box::new(ProgramExpression::Value(
                 ProgramValue::pointer(Pointer {
@@ -4535,7 +4532,7 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
         source: Default::default(),
     };
     let owned = |base: ProgramExpression, end: ProgramExpression| {
-        CResourceSpec::owned_memory(CMemorySegment {
+        ResourceSpec::owned_memory(MemorySegment {
             base,
             start: c_int32_literal(0),
             end,
@@ -4556,7 +4553,7 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
         // C is the only clause that can evaluate on the first pass.
         owned(c_pointer_value(seed.clone()), c_int32_literal(1)),
     ];
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .store(seed, ProgramValue::pointer(intermediate.clone()))
         .store(intermediate, ProgramValue::pointer(target));
     let assumptions = PureFactContext::new().assume_condition(
@@ -4577,8 +4574,8 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
 
 #[test]
 fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store() {
-    let support = CResourceFact::own_composite("memory_support".to_string(), Vec::new());
-    let observed_range = CMemoryRange::new(
+    let support = ResourceFact::own_composite("memory_support".to_string(), Vec::new());
+    let observed_range = MemoryRange::new(
         Pointer {
             block: "observed-block".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4586,7 +4583,7 @@ fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store()
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     );
-    let base = CMemory::new().with_block("observed-block", 32);
+    let base = Memory::new().with_block("observed-block", 32);
     let resources = ResourceContext::new().unchecked_with_fact(support.clone());
     let support_occurrence = *resources
         .storage
@@ -4601,7 +4598,7 @@ fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store()
     let resources = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
         support_occurrence,
         &support,
-        [CResourceFact::view_memory(observed_range.clone())],
+        [ResourceFact::view_memory(observed_range.clone())],
         &base,
     );
     let state = ExecutionState::new()
@@ -4617,7 +4614,7 @@ fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store()
     assert!(
         disjoint
             .resources()
-            .contains_exact_representation(&CResourceFact::view_memory(observed_range.clone()))
+            .contains_exact_representation(&ResourceFact::view_memory(observed_range.clone()))
     );
     let overlapping = disjoint
         .clone()
@@ -4631,7 +4628,7 @@ fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store()
     assert!(
         !overlapping
             .resources()
-            .contains_exact_representation(&CResourceFact::view_memory(observed_range))
+            .contains_exact_representation(&ResourceFact::view_memory(observed_range))
     );
     assert!(
         overlapping
@@ -4642,12 +4639,12 @@ fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store()
 
 #[test]
 fn observed_projection_tracks_loaded_address_prerequisite() {
-    let support = CResourceFact::own_composite("loaded_address_support".to_string(), Vec::new());
+    let support = ResourceFact::own_composite("loaded_address_support".to_string(), Vec::new());
     let selector = Pointer {
         block: "loaded-address-selector".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_block("loaded-address-selector", 4)
         .with_block("loaded-address-data", 32)
         .with_block("loaded-address-unrelated", 4)
@@ -4657,7 +4654,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
         Box::new(selector.clone()),
         crate::kernel::LoadKind::Int32,
     );
-    let projected = CResourceFact::view_memory(CMemoryRange::new(
+    let projected = ResourceFact::view_memory(MemoryRange::new(
         Pointer {
             block: "loaded-address-data".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4673,7 +4670,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
             Box::new(MachineTerm::constant(0)),
         ),
     ));
-    let unrelated = CResourceFact::view_memory(CMemoryRange::new(
+    let unrelated = ResourceFact::view_memory(MemoryRange::new(
         Pointer {
             block: "loaded-address-unrelated".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4718,12 +4715,12 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
 
 #[test]
 fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
-    let support = CResourceFact::own_composite("loaded_base_start_support".to_string(), Vec::new());
+    let support = ResourceFact::own_composite("loaded_base_start_support".to_string(), Vec::new());
     let selector = Pointer {
         block: "base-start-selector".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_block("base-start-selector", 8)
         .with_block("base-start-data", 32)
         .with_block("base-start-unrelated", 4)
@@ -4733,7 +4730,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
         Box::new(selector.clone()),
         crate::kernel::LoadKind::Int32,
     );
-    let base_projected = CResourceFact::view_memory(CMemoryRange::new(
+    let base_projected = ResourceFact::view_memory(MemoryRange::new(
         Pointer {
             block: "base-start-data".into(),
             offset: PointerOffsetTerm::scaled_int32_node(selector_load.clone(), 4),
@@ -4741,7 +4738,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
-    let start_projected = CResourceFact::view_memory(CMemoryRange::new(
+    let start_projected = ResourceFact::view_memory(MemoryRange::new(
         Pointer {
             block: "base-start-data".into(),
             offset: PointerOffsetTerm::Constant(8),
@@ -4754,7 +4751,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
             Box::new(MachineTerm::constant(1)),
         ),
     ));
-    let unrelated = CResourceFact::view_memory(CMemoryRange::new(
+    let unrelated = ResourceFact::view_memory(MemoryRange::new(
         Pointer {
             block: "base-start-unrelated".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4797,8 +4794,8 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
 
 #[test]
 fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
-    let support = CResourceFact::own_composite("wide_support".to_string(), Vec::new());
-    let range = CMemoryRange::new_with_element_width(
+    let support = ResourceFact::own_composite("wide_support".to_string(), Vec::new());
+    let range = MemoryRange::new_with_element_width(
         Pointer {
             block: "wide-block".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -4807,7 +4804,7 @@ fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
         MachineTerm::constant(20_000),
         1,
     );
-    let memory = CMemory::new().with_block("wide-block", 20_000);
+    let memory = Memory::new().with_block("wide-block", 20_000);
     let resources = ResourceContext::new().unchecked_with_fact(support.clone());
     let entry = *resources
         .storage
@@ -4822,7 +4819,7 @@ fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
     let resources = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
         occurrence,
         &support,
-        [CResourceFact::view_memory(range.clone())],
+        [ResourceFact::view_memory(range.clone())],
         &memory,
     );
     let state = ExecutionState::new()
@@ -4836,7 +4833,7 @@ fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
     assert!(
         !after
             .resources()
-            .contains_exact_representation(&CResourceFact::view_memory(range))
+            .contains_exact_representation(&ResourceFact::view_memory(range))
     );
     assert!(after.resources().contains_exact_representation(&support));
 }
@@ -4846,17 +4843,16 @@ fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
 fn supported_projection_interval_updates_scale_with_index_height() {
     let mut samples = Vec::new();
     for unrelated_count in [4_usize, 16, 64, 256, 1024] {
-        let memory =
-            CMemory::new().with_block("projection-curve", (8 * unrelated_count + 8) as u32);
+        let memory = Memory::new().with_block("projection-curve", (8 * unrelated_count + 8) as u32);
         let mut resources = ResourceContext::new();
         for index in 0..unrelated_count {
-            let support = CResourceFact::own_composite(
+            let support = ResourceFact::own_composite(
                 format!("projection_curve_unrelated_{index}"),
                 Vec::new(),
             );
             resources = resources.unchecked_with_fact(support.clone());
             let occurrence = resources.owned_occurrences_for_fact(&support)[0];
-            let view = CResourceFact::view_memory(CMemoryRange::new(
+            let view = ResourceFact::view_memory(MemoryRange::new(
                 Pointer {
                     block: "projection-curve".into(),
                     offset: PointerOffsetTerm::Constant((8 + index * 8) as i64),
@@ -4872,10 +4868,10 @@ fn supported_projection_interval_updates_scale_with_index_height() {
             );
         }
         let target_support =
-            CResourceFact::own_composite("projection_curve_target".into(), Vec::new());
+            ResourceFact::own_composite("projection_curve_target".into(), Vec::new());
         resources = resources.unchecked_with_fact(target_support.clone());
         let target_occurrence = resources.owned_occurrences_for_fact(&target_support)[0];
-        let target_view = CResourceFact::view_memory(CMemoryRange::new(
+        let target_view = ResourceFact::view_memory(MemoryRange::new(
             Pointer {
                 block: "projection-curve".into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -4927,12 +4923,12 @@ fn supported_projection_interval_updates_scale_with_index_height() {
 
 #[test]
 fn removing_symbolic_memory_observations_does_not_leave_alias_bucket_entries() {
-    let support = CResourceFact::own_composite("symbolic_alias_support".into(), Vec::new());
-    let memory = CMemory::new();
+    let support = ResourceFact::own_composite("symbolic_alias_support".into(), Vec::new());
+    let memory = Memory::new();
     let mut resources = ResourceContext::new().unchecked_with_fact(support.clone());
     let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
     for iteration in 0..4 {
-        let view = CResourceFact::view_memory(CMemoryRange::new(
+        let view = ResourceFact::view_memory(MemoryRange::new(
             Pointer {
                 block: PointerBlock::Symbolic(Variable(900 + iteration)),
                 offset: PointerOffsetTerm::Constant(0),
@@ -4966,8 +4962,8 @@ fn removing_symbolic_memory_observations_does_not_leave_alias_bucket_entries() {
 
 #[test]
 fn v11_fresh_view_children_use_exact_occurrences_and_preserve_duplicates() {
-    let support = CResourceFact::own_token("v11_support".into(), Vec::new());
-    let child = CResourceFact::view_token("v11_child".into(), Vec::new());
+    let support = ResourceFact::own_token("v11_support".into(), Vec::new());
+    let child = ResourceFact::view_token("v11_child".into(), Vec::new());
     let before = ResourceContext::new().unchecked_with_facts([support.clone(), child.clone()]);
     let existing_child = before.occurrences_for_fact(&child)[0];
     let support_occurrence = before.owned_occurrences_for_fact(&support)[0];
@@ -5007,8 +5003,8 @@ fn v11_fresh_view_children_use_exact_occurrences_and_preserve_duplicates() {
 
 #[test]
 fn v11_duplicate_bound_and_unbound_views_are_not_authority_candidates() {
-    let support = CResourceFact::own_token("v11_duplicate_support".into(), Vec::new());
-    let child = CResourceFact::view_token("v11_duplicate_child".into(), Vec::new());
+    let support = ResourceFact::own_token("v11_duplicate_support".into(), Vec::new());
+    let child = ResourceFact::view_token("v11_duplicate_child".into(), Vec::new());
     let context = ResourceContext::new().unchecked_with_facts([
         support.clone(),
         child.clone(),
@@ -5047,8 +5043,8 @@ fn v11_duplicate_bound_and_unbound_views_are_not_authority_candidates() {
 /// `view_the_support` changes only the binding's viewed fact, so two contexts
 /// that disagree on it still hold the same facts and the same support graph.
 fn context_with_one_loan_dependency(view_the_support: bool) -> ResourceContext {
-    let support = CResourceFact::own_token("f7_dependency_support".into(), Vec::new());
-    let child = CResourceFact::view_token("f7_dependency_child".into(), Vec::new());
+    let support = ResourceFact::own_token("f7_dependency_support".into(), Vec::new());
+    let child = ResourceFact::view_token("f7_dependency_child".into(), Vec::new());
     let context = ResourceContext::new().unchecked_with_facts([support.clone(), child.clone()]);
     let child_occurrence = context.occurrences_for_fact(&child)[0];
     let support_occurrence = context.owned_occurrences_for_fact(&support)[0];
@@ -5131,39 +5127,39 @@ fn loan_dependencies_differing_in_the_viewed_fact_order_deterministically() {
 
 #[test]
 fn v11_unbound_owner_observation_composite_still_expands() {
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "v11_observation_box",
         Vec::new(),
         None,
         false,
         vec![
-            CResourceSpec::declared(
+            ResourceSpec::declared(
                 ResourceFamily::Token,
-                CResourceAccessMode::Own,
+                ResourceAccessMode::Own,
                 "v11_observation_child".into(),
                 Vec::new(),
                 Vec::new(),
-                CResourceTransferRole::Consume,
-                CResourceSnapshot::Current,
+                ResourceTransferRole::Consume,
+                ResourceSnapshot::Current,
             )
             .unwrap(),
         ],
         Vec::new(),
     );
-    let parent = CResourceFact::view_composite("v11_observation_box".into(), Vec::new());
+    let parent = ResourceFact::view_composite("v11_observation_box".into(), Vec::new());
     let resources = ResourceContext::new().unchecked_with_fact(parent.clone());
     let expanded = crate::kernel::functions::expand_composite_resource_fact_with_children(
         &resources,
         &parent,
         &[definition],
-        &CMemory::new(),
+        &Memory::new(),
         &PureFactContext::new(),
     )
     .expect("an unbound owner-supported observation remains expandable");
     assert!(
         expanded
             .0
-            .contains_exact_representation(&CResourceFact::view_token(
+            .contains_exact_representation(&ResourceFact::view_token(
                 "v11_observation_child".into(),
                 Vec::new()
             ))
@@ -5172,28 +5168,28 @@ fn v11_unbound_owner_observation_composite_still_expands() {
 
 #[test]
 fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "v11_box",
         Vec::new(),
         None,
         false,
         vec![
-            CResourceSpec::declared(
+            ResourceSpec::declared(
                 ResourceFamily::Token,
-                CResourceAccessMode::Own,
+                ResourceAccessMode::Own,
                 "v11_child".into(),
                 Vec::new(),
                 Vec::new(),
-                CResourceTransferRole::Consume,
-                CResourceSnapshot::Current,
+                ResourceTransferRole::Consume,
+                ResourceSnapshot::Current,
             )
             .unwrap(),
         ],
         Vec::new(),
     );
-    let support = CResourceFact::own_token("v11_expansion_support".into(), Vec::new());
-    let parent = CResourceFact::view_composite("v11_box".into(), Vec::new());
-    let child = CResourceFact::view_token("v11_child".into(), Vec::new());
+    let support = ResourceFact::own_token("v11_expansion_support".into(), Vec::new());
+    let parent = ResourceFact::view_composite("v11_box".into(), Vec::new());
+    let child = ResourceFact::view_token("v11_child".into(), Vec::new());
     let resources =
         ResourceContext::new().unchecked_with_facts([support.clone(), parent.clone(), child]);
     let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
@@ -5216,9 +5212,9 @@ fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
     assert!(
         crate::kernel::functions::expand_composite_resource_fact_with_children(
             &resources,
-            &CResourceFact::view_composite("v11_box".into(), Vec::new()),
+            &ResourceFact::view_composite("v11_box".into(), Vec::new()),
             &[definition],
-            &CMemory::new(),
+            &Memory::new(),
             &PureFactContext::new(),
         )
         .is_none()
@@ -5227,8 +5223,8 @@ fn v11_composite_expansion_refuses_equal_ambient_child_without_destination() {
 
 #[test]
 fn v11_tampered_cstate_mirror_is_rejected_and_stale_sidecar_is_dropped() {
-    let support = CResourceFact::own_token("v11_tamper_support".into(), Vec::new());
-    let child = CResourceFact::view_token("v11_tamper_child".into(), Vec::new());
+    let support = ResourceFact::own_token("v11_tamper_support".into(), Vec::new());
+    let child = ResourceFact::view_token("v11_tamper_child".into(), Vec::new());
     let resources = ResourceContext::new().unchecked_with_facts([support.clone(), child.clone()]);
     let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
     let child_occurrence = resources.occurrences_for_fact(&child)[0];
@@ -5252,7 +5248,7 @@ fn v11_tampered_cstate_mirror_is_rejected_and_stale_sidecar_is_dropped() {
     );
     assert!(state.loan_bindings_are_consistent());
     let mut tampered = binding.clone();
-    tampered.viewed = CResourceFact::view_token("v11_other_child".into(), Vec::new());
+    tampered.viewed = ResourceFact::view_token("v11_other_child".into(), Vec::new());
     let mut tampered_state = state;
     tampered_state.loan_view_bindings =
         LoanViewBindings::default().with_inserted(child_occurrence, tampered);
@@ -5270,7 +5266,7 @@ fn v11_tampered_cstate_mirror_is_rejected_and_stale_sidecar_is_dropped() {
 
     let first = LoanViewBindings::default().with_inserted(child_occurrence, binding.clone());
     let mut other_binding = binding;
-    other_binding.viewed = CResourceFact::view_token("v11_identity_other".into(), Vec::new());
+    other_binding.viewed = ResourceFact::view_token("v11_identity_other".into(), Vec::new());
     let second = LoanViewBindings::default().with_inserted(child_occurrence, other_binding);
     assert_ne!(first, second);
 }
@@ -5286,33 +5282,33 @@ fn memory_entailment_relates_two_spellings_of_one_byte_footprint() {
         block: "mixed-width-footprint".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let int32_cell = CMemoryRange::new_with_element_width(
+    let int32_cell = MemoryRange::new_with_element_width(
         base.clone(),
         MachineTerm::constant(2),
         MachineTerm::constant(3),
         4,
     );
-    let same_bytes = CMemoryRange::new_with_element_width(
+    let same_bytes = MemoryRange::new_with_element_width(
         base.clone(),
         MachineTerm::constant(8),
         MachineTerm::constant(12),
         1,
     );
     let int32_context =
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(int32_cell.clone()));
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(int32_cell.clone()));
     let byte_context =
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(same_bytes.clone()));
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(same_bytes.clone()));
     assert!(
-        int32_context.satisfies_fact(&CResourceFact::own_memory(same_bytes.clone()), &assumptions)
+        int32_context.satisfies_fact(&ResourceFact::own_memory(same_bytes.clone()), &assumptions)
     );
     assert!(
-        byte_context.satisfies_fact(&CResourceFact::own_memory(int32_cell.clone()), &assumptions)
+        byte_context.satisfies_fact(&ResourceFact::own_memory(int32_cell.clone()), &assumptions)
     );
-    assert!(int32_context.satisfies_fact(&CResourceFact::view_memory(same_bytes), &assumptions));
-    assert!(byte_context.satisfies_fact(&CResourceFact::view_memory(int32_cell), &assumptions));
+    assert!(int32_context.satisfies_fact(&ResourceFact::view_memory(same_bytes), &assumptions));
+    assert!(byte_context.satisfies_fact(&ResourceFact::view_memory(int32_cell), &assumptions));
 
     // One byte past the end is still one byte too many.
-    let one_byte_over = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let one_byte_over = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base.clone(),
         MachineTerm::constant(8),
         MachineTerm::constant(13),
@@ -5320,7 +5316,7 @@ fn memory_entailment_relates_two_spellings_of_one_byte_footprint() {
     ));
     assert!(!int32_context.satisfies_fact(&one_byte_over, &assumptions));
     // A different four bytes of the same block is not the same footprint.
-    let neighbour = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let neighbour = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base,
         MachineTerm::constant(12),
         MachineTerm::constant(16),
@@ -5340,13 +5336,13 @@ fn subtracting_a_byte_field_from_an_int32_owner_leaves_the_bytewise_remainder() 
         block: "mixed-width-split".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base.clone(),
         MachineTerm::constant(2),
         MachineTerm::constant(4),
         4,
     ));
-    let byte_field = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let byte_field = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base.clone(),
         MachineTerm::constant(8),
         MachineTerm::constant(12),
@@ -5359,7 +5355,7 @@ fn subtracting_a_byte_field_from_an_int32_owner_leaves_the_bytewise_remainder() 
         .clone()
         .without_fact_incrementally(&byte_field, &assumptions)
         .expect("a width-1 field is consumable from a width-4 owner");
-    let remainder = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let remainder = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base,
         MachineTerm::constant(3),
         MachineTerm::constant(4),
@@ -5393,13 +5389,13 @@ fn bytewise_disjoint_mismatched_width_owners_compose_and_adjacent_ones_merge() {
         block: "mixed-width-composition".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let int32_head = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let int32_head = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(2),
         4,
     ));
-    let distant_bytes = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let distant_bytes = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base.clone(),
         MachineTerm::constant(12),
         MachineTerm::constant(16),
@@ -5414,7 +5410,7 @@ fn bytewise_disjoint_mismatched_width_owners_compose_and_adjacent_ones_merge() {
     assert!(disjoint.satisfies_fact(&int32_head, &assumptions));
     assert!(disjoint.satisfies_fact(&distant_bytes, &assumptions));
     assert!(!disjoint.satisfies_fact(
-        &CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        &ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base.clone(),
             MachineTerm::constant(8),
             MachineTerm::constant(12),
@@ -5423,7 +5419,7 @@ fn bytewise_disjoint_mismatched_width_owners_compose_and_adjacent_ones_merge() {
         &assumptions
     ));
 
-    let adjacent_bytes = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let adjacent_bytes = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base.clone(),
         MachineTerm::constant(8),
         MachineTerm::constant(12),
@@ -5437,8 +5433,8 @@ fn bytewise_disjoint_mismatched_width_owners_compose_and_adjacent_ones_merge() {
         .normalized(&assumptions);
     assert_eq!(
         merged.facts(),
-        [CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(
+        [ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(
                 base,
                 MachineTerm::constant(0),
                 MachineTerm::constant(3),
@@ -5459,7 +5455,7 @@ fn owned_pieces_over_displaced_bases_rejoin_where_they_abut() {
     };
     let i = MachineTerm::Variable(Variable(88_101));
     let own = |base: &Pointer, start: MachineTerm, end: MachineTerm| {
-        CResourceFact::own_memory(CMemoryRange::new(base.clone(), start, end))
+        ResourceFact::own_memory(MemoryRange::new(base.clone(), start, end))
     };
     let constant = MachineTerm::constant;
     let assumptions = PureFactContext::new();
@@ -5501,12 +5497,12 @@ fn mixed_width_symbolic_ranges_do_not_join_across_gaps_or_overlaps() {
     };
     for start in [11, 13] {
         let pieces = [
-            CResourceFact::own_memory(CMemoryRange::new(
+            ResourceFact::own_memory(MemoryRange::new(
                 base.offset_by_bytes(8),
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
             )),
-            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 base.clone(),
                 MachineTerm::constant(start),
                 MachineTerm::constant(16),
@@ -5518,7 +5514,7 @@ fn mixed_width_symbolic_ranges_do_not_join_across_gaps_or_overlaps() {
             .normalized(&PureFactContext::new());
         assert_eq!(context.facts().len(), 2);
         assert!(!context.satisfies_fact(
-            &CResourceFact::own_memory(CMemoryRange::new(
+            &ResourceFact::own_memory(MemoryRange::new(
                 base.clone(),
                 MachineTerm::constant(2),
                 MachineTerm::constant(4)
@@ -5539,7 +5535,7 @@ fn owned_pieces_over_displaced_bases_that_may_not_abut_stay_apart() {
     };
     let i = MachineTerm::Variable(Variable(88_201));
     let own = |base: &Pointer, start: MachineTerm, end: MachineTerm| {
-        CResourceFact::own_memory(CMemoryRange::new(base.clone(), start, end))
+        ResourceFact::own_memory(MemoryRange::new(base.clone(), start, end))
     };
     let constant = MachineTerm::constant;
     let assumptions = PureFactContext::new();
@@ -5582,8 +5578,8 @@ fn distinct_heap_allocations_never_merge_under_contradictory_assumptions() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let (b, c) = (block(1000001), block(1000002));
-    let alloc_b = CResourceFact::own_allocation(b.clone(), 16u32);
-    let alloc_c = CResourceFact::own_allocation(c.clone(), 16u32);
+    let alloc_b = ResourceFact::own_allocation(b.clone(), 16u32);
+    let alloc_c = ResourceFact::own_allocation(c.clone(), 16u32);
     // A contradictory `false`-is-true fact must not let normalization merge
     // distinct heap authorities. Heap identities are unique by construction.
     let poisoned = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
@@ -5629,15 +5625,15 @@ mod constant_range_containment {
         }
     }
 
-    fn range(base: Pointer, start: i32, end: i32) -> CMemoryRange {
-        CMemoryRange::new(
+    fn range(base: Pointer, start: i32, end: i32) -> MemoryRange {
+        MemoryRange::new(
             base,
             MachineTerm::constant(start as u32),
             MachineTerm::constant(end as u32),
         )
     }
 
-    fn covers(available: &CMemoryRange, required: &CMemoryRange) -> bool {
+    fn covers(available: &MemoryRange, required: &MemoryRange) -> bool {
         crate::kernel::memory_range_covers(available, required, &PureFactContext::new())
     }
 
@@ -5702,7 +5698,7 @@ mod constant_range_containment {
             offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
         };
         let owned = range(base, 0, 4);
-        let required = CMemoryRange::new(child, MachineTerm::constant(0), MachineTerm::constant(1));
+        let required = MemoryRange::new(child, MachineTerm::constant(0), MachineTerm::constant(1));
         let pinned = |value: i32| {
             PureFactContext::new().assume_condition(
                 ConditionTerm::Compare {
@@ -5738,9 +5734,9 @@ mod constant_range_containment {
 mod owned_quantity_sign {
     use super::*;
 
-    fn token(quantity: i32) -> CResourceFact {
-        CResourceFact::own_quantity(
-            CResource::Token {
+    fn token(quantity: i32) -> ResourceFact {
+        ResourceFact::own_quantity(
+            Resource::Token {
                 name: "tok".to_string(),
                 arguments: Vec::new().into(),
             },
@@ -5748,8 +5744,8 @@ mod owned_quantity_sign {
         )
     }
 
-    fn viewed() -> CResourceFact {
-        CResourceFact::View(CResource::Token {
+    fn viewed() -> ResourceFact {
+        ResourceFact::View(Resource::Token {
             name: "tok".to_string(),
             arguments: Vec::new().into(),
         })
@@ -5801,9 +5797,9 @@ mod owned_quantity_sign {
 mod population_quantity_totals {
     use super::*;
 
-    fn token(quantity: MachineTerm) -> CResourceFact {
-        CResourceFact::own_quantity(
-            CResource::Token {
+    fn token(quantity: MachineTerm) -> ResourceFact {
+        ResourceFact::own_quantity(
+            Resource::Token {
                 name: "tok".to_string(),
                 arguments: Vec::new().into(),
             },
@@ -5937,8 +5933,8 @@ mod concrete_partition_sweep {
         }
     }
 
-    fn owns(start: i32, end: i32) -> CResourceFact {
-        CResourceFact::own_memory(CMemoryRange::new(
+    fn owns(start: i32, end: i32) -> ResourceFact {
+        ResourceFact::own_memory(MemoryRange::new(
             external(),
             MachineTerm::constant(start as u32),
             MachineTerm::constant(end as u32),
@@ -5947,7 +5943,7 @@ mod concrete_partition_sweep {
 
     /// Both routes into the gate: the whole-context check, and the
     /// incremental one that adds the last fact to an already-valid context.
-    fn admits(facts: &[CResourceFact]) -> bool {
+    fn admits(facts: &[ResourceFact]) -> bool {
         let assumptions = PureFactContext::new();
         let mut whole = ResourceContext::new();
         for fact in facts {
@@ -5972,7 +5968,7 @@ mod concrete_partition_sweep {
     #[test]
     fn neighbour_order_uses_exact_bytes_for_native_and_mixed_width_ranges() {
         let native = |start, end, width| {
-            CResourceFact::own_memory(CMemoryRange::new_wide(
+            ResourceFact::own_memory(MemoryRange::new_wide(
                 external(),
                 MachineTerm::uint64_constant(start),
                 MachineTerm::uint64_constant(end),
@@ -5980,7 +5976,7 @@ mod concrete_partition_sweep {
             ))
         };
         let bytes = |start: u32, end: u32| {
-            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 external(),
                 start.into(),
                 end.into(),
@@ -6078,8 +6074,8 @@ mod residue_bounds {
         }
     }
 
-    fn range(base: Pointer, start: MachineTerm, end: MachineTerm) -> CMemoryRange {
-        CMemoryRange::new(base, start, end)
+    fn range(base: Pointer, start: MachineTerm, end: MachineTerm) -> MemoryRange {
+        MemoryRange::new(base, start, end)
     }
 
     fn constant(value: i32) -> MachineTerm {
@@ -6087,10 +6083,10 @@ mod residue_bounds {
     }
 
     fn split(
-        available: &CMemoryRange,
-        required: &CMemoryRange,
+        available: &MemoryRange,
+        required: &MemoryRange,
         assumptions: &PureFactContext,
-    ) -> Option<Vec<CMemoryRange>> {
+    ) -> Option<Vec<MemoryRange>> {
         crate::kernel::split_memory_range(available, required, assumptions)
     }
 
@@ -6155,7 +6151,7 @@ mod residue_bounds {
         let index = MachineTerm::Variable(Variable(93_970));
         let count = MachineTerm::Variable(Variable(93_971));
         let available = range(external(0), constant(0), count);
-        let required = CMemoryRange::new(
+        let required = MemoryRange::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
@@ -6207,11 +6203,11 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
     let arguments: ResourceArguments = vec![ProgramValue::pointer(pointer.clone()).into()].into();
     let description =
         crate::kernel::ResourceDescription::new("ticket".into(), arguments.clone(), schema.clone());
-    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let authority = ResourceFact::own(Resource::PopulationAuthority(description.clone()));
     let mut created = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_heap_allocation_claim(pointer, HeapExtent::int32(4))
                 .unwrap(),
         );
@@ -6220,7 +6216,7 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
     let (empty, _) = created
         .checked_population_authority_exchange(&authority, true, &assumptions)
         .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "ticket",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
@@ -6313,7 +6309,7 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
     );
     let without_authority = two.clone().with_resource_context(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own(CResource::Instance(first.clone()))),
+            .unchecked_with_fact(ResourceFact::own(Resource::Instance(first.clone()))),
     );
     assert!(
         rewrite(&without_authority, &first, true).is_err(),
@@ -6354,12 +6350,12 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
         arguments.clone(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
-    let authority = CResourceFact::own(CResource::PopulationAuthority(description));
-    let selected = CResourceFact::own(CResource::Composite {
+    let authority = ResourceFact::own(Resource::PopulationAuthority(description));
+    let selected = ResourceFact::own(Resource::Composite {
         name: "member".into(),
         arguments: arguments.clone(),
     });
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "member",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
@@ -6371,7 +6367,7 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
     let mut created = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_heap_allocation_claim(pointer.clone(), HeapExtent::int32(4))
                 .unwrap(),
         );
@@ -6447,13 +6443,13 @@ fn wide_shifted_suffix_coverage_checks_extent_and_identity() {
     let base = Pointer::symbolic(Variable(983_100));
     let whole = MachineTerm::Variable(Variable(983_101));
     let taken = MachineTerm::Variable(Variable(983_102));
-    let available = CMemoryRange::new_wide(
+    let available = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
         whole.clone(),
         4,
     );
-    let required = CMemoryRange::new_wide(
+    let required = MemoryRange::new_wide(
         base.offset_by_typed_elements(
             MachineTerm::uint64_subtract(whole.clone(), taken.clone()),
             4,
@@ -6483,7 +6479,7 @@ fn wide_shifted_suffix_coverage_checks_extent_and_identity() {
         true,
     );
     assert!(!covers(&available, &required, &only_count));
-    let offset_suffix = CMemoryRange::new_wide(
+    let offset_suffix = MemoryRange::new_wide(
         base.offset_by_typed_elements(taken.clone(), 4, true, true),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_subtract(whole.clone(), taken.clone()),
@@ -6500,34 +6496,34 @@ fn wide_shifted_suffix_coverage_checks_extent_and_identity() {
         true,
     );
     assert!(!covers(&available, &required, &low_words));
-    let unrelated = CMemoryRange::new_wide(
+    let unrelated = MemoryRange::new_wide(
         Pointer::symbolic(Variable(983_103)),
         MachineTerm::uint64_constant(0),
         taken.clone(),
         4,
     );
     assert!(!covers(&available, &unrelated, &facts));
-    let wrong_count = CMemoryRange::new_wide(
+    let wrong_count = MemoryRange::new_wide(
         required.base().clone(),
         MachineTerm::uint64_constant(0),
         MachineTerm::Variable(Variable(983_104)),
         4,
     );
     assert!(!covers(&available, &wrong_count, &facts));
-    let wrapped = CMemoryRange::new_wide(
+    let wrapped = MemoryRange::new_wide(
         base.offset_by_typed_elements(MachineTerm::uint64_constant(u64::MAX), 4, true, true),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(2),
         4,
     );
     assert!(!covers(&available, &wrapped, &facts));
-    let concrete = CMemoryRange::new_wide(
+    let concrete = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(3),
         4,
     );
-    let part = CMemoryRange::new_wide(
+    let part = MemoryRange::new_wide(
         base.offset_by_typed_elements(MachineTerm::uint64_constant(1), 4, true, true),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(2),
@@ -6535,7 +6531,7 @@ fn wide_shifted_suffix_coverage_checks_extent_and_identity() {
     );
     let empty_facts = PureFactContext::new();
     assert!(covers(&concrete, &part, &empty_facts));
-    let past = CMemoryRange::new_wide(
+    let past = MemoryRange::new_wide(
         part.base().clone(),
         MachineTerm::uint64_constant(0),
         MachineTerm::uint64_constant(3),
@@ -6548,7 +6544,7 @@ fn wide_shifted_suffix_coverage_checks_extent_and_identity() {
 fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(983_200));
-    let before = CMemory::new().store(
+    let before = Memory::new().store(
         pointer.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
     );
@@ -6589,18 +6585,18 @@ fn wide_ranges_are_compared_and_refused_without_a_32_bit_reading() {
     let end = MachineTerm::Variable(Variable(97_401));
     let other_end = MachineTerm::Variable(Variable(97_402));
     let wide = |end: &MachineTerm, width| {
-        CMemoryRange::new_wide(
+        MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(0),
             end.clone(),
             width,
         )
     };
-    let narrow = CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 4u32.into(), 1);
-    let equal = |left: &CMemoryRange, right: &CMemoryRange| {
+    let narrow = MemoryRange::new_with_element_width(base.clone(), 0u32.into(), 4u32.into(), 1);
+    let equal = |left: &MemoryRange, right: &MemoryRange| {
         crate::kernel::assumptions::resources_equal_ignoring_memories(
-            &CResource::Memory(left.clone()),
-            &CResource::Memory(right.clone()),
+            &Resource::Memory(left.clone()),
+            &Resource::Memory(right.clone()),
         )
     };
     assert!(equal(&wide(&end, 1), &wide(&end, 1)));
@@ -6612,7 +6608,7 @@ fn wide_ranges_are_compared_and_refused_without_a_32_bit_reading() {
     let covers = crate::kernel::primitives::memory_range_covers;
     assert!(!covers(&wide(&end, 1), &wide(&end, 4), &facts));
     assert!(!covers(&wide(&end, 4), &wide(&end, 1), &facts));
-    let words = CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 4u32.into(), 4);
+    let words = MemoryRange::new_with_element_width(base.clone(), 0u32.into(), 4u32.into(), 4);
     assert!(!covers(&wide(&end, 1), &words, &facts));
     assert!(!covers(&words, &wide(&end, 1), &facts));
 }
@@ -6625,7 +6621,7 @@ fn a_field_access_in_a_wide_struct_array_byte_range_is_placed_over_elements() {
     let index = MachineTerm::Variable(Variable(983_412));
     // `m * 8u64` bytes of eight-byte structs, as a 64-bit heap block holds them.
     let bytes = MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(8));
-    let range = CMemoryRange::new_wide(base.clone(), MachineTerm::uint64_constant(0), bytes, 1);
+    let range = MemoryRange::new_wide(base.clone(), MachineTerm::uint64_constant(0), bytes, 1);
     let at = |offset: PointerOffsetTerm| Pointer {
         block: base.block.clone(),
         offset,
@@ -6691,8 +6687,8 @@ fn a_wide_struct_range_and_its_byte_range_are_respelled_under_no_wrap() {
     let count = MachineTerm::Variable(Variable(983_421));
     let zero = MachineTerm::uint64_constant(0);
     let bytes = MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(8));
-    let block = CMemoryRange::new_wide(base.clone(), zero.clone(), bytes, 1);
-    let structs = CMemoryRange::new_wide(base.clone(), zero.clone(), count.clone(), 8);
+    let block = MemoryRange::new_wide(base.clone(), zero.clone(), bytes, 1);
+    let structs = MemoryRange::new_wide(base.clone(), zero.clone(), count.clone(), 8);
     let bounded = PureFactContext::new().assume_condition(
         ConditionTerm::uint64_less_equal(count.clone(), MachineTerm::uint64_constant(100)),
         true,
@@ -6722,7 +6718,7 @@ fn a_wide_struct_range_and_its_byte_range_are_respelled_under_no_wrap() {
         ConditionTerm::uint64_less_equal(MachineTerm::uint64_constant(1), count.clone()),
         true,
     );
-    let first = CMemoryRange::new_wide(
+    let first = MemoryRange::new_wide(
         base.clone(),
         zero.clone(),
         MachineTerm::uint64_constant(1),
@@ -6736,7 +6732,7 @@ fn a_wide_struct_range_and_its_byte_range_are_respelled_under_no_wrap() {
     assert_eq!(residues.len(), 1);
     assert_eq!(residues[0].element_width(), 8);
     // A struct width that does not divide the other has no re-spelling.
-    let pairs = CMemoryRange::new_wide(base, zero, count, 12);
+    let pairs = MemoryRange::new_wide(base, zero, count, 12);
     assert!(!crate::kernel::memory_range_covers(
         &block, &pairs, &bounded
     ));
@@ -6752,20 +6748,20 @@ fn a_wide_respelling_refusal_names_the_undecided_product() {
     let count = MachineTerm::Variable(Variable(983_441));
     let zero = MachineTerm::uint64_constant(0);
     let bytes = MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(8));
-    let held = CMemoryRange::new_wide(base.clone(), zero.clone(), bytes, 1);
-    let required = CMemoryRange::new_wide(base, zero, count.clone(), 8);
+    let held = MemoryRange::new_wide(base.clone(), zero.clone(), bytes, 1);
+    let required = MemoryRange::new_wide(base, zero, count.clone(), 8);
     let bounded = PureFactContext::new().assume_condition(
         ConditionTerm::uint64_less_equal(count.clone(), MachineTerm::uint64_constant(100)),
         true,
     );
     let refusal = |facts: &PureFactContext| {
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(held.clone()))
+            .unchecked_with_fact(ResourceFact::own_memory(held.clone()))
             .normalized(facts)
             .wide_range_respelling_refusal(&required, facts)
     };
     let no_wrap = refusal(&PureFactContext::new()).expect("the product is not decided");
-    assert_eq!(no_wrap.range, CResourceFact::own_memory(required.clone()));
+    assert_eq!(no_wrap.range, ResourceFact::own_memory(required.clone()));
     assert_eq!(no_wrap.count, count);
     assert_eq!(no_wrap.factor, 8);
     assert!(refusal(&bounded).is_none());
@@ -6779,7 +6775,7 @@ fn a_field_access_in_a_wide_struct_range_is_placed_over_its_count() {
     let base = Pointer::symbolic(Variable(983_430));
     let count = MachineTerm::Variable(Variable(983_431));
     let index = MachineTerm::Variable(Variable(983_432));
-    let range = CMemoryRange::new_wide(
+    let range = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
         count.clone(),
@@ -6837,9 +6833,9 @@ fn native_range_coverage_checks_complete_signed_observations() {
     let base = Pointer::symbolic(Variable(983_400));
     let index = MachineTerm::Variable(Variable(983_401));
     let next = MachineTerm::uint64_add(index.clone(), MachineTerm::uint64_constant(1));
-    let available = CMemoryRange::new_wide(base.clone(), index.clone(), next.clone(), 4);
+    let available = MemoryRange::new_wide(base.clone(), index.clone(), next.clone(), 4);
     let narrow = MachineTerm::uint32_from_64(index.clone());
-    let required = CMemoryRange::new(
+    let required = MemoryRange::new(
         base.clone(),
         narrow.clone(),
         MachineTerm::add(narrow.clone(), MachineTerm::constant(1)),
@@ -6886,13 +6882,13 @@ fn native_range_coverage_checks_complete_signed_observations() {
         true,
     );
     assert!(!covers(&available, &required, &native_wrap));
-    let too_long = CMemoryRange::new(
+    let too_long = MemoryRange::new(
         base.clone(),
         narrow.clone(),
         MachineTerm::add(narrow.clone(), MachineTerm::constant(2)),
     );
     assert!(!covers(&available, &too_long, &bounded));
-    let wrong_base = CMemoryRange::new(
+    let wrong_base = MemoryRange::new(
         Pointer::symbolic(Variable(983_402)),
         narrow.clone(),
         MachineTerm::add(narrow, MachineTerm::constant(1)),
@@ -6905,7 +6901,7 @@ fn native_owned_fragments_supply_indexed_writes() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(983_410));
     let range = |start, end| {
-        CMemoryRange::new_wide(
+        MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(start),
             MachineTerm::uint64_constant(end),
@@ -6914,7 +6910,7 @@ fn native_owned_fragments_supply_indexed_writes() {
     };
     let mut resources = ResourceContext::new();
     for (start, end) in [(0, 1), (2, 3), (1, 2)] {
-        resources = resources.unchecked_with_fact(CResourceFact::own_memory(range(start, end)));
+        resources = resources.unchecked_with_fact(ResourceFact::own_memory(range(start, end)));
     }
     let facts = PureFactContext::new();
     for index in 0..3 {
@@ -6926,18 +6922,18 @@ fn native_owned_fragments_supply_indexed_writes() {
     }
     for required in [
         range(0, 3),
-        CMemoryRange::new(base.clone(), 0u32.into(), 3u32.into()),
+        MemoryRange::new(base.clone(), 0u32.into(), 3u32.into()),
     ] {
         let remaining = resources
             .clone()
-            .without_fact_incrementally(&CResourceFact::own_memory(required), &facts)
+            .without_fact_incrementally(&ResourceFact::own_memory(required), &facts)
             .expect("all three owned fragments cover the complete request");
         assert!(remaining.facts().is_empty());
     }
     let outside = base.offset_by_elements(MachineTerm::constant(3), 4);
     assert!(resources.memory_write_range(&outside, 4, &facts).is_none());
     let viewed = ResourceContext::new()
-        .unchecked_with_fact(CResourceFact::View(CResource::Memory(range(0, 3))));
+        .unchecked_with_fact(ResourceFact::View(Resource::Memory(range(0, 3))));
     assert!(viewed.memory_write_range(&base, 4, &facts).is_none());
 }
 
@@ -6969,7 +6965,7 @@ fn observable_projection_uses_current_loan_bindings_and_composite_eligibility() 
             .is_empty(),
         "one owner alone does not expose a separation composition"
     );
-    let composite = CResourceFact::own_composite("observable_box".into(), Vec::new());
+    let composite = ResourceFact::own_composite("observable_box".into(), Vec::new());
     let context = ResourceContext::new().unchecked_with_fact(composite.clone());
     assert_eq!(
         context
@@ -6987,7 +6983,7 @@ fn observable_projection_uses_current_loan_bindings_and_composite_eligibility() 
 
 #[test]
 fn first_state_difference_names_the_resource_held_on_one_side() {
-    let authority = CResourceFact::own_composite("authority".to_string(), Vec::new());
+    let authority = ResourceFact::own_composite("authority".to_string(), Vec::new());
     let holding = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(authority.clone()));
     let empty = ExecutionState::new();
@@ -7009,8 +7005,8 @@ mod scaling_tests {
     include!("../../scaling_tests/kernel/tests/resource_tests.rs");
 }
 
-fn canonical_cell(index: i64) -> CResourceFact {
-    CResourceFact::own_memory(CMemoryRange::new(
+fn canonical_cell(index: i64) -> ResourceFact {
+    ResourceFact::own_memory(MemoryRange::new(
         Pointer {
             block: PointerBlock::Concrete(format!("object{index}")),
             offset: PointerOffsetTerm::Constant(0),
@@ -7082,24 +7078,24 @@ fn constant_owner_neighbors_ignore_empty_ranges_and_preserve_branches() {
         let assumptions = PureFactContext::new();
         let base = Pointer::symbolic(Variable(995_200));
         let range = |start: u64, end: u64| match origin {
-            Some(origin) => CMemoryRange::new_wide(
+            Some(origin) => MemoryRange::new_wide(
                 base.clone(),
                 MachineTerm::uint64_constant(origin + start),
                 MachineTerm::uint64_constant(origin + end),
                 4,
             ),
-            None => CMemoryRange::new(base.clone(), (start as u32).into(), (end as u32).into()),
+            None => MemoryRange::new(base.clone(), (start as u32).into(), (end as u32).into()),
         };
-        let owner = CResourceFact::own_memory(range(0, 10));
-        let empty = CResourceFact::own_memory(range(5, 5));
-        let reversed = CResourceFact::own_memory(range(8, 7));
+        let owner = ResourceFact::own_memory(range(0, 10));
+        let empty = ResourceFact::own_memory(range(5, 5));
+        let reversed = ResourceFact::own_memory(range(8, 7));
         let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
             owner.clone(),
             empty.clone(),
             reversed,
         ]);
         assert!(context.is_valid(&assumptions));
-        let overlap = CResourceFact::own_memory(range(6, 9));
+        let overlap = ResourceFact::own_memory(range(6, 9));
         assert!(
             !context
                 .clone()
@@ -7138,7 +7134,7 @@ fn constant_owner_neighbors_ignore_empty_ranges_and_preserve_branches() {
         assert!(
             context
                 .try_compose_into_valid_context_delaying_normalization(
-                    [CResourceFact::own_memory(range(6, 6))],
+                    [ResourceFact::own_memory(range(6, 6))],
                     &assumptions
                 )
                 .is_ok()
@@ -7152,7 +7148,7 @@ fn native_owner_neighbors_compare_exact_mixed_width_bytes() {
     let assumptions = PureFactContext::new();
     let base = Pointer::symbolic(Variable(995_201));
     let owned = |start, end, width| {
-        CResourceFact::own_memory(CMemoryRange::new_wide(
+        ResourceFact::own_memory(MemoryRange::new_wide(
             base.clone(),
             MachineTerm::uint64_constant(start),
             MachineTerm::uint64_constant(end),
@@ -7212,15 +7208,15 @@ fn translated_owner_coordinates_preserve_overlap_and_branch_isolation() {
                 block: PointerBlock::Symbolic(Variable(995_401)),
                 offset: PointerOffsetTerm::add(prefix.clone(), PointerOffsetTerm::Constant(delta)),
             };
-            CResourceFact::own_memory(if native {
-                CMemoryRange::new_wide(
+            ResourceFact::own_memory(if native {
+                MemoryRange::new_wide(
                     base,
                     MachineTerm::uint64_constant(start.into()),
                     MachineTerm::uint64_constant(end.into()),
                     width,
                 )
             } else {
-                CMemoryRange::new_with_element_width(base, start.into(), end.into(), width)
+                MemoryRange::new_with_element_width(base, start.into(), end.into(), width)
             })
         };
         let first = owned(0, 0, 1, 4);
@@ -7287,7 +7283,7 @@ fn translated_owner_coordinates_keep_native_extent_and_symbolic_origin() {
     let _session = crate::kernel::VerificationSession::enter();
     let assumptions = PureFactContext::new();
     let owned = |variable, delta, start, end| {
-        CResourceFact::own_memory(CMemoryRange::new_wide(
+        ResourceFact::own_memory(MemoryRange::new_wide(
             Pointer {
                 block: PointerBlock::Symbolic(Variable(995_402)),
                 offset: PointerOffsetTerm::add(
@@ -7352,7 +7348,7 @@ fn owned_root_neighbors_keep_alias_and_duplicate_refusals() {
     let p = pointer(995_600);
     let q = pointer(995_601);
     let owned = |base, start: u32, end: u32| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
             start.into(),
             end.into(),
@@ -7409,7 +7405,7 @@ fn owned_root_neighbors_require_complete_coordinate_coverage() {
     };
     let p = pointer(995_621);
     let q = pointer(995_622);
-    let range = |base, start, end| CMemoryRange::new_with_element_width(base, start, end, 4);
+    let range = |base, start, end| MemoryRange::new_with_element_width(base, start, end, 4);
     let shifted = Pointer {
         block: p.block.clone(),
         offset: PointerOffsetTerm::add(
@@ -7418,14 +7414,14 @@ fn owned_root_neighbors_require_complete_coordinate_coverage() {
         ),
     };
     for held in [
-        CResourceFact::own_memory(range(
+        ResourceFact::own_memory(range(
             p.clone(),
             index.clone(),
             MachineTerm::add(index.clone(), 1u32.into()),
         )),
-        CResourceFact::own_memory(range(shifted, 0u32.into(), 1u32.into())),
+        ResourceFact::own_memory(range(shifted, 0u32.into(), 1u32.into())),
     ] {
-        let required = CResourceFact::own_memory(range(p.clone(), 5u32.into(), 6u32.into()));
+        let required = ResourceFact::own_memory(range(p.clone(), 5u32.into(), 6u32.into()));
         // Supply the two overlap inequalities explicitly: this regression
         // tests candidate retention, independently of arithmetic search.
         let available = held.memory_own_range().unwrap();
@@ -7452,7 +7448,7 @@ fn owned_root_neighbors_require_complete_coordinate_coverage() {
             );
         let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
             held.clone(),
-            CResourceFact::own_memory(range(q.clone(), 0u32.into(), 1u32.into())),
+            ResourceFact::own_memory(range(q.clone(), 0u32.into(), 1u32.into())),
         ]);
         assert!(context.is_valid(&assumptions));
         assert!(
@@ -7495,7 +7491,7 @@ fn exact_alias_owned_neighbors_preserve_translations_and_branch_isolation() {
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
     let owned = |base, start: u32, end: u32| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
             start.into(),
             end.into(),
@@ -7556,7 +7552,7 @@ fn exact_alias_owned_neighbors_retain_symbolic_ranges() {
             true,
         );
     let owned = |base, start, end| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(base, start, end, 4))
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(base, start, end, 4))
     };
     let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
         owned(q.clone(), 0u32.into(), 1u32.into()),
@@ -7589,7 +7585,7 @@ fn exact_alias_owned_neighbors_keep_nonzero_displacements() {
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::pointer_equal(p.clone(), displaced), true);
     let owned = |base, start: u32| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
             start.into(),
             (start + 1).into(),
@@ -7625,11 +7621,10 @@ fn owner_only_base_buckets_follow_persistent_consumption_and_reinsertion() {
             ConditionTerm::signed_less_than(index.clone(), 5u32.into()),
             true,
         );
-    let held_range = CMemoryRange::new_with_element_width(q, 4u32.into(), 5u32.into(), 4);
-    let owner = CResourceFact::own_memory(held_range.clone());
-    let view = CResourceFact::view_memory(held_range);
-    let required =
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(p, index, end, 4));
+    let held_range = MemoryRange::new_with_element_width(q, 4u32.into(), 5u32.into(), 4);
+    let owner = ResourceFact::own_memory(held_range.clone());
+    let view = ResourceFact::view_memory(held_range);
+    let required = ResourceFact::own_memory(MemoryRange::new_with_element_width(p, index, end, 4));
     let parent = ResourceContext::new_with_equalities(&assumptions)
         .unchecked_with_facts([view.clone(), owner.clone()]);
     let refuses = |context: ResourceContext| {
@@ -7662,21 +7657,21 @@ fn skipping_unowned_alias_blocks_keeps_local_and_cross_block_refusals() {
     for native in [false, true] {
         let range = |base, start: u32| {
             if native {
-                CMemoryRange::new_wide(
+                MemoryRange::new_wide(
                     base,
                     MachineTerm::uint64_constant(u64::from(start)),
                     MachineTerm::uint64_constant(u64::from(start + 1)),
                     4,
                 )
             } else {
-                CMemoryRange::new_with_element_width(base, start.into(), (start + 1).into(), 4)
+                MemoryRange::new_with_element_width(base, start.into(), (start + 1).into(), 4)
             }
         };
-        let p_owner = CResourceFact::own_memory(range(p.clone(), 0));
-        let q_owner = CResourceFact::own_memory(range(q.clone(), 0));
+        let p_owner = ResourceFact::own_memory(range(p.clone(), 0));
+        let q_owner = ResourceFact::own_memory(range(q.clone(), 0));
         let views = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
-            CResourceFact::view_memory(range(p.clone(), 0)),
-            CResourceFact::view_memory(range(q.clone(), 0)),
+            ResourceFact::view_memory(range(p.clone(), 0)),
+            ResourceFact::view_memory(range(q.clone(), 0)),
         ]);
         assert!(
             views
@@ -7714,7 +7709,7 @@ fn skipping_unowned_alias_blocks_keeps_local_and_cross_block_refusals() {
                 parent
                     .clone()
                     .try_compose_into_valid_context_delaying_normalization(
-                        [CResourceFact::own_memory(range(p.clone(), 1))],
+                        [ResourceFact::own_memory(range(p.clone(), 1))],
                         &assumptions,
                     )
                     .is_ok()
@@ -7750,14 +7745,14 @@ fn direct_constant_overlap_keeps_byte_widths_translations_and_alias_refusals() {
     for native in [false, true] {
         let range = |base, start: u32, end: u32, width| {
             if native {
-                CMemoryRange::new_wide(
+                MemoryRange::new_wide(
                     base,
                     MachineTerm::uint64_constant(u64::from(start)),
                     MachineTerm::uint64_constant(u64::from(end)),
                     width,
                 )
             } else {
-                CMemoryRange::new_with_element_width(base, start.into(), end.into(), width)
+                MemoryRange::new_with_element_width(base, start.into(), end.into(), width)
             }
         };
         let held = range(p.clone(), 0, 1, 4);
@@ -7781,8 +7776,8 @@ fn direct_constant_overlap_keeps_byte_widths_translations_and_alias_refusals() {
                     assumptions
                         .clone()
                         .assume_proposition(Proposition::CResourceSeparate {
-                            left: Box::new(CResource::Memory(held.clone())),
-                            right: Box::new(CResource::Memory(query.clone())),
+                            left: Box::new(Resource::Memory(held.clone())),
+                            right: Box::new(Resource::Memory(query.clone())),
                         });
                 assert!(memory_ranges_proven_overlapping(
                     &held,
@@ -7796,7 +7791,7 @@ fn direct_constant_overlap_keeps_byte_widths_translations_and_alias_refusals() {
     // comparing a partial overlap and an adjacent translated interval.
     let high = 1u64 << 63;
     let wide = |base| {
-        CMemoryRange::new_wide(
+        MemoryRange::new_wide(
             base,
             MachineTerm::uint64_constant(high),
             MachineTerm::uint64_constant(high + 1),

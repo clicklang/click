@@ -17,8 +17,8 @@ fn split_formation_selects_the_owned_piece_beside_unrelated_owners() {
                 },
                 ProgramType::Int32Pointer,
             );
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::from_pointer_value(&other, 0u32.into(), 3u32.into(), 4),
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::from_pointer_value(&other, 0u32.into(), 3u32.into(), 4),
             ));
         }
         resources.synchronize_memory_equalities(&facts);
@@ -47,7 +47,7 @@ fn pointer_formation_uses_selected_bounds_beside_unrelated_ranges_and_facts() {
             resources = resources.unchecked_with_fact(view(&other, 0, 3));
             facts = facts.assume_proposition(
                 other
-                    .opaque_coverage_fact(&CMemoryRange::from_pointer_value(
+                    .opaque_coverage_fact(&MemoryRange::from_pointer_value(
                         &other,
                         0u32.into(),
                         3u32.into(),
@@ -100,10 +100,8 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         let allocated = crate::persistent::persistent_node_allocations() - before;
         assert!(matches!(
             result.as_slice(),
-            [CExpressionPath {
-                outcome: CExpressionOutcome::UndefinedBehavior(
-                    CUndefinedBehavior::PointerArithmetic
-                ),
+            [ExpressionPath {
+                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
                 ..
             }]
         ));

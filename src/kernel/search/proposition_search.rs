@@ -1896,7 +1896,7 @@ mod condition_premise_tests {
             block: "cell".into(),
             offset: PointerOffsetTerm::scaled_int32_node(term(40), 4),
         };
-        let memory = CMemory::new().with_block("cell", 64).store(
+        let memory = Memory::new().with_block("cell", 64).store(
             Pointer {
                 block: "cell".into(),
                 offset: PointerOffsetTerm::Constant(0),

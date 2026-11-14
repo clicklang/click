@@ -21,7 +21,7 @@ pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     pub(in crate::surface::proof) initial_state: &'a ExecutionState,
     pub(in crate::surface::proof) function_block: &'a FunctionBlock,
     pub(in crate::surface::proof) parsed_function: &'a syntax::C0Function,
-    pub(in crate::surface::proof) function_environment: &'a CExecutionEnvironment,
+    pub(in crate::surface::proof) function_environment: &'a ExecutionEnvironment,
     pub(in crate::surface::proof) spec_definitions: SpecDefinitions<'a>,
     pub(in crate::surface::proof) resource_environment: &'a ResourceEnvironment,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
@@ -815,7 +815,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
     proposition: &Proposition,
     source_requirement_ordinal: Option<usize>,
     source_requirement_is_state_independent: bool,
-    source_snapshot: Option<crate::kernel::CMemorySnapshotIdentity>,
+    source_snapshot: Option<crate::kernel::MemorySnapshotIdentity>,
 ) -> Result<bool, ClickError> {
     if source_requirement_ordinal.is_none() {
         return Ok(false);
@@ -1066,7 +1066,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
 /// unregistered loads remain on the compatibility path.
 fn registered_static_load_matches_snapshot(
     variable: &Variable,
-    source_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    source_snapshot: crate::kernel::MemorySnapshotIdentity,
 ) -> bool {
     let Some((_memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
         return false;
@@ -1080,7 +1080,7 @@ fn registered_static_load_matches_snapshot(
     // must be the exact source carrier identity; equal contents or matching
     // static markers are not a transport relation.
     if pointer != origin_pointer
-        || crate::kernel::CMemorySnapshotIdentity::of(origin.memory()) != source_snapshot
+        || crate::kernel::MemorySnapshotIdentity::of(origin.memory()) != source_snapshot
     {
         return false;
     }
@@ -1093,7 +1093,7 @@ fn registered_static_load_matches_snapshot(
 
 fn registered_static_memory_load_matches_snapshot(
     term: &MachineTerm,
-    source_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    source_snapshot: crate::kernel::MemorySnapshotIdentity,
 ) -> bool {
     let Some(read) =
         crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
@@ -1103,7 +1103,7 @@ fn registered_static_memory_load_matches_snapshot(
     let Some(origin) = read.origin else {
         return false;
     };
-    crate::kernel::CMemorySnapshotIdentity::of(origin.memory()) == source_snapshot
+    crate::kernel::MemorySnapshotIdentity::of(origin.memory()) == source_snapshot
         && matches!(read.pointer.block,
             PointerBlock::Concrete(ref block)
                 if PointerBlock::is_static_name(block) || PointerBlock::is_global_name(block))
@@ -1114,7 +1114,7 @@ fn registered_static_memory_load_matches_snapshot(
 /// this gate so neither route can silently derive the same source requirement.
 pub(in crate::surface) fn source_backed_requirement_should_intercept(
     obligation: &ProofObligation,
-    current_memory: &crate::kernel::CMemory,
+    current_memory: &crate::kernel::Memory,
 ) -> Result<bool, ClickError> {
     if obligation.is_assumable() {
         return Ok(false);
@@ -1122,7 +1122,7 @@ pub(in crate::surface) fn source_backed_requirement_should_intercept(
     let Some(site) = obligation.call_requirement_site() else {
         return Ok(false);
     };
-    if crate::kernel::CMemorySnapshotIdentity::of(current_memory) != site.source_snapshot {
+    if crate::kernel::MemorySnapshotIdentity::of(current_memory) != site.source_snapshot {
         return Ok(false);
     }
     source_backed_requirement_is_supported(
@@ -1253,7 +1253,7 @@ mod tests {
     #[test]
     fn static_load_capability_requires_registered_origin_epoch() {
         let memory = crate::kernel::intern_c_memory(
-            crate::kernel::CMemory::new().with_block("static:test:values#static0", 16),
+            crate::kernel::Memory::new().with_block("static:test:values#static0", 16),
         );
         let pointer = crate::kernel::Pointer {
             block: crate::kernel::PointerBlock::Concrete("static:test:values#static0".into()),
@@ -1278,7 +1278,7 @@ mod tests {
             },
             true,
         );
-        let source_snapshot = crate::kernel::CMemorySnapshotIdentity::of(memory.memory());
+        let source_snapshot = crate::kernel::MemorySnapshotIdentity::of(memory.memory());
         assert!(
             source_backed_requirement_is_supported(
                 &proposition,
@@ -1346,7 +1346,7 @@ mod tests {
         // eligible for a retry at the wrong frontier. (A derivation would hand
         // back the arena's canonical storage, so build the roots directly.)
         let other = memory.memory().with_fresh_storage_roots();
-        let other_snapshot = crate::kernel::CMemorySnapshotIdentity::of(&other);
+        let other_snapshot = crate::kernel::MemorySnapshotIdentity::of(&other);
         assert_ne!(source_snapshot, other_snapshot);
         assert!(
             !source_backed_requirement_is_supported(
@@ -1362,13 +1362,13 @@ mod tests {
 
     #[test]
     fn quantified_external_range_capability_is_frontier_exact() {
-        let memory = crate::kernel::CMemory::new();
+        let memory = crate::kernel::Memory::new();
         let pointer = crate::kernel::Pointer {
             block: crate::kernel::PointerBlock::ExternalArgument,
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         };
         let range = Proposition::CMemoryLoadable {
-            memory: crate::kernel::CMemory::new(),
+            memory: crate::kernel::Memory::new(),
             base: pointer,
             bytes: MachineTerm::constant(1),
             wide: false,

@@ -39,7 +39,7 @@ fn local_definedness_identity_ignores_unrelated_store_history() {
             block: "local:defined-array".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mut memory = CMemory::new().with_uninitialized_block(array.block.clone(), 4);
+        let mut memory = Memory::new().with_uninitialized_block(array.block.clone(), 4);
         for index in 0..size {
             memory = memory.with_block(format!("local:defined-unrelated-{index}"), 4);
         }

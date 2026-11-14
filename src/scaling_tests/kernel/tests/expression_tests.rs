@@ -50,7 +50,7 @@ fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
     };
     let target = external(31_070);
     let loadable = |base| Proposition::CMemoryLoadable {
-        memory: CMemory::new(),
+        memory: Memory::new(),
         base,
         bytes: MachineTerm::constant(4),
         wide: false,
@@ -181,12 +181,12 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
         let assumptions = PureFactContext::new();
         let mut resources = ResourceContext::new_with_equalities(&assumptions);
         for id in 1..=size {
-            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
-                CMemoryRange::new_with_element_width(pointer(id), 0u32.into(), 4u32.into(), 1),
+            resources = resources.unchecked_with_fact(ResourceFact::view_memory(
+                MemoryRange::new_with_element_width(pointer(id), 0u32.into(), 4u32.into(), 1),
             ));
         }
-        resources = resources.unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1),
+        resources = resources.unchecked_with_fact(ResourceFact::view_memory(
+            MemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1),
         ));
         let state = ExecutionState::new()
             .with_local("pointer", ProgramValue::pointer(target.clone()))
@@ -198,7 +198,7 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
         assert!(
             paths
                 .iter()
-                .all(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+                .all(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
         );
         samples.push(work);
     }
@@ -214,7 +214,7 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(96_311));
         let stored = subobject_pointer(0, 0, 4);
-        let memory = CMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
+        let memory = Memory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));
         let read = PointerValue::from_read(
             stored.pointer().clone(),
             ProgramType::Int32Pointer,
@@ -268,7 +268,7 @@ fn narrow_value_range_construction_ignores_unrelated_order_facts() {
         assert_eq!(paths.len(), 1);
         assert_eq!(
             paths[0].outcome,
-            CExpressionOutcome::Value(
+            ExpressionOutcome::Value(
                 state
                     .locals()
                     .get_native("byte")
@@ -319,13 +319,13 @@ fn rust_bool_values_do_not_split_paths() {
                 &state,
                 &statement,
                 &PureFactContext::new(),
-                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap()
         });
         assert_eq!(paths.len(), 1, "{size} assignments");
-        let CStatementOutcome::Normal(state) = &paths[0].outcome else {
+        let StatementOutcome::Normal(state) = &paths[0].outcome else {
             panic!("{size}: {:?}", paths[0].outcome);
         };
         let local_native_output_324 = state.locals.get_native("c_0");

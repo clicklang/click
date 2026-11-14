@@ -1707,7 +1707,7 @@ impl Parser {
                 lowered: ProgramExpression::Cast {
                     expression: Box::new(expression),
                     target_type,
-                    integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                    integer_mode: crate::kernel::IntegerCastMode::CConversion,
                     pointee_struct: None,
                     pointee_volatile: false,
                     pointee_constant: false,

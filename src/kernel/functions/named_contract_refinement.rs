@@ -6,7 +6,7 @@ use super::*;
 /// replace, with every slot filled from the two declarations the check read.
 ///
 /// The skeleton is the expand affordance of the automatic route. It is built
-/// from the same `CFunctionContract` and `ProgramFunction` interfaces the check
+/// from the same `FunctionContract` and `ProgramFunction` interfaces the check
 /// uses — the target's proof parameters, the implementation's binders, and
 /// the implementation's C parameter list — so the printed obligation cannot
 /// drift from the one that was refused. A target with no proof parameters
@@ -19,7 +19,7 @@ use super::*;
 /// caller supplies the tag rather than the kernel storing one; a position
 /// without a supplied spelling keeps this interface's own.
 pub(in crate::kernel) fn named_contract_refinement_theorem_skeleton(
-    contract: &CFunctionContract,
+    contract: &FunctionContract,
     function: &ProgramFunction,
     declared_parameter_spellings: &[Option<String>],
 ) -> String {
@@ -78,7 +78,7 @@ pub(in crate::kernel) fn named_contract_refinement_theorem_skeleton(
     let outputs = function
         .resource_ensures()
         .iter()
-        .filter(|spec| spec.role() == CResourceTransferRole::Produce)
+        .filter(|spec| spec.role() == ResourceTransferRole::Produce)
         .filter_map(|spec| spec.instance_binder())
         .collect::<Vec<_>>();
     let input_map = inputs
@@ -113,7 +113,7 @@ pub(in crate::kernel) fn named_contract_refinement_theorem_skeleton(
 
 /// The binder spellings a declaration introduces, in declaration order, once
 /// per identity.
-pub(super) fn declared_instance_binder_names(specs: &[&[CResourceSpec]]) -> Vec<String> {
+pub(super) fn declared_instance_binder_names(specs: &[&[ResourceSpec]]) -> Vec<String> {
     let mut seen = BTreeSet::new();
     let mut names = Vec::new();
     for spec in specs.iter().flat_map(|specs| specs.iter()) {
@@ -237,7 +237,7 @@ pub(crate) fn c_type_spelling(c_type: ProgramType) -> &'static str {
 /// Stateful refinement is deliberately limited to memory propositions backed
 /// by a nonempty resource transition and unguarded named mutable footprint.
 pub(in crate::kernel) fn function_refines_named_contract(
-    contract: &CFunctionContract,
+    contract: &FunctionContract,
     function: &ProgramFunction,
     object_type_requirements: &ObjectTypeRequirements,
     budget: &mut ExecutionBudget,
@@ -262,8 +262,8 @@ pub(in crate::kernel) fn function_refines_named_contract(
 /// theorem, with the source's value parameters bound to the fact's values.
 /// The values are the caller's terms, so the caller's facts about them hold.
 pub(super) fn contract_refines_contract(
-    contract: &CFunctionContract,
-    source: &CFunctionContract,
+    contract: &FunctionContract,
+    source: &FunctionContract,
     caller_facts: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<bool> {
@@ -295,10 +295,10 @@ pub(super) fn contract_refines_contract(
 }
 
 pub(in crate::kernel) fn prepare_function_contract_refinement_context(
-    contract: &CFunctionContract,
+    contract: &FunctionContract,
     function: &ProgramFunction,
     budget: &mut ExecutionBudget,
-) -> Option<CFunctionContractRefinementContext> {
+) -> Option<FunctionContractRefinementContext> {
     if !contract.has_compatible_signature_and_resource_vocabulary(function) {
         return None;
     }
@@ -312,10 +312,10 @@ pub(in crate::kernel) fn prepare_function_contract_refinement_context(
 /// introduced by [`function_refines_named_contract_in_case`], and only when
 /// the binding between the two declarations is forced.
 pub(super) fn prepare_automatic_contract_refinement_context(
-    contract: &CFunctionContract,
+    contract: &FunctionContract,
     function: &ProgramFunction,
     budget: &mut ExecutionBudget,
-) -> Option<CFunctionContractRefinementContext> {
+) -> Option<FunctionContractRefinementContext> {
     if !contract.has_compatible_signature_and_composite_vocabulary(function) {
         return None;
     }
@@ -323,10 +323,10 @@ pub(super) fn prepare_automatic_contract_refinement_context(
 }
 
 pub(super) fn contract_refinement_context_for_checked_interfaces(
-    contract: &CFunctionContract,
+    contract: &FunctionContract,
     function: &ProgramFunction,
     budget: &mut ExecutionBudget,
-) -> Option<CFunctionContractRefinementContext> {
+) -> Option<FunctionContractRefinementContext> {
     contract_refinement_context_for_interface(
         contract,
         function.name(),
@@ -336,11 +336,11 @@ pub(super) fn contract_refinement_context_for_checked_interfaces(
 }
 
 pub(in crate::kernel) fn contract_refinement_context_for_interface(
-    contract: &CFunctionContract,
+    contract: &FunctionContract,
     function_name: &str,
-    function_interface: &CFunctionContractInterface,
+    function_interface: &FunctionContractInterface,
     budget: &mut ExecutionBudget,
-) -> Option<CFunctionContractRefinementContext> {
+) -> Option<FunctionContractRefinementContext> {
     let mut argument_values = Vec::with_capacity(function_interface.parameters().len());
     for (index, parameter) in function_interface.parameters().iter().enumerate() {
         let variable = budget.allocate_kernel_variable().ok()?;
@@ -371,7 +371,7 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
             contract.instantiated(&values)?
         };
     let pointer_type = contract.function_pointer_type();
-    Some(CFunctionContractRefinementContext {
+    Some(FunctionContractRefinementContext {
         object_type_requirements: function_interface.object_type_requirements().clone(),
         contract,
         function_interface: function_interface.clone(),
@@ -392,7 +392,7 @@ pub(in crate::kernel) fn contract_refinement_context_for_interface(
 }
 
 pub(in crate::kernel) fn function_contract_refinement_entry_state(
-    context: &CFunctionContractRefinementContext,
+    context: &FunctionContractRefinementContext,
 ) -> ExecutionState {
     let mut state = with_contract_interface_argument_views(
         &ExecutionState::new().with_population_creation_tracking(),
@@ -422,7 +422,7 @@ pub(in crate::kernel) fn function_contract_refinement_entry_state(
 /// The implementation side's entry frame: the shared arguments, and the
 /// values its fact fixed for its own value parameters.
 pub(super) fn function_contract_refinement_implementation_state(
-    context: &CFunctionContractRefinementContext,
+    context: &FunctionContractRefinementContext,
 ) -> ExecutionState {
     let mut state = with_contract_interface_argument_views(
         &ExecutionState::new().with_population_creation_tracking(),
@@ -449,8 +449,8 @@ pub(super) fn function_contract_refinement_implementation_state(
 }
 
 pub(in crate::kernel) fn prepare_contract_refinement_obligations(
-    context: &CFunctionContractRefinementContext,
-) -> Option<CFunctionContractRefinementObligations> {
+    context: &FunctionContractRefinementContext,
+) -> Option<FunctionContractRefinementObligations> {
     let target = context.contract.interface();
     let source = &context.function_interface;
     // The theorem's obligation states the normal outcome only; a source that
@@ -535,7 +535,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
             ))
     }
     fn lower(
-        interface: &CFunctionContractInterface,
+        interface: &FunctionContractInterface,
         specs: &[SpecProposition],
         state: &ExecutionState,
         entry: &ExecutionState,
@@ -615,7 +615,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
             )),
         )),
     );
-    Some(CFunctionContractRefinementObligations {
+    Some(FunctionContractRefinementObligations {
         entry,
         post,
         proposition,
@@ -658,7 +658,7 @@ pub(super) struct DeclaredResourceInstance {
 /// once per identity. `owns` states the same binder in `requires` and
 /// `ensures`; the pair is one binder, not two.
 pub(super) fn evaluate_declared_resource_instances(
-    specs: &[&[CResourceSpec]],
+    specs: &[&[ResourceSpec]],
     state: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -683,7 +683,7 @@ pub(super) fn evaluate_declared_resource_instances(
         };
         let instance = match evaluate_function_resource_spec(state, &resource, assumptions, budget)?
         {
-            Ok(CResourceFact::Own(CResource::Composite { name, arguments }, quantity))
+            Ok(ResourceFact::Own(Resource::Composite { name, arguments }, quantity))
                 if quantity.as_const() == Some(1) =>
             {
                 DeclaredResourceInstance {
@@ -729,8 +729,8 @@ pub(super) fn index_declared_instances_by_family(
 /// applies to returned ownership: the identity survives, the field values do
 /// not, and only the implementation's guarantees relate the two.
 pub(super) fn forced_refinement_instance_bindings(
-    contract: &CFunctionContractInterface,
-    function: &CFunctionContractInterface,
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
     contract_entry: &ExecutionState,
     function_entry: &ExecutionState,
     assumptions: &PureFactContext,
@@ -823,14 +823,14 @@ pub(super) fn forced_refinement_instance_bindings(
 #[allow(clippy::type_complexity)]
 pub(super) fn refinement_bindings_at_post(
     bindings: &[RefinementInstanceBinding],
-    contract: &CFunctionContractInterface,
-    function: &CFunctionContractInterface,
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
     (contract_entry, contract_post): (&ExecutionState, &ExecutionState),
     (function_entry, function_post): (&ExecutionState, &ExecutionState),
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Option<Vec<RefinementInstanceBinding>>> {
-    let post_arguments = |interface: &CFunctionContractInterface,
+    let post_arguments = |interface: &FunctionContractInterface,
                           identity: Variable,
                           entry: &ExecutionState,
                           post: &ExecutionState,
@@ -840,7 +840,7 @@ pub(super) fn refinement_bindings_at_post(
             .resource_ensures()
             .iter()
             .find(|spec| spec.instance_identity() == Some(identity))
-            .and_then(CResourceSpec::instance_resource_spec)
+            .and_then(ResourceSpec::instance_resource_spec)
         else {
             return Ok(Some(None));
         };
@@ -852,7 +852,7 @@ pub(super) fn refinement_bindings_at_post(
                 assumptions,
                 budget,
             )? {
-                Ok(CResourceFact::Own(CResource::Composite { arguments, .. }, quantity))
+                Ok(ResourceFact::Own(Resource::Composite { arguments, .. }, quantity))
                     if quantity.as_const() == Some(1) =>
                 {
                     Some(Some(arguments))
@@ -1051,7 +1051,7 @@ pub(super) fn state_with_refinement_instances(
             RefinementPhase::Post => &binding.post,
         };
         names.insert(declared, instance.identity());
-        facts.push(CResourceFact::own(CResource::Instance(instance.clone())));
+        facts.push(ResourceFact::own(Resource::Instance(instance.clone())));
     }
     state.resource_bindings = Some(std::sync::Arc::new(names));
     state.resources = state
@@ -1063,7 +1063,7 @@ pub(super) fn state_with_refinement_instances(
 }
 
 pub(super) fn function_refines_named_contract_in_case(
-    context: &CFunctionContractRefinementContext,
+    context: &FunctionContractRefinementContext,
     case_assumptions: &[Proposition],
     unfolded_predicates: &BTreeSet<String>,
     explicit_case: bool,
@@ -1355,8 +1355,8 @@ pub(super) fn function_refines_named_contract_in_case(
 /// unfolding tables need no proof action. Every entry present on only one side
 /// must otherwise have its predicate name explicitly opened by the proof.
 pub(super) fn predicate_interfaces_are_explicitly_compatible(
-    contract: &CFunctionContractInterface,
-    function: &CFunctionContractInterface,
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
     unfolded_predicates: &BTreeSet<String>,
 ) -> bool {
     let contract_unfoldings = contract
@@ -1367,7 +1367,7 @@ pub(super) fn predicate_interfaces_are_explicitly_compatible(
         .predicate_unfoldings()
         .iter()
         .collect::<BTreeSet<_>>();
-    let permitted = |unfolding: &CPredicateUnfolding| match unfolding.predicate() {
+    let permitted = |unfolding: &PredicateUnfolding| match unfolding.predicate() {
         SpecProposition::Predicate { name, .. } => unfolded_predicates.contains(name),
         _ => false,
     };

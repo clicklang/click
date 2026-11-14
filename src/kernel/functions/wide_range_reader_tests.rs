@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn wide_call_ranges_are_undecided() {
     let base = Pointer::symbolic(Variable(984_000));
-    let wide = CMemoryRange::new_wide(
+    let wide = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(3),
         MachineTerm::uint64_constant(1 << 33),
@@ -25,7 +25,7 @@ fn wide_call_ranges_are_undecided() {
 fn wide_resource_body_loadability_preserves_native_extent() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(984_010));
-    let segment = CMemorySegment::new(
+    let segment = MemorySegment::new(
         ProgramExpression::Value(ProgramValue::pointer(base.clone())),
         c_uint64_literal(0),
         c_uint64_literal(1 << 33),
@@ -36,12 +36,12 @@ fn wide_resource_body_loadability_preserves_native_extent() {
         ResourceFieldType::C(ProgramType::UInt64),
     )])
     .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "wide",
         vec![],
         None,
         false,
-        vec![CResourceSpec::owned_memory(segment)],
+        vec![ResourceSpec::owned_memory(segment)],
         vec![],
     )
     .with_instance_schema(Some(schema.clone()));
@@ -56,7 +56,7 @@ fn wide_resource_body_loadability_preserves_native_extent() {
         .into(),
     )
     .unwrap();
-    let held = CResourceFact::own(CResource::Instance(instance.clone()));
+    let held = ResourceFact::own(Resource::Instance(instance.clone()));
     let state = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(held.clone()));
     let facts = PureFactContext::new();
@@ -75,7 +75,7 @@ fn wide_resource_body_loadability_preserves_native_extent() {
         fact.memory_range()
             .is_some_and(|range| range.wide_bounds().is_some())
     }));
-    let composite = CResourceFact::own(CResource::Composite {
+    let composite = ResourceFact::own(Resource::Composite {
         name: "wide".into(),
         arguments: vec![].into(),
     });

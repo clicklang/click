@@ -3,13 +3,13 @@ use super::*;
 fn nonnegative_i() -> SpecProposition {
     SpecProposition::Comparison {
         left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
-        operator: CComparisonOperator::LessEqual,
+        operator: ComparisonOperator::LessEqual,
         right: SpecExpression::ProgramExpression(c_variable("i")),
     }
 }
 
-fn check(proposition: SpecProposition) -> CLoopInvariantCheck {
-    CLoopInvariantCheck::new(proposition, None, None)
+fn check(proposition: SpecProposition) -> LoopInvariantCheck {
+    LoopInvariantCheck::new(proposition, None, None)
 }
 
 /// A loop head that cannot assume its invariants names the first declaration

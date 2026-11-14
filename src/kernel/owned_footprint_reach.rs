@@ -16,9 +16,9 @@
 
 use std::collections::{BTreeMap, VecDeque};
 
-use super::CCompositeResourceDefinition;
+use super::CompositeResourceDefinition;
 
-pub(super) fn propagate_owned_footprint_reach(definitions: &mut [CCompositeResourceDefinition]) {
+pub(super) fn propagate_owned_footprint_reach(definitions: &mut [CompositeResourceDefinition]) {
     let by_name: BTreeMap<&str, usize> = definitions
         .iter()
         .enumerate()

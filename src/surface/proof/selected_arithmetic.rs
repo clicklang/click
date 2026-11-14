@@ -389,7 +389,7 @@ fn explicit_native_rewrite_equality(
             lowered: ProgramExpression::Cast {
                 expression: Box::new(ProgramExpression::Value(int32(0))),
                 target_type: format.c_type(),
-                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                integer_mode: crate::kernel::IntegerCastMode::CConversion,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,

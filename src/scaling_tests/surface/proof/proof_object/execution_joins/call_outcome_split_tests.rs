@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::{
-    CFunctionContractClaim, ProgramStatement, Proposition, bool_value, c_call, c_function, c_if,
+    FunctionContractClaim, ProgramStatement, Proposition, bool_value, c_call, c_function, c_if,
     c_int32_literal, c_parameter, c_return, c_seq, c_skip, c_try_catch_int32, c_variable,
     prove_c_function_contract_execution_paths_with_checked_artifacts,
     prove_checked_c_function_execution_with_environment,
@@ -30,7 +30,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         vec![],
         vec![],
         vec![],
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     );
     let helper_arguments = vec![ProgramExpression::Value(bool_value(MachineTerm::Variable(
@@ -41,24 +41,24 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         helper.clone(),
         helper_arguments.clone(),
         PureFactContext::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
+        FunctionContractExecutionMode::VerifyLoops,
     );
     let certified = prove_c_function_contract_execution_paths_with_checked_artifacts(
         ExecutionState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments,
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
+        FunctionContractExecutionMode::VerifyLoops,
         &[artifacts],
     );
     let claims = crate::kernel::c_verified_function_contract_claims(&helper, &certified)
         .expect("helper body safety should certify");
     let helper_rule = c_verified_function_rule(helper.clone(), &claims)
         .expect("the checked helper should have a modular rule");
-    let function_environment = CExecutionEnvironment::new()
+    let function_environment = ExecutionEnvironment::new()
         .with_function(helper)
         .with_verified_function_rule(helper_rule);
     let function = c_function(

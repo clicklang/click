@@ -83,7 +83,7 @@ fn recorded_qualified_cells(
     cells: i32,
 ) -> (ExecutionState, SurfacePropositionMap, Vec<MachineTerm>) {
     let state = ExecutionState::new()
-        .with_memory(CMemory::new().with_block(block, 4 * u32::try_from(cells).unwrap()));
+        .with_memory(Memory::new().with_block(block, 4 * u32::try_from(cells).unwrap()));
     let base = ProgramValue::typed_pointer(
         Pointer {
             block: PointerBlock::Concrete(block.into()),
@@ -360,7 +360,7 @@ fn foreign_static_cell_requirements_round_trip_through_their_qualified_spelling(
 #[test]
 fn qualified_multidimensional_cell_recovery_preserves_its_source_rank() {
     let block = "static:increment_twice:values#static0";
-    let state = ExecutionState::new().with_memory(CMemory::new().with_block(block, 12));
+    let state = ExecutionState::new().with_memory(Memory::new().with_block(block, 12));
     let base = ProgramValue::typed_pointer(
         Pointer {
             block: PointerBlock::Concrete(block.into()),
@@ -638,7 +638,7 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
                 )),
             )),
             Box::new(Proposition::CMemoryLoadable {
-                memory: CMemory::new(),
+                memory: Memory::new(),
                 base: Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Add(
@@ -667,7 +667,7 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
 }
 
 fn external_symbolic_element_context(
-    memory: CMemory,
+    memory: Memory,
 ) -> (
     Vec<syntax::C0Parameter>,
     Vec<ProgramExpression>,
@@ -694,11 +694,11 @@ fn external_symbolic_element_context(
     (parameters, arguments, state)
 }
 
-fn external_symbolic_element_requirement(memory: CMemory, index: Variable) -> Proposition {
+fn external_symbolic_element_requirement(memory: Memory, index: Variable) -> Proposition {
     external_symbolic_element_requirement_term(memory, MachineTerm::Variable(index))
 }
 
-fn external_symbolic_element_requirement_term(memory: CMemory, index: MachineTerm) -> Proposition {
+fn external_symbolic_element_requirement_term(memory: Memory, index: MachineTerm) -> Proposition {
     Proposition::CMemoryLoadable {
         memory,
         base: Pointer {
@@ -727,7 +727,7 @@ fn external_symbolic_element_requirement_term(memory: CMemory, index: MachineTer
 }
 
 fn external_symbolic_element_constant_byte_requirement(
-    memory: CMemory,
+    memory: Memory,
     index: Variable,
 ) -> Proposition {
     let mut requirement = external_symbolic_element_requirement(memory, index);
@@ -830,7 +830,7 @@ fn replace_full_external_cstr_range_with_constant_byte_count(requirement: &mut P
 
 #[test]
 fn full_guarded_requirement_with_variable_argument_round_trips() {
-    let memory = CMemory::new().with_block("strlen:production-bytes", 16);
+    let memory = Memory::new().with_block("strlen:production-bytes", 16);
     let (parameters, concrete_arguments, state) = external_symbolic_element_context(memory.clone());
     let pointer = match &concrete_arguments[0] {
         ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.clone(),
@@ -876,7 +876,7 @@ fn full_guarded_requirement_with_variable_argument_round_trips() {
 
 #[test]
 fn full_guarded_constant_byte_requirement_with_variable_argument_round_trips() {
-    let memory = CMemory::new().with_block("strlen:production-constant-bytes", 16);
+    let memory = Memory::new().with_block("strlen:production-constant-bytes", 16);
     let (parameters, concrete_arguments, state) = external_symbolic_element_context(memory.clone());
     let pointer = match &concrete_arguments[0] {
         ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.clone(),
@@ -923,7 +923,7 @@ fn full_guarded_constant_byte_requirement_with_variable_argument_round_trips() {
 
 #[test]
 fn strlen_symbolic_element_range_round_trips_exactly() {
-    let memory = CMemory::new().with_block("strlen:bytes", 16);
+    let memory = Memory::new().with_block("strlen:bytes", 16);
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
     let requirement = external_symbolic_element_requirement(memory, Variable(100_001));
     let synthesized = {
@@ -954,7 +954,7 @@ fn strlen_symbolic_element_range_round_trips_exactly() {
 
 #[test]
 fn strlen_symbolic_element_constant_byte_range_round_trips_exactly() {
-    let memory = CMemory::new().with_block("strlen:constant-symbolic-bytes", 16);
+    let memory = Memory::new().with_block("strlen:constant-symbolic-bytes", 16);
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
     let requirement =
         external_symbolic_element_constant_byte_requirement(memory, Variable(100_001));
@@ -987,7 +987,7 @@ fn strlen_symbolic_element_constant_byte_range_round_trips_exactly() {
 
 #[test]
 fn strlen_symbolic_element_range_rejects_wrong_identity() {
-    let memory = CMemory::new().with_block("strlen:bytes", 16);
+    let memory = Memory::new().with_block("strlen:bytes", 16);
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
 
     let wrong_base = Proposition::CMemoryLoadable {
@@ -1076,7 +1076,7 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
 
 #[test]
 fn strlen_constant_element_range_falls_back_to_general_synthesis() {
-    let memory = CMemory::new().with_block("strlen:constant-bytes", 16);
+    let memory = Memory::new().with_block("strlen:constant-bytes", 16);
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
     let requirement = external_symbolic_element_requirement_term(memory, MachineTerm::constant(3));
     let synthesized = synthesize_surface_proposition(
@@ -1111,7 +1111,7 @@ fn strlen_constant_element_range_falls_back_to_general_synthesis() {
 
 #[test]
 fn strlen_zero_based_element_range_round_trips_exactly() {
-    let memory = CMemory::new().with_block("strlen:zero-based-bytes", 16);
+    let memory = Memory::new().with_block("strlen:zero-based-bytes", 16);
     let (parameters, mut arguments, state) = external_symbolic_element_context(memory.clone());
     let pointer = ProgramValue::typed_pointer(
         Pointer {
@@ -1153,7 +1153,7 @@ fn strlen_zero_based_element_range_round_trips_exactly() {
 
 #[test]
 fn non_external_named_range_still_uses_general_synthesis() {
-    let memory = CMemory::new().with_block("local:elements", 8);
+    let memory = Memory::new().with_block("local:elements", 8);
     let pointer = ProgramValue::typed_pointer(
         Pointer {
             block: PointerBlock::Concrete("local:elements".into()),
@@ -1210,7 +1210,7 @@ fn non_external_named_range_still_uses_general_synthesis() {
 
 #[test]
 fn strlen_quantified_element_range_requirement_round_trips() {
-    let memory = CMemory::new().with_block("strlen:quantified-bytes", 16);
+    let memory = Memory::new().with_block("strlen:quantified-bytes", 16);
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
     let binder = Variable(100_002);
     let requirement = Proposition::ForAll {
@@ -1314,7 +1314,7 @@ fn external_element_range_requirement(
     end: MachineTerm,
 ) -> Proposition {
     Proposition::CMemoryLoadable {
-        memory: CMemory::new(),
+        memory: Memory::new(),
         base: Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
@@ -1659,7 +1659,7 @@ fn function_array_synthesis_requires_the_exact_named_snapshot() {
     let entry = ExecutionState::new().with_local("p", pointer.clone());
     let post = entry
         .clone()
-        .with_memory(CMemory::new().with_block("other", 4));
+        .with_memory(Memory::new().with_block("other", 4));
     let values = [crate::kernel::PureFunctionArgument::ArrayRef {
         memory: entry.memory().clone(),
         pointer,
@@ -1799,7 +1799,7 @@ fn load_defining_equation_round_trips() {
         block: PointerBlock::Concrete("load-definition".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("load-definition", 4);
+    let memory = Memory::new().with_block("load-definition", 4);
     let state = ExecutionState::new().with_memory(memory).with_local(
         "p",
         ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
@@ -1838,13 +1838,13 @@ fn load_defining_equation_uses_entry_snapshot() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let entry = ExecutionState::new()
-        .with_memory(CMemory::new().with_block("load-definition-entry", 4))
+        .with_memory(Memory::new().with_block("load-definition-entry", 4))
         .with_local(
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
         );
     let post = entry.clone().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_block("load-definition-entry", 4)
             .store(pointer.clone(), int32(7)),
     );
@@ -1901,7 +1901,7 @@ fn load_defining_equation_uses_saved_snapshot() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let base = ExecutionState::new()
-        .with_memory(CMemory::new().with_block("load-definition-saved", 4))
+        .with_memory(Memory::new().with_block("load-definition-saved", 4))
         .with_local(
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
@@ -1917,12 +1917,12 @@ fn load_defining_equation_uses_saved_snapshot() {
         ProgramValue::Int32(MachineTerm::Variable(variable)),
     );
     let entry = snapshot.clone().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_block("load-definition-saved", 4)
             .store(pointer.clone(), int32(1)),
     );
     let post = snapshot.clone().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_block("load-definition-saved", 4)
             .store(pointer, int32(2)),
     );
@@ -1981,7 +1981,7 @@ fn example_load_defining_requirement(
         offset: PointerOffsetTerm::Constant(offset),
     };
     let state = ExecutionState::new()
-        .with_memory(CMemory::new().with_block(block, 16))
+        .with_memory(Memory::new().with_block(block, 16))
         .with_local(
             local,
             ProgramValue::typed_pointer(
@@ -2061,7 +2061,7 @@ fn owned_string_load_equation_round_trips_without_internal_names() {
 fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
     let (state, requirement, variable) =
         example_load_defining_requirement("owned-string:wrong-snapshot", "owner", 0);
-    let wrong_memory = CMemory::new().with_block("owned-string:other-epoch", 16);
+    let wrong_memory = Memory::new().with_block("owned-string:other-epoch", 16);
     let wrong_pointer = Pointer {
         block: PointerBlock::Concrete("owned-string:wrong-snapshot".into()),
         offset: PointerOffsetTerm::Constant(4),
@@ -2152,7 +2152,7 @@ fn actual_struct_field_load_equation(
         offset: PointerOffsetTerm::Constant(0),
     };
     let pointer = base.offset_by_bytes(field_offset as u32);
-    let memory = CMemory::new().with_block(block, 16);
+    let memory = Memory::new().with_block(block, 16);
     let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(pointer.clone()),
@@ -2519,7 +2519,7 @@ fn pointer_field_synthesis_through_cast_and_local_selects_current_value() {
             ProgramType::Int32Pointer,
         )
     };
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_block("job", 16)
         .store(base, value(decoy.clone()))
         .store(field_pointer.clone(), value(selected.clone()));
@@ -2814,7 +2814,7 @@ fn wide_memory_selectors_preserve_width_and_signedness() {
         };
         let argument = ProgramValue::typed_pointer(base.clone(), pointer_type);
         let state = ExecutionState::new()
-            .with_memory(CMemory::new().with_block("wide", 32))
+            .with_memory(Memory::new().with_block("wide", 32))
             .with_local("p", argument.clone());
         for offset in [0, 8, 24] {
             let address = ProgramExpression::Value(ProgramValue::typed_pointer(
@@ -2932,14 +2932,14 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
         block: PointerBlock::Concrete("between-points-other".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let with_memory = |memory: CMemory| {
+    let with_memory = |memory: Memory| {
         ExecutionState::new().with_memory(memory).with_local(
             "p",
             ProgramValue::typed_pointer(cell.clone(), ProgramType::Int32Pointer),
         )
     };
     let blocks = || {
-        CMemory::new()
+        Memory::new()
             .with_block("between-points", 4)
             .with_block("between-points-other", 4)
     };
@@ -3017,7 +3017,7 @@ fn a_pointer_a_local_no_longer_holds_is_spelled_where_it_was_introduced() {
         block: PointerBlock::Concrete("pointer-introduced-other".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("pointer-introduced-other", 4);
+    let memory = Memory::new().with_block("pointer-introduced-other", 4);
     let entry = ExecutionState::new()
         .with_memory(memory.clone())
         .with_local(
@@ -3087,7 +3087,7 @@ fn recorded_memories_near_a_read_are_offered_after_it_then_before_it() {
     // `between` is next recorded at `second`; a read in `last` was last
     // recorded at `second`, then `first`.
     let memory = |block: &str| {
-        let memory = CMemory::new().with_block(block, 4);
+        let memory = Memory::new().with_block(block, 4);
         crate::kernel::intern_c_memory_ref(&memory)
     };
     let point = |index| {
@@ -3125,7 +3125,7 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
     // A call replaces `o`'s model, so the earlier `o.size` value is held by
     // no current instance; the point after the first call held it.
     use crate::kernel::{
-        AlgebraicValue, CResource, CResourceFact, ResourceContext, ResourceFieldSchema,
+        AlgebraicValue, Resource, ResourceContext, ResourceFact, ResourceFieldSchema,
         ResourceFieldType, ResourceInstance,
     };
     let identity = Variable(930_001);
@@ -3149,7 +3149,7 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
         .unwrap();
         ExecutionState::new().with_resource_context(
             ResourceContext::new()
-                .unchecked_with_fact(CResourceFact::own(CResource::Instance(instance))),
+                .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance))),
         )
     };
     crate::kernel::model_fields::register_instance_spelling(identity, "o");
@@ -3226,7 +3226,7 @@ fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
             kind: ProgramPointKind::Exit,
         })
     };
-    let entry = CMemory::new()
+    let entry = Memory::new()
         .with_block("cell-introduced", 4)
         .store(cell.clone(), int32(1));
     let first = entry
@@ -3339,7 +3339,7 @@ fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
         vec![],
         crate::kernel::ProgramStatement::Skip,
     )
-    .with_global_arrays(vec![crate::kernel::CGlobalArray::new_with_kernel_name(
+    .with_global_arrays(vec![crate::kernel::GlobalArray::new_with_kernel_name(
         "g",
         "g",
         ProgramType::Int32,
@@ -3348,7 +3348,7 @@ fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
     )]);
     let entry =
         crate::kernel::c_function_entry_state(&ExecutionState::new(), &function, &[]).unwrap();
-    let pointer = CMemory::global_pointer("g").offset_by_bytes(12);
+    let pointer = Memory::global_pointer("g").offset_by_bytes(12);
     let term = crate::kernel::canonical_form_of_load(
         crate::kernel::intern_c_memory_ref(entry.memory()),
         pointer.clone(),
@@ -3436,7 +3436,7 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     offset: PointerOffsetTerm::Constant(0),
                 };
                 let state = ExecutionState::new()
-                    .with_memory(CMemory::new().with_block("indexed-array", 128))
+                    .with_memory(Memory::new().with_block("indexed-array", 128))
                     .with_local("a", ProgramValue::typed_pointer(base.clone(), pointer_type))
                     .with_local("i", value);
                 let index = if increment {
@@ -3907,7 +3907,7 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let state = ExecutionState::new()
-        .with_memory(CMemory::new().with_block("shared-read-round-trip", 4))
+        .with_memory(Memory::new().with_block("shared-read-round-trip", 4))
         .with_local(
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),

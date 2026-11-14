@@ -74,7 +74,7 @@ pub(crate) fn prove_uint32_from_le_bytes(pointer: PointerValue) -> Result<Theore
     }
     let conclusion = SpecProposition::Comparison {
         left: word,
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: packed,
     };
     let (conclusion, _, _) = super::api::c_lower_spec_proposition_at_state(

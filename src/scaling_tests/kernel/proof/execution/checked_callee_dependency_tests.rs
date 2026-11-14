@@ -23,7 +23,7 @@ fn checked_callee_summary_reuse_scales_with_input_not_product() {
                 CheckedExecutionEvent::Statement(Theorem::new(Proposition::CStatementVerifies {
                     state: Box::new(ExecutionState::new()),
                     statement: Box::new(summary.clone()),
-                    outcome: CStatementOutcome::Normal(Box::new(ExecutionState::new())),
+                    outcome: StatementOutcome::Normal(Box::new(ExecutionState::new())),
                 }))
             })
             .collect::<Vec<_>>();

@@ -14,7 +14,7 @@ thread_local! {
     /// whose arguments name cached cells. Recorded compositions remain folded;
     /// frame queries consult only the facts their indexes already expose.
     static FRAME_COMPOSITE_DEFINITIONS: std::cell::RefCell<
-        Vec<std::sync::Arc<Vec<CCompositeResourceDefinition>>>,
+        Vec<std::sync::Arc<Vec<CompositeResourceDefinition>>>,
     > = const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -41,7 +41,7 @@ thread_local! {
 /// `owns p[0..n]` on a struct pointer). A structural reading of the range's
 /// own endpoints; `None` for any other shape.
 pub(in crate::kernel) fn wide_struct_array_count(
-    range: &CMemoryRange,
+    range: &MemoryRange,
 ) -> Option<(&MachineTerm, i64)> {
     let (start, end) = range.wide_bounds()?;
     if start.uint64_as_const() != Some(0) {
@@ -110,7 +110,7 @@ impl Drop for FrameCompositeDefinitionsGuard {
 }
 
 pub fn arm_frame_composite_definitions(
-    definitions: Vec<CCompositeResourceDefinition>,
+    definitions: Vec<CompositeResourceDefinition>,
 ) -> FrameCompositeDefinitionsGuard {
     FRAME_COMPOSITE_DEFINITIONS
         .with(|armed| armed.borrow_mut().push(std::sync::Arc::new(definitions)));
@@ -118,7 +118,7 @@ pub fn arm_frame_composite_definitions(
 }
 
 pub(in crate::kernel) fn frame_composite_definitions()
--> Option<std::sync::Arc<Vec<CCompositeResourceDefinition>>> {
+-> Option<std::sync::Arc<Vec<CompositeResourceDefinition>>> {
     FRAME_COMPOSITE_DEFINITIONS.with(|definitions| definitions.borrow().last().cloned())
 }
 
@@ -223,7 +223,7 @@ impl PureFactContext {
     /// preserving memory edge. Value equalities alone are never authority.
     pub(crate) fn has_memory_read_defined_evidence(
         &self,
-        memory: &CMemory,
+        memory: &Memory,
         pointer: &Pointer,
         value_type: ProgramType,
     ) -> bool {
@@ -305,7 +305,7 @@ impl PureFactContext {
     /// equalities are deliberately absent from the initialization authority.
     pub(crate) fn proves_memory_read_defined(
         &self,
-        memory: &CMemory,
+        memory: &Memory,
         pointer: &Pointer,
         value_type: ProgramType,
     ) -> bool {
@@ -347,7 +347,7 @@ impl PureFactContext {
             self,
         );
         matches!(paths.as_slice(), [path]
-            if matches!(path.outcome, CExpressionOutcome::Value(_))
+            if matches!(path.outcome, ExpressionOutcome::Value(_))
                 // Read equations are certified results of this evaluation,
                 // not additional premises the caller must already know.
                 && path.facts.iter().all(|fact| fact.is_logical_read_equation()
@@ -370,7 +370,7 @@ impl PureFactContext {
 
     pub(crate) fn proves_memory_access(
         &self,
-        memory: &CMemory,
+        memory: &Memory,
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
@@ -383,7 +383,7 @@ impl PureFactContext {
     /// the evidence's address, just as for ordinary read ranges.
     pub(crate) fn proves_native_memory_loadable(
         &self,
-        memory: &CMemory,
+        memory: &Memory,
         base: &Pointer,
         bytes: &MachineTerm,
     ) -> bool {
@@ -503,7 +503,7 @@ impl PureFactContext {
     fn native_loadable_subrange_from(
         &self,
         fact: &Proposition,
-        memory: &CMemory,
+        memory: &Memory,
         base: &Pointer,
         bytes: &MachineTerm,
     ) -> bool {
@@ -587,7 +587,7 @@ impl PureFactContext {
 
     pub(crate) fn proves_memory_loadable(
         &self,
-        memory: &CMemory,
+        memory: &Memory,
         base: &Pointer,
         bytes: &MachineTerm,
     ) -> bool {
@@ -615,7 +615,7 @@ impl PureFactContext {
 
     fn proves_memory_loadable_inner(
         &self,
-        memory: &CMemory,
+        memory: &Memory,
         base: &Pointer,
         bytes: &MachineTerm,
     ) -> bool {
@@ -766,11 +766,11 @@ impl PureFactContext {
     /// store initializes the next cell of an already-initialized prefix.
     pub(crate) fn adjacent_loadable_region_facts(
         &self,
-        memory: &CMemory,
+        memory: &Memory,
         base: &Pointer,
         bytes: &MachineTerm,
     ) -> Option<Vec<Proposition>> {
-        let compatible = |fact_memory: &CMemory, fact_base: &Pointer| {
+        let compatible = |fact_memory: &Memory, fact_base: &Pointer| {
             fact_memory == memory
                 // Stores change cell contents, not whether the surrounding
                 // stack blocks or heap allocations are live. Pointer terms
@@ -964,7 +964,7 @@ impl PureFactContext {
 
     pub(crate) fn proves_memory_loadable_for_memory_resolution(
         &self,
-        memory: &CMemory,
+        memory: &Memory,
         base: &Pointer,
         bytes: &MachineTerm,
     ) -> bool {
@@ -1589,7 +1589,7 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn proves_access_from_memory_block(
         &self,
-        memory: &CMemory,
+        memory: &Memory,
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
@@ -1866,7 +1866,7 @@ impl PureFactContext {
         let mut members = Vec::new();
         // A range restated by multiple candidate compositions needs only
         // one containment decision.
-        let mut decided = BTreeMap::<&CMemoryRange, bool>::new();
+        let mut decided = BTreeMap::<&MemoryRange, bool>::new();
         for resources in compositions {
             crate::instrumentation::record_deterministic_work(1);
             for (base, access) in spellings {
@@ -2084,7 +2084,7 @@ impl PureFactContext {
         resources: &'a ResourceContext,
         pointer: &Pointer,
         bytes: u32,
-    ) -> Option<&'a CMemoryRange> {
+    ) -> Option<&'a MemoryRange> {
         additive_base_spellings(pointer).iter().find_map(|base| {
             resources
                 .owned_memory_members_with_base(base)
@@ -2100,7 +2100,7 @@ impl PureFactContext {
         resources: &'a ResourceContext,
         pointer: &Pointer,
         bytes: u32,
-    ) -> Option<&'a CMemoryRange> {
+    ) -> Option<&'a MemoryRange> {
         additive_base_spellings(pointer).iter().find_map(|base| {
             resources
                 .memory_members_with_base(base, true)
@@ -2122,7 +2122,7 @@ impl PureFactContext {
         placement: impl FnOnce() -> Option<PureFactContext>,
         pointer: &Pointer,
         bytes: u32,
-    ) -> Option<&'a CMemoryRange> {
+    ) -> Option<&'a MemoryRange> {
         self.kept_memory_range_holding_access(ranges, placement, pointer, bytes, false)
     }
 
@@ -2133,7 +2133,7 @@ impl PureFactContext {
         placement: impl FnOnce() -> Option<PureFactContext>,
         pointer: &Pointer,
         bytes: u32,
-    ) -> Option<&'a CMemoryRange> {
+    ) -> Option<&'a MemoryRange> {
         self.kept_memory_range_holding_access(ranges, placement, pointer, bytes, true)
     }
 
@@ -2144,7 +2144,7 @@ impl PureFactContext {
         pointer: &Pointer,
         bytes: u32,
         include_views: bool,
-    ) -> Option<&'a CMemoryRange> {
+    ) -> Option<&'a MemoryRange> {
         // Folded resources supply no flat memory to this lookup. Avoid
         // resolving a read's history just to query that empty index;
         // composite ownership is queried separately by the caller.
@@ -2210,7 +2210,7 @@ impl PureFactContext {
     /// [`Self::kept_range_holding_access`].
     pub(in crate::kernel) fn kept_range_holds_access(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         pointer: &Pointer,
         bytes: u32,
     ) -> bool {
@@ -2287,7 +2287,7 @@ impl PureFactContext {
         &self,
         pointer: &Pointer,
         bytes: u32,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> bool {
         if range.wide_bounds().is_some() {
             return self.pointer_access_in_wide_range(pointer, bytes, range);
@@ -2325,7 +2325,7 @@ impl PureFactContext {
         if self.pointers_proven_equal_ignoring_memory_separation(left, right) {
             return false;
         }
-        let contains = |pointer: &Pointer, range: &CMemoryRange| {
+        let contains = |pointer: &Pointer, range: &MemoryRange| {
             // A wide range has its one membership rule.
             if range.wide_bounds().is_some() {
                 return self.pointer_access_in_wide_range(pointer, range.element_width(), range);
@@ -2443,7 +2443,7 @@ impl PureFactContext {
     /// it accepts only an exact base-offset alias and the two exact range
     /// bounds, so a named separation candidate does not need recursive
     /// memory resolution merely because its member index is symbolic.
-    fn pointer_in_range_by_exact_facts(&self, pointer: &Pointer, range: &CMemoryRange) -> bool {
+    fn pointer_in_range_by_exact_facts(&self, pointer: &Pointer, range: &MemoryRange) -> bool {
         if pointer_in_memory_range_shallow_with_facts(pointer, range, self) {
             return true;
         }
@@ -2515,7 +2515,7 @@ impl PureFactContext {
         };
         // The same law asked of each held composition, with a phase's own
         // membership relation: two owned members, one holding each pointer.
-        let composition_candidate = |contains: &dyn Fn(&Pointer, &CMemoryRange) -> bool| {
+        let composition_candidate = |contains: &dyn Fn(&Pointer, &MemoryRange) -> bool| {
             let found = self.composition_separated_members(
                 left,
                 right,
@@ -2718,8 +2718,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
         &self,
-        left: &CMemoryRange,
-        right: &CMemoryRange,
+        left: &MemoryRange,
+        right: &MemoryRange,
     ) -> bool {
         if left.base().blocks_proven_distinct(right.base()) {
             return true;
@@ -2816,8 +2816,8 @@ impl PureFactContext {
     /// the scan of every separation.
     fn separation_facts_related_to(
         &self,
-        left: &CMemoryRange,
-        right: &CMemoryRange,
+        left: &MemoryRange,
+        right: &MemoryRange,
         certifies: impl Fn(&Proposition) -> bool,
     ) -> bool {
         let blocks = [left.base(), right.base()]
@@ -2848,11 +2848,7 @@ impl PureFactContext {
     /// so a composition holding the two finds them; the compositions listed
     /// under those blocks reach one (`CompositionMemberIndex`). Debug builds
     /// compare every answer with the scan.
-    fn composition_separates_owned_ranges(
-        &self,
-        left: &CMemoryRange,
-        right: &CMemoryRange,
-    ) -> bool {
+    fn composition_separates_owned_ranges(&self, left: &MemoryRange, right: &MemoryRange) -> bool {
         let separates = |resources: &ResourceContext| {
             resources.proves_owned_memory_ranges_separate_by(left, right, self, |child, parent| {
                 memory_range_contained_for_memory_resolution(child, parent, self)
@@ -3194,11 +3190,11 @@ impl PureFactContext {
         })
     }
 
-    pub(crate) fn proves_resource_contains(&self, parent: &CResource, child: &CResource) -> bool {
+    pub(crate) fn proves_resource_contains(&self, parent: &Resource, child: &Resource) -> bool {
         self.proves_resource_contains_inner(parent, child)
     }
 
-    fn proves_resource_contains_inner(&self, parent: &CResource, child: &CResource) -> bool {
+    fn proves_resource_contains_inner(&self, parent: &Resource, child: &Resource) -> bool {
         if self.resource_contains_builtin(parent, child) {
             return true;
         }
@@ -3285,8 +3281,8 @@ impl PureFactContext {
     /// unknown bounds fail closed because they cannot validate the separation.
     pub(in crate::kernel) fn memory_ranges_overlap_after_base_equality(
         &self,
-        left: &CMemoryRange,
-        right: &CMemoryRange,
+        left: &MemoryRange,
+        right: &MemoryRange,
     ) -> bool {
         // A separation between ranges already written against the exact same
         // base was not made stale by a later alias. Keep that range authority;
@@ -3300,7 +3296,7 @@ impl PureFactContext {
             if left.element_width() != right.element_width() {
                 return true;
             }
-            let bounds = |range: &CMemoryRange| {
+            let bounds = |range: &MemoryRange| {
                 crate::kernel::primitives::shared_wide_range_bounds(range, self)
             };
             let (Some((left_start, left_end)), Some((right_start, right_end))) =
@@ -3362,7 +3358,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn pointer_overlaps_range_after_path_equality(
         &self,
         pointer: &Pointer,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> bool {
         if pointer_in_memory_range_shallow_with_facts(pointer, range, self) {
             return true;
@@ -3406,11 +3402,11 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn resource_separation_conflicts_with_equalities(
         &self,
-        left: &CResource,
-        right: &CResource,
+        left: &Resource,
+        right: &Resource,
     ) -> bool {
         match (left, right) {
-            (CResource::Memory(left), CResource::Memory(right)) => {
+            (Resource::Memory(left), Resource::Memory(right)) => {
                 self.memory_ranges_overlap_after_base_equality(left, right)
             }
             _ => false,
@@ -3428,7 +3424,7 @@ impl PureFactContext {
         right: &Pointer,
         right_bytes: u32,
     ) -> bool {
-        let covers = |fact: &CMemoryRange, base: &Pointer, bytes: u32| {
+        let covers = |fact: &MemoryRange, base: &Pointer, bytes: u32| {
             let Some(delta) = fact
                 .base()
                 .exact_element_delta_from_base(base, 1, Some(self))
@@ -3462,7 +3458,7 @@ impl PureFactContext {
             })
     }
 
-    pub(crate) fn proves_resource_separate(&self, left: &CResource, right: &CResource) -> bool {
+    pub(crate) fn proves_resource_separate(&self, left: &Resource, right: &Resource) -> bool {
         self.proves_resource_separate_inner(left, right)
     }
 
@@ -3475,8 +3471,8 @@ impl PureFactContext {
     pub(crate) fn proves_held_resources_separate(
         &self,
         resources: &ResourceContext,
-        left: &CResource,
-        right: &CResource,
+        left: &Resource,
+        right: &Resource,
     ) -> bool {
         if left == right || self.resource_separation_conflicts_with_equalities(left, right) {
             return false;
@@ -3487,16 +3483,16 @@ impl PureFactContext {
         if resources
             .exact_resource_facts(left)
             .iter()
-            .any(CResourceFact::is_own)
+            .any(ResourceFact::is_own)
             && resources
                 .exact_resource_facts(right)
                 .iter()
-                .any(CResourceFact::is_own)
+                .any(ResourceFact::is_own)
         {
             return true;
         }
         // Finding an operand inside a larger owned member is a memory rule.
-        let (CResource::Memory(left_range), CResource::Memory(right_range)) = (left, right) else {
+        let (Resource::Memory(left_range), Resource::Memory(right_range)) = (left, right) else {
             return false;
         };
         let (Some((left_entry, left_owner)), Some((right_entry, right_owner))) = (
@@ -3507,16 +3503,16 @@ impl PureFactContext {
         };
         left_entry != right_entry
             && !self.resource_separation_conflicts_with_equalities(
-                &CResource::Memory(left_owner.clone()),
-                &CResource::Memory(right_owner.clone()),
+                &Resource::Memory(left_owner.clone()),
+                &Resource::Memory(right_owner.clone()),
             )
     }
 
     fn held_member_covering_range<'a>(
         &self,
         resources: &'a ResourceContext,
-        requested: &CMemoryRange,
-    ) -> Option<(u64, &'a CMemoryRange)> {
+        requested: &MemoryRange,
+    ) -> Option<(u64, &'a MemoryRange)> {
         // Keep symbolic and wide exact ownership on the fast path above.
         // A fixed-size field/range uses the same complete-access membership
         // judgment as memory framing, including mixed element widths.
@@ -3545,7 +3541,7 @@ impl PureFactContext {
         resources.owned_memory_member_covering_access(&pointer, bytes, self)
     }
 
-    fn proves_resource_separate_inner(&self, left: &CResource, right: &CResource) -> bool {
+    fn proves_resource_separate_inner(&self, left: &Resource, right: &Resource) -> bool {
         if self.resource_separation_conflicts_with_equalities(left, right) {
             return false;
         }
@@ -3554,13 +3550,13 @@ impl PureFactContext {
         // decision, whatever the index range's size; a range that might hold
         // an element is never proved separate.
         match (left, right) {
-            (CResource::Iterated(iterated), CResource::Memory(range))
-            | (CResource::Memory(range), CResource::Iterated(iterated)) => {
+            (Resource::Iterated(iterated), Resource::Memory(range))
+            | (Resource::Memory(range), Resource::Iterated(iterated)) => {
                 return crate::kernel::iterated::iterated_separate_from_range(
                     iterated, range, self,
                 );
             }
-            (CResource::Iterated(_), _) | (_, CResource::Iterated(_)) => return false,
+            (Resource::Iterated(_), _) | (_, Resource::Iterated(_)) => return false,
             _ => {}
         }
         // Separation is a claim about bytes, so a range may be spelled at the
@@ -3568,8 +3564,8 @@ impl PureFactContext {
         // storage block its class has, where held ranges are spelled. Address
         // equality decides bytes; it grants no access, which ownership
         // coverage checks separately.
-        if let (CResource::Memory(left_range), CResource::Memory(right_range)) = (left, right) {
-            let rebase = |range: &CMemoryRange| {
+        if let (Resource::Memory(left_range), Resource::Memory(right_range)) = (left, right) {
+            let rebase = |range: &MemoryRange| {
                 let coordinate = self.equality_graph.canonical_pointer(range.base())?;
                 if coordinate.representative == range.base().block
                     || !matches!(coordinate.representative, PointerBlock::ExternalArgument)
@@ -3593,20 +3589,20 @@ impl PureFactContext {
             let (rebased_left, rebased_right) = (rebase(left_range), rebase(right_range));
             if (rebased_left.is_some() || rebased_right.is_some())
                 && self.proves_resource_separate_inner(
-                    &CResource::Memory(rebased_left.unwrap_or_else(|| left_range.clone())),
-                    &CResource::Memory(rebased_right.unwrap_or_else(|| right_range.clone())),
+                    &Resource::Memory(rebased_left.unwrap_or_else(|| left_range.clone())),
+                    &Resource::Memory(rebased_right.unwrap_or_else(|| right_range.clone())),
                 )
             {
                 return true;
             }
         }
-        if let (CResource::Memory(left), CResource::Memory(right)) = (left, right)
+        if let (Resource::Memory(left), Resource::Memory(right)) = (left, right)
             && left.base().blocks_proven_distinct(right.base())
         {
             return true;
         }
 
-        if let (CResource::Memory(left), CResource::Memory(right)) = (left, right)
+        if let (Resource::Memory(left), Resource::Memory(right)) = (left, right)
             && left.base() == right.base()
             && let (Some(left_start), Some(left_end), Some(right_start), Some(right_end)) = (
                 left.signed_constant_start(),
@@ -3619,19 +3615,16 @@ impl PureFactContext {
             return true;
         }
 
-        if let (CResource::Memory(a), CResource::Memory(b)) = (left, right)
+        if let (Resource::Memory(a), Resource::Memory(b)) = (left, right)
             && self
                 .borrow_partition_separated_members(
                     a.base(),
                     b.base(),
                     |range| {
-                        self.proves_resource_contains_inner(&CResource::Memory(range.clone()), left)
+                        self.proves_resource_contains_inner(&Resource::Memory(range.clone()), left)
                     },
                     |range| {
-                        self.proves_resource_contains_inner(
-                            &CResource::Memory(range.clone()),
-                            right,
-                        )
+                        self.proves_resource_contains_inner(&Resource::Memory(range.clone()), right)
                     },
                 )
                 .is_some()
@@ -3639,7 +3632,7 @@ impl PureFactContext {
             return true;
         }
 
-        let separation_fact_entails = |fact_left: &CResource, fact_right: &CResource| {
+        let separation_fact_entails = |fact_left: &Resource, fact_right: &Resource| {
             (self.proves_resource_contains_inner(fact_left, left)
                 && self.proves_resource_contains_inner(fact_right, right)
                 || self.proves_resource_contains_inner(fact_left, right)
@@ -3655,12 +3648,12 @@ impl PureFactContext {
         // A non-memory side's containers are found upward from it
         // (`separations_with_side_containing`).
         let memory_memory_query =
-            matches!((left, right), (CResource::Memory(_), CResource::Memory(_)));
+            matches!((left, right), (Resource::Memory(_), Resource::Memory(_)));
         let scan_facts: &dyn Fn(&dyn Fn(&Proposition) -> bool) -> bool = &|entails| {
             if memory_memory_query {
                 return self.nonmemory_separation_facts.iter().any(entails);
             }
-            let keyed = if matches!(left, CResource::Memory(_)) {
+            let keyed = if matches!(left, Resource::Memory(_)) {
                 right
             } else {
                 left
@@ -3704,7 +3697,7 @@ impl PureFactContext {
         // The stated memory separations of this block pair, then the same law
         // asked of each held composition: two owned members of one valid
         // composition are separate.
-        if let (CResource::Memory(left_range), CResource::Memory(right_range)) = (left, right)
+        if let (Resource::Memory(left_range), Resource::Memory(right_range)) = (left, right)
             && (crate::instrumentation::measure_operation(
                 "kernel",
                 "resource separation",
@@ -3716,8 +3709,8 @@ impl PureFactContext {
                     )
                     .any(|(_, fact_left, fact_right)| {
                         separation_fact_entails(
-                            &CResource::Memory(fact_left.clone()),
-                            &CResource::Memory(fact_right.clone()),
+                            &Resource::Memory(fact_left.clone()),
+                            &Resource::Memory(fact_right.clone()),
                         )
                     })
                 },
@@ -3731,20 +3724,20 @@ impl PureFactContext {
                         &right_range.start_pointer(),
                         |member| {
                             self.proves_resource_contains_inner(
-                                &CResource::Memory(member.clone()),
+                                &Resource::Memory(member.clone()),
                                 left,
                             )
                         },
                         |member| {
                             self.proves_resource_contains_inner(
-                                &CResource::Memory(member.clone()),
+                                &Resource::Memory(member.clone()),
                                 right,
                             )
                         },
                         |member_left, member_right| {
                             !self.resource_separation_conflicts_with_equalities(
-                                &CResource::Memory(member_left.clone()),
-                                &CResource::Memory(member_right.clone()),
+                                &Resource::Memory(member_left.clone()),
+                                &Resource::Memory(member_right.clone()),
                             )
                         },
                     )
@@ -3764,8 +3757,7 @@ impl PureFactContext {
                 // the keys `CompositionMemberIndex` lists a composition
                 // under; other resources are matched by identity, which it
                 // does not index.
-                if let (CResource::Memory(left_range), CResource::Memory(right_range)) =
-                    (left, right)
+                if let (Resource::Memory(left_range), Resource::Memory(right_range)) = (left, right)
                 {
                     self.composition_members
                         .listed_under([], [&left_range.base().block, &right_range.base().block])
@@ -3782,9 +3774,9 @@ impl PureFactContext {
                     let mut members = Vec::new();
                     for side in [left, right] {
                         match side {
-                            CResource::Memory(range) => blocks.push(range.base().block.clone()),
+                            Resource::Memory(range) => blocks.push(range.base().block.clone()),
                             other => members.extend(OwnedMemberKey::probed(
-                                &crate::kernel::CResourceFact::View(other.clone()),
+                                &crate::kernel::ResourceFact::View(other.clone()),
                                 self,
                             )),
                         }
@@ -3816,13 +3808,13 @@ impl PureFactContext {
             return true;
         }
 
-        if let (CResource::Memory(left), CResource::Memory(right)) = (left, right) {
-            let composition_covers = |target: &CMemoryRange, other: &CMemoryRange| {
+        if let (Resource::Memory(left), Resource::Memory(right)) = (left, right) {
+            let composition_covers = |target: &MemoryRange, other: &MemoryRange| {
                 if target.wide_bounds().is_some() {
                     return false;
                 }
                 let covers = |resources: &ResourceContext| {
-                    let cover = |ranges: Vec<CMemoryRange>| {
+                    let cover = |ranges: Vec<MemoryRange>| {
                         let intervals = ranges
                             .into_iter()
                             .filter_map(|range| {
@@ -3853,7 +3845,7 @@ impl PureFactContext {
                             let full =
                                 cover(resources.owned_memory_ranges_separate_from_full_scan(
                                     &target.base().block,
-                                    &CResource::Memory(other.clone()),
+                                    &Resource::Memory(other.clone()),
                                     |owner, child| {
                                         self.proves_resource_contains_inner(owner, child)
                                     },
@@ -3879,7 +3871,7 @@ impl PureFactContext {
                 let mut blocks = Vec::new();
                 let mut pending_blocks = Vec::new();
                 let add_blocks =
-                    |range: &CMemoryRange,
+                    |range: &MemoryRange,
                      blocks: &mut Vec<PointerBlock>,
                      pending: &mut Vec<PointerBlock>| {
                         let mut add = |block: PointerBlock| {
@@ -3915,7 +3907,7 @@ impl PureFactContext {
                             continue;
                         };
                         match &**parent {
-                            CResource::Memory(range) => {
+                            Resource::Memory(range) => {
                                 add_blocks(range, &mut blocks, &mut pending_blocks);
                             }
                             container => {
@@ -3932,9 +3924,7 @@ impl PureFactContext {
                 let members = containers
                     .into_iter()
                     .filter_map(|container| {
-                        OwnedMemberKey::exact(&crate::kernel::CResourceFact::View(
-                            container.clone(),
-                        ))
+                        OwnedMemberKey::exact(&crate::kernel::ResourceFact::View(container.clone()))
                     })
                     .collect::<Vec<_>>();
                 let indexed = self
@@ -3976,11 +3966,11 @@ impl PureFactContext {
         false
     }
 
-    fn resource_contains_builtin(&self, parent: &CResource, child: &CResource) -> bool {
+    fn resource_contains_builtin(&self, parent: &Resource, child: &Resource) -> bool {
         if parent == child {
             return true;
         }
-        let (CResource::Memory(parent), CResource::Memory(child)) = (parent, child) else {
+        let (Resource::Memory(parent), Resource::Memory(child)) = (parent, child) else {
             return false;
         };
         if self.memory_ranges_proven_equal(parent, child) {
@@ -4058,7 +4048,7 @@ impl PureFactContext {
         self.range_covered_by_fact_range(child, parent.base(), parent.start(), parent.end())
     }
 
-    fn memory_ranges_proven_equal(&self, left: &CMemoryRange, right: &CMemoryRange) -> bool {
+    fn memory_ranges_proven_equal(&self, left: &MemoryRange, right: &MemoryRange) -> bool {
         if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
             return crate::kernel::primitives::wide_memory_range_covers(left, right, self)
                 && crate::kernel::primitives::wide_memory_range_covers(right, left, self);
@@ -4146,8 +4136,8 @@ impl PureFactContext {
 
     fn range_covered_by_resource_separate_ranges(
         &self,
-        target: &CMemoryRange,
-        other: &CMemoryRange,
+        target: &MemoryRange,
+        other: &MemoryRange,
     ) -> bool {
         if target.wide_bounds().is_some() {
             return false;
@@ -4188,8 +4178,8 @@ impl PureFactContext {
                 continue;
             }
 
-            if self.proves_resource_contains(right, &CResource::Memory(other.clone()))
-                && let CResource::Memory(left) = &**left
+            if self.proves_resource_contains(right, &Resource::Memory(other.clone()))
+                && let Resource::Memory(left) = &**left
                 && left.wide_bounds().is_none()
                 && let Some(interval) = self.fact_range_interval_on_target(
                     target,
@@ -4201,8 +4191,8 @@ impl PureFactContext {
                 intervals.push(interval);
             }
 
-            if self.proves_resource_contains(left, &CResource::Memory(other.clone()))
-                && let CResource::Memory(right) = &**right
+            if self.proves_resource_contains(left, &Resource::Memory(other.clone()))
+                && let Resource::Memory(right) = &**right
                 && right.wide_bounds().is_none()
                 && let Some(interval) = self.fact_range_interval_on_target(
                     target,
@@ -4219,7 +4209,7 @@ impl PureFactContext {
 
     fn fact_range_interval_on_target(
         &self,
-        target: &CMemoryRange,
+        target: &MemoryRange,
         base: &Pointer,
         start: &MachineTerm,
         end: &MachineTerm,
@@ -4425,7 +4415,7 @@ impl PureFactContext {
         &self,
         pointer: &Pointer,
         bytes: u32,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> bool {
         let Some((start, end)) = range.wide_bounds() else {
             return false;
@@ -4479,7 +4469,7 @@ impl PureFactContext {
         &self,
         pointer: &Pointer,
         byte_width: u32,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> bool {
         if range.wide_bounds().is_some() {
             return self.pointer_access_in_wide_range(pointer, byte_width, range);
@@ -4520,7 +4510,7 @@ impl PureFactContext {
         &self,
         pointer: &Pointer,
         byte_width: u32,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> bool {
         byte_width > 0 && self.place_in_wide_struct_array(pointer, byte_width, range)
     }
@@ -4535,7 +4525,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn position_in_wide_struct_array(
         &self,
         pointer: &Pointer,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> bool {
         self.place_in_wide_struct_array(pointer, 0, range)
     }
@@ -4546,7 +4536,7 @@ impl PureFactContext {
         &self,
         pointer: &Pointer,
         byte_width: u32,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> bool {
         let Some((count, stride)) = wide_struct_array_count(range) else {
             return false;
@@ -4618,7 +4608,7 @@ impl PureFactContext {
         &self,
         pointer: &Pointer,
         byte_width: u32,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> bool {
         let Some((start, end)) = range.wide_bounds() else {
             return false;
@@ -4711,7 +4701,7 @@ impl PureFactContext {
         &self,
         pointer: &Pointer,
         bytes: u32,
-        range: &CMemoryRange,
+        range: &MemoryRange,
     ) -> bool {
         match range.int32_bounds() {
             Some((start, end)) => self.pointer_access_in_range(
@@ -4813,13 +4803,13 @@ impl PureFactContext {
         };
         let pointer = &resolved;
         if byte_width > 0 && byte_width < element_width {
-            let available = CMemoryRange::new_with_element_width(
+            let available = MemoryRange::new_with_element_width(
                 base.clone(),
                 start.clone(),
                 end.clone(),
                 element_width,
             );
-            let required = CMemoryRange::new_with_element_width(
+            let required = MemoryRange::new_with_element_width(
                 pointer.clone(),
                 0u32.into(),
                 byte_width.into(),
@@ -5015,7 +5005,7 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn ranges_proven_disjoint_from_pointer(
         &self,
-        ranges: &[CMemoryRange],
+        ranges: &[MemoryRange],
         pointer: &Pointer,
     ) -> bool {
         // A range the pointer is decided to lie in is never separate from
@@ -5030,7 +5020,7 @@ impl PureFactContext {
     /// Whether the pointer is decided to lie inside one of `ranges` by the
     /// cheap overlap rules of [`Self::pointer_overlaps_range_after_path_equality`].
     /// Linear in the ranges, with no separation search.
-    fn pointer_overlaps_one_of_ranges(&self, ranges: &[CMemoryRange], pointer: &Pointer) -> bool {
+    fn pointer_overlaps_one_of_ranges(&self, ranges: &[MemoryRange], pointer: &Pointer) -> bool {
         ranges.iter().any(|range| {
             !range.base.blocks_proven_distinct(pointer)
                 && self.pointer_overlaps_range_after_path_equality(pointer, range)
@@ -5039,7 +5029,7 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn ranges_directly_disjoint_from_pointer(
         &self,
-        ranges: &[CMemoryRange],
+        ranges: &[MemoryRange],
         pointer: &Pointer,
     ) -> bool {
         self.ranges_directly_disjoint_from_access(
@@ -5055,7 +5045,7 @@ impl PureFactContext {
     /// from the record every typed C load writes.
     pub(in crate::kernel) fn ranges_directly_disjoint_from_access(
         &self,
-        ranges: &[CMemoryRange],
+        ranges: &[MemoryRange],
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
@@ -5259,7 +5249,7 @@ impl PureFactContext {
         pointer.exact_element_delta_from_base(base, element_width, Some(self))
     }
 
-    fn pointer_directly_in_memory_range(&self, pointer: &Pointer, range: &CMemoryRange) -> bool {
+    fn pointer_directly_in_memory_range(&self, pointer: &Pointer, range: &MemoryRange) -> bool {
         // A wide range has its one membership rule.
         if range.wide_bounds().is_some() {
             return self.pointer_access_in_wide_range(pointer, range.element_width(), range);
@@ -5309,7 +5299,7 @@ impl PureFactContext {
     /// segments this answers for are the ones whose addresses do not depend
     /// on field values, and a body that needs a live snapshot simply does
     /// not expand here.
-    fn range_proven_disjoint_from_pointer(&self, range: &CMemoryRange, pointer: &Pointer) -> bool {
+    fn range_proven_disjoint_from_pointer(&self, range: &MemoryRange, pointer: &Pointer) -> bool {
         if range.base.blocks_proven_distinct(pointer) {
             return true;
         }
@@ -5445,7 +5435,7 @@ impl PureFactContext {
                 return true;
             }
         }
-        let pointer_range = CMemoryRange::new(
+        let pointer_range = MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -5496,13 +5486,13 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn range_covered_by_fact_range(
         &self,
-        range: &CMemoryRange,
+        range: &MemoryRange,
         base: &Pointer,
         start: &MachineTerm,
         end: &MachineTerm,
     ) -> bool {
         if range.wide_bounds().is_some() {
-            let available = CMemoryRange::new_with_element_width(
+            let available = MemoryRange::new_with_element_width(
                 base.clone(),
                 start.clone(),
                 end.clone(),
@@ -5656,7 +5646,7 @@ pub(in crate::kernel) enum OwnedStoreFootprint<'a> {
     },
 }
 
-type OwnedStoreMembers<'a> = Vec<(&'a ResourceContext, u64, &'a CMemoryRange)>;
+type OwnedStoreMembers<'a> = Vec<(&'a ResourceContext, u64, &'a MemoryRange)>;
 
 pub(in crate::kernel) fn parameter_partition_variable(base: &Pointer) -> Option<&Variable> {
     if base.block != crate::kernel::PointerBlock::ExternalArgument {
@@ -5753,7 +5743,7 @@ fn structural_element_index(
 pub(in crate::kernel) fn owned_instances_naming_access_base<'a>(
     resources: &'a ResourceContext,
     pointer: &Pointer,
-    found: &mut BTreeMap<u64, &'a CResourceFact>,
+    found: &mut BTreeMap<u64, &'a ResourceFact>,
 ) {
     for base in additive_base_spellings(pointer) {
         for (entry, fact) in resources.owned_instances_with_pointer_argument(&base) {
@@ -5807,7 +5797,7 @@ mod seeded_interval_adjacency_tests {
             block: "wide-run-adjacency".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let source = crate::kernel::intern_c_memory(CMemory::new());
+        let source = crate::kernel::intern_c_memory(Memory::new());
         let run = CellRun::new(
             base.clone(),
             1,
@@ -5816,7 +5806,7 @@ mod seeded_interval_adjacency_tests {
             source,
             IndexIntervals::default(),
         );
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
         let wrong = Pointer {
             block: base.block.clone(),
@@ -5899,7 +5889,7 @@ mod shallow_composition_separation_tests {
     fn owner_of(pointers: &[Pointer]) -> Proposition {
         Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
             pointers.iter().map(|pointer| {
-                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     pointer.clone(),
                     0u32.into(),
                     1u32.into(),
@@ -5953,14 +5943,14 @@ mod shallow_composition_separation_tests {
         }
     }
 
-    fn cells(variable: u64) -> CMemoryRange {
-        CMemoryRange::new_with_element_width(symbolic(variable), 0u32.into(), 1u32.into(), 4)
+    fn cells(variable: u64) -> MemoryRange {
+        MemoryRange::new_with_element_width(symbolic(variable), 0u32.into(), 1u32.into(), 4)
     }
 
     fn separate(left: u64, right: u64) -> Proposition {
         Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(cells(left))),
-            right: Box::new(CResource::Memory(cells(right))),
+            left: Box::new(Resource::Memory(cells(left))),
+            right: Box::new(Resource::Memory(cells(right))),
         }
     }
 
@@ -5980,8 +5970,8 @@ mod shallow_composition_separation_tests {
             let (left, right) = (cells(9_200), cells(9_201));
             let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
                 facts.proves_resource_separate(
-                    &CResource::Memory(left.clone()),
-                    &CResource::Memory(right.clone()),
+                    &Resource::Memory(left.clone()),
+                    &Resource::Memory(right.clone()),
                 )
             });
             assert!(!separate);
@@ -6004,7 +5994,7 @@ mod shallow_composition_separation_tests {
         let holder = token("cover-holder");
         let contains = Proposition::CResourceContains {
             parent: Box::new(holder.clone()),
-            child: Box::new(CResource::Memory(cells(9_211))),
+            child: Box::new(Resource::Memory(cells(9_211))),
         };
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
@@ -6016,8 +6006,8 @@ mod shallow_composition_separation_tests {
                 },
             );
             let (left, right) = (
-                CResource::Memory(cells(9_210)),
-                CResource::Memory(cells(9_211)),
+                Resource::Memory(cells(9_210)),
+                Resource::Memory(cells(9_211)),
             );
             let (separate, work) = crate::instrumentation::measure_deterministic_work(|| {
                 facts.proves_resource_separate(&left, &right)
@@ -6025,8 +6015,8 @@ mod shallow_composition_separation_tests {
             assert!(!separate);
             let held = facts.assume_proposition(Proposition::CResourceComposition(
                 ResourceContext::new().unchecked_with_facts([
-                    CResourceFact::own_memory(cells(9_210)),
-                    CResourceFact::own(holder.clone()),
+                    ResourceFact::own_memory(cells(9_210)),
+                    ResourceFact::own(holder.clone()),
                 ]),
             ));
             assert!(held.proves_resource_separate(&left, &right));
@@ -6065,14 +6055,14 @@ mod shallow_composition_separation_tests {
         );
     }
 
-    fn token(name: &str) -> CResource {
-        CResource::Token {
+    fn token(name: &str) -> Resource {
+        Resource::Token {
             name: name.into(),
             arguments: Vec::new().into(),
         }
     }
 
-    fn separate_resources(left: CResource, right: CResource) -> Proposition {
+    fn separate_resources(left: Resource, right: Resource) -> Proposition {
         Proposition::CResourceSeparate {
             left: Box::new(left),
             right: Box::new(right),
@@ -6122,9 +6112,9 @@ mod shallow_composition_separation_tests {
     #[test]
     fn token_ownership_ignores_unrelated_compositions() {
         let owning =
-            |tokens: &[CResource]| {
+            |tokens: &[Resource]| {
                 Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts(
-                    tokens.iter().map(|token| CResourceFact::own(token.clone())),
+                    tokens.iter().map(|token| ResourceFact::own(token.clone())),
                 ))
             };
         let mut samples = Vec::new();
@@ -6155,7 +6145,7 @@ mod shallow_composition_separation_tests {
     /// those share the composite's name and arity.
     #[test]
     fn composite_ownership_ignores_compositions_of_other_roots() {
-        let boxed = |variable: u64| CResource::Composite {
+        let boxed = |variable: u64| Resource::Composite {
             name: "boxed".into(),
             arguments: vec![crate::kernel::AlgebraicValue::C(
                 crate::kernel::ProgramValue::Pointer(crate::kernel::PointerValue::new(
@@ -6165,12 +6155,12 @@ mod shallow_composition_separation_tests {
             )]
             .into(),
         };
-        let owning = |members: &[CResource]| {
+        let owning = |members: &[Resource]| {
             Proposition::CResourceComposition(
                 ResourceContext::new().unchecked_with_facts(
                     members
                         .iter()
-                        .map(|member| CResourceFact::own(member.clone())),
+                        .map(|member| ResourceFact::own(member.clone())),
                 ),
             )
         };
@@ -6243,7 +6233,7 @@ mod wide_separation_index_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = |id: u64| Pointer::symbolic(Variable(9_993_000 + id));
         let wide = |base| {
-            CMemoryRange::new_wide(
+            MemoryRange::new_wide(
                 base,
                 MachineTerm::uint64_constant(0),
                 MachineTerm::uint64_constant(8),
@@ -6253,8 +6243,8 @@ mod wide_separation_index_tests {
         let left = wide(pointer(0));
         let right = wide(pointer(1));
         let fact = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(left.clone())),
-            right: Box::new(CResource::Memory(right.clone())),
+            left: Box::new(Resource::Memory(left.clone())),
+            right: Box::new(Resource::Memory(right.clone())),
         };
         let parent = PureFactContext::new().assume_proposition(fact);
         let separate = |context: &PureFactContext| {
@@ -6431,7 +6421,7 @@ mod shared_range_index_tests {
         let pointer = base.offset_by_shared_elements(index.clone(), 4);
         let zero = MachineTerm::constant(0);
         let end = MachineTerm::constant(8);
-        let range = CMemoryRange::new(base.clone(), zero.clone(), end.clone());
+        let range = MemoryRange::new(base.clone(), zero.clone(), end.clone());
         let lower = index_comparison(
             CompareRelation::LessEqual,
             MachineOperandView::Legacy(&zero),
@@ -6472,7 +6462,7 @@ mod shared_range_index_tests {
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(1018323)), 4),
         };
         let pointer = base.offset_by_int32_elements(absolute.clone());
-        let range = CMemoryRange::new(base.clone(), start.clone(), end.clone());
+        let range = MemoryRange::new(base.clone(), start.clone(), end.clone());
         let lower = ConditionTerm::signed_less_equal(start.clone(), absolute.clone());
         let upper = ConditionTerm::signed_less_than(absolute, end.clone());
         let lower_only = PureFactContext::new().assume_condition(lower, true);

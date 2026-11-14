@@ -5,7 +5,7 @@ use crate::kernel::mutexes::helper_contracts::{HelperEffect, apply_call_effect};
 fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
     let assumptions = PureFactContext::new();
     let mutex = crate::kernel::Pointer::symbolic(crate::kernel::Variable(865));
-    let nominal = CResourceFact::own(CResource::MutexUse(crate::kernel::MutexUseIdentity {
+    let nominal = ResourceFact::own(Resource::MutexUse(crate::kernel::MutexUseIdentity {
         mutex: mutex.clone(),
         initialization: None,
         binding: None,

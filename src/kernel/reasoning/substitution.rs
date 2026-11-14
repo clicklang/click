@@ -28,7 +28,7 @@ trait VariableSubstitution {
     fn c_value(&self, value: &ProgramValue) -> ProgramValue;
     fn expression_value(&self, value: &ExecutionValue) -> ExecutionValue;
     fn c_expression(&self, expression: &ProgramExpression) -> ProgramExpression;
-    fn memory(&self, memory: &CMemory) -> CMemory;
+    fn memory(&self, memory: &Memory) -> Memory;
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm;
     fn spec_expression(&self, expression: &SpecExpression) -> SpecExpression;
     fn spec_integer(&self, expression: &SpecIntegerExpression) -> SpecIntegerExpression;
@@ -91,7 +91,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn c_expression(&self, expression: &ProgramExpression) -> ProgramExpression {
         substitute_bitvector_variable_in_c_expression(expression, self.from, self.to)
     }
-    fn memory(&self, memory: &CMemory) -> CMemory {
+    fn memory(&self, memory: &Memory) -> Memory {
         substitute_bitvector_variable_in_memory(memory, self.from, self.to)
     }
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm {
@@ -169,7 +169,7 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     fn c_expression(&self, expression: &ProgramExpression) -> ProgramExpression {
         substitute_pointer_variable_in_c_expression(expression, self.from, self.to)
     }
-    fn memory(&self, memory: &CMemory) -> CMemory {
+    fn memory(&self, memory: &Memory) -> Memory {
         substitute_pointer_variable_in_memory(memory, self.from, self.to)
     }
     fn algebraic_term(&self, term: &AlgebraicTerm) -> AlgebraicTerm {
@@ -241,26 +241,26 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression_outcome(
-    outcome: &CExpressionOutcome,
+    outcome: &ExpressionOutcome,
     from: Variable,
     to: &MachineTerm,
-) -> CExpressionOutcome {
+) -> ExpressionOutcome {
     walk_c_expression_outcome(outcome, &BitvectorSubstitution { from, to })
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement_outcome(
-    outcome: &CStatementOutcome,
+    outcome: &StatementOutcome,
     from: Variable,
     to: &MachineTerm,
-) -> CStatementOutcome {
+) -> StatementOutcome {
     walk_c_statement_outcome(outcome, &BitvectorSubstitution { from, to })
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function_outcome(
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     from: Variable,
     to: &MachineTerm,
-) -> CFunctionOutcome {
+) -> FunctionOutcome {
     walk_c_function_outcome(outcome, &BitvectorSubstitution { from, to })
 }
 
@@ -274,10 +274,10 @@ fn substitute_bitvector_variable_in_c_state(
 
 #[cfg(test)]
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
-    resource: &CResource,
+    resource: &Resource,
     from: Variable,
     to: &MachineTerm,
-) -> CResource {
+) -> Resource {
     walk_c_resource(resource, &BitvectorSubstitution { from, to })
 }
 
@@ -292,10 +292,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
 
 #[cfg(test)]
 pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
-    resource: &CResourceSpec,
+    resource: &ResourceSpec,
     from: Variable,
     to: &MachineTerm,
-) -> CResourceSpec {
+) -> ResourceSpec {
     walk_resource_spec(resource, &BitvectorSubstitution { from, to })
 }
 
@@ -315,7 +315,7 @@ pub(crate) fn substitute_pointer_value_in_proposition(
 ) -> Result<Proposition, String> {
     let c = std::collections::BTreeMap::from([(
         from,
-        crate::kernel::proof::term_rewrite::TypedCReplacement::Pointer(to.clone()),
+        crate::kernel::proof::term_rewrite::TypedProgramValueReplacement::Pointer(to.clone()),
     )]);
     let integers = Default::default();
     let algebraic = Default::default();
@@ -363,26 +363,26 @@ fn substitute_pointer_variable_in_c_statement(
 }
 
 fn substitute_pointer_variable_in_c_expression_outcome(
-    outcome: &CExpressionOutcome,
+    outcome: &ExpressionOutcome,
     from: Variable,
     to: &Pointer,
-) -> CExpressionOutcome {
+) -> ExpressionOutcome {
     walk_c_expression_outcome(outcome, &PointerSubstitution { from, to })
 }
 
 fn substitute_pointer_variable_in_c_statement_outcome(
-    outcome: &CStatementOutcome,
+    outcome: &StatementOutcome,
     from: Variable,
     to: &Pointer,
-) -> CStatementOutcome {
+) -> StatementOutcome {
     walk_c_statement_outcome(outcome, &PointerSubstitution { from, to })
 }
 
 fn substitute_pointer_variable_in_c_function_outcome(
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     from: Variable,
     to: &Pointer,
-) -> CFunctionOutcome {
+) -> FunctionOutcome {
     walk_c_function_outcome(outcome, &PointerSubstitution { from, to })
 }
 
@@ -396,10 +396,10 @@ fn substitute_pointer_variable_in_c_state(
 
 #[cfg(test)]
 fn substitute_pointer_variable_in_c_resource(
-    resource: &CResource,
+    resource: &Resource,
     from: Variable,
     to: &Pointer,
-) -> CResource {
+) -> Resource {
     walk_c_resource(resource, &PointerSubstitution { from, to })
 }
 
@@ -424,15 +424,15 @@ fn walk_algebraic_value<S: VariableSubstitution + ?Sized>(
 }
 
 fn walk_c_expression_outcome<S: VariableSubstitution + ?Sized>(
-    outcome: &CExpressionOutcome,
+    outcome: &ExpressionOutcome,
     s: &S,
-) -> CExpressionOutcome {
+) -> ExpressionOutcome {
     match outcome {
-        CExpressionOutcome::Value(value) => CExpressionOutcome::Value(s.c_value(value)),
-        CExpressionOutcome::UndefinedBehavior(kind) => {
-            CExpressionOutcome::UndefinedBehavior(kind.clone())
+        ExpressionOutcome::Value(value) => ExpressionOutcome::Value(s.c_value(value)),
+        ExpressionOutcome::UndefinedBehavior(kind) => {
+            ExpressionOutcome::UndefinedBehavior(kind.clone())
         }
-        CExpressionOutcome::RuntimeError(kind) => CExpressionOutcome::RuntimeError(kind.clone()),
+        ExpressionOutcome::RuntimeError(kind) => ExpressionOutcome::RuntimeError(kind.clone()),
     }
 }
 
@@ -487,7 +487,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
     interface.composite_resource_definitions = function
         .composite_resource_definitions()
         .iter()
-        .map(|definition| CCompositeResourceDefinition {
+        .map(|definition| CompositeResourceDefinition {
             resource_parameters: definition
                 .resource_parameters
                 .iter()
@@ -509,17 +509,17 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
                 .condition
                 .as_ref()
                 .map(|condition| s.spec_proposition(condition)),
-            matched: definition.matched.as_ref().map(|body| CResourceMatchBody {
+            matched: definition.matched.as_ref().map(|body| ResourceMatchBody {
                 field_index: body.field_index,
                 algebraic_type: body.algebraic_type.clone(),
                 arms: body
                     .arms
                     .iter()
-                    .map(|arm| CResourceMatchArm {
+                    .map(|arm| ResourceMatchArm {
                         children: arm
                             .children
                             .iter()
-                            .map(|child| CResourceChildSpec {
+                            .map(|child| ResourceChildSpec {
                                 name: child.name.clone(),
                                 resource: child.resource.clone(),
                                 binding: child.binding,
@@ -560,7 +560,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
             children: definition
                 .children
                 .iter()
-                .map(|child| CResourceChildSpec {
+                .map(|child| ResourceChildSpec {
                     arguments: child
                         .arguments
                         .iter()
@@ -579,7 +579,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
     interface.predicate_unfoldings = function
         .predicate_unfoldings()
         .iter()
-        .map(|unfolding| CPredicateUnfolding {
+        .map(|unfolding| PredicateUnfolding {
             predicate: s.spec_proposition(&unfolding.predicate),
             body: s.spec_proposition(&unfolding.body),
         })
@@ -597,7 +597,7 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
                 .map(|(identity, target)| {
                     (
                         *identity,
-                        CControlTarget {
+                        ControlTarget {
                             statement_index: target.statement_index,
                             remaining: std::sync::Arc::new(walk_c_statement(&target.remaining, s)),
                         },
@@ -616,31 +616,31 @@ fn walk_c_function<S: VariableSubstitution + ?Sized>(
 }
 
 fn walk_c_function_outcome<S: VariableSubstitution + ?Sized>(
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     s: &S,
-) -> CFunctionOutcome {
+) -> FunctionOutcome {
     match outcome {
-        CFunctionOutcome::Return { value, state } => CFunctionOutcome::Return {
+        FunctionOutcome::Return { value, state } => FunctionOutcome::Return {
             value: s.expression_value(value).into(),
             state: Box::new(walk_c_state(state, s)),
         },
-        CFunctionOutcome::Throw { value, state } => CFunctionOutcome::Throw {
+        FunctionOutcome::Throw { value, state } => FunctionOutcome::Throw {
             value: s.expression_value(value).into(),
             state: Box::new(walk_c_state(state, s)),
         },
-        CFunctionOutcome::VerificationDiverges => CFunctionOutcome::VerificationDiverges,
-        CFunctionOutcome::UndefinedBehavior(kind) => {
-            CFunctionOutcome::UndefinedBehavior(kind.clone())
+        FunctionOutcome::VerificationDiverges => FunctionOutcome::VerificationDiverges,
+        FunctionOutcome::UndefinedBehavior(kind) => {
+            FunctionOutcome::UndefinedBehavior(kind.clone())
         }
-        CFunctionOutcome::RuntimeError(kind) => CFunctionOutcome::RuntimeError(kind.clone()),
+        FunctionOutcome::RuntimeError(kind) => FunctionOutcome::RuntimeError(kind.clone()),
     }
 }
 
 fn walk_c_function_specification<S: VariableSubstitution + ?Sized>(
-    specification: &CFunctionSpecification,
+    specification: &FunctionSpecification,
     s: &S,
-) -> CFunctionSpecification {
-    CFunctionSpecification {
+) -> FunctionSpecification {
+    FunctionSpecification {
         state: walk_c_state(specification.state(), s),
         arguments: specification
             .arguments()
@@ -657,10 +657,10 @@ fn walk_c_function_specification<S: VariableSubstitution + ?Sized>(
 }
 
 fn walk_c_memory_segment<S: VariableSubstitution + ?Sized>(
-    segment: &CMemorySegment,
+    segment: &MemorySegment,
     s: &S,
-) -> CMemorySegment {
-    CMemorySegment {
+) -> MemorySegment {
+    MemorySegment {
         base: s.c_expression(&segment.base),
         start: s.c_expression(&segment.start),
         end: s.c_expression(&segment.end),
@@ -675,40 +675,40 @@ fn walk_c_memory_segment<S: VariableSubstitution + ?Sized>(
 }
 
 fn walk_c_ranking_component<S: VariableSubstitution + ?Sized>(
-    measure: &CRankingComponent,
+    measure: &RankingComponent,
     s: &S,
-) -> CRankingComponent {
+) -> RankingComponent {
     match measure {
-        CRankingComponent::ProgramExpression(expression) => {
-            CRankingComponent::ProgramExpression(s.c_expression(expression))
+        RankingComponent::ProgramExpression(expression) => {
+            RankingComponent::ProgramExpression(s.c_expression(expression))
         }
-        CRankingComponent::Pure { source, expression } => CRankingComponent::Pure {
+        RankingComponent::Pure { source, expression } => RankingComponent::Pure {
             source: source.clone(),
             expression: s.spec_expression(expression),
         },
-        CRankingComponent::PureInteger { source, expression } => CRankingComponent::PureInteger {
+        RankingComponent::PureInteger { source, expression } => RankingComponent::PureInteger {
             source: source.clone(),
             expression: s.spec_integer(expression),
         },
     }
 }
 
-fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &CResource, s: &S) -> CResource {
+fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &Resource, s: &S) -> Resource {
     match resource {
-        CResource::Star(pair) => {
-            CResource::star(walk_c_resource(&pair.0, s), walk_c_resource(&pair.1, s))
+        Resource::Star(pair) => {
+            Resource::star(walk_c_resource(&pair.0, s), walk_c_resource(&pair.1, s))
         }
-        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp => resource.clone(),
-        CResource::PopulationAuthority(description) => CResource::PopulationAuthority(
+        Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp => resource.clone(),
+        Resource::PopulationAuthority(description) => Resource::PopulationAuthority(
             description.map_values(|value| walk_algebraic_value(value, s)),
         ),
-        CResource::Publication(right) => CResource::Publication(PublicationRight {
+        Resource::Publication(right) => Resource::Publication(PublicationRight {
             side: right.side,
             payload: right.payload.map_values(|v| walk_algebraic_value(v, s)),
             flag: s.pointer(&right.flag),
             observed: right.observed.as_ref().map(|value| s.c_value(value)),
         }),
-        CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
+        Resource::MutexUse(identity) => Resource::MutexUse(MutexUseIdentity {
             protected: identity.protected.as_ref().map(|p| {
                 if identity.binding.is_none() {
                     p.map_values(|v| walk_algebraic_value(v, s))
@@ -724,7 +724,7 @@ fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &CResource, s: &S
                 identity.mutex.clone()
             },
         }),
-        CResource::MutexGuard(identity) => CResource::MutexGuard(MutexIdentity {
+        Resource::MutexGuard(identity) => Resource::MutexGuard(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {
                 s.pointer(&identity.mutex)
@@ -732,7 +732,7 @@ fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &CResource, s: &S
                 identity.mutex.clone()
             },
         }),
-        CResource::MutexLive(identity) => CResource::MutexLive(MutexIdentity {
+        Resource::MutexLive(identity) => Resource::MutexLive(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {
                 s.pointer(&identity.mutex)
@@ -740,7 +740,7 @@ fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &CResource, s: &S
                 identity.mutex.clone()
             },
         }),
-        CResource::Instance(instance) => {
+        Resource::Instance(instance) => {
             let mut result = instance.clone();
             result.arguments = instance
                 .arguments
@@ -756,20 +756,20 @@ fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &CResource, s: &S
                 instance.resource_arguments(),
                 |value| walk_algebraic_value(value, s),
             );
-            CResource::Instance(result)
+            Resource::Instance(result)
         }
-        CResource::Memory(range) => CResource::Memory(walk_c_memory_range(range, s)),
-        CResource::Iterated(iterated) => CResource::iterated(
+        Resource::Memory(range) => Resource::Memory(walk_c_memory_range(range, s)),
+        Resource::Iterated(iterated) => Resource::iterated(
             iterated.map_terms(|term| s.bitvector(term), |pointer| s.pointer(pointer)),
         ),
-        CResource::Composite { name, arguments } => CResource::Composite {
+        Resource::Composite { name, arguments } => Resource::Composite {
             name: name.clone(),
             arguments: arguments
                 .iter()
                 .map(|argument| walk_algebraic_value(argument, s))
                 .collect(),
         },
-        CResource::Token { name, arguments } => CResource::Token {
+        Resource::Token { name, arguments } => Resource::Token {
             name: name.clone(),
             arguments: arguments
                 .iter()
@@ -786,7 +786,7 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &ExecutionState, s: &S)
         .iter()
         .map(|(name, binding)| {
             let binding = match binding {
-                CLocalBinding::Object {
+                LocalBinding::Object {
                     storage_declared,
                     value,
                     c_type,
@@ -795,7 +795,7 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &ExecutionState, s: &S)
                     pointee_volatile,
                     constant,
                     pointee_constant,
-                } => CLocalBinding::Object {
+                } => LocalBinding::Object {
                     storage_declared: *storage_declared,
                     value: s.expression_value(value).into(),
                     c_type: *c_type,
@@ -805,14 +805,14 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &ExecutionState, s: &S)
                     constant: *constant,
                     pointee_constant: *pointee_constant,
                 },
-                CLocalBinding::UninitializedObject {
+                LocalBinding::UninitializedObject {
                     c_type,
                     slot,
                     volatile,
                     pointee_volatile,
                     constant,
                     pointee_constant,
-                } => CLocalBinding::UninitializedObject {
+                } => LocalBinding::UninitializedObject {
                     c_type: *c_type,
                     slot: s.local_slot(slot),
                     volatile: *volatile,
@@ -820,14 +820,14 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &ExecutionState, s: &S)
                     constant: *constant,
                     pointee_constant: *pointee_constant,
                 },
-                CLocalBinding::GlobalObject {
+                LocalBinding::GlobalObject {
                     c_type,
                     slot,
                     volatile,
                     pointee_volatile,
                     constant,
                     pointee_constant,
-                } => CLocalBinding::GlobalObject {
+                } => LocalBinding::GlobalObject {
                     c_type: *c_type,
                     slot: s.local_slot(slot),
                     volatile: *volatile,
@@ -835,22 +835,22 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &ExecutionState, s: &S)
                     constant: *constant,
                     pointee_constant: *pointee_constant,
                 },
-                CLocalBinding::ArrayObject {
+                LocalBinding::ArrayObject {
                     element_type,
                     length,
                     slot,
                     constant,
-                } => CLocalBinding::ArrayObject {
+                } => LocalBinding::ArrayObject {
                     element_type: *element_type,
                     length: *length,
                     slot: s.local_slot(slot),
                     constant: *constant,
                 },
-                CLocalBinding::AggregateObject {
+                LocalBinding::AggregateObject {
                     layout,
                     slot,
                     constant,
-                } => CLocalBinding::AggregateObject {
+                } => LocalBinding::AggregateObject {
                     layout: layout.clone(),
                     slot: s.local_slot(slot),
                     constant: *constant,
@@ -874,9 +874,9 @@ fn walk_c_state<S: VariableSubstitution + ?Sized>(state: &ExecutionState, s: &S)
                     .collect(),
             )
         }),
-        locals: CLocalEnvironment::from_parts(bindings, slots),
+        locals: LocalEnvironment::from_parts(bindings, slots),
         aggregate_destination: state.aggregate_destination.as_ref().map(|destination| {
-            std::sync::Arc::new(CAggregateDestination {
+            std::sync::Arc::new(AggregateDestination {
                 pointer: s.pointer(&destination.pointer),
                 layout: destination.layout.clone(),
             })
@@ -1133,7 +1133,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
                 .collect(),
             invariant_checks: invariant_checks
                 .iter()
-                .map(|check| CLoopInvariantCheck {
+                .map(|check| LoopInvariantCheck {
                     proposition: s.spec_proposition(check.proposition()),
                     entry_context: check.entry_context.clone(),
                     preservation_context: check.preservation_context.clone(),
@@ -1141,7 +1141,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
                 .collect(),
             effect_checks: effect_checks
                 .iter()
-                .map(|check| CLoopEffectCheck {
+                .map(|check| LoopEffectCheck {
                     effect: walk_loop_effect(check.effect(), s),
                     span: check.span,
                     context: check.context.clone(),
@@ -1163,7 +1163,7 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
             expression: s.c_expression(expression),
             cases: cases
                 .iter()
-                .map(|case| CSwitchCase {
+                .map(|case| SwitchCase {
                     value: case.value,
                     body: Box::new(walk_c_statement(&case.body, s)),
                 })
@@ -1173,46 +1173,44 @@ fn walk_c_statement<S: VariableSubstitution + ?Sized>(
 }
 
 fn walk_c_statement_outcome<S: VariableSubstitution + ?Sized>(
-    outcome: &CStatementOutcome,
+    outcome: &StatementOutcome,
     s: &S,
-) -> CStatementOutcome {
+) -> StatementOutcome {
     match outcome {
-        CStatementOutcome::Normal(state) => {
-            CStatementOutcome::Normal(Box::new(walk_c_state(state, s)))
+        StatementOutcome::Normal(state) => {
+            StatementOutcome::Normal(Box::new(walk_c_state(state, s)))
         }
-        CStatementOutcome::Break(state) => {
-            CStatementOutcome::Break(Box::new(walk_c_state(state, s)))
+        StatementOutcome::Break(state) => StatementOutcome::Break(Box::new(walk_c_state(state, s))),
+        StatementOutcome::Continue(state) => {
+            StatementOutcome::Continue(Box::new(walk_c_state(state, s)))
         }
-        CStatementOutcome::Continue(state) => {
-            CStatementOutcome::Continue(Box::new(walk_c_state(state, s)))
-        }
-        CStatementOutcome::Jump { target, state } => CStatementOutcome::Jump {
+        StatementOutcome::Jump { target, state } => StatementOutcome::Jump {
             target: *target,
             state: Box::new(walk_c_state(state, s)),
         },
-        CStatementOutcome::Return { value, state } => CStatementOutcome::Return {
+        StatementOutcome::Return { value, state } => StatementOutcome::Return {
             value: s.expression_value(value).into(),
             state: Box::new(walk_c_state(state, s)),
         },
-        CStatementOutcome::Throw { value, state } => CStatementOutcome::Throw {
+        StatementOutcome::Throw { value, state } => StatementOutcome::Throw {
             value: s.expression_value(value).into(),
             state: Box::new(walk_c_state(state, s)),
         },
-        CStatementOutcome::VerificationDiverges => CStatementOutcome::VerificationDiverges,
-        CStatementOutcome::UndefinedBehavior(kind) => {
-            CStatementOutcome::UndefinedBehavior(kind.clone())
+        StatementOutcome::VerificationDiverges => StatementOutcome::VerificationDiverges,
+        StatementOutcome::UndefinedBehavior(kind) => {
+            StatementOutcome::UndefinedBehavior(kind.clone())
         }
-        CStatementOutcome::RuntimeError(kind) => CStatementOutcome::RuntimeError(kind.clone()),
+        StatementOutcome::RuntimeError(kind) => StatementOutcome::RuntimeError(kind.clone()),
     }
 }
 
-fn walk_loop_effect<S: VariableSubstitution + ?Sized>(effect: &CLoopEffect, s: &S) -> CLoopEffect {
+fn walk_loop_effect<S: VariableSubstitution + ?Sized>(effect: &LoopEffect, s: &S) -> LoopEffect {
     match effect {
-        CLoopEffect::Immutable => CLoopEffect::Immutable,
-        CLoopEffect::Mutable(segments) => CLoopEffect::Mutable(
+        LoopEffect::Immutable => LoopEffect::Immutable,
+        LoopEffect::Mutable(segments) => LoopEffect::Mutable(
             segments
                 .iter()
-                .map(|segment| CMemorySegment {
+                .map(|segment| MemorySegment {
                     base: s.c_expression(&segment.base),
                     start: s.c_expression(&segment.start),
                     end: s.c_expression(&segment.end),
@@ -1507,16 +1505,13 @@ fn walk_pure_function_argument<S: VariableSubstitution + ?Sized>(
     }
 }
 
-fn walk_resource<S: VariableSubstitution + ?Sized>(
-    resource: &CResourceFact,
-    s: &S,
-) -> CResourceFact {
+fn walk_resource<S: VariableSubstitution + ?Sized>(resource: &ResourceFact, s: &S) -> ResourceFact {
     match resource {
-        CResourceFact::Own(resource, quantity) => CResourceFact::Own(
+        ResourceFact::Own(resource, quantity) => ResourceFact::Own(
             walk_c_resource(resource, s),
             Box::new(s.bitvector(quantity)),
         ),
-        CResourceFact::View(resource) => CResourceFact::View(walk_c_resource(resource, s)),
+        ResourceFact::View(resource) => ResourceFact::View(walk_c_resource(resource, s)),
     }
 }
 
@@ -1537,17 +1532,15 @@ fn walk_resource_context<S: VariableSubstitution + ?Sized>(
 }
 
 fn walk_resource_spec<S: VariableSubstitution + ?Sized>(
-    resource: &CResourceSpec,
+    resource: &ResourceSpec,
     s: &S,
-) -> CResourceSpec {
-    let substituted = CResourceSpec::new(
+) -> ResourceSpec {
+    let substituted = ResourceSpec::new(
         walk_resource_term(resource.term(), s),
         resource.access(),
         match resource.quantity() {
-            CResourceQuantity::One => CResourceQuantity::One,
-            CResourceQuantity::Count(quantity) => {
-                CResourceQuantity::Count(s.c_expression(quantity))
-            }
+            ResourceQuantity::One => ResourceQuantity::One,
+            ResourceQuantity::Count(quantity) => ResourceQuantity::Count(s.c_expression(quantity)),
         },
         resource.role(),
         resource.snapshot(),
@@ -1563,62 +1556,62 @@ fn walk_resource_spec<S: VariableSubstitution + ?Sized>(
 }
 
 fn walk_resource_term<S: VariableSubstitution + ?Sized>(
-    resource: &CResourceTerm,
+    resource: &ResourceTerm,
     s: &S,
-) -> CResourceTerm {
+) -> ResourceTerm {
     match resource {
-        CResourceTerm::Instance {
+        ResourceTerm::Instance {
             identity,
             binder,
             schema,
             resource,
-        } => CResourceTerm::Instance {
+        } => ResourceTerm::Instance {
             identity: *identity,
             binder: binder.clone(),
             schema: schema.clone(),
             resource: Box::new(walk_resource_term(resource, s)),
         },
-        CResourceTerm::PopulationAuthority {
+        ResourceTerm::PopulationAuthority {
             protected,
             population_arity,
             snapshot,
-        } => CResourceTerm::PopulationAuthority {
+        } => ResourceTerm::PopulationAuthority {
             population_arity: *population_arity,
-            protected: Box::new(CResourceTypeSpec {
+            protected: Box::new(ResourceTypeSpec {
                 resource: Box::new(walk_resource_spec(&protected.resource, s)),
                 schema: protected.schema.clone(),
             }),
             snapshot: *snapshot,
         },
-        CResourceTerm::MutexGuard { mutex, snapshot } => CResourceTerm::MutexGuard {
+        ResourceTerm::MutexGuard { mutex, snapshot } => ResourceTerm::MutexGuard {
             mutex: Box::new(s.c_expression(mutex)),
             snapshot: *snapshot,
         },
-        CResourceTerm::MutexLive { mutex, snapshot } => CResourceTerm::MutexLive {
+        ResourceTerm::MutexLive { mutex, snapshot } => ResourceTerm::MutexLive {
             mutex: Box::new(s.c_expression(mutex)),
             snapshot: *snapshot,
         },
-        CResourceTerm::Publication {
+        ResourceTerm::Publication {
             side,
             payload,
             flag,
             snapshot,
-        } => CResourceTerm::Publication {
+        } => ResourceTerm::Publication {
             side: *side,
-            payload: Box::new(CResourceTypeSpec {
+            payload: Box::new(ResourceTypeSpec {
                 resource: Box::new(walk_resource_spec(&payload.resource, s)),
                 schema: payload.schema.clone(),
             }),
             flag: Box::new(s.c_expression(flag)),
             snapshot: *snapshot,
         },
-        CResourceTerm::MutexUse {
+        ResourceTerm::MutexUse {
             mutex,
             snapshot,
             protected,
-        } => CResourceTerm::MutexUse {
+        } => ResourceTerm::MutexUse {
             protected: protected.as_ref().map(|p| {
-                Box::new(CResourceTypeSpec {
+                Box::new(ResourceTypeSpec {
                     resource: Box::new(walk_resource_spec(&p.resource, s)),
                     schema: p.schema.clone(),
                 })
@@ -1626,10 +1619,10 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
             mutex: Box::new(s.c_expression(mutex)),
             snapshot: *snapshot,
         },
-        CResourceTerm::Iterated(spec) => CResourceTerm::Iterated(Box::new(
+        ResourceTerm::Iterated(spec) => ResourceTerm::Iterated(Box::new(
             spec.map_expressions(|expression| s.c_expression(expression)),
         )),
-        CResourceTerm::Memory(segment) => CResourceTerm::Memory(CMemorySegment {
+        ResourceTerm::Memory(segment) => ResourceTerm::Memory(MemorySegment {
             base: s.c_expression(&segment.base),
             start: s.c_expression(&segment.start),
             end: s.c_expression(&segment.end),
@@ -1641,12 +1634,12 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
                 .as_ref()
                 .map(|guard| s.spec_proposition(guard)),
         }),
-        CResourceTerm::Composite {
+        ResourceTerm::Composite {
             name,
             arguments,
             argument_snapshots,
             parameter_types,
-        } => CResourceTerm::Composite {
+        } => ResourceTerm::Composite {
             name: name.clone(),
             arguments: arguments
                 .iter()
@@ -1655,12 +1648,12 @@ fn walk_resource_term<S: VariableSubstitution + ?Sized>(
             argument_snapshots: argument_snapshots.clone(),
             parameter_types: parameter_types.clone(),
         },
-        CResourceTerm::Token {
+        ResourceTerm::Token {
             name,
             arguments,
             argument_snapshots,
             parameter_types,
-        } => CResourceTerm::Token {
+        } => ResourceTerm::Token {
             name: name.clone(),
             arguments: arguments
                 .iter()
@@ -1692,9 +1685,9 @@ fn walk_sequence<S: VariableSubstitution + ?Sized>(sequence: &SequenceTerm, s: &
 }
 
 fn walk_c_memory_range<S: VariableSubstitution + ?Sized>(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     s: &S,
-) -> CMemoryRange {
+) -> MemoryRange {
     let mut result = range
         .with_bounds(
             s.pointer(&range.base),
@@ -1728,17 +1721,17 @@ mod resource_frame_substitution_tests {
         let variable = Variable(71_900);
         let address = Pointer::symbolic(variable);
         let replacement = Pointer::symbolic(Variable(71_901));
-        let abstract_guard = CResource::MutexGuard(MutexIdentity {
+        let abstract_guard = Resource::MutexGuard(MutexIdentity {
             epoch: None,
             mutex: address.clone(),
         });
-        let concrete_guard = CResource::MutexGuard(MutexIdentity {
+        let concrete_guard = Resource::MutexGuard(MutexIdentity {
             epoch: Some(123),
             mutex: address,
         });
         assert_eq!(
             substitute_pointer_variable_in_c_resource(&abstract_guard, variable, &replacement),
-            CResource::MutexGuard(MutexIdentity {
+            Resource::MutexGuard(MutexIdentity {
                 epoch: None,
                 mutex: replacement.clone()
             })
@@ -1754,17 +1747,17 @@ mod resource_frame_substitution_tests {
         let variable = Variable(71_900);
         let address = Pointer::symbolic(variable);
         let replacement = Pointer::symbolic(Variable(71_901));
-        let abstract_guard = CResource::MutexLive(MutexIdentity {
+        let abstract_guard = Resource::MutexLive(MutexIdentity {
             epoch: None,
             mutex: address.clone(),
         });
-        let concrete_guard = CResource::MutexLive(MutexIdentity {
+        let concrete_guard = Resource::MutexLive(MutexIdentity {
             epoch: Some(123),
             mutex: address,
         });
         assert_eq!(
             substitute_pointer_variable_in_c_resource(&abstract_guard, variable, &replacement),
-            CResource::MutexLive(MutexIdentity {
+            Resource::MutexLive(MutexIdentity {
                 epoch: None,
                 mutex: replacement.clone()
             })
@@ -1782,7 +1775,7 @@ mod resource_frame_substitution_tests {
             block: PointerBlock::Symbolic(variable),
             offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(variable), 1),
         };
-        let live = CResourceFact::own(CResource::MutexLive(MutexIdentity {
+        let live = ResourceFact::own(Resource::MutexLive(MutexIdentity {
             epoch: Some(123),
             mutex: address,
         }));
@@ -1817,7 +1810,7 @@ mod resource_frame_substitution_tests {
 
     #[test]
     fn unrelated_binder_preserves_nested_offset_snapshot() {
-        let base = CMemory::new();
+        let base = Memory::new();
         let metadata = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
@@ -1880,12 +1873,12 @@ mod resource_frame_substitution_tests {
         assert_eq!(pointer_substituted.loan_participant(), Some(participant));
     }
 
-    fn inherited_check(range: CMemoryRange) -> CLoopEffectCheck {
-        CLoopEffectCheck {
-            effect: CLoopEffect::Mutable(Vec::new()),
-            span: CLoopEffectSpan::Whole,
+    fn inherited_check(range: MemoryRange) -> LoopEffectCheck {
+        LoopEffectCheck {
+            effect: LoopEffect::Mutable(Vec::new()),
+            span: LoopEffectSpan::Whole,
             context: None,
-            origin: CLoopEffectOrigin::InheritedResourceDerived,
+            origin: LoopEffectOrigin::InheritedResourceDerived,
             validated_ranges: Some(vec![range]),
         }
     }
@@ -1893,7 +1886,7 @@ mod resource_frame_substitution_tests {
     #[test]
     fn bitvector_substitution_rewrites_validated_inherited_ranges() {
         let from = Variable(71_001);
-        let range = CMemoryRange::new(
+        let range = MemoryRange::new(
             Pointer {
                 block: PointerBlock::Concrete("substitution:range".into()),
                 offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(from), 4),
@@ -1942,7 +1935,7 @@ mod resource_frame_substitution_tests {
             block: PointerBlock::Concrete("substitution:replacement".into()),
             offset: PointerOffsetTerm::Constant(2),
         };
-        let range = CMemoryRange::new(
+        let range = MemoryRange::new(
             Pointer {
                 block: PointerBlock::Symbolic(from),
                 offset: PointerOffsetTerm::Constant(0),
@@ -1973,7 +1966,7 @@ mod resource_frame_substitution_tests {
             replacement.offset
         );
 
-        let derived_segment = CMemorySegment::new(
+        let derived_segment = MemorySegment::new(
             ProgramExpression::Value(ProgramValue::pointer(Pointer {
                 block: PointerBlock::Symbolic(from),
                 offset: PointerOffsetTerm::Constant(0),
@@ -2060,7 +2053,7 @@ fn substitute_surface_load_binding(
     from: Variable,
     load: &MachineTerm,
 ) -> Result<Proposition, IntegerPureSubstitutionError> {
-    use crate::kernel::proof::term_rewrite::{TermRewrite, TypedCReplacement};
+    use crate::kernel::proof::term_rewrite::{TermRewrite, TypedProgramValueReplacement};
     let mut collector =
         crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::checked();
     collector.collect(proposition);
@@ -2074,7 +2067,7 @@ fn substitute_surface_load_binding(
     let mut reserved = BTreeSet::new();
     collector.extend_into(&mut reserved);
     reserved.insert(from);
-    let c = BTreeMap::from([(from, TypedCReplacement::Bitvector(load.clone()))]);
+    let c = BTreeMap::from([(from, TypedProgramValueReplacement::Bitvector(load.clone()))]);
     let integer = BTreeMap::new();
     let algebraic = BTreeMap::new();
     let mut walker = TermRewrite::for_typed_variables(&c, &integer, &algebraic);
@@ -2530,17 +2523,17 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
         Term::ProgramValue(value) => collect_c_value_bound_variables(value, variables),
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_bound_variables(term, variables),
-        Term::CExpressionOutcome(outcome) => {
+        Term::ExpressionOutcome(outcome) => {
             collect_expression_outcome_bound_variables(outcome, variables)
         }
-        Term::CStatementOutcome(outcome) => {
+        Term::StatementOutcome(outcome) => {
             collect_statement_outcome_bound_variables(outcome, variables)
         }
-        Term::CFunctionOutcome(outcome) => {
+        Term::FunctionOutcome(outcome) => {
             collect_function_outcome_bound_variables(outcome, variables)
         }
         Term::ExecutionState(state) => collect_c_state_bound_variables(state, variables),
-        Term::CMemory(memory) => collect_memory_bound_variables(memory, variables),
+        Term::Memory(memory) => collect_memory_bound_variables(memory, variables),
     }
 }
 
@@ -2780,8 +2773,8 @@ pub(in crate::kernel) fn collect_c_statement_bound_variables(
     }
 }
 
-fn collect_loop_effect_bound_variables(effect: &CLoopEffect, variables: &mut BTreeSet<Variable>) {
-    if let CLoopEffect::Mutable(segments) = effect {
+fn collect_loop_effect_bound_variables(effect: &LoopEffect, variables: &mut BTreeSet<Variable>) {
+    if let LoopEffect::Mutable(segments) = effect {
         for segment in segments {
             collect_c_memory_segment_bound_variables(segment, variables);
         }
@@ -2789,7 +2782,7 @@ fn collect_loop_effect_bound_variables(effect: &CLoopEffect, variables: &mut BTr
 }
 
 fn collect_c_memory_segment_bound_variables(
-    segment: &CMemorySegment,
+    segment: &MemorySegment,
     variables: &mut BTreeSet<Variable>,
 ) {
     collect_c_expression_bound_variables(&segment.base, variables);
@@ -2808,7 +2801,7 @@ pub(in crate::kernel) fn collect_c_state_bound_variables(
         collect_pointer_bound_variables(&destination.pointer, variables);
     }
     for binding in state.locals.bindings.values() {
-        if let CLocalBinding::Object { value, .. } = binding {
+        if let LocalBinding::Object { value, .. } = binding {
             collect_expression_value_bound_variables(value, variables);
         }
     }
@@ -2819,38 +2812,36 @@ pub(in crate::kernel) fn collect_c_state_bound_variables(
 }
 
 pub(in crate::kernel) fn collect_statement_outcome_bound_variables(
-    outcome: &CStatementOutcome,
+    outcome: &StatementOutcome,
     variables: &mut BTreeSet<Variable>,
 ) {
     match outcome {
-        CStatementOutcome::Normal(state)
-        | CStatementOutcome::Break(state)
-        | CStatementOutcome::Continue(state)
-        | CStatementOutcome::Jump { state, .. } => {
-            collect_c_state_bound_variables(state, variables)
-        }
-        CStatementOutcome::Return { value, state } | CStatementOutcome::Throw { value, state } => {
+        StatementOutcome::Normal(state)
+        | StatementOutcome::Break(state)
+        | StatementOutcome::Continue(state)
+        | StatementOutcome::Jump { state, .. } => collect_c_state_bound_variables(state, variables),
+        StatementOutcome::Return { value, state } | StatementOutcome::Throw { value, state } => {
             collect_expression_value_bound_variables(value, variables);
             collect_c_state_bound_variables(state, variables);
         }
-        CStatementOutcome::VerificationDiverges
-        | CStatementOutcome::UndefinedBehavior(_)
-        | CStatementOutcome::RuntimeError(_) => {}
+        StatementOutcome::VerificationDiverges
+        | StatementOutcome::UndefinedBehavior(_)
+        | StatementOutcome::RuntimeError(_) => {}
     }
 }
 
 fn collect_function_outcome_bound_variables(
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     variables: &mut BTreeSet<Variable>,
 ) {
     match outcome {
-        CFunctionOutcome::Return { value, state } | CFunctionOutcome::Throw { value, state } => {
+        FunctionOutcome::Return { value, state } | FunctionOutcome::Throw { value, state } => {
             collect_expression_value_bound_variables(value, variables);
             collect_c_state_bound_variables(state, variables);
         }
-        CFunctionOutcome::VerificationDiverges
-        | CFunctionOutcome::UndefinedBehavior(_)
-        | CFunctionOutcome::RuntimeError(_) => {}
+        FunctionOutcome::VerificationDiverges
+        | FunctionOutcome::UndefinedBehavior(_)
+        | FunctionOutcome::RuntimeError(_) => {}
     }
 }
 
@@ -2880,20 +2871,20 @@ fn collect_spec_proposition_bound_variables(
 }
 
 fn collect_c_resource_spec_bound_variables(
-    resource: &CResourceSpec,
+    resource: &ResourceSpec,
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource.term() {
-        CResourceTerm::Instance { resource, .. } => {
+        ResourceTerm::Instance { resource, .. } => {
             collect_c_resource_term_bound_variables(resource, variables)
         }
-        CResourceTerm::PopulationAuthority { protected, .. } => {
+        ResourceTerm::PopulationAuthority { protected, .. } => {
             collect_c_resource_spec_bound_variables(&protected.resource, variables)
         }
-        CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
+        ResourceTerm::MutexGuard { mutex, .. } | ResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bound_variables(mutex, variables)
         }
-        CResourceTerm::MutexUse {
+        ResourceTerm::MutexUse {
             mutex, protected, ..
         } => {
             collect_c_expression_bound_variables(mutex, variables);
@@ -2901,44 +2892,44 @@ fn collect_c_resource_spec_bound_variables(
                 collect_c_resource_spec_bound_variables(&protected.resource, variables);
             }
         }
-        CResourceTerm::Publication { flag, payload, .. } => {
+        ResourceTerm::Publication { flag, payload, .. } => {
             collect_c_expression_bound_variables(flag, variables);
             collect_c_resource_spec_bound_variables(&payload.resource, variables);
         }
-        CResourceTerm::Memory(segment) => {
+        ResourceTerm::Memory(segment) => {
             collect_c_memory_segment_bound_variables(segment, variables)
         }
-        CResourceTerm::Composite { arguments, .. } | CResourceTerm::Token { arguments, .. } => {
+        ResourceTerm::Composite { arguments, .. } | ResourceTerm::Token { arguments, .. } => {
             for argument in arguments {
                 collect_c_expression_bound_variables(argument, variables);
             }
         }
-        CResourceTerm::Iterated(spec) => {
+        ResourceTerm::Iterated(spec) => {
             for expression in spec.expressions() {
                 collect_c_expression_bound_variables(expression, variables);
             }
         }
     }
-    if let CResourceQuantity::Count(quantity) = resource.quantity() {
+    if let ResourceQuantity::Count(quantity) = resource.quantity() {
         collect_c_expression_bound_variables(quantity, variables);
     }
 }
 
 fn collect_c_resource_term_bound_variables(
-    resource: &CResourceTerm,
+    resource: &ResourceTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
-        CResourceTerm::Instance { resource, .. } => {
+        ResourceTerm::Instance { resource, .. } => {
             collect_c_resource_term_bound_variables(resource, variables)
         }
-        CResourceTerm::PopulationAuthority { protected, .. } => {
+        ResourceTerm::PopulationAuthority { protected, .. } => {
             collect_c_resource_spec_bound_variables(&protected.resource, variables)
         }
-        CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
+        ResourceTerm::MutexGuard { mutex, .. } | ResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bound_variables(mutex, variables)
         }
-        CResourceTerm::MutexUse {
+        ResourceTerm::MutexUse {
             mutex, protected, ..
         } => {
             collect_c_expression_bound_variables(mutex, variables);
@@ -2946,19 +2937,19 @@ fn collect_c_resource_term_bound_variables(
                 collect_c_resource_spec_bound_variables(&protected.resource, variables);
             }
         }
-        CResourceTerm::Publication { flag, payload, .. } => {
+        ResourceTerm::Publication { flag, payload, .. } => {
             collect_c_expression_bound_variables(flag, variables);
             collect_c_resource_spec_bound_variables(&payload.resource, variables);
         }
-        CResourceTerm::Memory(segment) => {
+        ResourceTerm::Memory(segment) => {
             collect_c_memory_segment_bound_variables(segment, variables)
         }
-        CResourceTerm::Composite { arguments, .. } | CResourceTerm::Token { arguments, .. } => {
+        ResourceTerm::Composite { arguments, .. } | ResourceTerm::Token { arguments, .. } => {
             for argument in arguments {
                 collect_c_expression_bound_variables(argument, variables);
             }
         }
-        CResourceTerm::Iterated(spec) => {
+        ResourceTerm::Iterated(spec) => {
             for expression in spec.expressions() {
                 collect_c_expression_bound_variables(expression, variables);
             }
@@ -2978,7 +2969,7 @@ pub(in crate::kernel) fn collect_c_function_bound_variables(
 /// This is the companion to the bitvector collector used for named callback
 /// contracts; no template statement or storage is traversed.
 pub(in crate::kernel) fn collect_c_function_contract_interface_bound_variables(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     variables: &mut BTreeSet<Variable>,
 ) {
     for resource in interface
@@ -3004,7 +2995,7 @@ pub(in crate::kernel) fn collect_c_function_contract_interface_bound_variables(
 }
 
 fn collect_c_function_specification_bound_variables(
-    specification: &CFunctionSpecification,
+    specification: &FunctionSpecification,
     variables: &mut BTreeSet<Variable>,
 ) {
     collect_c_state_bound_variables(specification.state(), variables);
@@ -3018,10 +3009,10 @@ fn collect_c_function_specification_bound_variables(
 }
 
 fn collect_expression_outcome_bound_variables(
-    outcome: &CExpressionOutcome,
+    outcome: &ExpressionOutcome,
     variables: &mut BTreeSet<Variable>,
 ) {
-    if let CExpressionOutcome::Value(value) = outcome {
+    if let ExpressionOutcome::Value(value) = outcome {
         collect_c_value_bound_variables(value, variables);
     }
 }
@@ -3075,7 +3066,7 @@ pub(crate) fn memory_bound_cell_visits() -> usize {
     MEMORY_BOUND_CELL_VISITS.with(std::cell::Cell::get)
 }
 
-fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Variable>) {
+fn collect_memory_bound_variables(memory: &Memory, variables: &mut BTreeSet<Variable>) {
     // While a fact set reserves a fact's variables, an interned snapshot's
     // bound variables are walked once: they depend on the snapshot alone,
     // and the set already reserves those of every snapshot walked before.
@@ -3133,8 +3124,8 @@ fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Var
 /// differently from `base`: with `base`'s bound variables these include
 /// all of `memory`'s, and each is one of `memory`'s.
 fn collect_memory_bound_variables_entering(
-    base: &CMemory,
-    memory: &CMemory,
+    base: &Memory,
+    memory: &Memory,
     variables: &mut BTreeSet<Variable>,
 ) {
     for (before, after) in [
@@ -3181,21 +3172,21 @@ fn collect_memory_bound_variables_entering(
     }
 }
 
-fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeSet<Variable>) {
+fn collect_resource_bound_variables(resource: &Resource, variables: &mut BTreeSet<Variable>) {
     match resource {
-        CResource::Star(pair) => {
+        Resource::Star(pair) => {
             collect_resource_bound_variables(&pair.0, variables);
             collect_resource_bound_variables(&pair.1, variables);
         }
-        CResource::Emp | CResource::Footprint(_) => {}
-        CResource::Parameter(v) => {
+        Resource::Emp | Resource::Footprint(_) => {}
+        Resource::Parameter(v) => {
             variables.insert(*v);
         }
-        CResource::PopulationAuthority(description) => {
+        Resource::PopulationAuthority(description) => {
             description
                 .visit_values(|value| collect_algebraic_value_bound_variables(value, variables));
         }
-        CResource::MutexUse(identity) => {
+        Resource::MutexUse(identity) => {
             if let Some(p) = &identity.protected {
                 p.visit_values(|v| collect_algebraic_value_bound_variables(v, variables));
             }
@@ -3203,13 +3194,13 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
                 collect_pointer_bound_variables(&identity.mutex, variables);
             }
         }
-        CResource::MutexGuard(identity) | CResource::MutexLive(identity) => {
+        Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
                 let pointer = &identity.mutex;
                 collect_pointer_bound_variables(pointer, variables);
             }
         }
-        CResource::Publication(right) => {
+        Resource::Publication(right) => {
             right
                 .payload
                 .visit_values(|v| collect_algebraic_value_bound_variables(v, variables));
@@ -3218,7 +3209,7 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
                 collect_c_value_bound_variables(value, variables);
             }
         }
-        CResource::Instance(instance) => {
+        Resource::Instance(instance) => {
             for value in instance.arguments.iter().chain(instance.fields.iter()) {
                 collect_algebraic_value_bound_variables(value, variables);
             }
@@ -3230,12 +3221,12 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
             );
         }
 
-        CResource::Memory(range) => {
+        Resource::Memory(range) => {
             collect_pointer_bound_variables(&range.base, variables);
             collect_bitvector_bound_variables(range.bound_terms().0, variables);
             collect_bitvector_bound_variables(range.bound_terms().1, variables);
         }
-        CResource::Iterated(iterated) => {
+        Resource::Iterated(iterated) => {
             for pointer in iterated.pointers() {
                 collect_pointer_bound_variables(pointer, variables);
             }
@@ -3243,7 +3234,7 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
                 collect_bitvector_bound_variables(term, variables);
             }
         }
-        CResource::Composite { arguments, .. } | CResource::Token { arguments, .. } => {
+        Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
             for argument in arguments.iter() {
                 collect_algebraic_value_bound_variables(argument, variables);
             }
@@ -3681,17 +3672,17 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
                 },
             },
         }),
-        Term::CExpressionOutcome(outcome) => Term::CExpressionOutcome(
+        Term::ExpressionOutcome(outcome) => Term::ExpressionOutcome(
             substitute_bitvector_variable_in_c_expression_outcome(outcome, from, to),
         ),
-        Term::CStatementOutcome(outcome) => Term::CStatementOutcome(Box::new(
+        Term::StatementOutcome(outcome) => Term::StatementOutcome(Box::new(
             substitute_bitvector_variable_in_c_statement_outcome(outcome, from, to),
         )),
-        Term::CFunctionOutcome(outcome) => Term::CFunctionOutcome(Box::new(
+        Term::FunctionOutcome(outcome) => Term::FunctionOutcome(Box::new(
             substitute_bitvector_variable_in_c_function_outcome(outcome, from, to),
         )),
-        Term::CMemory(memory) => {
-            Term::CMemory(substitute_bitvector_variable_in_memory(memory, from, to))
+        Term::Memory(memory) => {
+            Term::Memory(substitute_bitvector_variable_in_memory(memory, from, to))
         }
         Term::ExecutionState(state) => Term::ExecutionState(Box::new(
             substitute_bitvector_variable_in_c_state(state, from, to),
@@ -3870,7 +3861,7 @@ pub(crate) fn substitute_machine_constant_in_pure_proposition(
     from: Variable,
     value: i64,
 ) -> Result<Proposition, IntegerPureSubstitutionError> {
-    use crate::kernel::proof::term_rewrite::{TermRewrite, TypedCReplacement};
+    use crate::kernel::proof::term_rewrite::{TermRewrite, TypedProgramValueReplacement};
 
     let mut collector =
         crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::checked();
@@ -3883,7 +3874,7 @@ pub(crate) fn substitute_machine_constant_in_pure_proposition(
     reserved.insert(from);
     let c = BTreeMap::from([(
         from,
-        TypedCReplacement::Bitvector(signed_i64_bitvector_constant(value)),
+        TypedProgramValueReplacement::Bitvector(signed_i64_bitvector_constant(value)),
     )]);
     let integer = BTreeMap::new();
     let algebraic = BTreeMap::new();
@@ -4131,7 +4122,7 @@ enum PropositionBinaryOperator {
 
 enum IntegerPropositionScope {
     Integer(crate::kernel::proof::term_rewrite::IntegerSubstitutionScope),
-    C(crate::kernel::proof::term_rewrite::CSubstitutionScope),
+    C(crate::kernel::proof::term_rewrite::ProgramValueSubstitutionScope),
 }
 
 /// Iterative proposition traversal for checked pure substitution.  The
@@ -5165,7 +5156,7 @@ mod spec_carrier_substitution_binder_tests {
             variable: binder,
             body: Box::new(SpecProposition::Comparison {
                 left: int32_value(source),
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right: int32_value(binder),
             }),
         };
@@ -5185,7 +5176,7 @@ mod spec_carrier_substitution_binder_tests {
             *body,
             SpecProposition::Comparison {
                 left: int32_value(binder),
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right: int32_value(variable),
             }
         );
@@ -5199,7 +5190,7 @@ mod spec_carrier_substitution_binder_tests {
             variable: source,
             body: Box::new(SpecProposition::Comparison {
                 left: int32_value(source),
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(8))),
             }),
         };
@@ -5322,7 +5313,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
                 _ => unreachable!(),
             }
         }
-        ConditionTerm::Float32(CFloatCondition::Comparison {
+        ConditionTerm::Float32(FloatCondition::Comparison {
             operator,
             left,
             right,
@@ -5331,14 +5322,14 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             substitute_bitvector_variable(right, from, to),
             *operator,
         ),
-        ConditionTerm::Float32(CFloatCondition::Classification {
+        ConditionTerm::Float32(FloatCondition::Classification {
             classification,
             value,
         }) => ConditionTerm::float32_classification(
             substitute_bitvector_variable(value, from, to),
             *classification,
         ),
-        ConditionTerm::Float64(CFloatCondition::Comparison {
+        ConditionTerm::Float64(FloatCondition::Comparison {
             operator,
             left,
             right,
@@ -5347,7 +5338,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             substitute_bitvector_variable(right, from, to),
             *operator,
         ),
-        ConditionTerm::Float64(CFloatCondition::Classification {
+        ConditionTerm::Float64(FloatCondition::Classification {
             classification,
             value,
         }) => ConditionTerm::float64_classification(
@@ -5883,10 +5874,10 @@ fn substitute_bitvector_variable_in_shared_memory(
 /// rewrite` growing far faster than the proof, which is what `click profile`
 /// could not point at before.
 pub(in crate::kernel) fn substitute_bitvector_variable_in_memory(
-    memory: &CMemory,
+    memory: &Memory,
     from: Variable,
     to: &MachineTerm,
-) -> CMemory {
+) -> Memory {
     // A snapshot carried by value (a loadability or effect proposition) is
     // interned only to consult and fill the absent-variable memo; interning
     // an already-registered snapshot is a shallow lookup.
@@ -5946,7 +5937,7 @@ fn run_slot_named_by_load_variable(
     (index < run.count() && !run.holes().contains(index)).then_some(index)
 }
 
-fn rewrite_memory_snapshot(memory: &CMemory, from: Variable, to: &MachineTerm) -> CMemory {
+fn rewrite_memory_snapshot(memory: &Memory, from: Variable, to: &MachineTerm) -> Memory {
     crate::instrumentation::measure_operation(
         "kernel",
         "substitution",
@@ -5978,7 +5969,7 @@ fn record_memory_lacks_variable(identity: (u32, u32), from: Variable) {
 fn snapshot_size_substitution_preserves_declared_types_and_write_protection() {
     let from = Variable(84001);
     let mut memory =
-        CMemory::new().with_declared_scalar_block("local:word".into(), 4, ProgramType::UInt32);
+        Memory::new().with_declared_scalar_block("local:word".into(), 4, ProgramType::UInt32);
     let mut read_only = MemoryBlock::read_only(4);
     read_only.size = HeapExtent::int32(MachineTerm::Variable(from));
     std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
@@ -5997,10 +5988,10 @@ fn snapshot_size_substitution_preserves_declared_types_and_write_protection() {
 }
 
 fn substitute_bitvector_variable_in_memory_contents(
-    memory: &CMemory,
+    memory: &Memory,
     from: Variable,
     to: &MachineTerm,
-) -> CMemory {
+) -> Memory {
     crate::instrumentation::record_deterministic_work(
         memory.cells.representation_len() + memory.union_cells.len() + memory.blocks.len(),
     );
@@ -6013,7 +6004,7 @@ fn substitute_bitvector_variable_in_memory_contents(
         },
         |run| run_slot_named_by_load_variable(run, from),
     ));
-    let mut result = CMemory {
+    let mut result = Memory {
         construction: None,
         blocks: std::sync::Arc::new(
             memory
@@ -6051,7 +6042,7 @@ fn substitute_bitvector_variable_in_memory_contents(
         // address or a value, and a rewritten snapshot that dropped it could
         // re-intern as a state that forgot nothing.
         forgotten: memory.forgotten.clone(),
-        heap: std::sync::Arc::new(CHeapMemory {
+        heap: std::sync::Arc::new(HeapMemory {
             live_allocations: memory
                 .heap
                 .live_allocations
@@ -6146,7 +6137,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .map(|(base, pending)| {
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
-                        CPendingReallocation {
+                        PendingReallocation {
                             old_pointer: substitute_bitvector_variable_in_pointer(
                                 &pending.old_pointer,
                                 from,
@@ -6301,17 +6292,17 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Pointer
             algebraic_type: term.algebraic_type.clone(),
             node: substitute_pointer_variable_in_algebraic_term_node(term, from, to),
         }),
-        Term::CExpressionOutcome(outcome) => Term::CExpressionOutcome(
+        Term::ExpressionOutcome(outcome) => Term::ExpressionOutcome(
             substitute_pointer_variable_in_c_expression_outcome(outcome, from, to),
         ),
-        Term::CStatementOutcome(outcome) => Term::CStatementOutcome(Box::new(
+        Term::StatementOutcome(outcome) => Term::StatementOutcome(Box::new(
             substitute_pointer_variable_in_c_statement_outcome(outcome, from, to),
         )),
-        Term::CFunctionOutcome(outcome) => Term::CFunctionOutcome(Box::new(
+        Term::FunctionOutcome(outcome) => Term::FunctionOutcome(Box::new(
             substitute_pointer_variable_in_c_function_outcome(outcome, from, to),
         )),
-        Term::CMemory(memory) => {
-            Term::CMemory(substitute_pointer_variable_in_memory(memory, from, to))
+        Term::Memory(memory) => {
+            Term::Memory(substitute_pointer_variable_in_memory(memory, from, to))
         }
         Term::ExecutionState(state) => Term::ExecutionState(Box::new(
             substitute_pointer_variable_in_c_state(state, from, to),
@@ -6669,11 +6660,11 @@ fn substitute_pointer_variable_in_c_expression(
 }
 
 pub(crate) fn substitute_pointer_variable_in_memory(
-    memory: &CMemory,
+    memory: &Memory,
     from: Variable,
     to: &Pointer,
-) -> CMemory {
-    let mut result = CMemory {
+) -> Memory {
+    let mut result = Memory {
         construction: None,
         blocks: std::sync::Arc::new(
             memory
@@ -6719,7 +6710,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 })
                 .collect(),
         ),
-        forgotten: std::sync::Arc::new(CForgottenKnowledge {
+        forgotten: std::sync::Arc::new(ForgottenKnowledge {
             ended_local_blocks: memory
                 .forgotten
                 .ended_local_blocks
@@ -6731,7 +6722,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
             forgotten_from: memory.forgotten.forgotten_from,
             join_inputs: memory.forgotten.join_inputs.clone(),
         }),
-        heap: std::sync::Arc::new(CHeapMemory {
+        heap: std::sync::Arc::new(HeapMemory {
             live_allocations: memory
                 .heap
                 .live_allocations
@@ -6827,7 +6818,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 .map(|(base, pending)| {
                     (
                         substitute_pointer_variable_in_pointer(base, from, to),
-                        CPendingReallocation {
+                        PendingReallocation {
                             old_pointer: substitute_pointer_variable_in_pointer(
                                 &pending.old_pointer,
                                 from,
@@ -8297,7 +8288,7 @@ mod integer_mixed_quantifier_tests {
     #[test]
     fn integer_witness_replacement_reserves_registered_pointer_integer() {
         let memory = crate::kernel::intern_c_memory(
-            crate::kernel::CMemory::new().with_block("integer-witness-capture", 64),
+            crate::kernel::Memory::new().with_block("integer-witness-capture", 64),
         );
         let source = Variable(9_100);
         // This ID is intentionally shared by the replacement's registered
@@ -8868,7 +8859,7 @@ mod integer_range_fold_substitution_tests {
             offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(binder), 4),
         };
         let source =
-            crate::kernel::intern_c_memory(CMemory::new().with_block("unrelated", 4).store(
+            crate::kernel::intern_c_memory(Memory::new().with_block("unrelated", 4).store(
                 Pointer {
                     block: PointerBlock::Concrete("unrelated".into()),
                     offset: PointerOffsetTerm::Constant(0),
@@ -8913,7 +8904,7 @@ mod integer_range_fold_substitution_tests {
     fn quantified_load_substitution_preserves_access_width() {
         let _session = crate::kernel::VerificationSession::enter();
         for bytes in [4, 8] {
-            let memory = crate::kernel::intern_c_memory(CMemory::new());
+            let memory = crate::kernel::intern_c_memory(Memory::new());
             let binder = Variable(70_156 + u64::from(bytes));
             let pointer = Pointer {
                 block: PointerBlock::ExternalArgument,
@@ -8953,7 +8944,7 @@ mod integer_range_fold_substitution_tests {
     #[test]
     fn int32_fold_substitution_rewrites_registered_load_address_only() {
         let item = Variable(70_056);
-        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("array", 16));
+        let memory = crate::kernel::intern_c_memory(Memory::new().with_block("array", 16));
         let pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(item), 4),
@@ -8997,7 +8988,7 @@ mod integer_range_fold_substitution_tests {
     #[test]
     fn int32_fold_substitution_canonicalizes_nonzero_load_base() {
         let item = Variable(70_058);
-        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("array", 16));
+        let memory = crate::kernel::intern_c_memory(Memory::new().with_block("array", 16));
         let pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Add(
@@ -9099,7 +9090,7 @@ mod resource_reference_substitution_tests {
     use super::*;
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceReference};
 
-    fn reference_resource() -> CResource {
+    fn reference_resource() -> Resource {
         let schema = ResourceFieldSchema::new(vec![(
             "value".into(),
             ResourceFieldType::C(ProgramType::Int32),
@@ -9129,7 +9120,7 @@ mod resource_reference_substitution_tests {
         )
         .unwrap()
         .with_resource_arguments(vec![ResourceReference::from_instance(&leaf)]);
-        CResource::Instance(
+        Resource::Instance(
             ResourceInstance::new(
                 Variable(202),
                 "wrapper".into(),
@@ -9153,7 +9144,7 @@ mod resource_reference_substitution_tests {
         let pointer = Pointer::symbolic(Variable(103));
         let replaced =
             substitute_pointer_variable_in_c_resource(&replaced, Variable(101), &pointer);
-        let CResource::Instance(instance) = replaced else {
+        let Resource::Instance(instance) = replaced else {
             unreachable!()
         };
         assert_eq!(instance.identity(), Variable(202));
@@ -9169,7 +9160,7 @@ mod resource_reference_substitution_tests {
             ]
         );
         let mut variables = BTreeSet::new();
-        collect_resource_bound_variables(&CResource::Instance(instance), &mut variables);
+        collect_resource_bound_variables(&Resource::Instance(instance), &mut variables);
         assert!(!variables.contains(&Variable(100)));
         assert!(!variables.contains(&Variable(101)));
         assert!(!variables.contains(&Variable(102)));
@@ -9315,7 +9306,7 @@ mod checked_singleton_substitution_tests {
     fn checked_singleton_substitution_refuses_unsupported_carriers() {
         let source = Proposition::Predicate {
             name: "opaque".into(),
-            arguments: vec![Term::CMemory(CMemory::new())],
+            arguments: vec![Term::Memory(Memory::new())],
         };
         assert_eq!(
             substitute_machine_constant_in_pure_proposition(&source, Variable(70_103), 7),

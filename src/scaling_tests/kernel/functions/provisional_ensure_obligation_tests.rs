@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let data = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
@@ -24,7 +24,7 @@ fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
             }),
             value_type: ProgramType::Int32,
         },
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::ProgramExpression(c_int32_literal(0)),
     };
     let function = c_function(

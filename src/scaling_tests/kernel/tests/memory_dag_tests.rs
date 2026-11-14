@@ -18,7 +18,7 @@ fn seeded_edge_justification(
     ) = crate::kernel::resource_tracker::step_effect::affects(
         &derivation,
         edge,
-        crate::kernel::resource_tracker::Resource::Cell { pointer, bytes },
+        crate::kernel::resource_tracker::TrackedResource::Cell { pointer, bytes },
         &crate::kernel::resource_tracker::step_effect::Evidence {
             assumptions,
             cross_loop_havoc: false,
@@ -101,10 +101,10 @@ fn rewritten_store_witness_work_scales_with_explicit_adjacent_equalities() {
     let mut samples = Vec::new();
     for size in [1, 2, 4, 8] {
         let value = MachineTerm::constant(17);
-        let mut memory = CMemory::new()
+        let mut memory = Memory::new()
             .with_block("arg-memory", 128)
             .store(arc_pointer(4), ProgramValue::Int32(value.clone()));
-        let load = |memory: &CMemory| {
+        let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(arc_pointer(4)),
@@ -147,7 +147,7 @@ fn reinterning_retained_memory_uses_shallow_component_identity() {
     let samples = [16, 32, 64, 128]
         .into_iter()
         .map(|size| {
-            let mut memory = CMemory::new();
+            let mut memory = Memory::new();
             for index in 0..size {
                 memory = memory.with_block(format!("shallow-memory-{size}-{index}"), 4);
             }
@@ -188,9 +188,9 @@ fn checked_order_store_crossing_ignores_unrelated_order_facts() {
             }
             let context =
                 context.assume_condition(ConditionTerm::signed_less_than(index, length), true);
-            let base = CMemory::new().with_block(format!("arg-memory-{size}"), 64);
+            let base = Memory::new().with_block(format!("arg-memory-{size}"), 64);
             let separated = base.clone().store_with_context(written, int32(7), &context);
-            let load = |memory: &CMemory| {
+            let load = |memory: &Memory| {
                 MachineTerm::MemoryLoad(
                     crate::kernel::intern_c_memory_ref(memory),
                     Box::new(kept.clone()),
@@ -226,7 +226,7 @@ fn memory_dag_walks_follow_chains_of_any_length() {
     let samples = [32, 64, 128, 256]
         .into_iter()
         .map(|size| {
-            let entry = CMemory::new().with_block("arg-memory", 4096);
+            let entry = Memory::new().with_block("arg-memory", 4096);
             let mut memory = entry.clone();
             for index in 0..size {
                 memory = memory.store(
@@ -255,7 +255,7 @@ fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes()
         let base = Pointer::symbolic(Variable(98_320));
         let address = base.offset_by_bytes((size - 2) * 4);
         let alias = Pointer::symbolic(Variable(98_321));
-        let old = intern_c_memory(CMemory::new());
+        let old = intern_c_memory(Memory::new());
         let current = intern_c_memory(
             old.memory()
                 .clone()
@@ -285,7 +285,7 @@ fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes()
 fn pointer_read_source_registration_does_not_walk_growing_store_histories() {
     for size in [8u32, 32, 128, 512] {
         let address = Pointer::symbolic(Variable(98_340));
-        let old = intern_c_memory(CMemory::new());
+        let old = intern_c_memory(Memory::new());
         let mut memory = old.memory().clone().with_seeded_cells(
             address.clone(),
             4,
@@ -315,7 +315,7 @@ fn pointer_read_single_store_edges_compose_with_near_linear_work() {
     let mut previous_work = None;
     for size in [2u32, 8, 32, 128] {
         let address = Pointer::symbolic(Variable(98_390));
-        let mut memory = intern_c_memory(CMemory::new());
+        let mut memory = intern_c_memory(Memory::new());
         let context = PureFactContext::new();
         let original = Pointer::loaded_value(&memory, &address);
         context.register_pointer_read(&original, &memory, &address);
@@ -347,7 +347,7 @@ fn pointer_read_single_store_edges_compose_with_near_linear_work() {
 fn pointer_read_cache_forgetting_registration_does_not_search_older_history() {
     for size in [8u32, 32, 128, 512] {
         let address = arc_pointer(0);
-        let mut memory = CMemory::new().with_block("arg-memory", 32);
+        let mut memory = Memory::new().with_block("arg-memory", 32);
         let original = intern_c_memory(memory.clone());
         for i in 0..size {
             memory = memory.store(
@@ -381,7 +381,7 @@ fn read_identity_production_is_linear_and_endpoint_queries_do_not_walk_history()
     for size in [8u32, 32, 128, 512] {
         let address = Pointer::symbolic(Variable(98_440));
         let unknown = Pointer::symbolic(Variable(98_441));
-        let original = intern_c_memory(CMemory::new());
+        let original = intern_c_memory(Memory::new());
         let mut memory = original.memory().clone();
         let context = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -441,9 +441,9 @@ fn named_snapshot_alias_equality_does_not_depend_on_sibling_observation_origins(
                 true,
             );
         }
-        let named = crate::kernel::intern_c_memory(CMemory::new());
+        let named = crate::kernel::intern_c_memory(Memory::new());
         let origins = ["local:first-arm", "local:second-arm"]
-            .map(|block| crate::kernel::intern_c_memory(CMemory::new().with_block(block, 4)));
+            .map(|block| crate::kernel::intern_c_memory(Memory::new().with_block(block, 4)));
         let variables = [(&left, &origins[0]), (&right, &origins[1])].map(|(pointer, origin)| {
             crate::kernel::eval::load_variable_for_cell_with_origin(
                 &named,
@@ -474,9 +474,8 @@ fn named_snapshot_alias_equality_does_not_depend_on_sibling_observation_origins(
             assert!(!witness.checks(&partial));
         }
         // The witness names the exact snapshot, address, and read kind.
-        let changed = crate::kernel::intern_c_memory(
-            CMemory::new().with_block("local:different-snapshot", 4),
-        );
+        let changed =
+            crate::kernel::intern_c_memory(Memory::new().with_block("local:different-snapshot", 4));
         for retargeted in [
             MachineTerm::MemoryLoad(changed, Box::new(right.clone()), LoadKind::Int32),
             MachineTerm::MemoryLoad(
@@ -533,9 +532,9 @@ fn kept_range_lookup_follows_exact_aliases_without_scanning_unrelated_members() 
     let mut previous = None;
     for count in [16, 64, 256, 1024] {
         let mut ranges =
-            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(field.clone()));
+            ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(field.clone()));
         for index in 0..count {
-            ranges = ranges.unchecked_with_fact(CResourceFact::own_memory(memory_range(
+            ranges = ranges.unchecked_with_fact(ResourceFact::own_memory(memory_range(
                 input(980_000 + index),
                 0,
                 2,
@@ -553,7 +552,7 @@ fn kept_range_lookup_follows_exact_aliases_without_scanning_unrelated_members() 
         }
         previous = Some(work);
     }
-    let ranges = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(field));
+    let ranges = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(field));
     for (pointer, bytes) in [
         (pointer.clone(), 12),
         (base.offset_by_bytes(12), 8),
@@ -586,7 +585,7 @@ fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
     ] {
         let mut previous_work = None;
         for size in [16, 256, 4096, 65536] {
-            let original = intern_c_memory(CMemory::new());
+            let original = intern_c_memory(Memory::new());
             let first = intern_c_memory(original.memory().clone().with_seeded_cells(
                 anchor.clone(),
                 width,
@@ -648,7 +647,7 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
         .into_iter()
         .flat_map(|count| [4, 8].map(|stride| (count, stride)))
     {
-        let original = intern_c_memory(CMemory::new());
+        let original = intern_c_memory(Memory::new());
         let current = intern_c_memory(original.memory().clone().with_seeded_cells(
             pointer.clone(),
             stride,
@@ -775,7 +774,7 @@ fn stored_field_value_uses_indexed_base_aliases() {
 /// overlap, including a later check made with a wider read.
 #[test]
 fn aliased_store_byte_frame_checks_width_context_and_scales() {
-    use crate::kernel::resource_tracker::Resource;
+    use crate::kernel::resource_tracker::TrackedResource;
     use crate::kernel::resource_tracker::cell_source::MemoryDagHopJustification;
     use crate::kernel::resource_tracker::step_effect::{Evidence, Separation, StepEffect, affects};
     let _session = crate::kernel::VerificationSession::enter();
@@ -791,9 +790,9 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
         Pointer::symbolic(Variable(106_004)),
         ProgramType::Int32Pointer,
     );
-    let memory = intern_c_memory(CMemory::new());
+    let memory = intern_c_memory(Memory::new());
     let classify = |write: Pointer, bytes, context: &PureFactContext| {
-        let step = CMemoryDerivation::Store {
+        let step = MemoryDerivation::Store {
             base: memory.clone(),
             pointer: write,
             value: value.clone(),
@@ -801,7 +800,7 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
         let result = affects(
             &step,
             &memory,
-            Resource::Cell {
+            TrackedResource::Cell {
                 pointer: &read,
                 bytes,
             },
@@ -902,7 +901,7 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
     let write = write_base.offset_by_bytes(8);
     let read = read_base.offset_by_bytes(8);
     let range = |base: &Pointer, end| {
-        CMemoryRange::new_with_element_width(
+        MemoryRange::new_with_element_width(
             base.clone(),
             MachineTerm::constant(8),
             MachineTerm::constant(end),
@@ -910,8 +909,8 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
         )
     };
     let separation = |end| Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(range(&write_model, end))),
-        right: Box::new(CResource::Memory(range(&read_model, end))),
+        left: Box::new(Resource::Memory(range(&write_model, end))),
+        right: Box::new(Resource::Memory(range(&read_model, end))),
     };
     let aliases = [
         ConditionTerm::pointer_equal(write_base.clone(), write_bridge.clone()),
@@ -919,8 +918,8 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
         ConditionTerm::pointer_equal(read_base.clone(), read_bridge.clone()),
         ConditionTerm::pointer_equal(read_bridge, read_model.clone()),
     ];
-    let step = CMemoryDerivation::Store {
-        base: intern_c_memory(CMemory::new()),
+    let step = MemoryDerivation::Store {
+        base: intern_c_memory(Memory::new()),
         pointer: write.clone(),
         value: ProgramValue::typed_pointer(
             Pointer::symbolic(Variable(160_007)),
@@ -988,22 +987,22 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
     let mut costs = Vec::new();
     for count in [16u32, 64, 256] {
         crate::kernel::eval::clear_load_variable_registry();
-        let retired = CMemory::frame_local_pointer(u64::from(count), "span");
+        let retired = Memory::frame_local_pointer(u64::from(count), "span");
         let read = Pointer::symbolic(Variable(140_000 + u64::from(count)));
-        let bytes = |base, end| CMemoryRange::new_with_element_width(base, 0u32.into(), end, 1);
+        let bytes = |base, end| MemoryRange::new_with_element_width(base, 0u32.into(), end, 1);
         let retired_range = bytes(retired.clone(), 16u32.into());
         let read_range = bytes(read.clone(), 8u32.into());
-        let mut memory = CMemory::new()
+        let mut memory = Memory::new()
             .with_block(retired.block.clone(), 16)
             .with_block(read.block.clone(), 16);
         let mut resources = ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(retired_range.clone()))
-            .unchecked_with_fact(CResourceFact::own_memory(read_range.clone()));
+            .unchecked_with_fact(ResourceFact::own_memory(retired_range.clone()))
+            .unchecked_with_fact(ResourceFact::own_memory(read_range.clone()));
         for index in 0..count {
-            let other = CMemory::frame_local_pointer(u64::from(count + index + 1), "unrelated");
+            let other = Memory::frame_local_pointer(u64::from(count + index + 1), "unrelated");
             memory = memory.with_block(other.block.clone(), 16);
-            resources = resources
-                .unchecked_with_fact(CResourceFact::own_memory(bytes(other, 16u32.into())));
+            resources =
+                resources.unchecked_with_fact(ResourceFact::own_memory(bytes(other, 16u32.into())));
         }
         let assumptions =
             PureFactContext::new().assume_proposition(Proposition::CResourceComposition(resources));
@@ -1025,7 +1024,7 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
                 let effect = step_effect::affects(
                     after.derivation().unwrap().as_ref(),
                     &after,
-                    crate::kernel::resource_tracker::Resource::Cell {
+                    crate::kernel::resource_tracker::TrackedResource::Cell {
                         pointer: &read,
                         bytes: 8,
                     },
@@ -1089,7 +1088,7 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
             !hop.justification
                 .checks(hop.derivation.as_ref(), &retired, 8, &assumptions)
         );
-        let larger = CMemory::new().with_block(retired.block.clone(), 32);
+        let larger = Memory::new().with_block(retired.block.clone(), 32);
         let larger_end =
             crate::kernel::intern_c_memory_ref(&larger.without_local_block(&retired.block));
         assert!(!hop.justification.checks(
@@ -1100,11 +1099,11 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
         ));
         for (retired_bytes, read_bytes) in [(8u32, 8u32), (16, 4)] {
             let partial = ResourceContext::new()
-                .unchecked_with_fact(CResourceFact::own_memory(bytes(
+                .unchecked_with_fact(ResourceFact::own_memory(bytes(
                     retired.clone(),
                     retired_bytes.into(),
                 )))
-                .unchecked_with_fact(CResourceFact::own_memory(bytes(
+                .unchecked_with_fact(ResourceFact::own_memory(bytes(
                     read.clone(),
                     read_bytes.into(),
                 )));
@@ -1132,7 +1131,7 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
 fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
     use crate::kernel::reasoning::memory_resolution::{AccessByteOverlap, access_byte_overlap};
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory_ref(&CMemory::new());
+    let memory = crate::kernel::intern_c_memory_ref(&Memory::new());
     let index = |slot: i64| {
         MachineTerm::MemoryLoad(
             memory.clone(),
@@ -1227,8 +1226,8 @@ fn indexed_byte_separation_ignores_unrelated_external_ranges() {
         offset: PointerOffsetTerm::Variable(Variable(id)),
     };
     let separate = |p, q| Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(memory_range(p, 0, 2))),
-        right: Box::new(CResource::Memory(memory_range(q, 0, 2))),
+        left: Box::new(Resource::Memory(memory_range(p, 0, 2))),
+        right: Box::new(Resource::Memory(memory_range(q, 0, 2))),
     };
     let p = pointer(970_121);
     let q = pointer(970_122);
@@ -1309,13 +1308,13 @@ fn an_unrelated_view_does_not_walk_pointer_read_history() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let target = Pointer::symbolic(Variable(995_600));
-        let mut memory = CMemory::new().store(
+        let mut memory = Memory::new().store(
             field.clone(),
             ProgramValue::typed_pointer(target, ProgramType::Int32Pointer),
         );
         for index in 0..size {
             memory = memory.store(
-                CMemory::local_pointer("empty-frame-counter").offset_by_bytes(index * 4),
+                Memory::local_pointer("empty-frame-counter").offset_by_bytes(index * 4),
                 ProgramValue::Int32(index.into()),
             );
         }
@@ -1330,7 +1329,7 @@ fn an_unrelated_view_does_not_walk_pointer_read_history() {
         let pointer = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
         context.register_pointer_read(&pointer, &snapshot, &field);
         let ranges = ResourceContext::new_with_equalities(&context)
-            .unchecked_with_fact(CResourceFact::view_memory(memory_range(field, 0, 2)));
+            .unchecked_with_fact(ResourceFact::view_memory(memory_range(field, 0, 2)));
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.kept_read_range_holding_access(&ranges, || None, &pointer, 4)
         });
@@ -1356,9 +1355,9 @@ fn mixed_width_seeded_runs_ignore_other_address_stems() {
             let word = address(98_750);
             let bytes = address(98_751);
             assert_eq!(word.block, bytes.block);
-            let source = intern_c_memory(CMemory::new());
+            let source = intern_c_memory(Memory::new());
             let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let seed_word = |memory: CMemory| {
+                let seed_word = |memory: Memory| {
                     memory.with_seeded_cells(
                         word.clone(),
                         8,
@@ -1368,7 +1367,7 @@ fn mixed_width_seeded_runs_ignore_other_address_stems() {
                         source.clone(),
                     )
                 };
-                let seed_bytes = |memory: CMemory| {
+                let seed_bytes = |memory: Memory| {
                     memory.with_seeded_cells(
                         bytes.clone(),
                         1,
@@ -1379,9 +1378,9 @@ fn mixed_width_seeded_runs_ignore_other_address_stems() {
                     )
                 };
                 let memory = if bytes_first {
-                    seed_word(seed_bytes(CMemory::new()))
+                    seed_word(seed_bytes(Memory::new()))
                 } else {
-                    seed_bytes(seed_word(CMemory::new()))
+                    seed_bytes(seed_word(Memory::new()))
                 };
                 // A repeated entry projection must not enumerate the other run either.
                 seed_word(memory)
@@ -1401,7 +1400,7 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
     for size in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let source = intern_c_memory(
-            CMemory::new().with_block_without_derivation("local:projection-chain", 4),
+            Memory::new().with_block_without_derivation("local:projection-chain", 4),
         );
         let mut left = Pointer::symbolic(Variable(98_370));
         let mut right = Pointer::symbolic(Variable(98_371));
@@ -1434,7 +1433,7 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
     for size in [0, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let source = intern_c_memory(
-            CMemory::new().with_block_without_derivation("local:projection-frame", 4),
+            Memory::new().with_block_without_derivation("local:projection-frame", 4),
         );
         for i in 0..size {
             let address = Pointer::symbolic(Variable(99_000 + i));
@@ -1471,7 +1470,7 @@ fn direct_pointer_projection_dependencies_scale_with_the_selected_chain() {
 #[test]
 fn abstract_read_congruence_scales_with_selected_reads() {
     let parameter = TypeParameterName::intern("ScaledReadT");
-    let memory = intern_c_memory(CMemory::new());
+    let memory = intern_c_memory(Memory::new());
     let read = |pointer: Pointer| AlgebraicTerm {
         algebraic_type: parameter.algebraic_type(),
         node: AlgebraicTermNode::MemoryLoad {
@@ -1530,7 +1529,7 @@ fn abstract_read_origin_lookup_ignores_unrelated_definitions() {
     for size in [0, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let source = intern_c_memory(
-            CMemory::new().with_block_without_derivation("local:abstract-origin-scaling", 4),
+            Memory::new().with_block_without_derivation("local:abstract-origin-scaling", 4),
         );
         let parameter = TypeParameterName::intern("ScaledOriginT");
         for i in 0..size {

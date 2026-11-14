@@ -3050,7 +3050,7 @@ fn resource_argument_type_message(
     actual: C0Type,
     context: &str,
 ) -> String {
-    if name == CResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
+    if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
         return format!(
             "resource `{name}` argument {index} expects int32 or uint64, got {} in {context}: \
              the byte count is a heap block's extent, a 32-bit `int32` or a 64-bit `uint64` \
@@ -3070,13 +3070,13 @@ fn resource_argument_type_message(
 /// it also takes a 64-bit `uint64` (`size_t`) byte count, the extent of a
 /// block whose size is a symbolic `size_t` (`design/heap-extents.md`, D4).
 fn resource_types_compatible(name: &str, index: usize, actual: C0Type, expected: C0Type) -> bool {
-    if name == CResourceFact::ALLOCATION_RESOURCE_NAME
+    if name == ResourceFact::ALLOCATION_RESOURCE_NAME
         && index == 1
         && matches!(actual, C0Type::UInt64(_))
     {
         return true;
     }
-    if name == CResourceFact::ALLOCATION_RESOURCE_NAME
+    if name == ResourceFact::ALLOCATION_RESOURCE_NAME
         && index == 0
         && expected == C0Type::Int32Pointer
     {
@@ -4122,7 +4122,7 @@ pub(super) fn validate_resource_clause(
                     access: ResourceAccessMode::Own,
                     name,
                     ..
-                } if name != CResourceFact::ALLOCATION_RESOURCE_NAME
+                } if name != ResourceFact::ALLOCATION_RESOURCE_NAME
             ) {
                 return Err(ClickError::new(format!(
                     "symbolic quantities require an owned user-declared resource in {context}"

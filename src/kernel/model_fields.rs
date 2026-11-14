@@ -52,7 +52,7 @@ const MAX_REGISTERED: usize = 100_000;
 /// Which step replaced an instance's model, recorded at the mint.
 ///
 /// This is not a guess reconstructed from a refusal site: the recorded memory
-/// history says nothing about model fields (no `CMemoryDerivation` edge carries it),
+/// history says nothing about model fields (no `MemoryDerivation` edge carries it),
 /// and the only place that knows why a field vector is fresh is the place that
 /// made it fresh.
 #[derive(Clone, Debug, Eq, PartialEq)]

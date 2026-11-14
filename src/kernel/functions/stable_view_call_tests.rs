@@ -14,7 +14,7 @@ fn caller(pointer: &Pointer) -> ExecutionState {
 }
 
 fn caller_with_owned_end(pointer: &Pointer, owned_end: u32, bytes: u32) -> ExecutionState {
-    let range = CMemoryRange::new(
+    let range = MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(owned_end),
@@ -22,19 +22,18 @@ fn caller_with_owned_end(pointer: &Pointer, owned_end: u32, bytes: u32) -> Execu
     ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(pointer.block.clone(), bytes)
                 .store(pointer.clone(), int32(7)),
         )
         .with_resource_context(
-            ResourceContext::new()
-                .unchecked_with_fact(CResourceFact::own(CResource::Memory(range))),
+            ResourceContext::new().unchecked_with_fact(ResourceFact::own(Resource::Memory(range))),
         )
 }
 
 fn reader_with_output(name: &str, output_start: u32, output_end: u32) -> ProgramFunction {
-    let input = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let output = CMemorySegment::new(
+    let input = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let output = MemorySegment::new(
         c_variable("p"),
         c_int32_literal(output_start),
         c_int32_literal(output_end),
@@ -46,13 +45,13 @@ fn reader_with_output(name: &str, output_start: u32, output_end: u32) -> Program
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
-        vec![CResourceSpec::viewed_memory(input)],
-        vec![CResourceSpec::viewed_memory(output)],
+        vec![ResourceSpec::viewed_memory(input)],
+        vec![ResourceSpec::viewed_memory(output)],
     )
 }
 
 fn reader_for_input(name: &str, input_end: u32) -> ProgramFunction {
-    let input = CMemorySegment::new(
+    let input = MemorySegment::new(
         c_variable("p"),
         c_int32_literal(0),
         c_int32_literal(input_end),
@@ -63,22 +62,22 @@ fn reader_for_input(name: &str, input_end: u32) -> ProgramFunction {
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
-    .with_resource_summary(vec![CResourceSpec::viewed_memory(input)], Vec::new())
+    .with_resource_summary(vec![ResourceSpec::viewed_memory(input)], Vec::new())
 }
 
 fn reader_with_mutable_range(name: &str, mutable_start: u32, mutable_end: u32) -> ProgramFunction {
-    let input = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let input = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
     c_function(
         ProgramType::Int32,
         name,
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
-    .with_resource_summary(vec![CResourceSpec::viewed_memory(input)], Vec::new())
+    .with_resource_summary(vec![ResourceSpec::viewed_memory(input)], Vec::new())
     .with_contract(
         Vec::new(),
         Vec::new(),
-        vec![CMemorySegment::new(
+        vec![MemorySegment::new(
             c_variable("p"),
             c_int32_literal(mutable_start),
             c_int32_literal(mutable_end),
@@ -89,10 +88,10 @@ fn reader_with_mutable_range(name: &str, mutable_start: u32, mutable_end: u32) -
 }
 
 fn reader(name: &str, duplicate_view: bool) -> ProgramFunction {
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let mut requires = vec![CResourceSpec::viewed_memory(segment.clone())];
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let mut requires = vec![ResourceSpec::viewed_memory(segment.clone())];
     if duplicate_view {
-        requires.push(CResourceSpec::viewed_memory(segment));
+        requires.push(ResourceSpec::viewed_memory(segment));
     }
     c_function(
         ProgramType::Int32,
@@ -104,23 +103,23 @@ fn reader(name: &str, duplicate_view: bool) -> ProgramFunction {
 }
 
 fn composite_reader(name: &str) -> ProgramFunction {
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let required = CResourceSpec::declared(
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let required = ResourceSpec::declared(
         ResourceFamily::Composite,
-        CResourceAccessMode::View,
+        ResourceAccessMode::View,
         "cell".into(),
         vec![c_variable("p")],
         vec![ProgramType::Int32Pointer],
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "cell",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(segment)],
+        vec![ResourceSpec::owned_memory(segment)],
         Vec::new(),
     );
     c_function(
@@ -134,7 +133,7 @@ fn composite_reader(name: &str) -> ProgramFunction {
 }
 
 fn early_reader(name: &str) -> ProgramFunction {
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
     c_function(
         ProgramType::Void,
         name,
@@ -145,22 +144,22 @@ fn early_reader(name: &str) -> ProgramFunction {
             else_branch: Box::new(ProgramStatement::Skip),
         },
     )
-    .with_resource_summary(vec![CResourceSpec::viewed_memory(segment)], Vec::new())
+    .with_resource_summary(vec![ResourceSpec::viewed_memory(segment)], Vec::new())
 }
 
 /// `resource guarded_item(item) { if item != 0 { owns item[0..1]; } }`
 /// consumed by a function whose body reads nothing.
-fn conditional_owner(name: &str) -> (ProgramFunction, CExecutionEnvironment) {
-    let definition = CCompositeResourceDefinition::new(
+fn conditional_owner(name: &str) -> (ProgramFunction, ExecutionEnvironment) {
+    let definition = CompositeResourceDefinition::new(
         "guarded_item",
         vec![c_parameter("item", ProgramType::Int32Pointer)],
         Some(SpecProposition::Comparison {
             left: SpecExpression::ProgramExpression(c_variable("item")),
-            operator: CComparisonOperator::NotEqual,
+            operator: ComparisonOperator::NotEqual,
             right: SpecExpression::Value(ProgramValue::pointer(Pointer::null())),
         }),
         false,
-        vec![CResourceSpec::owned_memory(CMemorySegment::new(
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
             c_variable("item"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -174,8 +173,8 @@ fn conditional_owner(name: &str) -> (ProgramFunction, CExecutionEnvironment) {
         c_return(c_int32_literal(0)),
     )
     .with_resource_summary(
-        vec![CResourceSpec::composite(
-            CResourceAccessMode::Own,
+        vec![ResourceSpec::composite(
+            ResourceAccessMode::Own,
             "guarded_item".to_string(),
             vec![c_variable("item")],
             vec![ProgramType::Int32Pointer],
@@ -187,11 +186,11 @@ fn conditional_owner(name: &str) -> (ProgramFunction, CExecutionEnvironment) {
     (function, environment)
 }
 
-fn environment(function: &ProgramFunction) -> CExecutionEnvironment {
-    CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
+fn environment(function: &ProgramFunction) -> ExecutionEnvironment {
+    ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
         pointer_result: None,
         function: function.clone(),
-        loop_semantics: CLoopSemantics::Verify,
+        loop_semantics: LoopSemantics::Verify,
         checked_callees: None,
         applied_tactics: Default::default(),
     })
@@ -209,7 +208,7 @@ fn independent_verification_uses_the_call_transfer_boundary() {
         &function,
         &[c_pointer_value(pointer)],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::execute_bodies(&environment(&function)),
         &mut budget,
         &mut variables,
         true,
@@ -218,8 +217,8 @@ fn independent_verification_uses_the_call_transfer_boundary() {
     .expect("verification should execute through the transfer boundary");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::Return { .. },
+        [FunctionPath {
+            outcome: FunctionOutcome::Return { .. },
             ..
         }]
     ));
@@ -251,7 +250,7 @@ fn candidate_reader_escrows_owner_until_return() {
     assert_eq!(plan.stable_views().len(), 1);
     assert!(
         !transfer.caller_resources_after_requirements.satisfies_fact(
-            &CResourceFact::own_memory(CMemoryRange::new(
+            &ResourceFact::own_memory(MemoryRange::new(
                 pointer,
                 MachineTerm::constant(0),
                 MachineTerm::constant(1),
@@ -260,7 +259,7 @@ fn candidate_reader_escrows_owner_until_return() {
         )
     );
     assert!(transfer.callee_resources.satisfies_fact(
-        &CResourceFact::view_memory(CMemoryRange::new(
+        &ResourceFact::view_memory(MemoryRange::new(
             Pointer {
                 block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
                 offset: PointerOffsetTerm::Constant(0),
@@ -299,10 +298,10 @@ fn candidate_function_entry_preserves_outer_loan_authority() {
 fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
     let pointer = pointer();
     let head =
-        CResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
+        ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
     let caller = ExecutionState::new()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         )
@@ -331,7 +330,7 @@ fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
         .expect("composite transfer records a loan plan");
     assert_eq!(plan.stable_views().len(), 1);
     assert!(plan.ledger.has_active_memory_loans());
-    let body_range = CMemoryRange::new(
+    let body_range = MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -340,15 +339,10 @@ fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
         plan.ledger.permits_memory_access(&body_range),
         Err(LoanRefusal::ActiveDependency)
     );
-    assert!(
-        transfer.callee_resources.satisfies_fact(
-            &CResourceFact::view_composite(
-                "cell".into(),
-                vec![ProgramValue::pointer(pointer.clone())],
-            ),
-            &PureFactContext::new(),
-        )
-    );
+    assert!(transfer.callee_resources.satisfies_fact(
+        &ResourceFact::view_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())],),
+        &PureFactContext::new(),
+    ));
     let callee_state = callee_state_with_resource_transfer(callee, &transfer);
     let (resources, _, _, _, evidence) = recover_candidate_stable_view_resources(
         &caller,
@@ -369,16 +363,16 @@ fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
 /// owner and no exposed body piece beside it.
 fn composite_reader_with_definition(
     name: &str,
-    definition: CCompositeResourceDefinition,
+    definition: CompositeResourceDefinition,
 ) -> ProgramFunction {
-    let required = CResourceSpec::declared(
+    let required = ResourceSpec::declared(
         ResourceFamily::Composite,
-        CResourceAccessMode::View,
+        ResourceAccessMode::View,
         "cell".into(),
         vec![c_variable("p")],
         vec![ProgramType::Int32Pointer],
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
     c_function(
@@ -391,25 +385,25 @@ fn composite_reader_with_definition(
     .with_composite_resource_definitions(vec![definition])
 }
 
-fn fact_bearing_cell_definition() -> CCompositeResourceDefinition {
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    CCompositeResourceDefinition::new(
+fn fact_bearing_cell_definition() -> CompositeResourceDefinition {
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    CompositeResourceDefinition::new(
         "cell",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(segment)],
+        vec![ResourceSpec::owned_memory(segment)],
         vec![SpecProposition::Defined(SpecExpression::Value(int32(0)))],
     )
 }
 
-fn plan_composite_lend(function: &ProgramFunction) -> Result<(), CRuntimeError> {
+fn plan_composite_lend(function: &ProgramFunction) -> Result<(), RuntimeError> {
     let pointer = pointer();
     let head =
-        CResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
+        ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
     let caller = ExecutionState::new()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         )
@@ -450,17 +444,17 @@ fn candidate_composite_with_unstable_facts_is_refused() {
     );
     let error = plan_composite_lend(&liveness).expect_err("a liveness fact is refused");
     assert!(
-        matches!(&error, CRuntimeError::FunctionContract(message) if message.contains("allocation-liveness")),
+        matches!(&error, RuntimeError::FunctionContract(message) if message.contains("allocation-liveness")),
         "{error}"
     );
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
     let counted = composite_reader_with_definition(
         "candidate_counted_fact_reader",
-        CCompositeResourceDefinition::authority_control(
+        CompositeResourceDefinition::authority_control(
             "cell",
             vec![c_parameter("p", ProgramType::Int32Pointer)],
             None,
-            vec![CResourceSpec::owned_memory(segment)],
+            vec![ResourceSpec::owned_memory(segment)],
             vec![SpecProposition::Defined(SpecExpression::Value(int32(0)))],
         ),
     );
@@ -471,26 +465,26 @@ fn candidate_composite_with_unstable_facts_is_refused() {
 // the callee's clause names one composite, the caller owns another whose
 // checked frontier covers it.
 
-fn cell_definition(end: u32, facts: Vec<SpecProposition>) -> CCompositeResourceDefinition {
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(end));
-    CCompositeResourceDefinition::new(
+fn cell_definition(end: u32, facts: Vec<SpecProposition>) -> CompositeResourceDefinition {
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(end));
+    CompositeResourceDefinition::new(
         "cell",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(segment)],
+        vec![ResourceSpec::owned_memory(segment)],
         facts,
     )
 }
 
-fn wide_definition(end: u32) -> CCompositeResourceDefinition {
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(end));
-    CCompositeResourceDefinition::new(
+fn wide_definition(end: u32) -> CompositeResourceDefinition {
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(end));
+    CompositeResourceDefinition::new(
         "wide",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(segment)],
+        vec![ResourceSpec::owned_memory(segment)],
         Vec::new(),
     )
 }
@@ -498,17 +492,17 @@ fn wide_definition(end: u32) -> CCompositeResourceDefinition {
 /// A reader that views `cell(p)` and knows both definitions.
 fn adapter_reader(
     name: &str,
-    cell: CCompositeResourceDefinition,
-    wide: CCompositeResourceDefinition,
+    cell: CompositeResourceDefinition,
+    wide: CompositeResourceDefinition,
 ) -> ProgramFunction {
-    let required = CResourceSpec::declared(
+    let required = ResourceSpec::declared(
         ResourceFamily::Composite,
-        CResourceAccessMode::View,
+        ResourceAccessMode::View,
         "cell".into(),
         vec![c_variable("p")],
         vec![ProgramType::Int32Pointer],
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
     c_function(
@@ -529,13 +523,13 @@ fn adapter_caller(pointer: &Pointer) -> ExecutionState {
     };
     ExecutionState::new()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(pointer.block.clone(), 8)
                 .store(pointer.clone(), int32(7))
                 .store(second, int32(9)),
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own_composite(
+            ResourceFact::own_composite(
                 "wide".into(),
                 vec![ProgramValue::pointer(pointer.clone())],
             ),
@@ -546,7 +540,7 @@ fn plan_adapter_lend(
     function: &ProgramFunction,
 ) -> (
     ExecutionState,
-    Result<CFunctionResourceTransfer, CRuntimeError>,
+    Result<FunctionResourceTransfer, RuntimeError>,
 ) {
     let pointer = pointer();
     let caller = adapter_caller(&pointer);
@@ -586,13 +580,13 @@ fn candidate_composite_view_is_backed_by_a_covering_owned_composite() {
         .expect("the adapter lend records a loan plan");
     assert_eq!(plan.stable_views().len(), 1);
     assert!(transfer.callee_resources.satisfies_fact(
-        &CResourceFact::view_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]),
+        &ResourceFact::view_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]),
         &PureFactContext::new(),
     ));
     // The whole escrowed frontier is protected, not just the adapted
     // clause's own bytes.
     for end in [1, 2] {
-        let range = CMemoryRange::new(
+        let range = MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(end),
@@ -619,7 +613,7 @@ fn candidate_composite_view_is_backed_by_a_covering_owned_composite() {
         &[],
     )
     .expect("the adapter lend should recover");
-    let head = CResourceFact::own_composite("wide".into(), vec![ProgramValue::pointer(pointer)]);
+    let head = ResourceFact::own_composite("wide".into(), vec![ProgramValue::pointer(pointer)]);
     assert!(resources.satisfies_fact(&head, &PureFactContext::new()));
     assert_eq!(resources.facts(), [head]);
 }
@@ -635,7 +629,7 @@ fn candidate_composite_view_over_an_uncovered_owner_is_refused() {
     );
     let (_, transfer) = plan_adapter_lend(&function);
     let error = transfer.expect_err("an owner that covers half the frontier is not backing");
-    let CRuntimeError::LoanRefusal(diagnostic) = &error else {
+    let RuntimeError::LoanRefusal(diagnostic) = &error else {
         panic!("{error}");
     };
     assert_eq!(
@@ -644,7 +638,7 @@ fn candidate_composite_view_over_an_uncovered_owner_is_refused() {
     );
     assert_eq!(
         diagnostic.subject().resource_fact(),
-        Some(&CResourceFact::view_composite(
+        Some(&ResourceFact::view_composite(
             "cell".into(),
             vec![ProgramValue::pointer(pointer())]
         ))
@@ -658,7 +652,7 @@ fn candidate_composite_view_over_an_uncovered_owner_is_refused() {
 fn candidate_composite_view_with_an_unestablished_fact_is_refused() {
     let unestablished = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(c_load(c_variable("p"))),
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::ProgramExpression(c_int32_literal(0)),
     };
     let function = adapter_reader(
@@ -670,12 +664,12 @@ fn candidate_composite_view_with_an_unestablished_fact_is_refused() {
     let error = transfer.expect_err("an unestablished body fact is refused");
     // Assembling the view is a fold, so the refusal names the instance and
     // the body fact it could not establish rather than a missing loan.
-    let CRuntimeError::UnestablishedAssemblyFact { assembled, .. } = &error else {
+    let RuntimeError::UnestablishedAssemblyFact { assembled, .. } = &error else {
         panic!("{error}");
     };
     assert_eq!(
         assembled.as_ref(),
-        &CResourceFact::view_composite("cell".into(), vec![ProgramValue::pointer(pointer())])
+        &ResourceFact::view_composite("cell".into(), vec![ProgramValue::pointer(pointer())])
     );
     // The same adapter with a fact the call already establishes is
     // accepted, so the refusal above is the fact check and not the shape.
@@ -722,12 +716,12 @@ fn candidate_composite_view_is_materialized_from_the_caller_frontier() {
         .stable_view_plan
         .as_ref()
         .expect("the materialized lend records a loan plan");
-    let lent = CMemoryRange::new(
+    let lent = MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     );
-    let kept = CMemoryRange::new(
+    let kept = MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(1),
         MachineTerm::constant(2),
@@ -738,7 +732,7 @@ fn candidate_composite_view_is_materialized_from_the_caller_frontier() {
     );
     assert_eq!(plan.ledger.permits_memory_access(&kept), Ok(()));
     assert!(transfer.callee_resources.satisfies_fact(
-        &CResourceFact::view_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]),
+        &ResourceFact::view_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]),
         &PureFactContext::new(),
     ));
     let callee_state = callee_state_with_resource_transfer(callee, &transfer);
@@ -757,7 +751,7 @@ fn candidate_composite_view_is_materialized_from_the_caller_frontier() {
     // is empty here, so what is left is exactly the recovered escrow.)
     assert_eq!(
         resources.facts(),
-        [CResourceFact::own(CResource::Memory(lent))]
+        [ResourceFact::own(Resource::Memory(lent))]
     );
 }
 
@@ -766,23 +760,23 @@ fn candidate_composite_view_is_materialized_from_the_caller_frontier() {
 /// gets back: composing the produced head beside it would leave the caller
 /// owning `p[0..1]` twice, once directly and once inside `zz_box3(p)`.
 fn view_and_produce_reader(name: &str) -> ProgramFunction {
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let produced = CResourceSpec::declared(
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let produced = ResourceSpec::declared(
         ResourceFamily::Composite,
-        CResourceAccessMode::Own,
+        ResourceAccessMode::Own,
         "zz_box3".into(),
         vec![c_variable("p")],
         vec![ProgramType::Int32Pointer],
-        CResourceTransferRole::Produce,
-        CResourceSnapshot::Post,
+        ResourceTransferRole::Produce,
+        ResourceSnapshot::Post,
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "zz_box3",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(segment.clone())],
+        vec![ResourceSpec::owned_memory(segment.clone())],
         Vec::new(),
     );
     c_function(
@@ -791,7 +785,7 @@ fn view_and_produce_reader(name: &str) -> ProgramFunction {
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         c_return(c_load(c_variable("p"))),
     )
-    .with_resource_summary(vec![CResourceSpec::viewed_memory(segment)], vec![produced])
+    .with_resource_summary(vec![ResourceSpec::viewed_memory(segment)], vec![produced])
     .with_composite_resource_definitions(vec![definition])
 }
 
@@ -800,10 +794,10 @@ fn produced_composite_over_a_viewed_owner_is_refused() {
     let pointer = pointer();
     let function = view_and_produce_reader("view_and_produce");
     let environment =
-        CExecutionEnvironment::new().with_verified_function_rule(CVerifiedFunctionRule {
+        ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: function.clone(),
-            loop_semantics: CLoopSemantics::Verify,
+            loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
         });
@@ -812,24 +806,24 @@ fn produced_composite_over_a_viewed_owner_is_refused() {
         &function,
         &[c_pointer_value(pointer)],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .expect("the call should execute");
     assert!(
         paths.iter().all(|path| matches!(
             &path.outcome,
-            CFunctionOutcome::RuntimeError(error) if produced_composite_overlap(error)
+            FunctionOutcome::RuntimeError(error) if produced_composite_overlap(error)
         )),
         "{:?}",
         paths.iter().map(|path| &path.outcome).collect::<Vec<_>>()
     );
 }
 
-fn produced_composite_overlap(error: &CRuntimeError) -> bool {
+fn produced_composite_overlap(error: &RuntimeError) -> bool {
     matches!(
         error,
-        CRuntimeError::ProducedCompositeOverlapsHeldResource { .. }
+        RuntimeError::ProducedCompositeOverlapsHeldResource { .. }
     )
 }
 
@@ -837,10 +831,10 @@ fn produced_composite_overlap(error: &CRuntimeError) -> bool {
 fn candidate_composite_reader_can_be_called_twice() {
     let pointer = pointer();
     let head =
-        CResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
+        ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
     let caller = ExecutionState::new()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer.clone(), int32(7)),
         )
@@ -853,13 +847,13 @@ fn candidate_composite_reader_can_be_called_twice() {
             pointer.clone(),
         ))],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::execute_bodies(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("first composite call should execute");
     let [
-        CFunctionPath {
-            outcome: CFunctionOutcome::Return {
+        FunctionPath {
+            outcome: FunctionOutcome::Return {
                 state: after_first, ..
             },
             ..
@@ -876,15 +870,15 @@ fn candidate_composite_reader_can_be_called_twice() {
             pointer.clone(),
         ))],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::execute_bodies(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("second composite call should execute");
     assert!(
         matches!(
             second.as_slice(),
-            [CFunctionPath {
-                outcome: CFunctionOutcome::Return { .. },
+            [FunctionPath {
+                outcome: FunctionOutcome::Return { .. },
                 ..
             }]
         ),
@@ -908,11 +902,11 @@ fn candidate_reader_recovers_owner_for_following_write() {
             pointer.clone(),
         ))],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment(&function)),
+        ExecutionContext::apply_verified_rules(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate call should execute");
-    let CFunctionOutcome::Return { state, .. } = &paths[0].outcome else {
+    let FunctionOutcome::Return { state, .. } = &paths[0].outcome else {
         panic!("candidate reader should return: {:?}", paths[0].outcome);
     };
     assert_eq!(paths[0].loan_evidence.len(), 1);
@@ -932,7 +926,7 @@ fn candidate_reader_recovers_owner_for_following_write() {
         .expect("retained candidate evidence rechecks");
     assert_eq!(state.loan_ledger(), Some(&evidence.recovered_ledger));
     assert!(state.resources().satisfies_fact(
-        &CResourceFact::own_memory(CMemoryRange::new(
+        &ResourceFact::own_memory(MemoryRange::new(
             pointer,
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -952,18 +946,18 @@ fn candidate_direct_reader_recovers_owner_for_following_write() {
             pointer.clone(),
         ))],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::execute_bodies(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate direct call should execute");
-    let CFunctionOutcome::Return { state, .. } = &paths[0].outcome else {
+    let FunctionOutcome::Return { state, .. } = &paths[0].outcome else {
         panic!(
             "candidate direct reader should return: {:?}",
             paths[0].outcome
         );
     };
     assert!(state.resources().satisfies_fact(
-        &CResourceFact::own_memory(CMemoryRange::new(
+        &ResourceFact::own_memory(MemoryRange::new(
             pointer,
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -988,7 +982,7 @@ fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity()
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment(&function)),
+        ExecutionContext::apply_verified_rules(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate call should execute");
@@ -1025,7 +1019,7 @@ fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity()
 fn candidate_nested_body_call_retains_inner_and_outer_evidence() {
     let pointer = pointer();
     let inner = reader("candidate_nested_inner", false);
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
     let outer = c_function(
         ProgramType::Int32,
         "candidate_nested_outer",
@@ -1038,7 +1032,7 @@ fn candidate_nested_body_call_retains_inner_and_outer_evidence() {
             )),
         ),
     )
-    .with_resource_summary(vec![CResourceSpec::viewed_memory(segment)], Vec::new());
+    .with_resource_summary(vec![ResourceSpec::viewed_memory(segment)], Vec::new());
     let environment = environment(&outer).with_function(inner);
     let ledger = LoanLedger::new();
     let participant = ledger.fresh_participant().expect("caller participant");
@@ -1050,7 +1044,7 @@ fn candidate_nested_body_call_retains_inner_and_outer_evidence() {
         &outer,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment),
+        ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::new(),
     )
     .expect("nested candidate call should execute");
@@ -1071,7 +1065,7 @@ fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
     let pointer = pointer();
     let function = reader("candidate_local_reader", false);
     let caller = ExecutionState::new().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_block(pointer.block.clone(), 4)
             .store(pointer.clone(), int32(7)),
     );
@@ -1080,7 +1074,7 @@ fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::execute_bodies(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate local view call should execute");
@@ -1091,8 +1085,8 @@ fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
     );
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::Return { state, .. },
+        [FunctionPath {
+            outcome: FunctionOutcome::Return { state, .. },
             ..
         }] if state.loan_ledger().is_none_or(|ledger| !ledger.has_active_memory_loans())
     ));
@@ -1108,7 +1102,7 @@ fn candidate_local_array_view_out_of_bounds_is_refused() {
     let pointer = pointer();
     let function = reader_for_input("candidate_local_wide_reader", 4);
     let caller = ExecutionState::new().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_block(pointer.block.clone(), 4)
             .store(pointer.clone(), int32(7)),
     );
@@ -1117,15 +1111,15 @@ fn candidate_local_array_view_out_of_bounds_is_refused() {
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::execute_bodies(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate out-of-bounds local view should execute to a diagnostic");
     assert!(
         matches!(
             paths.as_slice(),
-            [CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::MissingResource {
+            [FunctionPath {
+                outcome: FunctionOutcome::RuntimeError(RuntimeError::MissingResource {
                     resource
                 }),
                 ..
@@ -1147,15 +1141,15 @@ fn candidate_conditional_composite_with_a_false_guard_needs_no_owned_entry() {
         &function,
         &[c_pointer_value(Pointer::null())],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment),
+        ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::new(),
     )
     .expect("a false composite guard should execute");
     assert!(
         matches!(
             paths.as_slice(),
-            [CFunctionPath {
-                outcome: CFunctionOutcome::Return { .. },
+            [FunctionPath {
+                outcome: FunctionOutcome::Return { .. },
                 ..
             }]
         ),
@@ -1178,21 +1172,21 @@ fn candidate_conditional_composite_with_an_undecided_guard_still_needs_its_entry
         &function,
         &[c_pointer_value(symbolic)],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment),
+        ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::new(),
     )
     .expect("an undecided composite guard should execute to a diagnostic");
     assert!(
         matches!(
             paths.as_slice(),
-            [CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::MissingResource {
+            [FunctionPath {
+                outcome: FunctionOutcome::RuntimeError(RuntimeError::MissingResource {
                     resource
                 }),
                 ..
             }] if matches!(
                 resource.resource(),
-                CResource::Composite { name, .. } if name == "guarded_item"
+                Resource::Composite { name, .. } if name == "guarded_item"
             )
         ),
         "an undecided guard is not an empty body: {paths:?}"
@@ -1205,8 +1199,8 @@ fn candidate_conditional_composite_with_an_undecided_guard_still_needs_its_entry
 #[test]
 fn candidate_repeated_token_requirement_reports_the_demanded_quantity() {
     let requirement = |parameter| {
-        CResourceSpec::token(
-            CResourceAccessMode::Own,
+        ResourceSpec::token(
+            ResourceAccessMode::Own,
             "can_complete".to_string(),
             vec![c_variable(parameter)],
             vec![ProgramType::Int32],
@@ -1228,7 +1222,7 @@ fn candidate_repeated_token_requirement_reports_the_demanded_quantity() {
     let token = ProgramValue::Int32(MachineTerm::constant(5));
     let caller =
         ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own_token("can_complete".to_string(), vec![token.clone()]),
+            ResourceFact::own_token("can_complete".to_string(), vec![token.clone()]),
         ));
     let paths = execute_c_function_call_paths(
         &caller,
@@ -1238,15 +1232,15 @@ fn candidate_repeated_token_requirement_reports_the_demanded_quantity() {
             ProgramExpression::Value(token),
         ],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::execute_bodies(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("a doubled token requirement should execute to a diagnostic");
     assert!(
         matches!(
             paths.as_slice(),
-            [CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::MissingResource {
+            [FunctionPath {
+                outcome: FunctionOutcome::RuntimeError(RuntimeError::MissingResource {
                     resource
                 }),
                 ..
@@ -1265,14 +1259,14 @@ fn candidate_inline_reader_uses_the_callers_checked_resources() {
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::execute_bodies(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate inline call should execute");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::Return { .. },
+        [FunctionPath {
+            outcome: FunctionOutcome::Return { .. },
             ..
         }]
     ));
@@ -1306,7 +1300,7 @@ fn candidate_unresolved_return_obligation_refuses_recovery() {
     let (outcome, _, _) = function_outcome_from_body_with_resource_transfer(
         &caller,
         &function,
-        CStatementOutcome::Return {
+        StatementOutcome::Return {
             value: int32(7).into(),
             state: Box::new(callee),
         },
@@ -1320,7 +1314,7 @@ fn candidate_unresolved_return_obligation_refuses_recovery() {
     .expect("candidate return transition should complete");
     assert!(matches!(
         outcome,
-        CFunctionOutcome::RuntimeError(CRuntimeError::PendingCallObligations(pending))
+        FunctionOutcome::RuntimeError(RuntimeError::PendingCallObligations(pending))
             if pending.as_ref() == [unresolved]
     ));
 }
@@ -1351,7 +1345,7 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
     .expect_err("ledger-only caller must be refused");
     assert!(matches!(
         error,
-        CRuntimeError::LoanRefusal(diagnostic)
+        RuntimeError::LoanRefusal(diagnostic)
             if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
                 && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Plan
     ));
@@ -1378,7 +1372,7 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
     .expect_err("participant-only caller must be refused");
     assert!(matches!(
         error,
-        CRuntimeError::LoanRefusal(diagnostic)
+        RuntimeError::LoanRefusal(diagnostic)
             if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
                 && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Plan
     ));
@@ -1423,7 +1417,7 @@ fn candidate_rejects_wrong_callee_participant_on_recovery() {
     .expect_err("recovery without a ledger must be refused");
     assert!(matches!(
         error,
-        CRuntimeError::LoanRefusal(diagnostic)
+        RuntimeError::LoanRefusal(diagnostic)
             if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
                 && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Recovery
     ));
@@ -1439,7 +1433,7 @@ fn candidate_rejects_wrong_callee_participant_on_recovery() {
     .expect_err("recovery must refuse the wrong callee participant");
     assert!(matches!(
         error,
-        CRuntimeError::LoanRefusal(diagnostic)
+        RuntimeError::LoanRefusal(diagnostic)
             if diagnostic.category() == crate::kernel::LoanRefusalCategory::WrongHolder
                 && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Recovery
     ));
@@ -1547,7 +1541,7 @@ fn candidate_nested_reader_reborrows_and_restores_outer_view_binding() {
     assert_eq!(participant, outer_callee.loan_participant());
     assert_eq!(bindings, outer_callee.loan_view_bindings().clone());
     assert!(resources.satisfies_fact(
-        &CResourceFact::view_memory(CMemoryRange::new(
+        &ResourceFact::view_memory(MemoryRange::new(
             pointer,
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -1560,7 +1554,7 @@ fn candidate_nested_reader_reborrows_and_restores_outer_view_binding() {
 fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
     let pointer = pointer();
     let inner = reader("candidate_nested_body_inner", false);
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
     let outer = c_function(
         ProgramType::Int32,
         "candidate_nested_body_outer",
@@ -1570,13 +1564,13 @@ fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
             c_return(c_variable("result")),
         ),
     )
-    .with_resource_summary(vec![CResourceSpec::viewed_memory(segment)], Vec::new());
-    let environment = CExecutionEnvironment::new()
+    .with_resource_summary(vec![ResourceSpec::viewed_memory(segment)], Vec::new());
+    let environment = ExecutionEnvironment::new()
         .with_function(inner.clone())
-        .with_verified_function_rule(CVerifiedFunctionRule {
+        .with_verified_function_rule(VerifiedFunctionRule {
             pointer_result: None,
             function: inner,
-            loop_semantics: CLoopSemantics::Verify,
+            loop_semantics: LoopSemantics::Verify,
             checked_callees: None,
             applied_tactics: Default::default(),
         });
@@ -1588,11 +1582,11 @@ fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
             pointer.clone(),
         ))],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment),
+        ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::new(),
     )
     .expect("nested candidate reader should execute through the real body call");
-    let CFunctionOutcome::Return { value, state } = &paths[0].outcome else {
+    let FunctionOutcome::Return { value, state } = &paths[0].outcome else {
         panic!(
             "nested candidate reader should return: {:?}",
             paths[0].outcome
@@ -1600,7 +1594,7 @@ fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
     };
     assert_eq!(value.native().as_ref(), &int32(7));
     assert!(state.resources().satisfies_fact(
-        &CResourceFact::own_memory(CMemoryRange::new(
+        &ResourceFact::own_memory(MemoryRange::new(
             pointer,
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -1651,7 +1645,7 @@ fn candidate_nested_call_preserves_outer_view_for_wider_output() {
     )
     .expect("inner transfer should run")
     .expect("inner transfer should be accepted");
-    let output = CResourceFact::view_memory(CMemoryRange::new(
+    let output = ResourceFact::view_memory(MemoryRange::new(
         pointer,
         MachineTerm::constant(0),
         MachineTerm::constant(2),
@@ -1681,15 +1675,15 @@ fn assert_unbacked_output_rejected(output_start: u32, output_end: u32, name: &st
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment(&function)),
+        ExecutionContext::apply_verified_rules(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate output call should execute to a diagnostic path");
     assert!(
         matches!(
             paths.as_slice(),
-            [CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::UnbackedReturnedView { .. }),
+            [FunctionPath {
+                outcome: FunctionOutcome::RuntimeError(RuntimeError::UnbackedReturnedView { .. }),
                 ..
             }]
         ),
@@ -1712,7 +1706,7 @@ fn candidate_rejects_wider_output_without_outer_binding() {
 /// that exact owned occurrence or as a bare equal fact.
 fn recover_with_extra_returned_view(
     projected_from_owner: bool,
-) -> Result<ResourceContext, CRuntimeError> {
+) -> Result<ResourceContext, RuntimeError> {
     let pointer = pointer();
     let function = reader("candidate_returned_projection", false);
     let caller = caller_with_owned_end(&pointer, 3, 12);
@@ -1733,12 +1727,12 @@ fn recover_with_extra_returned_view(
     )
     .expect("candidate transfer should run")
     .expect("candidate transfer should be accepted");
-    let owner = CResourceFact::own_memory(CMemoryRange::new(
+    let owner = ResourceFact::own_memory(MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(1),
         MachineTerm::constant(3),
     ));
-    let returned = CResourceFact::view_memory(CMemoryRange::new(
+    let returned = ResourceFact::view_memory(MemoryRange::new(
         pointer,
         MachineTerm::constant(1),
         MachineTerm::constant(3),
@@ -1775,7 +1769,7 @@ fn recover_with_extra_returned_view(
 fn candidate_accepts_a_returned_view_projected_from_a_returned_owner() {
     let resources = recover_with_extra_returned_view(true)
         .expect("a checked projection of the returned owner has provenance");
-    let projected = CResourceFact::view_memory(CMemoryRange::new(
+    let projected = ResourceFact::view_memory(MemoryRange::new(
         pointer(),
         MachineTerm::constant(1),
         MachineTerm::constant(3),
@@ -1788,7 +1782,7 @@ fn candidate_rejects_a_returned_view_that_only_an_equal_owner_satisfies() {
     let error = recover_with_extra_returned_view(false)
         .expect_err("fact equality against an owner is not provenance");
     assert!(
-        matches!(&error, CRuntimeError::UnbackedReturnedView { .. }),
+        matches!(&error, RuntimeError::UnbackedReturnedView { .. }),
         "unexpected refusal: {error}"
     );
 }
@@ -1802,7 +1796,7 @@ fn candidate_rejects_a_returned_view_that_only_an_equal_owner_satisfies() {
 /// same; only the carried block's mutability differs.
 fn recover_with_a_carried_view_of_another_block(
     read_only: bool,
-) -> Result<ResourceContext, CRuntimeError> {
+) -> Result<ResourceContext, RuntimeError> {
     let pointer = pointer();
     let other = Pointer {
         block: PointerBlock::Concrete("global:candidate_table#file-static:t.c".to_string()),
@@ -1832,7 +1826,7 @@ fn recover_with_a_carried_view_of_another_block(
     )
     .expect("candidate transfer should run")
     .expect("candidate transfer should be accepted");
-    let carried = CResourceFact::view_memory(CMemoryRange::new(
+    let carried = ResourceFact::view_memory(MemoryRange::new(
         other,
         MachineTerm::constant(0),
         MachineTerm::constant(2),
@@ -1859,7 +1853,7 @@ fn recover_with_a_carried_view_of_another_block(
 fn candidate_accepts_a_carried_view_of_read_only_storage() {
     let resources = recover_with_a_carried_view_of_another_block(true)
         .expect("a view of read-only storage is intrinsic read authority");
-    let carried = CResourceFact::view_memory(CMemoryRange::new(
+    let carried = ResourceFact::view_memory(MemoryRange::new(
         Pointer {
             block: PointerBlock::Concrete("global:candidate_table#file-static:t.c".to_string()),
             offset: PointerOffsetTerm::Constant(0),
@@ -1876,7 +1870,7 @@ fn candidate_rejects_a_carried_view_of_mutable_storage() {
         .expect_err("a view of mutable storage the caller never lent has no provenance");
     // The refusal carries the carried view itself, so the surface can
     // name it rather than print a kernel dump of it.
-    let carried = CResourceFact::view_memory(CMemoryRange::new(
+    let carried = ResourceFact::view_memory(MemoryRange::new(
         Pointer {
             block: PointerBlock::Concrete("global:candidate_table#file-static:t.c".to_string()),
             offset: PointerOffsetTerm::Constant(0),
@@ -1885,17 +1879,13 @@ fn candidate_rejects_a_carried_view_of_mutable_storage() {
         MachineTerm::constant(2),
     ));
     assert!(
-        matches!(&error, CRuntimeError::UnbackedReturnedView { view } if **view == carried),
+        matches!(&error, RuntimeError::UnbackedReturnedView { view } if **view == carried),
         "unexpected refusal: {error}"
     );
 }
 
-fn symbolic_bounded_range(
-    start: MachineTerm,
-    end: MachineTerm,
-    element_width: u32,
-) -> CMemoryRange {
-    CMemoryRange::new_with_element_width(
+fn symbolic_bounded_range(start: MachineTerm, end: MachineTerm, element_width: u32) -> MemoryRange {
+    MemoryRange::new_with_element_width(
         Pointer {
             block: PointerBlock::Concrete("candidate:separation".to_string()),
             offset: PointerOffsetTerm::Constant(0),
@@ -1906,7 +1896,7 @@ fn symbolic_bounded_range(
     )
 }
 
-fn constant_bounded_range(start: i32, end: i32, element_width: u32) -> CMemoryRange {
+fn constant_bounded_range(start: i32, end: i32, element_width: u32) -> MemoryRange {
     symbolic_bounded_range(
         MachineTerm::constant(start as u32),
         MachineTerm::constant(end as u32),
@@ -2023,7 +2013,7 @@ fn assert_mutable_view_effect_result(
     mutable_start: u32,
     mutable_end: u32,
     name: &str,
-) -> Vec<CFunctionPath> {
+) -> Vec<FunctionPath> {
     let pointer = pointer();
     let function = reader_with_mutable_range(name, mutable_start, mutable_end);
     execute_c_function_call_paths(
@@ -2031,7 +2021,7 @@ fn assert_mutable_view_effect_result(
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment(&function)),
+        ExecutionContext::apply_verified_rules(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate mutable call should execute")
@@ -2042,8 +2032,8 @@ fn candidate_rejects_mutable_effect_overlapping_view() {
     let paths = assert_mutable_view_effect_result(0, 1, "candidate_overlap_effect");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)),
+        [FunctionPath {
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
             ..
         }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
             && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
@@ -2067,14 +2057,14 @@ fn candidate_rejects_symbolic_same_base_overlapping_effect() {
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment(&function)),
+        ExecutionContext::apply_verified_rules(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate symbolic overlap should execute to a diagnostic path");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)),
+        [FunctionPath {
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
             ..
         }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
             && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
@@ -2094,7 +2084,7 @@ fn candidate_rejects_unproved_mutable_effect_separation() {
         block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
         offset: PointerOffsetTerm::Variable(Variable(701)),
     };
-    let input = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let input = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
     let function = c_function(
         ProgramType::Int32,
         "candidate_unknown_effect",
@@ -2104,11 +2094,11 @@ fn candidate_rejects_unproved_mutable_effect_separation() {
         ],
         c_return(c_load(c_variable("p"))),
     )
-    .with_resource_summary(vec![CResourceSpec::viewed_memory(input)], Vec::new())
+    .with_resource_summary(vec![ResourceSpec::viewed_memory(input)], Vec::new())
     .with_contract(
         Vec::new(),
         Vec::new(),
-        vec![CMemorySegment::new(
+        vec![MemorySegment::new(
             c_variable("q"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -2124,14 +2114,14 @@ fn candidate_rejects_unproved_mutable_effect_separation() {
             ProgramExpression::Value(ProgramValue::pointer(mutated)),
         ],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment(&function)),
+        ExecutionContext::apply_verified_rules(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate unknown separation should execute to a diagnostic path");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)),
+        [FunctionPath {
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
             ..
         }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::SeparationUnproved
             && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::SeparationUnproved
@@ -2142,9 +2132,9 @@ fn candidate_rejects_unproved_mutable_effect_separation() {
 /// write footprint derived from that ownership. Each requirement is
 /// served by a different owned occurrence of the caller's partition.
 fn viewer_and_writer(name: &str) -> ProgramFunction {
-    let viewed = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let viewed = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
     // The writer reads only `p`, so `q` may arrive unwritten.
-    let owned = CMemorySegment::new(c_variable("q"), c_int32_literal(0), c_int32_literal(1))
+    let owned = MemorySegment::new(c_variable("q"), c_int32_literal(0), c_int32_literal(1))
         .with_uninitialized(true);
     c_function(
         ProgramType::Int32,
@@ -2157,8 +2147,8 @@ fn viewer_and_writer(name: &str) -> ProgramFunction {
     )
     .with_resource_summary(
         vec![
-            CResourceSpec::viewed_memory(viewed),
-            CResourceSpec::owned_memory(owned),
+            ResourceSpec::viewed_memory(viewed),
+            ResourceSpec::owned_memory(owned),
         ],
         Vec::new(),
     )
@@ -2184,7 +2174,7 @@ fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
         offset: PointerOffsetTerm::Variable(Variable(701)),
     };
     let owned_range = |pointer: &Pointer| {
-        CResourceFact::own(CResource::Memory(CMemoryRange::new(
+        ResourceFact::own(Resource::Memory(MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -2193,7 +2183,7 @@ fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(viewed.block.clone(), 8)
                 .store(viewed.clone(), int32(7)),
         )
@@ -2211,20 +2201,20 @@ fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
             ProgramExpression::Value(ProgramValue::pointer(mutated.clone())),
         ],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment(&function)),
+        ExecutionContext::apply_verified_rules(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate separate-occurrence effect call should execute");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::Return { .. },
+        [FunctionPath {
+            outcome: FunctionOutcome::Return { .. },
             ..
         }]
     ));
     let [
-        CFunctionPath {
-            outcome: CFunctionOutcome::Return { state: after, .. },
+        FunctionPath {
+            outcome: FunctionOutcome::Return { state: after, .. },
             ..
         },
     ] = paths.as_slice()
@@ -2252,8 +2242,8 @@ fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
 #[test]
 fn candidate_rejects_a_mutable_effect_overlapping_a_view_from_its_own_occurrence() {
     let pointer = pointer();
-    let viewed = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(2));
-    let owned = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let viewed = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(2));
+    let owned = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
     let function = c_function(
         ProgramType::Int32,
         "candidate_same_occurrence_overlap_effect",
@@ -2262,8 +2252,8 @@ fn candidate_rejects_a_mutable_effect_overlapping_a_view_from_its_own_occurrence
     )
     .with_resource_summary(
         vec![
-            CResourceSpec::viewed_memory(viewed),
-            CResourceSpec::owned_memory(owned),
+            ResourceSpec::viewed_memory(viewed),
+            ResourceSpec::owned_memory(owned),
         ],
         Vec::new(),
     )
@@ -2273,14 +2263,14 @@ fn candidate_rejects_a_mutable_effect_overlapping_a_view_from_its_own_occurrence
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment(&function)),
+        ExecutionContext::apply_verified_rules(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate same-occurrence overlap should execute to a diagnostic path");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)),
+        [FunctionPath {
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
             ..
         }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
             && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
@@ -2292,8 +2282,8 @@ fn candidate_allows_provably_disjoint_mutable_effect() {
     let paths = assert_mutable_view_effect_result(1, 2, "candidate_disjoint_effect");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::Return { .. },
+        [FunctionPath {
+            outcome: FunctionOutcome::Return { .. },
             ..
         }]
     ));
@@ -2307,23 +2297,23 @@ fn composite_reader_with_mutable_range(
     mutable_start: u32,
     mutable_end: u32,
 ) -> ProgramFunction {
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let required = CResourceSpec::declared(
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let required = ResourceSpec::declared(
         ResourceFamily::Composite,
-        CResourceAccessMode::View,
+        ResourceAccessMode::View,
         "cell".into(),
         vec![c_variable("p")],
         vec![ProgramType::Int32Pointer],
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "cell",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(segment)],
+        vec![ResourceSpec::owned_memory(segment)],
         Vec::new(),
     );
     c_function(
@@ -2337,7 +2327,7 @@ fn composite_reader_with_mutable_range(
     .with_contract(
         Vec::new(),
         Vec::new(),
-        vec![CMemorySegment::new(
+        vec![MemorySegment::new(
             c_variable("p"),
             c_int32_literal(mutable_start),
             c_int32_literal(mutable_end),
@@ -2351,14 +2341,14 @@ fn composite_mutable_effect_paths(
     mutable_start: u32,
     mutable_end: u32,
     name: &str,
-) -> Vec<CFunctionPath> {
+) -> Vec<FunctionPath> {
     let pointer = pointer();
     let head =
-        CResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
+        ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]);
     let caller = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(pointer.block.clone(), 8)
                 .store(pointer.clone(), int32(7)),
         )
@@ -2369,7 +2359,7 @@ fn composite_mutable_effect_paths(
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment(&function)),
+        ExecutionContext::apply_verified_rules(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate composite mutable call should execute")
@@ -2384,8 +2374,8 @@ fn candidate_rejects_mutable_effect_overlapping_a_composite_view_piece() {
     let paths = composite_mutable_effect_paths(0, 1, "candidate_composite_overlap_effect");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)),
+        [FunctionPath {
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
             ..
         }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
             && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
@@ -2400,8 +2390,8 @@ fn candidate_allows_a_mutable_effect_disjoint_from_a_composite_view_piece() {
     let paths = composite_mutable_effect_paths(1, 2, "candidate_composite_disjoint_effect");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::Return { .. },
+        [FunctionPath {
+            outcome: FunctionOutcome::Return { .. },
             ..
         }]
     ));
@@ -2414,7 +2404,7 @@ fn candidate_rejects_mutable_effect_overlapping_a_local_view() {
     let pointer = pointer();
     let function = reader_with_mutable_range("candidate_intrinsic_overlap_effect", 0, 1);
     let caller = ExecutionState::new().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_block(pointer.block.clone(), 8)
             .store(pointer.clone(), int32(7)),
     );
@@ -2423,14 +2413,14 @@ fn candidate_rejects_mutable_effect_overlapping_a_local_view() {
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment(&function)),
+        ExecutionContext::apply_verified_rules(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate intrinsic view effect call should execute");
     assert!(matches!(
         paths.as_slice(),
-        [CFunctionPath {
-            outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)),
+        [FunctionPath {
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
             ..
         }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
             && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
@@ -2476,7 +2466,7 @@ fn candidate_nested_reader_rejects_stale_outer_binding() {
     .expect("stale binding check should run");
     assert!(matches!(
         result,
-        Err(CRuntimeError::LoanRefusal(diagnostic))
+        Err(RuntimeError::LoanRefusal(diagnostic))
             if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
                 && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Plan
     ));
@@ -2493,18 +2483,18 @@ fn candidate_early_return_closes_call_scope() {
             pointer.clone(),
         ))],
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&environment(&function)),
+        ExecutionContext::execute_bodies(&environment(&function)),
         &mut ExecutionBudget::new(),
     )
     .expect("candidate early return should execute");
-    let CFunctionOutcome::Return { state, .. } = &paths[0].outcome else {
+    let FunctionOutcome::Return { state, .. } = &paths[0].outcome else {
         panic!(
             "candidate early reader should return: {:?}",
             paths[0].outcome
         );
     };
     assert!(state.resources().satisfies_fact(
-        &CResourceFact::own_memory(CMemoryRange::new(
+        &ResourceFact::own_memory(MemoryRange::new(
             pointer,
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -2518,7 +2508,7 @@ fn candidate_wrong_scope_close_is_refused() {
     let ledger = LoanLedger::new();
     let owner = ledger.fresh_participant().expect("owner participant");
     let reader = ledger.fresh_participant().expect("reader participant");
-    let escrow = CResourceFact::own(CResource::Token {
+    let escrow = ResourceFact::own(Resource::Token {
         name: "candidate_scope".to_string(),
         arguments: Vec::new().into(),
     });
@@ -2559,22 +2549,22 @@ fn candidate_wrong_scope_close_is_refused() {
 /// unit and the declared cardinality lives in the tracked population, so
 /// `n of slot(p)` is never one owned entry the reservation can select.
 fn token_population_reader(name: &str, population: &str) -> ProgramFunction {
-    let segment = CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let unit = CResourceSpec::declared(
+    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let unit = ResourceSpec::declared(
         ResourceFamily::Composite,
-        CResourceAccessMode::Own,
+        ResourceAccessMode::Own,
         population.into(),
         vec![c_variable("p")],
         vec![ProgramType::Int32Pointer],
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Entry,
     )
     .expect("a unit population term");
-    let counted = CResourceSpec::quantified(
+    let counted = ResourceSpec::quantified(
         c_variable("n"),
         unit,
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Entry,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Entry,
     )
     .expect("a counted population requirement");
     c_function(
@@ -2587,11 +2577,11 @@ fn token_population_reader(name: &str, population: &str) -> ProgramFunction {
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
-        vec![CResourceSpec::viewed_memory(segment), counted],
+        vec![ResourceSpec::viewed_memory(segment), counted],
         Vec::new(),
     )
     .with_composite_resource_definitions(vec![
-        CCompositeResourceDefinition::new(
+        CompositeResourceDefinition::new(
             population,
             vec![c_parameter("p", ProgramType::Int32Pointer)],
             None,
@@ -2617,8 +2607,8 @@ fn nonnegative_quantity(quantity: Variable) -> PureFactContext {
     )
 }
 
-fn token_population_unit(population: &str, pointer: &Pointer) -> CResourceFact {
-    CResourceFact::own_composite(
+fn token_population_unit(population: &str, pointer: &Pointer) -> ResourceFact {
+    ResourceFact::own_composite(
         population.into(),
         vec![ProgramValue::pointer(pointer.clone())],
     )
@@ -2660,7 +2650,7 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
         .as_ref()
         .expect("the view clause still records a loan plan");
     assert_eq!(plan.stable_views().len(), 1);
-    let viewed = CMemoryRange::new(
+    let viewed = MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
@@ -2672,7 +2662,7 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
     assert!(
         transfer
             .callee_resources
-            .satisfies_fact(&CResourceFact::view_memory(viewed), &PureFactContext::new())
+            .satisfies_fact(&ResourceFact::view_memory(viewed), &PureFactContext::new())
     );
 }
 
@@ -2712,7 +2702,7 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
             &state,
             &statement,
             &PureFactContext::new(),
-            CExecutionContext::apply_verified_rules(&environment),
+            ExecutionContext::apply_verified_rules(&environment),
             &mut ExecutionBudget::new(),
         )
         .expect("the sequence executes");
@@ -2721,14 +2711,14 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
             &state,
             &statement,
             &PureFactContext::new(),
-            CExecutionContext::apply_verified_rules(&environment),
+            ExecutionContext::apply_verified_rules(&environment),
             &mut ExecutionBudget::new(),
             &mut variables,
         )
         .expect("the sequence verifies");
         assert_eq!(executes.len(), 1, "{name}: {executes:?}");
         assert!(
-            !matches!(executes[0].outcome, CStatementOutcome::Normal(_)),
+            !matches!(executes[0].outcome, StatementOutcome::Normal(_)),
             "{name}: the sequence leaves abnormally"
         );
         assert_eq!(
@@ -2750,12 +2740,12 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
 fn refused_composite_assembly_retains_the_failed_source_clause() {
     let always = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(c_int32_literal(0)),
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::ProgramExpression(c_int32_literal(0)),
     };
     let missing = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(c_load(c_variable("p"))),
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::ProgramExpression(c_int32_literal(0)),
     };
     let definition = cell_definition(1, vec![always.clone(), always, missing])
@@ -2767,7 +2757,7 @@ fn refused_composite_assembly_retains_the_failed_source_clause() {
         wide_definition(2),
     );
     let (_, transfer) = plan_adapter_lend(&function);
-    let CRuntimeError::UnestablishedAssemblyFact {
+    let RuntimeError::UnestablishedAssemblyFact {
         fact,
         source: Some(source),
         ..
@@ -2830,7 +2820,7 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
         }
         let mut resources = ResourceContext::new_with_equalities(&facts);
         if case != "implicit" {
-            let range = CMemoryRange::new(
+            let range = MemoryRange::new(
                 other,
                 0u32.into(),
                 if matches!(case, "aliased_whole" | "owner_with_alias_fact") {
@@ -2840,15 +2830,15 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
                 },
             );
             resources = resources.unchecked_with_fact(if case == "view" {
-                CResourceFact::view_memory(range)
+                ResourceFact::view_memory(range)
             } else {
-                CResourceFact::own_memory(range)
+                ResourceFact::own_memory(range)
             });
         }
         resources.synchronize_memory_equalities(&facts);
         let state = ExecutionState::new()
             .with_memory(
-                CMemory::new()
+                Memory::new()
                     .with_block(local.block.clone(), 16)
                     .store(local.clone(), int32(7)),
             )
@@ -2859,15 +2849,15 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             &function,
             &[c_pointer_value(local)],
             &facts,
-            CExecutionContext::execute_bodies(&environment(&function)),
+            ExecutionContext::execute_bodies(&environment(&function)),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
         assert_eq!(
             matches!(
                 paths.as_slice(),
-                [CFunctionPath {
-                    outcome: CFunctionOutcome::Return { .. },
+                [FunctionPath {
+                    outcome: FunctionOutcome::Return { .. },
                     ..
                 }]
             ),
@@ -2881,12 +2871,12 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
 fn local_storage_absence_summary_tracks_persistent_resource_edits() {
     let facts = PureFactContext::new();
     let local = pointer();
-    let unknown = CResourceFact::own_memory(CMemoryRange::new(
+    let unknown = ResourceFact::own_memory(MemoryRange::new(
         Pointer::symbolic(Variable(941_002)),
         0u32.into(),
         1u32.into(),
     ));
-    let unrelated = CResourceFact::own_memory(CMemoryRange::new(
+    let unrelated = ResourceFact::own_memory(MemoryRange::new(
         Pointer {
             block: "local:other".into(),
             offset: PointerOffsetTerm::Constant(0),

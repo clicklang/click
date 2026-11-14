@@ -41,7 +41,7 @@ impl ScalarReferenceScopePlan {
         })
     }
     pub(crate) fn operation(self: &Arc<Self>, closing: bool) -> ProgramStatement {
-        ProgramStatement::ScalarReferenceScope(CScalarReferenceScope {
+        ProgramStatement::ScalarReferenceScope(ScalarReferenceScope {
             plan: self.clone(),
             closing,
         })
@@ -57,11 +57,11 @@ impl ScalarReferenceScopePlan {
 /// rewound. Cleanup prevents a branch join from abstracting a dead reference
 /// into a fresh ordinary pointer.
 #[derive(Clone, Debug)]
-pub struct CScalarReferenceScope {
+pub struct ScalarReferenceScope {
     plan: Arc<ScalarReferenceScopePlan>,
     closing: bool,
 }
-impl CScalarReferenceScope {
+impl ScalarReferenceScope {
     pub(crate) fn cleared_locals(&self) -> &[(String, ProgramType)] {
         if self.closing { &self.plan.locals } else { &[] }
     }
@@ -102,7 +102,7 @@ impl CScalarReferenceScope {
                 .binding(name)
                 .ok_or(loans::LoanRefusal::InvalidEvidence)?;
             let (ty, slot) = match binding {
-                CLocalBinding::Object {
+                LocalBinding::Object {
                     storage_declared: true,
                     c_type,
                     slot,
@@ -110,7 +110,7 @@ impl CScalarReferenceScope {
                     constant: false,
                     ..
                 }
-                | CLocalBinding::UninitializedObject {
+                | LocalBinding::UninitializedObject {
                     c_type,
                     slot,
                     volatile: false,
@@ -135,23 +135,23 @@ impl CScalarReferenceScope {
         Ok(state.with_loan_ledger(Some(base)))
     }
 }
-impl PartialEq for CScalarReferenceScope {
+impl PartialEq for ScalarReferenceScope {
     fn eq(&self, other: &Self) -> bool {
         self.closing == other.closing && self.plan.key == other.plan.key
     }
 }
-impl Eq for CScalarReferenceScope {}
-impl std::hash::Hash for CScalarReferenceScope {
+impl Eq for ScalarReferenceScope {}
+impl std::hash::Hash for ScalarReferenceScope {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         std::hash::Hash::hash(&(&self.plan.key, self.closing), state);
     }
 }
-impl Ord for CScalarReferenceScope {
+impl Ord for ScalarReferenceScope {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (&self.plan.key, self.closing).cmp(&(&other.plan.key, other.closing))
     }
 }
-impl PartialOrd for CScalarReferenceScope {
+impl PartialOrd for ScalarReferenceScope {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }

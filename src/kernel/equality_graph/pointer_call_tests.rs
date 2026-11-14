@@ -69,11 +69,11 @@ fn pointer_calls_keep_sorts_order_snapshots_and_noninjectivity() {
     let mut graph = EqualityGraph::default();
     let p = Pointer::symbolic(Variable(30));
     let q = Pointer::symbolic(Variable(31));
-    let memory = CMemory::new().with_block(p.block.clone(), 4);
+    let memory = Memory::new().with_block(p.block.clone(), 4);
     let changed = memory
         .clone()
         .store(p.clone(), ProgramValue::Int32(word(32)));
-    let array = |memory: &CMemory, pointer, element_type| PureFunctionArgument::ArrayRef {
+    let array = |memory: &Memory, pointer, element_type| PureFunctionArgument::ArrayRef {
         memory: memory.clone(),
         pointer: ProgramValue::Pointer(PointerValue::new(pointer, ProgramType::Int32Pointer)),
         element_type,
@@ -135,7 +135,7 @@ fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
         name: "count".into(),
         arguments: vec![pointer_argument(p)],
     };
-    let memory = intern_c_memory(CMemory::new());
+    let memory = intern_c_memory(Memory::new());
     let read = |p| {
         MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,

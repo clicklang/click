@@ -17,7 +17,7 @@ pub(super) fn apply(
     right: &ProgramValue,
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
-) -> Option<CExpressionPath> {
+) -> Option<ExpressionPath> {
     let destination = match op {
         MachineBinaryOp::Multiply
             if (matches!(left, ProgramValue::Int128(_))
@@ -100,8 +100,8 @@ pub(super) fn apply(
             value: result.into(),
             destination,
         });
-    Some(CExpressionPath {
-        outcome: CExpressionOutcome::Value(match destination {
+    Some(ExpressionPath {
+        outcome: ExpressionOutcome::Value(match destination {
             MachineIntegerType::Int128 => ProgramValue::Int128(term),
             MachineIntegerType::UInt128 => ProgramValue::UInt128(term),
             _ => unreachable!(),
@@ -143,7 +143,7 @@ mod tests {
             .unwrap();
             assert!(matches!(
                 path.outcome,
-                CExpressionOutcome::Value(ProgramValue::Int128(_))
+                ExpressionOutcome::Value(ProgramValue::Int128(_))
             ));
             assert!(path.facts.is_empty());
             assert!(
@@ -174,7 +174,7 @@ mod tests {
                 )
                 .unwrap();
                 // The value is the opaque quotient, never a chosen constant.
-                let CExpressionOutcome::Value(
+                let ExpressionOutcome::Value(
                     ProgramValue::Int128(term) | ProgramValue::UInt128(term),
                 ) = &total.outcome
                 else {

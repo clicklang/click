@@ -14,7 +14,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
     // Respelling a copied pointer retains its origin; address equality alone
     // cannot turn an independently originated pointer into this owner.
     let cursor = source_value.clone().with_address(alias.clone());
-    let owner = CResourceFact::own_memory(CMemoryRange::from_pointer_value(
+    let owner = ResourceFact::own_memory(MemoryRange::from_pointer_value(
         &source_value,
         0u32.into(),
         8u32.into(),
@@ -26,15 +26,15 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
     };
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::pointer_equal(alias.clone(), target), true);
-    let spec = CResourceSpec::new(
-        CResourceTerm::Memory(
-            CMemorySegment::new(c_variable("cursor"), c_int32_literal(0), c_int32_literal(4))
+    let spec = ResourceSpec::new(
+        ResourceTerm::Memory(
+            MemorySegment::new(c_variable("cursor"), c_int32_literal(0), c_int32_literal(4))
                 .with_element_width(1),
         ),
-        CResourceAccessMode::View,
-        CResourceQuantity::One,
-        CResourceTransferRole::Borrow,
-        CResourceSnapshot::Entry,
+        ResourceAccessMode::View,
+        ResourceQuantity::One,
+        ResourceTransferRole::Borrow,
+        ResourceSnapshot::Entry,
     )
     .unwrap();
     let mut costs = Vec::new();
@@ -42,8 +42,8 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
         let mut resources =
             ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owner.clone());
         for index in 0..size {
-            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
-                CMemoryRange::new_with_element_width(
+            resources = resources.unchecked_with_fact(ResourceFact::view_memory(
+                MemoryRange::new_with_element_width(
                     source.clone(),
                     ((index + 1) * 16).into(),
                     ((index + 1) * 16 + 8).into(),
@@ -68,7 +68,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
         });
         assert!(partition.1.contains_exact_representation(&owner));
         assert!(partition.0.satisfies_fact(
-            &CResourceFact::view_memory(CMemoryRange::from_pointer_value(
+            &ResourceFact::view_memory(MemoryRange::from_pointer_value(
                 &cursor,
                 0u32.into(),
                 4u32.into(),

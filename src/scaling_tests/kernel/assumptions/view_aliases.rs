@@ -10,7 +10,7 @@ fn view_misses_do_not_enumerate_pointer_alias_classes() {
                 .equality_graph
                 .add_equality(&base, &Pointer::symbolic(Variable(810_001 + index)));
         }
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let goal = Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
@@ -38,7 +38,7 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
         let mut misses = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let memory = CMemory::new();
+            let memory = Memory::new();
             let root = Pointer::symbolic(Variable(820_000));
             let source = Pointer::symbolic(Variable(820_001));
             let query = Pointer::symbolic(Variable(820_002));
@@ -107,7 +107,7 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
         };
         let base = pointer(830_000);
         let mut context = PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
-            memory: CMemory::new(),
+            memory: Memory::new(),
             base: Pointer::symbolic(Variable(839_000)),
             bytes: 16.into(),
             wide: false,
@@ -119,7 +119,7 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
             );
         }
         let goal = Proposition::CMemoryLoadable {
-            memory: CMemory::new(),
+            memory: Memory::new(),
             base: base.clone(),
             bytes: 4096.into(),
             wide: false,
@@ -148,7 +148,7 @@ fn indexed_storage_source_handles_displaced_aliases_beside_other_views() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let mut query = source.clone();
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let mut context = PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: source.clone(),
@@ -194,7 +194,7 @@ fn selected_alias_view_cannot_cross_distinct_allocations() {
         block: PointerBlock::Heap(860_001),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new();
+    let memory = Memory::new();
     // Even an inconsistent graph edge cannot turn a different allocation
     // into this source's storage during a memory query.
     let mut context = PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
@@ -218,7 +218,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                 offset: PointerOffsetTerm::Variable(Variable(id)),
             };
             let source = pointer(870_000);
-            let memory = CMemory::new();
+            let memory = Memory::new();
             let extent = |n| {
                 if wide {
                     MachineTerm::uint64_constant(n)

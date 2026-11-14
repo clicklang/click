@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 pub(super) fn transport_framed_index(
     value: &SharedMachineIntegerTerm,
-    after: &CMemory,
+    after: &Memory,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<SharedMachineIntegerTerm> {
     map_index_with_descent(
@@ -260,8 +260,8 @@ mod tests {
     fn common_call_indices_keep_roots_and_original_read_snapshots() {
         use crate::kernel::{KernelTermImport, PureFunctionArgument, SharedPureApplication};
         let _session = VerificationSession::enter();
-        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("call-snapshot", 8));
-        let address = CMemory::global_pointer("call-snapshot");
+        let before = crate::kernel::intern_c_memory(Memory::new().with_block("call-snapshot", 8));
+        let address = Memory::global_pointer("call-snapshot");
         let after = before
             .memory()
             .clone()
@@ -393,7 +393,7 @@ mod tests {
     fn parity(
         ty: MachineIntegerType,
         term: &MachineTerm,
-        after: &CMemory,
+        after: &Memory,
         facts: Option<(&PureFactContext, bool)>,
     ) {
         let empty = PureFactContext::new();
@@ -467,7 +467,7 @@ mod tests {
     #[test]
     fn framed_index_transport_preserves_native_constructor_rules() {
         let _session = VerificationSession::enter();
-        let after = CMemory::new();
+        let after = Memory::new();
         let x = MachineTerm::Variable(Variable(1018901));
         for ty in [
             MachineIntegerType::Int8,
@@ -558,7 +558,7 @@ mod tests {
             block: "transport-index".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new().with_block("transport-index", 16).store(
+        let before = Memory::new().with_block("transport-index", 16).store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         );
@@ -585,7 +585,7 @@ mod tests {
                 None,
                 None,
             ),
-            CMemory::new(),
+            Memory::new(),
         ] {
             for policy in [None, Some((&facts, true)), Some((&facts, false))] {
                 parity(MachineIntegerType::Int32, &term, &after, policy);
@@ -593,7 +593,7 @@ mod tests {
         }
         let unchanged = transport_framed_index(
             &retained(MachineIntegerType::Int32, &term),
-            &CMemory::new(),
+            &Memory::new(),
             None,
         )
         .unwrap();
@@ -607,7 +607,7 @@ mod tests {
             block: "registered-index".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let before = CMemory::new().with_block("registered-index", 16);
+        let before = Memory::new().with_block("registered-index", 16);
         let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(before.clone()),
             Box::new(pointer.clone()),
@@ -640,11 +640,11 @@ mod tests {
             else_term: Box::new(MachineTerm::constant(2)),
         };
         let term = MachineTerm::add(term, MachineTerm::Variable(Variable(1018902)));
-        parity(MachineIntegerType::Int32, &term, &CMemory::new(), None);
+        parity(MachineIntegerType::Int32, &term, &Memory::new(), None);
         assert!(
             transport_framed_index(
                 &retained(MachineIntegerType::Int32, &term),
-                &CMemory::new(),
+                &Memory::new(),
                 None
             )
             .is_none()
@@ -654,7 +654,7 @@ mod tests {
     #[test]
     fn framed_index_transport_keeps_opaque_constant_readings() {
         let _session = VerificationSession::enter();
-        let after = CMemory::new();
+        let after = Memory::new();
         let null = MachineTerm::PointerAddress(
             Box::new(Pointer::null()),
             crate::kernel::AddressObjectClass::NONE,
@@ -830,8 +830,8 @@ mod tests {
     #[test]
     fn exact_index_normalization_keeps_snapshot_kind_and_context_authority() {
         let _session = VerificationSession::enter();
-        let pointer = CMemory::global_pointer("exact-index");
-        let initial = CMemory::new().with_block("exact-index", 16);
+        let pointer = Memory::global_pointer("exact-index");
+        let initial = Memory::new().with_block("exact-index", 16);
         let stored = initial.clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
@@ -934,7 +934,7 @@ mod tests {
         for _ in 0..8 {
             assert_eq!(normalize_exact_index(&value, &empty), Some(value.clone()));
             assert_eq!(
-                transport_framed_index(&value, &CMemory::new(), None),
+                transport_framed_index(&value, &Memory::new(), None),
                 Some(value.clone())
             );
         }

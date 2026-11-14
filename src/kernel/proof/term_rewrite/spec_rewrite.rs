@@ -1989,7 +1989,7 @@ impl<'a> TermRewrite<'a> {
     /// behavior; the Spec resource path must participate in the active
     /// tactic deadline from replacement collection onward.
     pub(crate) fn for_checked_typed_variables(
-        c: &'a BTreeMap<Variable, TypedCReplacement>,
+        c: &'a BTreeMap<Variable, TypedProgramValueReplacement>,
         integer: &'a BTreeMap<Variable, IntegerTerm>,
         algebraic: &'a BTreeMap<Variable, AlgebraicTerm>,
     ) -> Self {
@@ -2029,7 +2029,7 @@ mod tests {
                 value: Box::new(SpecIntegerExpression::Term(IntegerTerm::var(source))),
                 destination: MachineIntegerType::Int32,
             },
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(7))),
         };
         let rewritten =
@@ -2124,7 +2124,7 @@ mod tests {
             variable: binder,
             body: Box::new(SpecProposition::Comparison {
                 left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(source))),
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
                     free_source,
                 ))),
@@ -2132,7 +2132,7 @@ mod tests {
         };
         let c_replacements = BTreeMap::from([(
             source,
-            TypedCReplacement::Bitvector(MachineTerm::Variable(binder)),
+            TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(binder)),
         )]);
         let integer_replacements = BTreeMap::new();
         let algebraic_replacements = BTreeMap::new();
@@ -2164,7 +2164,7 @@ mod tests {
 
     #[test]
     fn checked_spec_rewrite_reserves_integer_ids_hidden_in_registered_load_offsets() {
-        let memory: SharedMemory = CMemory::new().into();
+        let memory: SharedMemory = Memory::new().into();
         let pointer = Pointer {
             block: PointerBlock::Symbolic(Variable(101)),
             offset: PointerOffsetTerm::scaled_int32_node(
@@ -2191,13 +2191,13 @@ mod tests {
             variable: binder,
             body: Box::new(SpecProposition::Comparison {
                 left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(source))),
-                operator: CComparisonOperator::Equal,
+                operator: ComparisonOperator::Equal,
                 right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(load))),
             }),
         };
         let c_replacements = BTreeMap::from([(
             source,
-            TypedCReplacement::Bitvector(MachineTerm::Variable(binder)),
+            TypedProgramValueReplacement::Bitvector(MachineTerm::Variable(binder)),
         )]);
         let integer_replacements = BTreeMap::new();
         let algebraic_replacements = BTreeMap::new();

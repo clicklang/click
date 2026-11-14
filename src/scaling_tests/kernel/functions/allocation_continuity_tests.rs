@@ -16,12 +16,12 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
         vec![],
         c_return(c_void_value()),
     )
-    .with_composite_resource_definitions(vec![CCompositeResourceDefinition::new(
+    .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
         "boxed",
         vec![c_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
-        vec![CResourceSpec::owned_memory(CMemorySegment::new(
+        vec![ResourceSpec::owned_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -37,23 +37,21 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
     let samples = [16, 64, 256]
         .into_iter()
         .map(|size| {
-            let mut memory = CMemory::new();
+            let mut memory = Memory::new();
             let mut kept = ResourceContext::new();
             for index in 0..size {
                 let object = heap(931_000 + index as u64);
                 memory = memory
                     .with_heap_allocation_claim(object.clone(), HeapExtent::int32(bytes.clone()))
                     .expect("a fresh live object");
-                kept = kept.unchecked_with_fact(CResourceFact::own_composite(
+                kept = kept.unchecked_with_fact(ResourceFact::own_composite(
                     "boxed".into(),
                     vec![ProgramValue::pointer(object)],
                 ));
             }
             let created = heap(932_000);
-            let output = ResourceContext::new().unchecked_with_fact(CResourceFact::own_allocation(
-                created.clone(),
-                bytes.clone(),
-            ));
+            let output = ResourceContext::new()
+                .unchecked_with_fact(ResourceFact::own_allocation(created.clone(), bytes.clone()));
             let state = ExecutionState::new().with_memory(memory.clone());
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 apply_verified_heap_allocation_delta(

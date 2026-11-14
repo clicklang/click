@@ -269,7 +269,7 @@ fn direct_forward_goto_lowers_to_an_indexed_kernel_target() {
     let kernel = function.to_kernel_function();
     fn goto_target(
         statement: &crate::kernel::ProgramStatement,
-    ) -> Option<crate::kernel::CControlTargetId> {
+    ) -> Option<crate::kernel::ControlTargetId> {
         match statement {
             crate::kernel::ProgramStatement::Goto { target } => Some(*target),
             crate::kernel::ProgramStatement::Seq(statements) => statements
@@ -297,7 +297,7 @@ fn conditional_forward_goto_uses_the_preorder_source_target_index() {
     let kernel = function.to_kernel_function();
     fn goto_target(
         statement: &crate::kernel::ProgramStatement,
-    ) -> Option<crate::kernel::CControlTargetId> {
+    ) -> Option<crate::kernel::ControlTargetId> {
         match statement {
             crate::kernel::ProgramStatement::Goto { target } => Some(*target),
             crate::kernel::ProgramStatement::Seq(statements) => statements
@@ -1141,7 +1141,7 @@ fn c0_small_volatile_model_preserves_metadata_and_access_facts() {
     assert!(read_twice.parameters()[0].is_volatile());
     let kernel = read_twice.to_kernel_function();
     assert!(kernel.parameters()[0].is_volatile());
-    let volatile_read_names = |execution: &crate::kernel::SymbolicCExecution| {
+    let volatile_read_names = |execution: &crate::kernel::SymbolicExecution| {
         execution.paths()[0]
             .facts()
             .iter()
@@ -1391,7 +1391,7 @@ fn c0_pointer_object_volatile_accesses_preserve_pointer_provenance() {
     }
     let crate::kernel::Proposition::CFunctionExecutes {
         outcome:
-            crate::kernel::CFunctionOutcome::Return {
+            crate::kernel::FunctionOutcome::Return {
                 value: retained_result,
                 ..
             },
@@ -1521,7 +1521,7 @@ fn c0_lowers_static_address_initializers_with_pointer_provenance() {
             .pointee_is_constant()
     );
 
-    let expected_pointer = crate::kernel::CMemory::global_pointer("target");
+    let expected_pointer = crate::kernel::Memory::global_pointer("target");
     let kernel = function.to_kernel_function();
     let global = kernel
         .global_variables()
@@ -1551,7 +1551,7 @@ fn c0_lowers_static_address_initializers_with_pointer_provenance() {
     };
     assert_eq!(
         private_pointer.pointer(),
-        &crate::kernel::CMemory::global_pointer(private_target.kernel_name())
+        &crate::kernel::Memory::global_pointer(private_target.kernel_name())
     );
     assert_eq!(
         private_pointer.c_type(),
@@ -1612,7 +1612,7 @@ fn c0_links_static_address_dependencies_after_later_definitions() {
     };
     assert_eq!(
         alias_pointer.pointer(),
-        &crate::kernel::CMemory::global_pointer("target")
+        &crate::kernel::Memory::global_pointer("target")
     );
 
     let alias_ref = kernel
@@ -1625,7 +1625,7 @@ fn c0_links_static_address_dependencies_after_later_definitions() {
     };
     assert_eq!(
         alias_ref_pointer.pointer(),
-        &crate::kernel::CMemory::global_pointer("alias")
+        &crate::kernel::Memory::global_pointer("alias")
     );
     assert_eq!(
         kernel
@@ -1691,7 +1691,7 @@ fn c0_lowers_static_subobject_address_initializers_with_byte_offsets() {
     };
     assert_eq!(
         table_middle_pointer.pointer(),
-        &crate::kernel::CMemory::global_pointer("table").offset_by_bytes(4)
+        &crate::kernel::Memory::global_pointer("table").offset_by_bytes(4)
     );
 
     let shared_layout = function.structs()["state"].clone();
@@ -1717,7 +1717,7 @@ fn c0_lowers_static_subobject_address_initializers_with_byte_offsets() {
         };
         assert_eq!(
             pointer.pointer(),
-            &crate::kernel::CMemory::global_pointer("shared").offset_by_bytes(offset)
+            &crate::kernel::Memory::global_pointer("shared").offset_by_bytes(offset)
         );
     }
 
@@ -1731,7 +1731,7 @@ fn c0_lowers_static_subobject_address_initializers_with_byte_offsets() {
     };
     assert_eq!(
         pointer.pointer(),
-        &crate::kernel::CMemory::global_pointer("shared").offset_by_bytes(value_offset)
+        &crate::kernel::Memory::global_pointer("shared").offset_by_bytes(value_offset)
     );
 }
 
@@ -3530,8 +3530,8 @@ fn memory_range(
     base: crate::kernel::Pointer,
     start: impl Into<crate::kernel::MachineTerm>,
     end: impl Into<crate::kernel::MachineTerm>,
-) -> crate::kernel::CMemoryRange {
-    crate::kernel::CMemoryRange::new(base, start.into(), end.into())
+) -> crate::kernel::MemoryRange {
+    crate::kernel::MemoryRange::new(base, start.into(), end.into())
 }
 
 fn view_memory_context(
@@ -3540,7 +3540,7 @@ fn view_memory_context(
     end: impl Into<crate::kernel::MachineTerm>,
 ) -> crate::kernel::ResourceContext {
     crate::kernel::ResourceContext::new().unchecked_with_fact(
-        crate::kernel::CResourceFact::view_memory(memory_range(base, start, end)),
+        crate::kernel::ResourceFact::view_memory(memory_range(base, start, end)),
     )
 }
 
@@ -3550,7 +3550,7 @@ fn own_memory_context(
     end: impl Into<crate::kernel::MachineTerm>,
 ) -> crate::kernel::ResourceContext {
     crate::kernel::ResourceContext::new().unchecked_with_fact(
-        crate::kernel::CResourceFact::own_memory(memory_range(base, start, end)),
+        crate::kernel::ResourceFact::own_memory(memory_range(base, start, end)),
     )
 }
 
@@ -5229,7 +5229,7 @@ fn kernel_skip_preserves_state_without_facts_or_obligations() {
         &crate::kernel::Proposition::CStatementExecutes {
             state: Box::new(state.clone()),
             statement: Box::new(crate::kernel::c_skip()),
-            outcome: crate::kernel::CStatementOutcome::Normal(Box::new(state)),
+            outcome: crate::kernel::StatementOutcome::Normal(Box::new(state)),
         }
     );
 }
@@ -5453,8 +5453,8 @@ fn c0_unary_minus_preserves_signed_overflow_semantics() {
     assert!(matches!(
         proposition,
         crate::kernel::Proposition::CStatementExecutes {
-            outcome: crate::kernel::CStatementOutcome::UndefinedBehavior(
-                crate::kernel::CUndefinedBehavior::SignedOverflow
+            outcome: crate::kernel::StatementOutcome::UndefinedBehavior(
+                crate::kernel::UndefinedBehavior::SignedOverflow
             ),
             ..
         }
@@ -5605,7 +5605,7 @@ fn c0_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
     };
     let resources = own_memory_context(packet.clone(), 0, 4);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+        .with_memory(crate::kernel::Memory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             8,
@@ -5613,7 +5613,7 @@ fn c0_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
                 .store(
                     crate::kernel::Pointer {
@@ -5639,7 +5639,7 @@ fn c0_embedded_struct_field_access_lowers_to_nested_scalar_offset() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
@@ -6008,7 +6008,7 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
     };
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
         crate::kernel::ExecutionState::new().with_memory(
-            crate::kernel::CMemory::new().with_classed_block(
+            crate::kernel::Memory::new().with_classed_block(
                 "packet".into(),
                 address_number.to_kernel_function().parameters()[0].pointee_class(),
                 16,
@@ -6020,7 +6020,7 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
     )
     .expect("pointer-valued union member address should execute");
     let crate::kernel::Proposition::CFunctionExecutes {
-        outcome: crate::kernel::CFunctionOutcome::Return { value, .. },
+        outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
     else {
@@ -6206,7 +6206,7 @@ fn c0_enum_field_comparison_lowers_named_constant() {
     };
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
                 .store(state_pointer, crate::kernel::int32(7)),
         )
@@ -6227,7 +6227,7 @@ fn c0_enum_field_comparison_lowers_named_constant() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(1).into(),
                 state: Box::new(final_state),
             },
@@ -6648,19 +6648,19 @@ fn c0_chained_field_load_executes_through_typed_pointer_memory() {
         block: "leaf".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let memory = crate::kernel::CMemory::new()
+    let memory = crate::kernel::Memory::new()
         .store(
             root.clone(),
             crate::kernel::ProgramValue::pointer(leaf.clone()),
         )
         .store(leaf.clone(), crate::kernel::int32(9));
     let resources = crate::kernel::ResourceContext::new()
-        .unchecked_with_fact(crate::kernel::CResourceFact::view_memory(memory_range(
+        .unchecked_with_fact(crate::kernel::ResourceFact::view_memory(memory_range(
             root.clone(),
             0,
             2,
         )))
-        .unchecked_with_fact(crate::kernel::CResourceFact::view_memory(memory_range(
+        .unchecked_with_fact(crate::kernel::ResourceFact::view_memory(memory_range(
             leaf, 0, 1,
         )));
     let state = crate::kernel::ExecutionState::new()
@@ -6680,7 +6680,7 @@ fn c0_chained_field_load_executes_through_typed_pointer_memory() {
     assert!(matches!(
         proposition,
         crate::kernel::Proposition::CStatementExecutes {
-            outcome: crate::kernel::CStatementOutcome::Return {
+            outcome: crate::kernel::StatementOutcome::Return {
                 value,
                 ..
             },
@@ -6790,7 +6790,7 @@ fn c0_syntax_targets_kernel_max_body() {
             Box::new(crate::kernel::Proposition::CStatementExecutes {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
-                outcome: crate::kernel::CStatementOutcome::Return {
+                outcome: crate::kernel::StatementOutcome::Return {
                     value: crate::kernel::int32(crate::kernel::MachineTerm::Variable(b)).into(),
                     state: Box::new(state),
                 },
@@ -6836,7 +6836,7 @@ fn c0_syntax_targets_kernel_max_function_call() {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(1).into(),
                 state: Box::new(state),
             },
@@ -6870,7 +6870,7 @@ fn c0_syntax_targets_kernel_assignment_and_sequence() {
         &crate::kernel::Proposition::CStatementExecutes {
             state: Box::new(initial),
             statement: Box::new(statement),
-            outcome: crate::kernel::CStatementOutcome::Return {
+            outcome: crate::kernel::StatementOutcome::Return {
                 value: crate::kernel::int32(2).into(),
                 state: Box::new(final_state),
             },
@@ -6906,7 +6906,7 @@ fn c0_syntax_targets_kernel_assignment_function_call() {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(2).into(),
                 state: Box::new(state),
             },
@@ -6942,7 +6942,7 @@ fn c0_syntax_targets_kernel_store_and_load() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_local("p", crate::kernel::ProgramValue::pointer(pointer.clone()))
-        .with_memory(crate::kernel::CMemory::new().store(pointer.clone(), crate::kernel::int32(9)))
+        .with_memory(crate::kernel::Memory::new().store(pointer.clone(), crate::kernel::int32(9)))
         .with_resource_context(resources);
     let theorem = crate::kernel::prove_symbolic_c_execution(
         initial.clone(),
@@ -6956,7 +6956,7 @@ fn c0_syntax_targets_kernel_store_and_load() {
         &crate::kernel::Proposition::CStatementExecutes {
             state: Box::new(initial),
             statement: Box::new(statement),
-            outcome: crate::kernel::CStatementOutcome::Return {
+            outcome: crate::kernel::StatementOutcome::Return {
                 value: crate::kernel::int32(9).into(),
                 state: Box::new(final_state),
             },
@@ -6990,7 +6990,7 @@ fn c0_syntax_targets_kernel_struct_field_load() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let statement = function.body_kernel_statement();
-    let memory = crate::kernel::CMemory::new()
+    let memory = crate::kernel::Memory::new()
         .with_block("object", 4)
         .store(pointer.clone(), crate::kernel::int32(3));
     let initial = crate::kernel::ExecutionState::new()
@@ -7009,7 +7009,7 @@ fn c0_syntax_targets_kernel_struct_field_load() {
         &crate::kernel::Proposition::CStatementExecutes {
             state: Box::new(initial.clone()),
             statement: Box::new(statement),
-            outcome: crate::kernel::CStatementOutcome::Return {
+            outcome: crate::kernel::StatementOutcome::Return {
                 value: crate::kernel::int32(3).into(),
                 state: Box::new(initial),
             },
@@ -7040,7 +7040,7 @@ fn c0_syntax_targets_kernel_float64_struct_field_load() {
         1.25f64.to_bits(),
     ));
     let statement = function.body_kernel_statement();
-    let memory = crate::kernel::CMemory::new()
+    let memory = crate::kernel::Memory::new()
         .with_block("object", 8)
         .store(pointer.clone(), value.clone());
     let initial = crate::kernel::ExecutionState::new()
@@ -7059,7 +7059,7 @@ fn c0_syntax_targets_kernel_float64_struct_field_load() {
         &crate::kernel::Proposition::CStatementExecutes {
             state: Box::new(initial.clone()),
             statement: Box::new(statement),
-            outcome: crate::kernel::CStatementOutcome::Return {
+            outcome: crate::kernel::StatementOutcome::Return {
                 value: value.into(),
                 state: Box::new(initial),
             },
@@ -7090,7 +7090,7 @@ fn c0_syntax_targets_kernel_struct_field_store() {
     };
     let resources = own_memory_context(pointer.clone(), 0, 1);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+        .with_memory(crate::kernel::Memory::new().with_classed_block(
             "object".into(),
             function.parameters()[0].pointee_class(),
             4,
@@ -7102,7 +7102,7 @@ fn c0_syntax_targets_kernel_struct_field_store() {
     ];
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block("object".into(), function.parameters()[0].pointee_class(), 4)
                 .store(pointer, crate::kernel::int32(5)),
         )
@@ -7121,7 +7121,7 @@ fn c0_syntax_targets_kernel_struct_field_store() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(5).into(),
                 state: Box::new(final_state),
             },
@@ -7174,7 +7174,7 @@ fn c0_syntax_targets_kernel_multifield_struct_offset_load() {
         block: "pair".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
-    let memory = crate::kernel::CMemory::new()
+    let memory = crate::kernel::Memory::new()
         .with_classed_block("pair".into(), function.parameters()[0].pointee_class(), 8)
         .store(second, crate::kernel::int32(7));
     let state = crate::kernel::ExecutionState::new()
@@ -7195,7 +7195,7 @@ fn c0_syntax_targets_kernel_multifield_struct_offset_load() {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(7).into(),
                 state: Box::new(state),
             },
@@ -7238,12 +7238,12 @@ fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let resources = crate::kernel::ResourceContext::new().unchecked_with_facts(vec![
-        crate::kernel::CResourceFact::own_memory(memory_range(owner.clone(), 0, 4)),
-        crate::kernel::CResourceFact::own_memory(memory_range(data.clone(), 0, 1)),
+        crate::kernel::ResourceFact::own_memory(memory_range(owner.clone(), 0, 4)),
+        crate::kernel::ResourceFact::own_memory(memory_range(data.clone(), 0, 1)),
     ]);
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block("owner".into(), function.parameters()[0].pointee_class(), 16)
                 .with_block("data", 4),
         )
@@ -7262,7 +7262,7 @@ fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
 
     let crate::kernel::Proposition::CFunctionExecutes {
         outcome:
-            crate::kernel::CFunctionOutcome::Return {
+            crate::kernel::FunctionOutcome::Return {
                 value,
                 state: final_state,
             },
@@ -7275,17 +7275,15 @@ fn c0_syntax_targets_kernel_struct_pointer_field_roundtrip() {
     assert_eq!(value.native().as_ref(), &crate::kernel::int32(1));
     assert_eq!(
         final_state.memory().load(&owner),
-        crate::kernel::CExpressionOutcome::Value(crate::kernel::int32(1))
+        crate::kernel::ExpressionOutcome::Value(crate::kernel::int32(1))
     );
     assert_eq!(
         final_state.memory().load(&owner_data),
-        crate::kernel::CExpressionOutcome::Value(crate::kernel::ProgramValue::pointer(
-            data.clone()
-        ))
+        crate::kernel::ExpressionOutcome::Value(crate::kernel::ProgramValue::pointer(data.clone()))
     );
     assert_eq!(
         final_state.memory().load(&data),
-        crate::kernel::CExpressionOutcome::Value(crate::kernel::int32(1))
+        crate::kernel::ExpressionOutcome::Value(crate::kernel::int32(1))
     );
 }
 
@@ -7313,7 +7311,7 @@ fn c0_syntax_targets_kernel_store_and_load_function_call() {
     let arguments = vec![crate::kernel::c_pointer_value(pointer.clone())];
     let final_state = crate::kernel::ExecutionState::new()
         .with_local("caller", crate::kernel::int32(7))
-        .with_memory(crate::kernel::CMemory::new().store(pointer.clone(), crate::kernel::int32(9)))
+        .with_memory(crate::kernel::Memory::new().store(pointer.clone(), crate::kernel::int32(9)))
         .with_resource_context(resources);
     let theorem = crate::kernel::prove_symbolic_c_function_execution(
         state.clone(),
@@ -7329,7 +7327,7 @@ fn c0_syntax_targets_kernel_store_and_load_function_call() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(9).into(),
                 state: Box::new(final_state),
             },
@@ -7357,7 +7355,7 @@ fn c0_syntax_targets_kernel_pointer_addition_load() {
         block: "block".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
-    let memory = crate::kernel::CMemory::new()
+    let memory = crate::kernel::Memory::new()
         .with_block("block", 16)
         .store(second.clone(), crate::kernel::int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
@@ -7379,7 +7377,7 @@ fn c0_syntax_targets_kernel_pointer_addition_load() {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(23).into(),
                 state: Box::new(state),
             },
@@ -7407,7 +7405,7 @@ fn c0_syntax_targets_kernel_array_index_load() {
         block: "block".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
-    let memory = crate::kernel::CMemory::new()
+    let memory = crate::kernel::Memory::new()
         .with_block("block", 16)
         .store(second.clone(), crate::kernel::int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
@@ -7429,7 +7427,7 @@ fn c0_syntax_targets_kernel_array_index_load() {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(23).into(),
                 state: Box::new(state),
             },
@@ -7458,14 +7456,14 @@ fn c0_syntax_targets_kernel_array_index_store() {
         block: "block".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(4),
     };
-    let memory = crate::kernel::CMemory::new().with_block("block", 16);
+    let memory = crate::kernel::Memory::new().with_block("block", 16);
     let resources = own_memory_context(base.clone(), 1, 2);
     let state = crate::kernel::ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_block("block", 16)
                 .store(second, crate::kernel::int32(7)),
         )
@@ -7485,7 +7483,7 @@ fn c0_syntax_targets_kernel_array_index_store() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
@@ -7519,7 +7517,7 @@ fn c0_syntax_targets_kernel_address_of_array_index() {
         block: "local:q".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let memory = crate::kernel::CMemory::new()
+    let memory = crate::kernel::Memory::new()
         .with_block("block", 16)
         .store(second.clone(), crate::kernel::int32(23));
     let resources = view_memory_context(base.clone(), 1, 2);
@@ -7528,7 +7526,7 @@ fn c0_syntax_targets_kernel_address_of_array_index() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_block("block", 16)
                 .with_block("local:q", 8)
                 .store(second.clone(), crate::kernel::int32(23))
@@ -7559,7 +7557,7 @@ fn c0_syntax_targets_kernel_address_of_array_index() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(23).into(),
                 state: Box::new(final_state),
             },
@@ -7603,7 +7601,7 @@ fn c0_syntax_targets_kernel_pointer_null_equality() {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(1).into(),
                 state: Box::new(state),
             },
@@ -7644,7 +7642,7 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
         (
             crate::kernel::ExecutionState::new()
                 .with_memory(
-                    crate::kernel::CMemory::new()
+                    crate::kernel::Memory::new()
                         .with_block("block", 4)
                         .store(pointer.clone(), crate::kernel::int32(3)),
                 )
@@ -7655,7 +7653,7 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
         (
             crate::kernel::ExecutionState::new()
                 .with_memory(
-                    crate::kernel::CMemory::new()
+                    crate::kernel::Memory::new()
                         .with_block("block", 4)
                         .store(pointer.clone(), crate::kernel::int32(4)),
                 )
@@ -7680,7 +7678,7 @@ fn c0_syntax_targets_kernel_logical_short_circuiting() {
                 state: Box::new(state.clone()),
                 function: Box::new(function.clone()),
                 arguments,
-                outcome: crate::kernel::CFunctionOutcome::Return {
+                outcome: crate::kernel::FunctionOutcome::Return {
                     value: expected.into(),
                     state: Box::new(state),
                 },
@@ -7725,7 +7723,7 @@ fn c0_syntax_targets_kernel_unary_not() {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(1).into(),
                 state: Box::new(state),
             },
@@ -7753,7 +7751,7 @@ fn c0_syntax_targets_kernel_local_address_of() {
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("local:x", 4)
             .store(local_pointer, crate::kernel::int32(5)),
     );
@@ -7777,7 +7775,7 @@ fn c0_syntax_targets_kernel_local_address_of() {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(5).into(),
                 state: Box::new(final_state),
             },
@@ -7810,7 +7808,7 @@ fn c0_syntax_targets_kernel_local_array_storage() {
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("local:a", 12)
             .store(a0, crate::kernel::int32(5))
             .store(a1, crate::kernel::int32(7)),
@@ -7835,7 +7833,7 @@ fn c0_syntax_targets_kernel_local_array_storage() {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
@@ -7870,7 +7868,7 @@ fn c0_syntax_lowers_local_array_initializer_stores() {
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("local:a", 12)
             .store(a0, crate::kernel::int32(1))
             .store(a1, crate::kernel::int32(2))
@@ -7896,7 +7894,7 @@ fn c0_syntax_lowers_local_array_initializer_stores() {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(0).into(),
                 state: Box::new(final_state),
             },
@@ -7929,7 +7927,7 @@ fn c0_syntax_flattens_multidimensional_local_array_indices() {
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("local:values", 24)
             .store(first, crate::kernel::int32(1))
             .store(last, crate::kernel::int32(7)),
@@ -7954,7 +7952,7 @@ fn c0_syntax_flattens_multidimensional_local_array_indices() {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
@@ -7977,7 +7975,7 @@ fn c0_syntax_lowers_nested_multidimensional_array_initializers() {
 
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("local:values", 24)
             .store(
                 crate::kernel::Pointer {
@@ -8042,7 +8040,7 @@ fn c0_syntax_lowers_nested_multidimensional_array_initializers() {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(6).into(),
                 state: Box::new(final_state),
             },
@@ -8080,7 +8078,7 @@ fn c0_syntax_lowers_local_struct_array_fields_with_abi_stride() {
     };
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("local:items", 16)
             .store(tag, crate::kernel::uint8(3))
             .store(value, crate::kernel::int32(7)),
@@ -8105,7 +8103,7 @@ fn c0_syntax_lowers_local_struct_array_fields_with_abi_stride() {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(10).into(),
                 state: Box::new(final_state),
             },
@@ -8146,7 +8144,7 @@ fn c0_syntax_lowers_local_struct_array_initializers() {
 
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("local:items", 40)
             .store(
                 crate::kernel::Pointer {
@@ -8239,7 +8237,7 @@ fn c0_syntax_lowers_local_struct_array_initializers() {
             state: Box::new(state),
             function: Box::new(function),
             arguments: Vec::new(),
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(43).into(),
                 state: Box::new(final_state),
             },
@@ -8336,10 +8334,10 @@ fn c0_syntax_local_array_decays_to_pointer_argument() {
         block: "local:result".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let environment = crate::kernel::CExecutionEnvironment::new().with_function(read_first);
+    let environment = crate::kernel::ExecutionEnvironment::new().with_function(read_first);
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("local:a", 8)
             .with_block("local:result", 4)
             .store(a0, crate::kernel::int32(11))
@@ -8358,7 +8356,7 @@ fn c0_syntax_local_array_decays_to_pointer_argument() {
         Vec::new(),
         Default::default(),
         environment,
-        crate::kernel::CExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("local array should decay to pointer argument");
 
@@ -8368,7 +8366,7 @@ fn c0_syntax_local_array_decays_to_pointer_argument() {
             state: Box::new(state),
             function: Box::new(caller),
             arguments: Vec::new(),
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(11).into(),
                 state: Box::new(final_state),
             },
@@ -8565,7 +8563,7 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
     };
     let resources = own_memory_context(packet.clone(), 0, 8);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+        .with_memory(crate::kernel::Memory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             32,
@@ -8573,7 +8571,7 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -8613,7 +8611,7 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
 
     let mut numeric_result = theorem.proposition().clone();
     let crate::kernel::Proposition::CFunctionExecutes {
-        outcome: crate::kernel::CFunctionOutcome::Return { value, .. },
+        outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = &mut numeric_result
     else {
@@ -8626,7 +8624,7 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(11))
                     .into(),
                 state: Box::new(final_state),
@@ -9082,7 +9080,7 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("packet", 16)
             .with_block("data", 4)
             .store(data.clone(), crate::kernel::int32(2))
@@ -9109,7 +9107,7 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
 
     let crate::kernel::Proposition::CFunctionExecutes {
         outcome:
-            crate::kernel::CFunctionOutcome::Return {
+            crate::kernel::FunctionOutcome::Return {
                 value: retained_result,
                 state: final_state,
             },
@@ -9127,7 +9125,7 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
     let return_data = return_pointer.pointer().offset_by_bytes(0);
     assert_eq!(
         final_state.memory().load(&return_data),
-        crate::kernel::CExpressionOutcome::Value(crate::kernel::ProgramValue::typed_pointer(
+        crate::kernel::ExpressionOutcome::Value(crate::kernel::ProgramValue::typed_pointer(
             data,
             crate::kernel::ProgramType::Int32Pointer,
         ))
@@ -9136,11 +9134,11 @@ fn c0_struct_value_pointer_parameter_and_return_copy_pointee_identity() {
         final_state
             .memory()
             .load(&return_pointer.pointer().offset_by_bytes(8)),
-        crate::kernel::CExpressionOutcome::Value(crate::kernel::int32(7))
+        crate::kernel::ExpressionOutcome::Value(crate::kernel::int32(7))
     );
     assert_eq!(
         final_state.memory().load(&packet.offset_by_bytes(8)),
-        crate::kernel::CExpressionOutcome::Value(crate::kernel::int32(4))
+        crate::kernel::ExpressionOutcome::Value(crate::kernel::int32(4))
     );
 }
 
@@ -9438,7 +9436,7 @@ fn c0_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
     };
     let resources = own_memory_context(packet.clone(), 0, 4);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+        .with_memory(crate::kernel::Memory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             16,
@@ -9446,7 +9444,7 @@ fn c0_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -9476,7 +9474,7 @@ fn c0_struct_inline_scalar_array_field_supports_indexed_load_and_store() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::uint8(7).into(),
                 state: Box::new(final_state),
             },
@@ -9507,7 +9505,7 @@ fn c0_struct_multidimensional_scalar_array_field_flattens_row_major() {
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+        .with_memory(crate::kernel::Memory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             28,
@@ -9515,7 +9513,7 @@ fn c0_struct_multidimensional_scalar_array_field_flattens_row_major() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -9545,7 +9543,7 @@ fn c0_struct_multidimensional_scalar_array_field_flattens_row_major() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
@@ -9655,7 +9653,7 @@ fn c0_struct_scalar_array_element_address_executes_at_element_width() {
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+        .with_memory(crate::kernel::Memory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             28,
@@ -9663,7 +9661,7 @@ fn c0_struct_scalar_array_element_address_executes_at_element_width() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_block("local:value_pointer", 8)
                 .with_classed_block(
                     "packet".into(),
@@ -9698,7 +9696,7 @@ fn c0_struct_scalar_array_element_address_executes_at_element_width() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
@@ -9739,7 +9737,7 @@ fn c0_struct_byte_array_element_address_executes_at_byte_width() {
     };
     let resources = own_memory_context(packet.clone(), 0, 2);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+        .with_memory(crate::kernel::Memory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             8,
@@ -9747,7 +9745,7 @@ fn c0_struct_byte_array_element_address_executes_at_byte_width() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_block("local:byte_pointer", 8)
                 .with_classed_block("packet".into(), function.parameters()[0].pointee_class(), 8)
                 .store(
@@ -9781,7 +9779,7 @@ fn c0_struct_byte_array_element_address_executes_at_byte_width() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::uint8(9).into(),
                 state: Box::new(final_state),
             },
@@ -9852,7 +9850,7 @@ fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
     };
     let resources = own_memory_context(packet.clone(), 0, 6);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+        .with_memory(crate::kernel::Memory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             24,
@@ -9860,7 +9858,7 @@ fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -9890,7 +9888,7 @@ fn c0_embedded_struct_array_field_preserves_stride_and_accesses_leaf() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
@@ -9962,7 +9960,7 @@ fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
     };
     let resources = own_memory_context(packet.clone(), 0, 10);
     let state = crate::kernel::ExecutionState::new()
-        .with_memory(crate::kernel::CMemory::new().with_classed_block(
+        .with_memory(crate::kernel::Memory::new().with_classed_block(
             "packet".into(),
             function.parameters()[0].pointee_class(),
             40,
@@ -9970,7 +9968,7 @@ fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block(
                     "packet".into(),
                     function.parameters()[0].pointee_class(),
@@ -10000,7 +9998,7 @@ fn c0_multidimensional_embedded_struct_array_preserves_row_major_stride() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(7).into(),
                 state: Box::new(final_state),
             },
@@ -10377,7 +10375,7 @@ fn c0_address_of_int16_preserves_pointer_type() {
     )
     .expect("an int16 address should execute with its typed pointer result");
     let crate::kernel::Proposition::CFunctionExecutes {
-        outcome: crate::kernel::CFunctionOutcome::Return { value, .. },
+        outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
     else {
@@ -10420,8 +10418,8 @@ fn c0_syntax_rejects_assignment_to_local_array_object() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::RuntimeError(
-                crate::kernel::CRuntimeError::TypeMismatch
+            outcome: crate::kernel::FunctionOutcome::RuntimeError(
+                crate::kernel::RuntimeError::TypeMismatch
             ),
         }
     );
@@ -10463,7 +10461,7 @@ fn c0_syntax_targets_kernel_int32_subtraction_and_comparisons() {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(3).into(),
                 state: Box::new(state),
             },
@@ -10503,7 +10501,7 @@ fn c0_if_condition_uses_c_int32_truthiness() {
             state: Box::new(state.clone()),
             function: Box::new(function.clone()),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(1).into(),
                 state: Box::new(state.clone()),
             },
@@ -10525,7 +10523,7 @@ fn c0_if_condition_uses_c_int32_truthiness() {
             state: Box::new(state.clone()),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(0).into(),
                 state: Box::new(state),
             },
@@ -10605,7 +10603,7 @@ fn c0_clamp_demo_proves_symbolic_branch_specifications() {
             crate::kernel::ExecutionState::new(),
             arguments.clone(),
             requires.clone(),
-            crate::kernel::CFunctionOutcome::Return {
+            crate::kernel::FunctionOutcome::Return {
                 value: value.into(),
                 state: Box::new(crate::kernel::ExecutionState::new()),
             },
@@ -10831,10 +10829,10 @@ fn c0_syntax_targets_kernel_known_function_call_assignment() {
         block: "local:result".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let environment = crate::kernel::CExecutionEnvironment::new().with_function(increment);
+    let environment = crate::kernel::ExecutionEnvironment::new().with_function(increment);
     let state = crate::kernel::ExecutionState::new();
     let final_state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("local:result", 4)
             .store(local_pointer, crate::kernel::int32(42)),
     );
@@ -10850,7 +10848,7 @@ fn c0_syntax_targets_kernel_known_function_call_assignment() {
         Vec::new(),
         Default::default(),
         environment,
-        crate::kernel::CExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("known C0 function call should execute");
 
@@ -10860,7 +10858,7 @@ fn c0_syntax_targets_kernel_known_function_call_assignment() {
             state: Box::new(state),
             function: Box::new(caller),
             arguments: Vec::new(),
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(42).into(),
                 state: Box::new(final_state),
             },
@@ -10896,13 +10894,13 @@ fn c0_syntax_targets_kernel_float_argument_conversion() {
         caller,
         Vec::new(),
         Default::default(),
-        crate::kernel::CExecutionEnvironment::new().with_function(widen),
-        crate::kernel::CExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionEnvironment::new().with_function(widen),
+        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("integer-to-double call argument should execute");
     let crate::kernel::Proposition::CFunctionExecutes {
         outcome:
-            crate::kernel::CFunctionOutcome::Return {
+            crate::kernel::FunctionOutcome::Return {
                 value: retained_result,
                 ..
             },
@@ -11145,7 +11143,7 @@ fn c0_assignment_expression_result_uses_the_target_type() {
     )
     .expect("the converted assignment result should execute");
     let crate::kernel::Proposition::CFunctionExecutes {
-        outcome: crate::kernel::CFunctionOutcome::Return { value, .. },
+        outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
     else {
@@ -11187,7 +11185,7 @@ fn c0_assignment_expression_short_circuits_a_guard_read() {
     )
     .expect("a false assignment result must skip the field read");
     let crate::kernel::Proposition::CFunctionExecutes {
-        outcome: crate::kernel::CFunctionOutcome::Return { value, .. },
+        outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
     else {
@@ -11198,12 +11196,11 @@ fn c0_assignment_expression_short_circuits_a_guard_read() {
 
 #[test]
 fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
-    let calls_owner =
-        crate::kernel::CResourceSpec::owned_memory(crate::kernel::CMemorySegment::new(
-            crate::kernel::c_variable("calls"),
-            crate::kernel::c_int32_literal(0),
-            crate::kernel::c_int32_literal(1),
-        ));
+    let calls_owner = crate::kernel::ResourceSpec::owned_memory(crate::kernel::MemorySegment::new(
+        crate::kernel::c_variable("calls"),
+        crate::kernel::c_int32_literal(0),
+        crate::kernel::c_int32_literal(1),
+    ));
     let tick = syntax::parse_function(
         r#"
         int32 tick(int32 *calls, int32 value) {
@@ -11236,7 +11233,7 @@ fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
     .find(|function| function.name() == "caller")
     .expect("caller definition")
     .to_kernel_function();
-    let environment = crate::kernel::CExecutionEnvironment::new().with_function(tick);
+    let environment = crate::kernel::ExecutionEnvironment::new().with_function(tick);
 
     let theorem = crate::kernel::prove_symbolic_c_function_execution_with_environment(
         crate::kernel::ExecutionState::new(),
@@ -11244,11 +11241,11 @@ fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
         Vec::new(),
         Default::default(),
         environment,
-        crate::kernel::CExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("the guard call should execute once on each of three condition checks");
     let crate::kernel::Proposition::CFunctionExecutes {
-        outcome: crate::kernel::CFunctionOutcome::Return { state, value },
+        outcome: crate::kernel::FunctionOutcome::Return { state, value },
         ..
     } = theorem.proposition()
     else {
@@ -11264,8 +11261,8 @@ fn c0_assignment_expression_loop_guard_reexecutes_once_after_continue() {
     };
     assert_eq!(
         state.memory().load(&calls),
-        crate::kernel::CExpressionOutcome::UndefinedBehavior(
-            crate::kernel::CUndefinedBehavior::InvalidMemory
+        crate::kernel::ExpressionOutcome::UndefinedBehavior(
+            crate::kernel::UndefinedBehavior::InvalidMemory
         )
     );
 }
@@ -11402,7 +11399,7 @@ fn c0_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let state = crate::kernel::ExecutionState::new().with_memory(
-        crate::kernel::CMemory::new()
+        crate::kernel::Memory::new()
             .with_block("packet", 16)
             .store(source.clone(), crate::kernel::int32(1))
             .store(source.offset_by_bytes(8), crate::kernel::int32(42)),
@@ -11415,7 +11412,7 @@ fn c0_struct_union_fields_are_copyable_by_value_without_flattening_overlap() {
     )
     .expect("union-containing aggregate copy should preserve the active member view");
     let crate::kernel::Proposition::CFunctionExecutes {
-        outcome: crate::kernel::CFunctionOutcome::Return { value, .. },
+        outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
     else {
@@ -11610,10 +11607,10 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
         caller.clone(),
         Vec::new(),
         Default::default(),
-        crate::kernel::CExecutionEnvironment::new()
+        crate::kernel::ExecutionEnvironment::new()
             .with_function(callback)
             .with_function(apply),
-        crate::kernel::CExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("compatible callback should execute");
     assert_eq!(
@@ -11622,7 +11619,7 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
             state: Box::new(crate::kernel::ExecutionState::new()),
             function: Box::new(caller),
             arguments: Vec::new(),
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(38).into(),
                 // `caller` and `apply` each declare a `result`, and they are
                 // two objects. `apply` runs on the caller's memory with its
@@ -11632,7 +11629,7 @@ fn c0_function_pointers_preserve_signature_and_dispatch_callback() {
                 state: Box::new(
                     crate::kernel::ExecutionState::new()
                         .with_memory(
-                            crate::kernel::CMemory::new()
+                            crate::kernel::Memory::new()
                                 .with_block("local:result", 4)
                                 .with_block("local:lifetime:0:result", 4)
                                 .store(
@@ -11683,17 +11680,17 @@ fn c0_function_pointers_reject_incompatible_callback_targets() {
         caller,
         Vec::new(),
         Default::default(),
-        crate::kernel::CExecutionEnvironment::new()
+        crate::kernel::ExecutionEnvironment::new()
             .with_function(wrong)
             .with_function(apply),
-        crate::kernel::CExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("incompatible callback should produce a runtime-error theorem");
     let crate::kernel::Proposition::CFunctionExecutes {
         outcome:
-            crate::kernel::CFunctionOutcome::RuntimeError(
-                crate::kernel::CRuntimeError::FunctionContract(message),
-            ),
+            crate::kernel::FunctionOutcome::RuntimeError(crate::kernel::RuntimeError::FunctionContract(
+                message,
+            )),
         ..
     } = theorem.proposition()
     else {
@@ -11834,7 +11831,7 @@ fn c0_struct_function_pointer_fields_load_and_dispatch_known_targets() {
     );
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block("table".into(), apply.parameters()[0].pointee_class(), 8)
                 .store(table.clone(), callback),
         )
@@ -11848,14 +11845,14 @@ fn c0_struct_function_pointer_fields_load_and_dispatch_known_targets() {
             crate::kernel::ProgramType::Int32Pointer,
         )],
         Default::default(),
-        crate::kernel::CExecutionEnvironment::new()
+        crate::kernel::ExecutionEnvironment::new()
             .with_function(compare)
             .with_function(apply_for_environment),
-        crate::kernel::CExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("known callback field target should execute");
     let crate::kernel::Proposition::CFunctionExecutes {
-        outcome: crate::kernel::CFunctionOutcome::Return { value, .. },
+        outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
     else {
@@ -11910,7 +11907,7 @@ fn c0_struct_function_pointer_fields_support_direct_calls() {
     );
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block("table".into(), apply.parameters()[0].pointee_class(), 8)
                 .store(table.clone(), callback),
         )
@@ -11923,12 +11920,12 @@ fn c0_struct_function_pointer_fields_support_direct_calls() {
             crate::kernel::ProgramType::Int32Pointer,
         )],
         Default::default(),
-        crate::kernel::CExecutionEnvironment::new().with_function(compare),
-        crate::kernel::CExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionEnvironment::new().with_function(compare),
+        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .expect("direct callback field call should execute");
     let crate::kernel::Proposition::CFunctionExecutes {
-        outcome: crate::kernel::CFunctionOutcome::Return { value, .. },
+        outcome: crate::kernel::FunctionOutcome::Return { value, .. },
         ..
     } = theorem.proposition()
     else {
@@ -12112,7 +12109,7 @@ fn c0_syntax_targets_kernel_while_countdown() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(0).into(),
                 state: Box::new(crate::kernel::ExecutionState::new()),
             },
@@ -12158,12 +12155,12 @@ fn c0_memory_safety_demo_fill_three_ints() {
         block: "local:i".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let initial_memory = crate::kernel::CMemory::new().with_block("buf", 12);
+    let initial_memory = crate::kernel::Memory::new().with_block("buf", 12);
     let resources = own_memory_context(base.clone(), 0, 3);
     let state = crate::kernel::ExecutionState::new()
         .with_memory(initial_memory)
         .with_resource_context(resources.clone());
-    let final_memory = crate::kernel::CMemory::new()
+    let final_memory = crate::kernel::Memory::new()
         .with_block("buf", 12)
         .with_block("local:i", 4)
         .store(first, crate::kernel::int32(0))
@@ -12186,7 +12183,7 @@ fn c0_memory_safety_demo_fill_three_ints() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(2).into(),
                 state: Box::new(
                     crate::kernel::ExecutionState::new()
@@ -12527,11 +12524,11 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
     };
     let left = root.offset_by_bytes(8);
     let resources = own_memory_context(root.clone(), 2, 3).unchecked_with_fact(
-        crate::kernel::CResourceFact::own_memory(memory_range(replacement.clone(), 0, 1)),
+        crate::kernel::ResourceFact::own_memory(memory_range(replacement.clone(), 0, 1)),
     );
     let state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_classed_block("root".into(), function.parameters()[0].pointee_class(), 24)
                 .with_classed_block(
                     "replacement".into(),
@@ -12550,7 +12547,7 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
         .with_resource_context(resources.clone());
     let final_state = crate::kernel::ExecutionState::new()
         .with_memory(
-            crate::kernel::CMemory::new()
+            crate::kernel::Memory::new()
                 .with_block("local:link", 8)
                 .with_classed_block("root".into(), function.parameters()[0].pointee_class(), 24)
                 .with_classed_block(
@@ -12602,7 +12599,7 @@ fn c0_struct_pointer_indirection_updates_one_pointer_cell() {
             state: Box::new(state),
             function: Box::new(function),
             arguments,
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value: crate::kernel::int32(42).into(),
                 state: Box::new(final_state),
             },
@@ -12801,7 +12798,7 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
         assert!(matches!(
             execution.proposition(),
             crate::kernel::Proposition::CFunctionExecutes {
-                outcome: crate::kernel::CFunctionOutcome::Return {
+                outcome: crate::kernel::FunctionOutcome::Return {
                     value,
                     ..
                 },
@@ -12825,7 +12822,7 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
     assert!(matches!(
         execution.proposition(),
         crate::kernel::Proposition::CFunctionExecutes {
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value,
                 ..
             },
@@ -12865,7 +12862,7 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
     assert!(matches!(
         null.proposition(),
         crate::kernel::Proposition::CFunctionExecutes {
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value,
                 ..
             },
@@ -12887,7 +12884,7 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
     assert!(matches!(
         non_null.proposition(),
         crate::kernel::Proposition::CFunctionExecutes {
-            outcome: crate::kernel::CFunctionOutcome::Return {
+            outcome: crate::kernel::FunctionOutcome::Return {
                 value,
                 ..
             },
@@ -13015,13 +13012,13 @@ fn c0_body_call_updates_a_local_array_without_rebinding_it_as_a_scalar() {
         caller,
         Vec::new(),
         Default::default(),
-        crate::kernel::CExecutionEnvironment::new().with_function(callee),
-        crate::kernel::CExecutionSemantics::EXECUTE_BODIES,
+        crate::kernel::ExecutionEnvironment::new().with_function(callee),
+        crate::kernel::ExecutionSemantics::EXECUTE_BODIES,
     )
     .unwrap();
     assert!(
         matches!(theorem.proposition(), crate::kernel::Proposition::CFunctionExecutes {
-        outcome: crate::kernel::CFunctionOutcome::Return { value, .. }, ..
+        outcome: crate::kernel::FunctionOutcome::Return { value, .. }, ..
     } if value.native().as_ref() == &crate::kernel::int32(9))
     );
 }
@@ -14288,7 +14285,7 @@ fn c0_long_double_prototypes_are_unusable_and_keep_type_positions() {
 // updates as statements, including full-width unsigned wrap.
 #[test]
 fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
-    use crate::kernel::{CFunctionOutcome, ExecutionState, MachineTerm, Proposition};
+    use crate::kernel::{ExecutionState, FunctionOutcome, MachineTerm, Proposition};
     for (source, expected) in [
         (
             "int32 run() { int32 n = 5; return n++; }",
@@ -14339,7 +14336,7 @@ fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
         .expect(source);
         assert!(
             matches!(theorem.proposition(), Proposition::CFunctionExecutes {
-            outcome: CFunctionOutcome::Return { value, .. }, ..
+            outcome: FunctionOutcome::Return { value, .. }, ..
         } if value.native().as_ref() == &expected),
             "{source}: {:?}",
             theorem.proposition()
@@ -14367,7 +14364,7 @@ fn c0_scalar_updates_keep_const_pointer_reads_and_nominal_stride() {
         .expect(source);
         assert!(
             matches!(theorem.proposition(), crate::kernel::Proposition::CFunctionExecutes {
-            outcome: crate::kernel::CFunctionOutcome::Return { value, .. }, ..
+            outcome: crate::kernel::FunctionOutcome::Return { value, .. }, ..
         } if value.native().as_ref() == &crate::kernel::int32(262)),
             "{source}: {:?}",
             theorem.proposition()
@@ -14412,8 +14409,8 @@ fn c0_scalar_updates_preserve_signed_overflow_undefined_behavior() {
             matches!(
                 theorem.proposition(),
                 crate::kernel::Proposition::CFunctionExecutes {
-                    outcome: crate::kernel::CFunctionOutcome::UndefinedBehavior(
-                        crate::kernel::CUndefinedBehavior::SignedOverflow
+                    outcome: crate::kernel::FunctionOutcome::UndefinedBehavior(
+                        crate::kernel::UndefinedBehavior::SignedOverflow
                     ),
                     ..
                 }

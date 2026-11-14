@@ -1167,7 +1167,7 @@ impl<'a> Proof<'a> {
             // A `have` at the frontier may also consume a fact available across
             // the frontier's certified effects, exactly as a statement step's
             // prerequisite may. Load names are not preserved across call-havoc and
-            // store edges by path assumptions (see `CMemoryDerivation`), so the
+            // store edges by path assumptions (see `MemoryDerivation`), so the
             // cell an earlier fact names can carry a different load variable at
             // the frontier; the equality is proved in this path's context from the
             // goal's own snapshot-blind candidates, never by search.

@@ -125,7 +125,7 @@ fn check_shift_parity(rust: bool) {
                         for o in &mut expected.obligations {
                             o.proposition = native_domain(o.proposition());
                         }
-                        let CExpressionOutcome::Value(expected_value) = expected.outcome else {
+                        let ExpressionOutcome::Value(expected_value) = expected.outcome else {
                             panic!()
                         };
                         for (l, r) in [(false, false), (true, false), (false, true), (true, true)] {

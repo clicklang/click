@@ -263,7 +263,7 @@ pub(super) fn lower(
                 } else {
                     c_begin_aggregate_construction(
                         local.name.clone(),
-                        CAggregateLayout::new(
+                        AggregateLayout::new(
                             *length as u32 * element.byte_width(),
                             element.byte_width(),
                             vec![],
@@ -288,7 +288,7 @@ pub(super) fn lower(
                 cx.memory_values.insert(local.name.clone(), value_type);
                 c_begin_aggregate_construction(
                     local.name.clone(),
-                    CAggregateLayout::holding_value(value_type),
+                    AggregateLayout::holding_value(value_type),
                 )
             }
             t => {
@@ -881,7 +881,7 @@ pub(super) fn lower(
                     // Re-entry retires the old object and checks live loans.
                     c_begin_aggregate_construction(
                         local.clone(),
-                        CAggregateLayout::new(
+                        AggregateLayout::new(
                             arrays::array_length(element, length)? * element.byte_width(),
                             element.byte_width(),
                             vec![],

@@ -226,7 +226,7 @@ fn arithmetic_call_endpoint_keys_preserve_argument_identity_and_opaque_refusal()
     }
     assert_eq!(KernelTermExport::machine_export_count(), exports);
     let read = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&CMemory::new()),
+        crate::kernel::intern_c_memory_ref(&Memory::new()),
         Box::new(Pointer::null()),
         LoadKind::Int32,
     );

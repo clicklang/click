@@ -5356,7 +5356,7 @@ mod guided_condition_instantiation_tests {
 
     fn array_read(index: MachineTerm, kind: LoadKind) -> MachineTerm {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(CMemory::new()),
+            crate::kernel::intern_c_memory(Memory::new()),
             Box::new(Pointer {
                 block: "quantified-cells".into(),
                 offset: PointerOffsetTerm::scale_int32(index, 4),
@@ -6009,11 +6009,11 @@ mod shared_wide_order_evidence_tests {
     #[test]
     fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_registered_variable() {
         use crate::kernel::{
-            CMemory, LoadKind, MachineOperandView, Pointer, PointerOffsetTerm, intern_c_memory,
+            LoadKind, MachineOperandView, Memory, Pointer, PointerOffsetTerm, intern_c_memory,
         };
         for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let memory = intern_c_memory(CMemory::new().with_block("wide-order", 16));
+            let memory = intern_c_memory(Memory::new().with_block("wide-order", 16));
             let load = |offset| {
                 MachineTerm::MemoryLoad(
                     memory.clone(),

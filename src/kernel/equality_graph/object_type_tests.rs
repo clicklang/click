@@ -29,7 +29,7 @@ fn can_type(context: &PureFactContext, pointer: &Pointer) -> bool {
     crate::kernel::spec::refine_object_pointer_argument(
         &mut value(pointer, false),
         &class(),
-        &CMemory::new(),
+        &Memory::new(),
         context,
     )
 }
@@ -102,7 +102,7 @@ fn object_type_evidence_follows_early_and_late_pointer_merges() {
         assert!(!crate::kernel::spec::refine_object_pointer_argument(
             &mut value(&r, false),
             &other,
-            &CMemory::new(),
+            &Memory::new(),
             &context
         ));
     }
@@ -179,7 +179,7 @@ fn goals_alternatives_and_weak_cast_metadata_do_not_admit_type_evidence() {
 fn object_type_evidence_does_not_bridge_changed_read_snapshots() {
     let _session = VerificationSession::enter();
     let slot = pointer(9);
-    let memory = CMemory::new().with_block(slot.block.clone(), 8);
+    let memory = Memory::new().with_block(slot.block.clone(), 8);
     let changed = memory
         .clone()
         .store(slot.clone(), value(&pointer(10), false));

@@ -66,13 +66,13 @@ fn check_resource_publication_work(
         .unwrap();
         let binding = Variable(9_100_000_000);
         let mut definition =
-            CCompositeResourceDefinition::new("integer_box", vec![], None, false, vec![], vec![])
+            CompositeResourceDefinition::new("integer_box", vec![], None, false, vec![], vec![])
                 .with_instance_schema(Some(schema));
-        definition.matched = Some(CResourceMatchBody {
+        definition.matched = Some(ResourceMatchBody {
             field_index: 0,
             algebraic_type: ty.clone(),
             arms: vec![
-                CResourceMatchArm {
+                ResourceMatchArm {
                     variant: "Clear".into(),
                     bindings: vec![],
                     binding_types: vec![],
@@ -81,7 +81,7 @@ fn check_resource_publication_work(
                     facts: vec![],
                     children: vec![],
                 },
-                CResourceMatchArm {
+                ResourceMatchArm {
                     variant: "Set".into(),
                     bindings: vec!["value".into()],
                     binding_types: vec![AlgebraicValueType::Integer],
@@ -96,11 +96,10 @@ fn check_resource_publication_work(
                 },
             ],
         });
-        let state =
-            ExecutionState::new()
-                .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                    CResourceFact::own(CResource::Instance(instance.clone())),
-                ));
+        let state = ExecutionState::new().with_resource_context(
+            ResourceContext::new()
+                .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
+        );
         let assumptions = PureFactContext::new().assume_proposition(Proposition::Equal(
             Term::Algebraic(model),
             Term::Algebraic(constructor),
@@ -130,7 +129,7 @@ fn check_resource_publication_work(
         if retain_requirements {
             assumptions = assumptions.retaining_required_obligations();
         }
-        let mut interface = CFunctionContractInterface::new(ProgramType::Void, vec![]);
+        let mut interface = FunctionContractInterface::new(ProgramType::Void, vec![]);
         interface.composite_resource_definitions = vec![definition.clone()];
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
             if fold {

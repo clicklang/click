@@ -1,7 +1,7 @@
 use super::*;
 use num_bigint::BigInt;
 
-fn evaluated(expression: ProgramExpression) -> CExpressionOutcome {
+fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
     let theorem = prove_c_expression_evaluation(ExecutionState::new(), expression).unwrap();
     let Proposition::CExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         unreachable!()
@@ -51,11 +51,11 @@ fn wide_multiply_constants_match_exact_oracle_at_signed_boundaries() {
             if product < min || product > max {
                 assert_eq!(
                     outcome,
-                    CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
+                    ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow),
                     "{left} * {right}"
                 );
             } else {
-                let CExpressionOutcome::Value(value) = outcome else {
+                let ExpressionOutcome::Value(value) = outcome else {
                     panic!("{left} * {right}: {outcome:?}")
                 };
                 assert_eq!(value.c_type(), ProgramType::Int128);
@@ -95,7 +95,7 @@ fn wide_multiply_promotes_narrow_operands_before_multiplying() {
             BigInt::from(i128::MIN),
         ),
     ] {
-        let CExpressionOutcome::Value(value) = evaluated(c_multiply(left, right)) else {
+        let ExpressionOutcome::Value(value) = evaluated(c_multiply(left, right)) else {
             panic!("valid wide product")
         };
         assert_eq!(
@@ -112,14 +112,14 @@ fn wide_multiply_promotes_narrow_operands_before_multiplying() {
             c_multiply(c_int64_literal(i64::MAX), c_int32_literal(2)),
             ProgramType::Int128
         )),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow)
     );
     assert_eq!(
         evaluated(c_multiply(
             c_int128_literal(0),
             c_divide(c_int64_literal(1), c_int64_literal(0))
         )),
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::DivisionByZero)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::DivisionByZero)
     );
 }
 
@@ -141,11 +141,11 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         assert_eq!(paths.len(), 3 - provided);
         let normals: Vec<_> = paths
             .iter()
-            .filter(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+            .filter(|path| matches!(path.outcome, ExpressionOutcome::Value(_)))
             .collect();
         assert_eq!(normals.len(), 1);
         let normal = normals[0];
-        let CExpressionOutcome::Value(value) = &normal.outcome else {
+        let ExpressionOutcome::Value(value) = &normal.outcome else {
             unreachable!()
         };
         let observed = IntegerTerm::from_machine(
@@ -169,7 +169,7 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         assert!(
             paths
                 .iter()
-                .filter(|path| matches!(path.outcome, CExpressionOutcome::UndefinedBehavior(_)))
+                .filter(|path| matches!(path.outcome, ExpressionOutcome::UndefinedBehavior(_)))
                 .all(|path| path
                     .facts
                     .iter()
@@ -187,7 +187,7 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
                 .iter()
                 .filter(|path| matches!(
                     path.outcome,
-                    CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow)
+                    ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow)
                 ))
                 .count()
                 == 2 - provided
@@ -271,7 +271,7 @@ fn wide_multiply_checked_product_bounds_certificate_discharges_native_guards() {
     assert!(paths[0].obligations.is_empty());
     // The product keeps the operands' widenings to `int128` as written; it
     // reads (rule W) as the product of the operands' own observations.
-    let CExpressionOutcome::Value(ProgramValue::Int128(MachineTerm::IntegerToMachine {
+    let ExpressionOutcome::Value(ProgramValue::Int128(MachineTerm::IntegerToMachine {
         value,
         destination: MachineIntegerType::Int128,
     })) = &paths[0].outcome
@@ -294,7 +294,7 @@ fn wide_multiply_unsupported_unsigned_and_noninteger_operands_stay_refused() {
     ] {
         assert_eq!(
             evaluated(expression),
-            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
         );
     }
 }
@@ -319,11 +319,10 @@ fn wide_multiply_calls_keep_wide_result_and_caller_storage() {
     )
     .unwrap();
     let Proposition::CFunctionExecutes {
-        outcome:
-            CFunctionOutcome::Return {
-                state: returned,
-                value,
-            },
+        outcome: FunctionOutcome::Return {
+            state: returned,
+            value,
+        },
         ..
     } = theorem.proposition()
     else {

@@ -100,7 +100,7 @@ fn an_aliased_read_meets_its_stored_cell_without_scanning_unrelated_cells_or_ali
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let mut memory = CMemory::new().with_block("cells", 8 * (size as u32 + 1));
+        let mut memory = Memory::new().with_block("cells", 8 * (size as u32 + 1));
         let cell = |i: u64| Pointer {
             block: "cells".into(),
             offset: PointerOffsetTerm::Constant(8 * i as i64),
@@ -144,7 +144,7 @@ fn an_aliased_read_grows_linearly_with_its_own_alias_class() {
             block: "cells".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = intern_c_memory(CMemory::new().with_block("cells", 8).store(
+        let memory = intern_c_memory(Memory::new().with_block("cells", 8).store(
             stored_at.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
         ));
@@ -178,7 +178,7 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
     for size in [16_u64, 64, 256] {
         let _session = VerificationSession::enter();
         let read_at = Pointer::symbolic(Variable(973_000));
-        let mut memory = CMemory::new().with_block("other", 8 * size as u32);
+        let mut memory = Memory::new().with_block("other", 8 * size as u32);
         let mut graph = EqualityGraph::default();
         // One unresolved read of `read_at` in each of `size` snapshots.
         for i in 0..size {

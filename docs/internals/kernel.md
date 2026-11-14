@@ -206,7 +206,7 @@ re-checking them; expanded user proofs use the ordinary simple
 
 Execution theorems retain every verification condition as an implication
 premise, including conditions that are not assumable during execution.
-`CFunctionExecutionCandidates` is deliberately theorem-free: interpreter- or
+`FunctionExecutionCandidates` is deliberately theorem-free: interpreter- or
 caller-supplied outcomes are only candidates until a kernel execution
 reproduces them.
 
@@ -214,7 +214,7 @@ Opaque function rules have a narrower boundary:
 
 - the rule is bound to the complete `ProgramFunction`, including its lowered body,
   contract, exact claim targets, resource definitions, and execution metadata;
-- `CFunctionContractExecution` can only be created by the kernel from the
+- `FunctionContractExecution` can only be created by the kernel from the
   exact function's entry state and contract-derived assumptions. The kernel
   builds the contract entry (`c_function_contract_entry`): its lowering of
   each `requires` clause, the parameters' ranges, and what the entry
@@ -230,7 +230,7 @@ Opaque function rules have a narrower boundary:
 - every path verification condition is discharged before any body-safety,
   postcondition, resource, or effect claim is certified;
 - all recorded contract claims must have checked evidence for that same exact
-  function before `CVerifiedFunctionRule` can be constructed;
+  function before `VerifiedFunctionRule` can be constructed;
 - contract instantiation uses simultaneous, capture-avoiding substitution,
   and alpha-equivalence freshens both sides before comparing bound bodies;
 - composite-resource fold facts are rechecked against the kernel resource
@@ -262,11 +262,11 @@ decrease annotation and creates no termination evidence.
 C termination is a second judgment, and the language layer demands it of every
 verified function whose signature does not say `diverges`; a marked function
 is judged by the contract rule alone. Surface `decreases` clauses are lowered
-to an untrusted `CFunctionTerminationPlan`; the kernel checks the exact
+to an untrusted `FunctionTerminationPlan`; the kernel checks the exact
 partially verified function bodies, loop indices, integer types, guards, and
-decreasing edges before constructing `CVerifiedFunctionTerminationRule`. The
+decreasing edges before constructing `VerifiedFunctionTerminationRule`. The
 two rules stay separate in the environment: applying a
-`CVerifiedFunctionRule` never consults termination evidence, so the demand is
+`VerifiedFunctionRule` never consults termination evidence, so the demand is
 a language-layer policy over kernel-checked evidence rather than a change to
 what a contract means.
 
@@ -318,11 +318,11 @@ to the defect that refused them.
 
 An expression `decreases` on a self-recursive function is the one
 function-level measure the checker does not analyse a body for. The lowered
-component travels on the function's `CFunctionContractInterface`, beside its
+component travels on the function's `FunctionContractInterface`, beside its
 `contract_requires`, because the call site is where the descent is owed. At
 the entry of the function being certified the kernel reads that component once
-and installs a `CRecursionAnchor { function, component, measure: M0,
-entry_obligations }` on the `CExecutionEnvironment`; the anchor has no public
+and installs a `RecursionAnchor { function, component, measure: M0,
+entry_obligations }` on the `ExecutionEnvironment`; the anchor has no public
 constructor, and `c_execution_environment_with_recursion_anchor` reads the
 measure off the named function's own interface, so asking for an anchor cannot
 choose what it ranks. At a call step whose callee is the anchored function,
@@ -332,7 +332,7 @@ viewability the two readings owe, as ordinary verification conditions. A proof
 that does not discharge them does not get past the `step()`, and one that
 somehow retained them carries them as premises of its path theorem.
 
-The anchor is part of `CExecutionEnvironment`'s identity. Contract
+The anchor is part of `ExecutionEnvironment`'s identity. Contract
 certification derives it itself from the function and arguments in hand rather
 than trusting the caller's, and reuses a checked artifact only when
 `checked.environment == environment`, so an execution stepped without the
@@ -360,7 +360,7 @@ names, so no fresh iteration value is handed out on top of one; a measure that
 reads memory names the entry memory snapshot, and only an invariant the user
 writes relates the iteration's reading to it.
 
-`CVerifiedLoopRule` records the anchor its own body was stepped under. The
+`VerifiedLoopRule` records the anchor its own body was stepped under. The
 kernel writes that field from the environment the paths were produced in and
 there is no other way to set it, so it is a record rather than a claim. Two
 places read it: `applicable_verified_loop_rule` will not let a rule whose loop
@@ -428,7 +428,7 @@ local inside a loop is refused today
 ([bug](https://github.com/clicklang/click/blob/master/bugs/null-assignment-in-loop-fails-object-class-join.md)).
 
 A loop ranking component is not restricted to a C expression. The loop head
-carries a `CRankingComponent`: a current-state C expression, a pure
+carries a `RankingComponent`: a current-state C expression, a pure
 specification expression lowered exactly as a loop invariant's expression is,
 or a pure mathematical `Integer` expression lowered exactly as a clause's
 Integer operand is. The kernel evaluates that one object at the
@@ -444,7 +444,7 @@ measure read twice at the same state can never decrease.
 
 The carrier is a function of the component, not of the state, so the two
 readings of one component always agree on it. `c_ranking_measure_term` returns
-a `CRankingMeasureValue`, `Machine` or `Integer`, and the members are built in
+a `RankingMeasureValue`, `Machine` or `Integer`, and the members are built in
 that carrier: `0 <= m` and `m_post < m_pre` are signed int32 comparisons for a
 machine component and Integer comparisons for an Integer one. `<` on the
 nonnegative Integers is well founded for the same reason `<` on the
@@ -459,7 +459,7 @@ from the `FromMachine` and pure-argument positions that can name one, since a
 kernel `IntegerTerm` carries no source-level C name.
 
 The plan names a pure component by its declared spelling
-(`CRankingMeasureKey::Pure`), which is a weaker match than the structural
+(`RankingMeasureKey::Pure`), which is a weaker match than the structural
 equality a C component gets, because the whole-function plan is built before
 specification lowering has an environment. The weaker match is not soundness
 relevant. Termination evidence is the certified loop's own back-edge bundle,
@@ -484,7 +484,7 @@ lowered expression is available; a lowered form whose C variables cannot be
 collected is refused rather than passed unchecked.
 
 Termination rules live in their own execution-environment map. Constructing or
-applying `CVerifiedFunctionRule` does not consult that map, so a termination
+applying `VerifiedFunctionRule` does not consult that map, so a termination
 feature cannot accidentally turn ordinary `ensures` into total correctness.
 The public verification session exposes an explicit query for tools that need
 to distinguish the stronger result.
@@ -591,7 +591,7 @@ In `src/kernel/`:
   `int32`, whose order its canonical words compare exactly, so a fact has
   one spelling. Every other order is filed at its own format: a `uint32`
   order is `Compare { format: UInt32, .. }` of the operands' words.
-- `ProgramValue`, `ProgramType`, `Pointer`, `CMemory`, `ExecutionState`: C semantic state,
+- `ProgramValue`, `ProgramType`, `Pointer`, `Memory`, `ExecutionState`: C semantic state,
   including the non-object `Void` return value, scalar `int8`, `int16`, `int32`,
   `uint8`, `uint16`, `uint32`, `int64`, and `uint64`, pointers, and typed
   memory loads/stores.
@@ -613,11 +613,11 @@ In `src/kernel/`:
 - `ProofObligation`, `ExecutionPureFact`: obligations and facts produced during symbolic
   execution.
 - `Theorem`: abstract proven proposition.
-- `CFunctionContractExecution`: kernel-produced complete execution evidence
+- `FunctionContractExecution`: kernel-produced complete execution evidence
   used only for exact opaque-contract certification.
-- `CVerifiedFunctionContractClaim`, `CVerifiedFunctionRule`: unforgeable
+- `VerifiedFunctionContractClaim`, `VerifiedFunctionRule`: unforgeable
   evidence for one exact claim and for a complete exact opaque contract.
-- `CFunctionTerminationPlan`, `CVerifiedFunctionTerminationRule`: respectively
+- `FunctionTerminationPlan`, `VerifiedFunctionTerminationRule`: respectively
   an untrusted ranking proposal and separate kernel-checked evidence that the
   exact partially-correct function returns.
 
@@ -781,7 +781,7 @@ the widths a rule supports; it asks the module
 | Sign test of σ (sign bit at 32 bits) | `condition_reasoning/sign_bit.rs`: `sign_bit_equivalents`, `names_sign_cast32` | `u as int32 < 0` is `u > 2^31 - 1`, and `x as uint32 > 2^31 - 1` is `x < 0`, the equivalent built through σ, reading σ of a σ as that σ's operand (the constructor keeps σ of σ); a decision or known-condition lookup of either reads the other, and assuming a test of σ also files its equivalent |
 | Sign cast of a quotient (C) | `condition_reasoning/sign_cast_division.rs`: `decide_by_sign_cast_division`, `sign_cast_division_equivalent`, `names_sign_cast_division`; `MachineTerm::sign_cast_division_operands`; `ConditionTerm::nonnegative_division_bound_guards` | `(a / b) as int32 == (a as int32) / (b as int32)` for `uint32` `a`, `b` with `0 <= a as int32` and `0 < b as int32`, and `(x / y) as uint32 == (x as uint32) / (y as uint32)` for `int32` `x`, `y` with `0 <= x` and `0 < y`, and the same for `%`. Read at decision time on a comparison naming σ of a quotient, and filed beside such a fact when it is assumed: one match on each side's root and two sign decisions per side; the quotient bound guards read it too. A quotient by zero is not related |
 | Cross-format relations (R0, R-dist, R-comp) | the e-graph's `terms/machine_relations.rs`: `relate_machine_application`, `merge_machine_relations` | a conversion to a format no wider than its source distributes over `+ - * & \| ^ ~` and a constant `<<` below the destination's width (σ, which keeps the width, over a `<<` by any count); a conversion of a value-preserving conversion it reads exactly, or one keeping no more bits than either, is one conversion; a same-width conversion of at least 32 bits has its inverse in its operand's class; where both 32-bit widenings of one narrow class exist, the later is σ of the earlier (`relate_siblings`) |
-| Native narrow arithmetic (G2, G4) | `SpecExpression::NarrowArithmetic`, `SpecExpression::at_machine_type`; `CIntegerCastMode::NarrowArithmetic`, `c_narrow_arithmetic`; `CIntegerCastMode::ResultConversion`; `eval::native_narrow_binary`, `native_narrow_not` | specification arithmetic `+ - * & \| ^ ~` at an 8- or 16-bit position (a typed `let`, a pure function's argument at its parameter's type, a pure function's body at its result type) over operands of that type, and Rust `+ - * & \| ^ !` and `<<` by a 32-bit count on `u8`, `i8`, `u16`, `i16`, are the native node of the type, `(a op b) mod 2^N`, with no promotion and no domain obligation; an `int32` literal the type holds takes it. Rust's checked overflow stays its own panic assertion. An operand of another machine type at a specification position is refused by the parser or type checker, which names the conversion to write; inside the kernel, operands of another type keep the promoted reading. C keeps promote, operate, convert |
+| Native narrow arithmetic (G2, G4) | `SpecExpression::NarrowArithmetic`, `SpecExpression::at_machine_type`; `IntegerCastMode::NarrowArithmetic`, `c_narrow_arithmetic`; `IntegerCastMode::ResultConversion`; `eval::native_narrow_binary`, `native_narrow_not` | specification arithmetic `+ - * & \| ^ ~` at an 8- or 16-bit position (a typed `let`, a pure function's argument at its parameter's type, a pure function's body at its result type) over operands of that type, and Rust `+ - * & \| ^ !` and `<<` by a 32-bit count on `u8`, `i8`, `u16`, `i16`, are the native node of the type, `(a op b) mod 2^N`, with no promotion and no domain obligation; an `int32` literal the type holds takes it. Rust's checked overflow stays its own panic assertion. An operand of another machine type at a specification position is refused by the parser or type checker, which names the conversion to write; inside the kernel, operands of another type keep the promoted reading. C keeps promote, operate, convert |
 | Promoted spelling of a native narrow operator (N) | the e-graph's `terms/machine_relations.rs`: `promote` (`Relation::Promote`) | a native 8- or 16-bit operator `a op b` (and `~a`, and `a << c` for a 32-bit count `c`) is in the class of `Cast(int32 -> F, widen(a) op widen(b))`, interned with its K7' word, so its widening meets the masked word operator. It fires on demand: when the operator's class is widened to 32 bits, and for a shift (whose symbolic count R-dist cannot move); C's spelling meets the native node through R-dist and R-comp without it. Once per operator, at most seven nodes and two unions; an operator R-dist built is skipped, and R-dist of the rule's own narrowing over its word is marked fired |
 | `Bool` conditional (L-If) | `ConditionTerm::open_bool_if`; `PureFactContext::decide_bool_value` | `if c { a } else { b }` holds exactly when `(c and a) or (not c and b)`; opened only when the conditional itself is decided or split |
 | `Bool` equality (L-Eq) | the e-graph's `bool_node`, `admit_bool_condition`, `knows_bool_condition` | a true `a == b` merges the classes of `a` and `b`, which share their truth; a false one contradicts the merge; applications of one function to equal arguments are one class |
@@ -789,7 +789,7 @@ the widths a rule supports; it asks the module
 | `Bool` to integer (C1) | `MachineTerm::BoolCast`, `bool_cast`, `bool_word_as`; the e-graph's `link_bool_cast`, `cast_value_truth`, `cast_disequality_truth`; `c_bool_cast_range_facts` | `b as F` is 1 when `b` holds and 0 otherwise: a decided `b` merges the cast's class with that constant, the constant 1 or 0 decides `b`, any other constant is a contradiction, a cast unequal to 0 or to 1 decides `b`, two casts in one class have equal `Bool`s, and two unequal casts have unequal `Bool`s; the cast's word is canonical at every format (C1c), and `0 <= b as int32 <= 1` with `b as int32 == 0 or b as int32 == 1` is filed where a C `bool` value is introduced (C1b) |
 | Integer to `Bool` | `ConditionTerm::nonzero_test`, `bool_not` | C's `(bool)x`, an assignment or argument at `bool`, and a C++ conversion are the `Bool` `x != 0` (a non-null test for a pointer), the negation `if x == 0 { false } else { true }`, exact at every width; a cast `b as F` tested against zero is `b` |
 | Byte rule | `eval::memory_loads::symbolic_load_value_unrecorded`, `canonical_integer_read`, `primitives::cell_store::cell_run_value` | a store of a `Bool` writes its byte `b as uint8`; a read of a `bool` cell whose byte is `β` is the `Bool` `β != 0`; no write of another kind and no byte view reaches a `bool` cell |
-| Rust `Bool` values (D5) | `CIntegerCastMode::BoolValue`, `c_bool_value`; `eval::expression::ConditionValueScope` | a Rust comparison, `!`, or connective of a local or a value is the `Bool` it tests, carried as its C1 cast, with no path split; a branch or loop condition stays the comparison it tests |
+| Rust `Bool` values (D5) | `IntegerCastMode::BoolValue`, `c_bool_value`; `eval::expression::ConditionValueScope` | a Rust comparison, `!`, or connective of a local or a value is the `Bool` it tests, carried as its C1 cast, with no path split; a branch or loop condition stays the comparison it tests |
 
 The last seven rows are the logic of Click `Bool` (Stage 5 of
 `design/machine-integers.md`, decision of 2026-10-26), which is the
@@ -999,7 +999,7 @@ the flattened cell rather than at an aggregate temporary.
 
 Copyable by-value structs are the first exception to that address-first
 boundary. Click retains each leaf field name, byte offset, and kernel type in a
-flattened `CAggregateLayout`; embedded fields use qualified names such as
+flattened `AggregateLayout`; embedded fields use qualified names such as
 `inner.value`. The kernel binds a value to an `AggregateObject` with its own
 local block. Each automatic aggregate declaration owns its complete byte range,
 including ordinary C record locals as well as construction destinations. This
@@ -1250,7 +1250,7 @@ are tracked in `roadmap/multiple-compilers.md`.
 
 Untyped pointer operations likewise do not infer an `int32` pointee. An
 untyped load, index, or pointer addition whose pointee type cannot be recovered
-produces `CRuntimeError::IndeterminatePointeeType`. Importers should normally
+produces `RuntimeError::IndeterminatePointeeType`. Importers should normally
 emit typed loads/stores and preserve enough pointer-type information to avoid
 that model error.
 
@@ -1281,7 +1281,7 @@ truth value, and each side gains the condition or its negation as a fact.
 condition; tactics use it to select `if` edges.
 
 A call is one more part of an expression, not a separate mode. Proofs
-execute under `CExecutionSemantics::APPLY_VERIFIED_RULES` (below), so a call
+execute under `ExecutionSemantics::APPLY_VERIFIED_RULES` (below), so a call
 applies its callee's contract and never its body. It owes the `requires`;
 its result is a fresh symbol, which a proof names by its site,
 `statement(i).call(f, j).result`; the `ensures` become facts about that
@@ -1379,9 +1379,9 @@ result sort, while execution-memory snapshots stay opaque (regressions in
 - **A rule that abstracts a state takes the counter and returns where it
   left it.** `abstract_c_state_for_join` and its siblings take the maximum of
   the arms' counters, since the arms' abstractions are compared for equality,
-  and return a `CStateJoinAbstraction` pairing the state with that mark, so a
+  and return a `StateJoinAbstraction` pairing the state with that mark, so a
   caller cannot keep the old counter. A loop head's
-  `CLoopPreservationContext` reports its mark the same way; both the
+  `LoopPreservationContext` reports its mark the same way; both the
   continuing iteration and the body proof start from it.
 - **The counter only moves forward, and only the kernel moves it.**
   `ExecutionProofCore::next_kernel_variable` is private; callers read
@@ -1612,18 +1612,18 @@ choose a cell type implicitly.
 Call and loop behavior are explicit inputs to kernel execution. The common
 configurations are:
 
-- `CExecutionSemantics::EXECUTE_BODIES` evaluates callee bodies, verifies
+- `ExecutionSemantics::EXECUTE_BODIES` evaluates callee bodies, verifies
   annotated loops directly, and ignores available verified rules. Low-level C
   evaluator tests use this mode.
-- `CExecutionSemantics::APPLY_VERIFIED_RULES` applies opaque function and loop
+- `ExecutionSemantics::APPLY_VERIFIED_RULES` applies opaque function and loop
   rules and never evaluates the corresponding bodies. Click execution proofs
   use this mode.
 
-`CExecutionEnvironment` contains the function definitions and verified rules
+`ExecutionEnvironment` contains the function definitions and verified rules
 available to an execution; it does not select between these semantics. In
 particular, rule lookup is not a fallback mechanism. Applying verified rules
 without a matching rule fails, while direct body verification behaves the same
-whether or not a matching rule is present. `CExecutionSemantics` also exposes
+whether or not a matching rule is present. `ExecutionSemantics` also exposes
 `APPLY_CALL_RULES_AND_VERIFY_LOOPS` for the loop-rule construction phase,
 where calls remain modular while the current loop body is verified directly.
 

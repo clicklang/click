@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn retained_load_differences_preserve_native_operator_and_binder_rules() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new());
+        let memory = intern_c_memory(Memory::new());
         let pointer = Pointer {
             block: PointerBlock::Symbolic(Variable(1005600)),
             offset: PointerOffsetTerm::Constant(0),
@@ -300,7 +300,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let binder = Variable(1005699);
         let read = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_c_memory(Memory::new()),
             Box::new(Pointer::symbolic(binder)),
             LoadKind::Int32,
         );
@@ -368,7 +368,7 @@ mod tests {
         let ty = MachineIntegerType::Int32;
         let pointer = Pointer::symbolic(Variable(1007340));
         let load = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_c_memory(Memory::new()),
             pointer.into(),
             LoadKind::Int32,
         );
@@ -395,12 +395,12 @@ mod tests {
     fn shared_read_evidence_preserves_stored_and_origin_chain_sources() {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let pointer = CMemory::global_pointer("shared-read-source");
+        let pointer = Memory::global_pointer("shared-read-source");
         let sum = MachineTerm::add(
             MachineTerm::Variable(Variable(1007350)),
             MachineTerm::Variable(Variable(1007350)),
         );
-        let initial = CMemory::new().with_block("shared-read-source", 4);
+        let initial = Memory::new().with_block("shared-read-source", 4);
         let stored = initial
             .clone()
             .store(pointer.clone(), ProgramValue::Int32(sum.clone()));

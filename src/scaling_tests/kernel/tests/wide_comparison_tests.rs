@@ -23,7 +23,7 @@ fn wide_comparison_queries_ignore_unrelated_ambient_facts() {
                     paths(&expression, &context)
                 });
                 assert_eq!(output.len(), 1);
-                assert_eq!(output[0].outcome, CExpressionOutcome::Value(int32(1)));
+                assert_eq!(output[0].outcome, ExpressionOutcome::Value(int32(1)));
                 assert!(work < 4096, "{size}: {work}");
                 samples.push(work);
             }

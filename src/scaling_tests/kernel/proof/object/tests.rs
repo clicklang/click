@@ -10,7 +10,7 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
         ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
     };
     use crate::kernel::{
-        CComparisonOperator, CLoopInvariantCheck, ExecutionState, ProgramValue, SpecExpression,
+        ComparisonOperator, ExecutionState, LoopInvariantCheck, ProgramValue, SpecExpression,
         SpecProposition,
     };
     type TestProof =
@@ -29,10 +29,10 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
         )
     };
     let checks = [0, 1].map(|value| {
-        CLoopInvariantCheck::new(
+        LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value))),
-                operator: CComparisonOperator::LessEqual,
+                operator: ComparisonOperator::LessEqual,
                 right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(value))),
             },
             None,
@@ -161,7 +161,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
     };
     use crate::kernel::{
-        CComparisonOperator, CLoopInvariantCheck, ExecutionState, ProgramValue, SpecExpression,
+        ComparisonOperator, ExecutionState, LoopInvariantCheck, ProgramValue, SpecExpression,
         SpecProposition,
     };
     type TestProof =
@@ -183,16 +183,16 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         )
     };
     let checks = vec![
-        CLoopInvariantCheck::new(
+        LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
-                operator: CComparisonOperator::LessEqual,
+                operator: ComparisonOperator::LessEqual,
                 right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
             },
             None,
             None,
         ),
-        CLoopInvariantCheck::new(
+        LoopInvariantCheck::new(
             SpecProposition::Predicate {
                 resource_state_dependent: true,
                 name: "invariant".into(),
@@ -265,10 +265,10 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
                 .validate_checked_invariant_lowerings(&[], &[])
                 .is_err()
         );
-        let changed_checks = vec![CLoopInvariantCheck::new(
+        let changed_checks = vec![LoopInvariantCheck::new(
             SpecProposition::Comparison {
                 left: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
-                operator: CComparisonOperator::LessEqual,
+                operator: ComparisonOperator::LessEqual,
                 right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
             },
             None,

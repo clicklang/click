@@ -5,8 +5,8 @@ mod callback_signature_tests;
 mod one_byte_one_name_tests;
 
 fn checked_memory_load_equality(
-    left: &CMemory,
-    right: &CMemory,
+    left: &Memory,
+    right: &Memory,
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -57,8 +57,8 @@ pub(in crate::kernel) fn explicit_signed_elements(
 /// certificate. Tests supply the selected transition and prove its separation;
 /// the logical read producers provide both observations without reconstruction.
 pub(in crate::kernel) fn explicit_frame(
-    before: &CMemory,
-    after: &CMemory,
+    before: &Memory,
+    after: &Memory,
     address: &Pointer,
     ty: ProgramType,
     effects: &[Proposition],
@@ -73,13 +73,13 @@ pub(in crate::kernel) fn explicit_frame(
         .cloned()
         .map(ExecutionPureFact::certified)
         .collect::<Vec<_>>();
-    let footprint = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+    let footprint = Resource::Footprint(crate::kernel::RegionFootprint::transition(
         "selected transition".into(),
         &entry,
         &exit,
         &effects,
     ));
-    let kept = CResource::Memory(CMemoryRange::new_with_element_width(
+    let kept = Resource::Memory(MemoryRange::new_with_element_width(
         address.clone(),
         0u32.into(),
         1u32.into(),
@@ -87,7 +87,7 @@ pub(in crate::kernel) fn explicit_frame(
     ));
     // Establish each explicitly selected member's separation, then apply the
     // footprint rule to those facts, as normalize(using: [...]) does.
-    let CResource::Footprint(region) = &footprint else {
+    let Resource::Footprint(region) = &footprint else {
         unreachable!()
     };
     let mut selected = PureFactContext::new();
@@ -110,7 +110,7 @@ pub(in crate::kernel) fn explicit_frame(
         right: Box::new(kept),
     };
     let _reads = ReadScope::enter();
-    let observe = |memory: &CMemory| {
+    let observe = |memory: &Memory| {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
@@ -122,7 +122,7 @@ pub(in crate::kernel) fn explicit_frame(
         let [path] = paths.as_slice() else {
             panic!("one logical observation");
         };
-        let CExpressionOutcome::Value(value) = &path.outcome else {
+        let ExpressionOutcome::Value(value) = &path.outcome else {
             panic!("logical read produces a value");
         };
         value.clone()
@@ -203,10 +203,10 @@ fn certify_contract_with_kernel_artifacts(
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
     derived_entry_facts: Vec<Proposition>,
-    environment: CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
-    mode: CFunctionContractExecutionMode,
-) -> CFunctionContractExecution {
+    environment: ExecutionEnvironment,
+    execution_semantics: ExecutionSemantics,
+    mode: FunctionContractExecutionMode,
+) -> FunctionContractExecution {
     let assume_all = |facts: &[Proposition]| {
         facts
             .iter()
@@ -340,24 +340,24 @@ fn memory_range(
     base: Pointer,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
-) -> CMemoryRange {
-    CMemoryRange::new(base, start.into(), end.into())
+) -> MemoryRange {
+    MemoryRange::new(base, start.into(), end.into())
 }
 
 fn view_memory_fact(
     base: Pointer,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
-) -> CResourceFact {
-    CResourceFact::view_memory(memory_range(base, start, end))
+) -> ResourceFact {
+    ResourceFact::view_memory(memory_range(base, start, end))
 }
 
 fn own_memory_fact(
     base: Pointer,
     start: impl Into<MachineTerm>,
     end: impl Into<MachineTerm>,
-) -> CResourceFact {
-    CResourceFact::own_memory(memory_range(base, start, end))
+) -> ResourceFact {
+    ResourceFact::own_memory(memory_range(base, start, end))
 }
 
 fn view_memory_context(

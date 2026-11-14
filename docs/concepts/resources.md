@@ -36,7 +36,7 @@ implicit capability for direct local access.
 
 ## Resource context and families
 
-Internally, Click represents resource facts as `CResourceFact` values. A
+Internally, Click represents resource facts as `ResourceFact` values. A
 resource is the bare object being described, such as `memory(p[0..n])`; a
 resource fact is that resource with an access mode, such as
 `view(memory(p[0..n]))` or `own(memory(p[0..n]))`. Resource facts are what the

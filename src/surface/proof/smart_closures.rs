@@ -6,7 +6,7 @@ use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
 
 use super::selected_arithmetic::RewriteClosers;
 use super::*;
-use crate::kernel::CFloatCondition;
+use crate::kernel::FloatCondition;
 use crate::kernel::proof::arithmetic_special::signed_definedness_operands;
 use crate::kernel::proof::integer_arithmetic::{
     IntegerAffineClaim, IntegerAffineRelation, IntegerArithmeticCertificate, IntegerArithmeticNode,
@@ -377,7 +377,7 @@ fn int32_widening_spelling(
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
             target_type: crate::kernel::ProgramType::Int32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -1611,7 +1611,7 @@ fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Value(int32(0))),
             target_type: crate::kernel::ProgramType::Int32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -1628,7 +1628,7 @@ fn native_uint32_split_operand(operand: ContractExpression) -> ContractExpressio
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Value(int32(0))),
             target_type: crate::kernel::ProgramType::UInt32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            integer_mode: crate::kernel::IntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -2041,7 +2041,7 @@ impl<'a> Proof<'a> {
                     lowered: ProgramExpression::Cast {
                         expression: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
                         target_type: crate::kernel::ProgramType::Int32,
-                        integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                        integer_mode: crate::kernel::IntegerCastMode::CConversion,
                         pointee_struct: None,
                         pointee_volatile: false,
                         pointee_constant: false,
@@ -4276,7 +4276,7 @@ fn literal_requirement_matching_respects_both_truth_and_polarity() {
 
 fn source_backed_refusal(
     error: &ClickError,
-    current_memory: &crate::kernel::CMemory,
+    current_memory: &crate::kernel::Memory,
 ) -> Result<bool, ClickError> {
     let Some(requirement) = error.unresolved_requirement() else {
         return Ok(false);
@@ -4284,7 +4284,7 @@ fn source_backed_refusal(
     let Some(site) = requirement.call_site.as_ref() else {
         return Ok(false);
     };
-    if crate::kernel::CMemorySnapshotIdentity::of(current_memory) != site.source_snapshot {
+    if crate::kernel::MemorySnapshotIdentity::of(current_memory) != site.source_snapshot {
         return Ok(false);
     }
     source_backed_requirement_is_supported(
@@ -4319,7 +4319,7 @@ fn source_backed_call_requirement_surface(
     let source_ordinal = source.source_requirement_ordinal?;
     let site = source.site.as_ref();
 
-    if crate::kernel::CMemorySnapshotIdentity::of(execution.core.state.memory())
+    if crate::kernel::MemorySnapshotIdentity::of(execution.core.state.memory())
         != site.source_snapshot
     {
         return None;
@@ -4715,7 +4715,7 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
     *substituted_arguments.get_mut(*predicate_argument_slot)? =
         caller_parameter_as_argument(caller_parameter, predicate_parameter_type);
     let entry_state = context.constants.function_entry_state.as_ref()?;
-    let entry_snapshot = crate::kernel::CMemorySnapshotIdentity::of(entry_state.memory());
+    let entry_snapshot = crate::kernel::MemorySnapshotIdentity::of(entry_state.memory());
     // Phase 1 projects entry requirements only across an effect-free prefix.
     // Local declarations change the current snapshot without adding an
     // effect, while stores and havoc do add one. Crossing a recorded memory
@@ -5086,8 +5086,8 @@ mod synthesized_literal_tests {
         let whole = Proposition::And(Box::new(trivial.clone()), Box::new(bound));
         assert!(!lowered_states_requirement(&whole, &requirement(trivial)));
         let separation = Proposition::CResourceSeparate {
-            left: Box::new(crate::kernel::CResource::Emp),
-            right: Box::new(crate::kernel::CResource::Emp),
+            left: Box::new(crate::kernel::Resource::Emp),
+            right: Box::new(crate::kernel::Resource::Emp),
         };
         let whole = Proposition::And(Box::new(whole), Box::new(separation.clone()));
         assert!(lowered_states_requirement(&whole, &requirement(separation)));
@@ -5095,10 +5095,10 @@ mod synthesized_literal_tests {
 
     #[test]
     fn signed_certificate_spelling_matches_exact_read_atoms() {
-        use crate::kernel::{CMemory, LoadKind, Pointer, intern_c_memory};
+        use crate::kernel::{LoadKind, Memory, Pointer, intern_c_memory};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(71_230));
-        let before = intern_c_memory(CMemory::new());
+        let before = intern_c_memory(Memory::new());
         let after = intern_c_memory(before.memory().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
@@ -5123,15 +5123,15 @@ mod synthesized_literal_tests {
     #[test]
     fn retained_requirements_match_mirrored_orders_and_stored_read_sources() {
         use crate::kernel::{
-            CMemory, CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
-            MachineOperandView as V, Pointer, intern_c_memory,
+            CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
+            MachineOperandView as V, Memory, Pointer, intern_c_memory,
         };
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
         let x = MachineTerm::Variable(Variable(71231));
         let sum = MachineTerm::logical_machine_binary(ty, Op::Add, x, 1u32.into());
         let pointer = Pointer::symbolic(Variable(71232));
-        let before = intern_c_memory(CMemory::new());
+        let before = intern_c_memory(Memory::new());
         let after = intern_c_memory(
             before
                 .memory()

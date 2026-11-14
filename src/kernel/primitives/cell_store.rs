@@ -426,8 +426,8 @@ impl CellRun {
     }
 
     /// The memory range the run's elements span, element 0 up to `count`.
-    pub(crate) fn range(&self) -> super::CMemoryRange {
-        super::CMemoryRange::new_with_element_width(
+    pub(crate) fn range(&self) -> super::MemoryRange {
+        super::MemoryRange::new_with_element_width(
             self.base.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(self.count),
@@ -3177,14 +3177,14 @@ mod tests {
     //! number of runs.
 
     use super::*;
-    use crate::kernel::primitives::{CMemory, Variable};
+    use crate::kernel::primitives::{Memory, Variable};
     use std::collections::BTreeMap;
 
     #[test]
     fn symbolic_run_reads_keep_the_element_width_instead_of_the_unknown_default() {
         for copy in [false, true] {
             let _session = crate::kernel::VerificationSession::enter();
-            let source = crate::kernel::intern_c_memory(CMemory::new());
+            let source = crate::kernel::intern_c_memory(Memory::new());
             let base = Pointer::symbolic(Variable(993_140)).offset_by_bytes(8);
             let destination = Pointer::symbolic(Variable(993_141));
             let run = CellRun::new_with_mode(
@@ -3225,7 +3225,7 @@ mod tests {
 
     fn source(tag: u32) -> SharedMemory {
         crate::kernel::intern_c_memory(
-            CMemory::new().with_block(format!("cell-store-source-{tag}").as_str(), 4),
+            Memory::new().with_block(format!("cell-store-source-{tag}").as_str(), 4),
         )
     }
 
@@ -3256,7 +3256,7 @@ mod tests {
         )
     }
 
-    /// Seeds `run` as `CMemory::with_seeded_cells` does: every slot that
+    /// Seeds `run` as `Memory::with_seeded_cells` does: every slot that
     /// already holds a cell is a hole of the new run. The model stores each
     /// seeded slot one by one.
     fn seed(store: &mut CellStore, model: &mut BTreeMap<Pointer, ProgramValue>, mut run: CellRun) {
@@ -3622,7 +3622,7 @@ mod tests {
         assert!(!store.same_cells_as(&extra));
     }
 
-    /// `CMemory::same_contents_as` looks through the cell cache's layout and
+    /// `Memory::same_contents_as` looks through the cell cache's layout and
     /// through nothing else. A block that is read-only on one side, a block
     /// one side lacks, an ended automatic object, and a forget mark (a
     /// snapshot identity: the marked memory is not known to be the one it
@@ -3648,7 +3648,7 @@ mod tests {
             concrete.insert(seeded.slot_pointer(index), seeded.value(index));
         }
         let with_cells = |cells: &CellStore| {
-            let mut memory = CMemory::new().with_block(block, 8);
+            let mut memory = Memory::new().with_block(block, 8);
             memory.cells = std::sync::Arc::new(cells.clone());
             memory
         };
@@ -3658,7 +3658,7 @@ mod tests {
         assert!(as_run.same_contents_as(&as_cells));
         assert!(as_cells.same_contents_as(&as_run));
 
-        let mut read_only = CMemory::new().with_read_only_block(block, 8);
+        let mut read_only = Memory::new().with_read_only_block(block, 8);
         read_only.cells = std::sync::Arc::new(concrete.clone());
         assert!(!as_run.same_contents_as(&read_only));
 

@@ -11,7 +11,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
             let pointer = pointer();
             let facts = PureFactContext::new();
             let own = |start: u32, end: u32| {
-                CResourceFact::own_memory(CMemoryRange::new(
+                ResourceFact::own_memory(MemoryRange::new(
                     pointer.clone(),
                     start.into(),
                     end.into(),
@@ -38,7 +38,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
                 // Complete-owner controls put extras beyond the request.
                 let start = if case == "gap" { 100 } else { 2048 } + 2 * index;
                 resources = resources.unchecked_with_fact(if case == "implicit" {
-                    CResourceFact::own_token("unrelated".into(), vec![int32(index)])
+                    ResourceFact::own_token("unrelated".into(), vec![int32(index)])
                 } else {
                     own(start, start + 1)
                 });
@@ -46,7 +46,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
             resources.synchronize_memory_equalities(&facts);
             let state = ExecutionState::new()
                 .with_memory(
-                    CMemory::new()
+                    Memory::new()
                         .with_block(pointer.block.clone(), 16384)
                         .store(pointer.clone(), int32(7)),
                 )
@@ -63,7 +63,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
                             &function,
                             &arguments,
                             &facts,
-                            CExecutionContext::execute_bodies(&environment),
+                            ExecutionContext::execute_bodies(&environment),
                             &mut ExecutionBudget::new(),
                         )
                         .expect("classification produces a call outcome")
@@ -71,8 +71,8 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
                 });
                 let succeeds = matches!(
                     paths.as_slice(),
-                    [CFunctionPath {
-                        outcome: CFunctionOutcome::Return { .. },
+                    [FunctionPath {
+                        outcome: FunctionOutcome::Return { .. },
                         ..
                     }]
                 );
@@ -132,7 +132,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
         let pointer = pointer();
         let facts = PureFactContext::new();
         let own = |start: u32, end: u32| {
-            CResourceFact::own_memory(CMemoryRange::new(pointer.clone(), start.into(), end.into()))
+            ResourceFact::own_memory(MemoryRange::new(pointer.clone(), start.into(), end.into()))
         };
         let owner = own(0, 1024);
         let mut resources =
@@ -143,7 +143,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
         resources.synchronize_memory_equalities(&facts);
         let state = ExecutionState::new()
             .with_memory(
-                CMemory::new()
+                Memory::new()
                     .with_block(pointer.block.clone(), 16384)
                     .store(pointer.clone(), int32(7)),
             )
@@ -163,16 +163,16 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
                             &function,
                             &[c_pointer_value(pointer.clone())],
                             &facts,
-                            CExecutionContext::execute_bodies(&environment),
+                            ExecutionContext::execute_bodies(&environment),
                             &mut ExecutionBudget::new(),
                         )
                         .unwrap()
                     })
                 });
             let [
-                CFunctionPath {
+                FunctionPath {
                     outcome:
-                        CFunctionOutcome::Return {
+                        FunctionOutcome::Return {
                             state: returned, ..
                         },
                     ..
@@ -248,7 +248,7 @@ fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
         block: PointerBlock::Symbolic(Variable(id)),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let own = |base| CResourceFact::own_memory(CMemoryRange::new(base, 0u32.into(), 4u32.into()));
+    let own = |base| ResourceFact::own_memory(MemoryRange::new(base, 0u32.into(), 4u32.into()));
     for axis in ["aliases", "frame"] {
         let mut samples = Vec::new();
         for count in [4_u64, 16, 64, 256] {

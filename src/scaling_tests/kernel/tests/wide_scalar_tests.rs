@@ -60,7 +60,7 @@ fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let bits = MachineTerm::uint64_constant(0x1_0000_0001);
-        let mut memory = CMemory::new().with_block("wide-cached-scaling", (count + 1) * 8);
+        let mut memory = Memory::new().with_block("wide-cached-scaling", (count + 1) * 8);
         for index in 1..=count {
             memory = memory.store(
                 pointer.offset_by_bytes(index * 8),
@@ -104,7 +104,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         MachineTerm::uint64_constant(0x1_0000_0001),
     );
     let kept = CallKeptOwnership::new(
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(memory_range(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(memory_range(
             owned_pointer,
             0,
             2,
@@ -115,7 +115,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
     let matches = crate::kernel::memory_provenance::wide_read_has_recorded_value;
     let mut previous = None;
     for count in [16, 64, 256, 1024] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..count {
             memory = memory.store(
                 Pointer::symbolic(Variable(79_000 + index)),
@@ -179,14 +179,14 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
     );
     let kept = CallKeptOwnership::new(
         ResourceContext::new()
-            .unchecked_with_fact(CResourceFact::own_memory(memory_range(owner, 0, 2))),
+            .unchecked_with_fact(ResourceFact::own_memory(memory_range(owner, 0, 2))),
         CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
         &selected,
     );
     let bits = MachineTerm::uint64_constant(7);
     let mut previous = None;
     for count in [128, 256, 512] {
-        let mut memory = CMemory::new().store(pointer.clone(), ProgramValue::UInt64(bits.clone()));
+        let mut memory = Memory::new().store(pointer.clone(), ProgramValue::UInt64(bits.clone()));
         for index in 0..count {
             memory = memory.with_call_memory_havoc(
                 Variable(82_000 + index),
@@ -229,7 +229,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
     let mut previous_work = None;
     for count in [4u32, 16, 64, 256] {
         let mut selected = PureFactContext::new().assume_condition(alias.clone(), true);
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..count {
             memory = memory.store(
                 owned_pointer.offset_by_bytes((index + 1) * 8),
@@ -247,21 +247,22 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
             owned_pointer.clone(),
             ProgramValue::UInt64(MachineTerm::Variable(Variable(90_000 + u64::from(count)))),
         );
-        let kept =
-            CallKeptOwnership::new(
-                ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-                    memory_range(owned_pointer.clone(), 0, 2),
-                )),
-                CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
-                &selected,
-            );
+        let kept = CallKeptOwnership::new(
+            ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(memory_range(
+                owned_pointer.clone(),
+                0,
+                2,
+            ))),
+            CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
+            &selected,
+        );
         let after = memory.clone().with_call_memory_havoc(
             Variable(91_000 + u64::from(count)),
             &[memory_range(callee.clone(), 0, 2)],
             &selected,
             Some(&kept),
         );
-        let read = |snapshot: &CMemory, pointer: &Pointer, kind| {
+        let read = |snapshot: &Memory, pointer: &Pointer, kind| {
             MachineTerm::MemoryLoad(
                 intern_c_memory_ref(snapshot),
                 Box::new(pointer.clone()),

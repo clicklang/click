@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, CLoopEffectOrigin};
+use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, LoopEffectOrigin};
 use crate::kernel::{bits32_constant, constant_u32};
 
 // The lowerers share these two finite bands. Refusing at each ceiling keeps
@@ -68,7 +68,7 @@ fn is_unsuffixed_integer_literal_expression(expression: &ContractExpression) -> 
 /// ranking components, or the resource binder a structural measure names.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum LoopMeasureClauses {
-    Ranking(Vec<crate::kernel::CRankingComponent>),
+    Ranking(Vec<crate::kernel::RankingComponent>),
     Structural(String),
 }
 
@@ -522,8 +522,8 @@ fn contract_expression_is_algebraic(
         _ => false,
     }
 }
-use crate::kernel::CFloatClassification;
-use crate::kernel::CPredicateUnfolding;
+use crate::kernel::FloatClassification;
+use crate::kernel::PredicateUnfolding;
 use crate::kernel::SpecSequenceExpression;
 use crate::kernel::{
     AlgebraicSchemas, AlgebraicType, AlgebraicValueType, AlgebraicVariantType,
@@ -536,11 +536,11 @@ type FunctionContractSummary = (
     Vec<Option<usize>>,
     Vec<SpecProposition>,
     Vec<SpecProposition>,
-    Vec<CMemorySegment>,
-    Vec<CFunctionContractClaim>,
+    Vec<MemorySegment>,
+    Vec<FunctionContractClaim>,
     bool,
-    Vec<CPredicateUnfolding>,
-    Vec<crate::kernel::CRankingComponent>,
+    Vec<PredicateUnfolding>,
+    Vec<crate::kernel::RankingComponent>,
 );
 
 /// Records each declared `Integer`-valued function's body with the kernel,
@@ -622,7 +622,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
         else {
             continue;
         };
-        crate::kernel::register_fold_read_definition(crate::kernel::CFoldReadDefinition::new(
+        crate::kernel::register_fold_read_definition(crate::kernel::FoldReadDefinition::new(
             definition.name(),
             parameters,
             body,
@@ -702,7 +702,7 @@ pub(in crate::surface) fn lower_composite_resource_condition(
 pub(in crate::surface) struct LoweredResourceBody {
     pub facts: Vec<SpecProposition>,
     pub fact_source_indices: Vec<usize>,
-    pub children: Vec<crate::kernel::CResourceChildSpec>,
+    pub children: Vec<crate::kernel::ResourceChildSpec>,
 }
 
 pub(in crate::surface) fn lower_composite_resource_body(
@@ -826,7 +826,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
         .children
         .iter()
         .map(|child| {
-            Ok(crate::kernel::CResourceChildSpec {
+            Ok(crate::kernel::ResourceChildSpec {
                 name: child.name.clone(),
                 resource: child.resource.clone(),
                 binding: child.identity,
@@ -1097,7 +1097,7 @@ pub(in crate::surface) fn kernel_loop_replacement_steps() -> usize {
 /// write footprint a loop without a resource clause inherits.
 struct LoopAnnotationShape {
     records: Vec<LoopLoweringRecord>,
-    contract_mutable: Vec<CMemorySegment>,
+    contract_mutable: Vec<MemorySegment>,
     resource_derived_mutable_frame: bool,
     /// Whether one loop can be lowered alone at all: the walk lowered the
     /// function's own body, numbering every loop the kernel body holds, and
@@ -1848,10 +1848,10 @@ fn annotate_function(
             .contract_interface()
             .aggregate_return_mode()
         {
-            crate::kernel::CAggregateReturnMode::Copy => {
+            crate::kernel::AggregateReturnMode::Copy => {
                 function.with_return_aggregate_layout(layout)
             }
-            crate::kernel::CAggregateReturnMode::Construction => {
+            crate::kernel::AggregateReturnMode::Construction => {
                 function.with_construction_return(layout)
             }
         };
@@ -2685,7 +2685,7 @@ pub(in crate::surface) fn function_contract_summary(
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
                     predicate_unfoldings
-                        .push(CPredicateUnfolding::new(predicate, proposition.clone()));
+                        .push(PredicateUnfolding::new(predicate, proposition.clone()));
                 }
                 requires.push(proposition);
                 contract_requirement_sources.push(Some(source_index));
@@ -2736,7 +2736,7 @@ pub(in crate::surface) fn function_contract_summary(
             Ok(proposition) => {
                 if let Ok(Some(predicate)) = opaque_predicate {
                     predicate_unfoldings
-                        .push(CPredicateUnfolding::new(predicate, proposition.clone()));
+                        .push(PredicateUnfolding::new(predicate, proposition.clone()));
                 }
                 ensures.push(proposition)
             }
@@ -2784,7 +2784,7 @@ pub(in crate::surface) fn function_contract_summary(
                 // signed int32 bounds by the program-entry initializer.
                 let range = fact.memory_own_range()?;
                 Some(
-                    CMemorySegment::new(
+                    MemorySegment::new(
                         ProgramExpression::Value(ProgramValue::pointer(range.base().clone())),
                         ProgramExpression::Value(ProgramValue::Int32(range.start().clone())),
                         ProgramExpression::Value(ProgramValue::Int32(range.end().clone())),
@@ -2797,7 +2797,7 @@ pub(in crate::surface) fn function_contract_summary(
     let mut claims = if function_block.ensures().is_empty()
         && function_block.exceptional_ensures().is_empty()
     {
-        vec![CFunctionContractClaim::body_safety()]
+        vec![FunctionContractClaim::body_safety()]
     } else {
         let mut proposition_index = 0;
         let mut resource_index = 0;
@@ -2806,20 +2806,20 @@ pub(in crate::surface) fn function_contract_summary(
             claims.push(match ensure.ensure() {
                 Ensure::Proposition(_) => {
                     let claim =
-                        CFunctionContractClaim::ensure_proposition(source_index, proposition_index);
+                        FunctionContractClaim::ensure_proposition(source_index, proposition_index);
                     proposition_index += 1;
                     claim
                 }
                 Ensure::Resource(_) => {
                     let claim =
-                        CFunctionContractClaim::ensure_resource(source_index, resource_index);
+                        FunctionContractClaim::ensure_resource(source_index, resource_index);
                     resource_index += 1;
                     claim
                 }
             });
         }
         for (source_index, _ensure) in function_block.exceptional_ensures().iter().enumerate() {
-            claims.push(CFunctionContractClaim::exceptional_ensure_proposition(
+            claims.push(FunctionContractClaim::exceptional_ensure_proposition(
                 source_index,
                 source_index,
             ));
@@ -2835,7 +2835,7 @@ pub(in crate::surface) fn function_contract_summary(
             .iter()
             .filter(|clause| matches!(clause.ensure(), Ensure::Resource(_)))
             .count();
-        claims.push(CFunctionContractClaim::ensure_resource(
+        claims.push(FunctionContractClaim::ensure_resource(
             function_block.ensures().len(),
             resource_index,
         ));
@@ -3056,13 +3056,13 @@ struct LoopResourceDeclaration {
     /// The loop's declarations as kernel resource specs, evaluated at loop
     /// entry to build the body's resource context and, from that same
     /// evaluation, the loop's checked whole-loop footprint.
-    specs: Vec<CResourceSpec>,
+    specs: Vec<ResourceSpec>,
 }
 
 struct AnnotationLowerer<'a> {
     capture_referenced_names: Option<BTreeSet<String>>,
     structural_clauses: &'a StructuralClauses,
-    implicit_contract_mutable_segments: &'a [CMemorySegment],
+    implicit_contract_mutable_segments: &'a [MemorySegment],
     /// Resources declared by each loop, keyed by loop index. A loop with a
     /// declaration has the shape of a callee contract: its body executes
     /// owning exactly these resources, and its write footprint is the memory
@@ -3692,7 +3692,7 @@ impl AnnotationLowerer<'_> {
     fn lower_statement(
         &mut self,
         statement: &syntax::C0Statement,
-        control_targets: &BTreeMap<String, (crate::kernel::CControlTargetId, usize)>,
+        control_targets: &BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
     ) -> Result<ProgramStatement, ClickError> {
         Ok(match statement {
             syntax::C0Statement::Seq(first, second) => c_seq(
@@ -3799,7 +3799,7 @@ impl AnnotationLowerer<'_> {
 
     /// The loop's declared resources as kernel specs. An empty list means the
     /// loop declared none and inherits the function's own resource context.
-    fn loop_resource_specs(&self, loop_index: usize) -> Vec<CResourceSpec> {
+    fn loop_resource_specs(&self, loop_index: usize) -> Vec<ResourceSpec> {
         self.loop_resources
             .get(&loop_index)
             .map(|declaration| declaration.specs.clone())
@@ -3895,7 +3895,7 @@ impl AnnotationLowerer<'_> {
         &mut self,
         loop_index: usize,
         clause: &StructuralClause,
-    ) -> Result<Vec<crate::kernel::CRankingComponent>, ClickError> {
+    ) -> Result<Vec<crate::kernel::RankingComponent>, ClickError> {
         let Some(measure) = clause.decreases() else {
             return Ok(Vec::new());
         };
@@ -3931,7 +3931,7 @@ impl AnnotationLowerer<'_> {
             if written.is_none()
                 && let Ok(c_expression) = resource_argument_to_c_expression(expression)
             {
-                components.push(crate::kernel::CRankingComponent::ProgramExpression(
+                components.push(crate::kernel::RankingComponent::ProgramExpression(
                     c_expression,
                 ));
                 continue;
@@ -3969,7 +3969,7 @@ impl AnnotationLowerer<'_> {
                             "loop {loop_index} `decreases` component `{source}`: {message}"
                         ))
                     })?;
-                components.push(crate::kernel::CRankingComponent::PureInteger {
+                components.push(crate::kernel::RankingComponent::PureInteger {
                     source,
                     expression: lowered,
                 });
@@ -3987,7 +3987,7 @@ impl AnnotationLowerer<'_> {
                             "loop {loop_index} `decreases` component `{source}`: {message}"
                         ))
                     })?;
-                components.push(crate::kernel::CRankingComponent::PureInteger {
+                components.push(crate::kernel::RankingComponent::PureInteger {
                     source,
                     expression: lowered,
                 });
@@ -4000,7 +4000,7 @@ impl AnnotationLowerer<'_> {
                         "loop {loop_index} `decreases` component `{source}`: {message}"
                     ))
                 })?;
-            components.push(crate::kernel::CRankingComponent::Pure {
+            components.push(crate::kernel::RankingComponent::Pure {
                 source,
                 expression: lowered,
             });
@@ -4023,7 +4023,7 @@ impl AnnotationLowerer<'_> {
         &mut self,
         function_block: &FunctionBlock,
         context: &SpecElaborationContext,
-    ) -> Result<Vec<crate::kernel::CRankingComponent>, ClickError> {
+    ) -> Result<Vec<crate::kernel::RankingComponent>, ClickError> {
         let components = match function_block.decreases() {
             Some(CFunctionDecrease::Numeric(expression)) => {
                 // A bare name of a C int32 parameter is today's numeric
@@ -4068,7 +4068,7 @@ impl AnnotationLowerer<'_> {
         function_block: &FunctionBlock,
         expression: &ContractExpression,
         context: &SpecElaborationContext,
-    ) -> Result<crate::kernel::CRankingComponent, ClickError> {
+    ) -> Result<crate::kernel::RankingComponent, ClickError> {
         let name = function_block.signature().name();
         // The kernel reads the one declared measure at the function's entry
         // and again at each recursive call, and requires the second value to
@@ -4099,7 +4099,7 @@ impl AnnotationLowerer<'_> {
                         crate::surface::verification::termination_measure_source(expression)
                     ))
                 })?;
-            return Ok(crate::kernel::CRankingComponent::PureInteger {
+            return Ok(crate::kernel::RankingComponent::PureInteger {
                 source: crate::surface::verification::termination_measure_source(expression),
                 expression: lowered,
             });
@@ -4112,7 +4112,7 @@ impl AnnotationLowerer<'_> {
                     crate::surface::verification::termination_measure_source(expression)
                 ))
             })?;
-        Ok(crate::kernel::CRankingComponent::Pure {
+        Ok(crate::kernel::RankingComponent::Pure {
             source: crate::surface::verification::termination_measure_source(expression),
             expression: lowered,
         })
@@ -4123,7 +4123,7 @@ impl AnnotationLowerer<'_> {
     fn loop_measure_clauses(
         &mut self,
         loop_index: usize,
-    ) -> Result<(Vec<crate::kernel::CRankingComponent>, Option<String>), ClickError> {
+    ) -> Result<(Vec<crate::kernel::RankingComponent>, Option<String>), ClickError> {
         Ok(match self.loop_ranking_measures(loop_index)? {
             Some(LoopMeasureClauses::Ranking(components)) => (components, None),
             Some(LoopMeasureClauses::Structural(binder)) => (Vec::new(), Some(binder)),
@@ -4134,7 +4134,7 @@ impl AnnotationLowerer<'_> {
     fn loop_invariant_checks(
         &mut self,
         loop_index: usize,
-    ) -> Result<Vec<CLoopInvariantCheck>, ClickError> {
+    ) -> Result<Vec<LoopInvariantCheck>, ClickError> {
         let unfolded_predicates = self
             .structural_clauses
             .for_loop(loop_index)
@@ -4166,7 +4166,7 @@ impl AnnotationLowerer<'_> {
                         item.title(item_index)
                     ))
                 })?;
-                Ok(CLoopInvariantCheck::new(
+                Ok(LoopInvariantCheck::new(
                     self.click_proposition_to_spec_proposition(
                         &proposition,
                         &SpecElaborationContext::for_loop_invariant(loop_index),
@@ -4730,7 +4730,7 @@ impl AnnotationLowerer<'_> {
         // would clone every nested call's subtree.
         let value = self.lower_contract_expression_to_spec(argument, environment)?;
         Ok(match pure_function_parameter_conversion(parameter) {
-            Some((target, crate::kernel::CIntegerCastMode::PointerCoercion)) => {
+            Some((target, crate::kernel::IntegerCastMode::PointerCoercion)) => {
                 SpecExpression::PointerCoercion(Box::new(value), target)
             }
             Some((target, _)) => SpecExpression::Cast(Box::new(value), target),
@@ -4831,7 +4831,7 @@ impl AnnotationLowerer<'_> {
                     }
                     return Ok(SpecProposition::Predicate {
                         resource_state_dependent: false,
-                        name: CFunctionContract::predicate_name_for(name),
+                        name: FunctionContract::predicate_name_for(name),
                         arguments: contract_arguments,
                     });
                 }
@@ -5096,11 +5096,11 @@ impl AnnotationLowerer<'_> {
             } => Ok(SpecProposition::FloatClassification {
                 expression: self.lower_contract_expression_to_spec(expression, environment)?,
                 classification: match classification {
-                    syntax::C0FloatClassification::Finite => CFloatClassification::Finite,
-                    syntax::C0FloatClassification::Infinite => CFloatClassification::Infinite,
-                    syntax::C0FloatClassification::Zero => CFloatClassification::Zero,
-                    syntax::C0FloatClassification::Subnormal => CFloatClassification::Subnormal,
-                    syntax::C0FloatClassification::Nan => CFloatClassification::Nan,
+                    syntax::C0FloatClassification::Finite => FloatClassification::Finite,
+                    syntax::C0FloatClassification::Infinite => FloatClassification::Infinite,
+                    syntax::C0FloatClassification::Zero => FloatClassification::Zero,
+                    syntax::C0FloatClassification::Subnormal => FloatClassification::Subnormal,
+                    syntax::C0FloatClassification::Nan => FloatClassification::Nan,
                 },
             }),
             ClickProposition::ChangesOnly {
@@ -6202,10 +6202,10 @@ impl AnnotationLowerer<'_> {
                             );
                         }
                         Ok(
-                            if *integer_mode == crate::kernel::CIntegerCastMode::PointerCoercion {
+                            if *integer_mode == crate::kernel::IntegerCastMode::PointerCoercion {
                                 SpecExpression::PointerCoercion(Box::new(value), *target_type)
                             } else if *integer_mode
-                                == crate::kernel::CIntegerCastMode::ResultConversion
+                                == crate::kernel::IntegerCastMode::ResultConversion
                             {
                                 // A pure function's body is at its result
                                 // type (G2).
@@ -7973,7 +7973,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecResource, String> {
         match resource {
-            ResourceSubject::Emp => Ok(SpecResource::Value(CResource::Emp)),
+            ResourceSubject::Emp => Ok(SpecResource::Value(Resource::Emp)),
             ResourceSubject::Star(left, right) => Ok(SpecResource::Star(
                 Box::new(self.lower_resource_subject_to_spec(left, environment)?),
                 Box::new(self.lower_resource_subject_to_spec(right, environment)?),
@@ -7998,7 +7998,7 @@ impl AnnotationLowerer<'_> {
                             .ok_or_else(|| {
                                 format!("resource instance `{name}` is not owned at this snapshot")
                             })?;
-                    Ok(SpecResource::Value(CResource::Instance(instance.clone())))
+                    Ok(SpecResource::Value(Resource::Instance(instance.clone())))
                 } else {
                     Ok(SpecResource::Instance {
                         identity: *identity,
@@ -8012,7 +8012,7 @@ impl AnnotationLowerer<'_> {
                     .footprint(region)?,
             )),
             ResourceSubject::Parameter { index, .. } => Ok(SpecResource::Value(
-                crate::kernel::CResource::Parameter(crate::kernel::Variable(*index as u64)),
+                crate::kernel::Resource::Parameter(crate::kernel::Variable(*index as u64)),
             )),
             ResourceSubject::Captured { value, .. } => Ok(SpecResource::Value(value.clone())),
 
@@ -8460,7 +8460,7 @@ impl AnnotationLowerer<'_> {
                 if let Some(value_type @ ProgramType::Parameter(parameter)) = state
                     .locals()
                     .aggregate_layout(name)
-                    .and_then(crate::kernel::CAggregateLayout::value_type)
+                    .and_then(crate::kernel::AggregateLayout::value_type)
                 {
                     return Ok(SpecExpression::MemoryLoad {
                         memory: environment.current_memory.clone(),
@@ -8780,7 +8780,7 @@ impl AnnotationLowerer<'_> {
             {
                 let value = Box::new(self.lower_c_fragment_to_spec(expression, environment)?);
                 Ok(
-                    if *integer_mode == crate::kernel::CIntegerCastMode::PointerCoercion {
+                    if *integer_mode == crate::kernel::IntegerCastMode::PointerCoercion {
                         SpecExpression::PointerCoercion(value, *target_type)
                     } else {
                         SpecExpression::Cast(value, *target_type)
@@ -9506,8 +9506,8 @@ impl AnnotationLowerer<'_> {
         }
     }
 
-    fn loop_frame_checks(&self, loop_index: usize) -> Result<Vec<CLoopEffectCheck>, ClickError> {
-        let mut checks: Vec<CLoopEffectCheck> = Vec::new();
+    fn loop_frame_checks(&self, loop_index: usize) -> Result<Vec<LoopEffectCheck>, ClickError> {
+        let mut checks: Vec<LoopEffectCheck> = Vec::new();
         // A loop body can only write memory the function owns, so a loop with
         // no clause of its own inherits the function's owned write footprint
         // instead of becoming an unconditional havoc. An owned footprint that
@@ -9523,19 +9523,19 @@ impl AnnotationLowerer<'_> {
             // kernel derives it from the loop's specs at entry and installs
             // it as the check's validated ranges. The claim stays checked at
             // every back edge.
-            checks.push(CLoopEffectCheck::new_with_origin(
-                CLoopEffect::Mutable(Vec::new()),
-                CLoopEffectSpan::Whole,
-                CLoopEffectOrigin::DeclaredResource,
+            checks.push(LoopEffectCheck::new_with_origin(
+                LoopEffect::Mutable(Vec::new()),
+                LoopEffectSpan::Whole,
+                LoopEffectOrigin::DeclaredResource,
                 Some(format!("loop {loop_index} declared owned resource frame")),
             ));
         } else if self.inherits_resource_derived_frame
             || !self.implicit_contract_mutable_segments.is_empty()
         {
-            checks.push(CLoopEffectCheck::new_with_origin(
-                CLoopEffect::Mutable(self.implicit_contract_mutable_segments.to_vec()),
-                CLoopEffectSpan::Whole,
-                CLoopEffectOrigin::InheritedResourceDerived,
+            checks.push(LoopEffectCheck::new_with_origin(
+                LoopEffect::Mutable(self.implicit_contract_mutable_segments.to_vec()),
+                LoopEffectSpan::Whole,
+                LoopEffectOrigin::InheritedResourceDerived,
                 Some(format!("loop {loop_index} inherited owned resource frame")),
             ));
         }
@@ -9820,7 +9820,7 @@ mod integer_source_quantifier_tests {
     #[test]
     fn captured_integer_freshness_ignores_unrelated_heap_snapshot() {
         use crate::kernel::{
-            CMemory, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, ProgramType,
+            MachineTerm, Memory, Pointer, PointerBlock, PointerOffsetTerm, ProgramType,
             ProgramValue, SpecExpression, SpecMemory, SpecPureFunctionArgument,
         };
 
@@ -9830,7 +9830,7 @@ mod integer_source_quantifier_tests {
             block: PointerBlock::Heap(77),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new()
+        let memory = Memory::new()
             .with_block(heap_pointer.block.clone(), 4)
             .store(
                 heap_pointer,

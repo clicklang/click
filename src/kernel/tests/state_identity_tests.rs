@@ -14,8 +14,8 @@ fn ledger_with_participants() -> (
     (ledger, owner, reader)
 }
 
-fn token_with_support(name: &str) -> (CResourceFact, ResourceOccurrenceId) {
-    let fact = CResourceFact::own_token(name.to_string(), Vec::new());
+fn token_with_support(name: &str) -> (ResourceFact, ResourceOccurrenceId) {
+    let fact = ResourceFact::own_token(name.to_string(), Vec::new());
     let support = ResourceContext::new()
         .unchecked_with_fact(fact.clone())
         .unique_owned_occurrence_for_fact(&fact)
@@ -70,13 +70,13 @@ fn statement_outcome_reconstruction_preserves_holder_identity() {
         &state,
         &c_assign("x", c_int32_literal(1)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
     )
     .expect("assignment should execute");
     let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(next_state),
+        StatementExecutionPath {
+            outcome: StatementOutcome::Normal(next_state),
             ..
         },
     ] = paths.as_slice()
@@ -211,7 +211,7 @@ fn arm_with_view_binding(
     name: &str,
 ) -> (ExecutionState, crate::kernel::loans::LoanViewBinding) {
     let (support_fact, _) = token_with_support(&format!("{name}_support"));
-    let viewed = CResourceFact::view_token(format!("{name}_view"), Vec::new());
+    let viewed = ResourceFact::view_token(format!("{name}_view"), Vec::new());
     let resources =
         ResourceContext::new().unchecked_with_facts([support_fact.clone(), viewed.clone()]);
     let support = resources.owned_occurrences_for_fact(&support_fact)[0];
@@ -339,7 +339,7 @@ fn loop_backedge_rejects_divergent_holders_on_one_ledger_root() {
 
 /// Two arm states that share `known` cached cells and differ in one other
 /// cell, as the arms of an `if` that each store once leave them.
-fn arms_beside_known_cells(known: u32) -> (CMemory, [ExecutionState; 2]) {
+fn arms_beside_known_cells(known: u32) -> (Memory, [ExecutionState; 2]) {
     let known_cell = |index: u32| Pointer {
         block: "global:known".into(),
         offset: PointerOffsetTerm::Constant(4 * i64::from(index)),
@@ -348,7 +348,7 @@ fn arms_beside_known_cells(known: u32) -> (CMemory, [ExecutionState; 2]) {
         block: "global:written".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let mut memory = CMemory::new()
+    let mut memory = Memory::new()
         .with_block("global:known", 4 * known)
         .with_block("global:written", 4);
     for index in 0..known {
@@ -453,7 +453,7 @@ fn interface_join_provenance_uses_checked_arms_before_marker_union() {
         block: "global:branch-value".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let base = CMemory::new().with_block(pointer.block.clone(), 4);
+    let base = Memory::new().with_block(pointer.block.clone(), 4);
     let then_state = ExecutionState::new().with_memory(
         base.clone()
             .store(pointer.clone(), int32(1))

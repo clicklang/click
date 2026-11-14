@@ -1,6 +1,6 @@
 //! Clone statement trees without recursing through nested branch bodies.
 
-use super::{CSwitchCase, ProgramStatement};
+use super::{ProgramStatement, SwitchCase};
 
 impl Clone for ProgramStatement {
     fn clone(&self) -> Self {
@@ -274,7 +274,7 @@ impl ProgramStatement {
                 expression: expression.clone(),
                 cases: cases
                     .iter()
-                    .map(|case| CSwitchCase {
+                    .map(|case| SwitchCase {
                         value: case.value,
                         body: Box::new(Self::Skip),
                     })

@@ -424,16 +424,16 @@ pub(in crate::surface) fn substitute_iterated_clause(
 pub(in crate::surface) fn iterated_clause_to_spec(
     clause: &IteratedResourceClause,
     parameters: &[syntax::C0Parameter],
-) -> Result<crate::kernel::CIteratedSpec, ClickError> {
+) -> Result<crate::kernel::IteratedSpec, ClickError> {
     let shape = iterated_clause_shape(clause).map_err(ClickError::new)?;
     let guard = shape.guard.ok_or_else(|| {
         ClickError::new("an unguarded iterated ownership clause lowers to a plain memory range")
     })?;
     let element_width =
         contract_segment_element_width_for_result_type(parameters, &clause.element, None);
-    Ok(crate::kernel::CIteratedSpec {
+    Ok(crate::kernel::IteratedSpec {
         owner: clause.owner.clone(),
-        element: CMemorySegment::new(shape.element_base, shape.lower, shape.upper)
+        element: MemorySegment::new(shape.element_base, shape.lower, shape.upper)
             .with_element_width(element_width),
         stride: shape.stride,
         start_offset: shape.start_offset,
@@ -455,7 +455,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     assumptions: &PureFactContext,
-) -> Result<CResourceFact, ClickError> {
+) -> Result<ResourceFact, ClickError> {
     let shape = iterated_clause_shape(clause).map_err(ClickError::new)?;
     let guard = shape.guard.clone().ok_or_else(|| {
         ClickError::new("an unguarded iterated ownership clause lowers to a plain memory range")
@@ -508,7 +508,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
     let upper = int32(evaluate(&shape.upper, "upper bound")?, "upper bound")?;
     let guard_base = pointer(evaluate(&guard.base, "guard base")?, "guard base")?;
     let guard_value = int32(evaluate(&guard.value, "guard value")?, "guard value")?;
-    let iterated = crate::kernel::CIteratedMemory::new(
+    let iterated = crate::kernel::IteratedMemory::new(
         &clause.owner,
         element_base,
         element_width,
@@ -517,7 +517,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
         shape.end_offset,
         lower,
         upper,
-        crate::kernel::CIteratedGuard::new(
+        crate::kernel::IteratedGuard::new(
             guard_base,
             crate::kernel::ProgramType::Int32,
             4,
@@ -526,7 +526,7 @@ pub(in crate::surface) fn lower_iterated_clause_with_values(
         ),
     )
     .ok_or_else(|| ClickError::new("iterated ownership clause has an invalid element shape"))?;
-    Ok(CResourceFact::own(CResource::iterated(iterated)))
+    Ok(ResourceFact::own(Resource::iterated(iterated)))
 }
 
 /// The clause as written, for printing and diagnostics.

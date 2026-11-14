@@ -209,7 +209,7 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_extent() {
 #[test]
 fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = intern_c_memory(CMemory::new());
+    let memory = intern_c_memory(Memory::new());
     let p = PointerValue::new(Pointer::symbolic(Variable(421)), ProgramType::Int32Pointer);
     let q = PointerValue::new(Pointer::symbolic(Variable(422)), ProgramType::Int32Pointer);
     let other = Pointer::symbolic(Variable(423));
@@ -250,7 +250,7 @@ fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
 #[test]
 fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     let _session = crate::kernel::VerificationSession::enter();
-    let snapshot = intern_c_memory(CMemory::new());
+    let snapshot = intern_c_memory(Memory::new());
     let storage = Pointer::symbolic(Variable(424_100));
     let source = PointerValue::from_read(
         Pointer::symbolic(Variable(424_101)),
@@ -269,11 +269,11 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
         }),
     );
     let relationship = |value: &PointerValue| Proposition::CResourceContains {
-        parent: Box::new(CResource::Composite {
+        parent: Box::new(Resource::Composite {
             name: "holder".into(),
             arguments: vec![AlgebraicValue::C(ProgramValue::Pointer(value.clone()))].into(),
         }),
-        child: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
+        child: Box::new(Resource::Memory(MemoryRange::from_pointer_value(
             value,
             0u32.into(),
             1u32.into(),
@@ -289,7 +289,7 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     let Proposition::CResourceContains { child, .. } = rewritten else {
         panic!("containment")
     };
-    let CResource::Memory(range) = child.as_ref() else {
+    let Resource::Memory(range) = child.as_ref() else {
         panic!("memory")
     };
     assert_eq!(range.base(), target.pointer());
@@ -301,7 +301,7 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
 #[test]
 fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_address() {
     let _session = crate::kernel::VerificationSession::enter();
-    let snapshot = intern_c_memory(CMemory::new());
+    let snapshot = intern_c_memory(Memory::new());
     let raw = Pointer::symbolic(Variable(424_110));
     let source = PointerValue::from_read(
         raw.clone(),
@@ -323,13 +323,13 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
         ProgramType::Int32Pointer,
     );
     let input = Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(CMemoryRange::from_pointer_value(
+        left: Box::new(Resource::Memory(MemoryRange::from_pointer_value(
             &unrelated,
             0u32.into(),
             1u32.into(),
             4,
         ))),
-        right: Box::new(CResource::Memory(CMemoryRange::new(
+        right: Box::new(Resource::Memory(MemoryRange::new(
             Pointer::symbolic(Variable(424_114)),
             0u32.into(),
             1u32.into(),
@@ -339,7 +339,7 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
     let Proposition::CResourceSeparate { left, .. } = rewrite.proposition(&input) else {
         panic!("separation")
     };
-    let CResource::Memory(range) = left.as_ref() else {
+    let Resource::Memory(range) = left.as_ref() else {
         panic!("memory")
     };
     assert_eq!(range.base(), target.pointer());
@@ -516,7 +516,7 @@ fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
             width: 4u32.into(),
         },
     ));
-    let memory = intern_c_memory(CMemory::new());
+    let memory = intern_c_memory(Memory::new());
     let source = PointerValue::from_read(
         numeric.clone(),
         ProgramType::UInt8Pointer,

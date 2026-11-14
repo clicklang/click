@@ -11,11 +11,11 @@
 fn explicit_separation_lookup_reads_only_related_blocks() {
     let pointer = |id| Pointer::symbolic(Variable(id));
     let narrow =
-        |base: Pointer| CMemoryRange::new_with_element_width(base, 0u32.into(), 8u32.into(), 1);
-    let wide = |base: Pointer| CMemoryRange::new_wide(base, 0u32.into(), 8u32.into(), 1);
-    let separation = |left: CMemoryRange, right: CMemoryRange| Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(left)),
-        right: Box::new(CResource::Memory(right)),
+        |base: Pointer| MemoryRange::new_with_element_width(base, 0u32.into(), 8u32.into(), 1);
+    let wide = |base: Pointer| MemoryRange::new_wide(base, 0u32.into(), 8u32.into(), 1);
+    let separation = |left: MemoryRange, right: MemoryRange| Proposition::CResourceSeparate {
+        left: Box::new(Resource::Memory(left)),
+        right: Box::new(Resource::Memory(right)),
     };
     let mut works = Vec::new();
     for size in [16u64, 64, 256] {
@@ -69,9 +69,9 @@ fn explicit_separation_lookup_reads_only_related_blocks() {
 #[test]
 fn wide_separation_lookup_ignores_unrelated_wide_facts() {
     let pointer = |id| Pointer::symbolic(Variable(id));
-    let narrow = |base| CMemoryRange::new_with_element_width(base, 0u32.into(), 4u32.into(), 4);
+    let narrow = |base| MemoryRange::new_with_element_width(base, 0u32.into(), 4u32.into(), 4);
     let wide = |base| {
-        CMemoryRange::new_wide(
+        MemoryRange::new_wide(
             base,
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_constant(8),
@@ -79,8 +79,8 @@ fn wide_separation_lookup_ignores_unrelated_wide_facts() {
         )
     };
     let separation = |left, right| Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(left)),
-        right: Box::new(CResource::Memory(right)),
+        left: Box::new(Resource::Memory(left)),
+        right: Box::new(Resource::Memory(right)),
     };
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
@@ -134,7 +134,7 @@ fn wide_separation_lookup_ignores_unrelated_wide_facts() {
 fn wide_separation_lookup_scales_with_its_related_alias_chain() {
     let pointer = |id| Pointer::symbolic(Variable(9_992_000 + id));
     let wide = |base| {
-        CMemoryRange::new_wide(
+        MemoryRange::new_wide(
             base,
             MachineTerm::uint64_constant(0),
             MachineTerm::uint64_constant(8),
@@ -145,8 +145,8 @@ fn wide_separation_lookup_scales_with_its_related_alias_chain() {
     for size in [4u64, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let witness = Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(wide(pointer(0)))),
-            right: Box::new(CResource::Memory(wide(pointer(1)))),
+            left: Box::new(Resource::Memory(wide(pointer(0)))),
+            right: Box::new(Resource::Memory(wide(pointer(1)))),
         };
         let mut context = PureFactContext::new().assume_proposition(witness);
         for index in 1..=size {
@@ -160,13 +160,13 @@ fn wide_separation_lookup_scales_with_its_related_alias_chain() {
                 );
             }
         }
-        let left = CMemoryRange::new_with_element_width(
+        let left = MemoryRange::new_with_element_width(
             pointer(2 * size).offset_by_bytes(4),
             0u32.into(),
             2u32.into(),
             4,
         );
-        let right = CMemoryRange::new_with_element_width(
+        let right = MemoryRange::new_with_element_width(
             pointer(2 * size + 1).offset_by_bytes(8),
             0u32.into(),
             2u32.into(),

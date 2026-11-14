@@ -16,11 +16,11 @@ fn retained_execution_handoffs_do_not_walk_the_value_dag() {
         }
         let exports = KernelTermExport::machine_export_count();
         let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let mut outcome = CExpressionOutcome::Value(ExecutionValue::from(root.clone()));
+            let mut outcome = ExpressionOutcome::Value(ExecutionValue::from(root.clone()));
             for _ in 0..32 {
                 outcome = outcome.map_value(|value| value.clone());
             }
-            let CExpressionOutcome::Value(value) = outcome else {
+            let ExpressionOutcome::Value(value) = outcome else {
                 unreachable!()
             };
             assert_eq!(value.c_type(), ProgramType::UInt32);

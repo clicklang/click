@@ -32,7 +32,7 @@ fn owned_address_admission_does_not_generate_pairs() {
     for size in [8u64, 32, 128, 512] {
         let mut owners = ResourceContext::new();
         for i in 0..size {
-            owners = owners.unchecked_with_fact(CResourceFact::own_memory(range(
+            owners = owners.unchecked_with_fact(ResourceFact::own_memory(range(
                 &pointer(3000 + i),
                 0,
                 1,

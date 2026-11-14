@@ -12,15 +12,15 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
     // plain token instead keeps the ordinary definition law: its recorded
     // successor comes from the fold/unfold producer, not arbitrary test input.
     let member_definition =
-        CCompositeResourceDefinition::new("member", vec![], None, false, vec![], vec![])
+        CompositeResourceDefinition::new("member", vec![], None, false, vec![], vec![])
             .with_authorized(true);
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "held",
         vec![],
         None,
         false,
-        vec![CResourceSpec::composite(
-            CResourceAccessMode::Own,
+        vec![ResourceSpec::composite(
+            ResourceAccessMode::Own,
             "member".into(),
             vec![],
             vec![],
@@ -39,27 +39,26 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
         .unwrap();
     assert!(!wrapper.is_authorized());
     assert!(wrapper.reaches_population());
-    let selected = CResourceFact::own_composite("held".into(), vec![]);
-    let child = CResourceFact::own_composite("member".into(), vec![]);
+    let selected = ResourceFact::own_composite("held".into(), vec![]);
+    let child = ResourceFact::own_composite("member".into(), vec![]);
     let samples = [4usize, 16, 64, 256].map(|size| {
         let mut before = ExecutionState::new().with_population_creation_tracking();
         let mut facts = ProofFacts::default();
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         let mut resources = ResourceContext::new().unchecked_with_fact(child.clone());
         for index in 0..size {
-            let unrelated = CResourceFact::own_token(format!("other_{index}"), vec![]);
+            let unrelated = ResourceFact::own_token(format!("other_{index}"), vec![]);
             resources = resources.unchecked_with_fact(unrelated);
             before = before.with_local(format!("local_{index}"), int32(index as u32));
             memory = memory.with_block(format!("block_{index}"), 4);
-            resources =
-                resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
-                    Pointer {
-                        block: format!("block_{index}").into(),
-                        offset: crate::kernel::PointerOffsetTerm::Constant(0),
-                    },
-                    0.into(),
-                    1.into(),
-                )));
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
+                Pointer {
+                    block: format!("block_{index}").into(),
+                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                },
+                0.into(),
+                1.into(),
+            )));
             facts = facts.with_fact(Proposition::ConditionIs(
                 crate::kernel::ConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::Int32,
@@ -107,7 +106,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
                 .expect("one wrapper rewrite preserves its unrelated frame");
             }
         });
-        let unrelated = CResourceFact::own_token("other_0".into(), vec![]);
+        let unrelated = ResourceFact::own_token("other_0".into(), vec![]);
         let forged = folded.clone().with_resource_context(
             folded
                 .resources()
@@ -128,7 +127,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
             .is_err(),
             "the unrelated frame must remain authenticated"
         );
-        let unrelated_memory = CResourceFact::own_memory(CMemoryRange::new(
+        let unrelated_memory = ResourceFact::own_memory(MemoryRange::new(
             Pointer {
                 block: "block_0".into(),
                 offset: crate::kernel::PointerOffsetTerm::Constant(0),

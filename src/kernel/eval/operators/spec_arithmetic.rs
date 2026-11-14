@@ -25,7 +25,7 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
     right: &ProgramValue,
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
-) -> Option<CExpressionPath> {
+) -> Option<ExpressionPath> {
     if matches!(
         left,
         ProgramValue::Pointer(_) | ProgramValue::PointerInteger(_)
@@ -78,8 +78,8 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
         );
     }
     let term = MachineTerm::logical_machine_binary(format, op, left, right);
-    Some(CExpressionPath {
-        outcome: CExpressionOutcome::Value(match width {
+    Some(ExpressionPath {
+        outcome: ExpressionOutcome::Value(match width {
             ScalarWidth::Int32 => ProgramValue::Int32(term),
             ScalarWidth::UInt32 => ProgramValue::UInt32(term),
             ScalarWidth::Int64 => ProgramValue::Int64(term),
@@ -98,7 +98,7 @@ fn apply_spec_shift(
     right: &ProgramValue,
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
-) -> Option<CExpressionPath> {
+) -> Option<ExpressionPath> {
     apply_spec_shift_with_count_width(op, left, right, facts, inherited, None)
 }
 
@@ -111,7 +111,7 @@ pub(in crate::kernel) fn apply_spec_rust_shift(
     right: &ProgramValue,
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
-) -> Option<CExpressionPath> {
+) -> Option<ExpressionPath> {
     use crate::kernel::machine_integer::conversion::convert_value;
     if matches!(right.numeric_value(), ProgramValue::Bool(_)) {
         return None;
@@ -142,10 +142,10 @@ pub(in crate::kernel) fn apply_spec_rust_shift(
     };
     let mut path =
         apply_spec_shift_with_count_width(op, &operand, right, facts, inherited, Some(bits))?;
-    let CExpressionOutcome::Value(value) = path.outcome else {
+    let ExpressionOutcome::Value(value) = path.outcome else {
         return None;
     };
-    path.outcome = CExpressionOutcome::Value(convert_value(value, format)?);
+    path.outcome = ExpressionOutcome::Value(convert_value(value, format)?);
     Some(path)
 }
 
@@ -156,7 +156,7 @@ fn apply_spec_shift_with_count_width(
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
     count_width: Option<u32>,
-) -> Option<CExpressionPath> {
+) -> Option<ExpressionPath> {
     let width = scalar_width(left, left)?;
     let left = promote_c_path_value(left.clone(), width.format())?;
     let (right, unsigned_count, right_is_wide) = promote_c_shift_count(right.clone())?;
@@ -228,8 +228,8 @@ fn apply_spec_shift_with_count_width(
         );
     }
     let term = MachineTerm::logical_machine_binary(width.format(), op, left, count);
-    Some(CExpressionPath {
-        outcome: CExpressionOutcome::Value(match width {
+    Some(ExpressionPath {
+        outcome: ExpressionOutcome::Value(match width {
             ScalarWidth::Int32 => ProgramValue::Int32(term),
             ScalarWidth::UInt32 => uint32(term),
             ScalarWidth::Int64 => ProgramValue::Int64(term),
@@ -320,7 +320,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-            assert!(matches!(path.outcome, CExpressionOutcome::Value(_)));
+            assert!(matches!(path.outcome, ExpressionOutcome::Value(_)));
             assert!(path.facts.is_empty());
             assert!(
                 path.obligations.iter().any(
@@ -419,7 +419,7 @@ mod tests {
                     .unwrap();
                     assert_eq!(
                         path.outcome,
-                        CExpressionOutcome::Value(wrap(MachineTerm::machine_binary(
+                        ExpressionOutcome::Value(wrap(MachineTerm::machine_binary(
                             format,
                             op,
                             left.clone(),
@@ -481,7 +481,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 path.outcome,
-                CExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::Binary {
+                ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op,
                     left: Box::new(left),
@@ -509,7 +509,7 @@ mod tests {
                 &[],
             )
             .unwrap();
-            assert!(matches!(path.outcome, CExpressionOutcome::Value(_)));
+            assert!(matches!(path.outcome, ExpressionOutcome::Value(_)));
             assert!(
                 path.obligations
                     .iter()
@@ -550,7 +550,7 @@ mod tests {
                 // No value is chosen: the quotient stays an operation node.
                 assert_eq!(
                     total.outcome,
-                    CExpressionOutcome::Value(wrap(MachineTerm::Binary {
+                    ExpressionOutcome::Value(wrap(MachineTerm::Binary {
                         format,
                         op,
                         left: Box::new(left.clone()),

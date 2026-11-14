@@ -74,8 +74,8 @@ struct SourceExecutionLayoutData {
     automatic_abrupt_exits: BTreeMap<usize, Vec<String>>,
     automatic_break_heads: BTreeMap<usize, usize>,
     loop_bodies: BTreeMap<usize, usize>,
-    natural_loop_targets: BTreeMap<usize, crate::kernel::CControlTargetId>,
-    natural_exit_targets: BTreeMap<usize, crate::kernel::CControlTargetId>,
+    natural_loop_targets: BTreeMap<usize, crate::kernel::ControlTargetId>,
+    natural_exit_targets: BTreeMap<usize, crate::kernel::ControlTargetId>,
     natural_exit_statement_indices: BTreeMap<usize, usize>,
     /// The C `if` statement indices whose regions complete when the keyed
     /// statement completes normally: the chain of enclosing branches this
@@ -584,8 +584,8 @@ impl SourceExecutionLayout {
 
     fn new_with_natural_loop(
         statement: &syntax::C0Statement,
-        natural_loop_target: Option<crate::kernel::CControlTargetId>,
-        natural_exit_target: Option<crate::kernel::CControlTargetId>,
+        natural_loop_target: Option<crate::kernel::ControlTargetId>,
+        natural_exit_target: Option<crate::kernel::ControlTargetId>,
         natural_exit_label: Option<&str>,
     ) -> Self {
         /// Records where the statement at `index` was written and returns
@@ -1340,14 +1340,14 @@ impl SourceExecutionLayout {
     pub(in crate::surface) fn natural_loop_target(
         &self,
         loop_index: usize,
-    ) -> Option<crate::kernel::CControlTargetId> {
+    ) -> Option<crate::kernel::ControlTargetId> {
         self.data.natural_loop_targets.get(&loop_index).copied()
     }
 
     pub(in crate::surface) fn natural_exit_target(
         &self,
         loop_index: usize,
-    ) -> Option<crate::kernel::CControlTargetId> {
+    ) -> Option<crate::kernel::ControlTargetId> {
         self.data.natural_exit_targets.get(&loop_index).copied()
     }
 

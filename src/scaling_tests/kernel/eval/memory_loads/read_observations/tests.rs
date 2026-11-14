@@ -5,7 +5,7 @@ fn unobserved_read_inspection_is_indexed_and_leaves_no_record() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new());
+        let memory = intern_c_memory(Memory::new());
         let pointer = Pointer::symbolic(Variable(998_708));
         for i in 1..=size {
             record(
@@ -41,7 +41,7 @@ fn selected_read_metadata_stays_indexed_as_observations_and_branches_grow() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new());
+        let memory = intern_c_memory(Memory::new());
         let address = Pointer::symbolic(Variable(998_703));
         let term = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,

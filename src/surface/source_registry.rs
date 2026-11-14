@@ -68,7 +68,7 @@ pub(in crate::surface) struct CallerRequirementRecord {
     pub(in crate::surface) principal_fact_index: usize,
     pub(in crate::surface) principal_fact: Proposition,
     pub(in crate::surface) source_arguments: Vec<ContractExpression>,
-    pub(in crate::surface) entry_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    pub(in crate::surface) entry_snapshot: crate::kernel::MemorySnapshotIdentity,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -78,7 +78,7 @@ pub(in crate::surface) struct CallerRequirementSelection {
     pub(in crate::surface) principal_fact: Proposition,
     pub(in crate::surface) source_proposition: ClickProposition,
     pub(in crate::surface) source_arguments: Vec<ContractExpression>,
-    pub(in crate::surface) entry_snapshot: crate::kernel::CMemorySnapshotIdentity,
+    pub(in crate::surface) entry_snapshot: crate::kernel::MemorySnapshotIdentity,
 }
 
 /// The proof-local lookup table for direct caller predicate requirements.
@@ -120,7 +120,7 @@ impl CallerRequirementIndex {
         parameters: &[syntax::C0Parameter],
         entry_facts: &[Proposition],
         entry_fact_origins: &[EntryFactOrigin],
-        entry_snapshot: crate::kernel::CMemorySnapshotIdentity,
+        entry_snapshot: crate::kernel::MemorySnapshotIdentity,
     ) -> Self {
         Self::from_entry_facts_elaborated(
             owner,
@@ -144,7 +144,7 @@ impl CallerRequirementIndex {
         parameters: &[syntax::C0Parameter],
         entry_facts: &[Proposition],
         entry_fact_origins: &[EntryFactOrigin],
-        entry_snapshot: crate::kernel::CMemorySnapshotIdentity,
+        entry_snapshot: crate::kernel::MemorySnapshotIdentity,
         predicates: Option<&PredicateEnvironment>,
     ) -> Self {
         if entry_facts.len() != entry_fact_origins.len() {
@@ -288,7 +288,7 @@ impl CallerRequirementIndex {
         predicate_argument_slot: usize,
         caller_parameter_slot: usize,
         source_arguments: &[ContractExpression],
-        expected_entry_snapshot: crate::kernel::CMemorySnapshotIdentity,
+        expected_entry_snapshot: crate::kernel::MemorySnapshotIdentity,
     ) -> Option<CallerRequirementSelection> {
         let key = CallerRequirementKey {
             predicate_name: predicate_name.to_string(),
@@ -616,8 +616,8 @@ mod tests {
         CallerSourceOwnerId::ordinary("test.c", "caller")
     }
 
-    fn snapshot() -> crate::kernel::CMemorySnapshotIdentity {
-        crate::kernel::CMemorySnapshotIdentity::of(&crate::kernel::CMemory::new())
+    fn snapshot() -> crate::kernel::MemorySnapshotIdentity {
+        crate::kernel::MemorySnapshotIdentity::of(&crate::kernel::Memory::new())
     }
 
     fn direct_predicate(name: &str, parameter: &str) -> Requirement {
@@ -1059,8 +1059,8 @@ mod tests {
                     0,
                     0,
                     &source_arguments,
-                    crate::kernel::CMemorySnapshotIdentity::of(
-                        &crate::kernel::CMemory::new().with_block("stale", 1),
+                    crate::kernel::MemorySnapshotIdentity::of(
+                        &crate::kernel::Memory::new().with_block("stale", 1),
                     ),
                 )
                 .is_none()

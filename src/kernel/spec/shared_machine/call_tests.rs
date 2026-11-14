@@ -177,7 +177,7 @@ fn common_call_arithmetic_preserves_native_values_and_domains() {
                         apply_values(Some(op), &l.clone().into(), &r.clone().into(), &budget)
                             .unwrap();
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
-                    let CExpressionOutcome::Value(expected_value) = expected.outcome else {
+                    let ExpressionOutcome::Value(expected_value) = expected.outcome else {
                         panic!()
                     };
                     assert_eq!(
@@ -294,7 +294,7 @@ fn wide_call_identity_casts_keep_the_native_type_refusal() {
                     assert!(paths.is_empty());
                     assert_eq!(
                         budget.dropped_runtime_error,
-                        Some(CRuntimeError::TypeMismatch)
+                        Some(RuntimeError::TypeMismatch)
                     );
                     if shared {
                         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -402,7 +402,7 @@ fn actual_call_results_keep_deferred_bindings_and_wide_cast_refusals() {
                     assert!(paths.is_empty());
                     assert_eq!(
                         budget.dropped_runtime_error,
-                        Some(CRuntimeError::TypeMismatch)
+                        Some(RuntimeError::TypeMismatch)
                     );
                 }
             }
@@ -506,12 +506,12 @@ fn actual_call_comparisons_preserve_native_fact_forms() {
         let other =
             SpecValue::Native(format.value_from_term(MachineTerm::Variable(Variable(995832))));
         for op in [
-            CComparisonOperator::Equal,
-            CComparisonOperator::NotEqual,
-            CComparisonOperator::LessThan,
-            CComparisonOperator::LessEqual,
-            CComparisonOperator::GreaterThan,
-            CComparisonOperator::GreaterEqual,
+            ComparisonOperator::Equal,
+            ComparisonOperator::NotEqual,
+            ComparisonOperator::LessThan,
+            ComparisonOperator::LessEqual,
+            ComparisonOperator::GreaterThan,
+            ComparisonOperator::GreaterEqual,
         ] {
             let exports = KernelTermExport::machine_export_count();
             assert_eq!(

@@ -6,7 +6,7 @@ use crate::kernel::{KernelFold, KernelTermNode, KernelType};
 
 pub(super) fn collect_fold_memory_loads(
     fold: &KernelFold,
-    current_memory: &CMemory,
+    current_memory: &Memory,
     loads: &mut Vec<(Pointer, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
@@ -30,7 +30,7 @@ pub(super) fn collect_fold_memory_loads(
 
 pub(super) fn collect_common_memory_loads(
     mut pending: Vec<(&KernelTerm, Option<u32>)>,
-    current_memory: &CMemory,
+    current_memory: &Memory,
     loads: &mut Vec<(Pointer, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -204,7 +204,7 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let _session = crate::kernel::VerificationSession::enter();
-            let current = CMemory::new();
+            let current = Memory::new();
             let pointer = Pointer::symbolic(Variable(991510));
             let source = IntegerTerm::RangeFold {
                 index: IntegerRangeFoldIndex::Integer {
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn retained_fold_read_collection_preserves_snapshots_widths_and_opaque_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
-        let current = CMemory::new();
+        let current = Memory::new();
         let memory = crate::kernel::intern_c_memory_ref(&current);
         let pointer = Pointer::symbolic(Variable(991501));
         let read = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Bits64);

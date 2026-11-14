@@ -1,18 +1,18 @@
 //! Report-local disambiguation; never retained by checking or error capture.
 use super::*;
-use crate::kernel::CMemoryRange;
+use crate::kernel::MemoryRange;
 
 const MAX_RANGES: usize = 64;
 
 #[derive(Clone, Default)]
 pub(super) struct RangeCollisions {
-    entries: Vec<(String, CMemoryRange, Option<usize>)>,
+    entries: Vec<(String, MemoryRange, Option<usize>)>,
     collecting: bool,
     limited: bool,
 }
 
 impl RangeCollisions {
-    pub(super) fn observe(&mut self, text: &str, range: &CMemoryRange) -> Option<String> {
+    pub(super) fn observe(&mut self, text: &str, range: &MemoryRange) -> Option<String> {
         if let Some((_, _, label)) = self
             .entries
             .iter()
@@ -136,14 +136,14 @@ mod tests {
     use super::*;
     use crate::kernel::{PointerBlock, PointerValue, ProgramType};
 
-    fn range(origin: u64) -> CMemoryRange {
+    fn range(origin: u64) -> MemoryRange {
         let base = Pointer::symbolic(Variable(987_800));
         let value = PointerValue::new(
             Pointer::symbolic(Variable(origin)),
             ProgramType::Int32Pointer,
         )
         .with_address(base);
-        CMemoryRange::from_pointer_value(&value, 0u32.into(), 1u32.into(), 4)
+        MemoryRange::from_pointer_value(&value, 0u32.into(), 1u32.into(), 4)
     }
 
     #[test]
@@ -200,7 +200,7 @@ mod tests {
     fn ordinary_rendering_does_not_collect_collisions() {
         let mut labels = SnapshotLabels::default();
         for origin in 987_801..987_805 {
-            let fact = CResourceFact::View(CResource::Memory(range(origin)));
+            let fact = ResourceFact::View(Resource::Memory(range(origin)));
             let text = render_resource_fact_labeled(&fact, &mut labels);
             assert!(!text.contains("[range "));
             assert!(labels.range_collisions.is_none());
@@ -213,7 +213,7 @@ mod tests {
             },
             ProgramType::Int32Pointer,
         );
-        let range = CMemoryRange::from_pointer_value(&value, 0u32.into(), 1u32.into(), 4);
+        let range = MemoryRange::from_pointer_value(&value, 0u32.into(), 1u32.into(), 4);
         assert!(range.diagnostic_pointer_metadata().2);
     }
 }

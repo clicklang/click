@@ -21,7 +21,7 @@ use super::{
     CppInitializer, CppPlace, CppPlaceReference, CppStatement, CppType, PreparedCppImport,
 };
 use crate::kernel::{
-    CAggregateLayout, LoadSourceId, LoadSourceOwnerId, ProgramExpression, ProgramFunction,
+    AggregateLayout, LoadSourceId, LoadSourceOwnerId, ProgramExpression, ProgramFunction,
     ProgramStatement, ProgramType, c_add, c_allocate_aggregate_destination, c_and, c_assign,
     c_call, c_call_assign, c_cast, c_checked_object_address, c_copy_aggregate, c_declare,
     c_declare_aggregate, c_declare_initialized, c_declare_with_all_qualifiers, c_divide,
@@ -2302,7 +2302,7 @@ impl LoweringContext<'_> {
         }
     }
 
-    fn record_layout(&self, name: &str) -> Result<CAggregateLayout, String> {
+    fn record_layout(&self, name: &str) -> Result<AggregateLayout, String> {
         self.layouts
             .get(name)
             .map(crate::languages::c::syntax::C0StructLayout::to_kernel_aggregate_layout)

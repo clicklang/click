@@ -9,7 +9,7 @@ use super::*;
 #[test]
 fn exit_local_argument_lookup_skips_unrelated_locals() {
     let _session = crate::kernel::VerificationSession::enter();
-    let (binder, instances) = fixture(CResourceSnapshot::Current);
+    let (binder, instances) = fixture(ResourceSnapshot::Current);
     let mut costs = Vec::new();
     for size in [16, 64, 256, 1024] {
         let mut ambient = ExecutionState::new();
@@ -42,7 +42,7 @@ fn exit_local_argument_lookup_skips_unrelated_locals() {
 #[test]
 fn exit_local_argument_context_indexing_is_linear_and_shared() {
     let _session = crate::kernel::VerificationSession::enter();
-    let (binder, instances) = fixture(CResourceSnapshot::Current);
+    let (binder, instances) = fixture(ResourceSnapshot::Current);
     let exits = [
         ExecutionState::new().with_local("cur", int32(1)),
         ExecutionState::new().with_local("cur", int32(2)),
@@ -99,7 +99,7 @@ fn exit_argument_checks_reuse_the_checked_path_context() {
             root = root.with_fact(fact(931_000 + index, index as u32));
         }
         let path = root.with_fact(selected.clone());
-        let exit = CLoopBreakExit::from_proof_facts(ExecutionState::new(), &path);
+        let exit = LoopBreakExit::from_proof_facts(ExecutionState::new(), &path);
         let facts = exit
             .pure_facts()
             .iter()

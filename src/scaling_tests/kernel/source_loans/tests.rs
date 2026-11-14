@@ -124,7 +124,7 @@ fn source_scalar_lease_selected_end_is_indexed_across_live_nested_handles() {
             state = next;
             parent = child;
             selected = Some(ProgramStatement::EndScalarReference(
-                CScalarReferenceEnd::new(key),
+                ScalarReferenceEnd::new(key),
             ));
         }
         let end = selected.unwrap();

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn logical_pointer_field_uses_current_pointee_memory() {
-    use crate::kernel::{CAggregateField, CAggregateLayout};
+    use crate::kernel::{AggregateField, AggregateLayout};
     let slot = Pointer {
         block: "local:frame:0:input".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -12,7 +12,7 @@ fn logical_pointer_field_uses_current_pointee_memory() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let mut entry = ExecutionState::new().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_block(slot.block.clone(), 8)
             .with_block(pointee.block.clone(), 4)
             .store(slot.clone(), ProgramValue::pointer(pointee.clone()))
@@ -20,10 +20,10 @@ fn logical_pointer_field_uses_current_pointee_memory() {
     );
     entry.locals.set_aggregate_object_at(
         "input".to_string(),
-        CAggregateLayout::new(
+        AggregateLayout::new(
             8,
             8,
-            vec![CAggregateField::new("data", 0, ProgramType::Int32Pointer)],
+            vec![AggregateField::new("data", 0, ProgramType::Int32Pointer)],
         ),
         slot.clone(),
     );

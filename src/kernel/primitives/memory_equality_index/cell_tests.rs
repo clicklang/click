@@ -1,7 +1,7 @@
 use super::*;
 
-fn view(base: &Pointer, start: u32, end: u32) -> CResourceFact {
-    CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+fn view(base: &Pointer, start: u32, end: u32) -> ResourceFact {
+    ResourceFact::view_memory(MemoryRange::new_with_element_width(
         base.clone(),
         start.into(),
         end.into(),
@@ -17,7 +17,7 @@ fn checked_context_construction_attaches_address_candidates() {
         .clone()
         .assume_condition(ConditionTerm::pointer_equal(at(0), at(1)), true)
         .assume_condition(ConditionTerm::pointer_equal(at(1), at(2)), true);
-    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         at(0),
         0u32.into(),
         4u32.into(),
@@ -80,8 +80,8 @@ fn publication_in_one_branch_keeps_sibling_input_pairing() {
         let parent = PureFactContext::new();
         let first = parent.clone().assume_condition(equality(0, 1), true);
         let sibling = parent.clone().assume_condition(equality(0, 2), true);
-        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(at(0), 0u32.into(), 4u32.into(), 1),
+        let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(at(0), 0u32.into(), 4u32.into(), 1),
         ));
         resources.synchronize_memory_equalities(&first);
         for (facts, alias) in [
@@ -100,7 +100,7 @@ fn publication_in_one_branch_keeps_sibling_input_pairing() {
                     .concrete_write_entries(&alias, 4, facts)
                     .is_some_and(|entries| entries.exact())
             );
-            let cell = CMemoryRange::new_with_element_width(alias, 0u32.into(), 4u32.into(), 1);
+            let cell = MemoryRange::new_with_element_width(alias, 0u32.into(), 4u32.into(), 1);
             assert_eq!(
                 resources
                     .memory_fact_candidates(&cell, true, facts)
@@ -118,7 +118,7 @@ fn publication_in_one_branch_keeps_sibling_input_pairing() {
 #[test]
 fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let snapshot = crate::kernel::intern_c_memory(memory.clone());
     let (a, b) = (
         Pointer::symbolic(Variable(852_010)),
@@ -137,7 +137,7 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
             None,
             None,
         );
-        let CExpressionOutcome::Value(ProgramValue::Pointer(value)) = &paths[0].outcome else {
+        let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &paths[0].outcome else {
             panic!("pointer read")
         };
         (value.pointer().clone(), paths[0].facts.clone())
@@ -150,7 +150,7 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
         .fold(PureFactContext::new(), |context, fact| {
             context.assume_execution_pure_fact(fact)
         });
-    let cell = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let cell = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         x.clone(),
         0u32.into(),
         4u32.into(),
@@ -206,14 +206,10 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
     // Shifted whole cells register only their retained read-atom dependency.
     // Storage-relative names with symbolic coordinates are still outside the
     // concrete interval fragment, but exact address evidence does apply.
-    let shifted = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-            x.offset_by_bytes(8),
-            0u32.into(),
-            4u32.into(),
-            1,
-        )),
-    );
+    let shifted =
+        ResourceContext::new_with_equalities(&facts).unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(x.offset_by_bytes(8), 0u32.into(), 4u32.into(), 1),
+        ));
     for value in [&y, &old] {
         let query = value.offset_by_bytes(8);
         let mut candidates = shifted
@@ -262,7 +258,7 @@ fn typed_cell_candidates_follow_raw_offset_syntax_and_check_ownership() {
         },
     );
     let cell = |base| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
             0u32.into(),
             1u32.into(),
@@ -395,8 +391,8 @@ fn whole_cell_hits_remain_indexed_beside_other_read_shapes() {
     let resources = ResourceContext::new()
         .unchecked_with_fact(view(&owner, 0, 4))
         .unchecked_with_fact(view(&at(2), 0, 8))
-        .unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::new_with_element_width(
+        .unchecked_with_fact(ResourceFact::view_memory(
+            MemoryRange::new_with_element_width(
                 at(3),
                 0u32.into(),
                 MachineTerm::Variable(Variable(857_100)),
@@ -426,8 +422,8 @@ fn cell_footprints_follow_merges_removals_and_normalization() {
     };
     let (owner, alias) = (at(0), at(1));
     let (short, long) = (view(&owner, 0, 4), view(&alias, 0, 8));
-    let zero = CResourceFact::Own(
-        CResource::Memory(CMemoryRange::new_with_element_width(
+    let zero = ResourceFact::Own(
+        Resource::Memory(MemoryRange::new_with_element_width(
             owner.clone(),
             0u32.into(),
             12u32.into(),
@@ -489,7 +485,7 @@ fn cell_footprints_follow_merges_removals_and_normalization() {
 #[test]
 fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
     let _session = crate::kernel::VerificationSession::enter();
-    let logical_pointer_read = |memory: &CMemory, address: &Pointer, context: &PureFactContext| {
+    let logical_pointer_read = |memory: &Memory, address: &Pointer, context: &PureFactContext| {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
             memory,
             address.clone(),
@@ -508,19 +504,19 @@ fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
                 .all(|fact| fact.is_logical_read_equation())
         );
         assert!(path.obligations.is_empty());
-        let CExpressionOutcome::Value(ProgramValue::Pointer(value)) = &path.outcome else {
+        let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &path.outcome else {
             panic!("pointer read")
         };
         value.pointer().clone()
     };
-    let memory = CMemory::new();
+    let memory = Memory::new();
     let a = Pointer::symbolic(Variable(92_250));
     let b = Pointer::symbolic(Variable(92_251));
     let before = PureFactContext::new();
     let x = logical_pointer_read(&memory, &a, &before);
     let y = logical_pointer_read(&memory, &b, &before);
-    let owner = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-        CMemoryRange::new_with_element_width(x, 0u32.into(), 4u32.into(), 1),
+    let owner = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
+        MemoryRange::new_with_element_width(x, 0u32.into(), 4u32.into(), 1),
     ));
     owner.synchronize_memory_equalities(&before);
     let sibling = before.clone();
@@ -575,7 +571,7 @@ fn interval_candidates_ignore_unrelated_scalar_equalities() {
 fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
     let a = Pointer::symbolic(Variable(895_010));
     let b = Pointer::symbolic(Variable(895_011));
-    let snapshot = crate::kernel::intern_c_memory(CMemory::new());
+    let snapshot = crate::kernel::intern_c_memory(Memory::new());
     let x = Pointer::loaded_value(&snapshot, &a);
     let y = Pointer::loaded_value(&snapshot, &b);
     let initial = PureFactContext::new();
@@ -583,7 +579,7 @@ fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
         .clone()
         .assume_condition(ConditionTerm::pointer_equal(a, b), true);
     let resources = ResourceContext::new_with_equalities(&initial).unchecked_with_fact(
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             x.clone(),
             0u32.into(),
             32u32.into(),
@@ -606,7 +602,7 @@ fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
     );
     assert!(resources.memory_write_range(&query, 4, &initial).is_none());
     for start in [0u32, 8] {
-        let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        let required = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             if start == 0 { query.clone() } else { y.clone() },
             start.into(),
             (start + 4).into(),
@@ -630,7 +626,7 @@ fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
             .memory_write_range(&y.offset_by_bytes(30), 4, &connected)
             .is_none()
     );
-    let later = crate::kernel::intern_c_memory(CMemory::new().with_block("later", 8));
+    let later = crate::kernel::intern_c_memory(Memory::new().with_block("later", 8));
     let other_snapshot = Pointer::loaded_value(&later, &Pointer::symbolic(Variable(895_010)));
     assert!(!resources.permits_memory_read(&other_snapshot.offset_by_bytes(8), 4, &connected));
 }
@@ -731,7 +727,7 @@ fn interval_alignment_retains_query_and_occurrence_checkpoint() {
 fn unpublished_loaded_intervals_do_not_claim_complete_supplier_coverage() {
     let a = Pointer::symbolic(Variable(895_060));
     let b = Pointer::symbolic(Variable(895_061));
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_c_memory(Memory::new());
     let x = Pointer::loaded_value(&memory, &a);
     let y = Pointer::loaded_value(&memory, &b);
     let facts = PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(a, b), true);
@@ -765,10 +761,10 @@ fn sole_symbolic_write_owner_preserves_bounds_authority_and_forks() {
         ConditionTerm::pointer_equal(base.clone(), alias.clone()),
         true,
     );
-    let range = CMemoryRange::new_with_element_width(base.clone(), 1u32.into(), n.clone(), 1);
-    let owner = CResourceFact::own_memory(range.clone());
+    let range = MemoryRange::new_with_element_width(base.clone(), 1u32.into(), n.clone(), 1);
+    let owner = ResourceFact::own_memory(range.clone());
     let resources = ResourceContext::new_with_equalities(&empty)
-        .unchecked_with_fact(CResourceFact::view_memory(range.clone()))
+        .unchecked_with_fact(ResourceFact::view_memory(range.clone()))
         .unchecked_with_fact(owner.clone());
     resources.synchronize_memory_equalities(&empty);
     let query = alias.offset_by_elements(i.clone(), 1);
@@ -799,15 +795,15 @@ fn sole_symbolic_write_owner_preserves_bounds_authority_and_forks() {
         .unwrap();
     assert!(views.memory_write_range(&query, 1, &facts).is_none());
     for quantity in [0u32, u32::MAX] {
-        let invalid = views.clone().unchecked_with_fact(CResourceFact::Own(
-            CResource::Memory(range.clone()),
+        let invalid = views.clone().unchecked_with_fact(ResourceFact::Own(
+            Resource::Memory(range.clone()),
             Box::new(quantity.into()),
         ));
         assert!(invalid.memory_write_range(&query, 1, &facts).is_none());
     }
     // Both occurrences must follow the late class merge. Selection reports
     // unknown rather than trying owners until one happens to cover the query.
-    let second = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let second = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         alias,
         0u32.into(),
         range.end().clone(),
@@ -833,7 +829,7 @@ fn memory_support_returns_retained_occurrences_through_transitive_aliases() {
         .clone()
         .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true)
         .assume_condition(ConditionTerm::pointer_equal(q, r.clone()), true);
-    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         p,
         0u32.into(),
         8u32.into(),
@@ -861,9 +857,9 @@ fn memory_support_returns_retained_occurrences_through_transitive_aliases() {
 fn indexed_memory_support_never_promotes_zero_quantity() {
     let p = Pointer::symbolic(Variable(976_000));
     let facts = PureFactContext::new();
-    let range = CMemoryRange::new_with_element_width(p, 0u32.into(), 4u32.into(), 1);
-    let owner = CResourceFact::own_memory(range.clone());
-    let zero = CResourceFact::Own(CResource::Memory(range), Box::new(0u32.into()));
+    let range = MemoryRange::new_with_element_width(p, 0u32.into(), 4u32.into(), 1);
+    let owner = ResourceFact::own_memory(range.clone());
+    let zero = ResourceFact::Own(Resource::Memory(range), Box::new(0u32.into()));
     let resources = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(zero);
     assert!(!resources.satisfies_fact(&owner, &facts));
     assert!(resources.directly_supporting_fact(&owner, &facts).is_none());
@@ -872,7 +868,7 @@ fn indexed_memory_support_never_promotes_zero_quantity() {
             .directly_supporting_owned_entry(&owner, &facts)
             .is_none()
     );
-    let view = CResourceFact::view_memory(owner.memory_own_range().unwrap().clone());
+    let view = ResourceFact::view_memory(owner.memory_own_range().unwrap().clone());
     assert!(
         resources
             .directly_supporting_owned_entry(&view, &facts)
@@ -895,8 +891,8 @@ fn constant_consumption_refuses_nonpositive_whole_and_fragment_suppliers() {
     let p = Pointer::symbolic(Variable(976_100));
     let facts = PureFactContext::new();
     let own = |start: u32, end: u32, quantity: u32| {
-        CResourceFact::Own(
-            CResource::Memory(CMemoryRange::new_with_element_width(
+        ResourceFact::Own(
+            Resource::Memory(MemoryRange::new_with_element_width(
                 p.clone(),
                 start.into(),
                 end.into(),
@@ -946,7 +942,7 @@ fn fragment_coordinate_residues_do_not_establish_wide_pointer_adjacency() {
         offset: PointerOffsetTerm::Constant(i64::from(i32::MIN)),
     };
     let own = |base, end| {
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
             0u32.into(),
             end,
@@ -974,14 +970,10 @@ fn storage_ownership_follows_transitive_address_equality() {
     let alias = Pointer::symbolic(Variable(894_001));
     let last = Pointer::symbolic(Variable(894_002));
     let empty = PureFactContext::new();
-    let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-            base.clone(),
-            0u32.into(),
-            48u32.into(),
-            1,
-        )),
-    );
+    let resources =
+        ResourceContext::new_with_equalities(&empty).unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(base.clone(), 0u32.into(), 48u32.into(), 1),
+        ));
     let facts = empty
         .clone()
         .assume_condition(
@@ -1033,7 +1025,7 @@ fn object_evidence_uses_provenance_classes_and_live_nonempty_occurrences() {
         Some(&fact)
     );
     assert!(!resources.owns_storage_access(&source, 4, &empty));
-    let owner = CResourceFact::own_memory(fact.memory_range().unwrap().clone());
+    let owner = ResourceFact::own_memory(fact.memory_range().unwrap().clone());
     let owned = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(owner.clone());
     let gone = owned
         .clone()
@@ -1043,8 +1035,8 @@ fn object_evidence_uses_provenance_classes_and_live_nonempty_occurrences() {
     assert_eq!(owned.memory_object_evidence(&source, &empty), Some(&owner));
     for fact in [
         view(&source, 0, 0),
-        CResourceFact::own_quantity(
-            CResource::Memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_quantity(
+            Resource::Memory(MemoryRange::new_with_element_width(
                 source.clone(),
                 0u32.into(),
                 4u32.into(),
@@ -1066,7 +1058,7 @@ fn object_evidence_uses_provenance_classes_and_live_nonempty_occurrences() {
 // incremental class index, not just return true from an equality query.
 #[test]
 fn typed_read_congruence_publishes_late_ownership_class_updates() {
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let memory = crate::kernel::intern_c_memory(Memory::new());
     let p = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Variable(Variable(998_001)),
@@ -1099,22 +1091,22 @@ fn symbolic_owned_suffix_start_checks_bounds_and_retained_authority() {
         ConditionTerm::uint64_less_than(split.clone(), MachineTerm::uint64_constant(32)),
         true,
     );
-    let prefix = CMemoryRange::new_wide(
+    let prefix = MemoryRange::new_wide(
         base.clone(),
         MachineTerm::uint64_constant(0),
         split.clone(),
         1,
     );
-    let suffix = CMemoryRange::new_wide(
+    let suffix = MemoryRange::new_wide(
         base.clone(),
         split.clone(),
         MachineTerm::uint64_constant(32),
         1,
     );
-    let owner = CResourceFact::own_memory(suffix.clone());
+    let owner = ResourceFact::own_memory(suffix.clone());
     let resources = ResourceContext::new_with_equalities(&empty)
-        .unchecked_with_fact(CResourceFact::own_memory(prefix))
-        .unchecked_with_fact(CResourceFact::view_memory(suffix.clone()))
+        .unchecked_with_fact(ResourceFact::own_memory(prefix))
+        .unchecked_with_fact(ResourceFact::view_memory(suffix.clone()))
         .unchecked_with_fact(owner.clone());
     resources.synchronize_memory_equalities(&empty);
     let query = suffix.start_pointer();
@@ -1127,7 +1119,7 @@ fn symbolic_owned_suffix_start_checks_bounds_and_retained_authority() {
     assert!(
         resources
             .memory_write_range(
-                &CMemoryRange::new_wide(
+                &MemoryRange::new_wide(
                     base,
                     MachineTerm::uint64_constant(32),
                     MachineTerm::uint64_constant(33),
@@ -1170,13 +1162,13 @@ fn captured_empty_caller_does_not_inherit_opening_equalities() {
         ConditionTerm::pointer_equal(base.clone(), alias.clone()),
         true,
     );
-    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base.clone(),
         0u32.into(),
         4u32.into(),
         1,
     ));
-    let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let required = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         alias.clone(),
         0u32.into(),
         4u32.into(),
@@ -1189,7 +1181,7 @@ fn captured_empty_caller_does_not_inherit_opening_equalities() {
         .try_compose_into_valid_context_delaying_normalization(
             [
                 owner,
-                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                ResourceFact::own_memory(MemoryRange::new_with_element_width(
                     base.offset_by_bytes(8),
                     0u32.into(),
                     4u32.into(),
@@ -1238,7 +1230,7 @@ fn remove_suppliers_with_late_read_definition(register_query: bool) {
         offset: PointerOffsetTerm::Constant(0),
     };
     let first = crate::kernel::intern_c_memory(
-        CMemory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
+        Memory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
     );
     let named = name(&first, &cell);
     let later = crate::kernel::intern_c_memory(
@@ -1248,14 +1240,14 @@ fn remove_suppliers_with_late_read_definition(register_query: bool) {
             .store(unrelated, ProgramValue::UInt32(2u32.into())),
     );
     let later_read = Pointer::loaded_value(&later, &cell);
-    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         later_read.clone(),
         0u32.into(),
         1u32.into(),
         8,
     ));
     let facts = PureFactContext::new();
-    let other_owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let other_owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         named.clone(),
         1u32.into(),
         2u32.into(),
@@ -1269,7 +1261,7 @@ fn remove_suppliers_with_late_read_definition(register_query: bool) {
         0,
         8,
     );
-    let extra_owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+    let extra_owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         later_read.clone(),
         2u32.into(),
         3u32.into(),
@@ -1314,8 +1306,8 @@ fn a_different_owned_field_does_not_hide_the_selected_read_view() {
     let base = Pointer::symbolic(Variable(965_000));
     let resources = ResourceContext::new()
         .unchecked_with_fact(view(&base, 0, 8))
-        .unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(base.clone(), 8u32.into(), 24u32.into(), 1),
+        .unchecked_with_fact(ResourceFact::own_memory(
+            MemoryRange::new_with_element_width(base.clone(), 8u32.into(), 24u32.into(), 1),
         ));
     resources.synchronize_memory_equalities(&facts);
     assert!(resources.permits_memory_read(&base, 4, &facts));
@@ -1333,7 +1325,7 @@ fn native_fragment_consumption_preserves_large_bounds_and_residuals() {
     let facts = PureFactContext::new();
     let p = Pointer::symbolic(Variable(976_190));
     let own = |start, end| {
-        CResourceFact::own_memory(CMemoryRange::new_wide(
+        ResourceFact::own_memory(MemoryRange::new_wide(
             p.clone(),
             MachineTerm::uint64_constant(start),
             MachineTerm::uint64_constant(end),
@@ -1367,20 +1359,20 @@ fn native_fragment_consumption_refuses_gaps_views_and_nonpositive_ownership() {
     let facts = PureFactContext::new();
     let p = Pointer::symbolic(Variable(976_191));
     let range = |start, end| {
-        CMemoryRange::new_wide(
+        MemoryRange::new_wide(
             p.clone(),
             MachineTerm::uint64_constant(start),
             MachineTerm::uint64_constant(end),
             4,
         )
     };
-    let own = |start, end| CResourceFact::own_memory(range(start, end));
+    let own = |start, end| ResourceFact::own_memory(range(start, end));
     let required = own(0, 8);
     for bad in [
         own(3, 8),
-        CResourceFact::view_memory(range(2, 8)),
-        CResourceFact::Own(CResource::Memory(range(2, 8)), Box::new(0u32.into())),
-        CResourceFact::Own(CResource::Memory(range(2, 8)), Box::new(u32::MAX.into())),
+        ResourceFact::view_memory(range(2, 8)),
+        ResourceFact::Own(Resource::Memory(range(2, 8)), Box::new(0u32.into())),
+        ResourceFact::Own(Resource::Memory(range(2, 8)), Box::new(u32::MAX.into())),
     ] {
         let context = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts([own(0, 2), bad.clone()]);
@@ -1410,7 +1402,7 @@ fn native_fragment_consumption_checks_each_typed_designation() {
     let p = Pointer::symbolic(Variable(976_192));
     let other = Pointer::symbolic(Variable(976_193));
     let range = |start, end| {
-        CMemoryRange::new_wide(
+        MemoryRange::new_wide(
             p.clone(),
             MachineTerm::uint64_constant(start),
             MachineTerm::uint64_constant(end),
@@ -1418,12 +1410,15 @@ fn native_fragment_consumption_checks_each_typed_designation() {
         )
     };
     let facts = PureFactContext::new();
-    let required = CResourceFact::own_memory(range(0, 8).with_typed_carrier());
+    let required = ResourceFact::own_memory(range(0, 8).with_typed_carrier());
     for wrong in [false, true] {
-        let second = CResourceFact::own_memory(range(2, 8).with_designation(std::sync::Arc::new(
-            if wrong { other.clone() } else { p.clone() },
-        )));
-        let first = CResourceFact::own_memory(range(0, 2));
+        let second =
+            ResourceFact::own_memory(range(2, 8).with_designation(std::sync::Arc::new(if wrong {
+                other.clone()
+            } else {
+                p.clone()
+            })));
+        let first = ResourceFact::own_memory(range(0, 2));
         let context = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts([first.clone(), second.clone()]);
         context.synchronize_memory_equalities(&facts);
@@ -1484,15 +1479,15 @@ fn ownership_queries_preserve_authority_checks_and_branches(symbolic: bool) {
             };
             let range = |a, b| {
                 if native {
-                    CMemoryRange::new_wide(p.clone(), a, b, 4)
+                    MemoryRange::new_wide(p.clone(), a, b, 4)
                 } else {
-                    CMemoryRange::new(p.clone(), a, b)
+                    MemoryRange::new(p.clone(), a, b)
                 }
             };
             let facts = PureFactContext::new()
                 .assume_condition(less(c(2), end.clone()), true)
                 .assume_condition(less(end.clone(), c(64)), true);
-            let first = CResourceFact::own_memory(range(c(0), c(2)));
+            let first = ResourceFact::own_memory(range(c(0), c(2)));
             let tail = range(
                 c(match case {
                     "gap" => 3,
@@ -1501,22 +1496,21 @@ fn ownership_queries_preserve_authority_checks_and_branches(symbolic: bool) {
                 }),
                 end.clone(),
             );
-            let second =
-                match case {
-                    "view" => CResourceFact::view_memory(tail),
-                    "zero" => CResourceFact::Own(CResource::Memory(tail), Box::new(0u32.into())),
-                    "negative" => {
-                        CResourceFact::Own(CResource::Memory(tail), Box::new(u32::MAX.into()))
-                    }
-                    "designation" => CResourceFact::own_memory(tail.with_designation(
-                        std::sync::Arc::new(Pointer::symbolic(Variable(991_012))),
-                    )),
-                    _ => CResourceFact::own_memory(tail),
-                };
+            let second = match case {
+                "view" => ResourceFact::view_memory(tail),
+                "zero" => ResourceFact::Own(Resource::Memory(tail), Box::new(0u32.into())),
+                "negative" => ResourceFact::Own(Resource::Memory(tail), Box::new(u32::MAX.into())),
+                "designation" => {
+                    ResourceFact::own_memory(tail.with_designation(std::sync::Arc::new(
+                        Pointer::symbolic(Variable(991_012)),
+                    )))
+                }
+                _ => ResourceFact::own_memory(tail),
+            };
             let context = ResourceContext::new_with_equalities(&facts)
                 .unchecked_with_facts([first.clone(), second.clone()]);
             context.synchronize_memory_equalities(&facts);
-            let required = CResourceFact::own_memory(range(c(0), end).with_typed_carrier());
+            let required = ResourceFact::own_memory(range(c(0), end).with_typed_carrier());
             for _ in 0..3 {
                 assert_eq!(
                     context.satisfies_fact(&required, &facts),

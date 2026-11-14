@@ -21,21 +21,21 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
         let mut context = PureFactContext::new()
             .assume_condition(below(k, 4), true)
             .assume_proposition(Proposition::CResourceSeparate {
-                left: Box::new(CResource::Memory(bytes(&dst, 5))),
-                right: Box::new(CResource::Memory(range.clone())),
+                left: Box::new(Resource::Memory(bytes(&dst, 5))),
+                right: Box::new(Resource::Memory(range.clone())),
             });
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         for index in 0..size {
             // Another index under another bound, on the same base.
             let other = Variable(9_904_000 + index);
             context = context.assume_condition(below(other, 4 + index), true);
             // An unrelated separation of two other buffers.
             context = context.assume_proposition(Proposition::CResourceSeparate {
-                left: Box::new(CResource::Memory(bytes(
+                left: Box::new(Resource::Memory(bytes(
                     &Pointer::symbolic(Variable(9_905_000 + index * 2)),
                     4,
                 ))),
-                right: Box::new(CResource::Memory(bytes(
+                right: Box::new(Resource::Memory(bytes(
                     &Pointer::symbolic(Variable(9_905_001 + index * 2)),
                     4,
                 ))),

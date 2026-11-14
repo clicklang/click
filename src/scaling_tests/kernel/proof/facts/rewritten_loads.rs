@@ -6,7 +6,7 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
             for size in [16, 64, 256] {
                 let _session = VerificationSession::enter();
                 let format = MachineIntegerType::Int32;
-                let memory = intern_c_memory(CMemory::new());
+                let memory = intern_c_memory(Memory::new());
                 let pointer = Pointer {
                     block: PointerBlock::Symbolic(Variable(1005500)),
                     offset: PointerOffsetTerm::Constant(0),

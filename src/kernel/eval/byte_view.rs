@@ -35,7 +35,7 @@ const WIDEST_INTEGER_CELL_BYTES: i64 = 8;
 /// existing integer cell: the resulting typed cell replaces the byte cells,
 /// and the ordinary store transition invalidates overlapping cached values.
 pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
-    memory: &CMemory,
+    memory: &Memory,
     pointer: &Pointer,
     stored: &ProgramValue,
     byte_order: Option<ByteOrder>,
@@ -136,7 +136,7 @@ fn integer_cell_width(value: &ProgramValue) -> Option<u32> {
 /// overlapping cell, or an overlapping cell with no byte view (pointer,
 /// float, `_Bool`).
 pub(in crate::kernel) fn containing_integer_cell(
-    memory: &CMemory,
+    memory: &Memory,
     pointer: &Pointer,
     byte_order: Option<ByteOrder>,
 ) -> Option<ContainingIntegerCell> {

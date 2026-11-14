@@ -37,7 +37,7 @@ fn compact_scalar_arrays_copy_uniform_values_without_expanding_storage_or_work()
         );
         assert_eq!(
             memory.load(&pointer("local:array-target", i64::from(count - 1) * 4)),
-            CExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+            ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
                 912_345
             ))))
         );
@@ -67,12 +67,8 @@ fn scalar_array_copy_after_call_captures_unknown_initialized_values_compactly() 
         let _session = crate::kernel::VerificationSession::enter();
         let source = pointer("local:array-source", 0);
         let target = pointer("local:array-target", 0);
-        let written = CMemoryRange::new_with_element_width(
-            source.clone(),
-            0u32.into(),
-            (count * 4).into(),
-            1,
-        );
+        let written =
+            MemoryRange::new_with_element_width(source.clone(), 0u32.into(), (count * 4).into(), 1);
         let after_call = seeded(count).with_call_memory_havoc(
             Variable(912_347),
             &[written],
@@ -107,11 +103,11 @@ fn scalar_array_copy_after_call_captures_unknown_initialized_values_compactly() 
             let held = copied.load(&at);
             assert!(matches!(
                 held,
-                CExpressionOutcome::Value(ProgramValue::UInt32(_))
+                ExpressionOutcome::Value(ProgramValue::UInt32(_))
             ));
             assert_ne!(
                 held,
-                CExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+                ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
                     912_345
                 )),))
             );
@@ -139,7 +135,7 @@ fn compact_array_regions_copy_and_overwrite_preserve_neighbors_and_scale() {
         let target = pointer("local:region-target", 4);
         let context = PureFactContext::new();
         let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let memory = CMemory::new()
+            let memory = Memory::new()
                 .with_block(source.block.clone(), bytes + 8)
                 .with_block(target.block.clone(), bytes + 8)
                 .store(
@@ -190,7 +186,7 @@ fn compact_array_regions_copy_and_overwrite_preserve_neighbors_and_scale() {
         ] {
             assert_eq!(
                 memory.load(&pointer("local:region-target", offset)),
-                CExpressionOutcome::Value(ProgramValue::UInt32(value.into()))
+                ExpressionOutcome::Value(ProgramValue::UInt32(value.into()))
             );
         }
         assert_eq!(memory.cells.concrete().len(), 2);
@@ -199,7 +195,7 @@ fn compact_array_regions_copy_and_overwrite_preserve_neighbors_and_scale() {
         let mutated = memory.store(source, ProgramValue::UInt32(101u32.into()));
         assert_eq!(
             mutated.load(&target),
-            CExpressionOutcome::Value(ProgramValue::UInt32(7u32.into()))
+            ExpressionOutcome::Value(ProgramValue::UInt32(7u32.into()))
         );
         samples.push(work);
     }
@@ -234,13 +230,10 @@ fn scalar_array_snapshots_preserve_sparse_lanes_without_extent_work() {
         });
         assert_eq!(copied.cells.concrete().len(), 4);
         assert_eq!(copied.cells.runs_in_block(&target.block).count(), 1);
-        assert_eq!(
-            copied.load(&target),
-            CExpressionOutcome::Value(lane.clone())
-        );
+        assert_eq!(copied.load(&target), ExpressionOutcome::Value(lane.clone()));
         assert_eq!(
             copied.load(&pointer("local:array-target", i64::from(count - 1) * 4)),
-            CExpressionOutcome::Value(ProgramValue::UInt32(17u32.into()))
+            ExpressionOutcome::Value(ProgramValue::UInt32(17u32.into()))
         );
         let changed = copied
             .store(source.clone(), ProgramValue::UInt32(99u32.into()))
@@ -248,10 +241,10 @@ fn scalar_array_snapshots_preserve_sparse_lanes_without_extent_work() {
                 pointer("local:array-target", 4),
                 ProgramValue::UInt32(18u32.into()),
             );
-        assert_eq!(changed.load(&target), CExpressionOutcome::Value(lane));
+        assert_eq!(changed.load(&target), ExpressionOutcome::Value(lane));
         assert_eq!(
             changed.load(&pointer("local:array-source", 4)),
-            CExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
+            ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(
                 912_345
             ))))
         );
@@ -271,7 +264,7 @@ fn scalar_array_snapshot_region_does_not_scan_unrelated_sibling_cells() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = pointer("local:siblings", 4);
         let target = pointer("local:target", 0);
-        let mut memory = CMemory::new()
+        let mut memory = Memory::new()
             .with_block(source.block.clone(), (siblings + 5) * 4)
             .with_block(target.block.clone(), 16)
             .write_scalar_array_region(
@@ -306,7 +299,7 @@ fn scalar_array_snapshot_region_does_not_scan_unrelated_sibling_cells() {
         });
         assert_eq!(
             copied.load(&target),
-            CExpressionOutcome::Value(ProgramValue::UInt32(9u32.into()))
+            ExpressionOutcome::Value(ProgramValue::UInt32(9u32.into()))
         );
         samples.push((siblings, work));
     }

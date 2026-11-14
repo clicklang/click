@@ -593,7 +593,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
     /// no separately supplied context can reuse a domain-discharge receipt.
     pub(crate) fn focus_contract_claim(
         &self,
-        goal: &crate::kernel::CClaimGoal,
+        goal: &crate::kernel::ContractClaimGoal,
         presentation: P,
     ) -> Result<Self, Vec<crate::kernel::ProofObligation>> {
         #[cfg(test)]
@@ -1687,10 +1687,10 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         loop_entry: &crate::kernel::ExecutionState,
         iteration_entry: &crate::kernel::ExecutionState,
         head_iterations: &crate::kernel::IntegerTerm,
-        checks: &[crate::kernel::CLoopInvariantCheck],
-        ranking_measures: &[crate::kernel::CRankingComponent],
-        binders: &[crate::kernel::CLoopBinder],
-        definitions: &[crate::kernel::CCompositeResourceDefinition],
+        checks: &[crate::kernel::LoopInvariantCheck],
+        ranking_measures: &[crate::kernel::RankingComponent],
+        binders: &[crate::kernel::LoopBinder],
+        definitions: &[crate::kernel::CompositeResourceDefinition],
         presentation: impl FnOnce(
             &Proposition,
             &[Option<Arc<crate::kernel::LoweringIntroductions>>],
@@ -2037,8 +2037,8 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
     /// discovery are deliberately absent from the closure boundary.
     pub(crate) fn validate_checked_invariant_lowerings(
         &self,
-        checks: &[crate::kernel::CLoopInvariantCheck],
-        ranking_measures: &[crate::kernel::CRankingComponent],
+        checks: &[crate::kernel::LoopInvariantCheck],
+        ranking_measures: &[crate::kernel::RankingComponent],
     ) -> Result<(), String> {
         let (branch, execution) = self
             .focused_frontier_execution()
@@ -2901,9 +2901,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            CMemory, ConditionTerm, ExecutionState, IntegerRangeFoldIndex, IntegerTerm,
-            MachineIntegerType, Pointer, PointerOffsetTerm, ProgramValue,
-            SharedIntegerRangeEndpoint,
+            ConditionTerm, ExecutionState, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
+            Memory, Pointer, PointerOffsetTerm, ProgramValue, SharedIntegerRangeEndpoint,
         };
         type TestProof = ProofObject<
             (),
@@ -2933,8 +2932,8 @@ mod tests {
                 ),
             )
         };
-        let before = CMemory::new().with_block("alpha", 16);
-        let loadable = |memory: CMemory, variable| Proposition::ForAll {
+        let before = Memory::new().with_block("alpha", 16);
+        let loadable = |memory: Memory, variable| Proposition::ForAll {
             name: Default::default(),
             var: variable,
             sort: Sort::CInt32,
@@ -3056,7 +3055,7 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            CLoopInvariantCheck, ExecutionState, Pointer, PointerOffsetTerm, ProgramType,
+            ExecutionState, LoopInvariantCheck, Pointer, PointerOffsetTerm, ProgramType,
             ProgramValue, SpecExpression, SpecMemory, SpecProposition,
         };
         type TestProof = ProofObject<
@@ -3079,7 +3078,7 @@ mod tests {
         };
         // An explicit validity claim needs evidence even though logical
         // reflexivity at this address would hold without memory permission.
-        let checks = [CLoopInvariantCheck::new(
+        let checks = [LoopInvariantCheck::new(
             SpecProposition::Defined(load),
             None,
             None,

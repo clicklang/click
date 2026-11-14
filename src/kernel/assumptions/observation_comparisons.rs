@@ -38,12 +38,12 @@ pub(in crate::kernel) enum ResourceArgumentKey {
 pub(in crate::kernel) enum ResourceKey {
     Composite(String, Vec<ResourceArgumentKey>),
     Token(String, Vec<ResourceArgumentKey>),
-    Exact(CResource),
+    Exact(Resource),
 }
 impl ResourceKey {
-    fn new(resource: &CResource) -> Self {
+    fn new(resource: &Resource) -> Self {
         let (name, arguments) = match resource {
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 (name, arguments)
             }
             _ => return Self::Exact(resource.clone()),
@@ -82,7 +82,7 @@ impl ResourceKey {
             })
             .collect();
         match resource {
-            CResource::Composite { .. } => Self::Composite(name.clone(), arguments),
+            Resource::Composite { .. } => Self::Composite(name.clone(), arguments),
             _ => Self::Token(name.clone(), arguments),
         }
     }
@@ -897,11 +897,11 @@ mod resource_relation_tests {
     use crate::kernel::{LoadKind, Pointer, PointerValue, ProgramType, Variable};
 
     fn relation(term: MachineTerm, pointer: PointerValue, separate: bool) -> Proposition {
-        let left = CResource::Composite {
+        let left = Resource::Composite {
             name: "storage".into(),
             arguments: vec![AlgebraicValue::C(ProgramValue::Pointer(pointer.clone()))].into(),
         };
-        let right = CResource::Composite {
+        let right = Resource::Composite {
             name: "allocation".into(),
             arguments: vec![
                 AlgebraicValue::C(ProgramValue::Pointer(pointer)),
@@ -931,9 +931,9 @@ mod resource_relation_tests {
     fn resource_relation_keys_match_read_names_without_erasing_their_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(Variable(3_219_300));
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         let other_memory = crate::kernel::intern_c_memory(
-            CMemory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),
+            Memory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),
         );
         let name = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,

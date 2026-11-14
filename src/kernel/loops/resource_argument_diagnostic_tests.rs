@@ -29,7 +29,7 @@ fn missing_argument_read_retains_the_actual_snapshot_and_permission() {
     .unwrap();
     assert_eq!(captured, ordinary);
     assert!(captured.is_err());
-    let Some(CRuntimeError::ContractResourceDiagnostic {
+    let Some(RuntimeError::ContractResourceDiagnostic {
         memory: Some(memory),
         required,
         held: None,
@@ -39,8 +39,5 @@ fn missing_argument_read_retains_the_actual_snapshot_and_permission() {
         panic!("the failed read must retain its operands")
     };
     assert_eq!(*memory, *state.memory());
-    assert!(matches!(
-        *required,
-        CResourceFact::View(CResource::Memory(_))
-    ));
+    assert!(matches!(*required, ResourceFact::View(Resource::Memory(_))));
 }

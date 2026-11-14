@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use click::cli::{CInput, parse_mdtest, read_c_inputs, read_click_project};
 use click::kernel::{
-    CFunctionOutcome, CMemory, CMemoryRange, CResourceFact, CUndefinedBehavior, ExecutionState,
-    MachineTerm, Pointer, PointerOffsetTerm, ProgramExpression, ProgramStatement, ProgramType,
-    Proposition, PureFactContext, ResourceContext, c_typed_pointer_value, int32,
+    ExecutionState, FunctionOutcome, MachineTerm, Memory, MemoryRange, Pointer, PointerOffsetTerm,
+    ProgramExpression, ProgramStatement, ProgramType, Proposition, PureFactContext,
+    ResourceContext, ResourceFact, UndefinedBehavior, c_typed_pointer_value, int32,
     prove_symbolic_c_function_execution,
 };
 use click::languages::cpp::{
@@ -3848,7 +3848,7 @@ fn contains_raw_aggregate_destination(statement: &ProgramStatement, expected: &s
     match statement {
         ProgramStatement::DeclareAggregate {
             name,
-            kind: click::kernel::CAggregateDeclarationKind::ConstructionDestination,
+            kind: click::kernel::AggregateDeclarationKind::ConstructionDestination,
             ..
         } => name == expected,
         ProgramStatement::Seq(statements) => statements
@@ -6178,7 +6178,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let resources =
-        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+        ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
             MachineTerm::constant(0),
             MachineTerm::constant(1),
@@ -6188,10 +6188,10 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
         ProgramType::Int32Pointer,
     )];
     let state = ExecutionState::new()
-        .with_memory(CMemory::new().store(pointer.clone(), int32(41)))
+        .with_memory(Memory::new().store(pointer.clone(), int32(41)))
         .with_resource_context(resources.clone());
     let expected_state = ExecutionState::new()
-        .with_memory(CMemory::new().store(pointer.clone(), int32(42)))
+        .with_memory(Memory::new().store(pointer.clone(), int32(42)))
         .with_resource_context(resources.clone());
     let theorem = prove_symbolic_c_function_execution(
         state.clone(),
@@ -6206,7 +6206,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
             state: Box::new(state),
             function: Box::new(function.clone()),
             arguments: arguments.clone(),
-            outcome: CFunctionOutcome::Return {
+            outcome: FunctionOutcome::Return {
                 value: int32(42).into(),
                 state: Box::new(expected_state),
             },
@@ -6214,7 +6214,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     );
 
     let max_state = ExecutionState::new()
-        .with_memory(CMemory::new().store(pointer, int32(i32::MAX as u32)))
+        .with_memory(Memory::new().store(pointer, int32(i32::MAX as u32)))
         .with_resource_context(resources);
     let overflow = prove_symbolic_c_function_execution(
         max_state.clone(),
@@ -6229,7 +6229,7 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
             state: Box::new(max_state),
             function: Box::new(function.clone()),
             arguments,
-            outcome: CFunctionOutcome::UndefinedBehavior(CUndefinedBehavior::SignedOverflow),
+            outcome: FunctionOutcome::UndefinedBehavior(UndefinedBehavior::SignedOverflow),
         }
     );
 }
@@ -17525,7 +17525,7 @@ fn check_construction_return_descriptor_factories(expand_and_retain: bool) {
             .unwrap()
             .contract_interface()
             .aggregate_return_mode(),
-        click::kernel::CAggregateReturnMode::Construction
+        click::kernel::AggregateReturnMode::Construction
     );
     let proof = r#"verifying "construct-return.cpp";
 int32* identity(int32* p) { ensures result == p; }

@@ -1,30 +1,30 @@
 use super::*;
 
-fn fixture(snapshot: CResourceSnapshot) -> (CLoopBinder, Vec<ResourceInstance>) {
+fn fixture(snapshot: ResourceSnapshot) -> (LoopBinder, Vec<ResourceInstance>) {
     let schema = ResourceFieldSchema::new(vec![(
         "tag".into(),
         ResourceFieldType::C(ProgramType::Int32),
     )])
     .unwrap();
-    let spec = CResourceSpec::new(
-        CResourceTerm::Instance {
+    let spec = ResourceSpec::new(
+        ResourceTerm::Instance {
             identity: Variable(99),
             binder: "c".into(),
             schema: schema.clone(),
-            resource: Box::new(CResourceTerm::Composite {
+            resource: Box::new(ResourceTerm::Composite {
                 name: "cursor".into(),
                 arguments: vec![c_variable("cur")],
                 argument_snapshots: vec![snapshot],
                 parameter_types: vec![ProgramType::Int32],
             }),
         },
-        CResourceAccessMode::Own,
-        CResourceQuantity::One,
-        CResourceTransferRole::Consume,
-        CResourceSnapshot::Current,
+        ResourceAccessMode::Own,
+        ResourceQuantity::One,
+        ResourceTransferRole::Consume,
+        ResourceSnapshot::Current,
     )
     .unwrap();
-    let binder = CLoopBinder {
+    let binder = LoopBinder {
         identity: Variable(99),
         name: "c".into(),
         spec: Some(spec),
@@ -53,7 +53,7 @@ fn exit_local_argument_requires_current_snapshot_and_every_exit() {
         ExecutionState::new().with_local("cur", int32(2)),
     ];
     let successor = ExecutionState::new().with_local("cur", int32(3));
-    for snapshot in [CResourceSnapshot::Entry, CResourceSnapshot::Post] {
+    for snapshot in [ResourceSnapshot::Entry, ResourceSnapshot::Post] {
         let (binder, instances) = fixture(snapshot);
         assert_eq!(
             loop_exit_local_arguments(
@@ -66,7 +66,7 @@ fn exit_local_argument_requires_current_snapshot_and_every_exit() {
             vec![None]
         );
     }
-    let (binder, instances) = fixture(CResourceSnapshot::Current);
+    let (binder, instances) = fixture(ResourceSnapshot::Current);
     let mismatched = [
         exits[0].clone(),
         exits[1].clone().with_local("cur", int32(4)),
@@ -106,9 +106,9 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
     ];
     let successor = ExecutionState::new().with_local("cur", pointers[2].clone());
     for snapshot in [
-        CResourceSnapshot::Current,
-        CResourceSnapshot::Entry,
-        CResourceSnapshot::Post,
+        ResourceSnapshot::Current,
+        ResourceSnapshot::Entry,
+        ResourceSnapshot::Post,
     ] {
         let (_, old_instances) = fixture(snapshot);
         let schema = old_instances[0].schema.clone();
@@ -125,17 +125,17 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
                 .unwrap()
             })
             .collect::<Vec<_>>();
-        let spec = CResourceSpec::new(
-            CResourceTerm::Instance {
+        let spec = ResourceSpec::new(
+            ResourceTerm::Instance {
                 identity: Variable(99),
                 binder: "c".into(),
                 schema,
-                resource: Box::new(CResourceTerm::Composite {
+                resource: Box::new(ResourceTerm::Composite {
                     name: "cursor".into(),
                     arguments: vec![ProgramExpression::Cast {
                         expression: Box::new(c_variable("cur")),
                         target_type: ProgramType::UInt64,
-                        integer_mode: CIntegerCastMode::Standard,
+                        integer_mode: IntegerCastMode::Standard,
                         pointee_struct: None,
                         pointee_volatile: false,
                         pointee_constant: false,
@@ -145,19 +145,19 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
                     parameter_types: vec![ProgramType::UInt64],
                 }),
             },
-            CResourceAccessMode::Own,
-            CResourceQuantity::One,
-            CResourceTransferRole::Consume,
-            CResourceSnapshot::Current,
+            ResourceAccessMode::Own,
+            ResourceQuantity::One,
+            ResourceTransferRole::Consume,
+            ResourceSnapshot::Current,
         )
         .unwrap();
-        let binder = CLoopBinder {
+        let binder = LoopBinder {
             identity: Variable(99),
             name: "c".into(),
             spec: Some(spec),
         };
         let contexts = [PureFactContext::new(), PureFactContext::new()];
-        let expected = (snapshot == CResourceSnapshot::Current).then(|| address(&pointers[2]));
+        let expected = (snapshot == ResourceSnapshot::Current).then(|| address(&pointers[2]));
         assert_eq!(
             loop_exit_local_arguments(&successor, &exits, &binder, &instances, &contexts),
             vec![expected]

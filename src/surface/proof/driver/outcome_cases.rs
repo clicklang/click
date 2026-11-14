@@ -85,7 +85,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             if retained.is_none() {
                 provenance.checked_leaf_facts = None;
             }
-            let CFunctionOutcome::Return { value, state } = path.outcome() else {
+            let FunctionOutcome::Return { value, state } = path.outcome() else {
                 paths.push(path.clone());
                 outcome_provenance.push(provenance);
                 evidence_plan.push(OutcomeEvidenceFork::Keep);

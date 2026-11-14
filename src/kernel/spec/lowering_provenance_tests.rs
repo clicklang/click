@@ -10,7 +10,7 @@ fn bound(variable: Variable) -> SpecExpression {
 fn positive(expression: SpecExpression) -> SpecProposition {
     SpecProposition::Comparison {
         left: expression,
-        operator: CComparisonOperator::GreaterThan,
+        operator: ComparisonOperator::GreaterThan,
         right: SpecExpression::Value(int32(0)),
     }
 }
@@ -229,7 +229,7 @@ fn native_existential_conversion_obligations_share_the_claim_witness() {
     };
     let claim = existential(SpecProposition::Comparison {
         left: narrowed,
-        operator: CComparisonOperator::Equal,
+        operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(crate::kernel::uint8(255u32)),
     });
     let (goal, _, obligations, _) =

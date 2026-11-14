@@ -10,7 +10,7 @@ pub(in crate::kernel::loans) struct LocalReferenceScope {
     key: ScalarReferenceScopeKey,
     issued: PersistentSet<LocalReferenceId>,
     active: usize,
-    restored: PersistentMap<ResourceOccurrenceId, CResourceFact>,
+    restored: PersistentMap<ResourceOccurrenceId, ResourceFact>,
 }
 impl LoanLedger {
     pub(in crate::kernel) fn begin_local_reference_scope(

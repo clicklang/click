@@ -157,10 +157,10 @@ mod tests {
 
     #[test]
     fn shared_certificate_read_identity_keeps_snapshot_address_and_kind() {
-        use crate::kernel::{CMemory, LoadKind, Pointer, ProgramValue, VerificationSession};
+        use crate::kernel::{LoadKind, Memory, Pointer, ProgramValue, VerificationSession};
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(997109));
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         let name = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &address,

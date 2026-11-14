@@ -13,7 +13,7 @@ fn read_validity_misses_do_not_walk_pointer_aliases() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 assert!(!context.has_memory_read_defined_evidence(
-                    &CMemory::new(),
+                    &Memory::new(),
                     &base,
                     ProgramType::Int32
                 ));
@@ -48,13 +48,13 @@ fn kept_frame_misses_do_not_walk_aliases_or_unrelated_ranges() {
                         true,
                     );
                 } else {
-                    ranges = ranges.unchecked_with_fact(CResourceFact::own_memory(
-                        CMemoryRange::new(pointer(index), 0u32.into(), 4u32.into()),
+                    ranges = ranges.unchecked_with_fact(ResourceFact::own_memory(
+                        MemoryRange::new(pointer(index), 0u32.into(), 4u32.into()),
                     ));
                 }
             }
             if aliases {
-                ranges = ranges.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                ranges = ranges.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                     pointer(1000),
                     0u32.into(),
                     4u32.into(),
@@ -89,7 +89,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let field = source.offset_by_bytes(4);
-        let memory = CMemory::new()
+        let memory = Memory::new()
             .with_heap_allocation_claim(source.clone(), HeapExtent::int32(16))
             .unwrap();
         let mut context =
@@ -112,7 +112,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
             });
         }
         let ranges = ResourceContext::new_with_equalities(&context).unchecked_with_fact(
-            CResourceFact::own_memory(CMemoryRange::new(source, 0u32.into(), 4u32.into())),
+            ResourceFact::own_memory(MemoryRange::new(source, 0u32.into(), 4u32.into())),
         );
         let query = query.offset_by_bytes(4);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -155,7 +155,7 @@ fn read_validity_snapshot_buckets_keep_exact_hits_and_bounded_misses() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Pointer::symbolic(Variable(920_000));
         let other = Pointer::symbolic(Variable(920_001));
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         let mut context = PureFactContext::new();
         for index in 0..size {
             memory = memory.store(other.clone(), ProgramValue::Int32((index as u32).into()));
@@ -165,7 +165,7 @@ fn read_validity_snapshot_buckets_keep_exact_hits_and_bounded_misses() {
                 value_type: ProgramType::Int32,
             });
         }
-        let missing = CMemory::new();
+        let missing = Memory::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 assert!(context.has_memory_read_defined_evidence(

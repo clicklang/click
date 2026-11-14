@@ -18,7 +18,7 @@ fn load(pointer: Pointer, ty: ProgramType) -> ProgramExpression {
     c_typed_load(c_typed_pointer_value(pointer, ProgramType::VoidPointer), ty)
 }
 
-fn paths(state: &ExecutionState, expression: &ProgramExpression) -> Vec<CExpressionPath> {
+fn paths(state: &ExecutionState, expression: &ProgramExpression) -> Vec<ExpressionPath> {
     evaluate_c_expression_paths(
         state,
         expression,
@@ -39,7 +39,7 @@ fn wide_storage_exact_typed_store_and_load_preserve_all_bits() {
     ] {
         let ty = value.c_type();
         let state = ExecutionState::new().with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block("local:wide-storage", 32)
                 .with_initialized_object(&address(0), 32),
         );
@@ -50,7 +50,7 @@ fn wide_storage_exact_typed_store_and_load_preserve_all_bits() {
         );
         let theorem = prove_c_statement_execution(state, statement).unwrap();
         let Proposition::CStatementExecutes {
-            outcome: CStatementOutcome::Normal(after),
+            outcome: StatementOutcome::Normal(after),
             ..
         } = theorem.proposition()
         else {
@@ -58,7 +58,7 @@ fn wide_storage_exact_typed_store_and_load_preserve_all_bits() {
         };
         let result = paths(after, &load(address(0), ty));
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].outcome, CExpressionOutcome::Value(value.clone()));
+        assert_eq!(result[0].outcome, ExpressionOutcome::Value(value.clone()));
         assert!(result[0].obligations.is_empty());
         assert_eq!(after.memory.known_value(&address(0)), Some(value));
     }
@@ -67,7 +67,7 @@ fn wide_storage_exact_typed_store_and_load_preserve_all_bits() {
 #[test]
 fn wide_storage_symbolic_loads_keep_kind_width_and_defining_identity() {
     let state = ExecutionState::new().with_memory(
-        CMemory::new()
+        Memory::new()
             .with_block("local:wide-storage", 32)
             .with_initialized_object(&address(0), 32),
     );
@@ -89,7 +89,7 @@ fn wide_storage_symbolic_loads_keep_kind_width_and_defining_identity() {
         let second = paths(&state, &expression);
         assert_eq!(first.len(), 1);
         assert_eq!(first[0].outcome, second[0].outcome);
-        let CExpressionOutcome::Value(value) = &first[0].outcome else {
+        let ExpressionOutcome::Value(value) = &first[0].outcome else {
             panic!("symbolic load")
         };
         assert_eq!(value.c_type(), ty);
@@ -118,7 +118,7 @@ fn wide_storage_symbolic_loads_keep_kind_width_and_defining_identity() {
 
 #[test]
 fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
-    let memory = CMemory::new()
+    let memory = Memory::new()
         .with_block("local:wide-storage", 32)
         .store(address(0), literal(c_uint128_literal(u128::MAX)));
     let state = ExecutionState::new().with_memory(memory.clone());
@@ -127,7 +127,7 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
         assert_eq!(result.len(), 1);
         assert!(matches!(
             result[0].outcome,
-            CExpressionOutcome::RuntimeError(CRuntimeError::LoadTypeMismatch { .. })
+            ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch { .. })
         ));
     }
     for (machine, wrong) in [
@@ -146,7 +146,7 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
         };
         assert!(matches!(
             paths(&state, &ProgramExpression::Value(wrapped))[0].outcome,
-            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+            ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch)
         ));
     }
     assert_eq!(
@@ -162,13 +162,13 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
 #[test]
 fn wide_storage_symbolic_load_requires_full_extent_and_local_initialization() {
     for (size, offset) in [(15, 0), (16, 1), (32, 17)] {
-        let state = ExecutionState::new()
-            .with_memory(CMemory::new().with_block("local:wide-storage", size));
+        let state =
+            ExecutionState::new().with_memory(Memory::new().with_block("local:wide-storage", size));
         let result = paths(&state, &load(address(offset), ProgramType::Int128));
         assert!(
             !result
                 .iter()
-                .any(|path| matches!(path.outcome, CExpressionOutcome::Value(_))
+                .any(|path| matches!(path.outcome, ExpressionOutcome::Value(_))
                     && path.obligations.is_empty())
         );
         assert!(
@@ -180,18 +180,18 @@ fn wide_storage_symbolic_load_requires_full_extent_and_local_initialization() {
         block: "local:wide-storage".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block("local:wide-storage", 16);
+    let memory = Memory::new().with_block("local:wide-storage", 16);
     let state = ExecutionState::new().with_memory(memory);
     assert_eq!(
         paths(&state, &load(pointer, ProgramType::Int128))[0].outcome,
-        CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead)
+        ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
     );
 }
 
 #[test]
 fn wide_storage_frame_transport_uses_all_sixteen_bytes() {
-    let before = CMemory::new().with_block("local:wide-storage", 48);
-    let condition = |memory: &CMemory| {
+    let before = Memory::new().with_block("local:wide-storage", 48);
+    let condition = |memory: &Memory| {
         ConditionTerm::equal(
             MachineTerm::MemoryLoad(
                 intern_c_memory(memory.clone()),
@@ -228,11 +228,11 @@ fn wide_storage_frame_transport_uses_all_sixteen_bytes() {
 /// 32-bit one does: the comparison operator is compared, not its width.
 #[test]
 fn wide_order_frame_transport_matches_across_a_disjoint_store() {
-    let before = CMemory::new().with_block("local:wide-storage", 16);
+    let before = Memory::new().with_block("local:wide-storage", 16);
     let after = before
         .clone()
         .store(address(8), literal(c_uint8_literal(3)));
-    let condition = |memory: &CMemory| {
+    let condition = |memory: &Memory| {
         ConditionTerm::uint64_less_than(
             MachineTerm::MemoryLoad(
                 intern_c_memory(memory.clone()),
@@ -250,7 +250,7 @@ fn wide_order_frame_transport_matches_across_a_disjoint_store() {
 
 #[test]
 fn wide_storage_overlapping_store_invalidates_high_bytes_and_gap_skip() {
-    let before = CMemory::new()
+    let before = Memory::new()
         .with_block("local:wide-storage", 48)
         .store(address(0), literal(c_uint128_literal(u128::MAX)));
     for offset in [0, 7, 8, 15] {
@@ -279,7 +279,7 @@ fn wide_storage_overlapping_store_invalidates_high_bytes_and_gap_skip() {
     }
     for offset in [8, 15, 16, 32] {
         let write =
-            CMemoryRange::new_with_element_width(address(offset), 0u32.into(), 1u32.into(), 1);
+            MemoryRange::new_with_element_width(address(offset), 0u32.into(), 1u32.into(), 1);
         let after = before.clone().with_call_memory_havoc(
             Variable(152_004),
             &[write],
@@ -306,33 +306,33 @@ fn wide_storage_external_access_needs_sixteen_bytes_of_authority() {
     };
     for bytes in [8, 16] {
         let range =
-            CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), bytes.into(), 1);
-        let memory = CMemory::new().with_block("wide-external", 16);
+            MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), bytes.into(), 1);
+        let memory = Memory::new().with_block("wide-external", 16);
         let read_state = ExecutionState::new()
             .with_memory(memory.clone())
             .with_resource_context(
                 ResourceContext::new()
-                    .unchecked_with_facts([CResourceFact::view_memory(range.clone())]),
+                    .unchecked_with_facts([ResourceFact::view_memory(range.clone())]),
             );
         let result = paths(&read_state, &load(pointer.clone(), ProgramType::UInt128));
         assert_eq!(result.len(), 1);
         assert_eq!(
             matches!(
                 result[0].outcome,
-                CExpressionOutcome::Value(ProgramValue::UInt128(_))
+                ExpressionOutcome::Value(ProgramValue::UInt128(_))
             ),
             bytes == 16
         );
         if bytes == 8 {
             assert!(matches!(
                 result[0].outcome,
-                CExpressionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+                ExpressionOutcome::RuntimeError(RuntimeError::MissingResource { .. })
             ));
         }
         let write_state = ExecutionState::new()
             .with_memory(memory)
             .with_resource_context(
-                ResourceContext::new().unchecked_with_facts([CResourceFact::own_memory(range)]),
+                ResourceContext::new().unchecked_with_facts([ResourceFact::own_memory(range)]),
             );
         let statement = c_typed_store(
             c_typed_pointer_value(pointer.clone(), ProgramType::VoidPointer),
@@ -343,11 +343,11 @@ fn wide_storage_external_access_needs_sixteen_bytes_of_authority() {
         let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
-        assert_eq!(matches!(outcome, CStatementOutcome::Normal(_)), bytes == 16);
+        assert_eq!(matches!(outcome, StatementOutcome::Normal(_)), bytes == 16);
         if bytes == 8 {
             assert!(matches!(
                 outcome,
-                CStatementOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+                StatementOutcome::RuntimeError(RuntimeError::MissingResource { .. })
             ));
         }
     }

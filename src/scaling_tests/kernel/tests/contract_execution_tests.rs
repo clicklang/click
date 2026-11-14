@@ -10,7 +10,7 @@ fn certification_of_algebraic_witness_ignores_unrelated_quantifiers() {
     for size in [32, 64, 128, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = AlgebraicType::parameter("Path".into());
-        let memory = CMemory::new().with_block("graph", 4);
+        let memory = Memory::new().with_block("graph", 4);
         let mut facts = PureFactContext::new().assume_proposition(path_exists_at_snapshot(
             &ty,
             100,
@@ -51,7 +51,7 @@ fn conditional_universal_certification_ignores_unrelated_facts() {
     for size in [32, 64, 128, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = AlgebraicType::parameter("Path".into());
-        let memory = CMemory::new().with_block("graph", 4);
+        let memory = Memory::new().with_block("graph", 4);
         let mut facts = PureFactContext::new().assume_proposition(conditional_path_universal(
             &ty,
             100,
@@ -233,7 +233,7 @@ fn shared_reassociated_add_domains_keep_operands_and_required_guards() {
 fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
     let mut measurements = Vec::new();
     for count in [0u32, 16, 64, 256] {
-        let mut memory = CMemory::new();
+        let mut memory = Memory::new();
         let mut resources = ResourceContext::new();
         for index in 0..count {
             let pointer = Pointer {
@@ -243,8 +243,8 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
             memory = memory
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer.clone(), uint32(index));
-            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
-                CMemoryRange::new_with_element_width(pointer, 0.into(), 4.into(), 1),
+            resources = resources.unchecked_with_fact(ResourceFact::own_memory(
+                MemoryRange::new_with_element_width(pointer, 0.into(), 4.into(), 1),
             ));
         }
         let state = ExecutionState::new()
@@ -262,13 +262,13 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
                 &state,
                 &statement,
                 &PureFactContext::new(),
-                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::new(),
             )
             .unwrap()
         });
         assert!(
-            matches!(&paths[0].outcome, CStatementOutcome::Return { value, .. } if *value.native() == ProgramValue::UInt32(MachineTerm::uint32_constant(7)))
+            matches!(&paths[0].outcome, StatementOutcome::Return { value, .. } if *value.native() == ProgramValue::UInt32(MachineTerm::uint32_constant(7)))
         );
         measurements.push(work);
     }

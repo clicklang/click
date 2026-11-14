@@ -3,8 +3,8 @@
 use super::*;
 
 pub(super) fn compatible_resource_and_effect_interfaces(
-    contract: &CFunctionContractInterface,
-    function: &CFunctionContractInterface,
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
     contract_entry: &ExecutionState,
     function_entry: &ExecutionState,
     contract_post: &ExecutionState,
@@ -45,8 +45,8 @@ pub(super) fn compatible_resource_and_effect_interfaces(
 /// `Some(false)` is an explicit view-to-own refusal.  `None` means the two
 /// interfaces have no access-mode variance that this adapter handles.
 pub(super) fn checked_access_mode_refinement_adapter(
-    contract: &CFunctionContractInterface,
-    function: &CFunctionContractInterface,
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
     contract_entry: &ExecutionState,
     function_entry: &ExecutionState,
     function_post: &ExecutionState,
@@ -76,7 +76,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
     else {
         return Ok(Some(false));
     };
-    let satisfied_by_mode = |required: &CResourceFact, view: bool| {
+    let satisfied_by_mode = |required: &ResourceFact, view: bool| {
         contract_resources.facts().iter().any(|available| {
             available.is_view() == view
                 && ResourceContext::new_with_equalities(assumptions)
@@ -177,8 +177,8 @@ pub(super) fn checked_access_mode_refinement_adapter(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn resource_transition_is_compatible(
-    contract: &CFunctionContractInterface,
-    function: &CFunctionContractInterface,
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
     contract_entry: &ExecutionState,
     function_entry: &ExecutionState,
     contract_post: &ExecutionState,
@@ -212,8 +212,8 @@ pub(super) fn resource_transition_is_compatible(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn exact_resource_interfaces_match(
-    contract: &CFunctionContractInterface,
-    function: &CFunctionContractInterface,
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
     contract_entry: &ExecutionState,
     function_entry: &ExecutionState,
     contract_post: &ExecutionState,
@@ -261,8 +261,8 @@ pub(super) fn exact_resource_interfaces_match(
         .zip(function.resource_ensures())
     {
         let contract_state = match contract_resource.snapshot() {
-            CResourceSnapshot::Entry => contract_entry,
-            CResourceSnapshot::Current | CResourceSnapshot::Post => contract_post,
+            ResourceSnapshot::Entry => contract_entry,
+            ResourceSnapshot::Current | ResourceSnapshot::Post => contract_post,
         };
         let contract_resource = match evaluate_function_resource_spec_with_entry(
             contract_entry,
@@ -275,8 +275,8 @@ pub(super) fn exact_resource_interfaces_match(
             Err(_) => return Ok(false),
         };
         let function_state = match function_resource.snapshot() {
-            CResourceSnapshot::Entry => function_entry,
-            CResourceSnapshot::Current | CResourceSnapshot::Post => function_post,
+            ResourceSnapshot::Entry => function_entry,
+            ResourceSnapshot::Current | ResourceSnapshot::Post => function_post,
         };
         let function_resource = match evaluate_function_resource_spec_with_entry(
             function_entry,
@@ -299,21 +299,21 @@ pub(super) fn context_contains_only_refinable_resources(resources: &ResourceCont
     resources.facts().iter().all(|resource| {
         matches!(
             resource,
-            CResourceFact::Own(CResource::Memory(_) | CResource::Instance(_), quantity)
+            ResourceFact::Own(Resource::Memory(_) | Resource::Instance(_), quantity)
                 if quantity.as_const() == Some(1)
         ) || matches!(
             resource,
-            CResourceFact::Own(CResource::Composite { .. } | CResource::Token { .. }, _)
+            ResourceFact::Own(Resource::Composite { .. } | Resource::Token { .. }, _)
         ) || matches!(
             resource,
-            CResourceFact::View(
-                CResource::Memory(_) | CResource::Composite { .. } | CResource::Token { .. }
+            ResourceFact::View(
+                Resource::Memory(_) | Resource::Composite { .. } | Resource::Token { .. }
             )
         )
     })
 }
 
-pub(super) fn resource_spec_supports_framed_refinement(resource: &CResourceSpec) -> bool {
+pub(super) fn resource_spec_supports_framed_refinement(resource: &ResourceSpec) -> bool {
     if resource.is_instance() {
         return resource
             .instance_resource_spec()
@@ -327,8 +327,8 @@ pub(super) fn resource_spec_supports_framed_refinement(resource: &CResourceSpec)
 
 pub(super) fn evaluate_refinement_resource_context(
     state: &ExecutionState,
-    resources: &[CResourceSpec],
-    definitions: &[CCompositeResourceDefinition],
+    resources: &[ResourceSpec],
+    definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Option<ResourceContext>> {
@@ -347,8 +347,8 @@ pub(super) fn evaluate_refinement_resource_context(
 /// functions, composite definitions, or unrelated proof state are inspected.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn framed_resource_transition_refines(
-    contract: &CFunctionContractInterface,
-    function: &CFunctionContractInterface,
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
     contract_entry: &ExecutionState,
     function_entry: &ExecutionState,
     contract_post: &ExecutionState,
@@ -464,8 +464,8 @@ pub(super) fn framed_resource_transition_refines(
 /// finite disjunction over the declared segments would spell a choice that
 /// nothing consumes.
 pub(super) fn mutable_footprint_is_compatible_for_interfaces(
-    contract: &CFunctionContractInterface,
-    function: &CFunctionContractInterface,
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
     contract_entry: &ExecutionState,
     function_entry: &ExecutionState,
     assumptions: &PureFactContext,
@@ -510,19 +510,18 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
     if contract_projection
         .ranges()
         .iter()
-        .any(CMemoryRange::is_unnamed_footprint)
+        .any(MemoryRange::is_unnamed_footprint)
     {
         return Ok(true);
     }
     if function_projection
         .ranges()
         .iter()
-        .any(CMemoryRange::is_unnamed_footprint)
+        .any(MemoryRange::is_unnamed_footprint)
     {
         return Ok(false);
     }
-    let mut available_by_family: BTreeMap<(PointerBlock, u32), Vec<&CMemoryRange>> =
-        BTreeMap::new();
+    let mut available_by_family: BTreeMap<(PointerBlock, u32), Vec<&MemoryRange>> = BTreeMap::new();
     for available in contract_projection.ranges() {
         available_by_family
             .entry((available.base.block.clone(), available.element_width))
@@ -550,8 +549,8 @@ pub(super) fn mutable_footprint_is_compatible_for_interfaces(
 /// must already be established on that path. Range lowering itself still goes
 /// through the shared projection evaluator.
 pub(super) fn explicit_refinement_effects_are_compatible(
-    contract: &CFunctionContractInterface,
-    function: &CFunctionContractInterface,
+    contract: &FunctionContractInterface,
+    function: &FunctionContractInterface,
     contract_entry: &ExecutionState,
     function_entry: &ExecutionState,
     assumptions: &PureFactContext,
@@ -640,11 +639,11 @@ pub(super) fn explicit_refinement_effects_are_compatible(
 }
 
 pub(super) fn project_refinement_effects(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     entry: &ExecutionState,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CFunctionMemoryEffectProjection, String>> {
+) -> ExecutionResult<Result<FunctionMemoryEffectProjection, String>> {
     let mut projection_assumptions = assumptions.clone();
     // Explicit guards retain refinement's exact-route refusal semantics. The
     // resource-derived projection has no independent surface guard list and
@@ -693,7 +692,7 @@ pub(super) fn project_refinement_effects(
             ranges.extend(segment_ranges);
             evidence_facts.extend(segment_evidence);
         }
-        return Ok(Ok(CFunctionMemoryEffectProjection {
+        return Ok(Ok(FunctionMemoryEffectProjection {
             ranges,
             evidence_facts: evidence_facts.into(),
             // Explicit segments carry no requirement provenance.
@@ -730,7 +729,7 @@ pub(super) fn mutable_footprint_is_compatible(
 }
 
 pub(super) fn lower_refinement_mutable_guards_for_interface(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     entry: &ExecutionState,
     assumptions: &mut PureFactContext,
     budget: &mut ExecutionBudget,

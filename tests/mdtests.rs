@@ -536,7 +536,7 @@ fn mdtests() {
     // Which producers still end a step on a snapshot older than itself, so
     // that the step is recorded on no history. A knowledge-losing forget
     // cannot: its mark makes the result a node no earlier snapshot can be
-    // (`CMemory::mark_forgotten_from`). Anything else here is a producer
+    // (`Memory::mark_forgotten_from`). Anything else here is a producer
     // whose steps are invisible to every history-based rule, and this line
     // is how a corpus run names it.
     eprintln!(
@@ -768,7 +768,7 @@ fn check_expectation(
             path.display()
         )),
         (MdTestExpectation::FailContains(expected), Err((message, report))) => {
-            if let Some(internal) = ["CMemory {", "CHeapMemory {", "pointer(pointer "]
+            if let Some(internal) = ["Memory {", "HeapMemory {", "pointer(pointer "]
                 .into_iter()
                 .find(|internal| report.contains(internal))
             {

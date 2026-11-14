@@ -48,7 +48,7 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
                 source.clone(),
             ))),
             target_type: ProgramType::VoidPointer,
-            integer_mode: CIntegerCastMode::PointerCoercion,
+            integer_mode: IntegerCastMode::PointerCoercion,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -66,7 +66,7 @@ fn implicit_void_pointer_coercions_preserve_complete_views_in_both_evaluators() 
         };
         assert_eq!(
             path.outcome,
-            CExpressionOutcome::Value(ProgramValue::Pointer(expected))
+            ExpressionOutcome::Value(ProgramValue::Pointer(expected))
         );
         let explicit = SpecExpression::Cast(
             Box::new(SpecExpression::Value(ProgramValue::Pointer(source))),
@@ -122,7 +122,7 @@ fn implicit_void_pointer_coercion_rejects_function_pointers() {
     let native = ProgramExpression::Cast {
         expression: Box::new(ProgramExpression::Value(source)),
         target_type: ProgramType::VoidPointer,
-        integer_mode: CIntegerCastMode::PointerCoercion,
+        integer_mode: IntegerCastMode::PointerCoercion,
         pointee_struct: None,
         pointee_volatile: false,
         pointee_constant: false,
@@ -137,8 +137,8 @@ fn implicit_void_pointer_coercion_rejects_function_pointers() {
     .unwrap();
     assert!(matches!(
         paths.as_slice(),
-        [CExpressionPath {
-            outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+        [ExpressionPath {
+            outcome: ExpressionOutcome::RuntimeError(RuntimeError::TypeMismatch),
             ..
         }]
     ));
@@ -173,7 +173,7 @@ fn native_pointer_word_round_trip_does_not_promote_declared_class_to_evidence() 
         let expression = ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Value(word)),
             target_type: ProgramType::Int32Pointer,
-            integer_mode: CIntegerCastMode::Standard,
+            integer_mode: IntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -189,7 +189,7 @@ fn native_pointer_word_round_trip_does_not_promote_declared_class_to_evidence() 
         let [path] = paths.as_slice() else {
             panic!("one pointer expected")
         };
-        let CExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = &path.outcome else {
+        let ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) = &path.outcome else {
             panic!("pointer expected: {:?}", path.outcome)
         };
         assert_eq!(pointer.object_class(), Some(class.clone()));

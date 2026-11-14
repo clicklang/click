@@ -39,7 +39,7 @@ fn shared_machine_collectors_preserve_carriers_binders_and_loads() {
             value: folded.into(),
             destination: format,
         };
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let memory = crate::kernel::intern_c_memory(Memory::new());
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &Pointer::symbolic(Variable(989965)),

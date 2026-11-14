@@ -15,7 +15,7 @@ fn alias_lookup_does_not_scan_unrelated_resources() {
             state.resources =
                 state
                     .resources
-                    .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                    .unchecked_with_fact(ResourceFact::own(Resource::Token {
                         name: format!("frame{index}"),
                         arguments: vec![].into(),
                     }));

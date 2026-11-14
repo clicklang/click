@@ -16,7 +16,7 @@
 //! closure can retain them and a simple `arithmetic using` step can check
 //! the same decision from those facts alone.
 
-use super::operators::CBitwiseOperation;
+use super::operators::BitwiseOperation;
 use super::*;
 use crate::kernel::MachineTerm;
 use crate::kernel::{CompareRelation, MachineIntegerType, MachineOperandView};
@@ -558,9 +558,9 @@ fn structural_form_of(
             [left, right],
         )) => {
             let operation = if op == MachineBinaryOp::BitwiseAnd {
-                CBitwiseOperation::And
+                BitwiseOperation::And
             } else {
-                CBitwiseOperation::Or
+                BitwiseOperation::Or
             };
             // The tag side is a constant, or for `|` a masked term `x & m`
             // (rbtree's `rb_color(rb) | (unsigned long)p`), whose bound the
@@ -571,7 +571,7 @@ fn structural_form_of(
             let (inner, tag, constant) = match (left.uint64_constant(), right.uint64_constant()) {
                 (None, Some(constant)) => (left, None, constant),
                 (Some(constant), None) => (right, None, constant),
-                (None, None) if matches!(operation, CBitwiseOperation::Or) => {
+                (None, None) if matches!(operation, BitwiseOperation::Or) => {
                     match (masked_bound(left, used), masked_bound(right, used)) {
                         (None, Some(bound)) => {
                             (left, Some(right.retain(MachineIntegerType::UInt64)), bound)
@@ -588,7 +588,7 @@ fn structural_form_of(
                 return Ok(None);
             };
             match operation {
-                CBitwiseOperation::And => {
+                BitwiseOperation::And => {
                     let Some(alignment) = clearing_mask_alignment(constant) else {
                         return Ok(None);
                     };
@@ -618,7 +618,7 @@ fn structural_form_of(
                         },
                     })
                 }
-                CBitwiseOperation::Or => {
+                BitwiseOperation::Or => {
                     let Some(alignment) = constant
                         .checked_add(1)
                         .and_then(u64::checked_next_power_of_two)
@@ -647,7 +647,7 @@ fn structural_form_of(
                         ),
                     })
                 }
-                CBitwiseOperation::Xor => None,
+                BitwiseOperation::Xor => None,
             }
         }
         _ => None,
@@ -870,7 +870,7 @@ mod exact_word_address_tests {
         use crate::kernel::{KernelTermExport, KernelTermImport};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(985_331));
-        let memory = CMemory::new();
+        let memory = Memory::new();
         let read = |memory| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
@@ -1608,7 +1608,7 @@ mod retained_tag_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let pointer = Pointer::symbolic(Variable(986030));
-        let memory = CMemory::new().with_block("tag-cell", 8);
+        let memory = Memory::new().with_block("tag-cell", 8);
         let read = |memory| {
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),

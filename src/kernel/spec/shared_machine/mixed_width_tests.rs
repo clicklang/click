@@ -125,7 +125,7 @@ fn mixed_arithmetic_matches_native_terms_and_domains() {
                         for o in &mut expected.obligations {
                             o.proposition = native_domain(o.proposition());
                         }
-                        let CExpressionOutcome::Value(expected_value) = expected.outcome else {
+                        let ExpressionOutcome::Value(expected_value) = expected.outcome else {
                             panic!()
                         };
                         for (l_shared, r_shared) in

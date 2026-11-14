@@ -53,7 +53,7 @@ fn checked_surface_fact_in_state_with_assumptions(
         let same_non_memory_arguments = |arguments: &[Term]| {
             arguments.len() == target_arguments.len()
                 && arguments.iter().zip(target_arguments).all(|(left, right)| {
-                    matches!((left, right), (Term::CMemory(_), Term::CMemory(_))) || left == right
+                    matches!((left, right), (Term::Memory(_), Term::Memory(_))) || left == right
                 })
         };
         for recorded in view.surface_propositions.atomic_kernel_facts() {
@@ -185,7 +185,7 @@ fn checked_surface_fact_in_state_with_assumptions(
     }
 }
 
-fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<CMemory> {
+fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<Memory> {
     if !matches!(
         proposition,
         Proposition::And(_, _)
@@ -212,7 +212,7 @@ fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<CMemory> {
             }
             Proposition::Equal(left, right) => {
                 for term in [left, right] {
-                    if let Term::CMemory(memory) = term
+                    if let Term::Memory(memory) = term
                         && !memories.contains(memory)
                     {
                         memories.push(memory.clone());
@@ -221,7 +221,7 @@ fn proposition_snapshot_memories(proposition: &Proposition) -> Vec<CMemory> {
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
-                    if let Term::CMemory(memory) = argument
+                    if let Term::Memory(memory) = argument
                         && !memories.contains(memory)
                     {
                         memories.push(memory.clone());

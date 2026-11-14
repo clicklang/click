@@ -15,7 +15,7 @@ fn initialized_interface_exchange_scales_independently_of_resource_frame() {
                 published
                     .state
                     .resources
-                    .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                    .unchecked_with_fact(ResourceFact::own(Resource::Token {
                         name: format!("frame{index}"),
                         arguments: vec![].into(),
                     }));
@@ -55,7 +55,7 @@ fn use_interface_call_binding_scales_independently_of_resource_frame() {
                 context
                     .state
                     .resources
-                    .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                    .unchecked_with_fact(ResourceFact::own(Resource::Token {
                         name: format!("frame{index}"),
                         arguments: vec![].into(),
                     }));

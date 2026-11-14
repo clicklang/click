@@ -6,15 +6,15 @@ use super::*;
 
 #[test]
 fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
-    use crate::kernel::{CAggregateField, CAggregateLayout};
+    use crate::kernel::{AggregateField, AggregateLayout};
     let slot = Pointer {
         block: "local:frame:0:input".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let layout = CAggregateLayout::new(
+    let layout = AggregateLayout::new(
         4,
         4,
-        vec![CAggregateField::new("value", 0, ProgramType::Int32)],
+        vec![AggregateField::new("value", 0, ProgramType::Int32)],
     );
     let projection = SpecExpression::AggregateFieldValue {
         parameter: "input".to_string(),
@@ -26,7 +26,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
     let mut samples = Vec::new();
     for size in [8, 32, 128] {
         let mut entry = ExecutionState::new().with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(slot.block.clone(), 4)
                 .store(slot.clone(), int32(7)),
         );

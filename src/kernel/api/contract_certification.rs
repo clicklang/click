@@ -38,7 +38,7 @@ pub(crate) fn contract_resource_condition_cases(
     .ok()?;
     let mut guards = Vec::new();
     for resource in required_resources.facts() {
-        let CResource::Composite {
+        let Resource::Composite {
             name,
             arguments: resource_arguments,
         } = resource.resource()
@@ -336,7 +336,7 @@ pub fn c_state_justifies_loadability_obligation(
             wide: false,
         } => {
             assumptions.proves_exact(obligation)
-                || matches!(memory.load(base), CExpressionOutcome::Value(_))
+                || matches!(memory.load(base), ExpressionOutcome::Value(_))
                 || match bytes.as_const() {
                     Some(width) => {
                         memory.is_loadable_concretely(base, width)
@@ -366,7 +366,7 @@ pub fn c_state_justifies_loadability_obligation(
 /// are read by key and an alias of an alias is not followed, so the work is
 /// bounded by the equalities stated about this one pointer.
 fn symbolic_base_aliases_a_held_cell(
-    memory: &CMemory,
+    memory: &Memory,
     base: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -388,7 +388,7 @@ fn symbolic_base_aliases_a_held_cell(
         crate::instrumentation::record_deterministic_work(1);
         matches!(
             memory.load(&alias.offset_by_bytes(offset)),
-            CExpressionOutcome::Value(_)
+            ExpressionOutcome::Value(_)
         )
     })
 }
@@ -712,7 +712,7 @@ fn forall_loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Proposi
 /// holds. A proposition about a load's value supplies no validity evidence.
 pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     assumptions: &PureFactContext,
-    memory: &CMemory,
+    memory: &Memory,
     base: &Pointer,
 ) -> bool {
     if crate::kernel::assumptions::reasoning_interrupted() {
@@ -891,111 +891,111 @@ pub(in crate::kernel) fn certification_proves_exists_obligation_from_facts(
 /// errors carry a sentence written for the user; the structured variants have
 /// no kernel-side rendering of their payload, so they are named by kind rather
 /// than dumped as internal state.
-pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeError) -> String {
+pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeError) -> String {
     match error {
-        CRuntimeError::PointerConversion(message)
-        | CRuntimeError::EnumVariant(message)
-        | CRuntimeError::FunctionContract(message)
-        | CRuntimeError::UnsuppliedResourceValue(message) => {
+        RuntimeError::PointerConversion(message)
+        | RuntimeError::EnumVariant(message)
+        | RuntimeError::FunctionContract(message)
+        | RuntimeError::UnsuppliedResourceValue(message) => {
             message.clone()
         }
-        CRuntimeError::PendingCallObligations(pending) => format!(
+        RuntimeError::PendingCallObligations(pending) => format!(
             "call cannot finish while {} proof obligation(s) remain", pending.len()
         ),
-        CRuntimeError::ContractResourceDiagnostic { reason, .. } => reason.clone(),
-        CRuntimeError::UnboundVariable(name) => format!("unbound variable `{name}`"),
-        CRuntimeError::UnknownFunction(name) => format!("unknown function `{name}`"),
-        CRuntimeError::MissingVerifiedFunctionRule(name) => {
+        RuntimeError::ContractResourceDiagnostic { reason, .. } => reason.clone(),
+        RuntimeError::UnboundVariable(name) => format!("unbound variable `{name}`"),
+        RuntimeError::UnknownFunction(name) => format!("unknown function `{name}`"),
+        RuntimeError::MissingVerifiedFunctionRule(name) => {
             format!("the sidecar states no contract for `{name}`")
         }
-        CRuntimeError::UnsupportedOpaqueFunctionContract(name) => {
+        RuntimeError::UnsupportedOpaqueFunctionContract(name) => {
             format!("the contract of `{name}` refers to an unavailable program point")
         }
-        CRuntimeError::AbstractFunctionPointerCall(name) => {
+        RuntimeError::AbstractFunctionPointerCall(name) => {
             format!("no named contract is available for function pointer `{name}`")
         }
-        CRuntimeError::TypeMismatch => "type mismatch".to_string(),
-        CRuntimeError::HeapAllocationSize => CRuntimeError::HEAP_ALLOCATION_SIZE_MESSAGE.to_string(),
-        CRuntimeError::HeapAllocationSizeAboveInt32 => {
-            CRuntimeError::HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE.to_string()
+        RuntimeError::TypeMismatch => "type mismatch".to_string(),
+        RuntimeError::HeapAllocationSize => RuntimeError::HEAP_ALLOCATION_SIZE_MESSAGE.to_string(),
+        RuntimeError::HeapAllocationSizeAboveInt32 => {
+            RuntimeError::HEAP_ALLOCATION_SIZE_ABOVE_INT32_MESSAGE.to_string()
         }
-        CRuntimeError::WideRangeRespellingMayWrap(no_wrap) => format!(
+        RuntimeError::WideRangeRespellingMayWrap(no_wrap) => format!(
             "a range of {}-byte elements needs its endpoint times {} to not wrap (at most UINT64_MAX)",
             no_wrap
                 .range
                 .memory_range()
-                .map_or(0, crate::kernel::CMemoryRange::element_width),
+                .map_or(0, crate::kernel::MemoryRange::element_width),
             no_wrap.factor
         ),
-        CRuntimeError::LoadTypeMismatch { .. } => error.kernel_summary(),
-        CRuntimeError::IndeterminatePointeeType => {
+        RuntimeError::LoadTypeMismatch { .. } => error.kernel_summary(),
+        RuntimeError::IndeterminatePointeeType => {
             "a pointer operation has no known pointee type".to_string()
         }
-        CRuntimeError::WrongArity { expected, actual } => {
+        RuntimeError::WrongArity { expected, actual } => {
             format!("wrong argument count: expected {expected}, got {actual}")
         }
-        CRuntimeError::MissingReturn => "missing return".to_string(),
-        CRuntimeError::MutexStorageScopeEnd { local, .. } => format!("initialized mutex storage must outlive local `{local}`"),
-        CRuntimeError::MutexStorageInUse { .. } => "allocation storage still contains an initialized mutex".into(),
-        CRuntimeError::MutexStorageSeparationRequired { .. } => "requires separation between retired allocation and initialized mutex storage".into(),
-        CRuntimeError::MutexStorageWrite { .. } => "requires separation from initialized mutex storage".into(),
-        CRuntimeError::MissingMutexStorageAlignment { .. } => "requires aligned mutex storage".into(),
-        CRuntimeError::UnsupportedMutexStorageRetirement => "allocation retirement in a preserving guard contract needs checked mutex lifetime authority".into(),
-        CRuntimeError::MissingMutexGuard { .. } => {
+        RuntimeError::MissingReturn => "missing return".to_string(),
+        RuntimeError::MutexStorageScopeEnd { local, .. } => format!("initialized mutex storage must outlive local `{local}`"),
+        RuntimeError::MutexStorageInUse { .. } => "allocation storage still contains an initialized mutex".into(),
+        RuntimeError::MutexStorageSeparationRequired { .. } => "requires separation between retired allocation and initialized mutex storage".into(),
+        RuntimeError::MutexStorageWrite { .. } => "requires separation from initialized mutex storage".into(),
+        RuntimeError::MissingMutexStorageAlignment { .. } => "requires aligned mutex storage".into(),
+        RuntimeError::UnsupportedMutexStorageRetirement => "allocation retirement in a preserving guard contract needs checked mutex lifetime authority".into(),
+        RuntimeError::MissingMutexGuard { .. } => {
             "a required mutex_guard resource is not available".to_string()
         }
-        CRuntimeError::MissingMutexLive { .. } => {
+        RuntimeError::MissingMutexLive { .. } => {
             "a required mutex_live resource is not available".to_string()
         }
-        CRuntimeError::MissingMutexUse { .. } => {
+        RuntimeError::MissingMutexUse { .. } => {
             "a required mutex_use resource is not available".to_string()
         }
-        CRuntimeError::MissingMutexInvariant { .. } => {
+        RuntimeError::MissingMutexInvariant { .. } => {
             "the protected resource selected at mutex initialization must be restored".to_string()
         }
-        CRuntimeError::MissingResource { .. } => "a required resource is not available".to_string(),
-        CRuntimeError::UnestablishedAssemblyFact { .. } => {
+        RuntimeError::MissingResource { .. } => "a required resource is not available".to_string(),
+        RuntimeError::UnestablishedAssemblyFact { .. } => {
             "assembling a required view from the caller's bytes requires an exact body fact".to_string()
         }
-        CRuntimeError::UnbackedReturnedView { .. } => {
-            CRuntimeError::UNBACKED_RETURNED_VIEW.to_string()
+        RuntimeError::UnbackedReturnedView { .. } => {
+            RuntimeError::UNBACKED_RETURNED_VIEW.to_string()
         }
-        CRuntimeError::UninitializedMutex { .. } => {
+        RuntimeError::UninitializedMutex { .. } => {
             "the mutex has not been initialized on this path".to_string()
         }
-        CRuntimeError::UnsupportedConcurrentMutex => {
+        RuntimeError::UnsupportedConcurrentMutex => {
             "Click cannot yet verify pthread workers sharing an initialized mutex".to_string()
         }
-        CRuntimeError::InvalidFree(reason) => match reason {
-            CInvalidFree::InteriorPointer => {
+        RuntimeError::InvalidFree(reason) => match reason {
+            InvalidFree::InteriorPointer => {
                 "cannot free an interior pointer; free requires the allocation base".to_string()
             }
-            CInvalidFree::NonHeapPointer => {
+            InvalidFree::NonHeapPointer => {
                 "cannot free a pointer that is not a live heap allocation".to_string()
             }
-            CInvalidFree::DoubleFree => {
+            InvalidFree::DoubleFree => {
                 "cannot free an allocation whose lifetime has already ended".to_string()
             }
         },
-        CRuntimeError::UnresolvedAllocationOutcome => {
+        RuntimeError::UnresolvedAllocationOutcome => {
             "an unresolved allocation outcome".to_string()
         }
-        CRuntimeError::LiveAllocationLeak { .. } => {
+        RuntimeError::LiveAllocationLeak { .. } => {
             "a live allocation is neither returned nor freed".to_string()
         }
-        CRuntimeError::StaleResourceAfterFree { .. } => {
+        RuntimeError::StaleResourceAfterFree { .. } => {
             "a resource would remain usable after its allocation is freed".to_string()
         }
-        CRuntimeError::DuplicateResource { .. } => {
+        RuntimeError::DuplicateResource { .. } => {
             "the same resource is declared twice".to_string()
         }
-        CRuntimeError::OverlappingOwnedMemoryResources { .. } => {
+        RuntimeError::OverlappingOwnedMemoryResources { .. } => {
             "two owned memory resource clauses overlap".to_string()
         }
-        CRuntimeError::ProducedCompositeOverlapsHeldResource { .. } => {
+        RuntimeError::ProducedCompositeOverlapsHeldResource { .. } => {
             "a produced composite's body overlaps a resource the caller already holds".to_string()
         }
-        CRuntimeError::LoanRefusal(diagnostic) => format_loan_refusal_diagnostic(diagnostic),
+        RuntimeError::LoanRefusal(diagnostic) => format_loan_refusal_diagnostic(diagnostic),
     }
 }
 
@@ -1080,7 +1080,7 @@ fn format_loan_operation(operation: crate::kernel::LoanRefusalOperation) -> &'st
 
 /// Where one fact of a function's contract entry comes from.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CContractEntryFactOrigin {
+pub enum ContractEntryFactOrigin {
     /// The type range of a narrow integer parameter, and the range of a
     /// `bool` parameter's cast (rule C1).
     NarrowRange,
@@ -1117,13 +1117,13 @@ pub enum CContractEntryFactOrigin {
 
 /// One fact a function may assume at entry, with where it comes from.
 #[derive(Clone, Debug)]
-pub struct CContractEntryFact {
-    origin: CContractEntryFactOrigin,
+pub struct ContractEntryFact {
+    origin: ContractEntryFactOrigin,
     proposition: Proposition,
 }
 
-impl CContractEntryFact {
-    pub fn origin(&self) -> CContractEntryFactOrigin {
+impl ContractEntryFact {
+    pub fn origin(&self) -> ContractEntryFactOrigin {
         self.origin
     }
 
@@ -1132,17 +1132,17 @@ impl CContractEntryFact {
     }
 }
 
-struct ContractEntryFactLog(Vec<CContractEntryFact>);
+struct ContractEntryFactLog(Vec<ContractEntryFact>);
 
 impl ContractEntryFactLog {
     /// Assumes `proposition` and records it with its origin.
     fn assume(
         &mut self,
         assumptions: PureFactContext,
-        origin: CContractEntryFactOrigin,
+        origin: ContractEntryFactOrigin,
         proposition: Proposition,
     ) -> PureFactContext {
-        self.0.push(CContractEntryFact {
+        self.0.push(ContractEntryFact {
             origin,
             proposition: proposition.clone(),
         });
@@ -1158,18 +1158,18 @@ impl ContractEntryFactLog {
 /// same lowering, so a body proved from these facts is proved from what its
 /// callers establish.
 #[derive(Clone, Debug)]
-pub struct CContractEntry {
+pub struct ContractEntry {
     assumptions: PureFactContext,
-    facts: Vec<CContractEntryFact>,
+    facts: Vec<ContractEntryFact>,
     /// The propositions of `facts`, for membership.
     stated: BTreeSet<Proposition>,
     /// The entry state holding the contract's expanded entry resources.
     resource_state: ExecutionState,
 }
 
-impl CContractEntry {
+impl ContractEntry {
     /// The entry facts in the order the contract yields them.
-    pub fn facts(&self) -> &[CContractEntryFact] {
+    pub fn facts(&self) -> &[ContractEntryFact] {
         &self.facts
     }
 
@@ -1214,7 +1214,7 @@ pub fn c_function_contract_entry(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-) -> Result<CContractEntry, String> {
+) -> Result<ContractEntry, String> {
     let (assumptions, facts, resource_state) =
         c_function_contract_entry_facts(caller_state, function, arguments)?;
     let predicate_bodies = function
@@ -1230,11 +1230,11 @@ pub fn c_function_contract_entry(
     let facts = facts
         .into_iter()
         .map(|mut fact| {
-            if let CContractEntryFactOrigin::Requirement(index)
-            | CContractEntryFactOrigin::RequirementLowering(index) = fact.origin
+            if let ContractEntryFactOrigin::Requirement(index)
+            | ContractEntryFactOrigin::RequirementLowering(index) = fact.origin
                 && predicate_bodies.get(index) == Some(&true)
             {
-                fact.origin = CContractEntryFactOrigin::PredicateBody(index);
+                fact.origin = ContractEntryFactOrigin::PredicateBody(index);
             }
             fact
         })
@@ -1266,7 +1266,7 @@ pub fn c_function_contract_entry(
         .fold(assumptions, |assumptions, identity| {
             entry_facts.assume(
                 assumptions,
-                CContractEntryFactOrigin::PredicateIdentity,
+                ContractEntryFactOrigin::PredicateIdentity,
                 identity,
             )
         });
@@ -1275,7 +1275,7 @@ pub fn c_function_contract_entry(
         .iter()
         .map(|fact| fact.proposition.clone())
         .collect();
-    Ok(CContractEntry {
+    Ok(ContractEntry {
         assumptions,
         facts: entry_facts.0,
         stated,
@@ -1291,7 +1291,7 @@ fn c_function_contract_entry_facts(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
-) -> Result<(PureFactContext, Vec<CContractEntryFact>, ExecutionState), String> {
+) -> Result<(PureFactContext, Vec<ContractEntryFact>, ExecutionState), String> {
     let mut assumptions = PureFactContext::new();
     let mut entry_facts = ContractEntryFactLog(Vec::new());
     if let Some(message) =
@@ -1352,14 +1352,14 @@ fn c_function_contract_entry_facts(
                 let Some(ProgramValue::Pointer(pointer)) = pointer_value.as_deref() else {
                     return Err("array reference entry argument is not a pointer value".into());
                 };
-                if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
+                if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
                     pointer.pointer().clone(),
                     MachineTerm::uint64_constant(0),
                     MachineTerm::uint64_constant(u64::from(bytes)),
                     1,
                 )) {
                     assumptions =
-                        entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, coverage);
+                        entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
                 }
             }
             let Some(length_index) = parameter.slice_length_parameter else {
@@ -1383,7 +1383,7 @@ fn c_function_contract_entry_facts(
                 .byte_width();
             assumptions = entry_facts.assume(
                 assumptions,
-                CContractEntryFactOrigin::Extent,
+                ContractEntryFactOrigin::Extent,
                 Proposition::ConditionIs(
                     ConditionTerm::uint64_less_equal(
                         length.clone(),
@@ -1392,14 +1392,14 @@ fn c_function_contract_entry_facts(
                     true,
                 ),
             );
-            if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
+            if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
                 pointer.pointer().clone(),
                 MachineTerm::uint64_constant(0),
                 length.clone(),
                 width,
             )) {
                 assumptions =
-                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, coverage);
+                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
             }
         }
     }
@@ -1411,7 +1411,7 @@ fn c_function_contract_entry_facts(
         {
             for fact in facts {
                 assumptions =
-                    entry_facts.assume(assumptions, CContractEntryFactOrigin::NarrowRange, fact);
+                    entry_facts.assume(assumptions, ContractEntryFactOrigin::NarrowRange, fact);
             }
         }
     }
@@ -1503,13 +1503,13 @@ fn c_function_contract_entry_facts(
         for fact in &path.facts {
             assumptions = entry_facts.assume(
                 assumptions,
-                CContractEntryFactOrigin::RequirementLowering(requirement_index),
+                ContractEntryFactOrigin::RequirementLowering(requirement_index),
                 fact.proposition().clone(),
             );
         }
         assumptions = entry_facts.assume(
             assumptions,
-            CContractEntryFactOrigin::Requirement(requirement_index),
+            ContractEntryFactOrigin::Requirement(requirement_index),
             path.proposition.clone(),
         );
     }
@@ -1539,7 +1539,7 @@ fn c_function_contract_entry_facts(
     for proposition in quantity_assumptions {
         assumptions = entry_facts.assume(
             assumptions,
-            CContractEntryFactOrigin::ResourceQuantity,
+            ContractEntryFactOrigin::ResourceQuantity,
             proposition,
         );
     }
@@ -1582,7 +1582,7 @@ fn c_function_contract_entry_facts(
     // and its soundness argument; the fail-closed call-site planner is what
     // discharges the claim, so a caller owes nothing extra for it.
     for fact in crate::kernel::contract_entry_partition_facts(&required_entry_clauses) {
-        assumptions = entry_facts.assume(assumptions, CContractEntryFactOrigin::Partition, fact);
+        assumptions = entry_facts.assume(assumptions, ContractEntryFactOrigin::Partition, fact);
     }
     // Each clause states its own range, and the proof side holds each one as
     // written: its byte-count guards and its loadability at entry. The
@@ -1612,7 +1612,7 @@ fn c_function_contract_entry_facts(
                 well_formed = false;
             } else {
                 assumptions =
-                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, guard);
+                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
             }
         }
         // A range its own guards refute states no memory to read.
@@ -1623,7 +1623,7 @@ fn c_function_contract_entry_facts(
         if range.wide_bounds().is_some() {
             assumptions = entry_facts.assume(
                 assumptions,
-                CContractEntryFactOrigin::ClauseLoadable,
+                ContractEntryFactOrigin::ClauseLoadable,
                 range.loadable_fact(entry_state.memory()),
             );
             continue;
@@ -1631,7 +1631,7 @@ fn c_function_contract_entry_facts(
         let width = range.element_width();
         assumptions = entry_facts.assume(
             assumptions,
-            CContractEntryFactOrigin::ClauseLoadable,
+            ContractEntryFactOrigin::ClauseLoadable,
             Proposition::CMemoryLoadable {
                 memory: entry_state.memory().clone(),
                 base: range
@@ -1648,7 +1648,7 @@ fn c_function_contract_entry_facts(
     for fact in required_resources.facts() {
         if let Some(coverage) = fact.allocation_bounds_fact(&assumptions) {
             assumptions =
-                entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, coverage);
+                entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
         }
         // Owned ranges carry their byte-count guards exactly as viewed ranges
         // do: the clause states the same range, and the loadability rules read
@@ -1665,7 +1665,7 @@ fn c_function_contract_entry_facts(
             };
             if !guard_is_false {
                 assumptions =
-                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, guard);
+                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
             }
         }
     }
@@ -1688,7 +1688,7 @@ fn c_function_contract_entry_facts(
     for fact in expanded_resources.facts() {
         if let Some(coverage) = fact.allocation_bounds_fact(&assumptions) {
             assumptions =
-                entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, coverage);
+                entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, coverage);
         }
         let Some(range) = fact.memory_view_range().or_else(|| fact.memory_own_range()) else {
             continue;
@@ -1702,14 +1702,14 @@ fn c_function_contract_entry_facts(
             };
             if !guard_is_false {
                 assumptions =
-                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, guard);
+                    entry_facts.assume(assumptions, ContractEntryFactOrigin::Extent, guard);
             }
         }
     }
     for proposition in resource_definition_facts {
         assumptions = entry_facts.assume(
             assumptions,
-            CContractEntryFactOrigin::CompositeDefinition,
+            ContractEntryFactOrigin::CompositeDefinition,
             proposition,
         );
     }
@@ -1724,7 +1724,7 @@ fn c_function_contract_entry_facts(
     })?;
     for fact in population_facts {
         assumptions =
-            entry_facts.assume(assumptions, CContractEntryFactOrigin::PopulationFact, fact);
+            entry_facts.assume(assumptions, ContractEntryFactOrigin::PopulationFact, fact);
     }
     let expanded_required_resources = ({
         super::super::functions::expand_all_composite_resource_facts_at_state(
@@ -1758,11 +1758,11 @@ fn c_function_contract_entry_facts(
             &assumptions,
         )
         .or_else(|| {
-            let CResource::Memory(required_range) = required.resource() else {
+            let Resource::Memory(required_range) = required.resource() else {
                 return None;
             };
             let has_same_base = entry_resources.facts().iter().any(|available| {
-                let CResource::Memory(available_range) = available.resource() else {
+                let Resource::Memory(available_range) = available.resource() else {
                     return false;
                 };
                 crate::kernel::assumptions::pointers_equal_ignoring_memories(
@@ -1795,24 +1795,24 @@ fn c_function_contract_entry_facts(
             .into_iter()
             .map(|(index, required)| {
                 let kind = match required.resource() {
-                    CResource::Emp => "separation::emp".into(),
-                    CResource::Star(_) => "separating conjunction".into(),
-                    CResource::Footprint(fp) => fp.source.clone(),
-                    CResource::Parameter(v) => format!("resource parameter {v:?}"),
-                    CResource::Memory(range) => {
+                    Resource::Emp => "separation::emp".into(),
+                    Resource::Star(_) => "separating conjunction".into(),
+                    Resource::Footprint(fp) => fp.source.clone(),
+                    Resource::Parameter(v) => format!("resource parameter {v:?}"),
+                    Resource::Memory(range) => {
                         format!("memory in {}", range.base().block)
                     }
-                    CResource::PopulationAuthority(description) => {
+                    Resource::PopulationAuthority(description) => {
                         format!("population authority for {}", description.family())
                     }
-                    CResource::Composite { name, .. } => format!("composite {name}"),
-                    CResource::Token { name, .. } => format!("token {name}"),
-                    CResource::MutexGuard(_) => "mutex guard".to_string(),
-                    CResource::MutexLive(_) => "mutex lifetime".to_string(),
-                    CResource::MutexUse(_) => "mutex use".to_string(),
-                    CResource::Publication(_) => "publication right".to_string(),
-                    CResource::Instance(instance) => format!("instance {}", instance.name()),
-                    CResource::Iterated(iterated) => {
+                    Resource::Composite { name, .. } => format!("composite {name}"),
+                    Resource::Token { name, .. } => format!("token {name}"),
+                    Resource::MutexGuard(_) => "mutex guard".to_string(),
+                    Resource::MutexLive(_) => "mutex lifetime".to_string(),
+                    Resource::MutexUse(_) => "mutex use".to_string(),
+                    Resource::Publication(_) => "publication right".to_string(),
+                    Resource::Instance(instance) => format!("instance {}", instance.name()),
+                    Resource::Iterated(iterated) => {
                         format!("iterated ownership of {}", iterated.owner())
                     }
                 };
@@ -1842,23 +1842,22 @@ fn c_function_contract_entry_facts(
             continue;
         }
         let (name, arguments) = match required.resource() {
-            CResource::Footprint(_)
-            | CResource::Parameter(_)
-            | CResource::Emp
-            | CResource::Star(_) => continue,
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
+                continue;
+            }
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
                 (name.as_str(), arguments.as_ref())
             }
-            CResource::PopulationAuthority(description) => {
+            Resource::PopulationAuthority(description) => {
                 (description.family(), description.arguments())
             }
-            CResource::Instance(instance) => (instance.name(), instance.arguments()),
-            CResource::Memory(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)
-            | CResource::Iterated(_) => continue,
+            Resource::Instance(instance) => (instance.name(), instance.arguments()),
+            Resource::Memory(_)
+            | Resource::MutexGuard(_)
+            | Resource::MutexLive(_)
+            | Resource::MutexUse(_)
+            | Resource::Publication(_)
+            | Resource::Iterated(_) => continue,
         };
         // Retain the same authenticated population facts as a written
         // count requirement. Owning a member entails its lower bound even
@@ -1875,7 +1874,7 @@ fn c_function_contract_entry_facts(
         else {
             continue;
         };
-        if let CResource::PopulationAuthority(description) = required.resource()
+        if let Resource::PopulationAuthority(description) = required.resource()
             && let Some(arity) = description.population_arity()
         {
             arguments.resize(arity, None);
@@ -1914,7 +1913,7 @@ fn c_function_contract_entry_facts(
             for fact in &path.facts {
                 assumptions = entry_facts.assume(
                     assumptions,
-                    CContractEntryFactOrigin::PopulationCount,
+                    ContractEntryFactOrigin::PopulationCount,
                     fact.proposition().clone(),
                 );
             }
@@ -1967,7 +1966,7 @@ fn c_function_contract_entry_facts(
     for obligation in requirement_obligations {
         assumptions = entry_facts.assume(
             assumptions,
-            CContractEntryFactOrigin::RequirementObligation,
+            ContractEntryFactOrigin::RequirementObligation,
             obligation.proposition().clone(),
         );
     }
@@ -1990,7 +1989,7 @@ fn c_function_contract_entry_facts(
     for proposition in observable_facts {
         assumptions = entry_facts.assume(
             assumptions,
-            CContractEntryFactOrigin::Observable,
+            ContractEntryFactOrigin::Observable,
             proposition,
         );
     }
@@ -2004,7 +2003,7 @@ fn c_function_contract_entry_facts(
     {
         assumptions = entry_facts.assume(
             assumptions,
-            CContractEntryFactOrigin::Observable,
+            ContractEntryFactOrigin::Observable,
             proposition,
         );
     }
@@ -2025,7 +2024,7 @@ fn c_function_contract_entry_facts(
     {
         assumptions = entry_facts.assume(
             assumptions,
-            CContractEntryFactOrigin::Publication,
+            ContractEntryFactOrigin::Publication,
             proposition,
         );
     }
@@ -2034,7 +2033,7 @@ fn c_function_contract_entry_facts(
 
 pub(super) fn instantiate_contract_predicate_unfolding(
     entry_state: &ExecutionState,
-    unfolding: &CPredicateUnfolding,
+    unfolding: &PredicateUnfolding,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> Option<(Proposition, Proposition)> {
@@ -2059,7 +2058,7 @@ pub(super) fn instantiate_contract_predicate_unfolding(
 pub(super) fn instantiate_contract_predicate_unfolding_with_obligations(
     state: &ExecutionState,
     entry_state: Option<&ExecutionState>,
-    unfolding: &CPredicateUnfolding,
+    unfolding: &PredicateUnfolding,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> Option<(Proposition, Vec<Proposition>, Proposition, Vec<Proposition>)> {
@@ -2098,12 +2097,12 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
     assumptions: PureFactContext,
-    environment: CExecutionEnvironment,
-    execution_semantics: CExecutionSemantics,
+    environment: ExecutionEnvironment,
+    execution_semantics: ExecutionSemantics,
     mut budget: ExecutionBudget,
     prepare_contract_resources: bool,
     defer_conditional_resource_effect: bool,
-) -> SymbolicCExecution {
+) -> SymbolicExecution {
     let existing = crate::instrumentation::measure_operation(
         function.name(),
         "independent kernel execution",
@@ -2131,7 +2130,7 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
                 &function,
                 &arguments,
                 &assumptions,
-                CExecutionContext::new(&environment, execution_semantics),
+                ExecutionContext::new(&environment, execution_semantics),
                 &mut budget,
                 &mut variables,
                 prepare_contract_resources,
@@ -2141,7 +2140,7 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
     ) {
         Ok(paths) => paths,
         Err(limit) => {
-            return SymbolicCExecution {
+            return SymbolicExecution {
                 paths: Vec::new(),
                 limit: Some(limit),
             };
@@ -2169,7 +2168,7 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
                         &facts,
                         &path.obligations,
                     ));
-                    SymbolicCExecutionPath {
+                    SymbolicExecutionPath {
                         call_parameters: None,
                         completion_origin: None,
                         call_result: None,
@@ -2186,7 +2185,7 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
         },
     );
 
-    SymbolicCExecution { paths, limit: None }
+    SymbolicExecution { paths, limit: None }
 }
 
 pub fn c_function_execution_candidates_from_outcomes(
@@ -2194,11 +2193,11 @@ pub fn c_function_execution_candidates_from_outcomes(
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
     paths: Vec<(
-        CFunctionOutcome,
+        FunctionOutcome,
         Vec<ExecutionPureFact>,
         Vec<ProofObligation>,
     )>,
-) -> CFunctionExecutionCandidates {
+) -> FunctionExecutionCandidates {
     c_function_execution_candidates_from_outcomes_with_loan_evidence(
         state,
         function,
@@ -2222,19 +2221,19 @@ pub(crate) fn c_function_execution_candidates_from_outcomes_with_loan_evidence(
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
     paths: Vec<(
-        CFunctionOutcome,
+        FunctionOutcome,
         ExecutionFacts,
         Vec<ProofObligation>,
         crate::kernel::loans::CheckedLoanCallEvidenceSequence,
     )>,
-) -> CFunctionExecutionCandidates {
+) -> FunctionExecutionCandidates {
     let paths: Vec<_> = paths
         .into_iter()
         .map(|(outcome, facts, obligations, loan_evidence)| {
             let effect_facts = memory_effect_execution_facts(&facts);
             let facts = public_execution_pure_facts(&facts);
-            CFunctionExecutionCandidate {
-                data: Arc::new(CFunctionExecutionCandidateData {
+            FunctionExecutionCandidate {
+                data: Arc::new(FunctionExecutionCandidateData {
                     outcome: Arc::new(outcome),
                     facts,
                     effects_public_first: execution_effects_are_public_first(&effect_facts),
@@ -2254,8 +2253,8 @@ pub(crate) fn c_function_execution_candidates_from_retained_paths(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
-    paths: Vec<CFunctionExecutionCandidate>,
-) -> CFunctionExecutionCandidates {
+    paths: Vec<FunctionExecutionCandidate>,
+) -> FunctionExecutionCandidates {
     #[cfg(test)]
     ExecutionFacts::record_published_storage(
         false,
@@ -2264,8 +2263,8 @@ pub(crate) fn c_function_execution_candidates_from_retained_paths(
             .iter()
             .flat_map(|path| [path.facts(), path.effect_facts()]),
     );
-    CFunctionExecutionCandidates {
-        data: std::sync::Arc::new(CFunctionExecutionCandidatesData {
+    FunctionExecutionCandidates {
+        data: std::sync::Arc::new(FunctionExecutionCandidatesData {
             state,
             function: Arc::new(function),
             arguments: Arc::new(arguments),
@@ -2279,13 +2278,13 @@ pub(crate) fn c_function_execution_candidates_from_retained_paths(
 /// still untrusted candidate data; trace completion certifies every outcome.
 pub(crate) fn concat_retained_function_candidates(
     state: ExecutionState,
-    arms: [&CFunctionExecutionCandidates; 2],
+    arms: [&FunctionExecutionCandidates; 2],
     common_facts: ExecutionFacts,
-) -> CFunctionExecutionCandidates {
+) -> FunctionExecutionCandidates {
     let mut paths = arms[0].data.paths.clone();
     paths.append_shared(&arms[1].data.paths);
-    CFunctionExecutionCandidates {
-        data: Arc::new(CFunctionExecutionCandidatesData {
+    FunctionExecutionCandidates {
+        data: Arc::new(FunctionExecutionCandidatesData {
             state,
             function: arms[0].data.function.clone(),
             arguments: arms[0].data.arguments.clone(),
@@ -2315,9 +2314,9 @@ fn execution_effects_are_public_first(facts: &ExecutionFacts) -> bool {
 /// private effect order without re-classifying the complete guard stream.
 /// All certification remains independent.
 pub(crate) fn c_function_execution_candidate_with_additional_facts(
-    candidate: &CFunctionExecutionCandidate,
+    candidate: &FunctionExecutionCandidate,
     additional: &ExecutionFacts,
-) -> CFunctionExecutionCandidate {
+) -> FunctionExecutionCandidate {
     if additional.is_empty() && candidate.data.effects_public_first {
         return candidate.clone();
     }
@@ -2337,15 +2336,15 @@ pub(crate) fn c_function_execution_candidate_with_additional_facts(
         data.effect_facts.extend_shared(&added_effects);
         data.effects_public_first = execution_effects_are_public_first(&data.effect_facts);
     }
-    CFunctionExecutionCandidate {
+    FunctionExecutionCandidate {
         data: Arc::new(data),
     }
 }
 
 pub fn prove_c_function_satisfies_specification_from_symbolic_path(
     function: ProgramFunction,
-    specification: CFunctionSpecification,
-    path: &SymbolicCExecutionPath,
+    specification: FunctionSpecification,
+    path: &SymbolicExecutionPath,
 ) -> Option<Theorem> {
     let mut proved = path.theorem().proposition();
     let mut premises = Vec::new();
@@ -2406,11 +2405,11 @@ pub fn prove_c_function_satisfies_specification_from_symbolic_path(
 
 fn certified_function_path_parts<'a>(
     function: &ProgramFunction,
-    path: &'a SymbolicCExecutionPath,
+    path: &'a SymbolicExecutionPath,
 ) -> Option<(
     &'a ExecutionState,
     &'a [ProgramExpression],
-    &'a CFunctionOutcome,
+    &'a FunctionOutcome,
     PureFactContext,
 )> {
     let mut proposition = path.theorem().proposition();
@@ -2443,9 +2442,9 @@ fn certified_function_path_parts<'a>(
 
 fn resource_contexts_definitionally_equal(
     function: &ProgramFunction,
-    left_memory: &CMemory,
+    left_memory: &Memory,
     left: &ResourceContext,
-    right_memory: &CMemory,
+    right_memory: &Memory,
     right: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2460,10 +2459,10 @@ fn resource_contexts_definitionally_equal(
 }
 
 pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions(
-    composite_resource_definitions: &[CCompositeResourceDefinition],
-    left_memory: &CMemory,
+    composite_resource_definitions: &[CompositeResourceDefinition],
+    left_memory: &Memory,
     left: &ResourceContext,
-    right_memory: &CMemory,
+    right_memory: &Memory,
     right: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2479,7 +2478,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
                 .into_iter()
                 .flat_map(|(resources, memory)| {
                     resources.facts().iter().filter_map(move |fact| {
-                        matches!(fact.resource(), CResource::Composite { .. })
+                        matches!(fact.resource(), Resource::Composite { .. })
                             .then(|| {
                                 evaluate_composite_resource_relation_propositions(
                                     fact,
@@ -2499,14 +2498,14 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
     let assumptions = &enriched_assumptions;
     let _assumptions_memo_scope =
         crate::kernel::assumptions::PureFactContextIdScope::enter(assumptions);
-    let facts_directly_match = |left: &CResourceFact, right: &CResourceFact| match (left, right) {
-        (CResourceFact::Own(left, left_quantity), CResourceFact::Own(right, right_quantity))
+    let facts_directly_match = |left: &ResourceFact, right: &ResourceFact| match (left, right) {
+        (ResourceFact::Own(left, left_quantity), ResourceFact::Own(right, right_quantity))
             if left_quantity == right_quantity =>
         {
             crate::kernel::assumptions::resources_equal_ignoring_memories(left, right)
                 && c_resources_directly_match(left, right, assumptions)
         }
-        (CResourceFact::View(left), CResourceFact::View(right)) => {
+        (ResourceFact::View(left), ResourceFact::View(right)) => {
             crate::kernel::assumptions::resources_equal_ignoring_memories(left, right)
                 && c_resources_directly_match(left, right, assumptions)
         }
@@ -2525,7 +2524,7 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
         })
     };
     let definitionally_covers =
-        |available: &ResourceContext, required: &ResourceContext, memory: &CMemory| {
+        |available: &ResourceContext, required: &ResourceContext, memory: &Memory| {
             required.facts().iter().all(|fact| {
                 expose_composite_resource_fact(
                     available,
@@ -2607,11 +2606,11 @@ pub(in crate::kernel) fn resource_contexts_definitionally_equal_with_definitions
     // facts must hold in the memory of the side that has only its pieces.
     // A loop back edge otherwise returned `owns c(p)` from a body whose C
     // store had falsified a fact of `c` and never refolded it.
-    let reassembly_holds = |composites: &[CResourceFact],
+    let reassembly_holds = |composites: &[ResourceFact],
                             other: &ResourceContext,
-                            other_composites: &[CResourceFact],
+                            other_composites: &[ResourceFact],
                             other_expanded: &ResourceContext,
-                            other_memory: &CMemory| {
+                            other_memory: &Memory| {
         composites.iter().all(|composite| {
             other_composites.contains(composite)
                 || other.satisfies_fact(composite, assumptions)
@@ -3287,7 +3286,7 @@ mod shared_contract_operand_tests {
             MachineTerm::Variable(Variable(1017151)),
             MachineTerm::constant(7),
         );
-        let before = crate::kernel::CMemory::new().with_block("contract-expression-cell", 4);
+        let before = crate::kernel::Memory::new().with_block("contract-expression-cell", 4);
         let after = before
             .clone()
             .store(pointer.clone(), ProgramValue::Int32(written.clone()));
@@ -3331,7 +3330,7 @@ mod shared_contract_operand_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let load = |id| {
-            let memory = crate::kernel::CMemory::new()
+            let memory = crate::kernel::Memory::new()
                 .with_block("contract-index", 4)
                 .store(
                     pointer.clone(),

@@ -107,7 +107,7 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
     let mut warm_samples = Vec::new();
     for size in [8, 16, 32, 64] {
         let (mut context, goal) = chain(8, 0);
-        let memory = intern_c_memory(CMemory::new().with_block("other", size as u32 * 4));
+        let memory = intern_c_memory(Memory::new().with_block("other", size as u32 * 4));
         for index in 0..size {
             let condition = ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -258,7 +258,7 @@ fn connected_condition_selection_scales_linearly_in_chain_and_context() {
 fn covering_loadability_avoids_unrelated_adjacency_search() {
     let mut samples = Vec::new();
     for size in [8, 32, 128] {
-        let memory = CMemory::new();
+        let memory = Memory::new();
         // The theorem frontend represents these pointers in one block, so
         // unrelated ranges remain candidates for the adjacency search.
         let pointer = |index| Pointer {
@@ -314,7 +314,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
 fn arithmetic_candidates_omit_registered_read_definitions() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
-        let memory = intern_c_memory(CMemory::new().with_block("buffer", 4096));
+        let memory = intern_c_memory(Memory::new().with_block("buffer", 4096));
         let mut context = PureFactContext::new();
         let mut reads = Vec::new();
         for index in 0..size {

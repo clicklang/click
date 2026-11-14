@@ -44,7 +44,7 @@ fn pending_status_resolution_scales_with_explicit_intervening_work() {
         });
         assert_eq!(
             resolved.memory().load(&pointer(0)),
-            CExpressionOutcome::Value(int32((size - 1) as u32))
+            ExpressionOutcome::Value(int32((size - 1) as u32))
         );
         assert!(work >= size);
         samples.push((size, work));
@@ -112,7 +112,7 @@ fn joining_one_of_many_shared_readers_touches_only_its_share_branch() {
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
-        vec![CResourceSpec::viewed_memory(CMemorySegment::new(
+        vec![ResourceSpec::viewed_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -123,11 +123,11 @@ fn joining_one_of_many_shared_readers_touches_only_its_share_branch() {
         vec![],
         vec![],
         vec![],
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     );
     let (reader, termination) = certify_worker(function.clone());
-    let view = CResourceFact::view_memory(range(0, 0, 1));
+    let view = ResourceFact::view_memory(range(0, 0, 1));
     let state = c_state_with_borrowed_contract_inputs(
         parent(1).with_resource_context(ResourceContext::new().unchecked_with_fact(view.clone())),
         &function,

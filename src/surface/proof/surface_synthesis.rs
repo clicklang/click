@@ -165,13 +165,13 @@ impl LocalStructLayoutScope {
             .values()
             .map(|global| {
                 (
-                    CMemory::global_pointer(global.kernel_name()),
+                    Memory::global_pointer(global.kernel_name()),
                     (global.name().to_string(), global.c_type().to_kernel_type()),
                 )
             })
             .chain(function.static_locals().values().map(|local| {
                 (
-                    CMemory::static_pointer(function.name(), local.kernel_name()),
+                    Memory::static_pointer(function.name(), local.kernel_name()),
                     (local.name().to_string(), local.c_type().to_kernel_type()),
                 )
             }))
@@ -300,7 +300,7 @@ fn struct_owners(
             base: ProgramExpression::Cast {
                 expression: Box::new(ProgramExpression::Variable(parameter.name().to_string())),
                 target_type: ProgramType::Int32Pointer,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: Some(struct_name.clone()),
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -446,7 +446,7 @@ fn synthesize_struct_loadable_segment(
         let cast = ProgramExpression::Cast {
             expression: Box::new(owner.base),
             target_type: ProgramType::UInt8Pointer,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -493,11 +493,11 @@ fn field_pointer_bases(
             }
             let field_pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
             let loaded = match state.memory().load(&field_pointer) {
-                CExpressionOutcome::Value(ProgramValue::Pointer(loaded)) => loaded,
+                ExpressionOutcome::Value(ProgramValue::Pointer(loaded)) => loaded,
                 // Contract memory can keep a pointer field as the
                 // pointer-width load of the field: the pointer it names is
                 // that read.
-                CExpressionOutcome::Value(ProgramValue::Int32(value)) => {
+                ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
                     let Some(pointer) = Pointer::loaded(&value) else {
                         continue;
                     };
@@ -1216,7 +1216,7 @@ fn synthesize_surface_pointer_address(
                 ProgramType::VoidPointer,
             ))),
             target_type: ProgramType::UInt64,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -1708,7 +1708,7 @@ fn synthesize_zero_based_loadable_segment(
     let semantic_base = ProgramExpression::Cast {
         expression: Box::new(semantic_base?),
         target_type: element_pointer_type,
-        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+        integer_mode: crate::kernel::IntegerCastMode::Standard,
         pointee_struct: None,
         pointee_volatile: false,
         pointee_constant: false,
@@ -2391,7 +2391,7 @@ fn synthesize_surface_atomic_proposition(
     // snapshot. Its source call does not write that argument. Each array-ref
     // argument then lowers to a (memory, pointer) term pair and each value
     // argument to a single value term, so the remaining kernel argument list
-    // reads back unambiguously: a `CMemory` term always opens an array-ref
+    // reads back unambiguously: a `Memory` term always opens an array-ref
     // pair. The snapshot the pair names is not written here — the current
     // memory needs no form, and every caller re-lowers the candidate and
     // compares it to the kernel fact, so a candidate built against the wrong
@@ -2409,7 +2409,7 @@ fn synthesize_surface_atomic_proposition(
         ));
         while index < kernel_arguments.len() {
             match &kernel_arguments[index] {
-                Term::CMemory(_) => {
+                Term::Memory(_) => {
                     let Some(Term::ProgramValue(ProgramValue::Pointer(pointer))) =
                         kernel_arguments.get(index + 1)
                     else {
@@ -2529,7 +2529,7 @@ fn synthesize_surface_atomic_proposition(
                 volatile: false,
                 pointee_constant: false,
                 access_class: None,
-                source: crate::kernel::CExpressionLoadSource::none(),
+                source: crate::kernel::ExpressionLoadSource::none(),
             }),
         };
         if state.memory() == memory {
@@ -3352,9 +3352,9 @@ pub(super) fn raise_kernel_term(
                         expression: Box::new(ProgramExpression::Value(int32(0))),
                         target_type: destination.c_type(),
                         integer_mode: if *encoding == MachineCastSpelling::UInt32From64 {
-                            crate::kernel::CIntegerCastMode::Standard
+                            crate::kernel::IntegerCastMode::Standard
                         } else {
-                            crate::kernel::CIntegerCastMode::CConversion
+                            crate::kernel::IntegerCastMode::CConversion
                         },
                         pointee_struct: None,
                         pointee_volatile: false,
@@ -3407,7 +3407,7 @@ fn synthesize_observation_operand(
             lowered: ProgramExpression::Cast {
                 expression: Box::new(ProgramExpression::Value(int32(0))),
                 target_type: format,
-                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                integer_mode: crate::kernel::IntegerCastMode::CConversion,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -3501,13 +3501,13 @@ fn synthesize_unsigned_comparison(
 }
 
 pub(super) fn synthesize_surface_resource_subject(
-    resource: &CResource,
+    resource: &Resource,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ResourceSubject> {
     let _frame = SurfaceSynthesisFrame::enter("resource")?;
-    if let CResource::Star(pair) = resource {
+    if let Resource::Star(pair) = resource {
         return Some(ResourceSubject::Star(
             Box::new(synthesize_surface_resource_subject(
                 &pair.0,
@@ -3523,10 +3523,10 @@ pub(super) fn synthesize_surface_resource_subject(
             )?),
         ));
     }
-    if matches!(resource, CResource::Emp) {
+    if matches!(resource, Resource::Emp) {
         return Some(ResourceSubject::Emp);
     }
-    let CResource::Memory(range) = resource else {
+    let Resource::Memory(range) = resource else {
         return None;
     };
     // A scalar's storage is its address, not its current value or the zero
@@ -3563,7 +3563,7 @@ pub(super) fn synthesize_surface_resource_subject(
             lowered: ProgramExpression::Cast {
                 expression: Box::new(ProgramExpression::Value(int32(0))),
                 target_type,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -3838,10 +3838,10 @@ fn synthesize_parameter_field_pointer_value(
             }
             let field_pointer = base.offset_by_bytes(field.offset_bytes());
             let loaded_offset = match state.memory().load(&field_pointer) {
-                CExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
+                ExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
                 // Struct pointer fields are represented in contract memory
                 // by their pointer-width scalar offset.
-                CExpressionOutcome::Value(ProgramValue::Int32(value)) => {
+                ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
                     PointerOffsetTerm::scale_int32(
                         value,
                         i64::from(value_type.pointee_type()?.byte_width()),
@@ -3888,8 +3888,8 @@ fn synthesize_parameter_field_pointer_value(
             }
             let field_pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
             let loaded_offset = match state.memory().load(&field_pointer) {
-                CExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
-                CExpressionOutcome::Value(ProgramValue::Int32(value)) => {
+                ExpressionOutcome::Value(ProgramValue::Pointer(value)) => value.offset.clone(),
+                ExpressionOutcome::Value(ProgramValue::Int32(value)) => {
                     PointerOffsetTerm::scale_int32(
                         value,
                         i64::from(value_type.pointee_type()?.byte_width()),
@@ -4224,7 +4224,7 @@ fn synthesize_surface_bitvector(
             Some(ContractExpression::CFragment(ProgramExpression::Cast {
                 expression: Box::new(contract_expression_to_c_fragment(&operand)?),
                 target_type: destination.c_type(),
-                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                integer_mode: crate::kernel::IntegerCastMode::CConversion,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -4333,7 +4333,7 @@ fn synthesize_surface_bitvector(
             Some(ContractExpression::CFragment(ProgramExpression::Cast {
                 expression: Box::new(pointer),
                 target_type: ProgramType::UInt64,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -4665,7 +4665,7 @@ fn synthesize_surface_bitvector(
                 } else {
                     ProgramType::UInt64
                 },
-                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                integer_mode: crate::kernel::IntegerCastMode::CConversion,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -4683,7 +4683,7 @@ fn synthesize_surface_bitvector(
                     )?,
                 )?),
                 target_type: ProgramType::UInt32,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -4972,7 +4972,7 @@ fn synthesize_parameter_field_indexed_int32_load(
         lowered: ProgramExpression::Cast {
             expression: Box::new(contract_expression_to_c_fragment(&field)?),
             target_type: ProgramType::UInt8Pointer,
-            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
             pointee_volatile: false,
             pointee_constant: false,
@@ -5017,7 +5017,7 @@ fn synthesize_local_struct_pointer_field(
                 continue;
             }
             let pointer = owner.pointer.offset_by_bytes(field.offset_bytes());
-            let CExpressionOutcome::Value(loaded) = state.memory().load(&pointer) else {
+            let ExpressionOutcome::Value(loaded) = state.memory().load(&pointer) else {
                 continue;
             };
             let loaded = match loaded.numeric_value().clone() {
@@ -5096,7 +5096,7 @@ fn synthesize_local_aggregate_field(
                             ),
                         }
                     };
-                    let CExpressionOutcome::Value(value) = state.memory().load(&pointer) else {
+                    let ExpressionOutcome::Value(value) = state.memory().load(&pointer) else {
                         return None;
                     };
                     let value_term = match value.numeric_value().clone() {
@@ -6365,7 +6365,7 @@ fn synthesize_surface_algebraic(
                                             ProgramValue::Pointer(pointer.clone()),
                                         )),
                                         target_type: ProgramType::VoidPointer,
-                                        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+                                        integer_mode: crate::kernel::IntegerCastMode::Standard,
                                         pointee_struct: None,
                                         pointee_volatile: false,
                                         pointee_constant: false,

@@ -376,7 +376,7 @@ pub(in crate::kernel) fn proposition_syntax_execution_variable_ceiling(
 /// [`proposition_syntax_execution_variable_ceiling`] for one held resource
 /// fact of a composition.
 fn resource_fact_syntax_execution_variable_ceiling(
-    fact: &CResourceFact,
+    fact: &ResourceFact,
 ) -> (Option<Variable>, bool) {
     execution_variable_ceiling(Some(false), |variables| {
         collect_resource_bitvector_variables(fact, variables)
@@ -717,16 +717,16 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
         Term::ProgramValue(value) => collect_c_value_bitvector_variables(value, variables),
         Term::Sequence(sequence) => collect_sequence_bitvector_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_term_bitvector_variables(term, variables),
-        Term::CExpressionOutcome(outcome) => {
+        Term::ExpressionOutcome(outcome) => {
             collect_c_expression_outcome_bitvector_variables(outcome, variables);
         }
-        Term::CStatementOutcome(outcome) => {
+        Term::StatementOutcome(outcome) => {
             collect_c_statement_outcome_bitvector_variables(outcome, variables);
         }
-        Term::CFunctionOutcome(outcome) => {
+        Term::FunctionOutcome(outcome) => {
             collect_c_function_outcome_bitvector_variables(outcome, variables);
         }
-        Term::CMemory(memory) => collect_memory_bitvector_variables(memory, variables),
+        Term::Memory(memory) => collect_memory_bitvector_variables(memory, variables),
         Term::ExecutionState(state) => collect_c_state_bitvector_variables(state, variables),
     }
 }
@@ -1038,17 +1038,17 @@ pub(in crate::kernel) fn collect_c_statement_bitvector_variables(
 /// rewrites it, so its variables are reserved wherever it travels: on a loop
 /// head, and on the recursion anchor of the function that declared it.
 pub(in crate::kernel) fn collect_c_ranking_component_variables(
-    component: &CRankingComponent,
+    component: &RankingComponent,
     variables: &mut BTreeSet<Variable>,
 ) {
     match component {
-        CRankingComponent::ProgramExpression(expression) => {
+        RankingComponent::ProgramExpression(expression) => {
             collect_c_expression_bitvector_variables(expression, variables);
         }
-        CRankingComponent::Pure { expression, .. } => {
+        RankingComponent::Pure { expression, .. } => {
             collect_spec_expression_bitvector_variables(expression, variables);
         }
-        CRankingComponent::PureInteger { expression, .. } => {
+        RankingComponent::PureInteger { expression, .. } => {
             collect_spec_integer_variables(expression, variables);
         }
     }
@@ -1475,12 +1475,12 @@ pub(crate) fn collect_spec_algebraic_expression_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_loop_effect_bitvector_variables(
-    effect: &CLoopEffect,
+    effect: &LoopEffect,
     variables: &mut BTreeSet<Variable>,
 ) {
     match effect {
-        CLoopEffect::Immutable => {}
-        CLoopEffect::Mutable(segments) => {
+        LoopEffect::Immutable => {}
+        LoopEffect::Mutable(segments) => {
             for segment in segments {
                 collect_c_expression_bitvector_variables(&segment.base, variables);
                 collect_c_expression_bitvector_variables(&segment.start, variables);
@@ -1491,47 +1491,47 @@ pub(in crate::kernel) fn collect_loop_effect_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_c_expression_outcome_bitvector_variables(
-    outcome: &CExpressionOutcome,
+    outcome: &ExpressionOutcome,
     variables: &mut BTreeSet<Variable>,
 ) {
-    if let CExpressionOutcome::Value(value) = outcome {
+    if let ExpressionOutcome::Value(value) = outcome {
         collect_c_value_bitvector_variables(value, variables);
     }
 }
 
 pub(in crate::kernel) fn collect_c_statement_outcome_bitvector_variables(
-    outcome: &CStatementOutcome,
+    outcome: &StatementOutcome,
     variables: &mut BTreeSet<Variable>,
 ) {
     match outcome {
-        CStatementOutcome::Normal(state) => collect_c_state_bitvector_variables(state, variables),
-        CStatementOutcome::Break(state)
-        | CStatementOutcome::Continue(state)
-        | CStatementOutcome::Jump { state, .. } => {
+        StatementOutcome::Normal(state) => collect_c_state_bitvector_variables(state, variables),
+        StatementOutcome::Break(state)
+        | StatementOutcome::Continue(state)
+        | StatementOutcome::Jump { state, .. } => {
             collect_c_state_bitvector_variables(state, variables)
         }
-        CStatementOutcome::Return { value, state } | CStatementOutcome::Throw { value, state } => {
+        StatementOutcome::Return { value, state } | StatementOutcome::Throw { value, state } => {
             collect_expression_value_bitvector_variables(value, variables);
             collect_c_state_bitvector_variables(state, variables);
         }
-        CStatementOutcome::VerificationDiverges
-        | CStatementOutcome::UndefinedBehavior(_)
-        | CStatementOutcome::RuntimeError(_) => {}
+        StatementOutcome::VerificationDiverges
+        | StatementOutcome::UndefinedBehavior(_)
+        | StatementOutcome::RuntimeError(_) => {}
     }
 }
 
 pub(in crate::kernel) fn collect_c_function_outcome_bitvector_variables(
-    outcome: &CFunctionOutcome,
+    outcome: &FunctionOutcome,
     variables: &mut BTreeSet<Variable>,
 ) {
     match outcome {
-        CFunctionOutcome::Return { value, state } | CFunctionOutcome::Throw { value, state } => {
+        FunctionOutcome::Return { value, state } | FunctionOutcome::Throw { value, state } => {
             collect_expression_value_bitvector_variables(value, variables);
             collect_c_state_bitvector_variables(state, variables);
         }
-        CFunctionOutcome::VerificationDiverges
-        | CFunctionOutcome::UndefinedBehavior(_)
-        | CFunctionOutcome::RuntimeError(_) => {}
+        FunctionOutcome::VerificationDiverges
+        | FunctionOutcome::UndefinedBehavior(_)
+        | FunctionOutcome::RuntimeError(_) => {}
     }
 }
 
@@ -1544,13 +1544,13 @@ pub(in crate::kernel) fn collect_c_state_bitvector_variables(
     }
     for binding in state.locals.bindings.values() {
         match binding {
-            CLocalBinding::Object { value, .. } => {
+            LocalBinding::Object { value, .. } => {
                 collect_expression_value_bitvector_variables(value, variables)
             }
-            CLocalBinding::UninitializedObject { .. } => {}
-            CLocalBinding::GlobalObject { .. } => {}
-            CLocalBinding::ArrayObject { .. } => {}
-            CLocalBinding::AggregateObject { .. } => {}
+            LocalBinding::UninitializedObject { .. } => {}
+            LocalBinding::GlobalObject { .. } => {}
+            LocalBinding::ArrayObject { .. } => {}
+            LocalBinding::AggregateObject { .. } => {}
         }
     }
     collect_memory_bitvector_variables(&state.memory, variables);
@@ -1575,7 +1575,7 @@ thread_local! {
 }
 
 pub(in crate::kernel) fn collect_resource_bitvector_variables(
-    resource: &CResourceFact,
+    resource: &ResourceFact,
     variables: &mut BTreeSet<Variable>,
 ) {
     #[cfg(test)]
@@ -1584,21 +1584,21 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
-    resource: &CResource,
+    resource: &Resource,
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
-        CResource::Star(pair) => {
+        Resource::Star(pair) => {
             collect_c_resource_bitvector_variables(&pair.0, variables);
             collect_c_resource_bitvector_variables(&pair.1, variables);
         }
-        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp => {}
-        CResource::PopulationAuthority(description) => {
+        Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp => {}
+        Resource::PopulationAuthority(description) => {
             description.visit_values(|value| {
                 collect_algebraic_value_bitvector_variables(value, variables)
             });
         }
-        CResource::MutexUse(identity) => {
+        Resource::MutexUse(identity) => {
             if let Some(p) = &identity.protected {
                 p.visit_values(|v| collect_algebraic_value_bitvector_variables(v, variables));
             }
@@ -1606,13 +1606,13 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
                 collect_pointer_bitvector_variables(&identity.mutex, variables);
             }
         }
-        CResource::MutexGuard(identity) | CResource::MutexLive(identity) => {
+        Resource::MutexGuard(identity) | Resource::MutexLive(identity) => {
             if identity.epoch.is_none() {
                 let pointer = &identity.mutex;
                 collect_pointer_bitvector_variables(pointer, variables);
             }
         }
-        CResource::Publication(right) => {
+        Resource::Publication(right) => {
             right
                 .payload
                 .visit_values(|v| collect_algebraic_value_bitvector_variables(v, variables));
@@ -1621,7 +1621,7 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
                 collect_c_value_bitvector_variables(value, variables);
             }
         }
-        CResource::Instance(instance) => {
+        Resource::Instance(instance) => {
             for value in instance.arguments.iter().chain(instance.fields.iter()) {
                 collect_algebraic_value_bitvector_variables(value, variables);
             }
@@ -1632,8 +1632,8 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
                 },
             );
         }
-        CResource::Memory(range) => collect_c_memory_range_bitvector_variables(range, variables),
-        CResource::Iterated(iterated) => {
+        Resource::Memory(range) => collect_c_memory_range_bitvector_variables(range, variables),
+        Resource::Iterated(iterated) => {
             for pointer in iterated.pointers() {
                 collect_pointer_bitvector_variables(pointer, variables);
             }
@@ -1641,7 +1641,7 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
                 collect_bitvector_variables(term, variables);
             }
         }
-        CResource::Composite { arguments, .. } | CResource::Token { arguments, .. } => {
+        Resource::Composite { arguments, .. } | Resource::Token { arguments, .. } => {
             for argument in arguments.iter() {
                 collect_algebraic_value_bitvector_variables(argument, variables);
             }
@@ -1665,7 +1665,7 @@ pub(in crate::kernel) fn collect_c_function_bitvector_variables(
 /// statements, globals, and storage cannot affect fresh identities or
 /// callback behavior.
 pub(in crate::kernel) fn collect_c_function_contract_interface_bitvector_variables(
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     variables: &mut BTreeSet<Variable>,
 ) {
     for resource in interface
@@ -1699,20 +1699,20 @@ pub(in crate::kernel) fn collect_c_function_contract_interface_bitvector_variabl
 }
 
 pub(in crate::kernel) fn collect_resource_spec_bitvector_variables(
-    resource: &CResourceSpec,
+    resource: &ResourceSpec,
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource.term() {
-        CResourceTerm::Instance { resource, .. } => {
+        ResourceTerm::Instance { resource, .. } => {
             collect_resource_term_bitvector_variables(resource, variables)
         }
-        CResourceTerm::PopulationAuthority { protected, .. } => {
+        ResourceTerm::PopulationAuthority { protected, .. } => {
             collect_resource_spec_bitvector_variables(&protected.resource, variables)
         }
-        CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
+        ResourceTerm::MutexGuard { mutex, .. } | ResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bitvector_variables(mutex, variables)
         }
-        CResourceTerm::MutexUse {
+        ResourceTerm::MutexUse {
             mutex, protected, ..
         } => {
             collect_c_expression_bitvector_variables(mutex, variables);
@@ -1720,11 +1720,11 @@ pub(in crate::kernel) fn collect_resource_spec_bitvector_variables(
                 collect_resource_spec_bitvector_variables(&p.resource, variables);
             }
         }
-        CResourceTerm::Publication { flag, payload, .. } => {
+        ResourceTerm::Publication { flag, payload, .. } => {
             collect_c_expression_bitvector_variables(flag, variables);
             collect_resource_spec_bitvector_variables(&payload.resource, variables);
         }
-        CResourceTerm::Memory(segment) => {
+        ResourceTerm::Memory(segment) => {
             collect_c_expression_bitvector_variables(&segment.base, variables);
             collect_c_expression_bitvector_variables(&segment.start, variables);
             collect_c_expression_bitvector_variables(&segment.end, variables);
@@ -1732,37 +1732,37 @@ pub(in crate::kernel) fn collect_resource_spec_bitvector_variables(
                 collect_spec_proposition_bitvector_variables(guard, variables);
             }
         }
-        CResourceTerm::Iterated(spec) => {
+        ResourceTerm::Iterated(spec) => {
             for expression in spec.expressions() {
                 collect_c_expression_bitvector_variables(expression, variables);
             }
         }
-        CResourceTerm::Composite { arguments, .. } | CResourceTerm::Token { arguments, .. } => {
+        ResourceTerm::Composite { arguments, .. } | ResourceTerm::Token { arguments, .. } => {
             for argument in arguments {
                 collect_c_expression_bitvector_variables(argument, variables);
             }
         }
     }
-    if let CResourceQuantity::Count(quantity) = resource.quantity() {
+    if let ResourceQuantity::Count(quantity) = resource.quantity() {
         collect_c_expression_bitvector_variables(quantity, variables);
     }
 }
 
 fn collect_resource_term_bitvector_variables(
-    resource: &CResourceTerm,
+    resource: &ResourceTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
-        CResourceTerm::Instance { resource, .. } => {
+        ResourceTerm::Instance { resource, .. } => {
             collect_resource_term_bitvector_variables(resource, variables)
         }
-        CResourceTerm::PopulationAuthority { protected, .. } => {
+        ResourceTerm::PopulationAuthority { protected, .. } => {
             collect_resource_spec_bitvector_variables(&protected.resource, variables)
         }
-        CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
+        ResourceTerm::MutexGuard { mutex, .. } | ResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bitvector_variables(mutex, variables)
         }
-        CResourceTerm::MutexUse {
+        ResourceTerm::MutexUse {
             mutex, protected, ..
         } => {
             collect_c_expression_bitvector_variables(mutex, variables);
@@ -1770,11 +1770,11 @@ fn collect_resource_term_bitvector_variables(
                 collect_resource_spec_bitvector_variables(&p.resource, variables);
             }
         }
-        CResourceTerm::Publication { flag, payload, .. } => {
+        ResourceTerm::Publication { flag, payload, .. } => {
             collect_c_expression_bitvector_variables(flag, variables);
             collect_resource_spec_bitvector_variables(&payload.resource, variables);
         }
-        CResourceTerm::Memory(segment) => {
+        ResourceTerm::Memory(segment) => {
             collect_c_expression_bitvector_variables(&segment.base, variables);
             collect_c_expression_bitvector_variables(&segment.start, variables);
             collect_c_expression_bitvector_variables(&segment.end, variables);
@@ -1782,12 +1782,12 @@ fn collect_resource_term_bitvector_variables(
                 collect_spec_proposition_bitvector_variables(guard, variables);
             }
         }
-        CResourceTerm::Iterated(spec) => {
+        ResourceTerm::Iterated(spec) => {
             for expression in spec.expressions() {
                 collect_c_expression_bitvector_variables(expression, variables);
             }
         }
-        CResourceTerm::Composite { arguments, .. } | CResourceTerm::Token { arguments, .. } => {
+        ResourceTerm::Composite { arguments, .. } | ResourceTerm::Token { arguments, .. } => {
             for argument in arguments {
                 collect_c_expression_bitvector_variables(argument, variables);
             }
@@ -1796,7 +1796,7 @@ fn collect_resource_term_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_c_function_specification_bitvector_variables(
-    specification: &CFunctionSpecification,
+    specification: &FunctionSpecification,
     variables: &mut BTreeSet<Variable>,
 ) {
     collect_c_state_bitvector_variables(specification.state(), variables);
@@ -1819,7 +1819,7 @@ pub(in crate::kernel) fn collect_assumption_variables(
 }
 
 pub(in crate::kernel) fn collect_execution_environment_variables(
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     variables: &mut BTreeSet<Variable>,
 ) {
     variables.extend(
@@ -1834,7 +1834,7 @@ pub(in crate::kernel) fn collect_execution_environment_variables(
 /// a proof's `loop` tactic adds one rule to an environment holding all the
 /// earlier ones, and must not collect those again.
 pub(in crate::kernel) fn execution_environment_variable_index(
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
 ) -> crate::kernel::ReservedVariableSets {
     let mut sets =
         crate::kernel::ReservedVariableSets::from(environment.variable_index.get_or_init(|| {
@@ -1853,7 +1853,7 @@ pub(in crate::kernel) fn execution_environment_variable_index(
 /// keeps such a bound as its facts are filed, and only the rule's
 /// loop-local parts are read here, once per rule.
 pub(in crate::kernel) fn verified_loop_rule_execution_bound(
-    rule: &crate::kernel::CVerifiedLoopRule,
+    rule: &crate::kernel::VerifiedLoopRule,
 ) -> Option<Variable> {
     rule.variable_index.execution_bound(|| {
         let (local, _) = execution_variable_ceiling(None, |variables| {
@@ -1867,7 +1867,7 @@ pub(in crate::kernel) fn verified_loop_rule_execution_bound(
 /// by the rule's clones. Its prerequisite context is the whole path context
 /// at its loop, so this is linear in everything before the loop.
 pub(in crate::kernel) fn verified_loop_rule_variables(
-    rule: &crate::kernel::CVerifiedLoopRule,
+    rule: &crate::kernel::VerifiedLoopRule,
 ) -> std::sync::Arc<BTreeSet<Variable>> {
     rule.variable_index.get_or_init(|| {
         let mut variables = BTreeSet::new();
@@ -1891,7 +1891,7 @@ pub(in crate::kernel) fn collect_assumption_reserved_variables(
 }
 
 fn collect_execution_environment_variables_uncached(
-    environment: &CExecutionEnvironment,
+    environment: &ExecutionEnvironment,
     variables: &mut BTreeSet<Variable>,
 ) {
     for function in environment.functions.values() {
@@ -1912,16 +1912,16 @@ fn collect_execution_environment_variables_uncached(
     if let Some(anchor) = environment.recursion_anchor() {
         for measure in anchor.measure() {
             match measure {
-                CRankingMeasureValue::Machine(term)
-                | CRankingMeasureValue::Unsigned32(term)
-                | CRankingMeasureValue::Unsigned64(term)
-                | CRankingMeasureValue::Signed64(term) => {
+                RankingMeasureValue::Machine(term)
+                | RankingMeasureValue::Unsigned32(term)
+                | RankingMeasureValue::Unsigned64(term)
+                | RankingMeasureValue::Signed64(term) => {
                     collect_bitvector_variables(term, variables)
                 }
                 // An Integer measure's reserved names are the C carriers it
                 // reads plus its own Integer binders; both are named by later
                 // call steps.
-                CRankingMeasureValue::Integer(term) => {
+                RankingMeasureValue::Integer(term) => {
                     collect_integer_capture_bitvector_variables(term, variables);
                     collect_integer_variables(term, variables);
                 }
@@ -1946,7 +1946,7 @@ fn collect_execution_environment_variables_uncached(
 }
 
 fn collect_verified_loop_rule_variables(
-    rule: &crate::kernel::CVerifiedLoopRule,
+    rule: &crate::kernel::VerifiedLoopRule,
     variables: &mut BTreeSet<Variable>,
 ) {
     collect_verified_loop_rule_local_variables(rule, variables);
@@ -1956,7 +1956,7 @@ fn collect_verified_loop_rule_variables(
 /// A rule's variables other than its prerequisite context's: its entry
 /// state, loop statement and certified paths.
 fn collect_verified_loop_rule_local_variables(
-    rule: &crate::kernel::CVerifiedLoopRule,
+    rule: &crate::kernel::VerifiedLoopRule,
     variables: &mut BTreeSet<Variable>,
 ) {
     collect_c_state_bitvector_variables(&rule.symbolic_entry_state, variables);
@@ -1978,7 +1978,7 @@ fn collect_verified_loop_rule_local_variables(
 }
 
 pub(in crate::kernel) fn collect_c_memory_range_bitvector_variables(
-    range: &CMemoryRange,
+    range: &MemoryRange,
     variables: &mut BTreeSet<Variable>,
 ) {
     for fact in range.formation_coverage.iter() {
@@ -5754,7 +5754,7 @@ thread_local! {
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     // Pointer-read projections share heap metadata even when their selected
     // cells differ. Retain the root, so an address cannot be reused for a hit.
-    static HEAP_VARIABLES: std::cell::RefCell<Option<(std::sync::Arc<crate::kernel::primitives::CHeapMemory>, VariableCounts)>> = const { std::cell::RefCell::new(None) };
+    static HEAP_VARIABLES: std::cell::RefCell<Option<(std::sync::Arc<crate::kernel::primitives::HeapMemory>, VariableCounts)>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Forgets every snapshot's remembered variables; see
@@ -5769,7 +5769,7 @@ fn remembered_memory_variables(memory: &SharedMemory) -> Option<VariableCounts> 
 }
 
 /// Establish the input snapshot's index once, before individual C steps.
-pub(in crate::kernel) fn prepare_memory_variable_index(memory: &CMemory) {
+pub(in crate::kernel) fn prepare_memory_variable_index(memory: &Memory) {
     let shared = crate::kernel::intern_c_memory_ref(memory);
     shared_memory_variable_counts(&shared, WholeCount::Charged);
 }
@@ -5809,15 +5809,15 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
             };
             crate::instrumentation::record_deterministic_work(1);
             match derivation.as_ref() {
-                CMemoryDerivation::Store { pointer, .. } => {
+                MemoryDerivation::Store { pointer, .. } => {
                     collect_pointer_bitvector_variables(pointer, variables);
                 }
-                CMemoryDerivation::CallHavoc { mutable_ranges, .. } => {
+                MemoryDerivation::CallHavoc { mutable_ranges, .. } => {
                     for range in mutable_ranges {
                         collect_c_memory_range_bitvector_variables(range, variables);
                     }
                 }
-                CMemoryDerivation::LoopHavoc {
+                MemoryDerivation::LoopHavoc {
                     mutable_ranges: Some(mutable_ranges),
                     ..
                 } => {
@@ -6001,7 +6001,7 @@ pub(in crate::kernel) fn bound_reserved_base(
 /// The variables of every entry `memory` holds that `base` does not hold
 /// the same, by the diffs `counts_from_base` reads: together with `base`'s
 /// variables they include all of `memory`'s, and each is one of `memory`'s.
-fn variables_entering(base: &CMemory, memory: &CMemory) -> BTreeSet<Variable> {
+fn variables_entering(base: &Memory, memory: &Memory) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
     for change in base.blocks.diff(&memory.blocks) {
         let block = change.key();
@@ -6149,7 +6149,7 @@ fn shared_memory_variable_counts(memory: &SharedMemory, whole: WholeCount) -> Va
     previous.expect("the chain counts at least the snapshot").1
 }
 
-fn memory_entry_count(memory: &CMemory) -> usize {
+fn memory_entry_count(memory: &Memory) -> usize {
     memory.blocks.len()
         + memory.cells.representation_len()
         + memory.union_cells.len()
@@ -6291,7 +6291,7 @@ fn adjust_run_counts_by_changed_slots(
 /// A snapshot's counts from all of its entries; one unit per entry unless
 /// `whole` is [`WholeCount::Uncharged`].
 fn heap_variable_counts(
-    heap: &std::sync::Arc<crate::kernel::primitives::CHeapMemory>,
+    heap: &std::sync::Arc<crate::kernel::primitives::HeapMemory>,
     whole: WholeCount,
 ) -> VariableCounts {
     let previous = HEAP_VARIABLES.with(|table| table.borrow().clone());
@@ -6335,7 +6335,7 @@ fn heap_variable_counts(
     counts
 }
 
-fn counts_whole(memory: &CMemory, whole: WholeCount) -> VariableCounts {
+fn counts_whole(memory: &Memory, whole: WholeCount) -> VariableCounts {
     if whole == WholeCount::Charged {
         crate::instrumentation::record_deterministic_work(
             memory.blocks.len() + memory.cells.representation_len() + memory.union_cells.len(),
@@ -6362,11 +6362,7 @@ fn counts_whole(memory: &CMemory, whole: WholeCount) -> VariableCounts {
 /// `memory`'s counts from `base`'s: each entry the two differ on leaves with
 /// its old variables and arrives with its new ones. The diffs charge one unit
 /// per difference.
-fn counts_from_base(
-    mut counts: VariableCounts,
-    base: &CMemory,
-    memory: &CMemory,
-) -> VariableCounts {
+fn counts_from_base(mut counts: VariableCounts, base: &Memory, memory: &Memory) -> VariableCounts {
     for change in base.blocks.diff(&memory.blocks) {
         let block = change.key();
         if let Some(contents) = base.blocks.get(block) {
@@ -6433,7 +6429,7 @@ fn counts_from_base(
 /// An interned snapshot a cell's load reaches is walked through
 /// [`collect_shared_memory_bitvector_variables`], once per session.
 pub(in crate::kernel) fn collect_memory_bitvector_variables(
-    memory: &CMemory,
+    memory: &Memory,
     variables: &mut BTreeSet<Variable>,
 ) {
     if collecting_connection_variables() {
@@ -6475,7 +6471,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
 /// [`shared_memory_variable_counts`] are built from the same per-entry
 /// collectors, so the two agree on every snapshot.
 pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
-    memory: &CMemory,
+    memory: &Memory,
     variables: &mut BTreeSet<Variable>,
 ) {
     if collecting_connection_variables() {
@@ -6693,7 +6689,7 @@ mod shared_read_walker_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let native = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_c_memory(Memory::new()),
             Box::new(pointer),
             LoadKind::Int32,
         );
@@ -6721,7 +6717,7 @@ mod shared_read_walker_tests {
             ),
         };
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(CMemory::new()),
+            intern_c_memory(Memory::new()),
             Box::new(pointer),
             LoadKind::Int32,
         );

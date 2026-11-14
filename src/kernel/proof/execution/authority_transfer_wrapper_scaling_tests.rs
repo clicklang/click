@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{CResourceAccessMode, CResourceSpec, ProgramType, c_function, int32};
+use crate::kernel::{ProgramType, ResourceAccessMode, ResourceSpec, c_function, int32};
 
 #[test]
 fn authority_named_memory_rewrite_preserves_population_ledger() {
@@ -17,13 +17,13 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
         vec![int32(7).into()].into(),
     )
     .unwrap();
-    let definition = CCompositeResourceDefinition::new(
+    let definition = CompositeResourceDefinition::new(
         "cell",
         vec![],
         None,
         false,
-        vec![crate::kernel::CResourceSpec::owned_memory(
-            crate::kernel::CMemorySegment {
+        vec![crate::kernel::ResourceSpec::owned_memory(
+            crate::kernel::MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
                 base: ProgramExpression::Value(ProgramValue::pointer(
@@ -45,7 +45,7 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
         ProgramStatement::Return(ProgramExpression::Value(int32(7))),
     )
     .with_composite_resource_definitions(vec![definition.clone()]);
-    let selected = CResourceFact::own(CResource::Instance(instance.clone()));
+    let selected = ResourceFact::own(Resource::Instance(instance.clone()));
     let folded = ExecutionState::new()
         .with_population_creation_tracking()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));

@@ -78,7 +78,7 @@ impl MemoryHistoryDiagnostic {
             .and_then(|(at, _)| at)
             .and_then(|at| at.snapshot().derivation())
             .and_then(|derivation| match derivation.as_ref() {
-                crate::kernel::CMemoryDerivation::Store { value, .. } => {
+                crate::kernel::MemoryDerivation::Store { value, .. } => {
                     Some(value.c_type().byte_width())
                 }
                 _ => None,
@@ -122,7 +122,7 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
         None
     }
 
-    fn resources(&self) -> &[crate::kernel::CResourceFact] {
+    fn resources(&self) -> &[crate::kernel::ResourceFact] {
         &[]
     }
 
@@ -433,7 +433,7 @@ pub(crate) fn render_trace_context_with_requirement(
     diagnostic: &ProofFailureDiagnostic,
     search_failures: &[ProofSearchFailure],
     requirement: Option<&Proposition>,
-    resource: Option<&crate::kernel::CResourceFact>,
+    resource: Option<&crate::kernel::ResourceFact>,
     labels: &mut render::SnapshotLabels,
 ) -> String {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
@@ -460,7 +460,7 @@ pub(crate) fn render_trace_context_with_requirement(
 #[derive(Clone, Copy, Default)]
 struct RequiredGoal<'a> {
     requirement: Option<&'a Proposition>,
-    resource: Option<&'a crate::kernel::CResourceFact>,
+    resource: Option<&'a crate::kernel::ResourceFact>,
 }
 
 fn render_diagnostic_labeled(
@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn rejected_read_prerequisite_uses_the_shared_snapshot_legend() {
-        use crate::kernel::{CMemory, Pointer, ProgramType, Variable};
+        use crate::kernel::{Memory, Pointer, ProgramType, Variable};
         struct Rejected(Proposition);
         impl ProofDiagnosticState for Rejected {
             fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
@@ -759,7 +759,7 @@ mod tests {
             }
         }
         let state = Rejected(Proposition::CMemoryReadDefined {
-            memory: CMemory::new(),
+            memory: Memory::new(),
             pointer: Pointer::symbolic(Variable(987_001)),
             value_type: ProgramType::Int32,
         });
@@ -781,7 +781,7 @@ mod tests {
     #[test]
     fn rejected_resource_fact_uses_one_printer_and_snapshot_legend() {
         let _typed = render::TypedNotationScope::enter();
-        use crate::kernel::{CMemory, Pointer, ProgramType, Variable};
+        use crate::kernel::{Memory, Pointer, ProgramType, Variable};
         struct Rejected(crate::kernel::proof::RejectedResourceRewriteFact);
         impl ProofDiagnosticState for Rejected {
             fn rejected_resource_fact(
@@ -804,8 +804,8 @@ mod tests {
             pointer: Pointer::symbolic(Variable(987_002)),
             value_type: ProgramType::Int32,
         };
-        let rejected = read(CMemory::new());
-        let allowed = read(CMemory::new().with_block("changed", 4));
+        let rejected = read(Memory::new());
+        let allowed = read(Memory::new().with_block("changed", 4));
         let state = Rejected(crate::kernel::proof::RejectedResourceRewriteFact {
             rejected: rejected.clone(),
             allowed: vec![allowed.clone(); 13].into(),
@@ -951,7 +951,7 @@ mod tests {
 
     #[test]
     fn reported_trace_uses_the_goals_snapshot_labels() {
-        use crate::kernel::{CMemory, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
+        use crate::kernel::{MachineTerm, Memory, Pointer, PointerBlock, PointerOffsetTerm};
 
         struct TracedState(Proposition);
         impl ProofDiagnosticState for TracedState {
@@ -1002,7 +1002,7 @@ mod tests {
             wide: false,
         };
         crate::surface::with_proof_trace("f", || {
-            let memory = CMemory::new().with_block("shared", 1);
+            let memory = Memory::new().with_block("shared", 1);
             crate::surface::proof_trace::record(
                 1,
                 crate::surface::proof_trace::TraceStep {
@@ -1151,7 +1151,7 @@ mod tests {
 
     #[test]
     fn unspelled_premises_keep_entry_names_after_the_session_unwinds() {
-        use crate::kernel::{CMemory, MachineTerm, ProgramExpression, ProgramValue, Variable};
+        use crate::kernel::{MachineTerm, Memory, ProgramExpression, ProgramValue, Variable};
         use crate::languages::c::syntax::{C0Parameter, C0Type};
         let variable = Variable(786_901);
         let parameters = [C0Parameter::new(C0Type::Int32, "input".into(), None)];
@@ -1160,7 +1160,7 @@ mod tests {
         ))];
         render::enter_ambient_naming(
             crate::surface::ParameterBinding::new(&parameters, &arguments),
-            &CMemory::new(),
+            &Memory::new(),
         );
         let failure = unspelled_test_failure(&[unspelled_test_fact(variable)]);
         render::clear_ambient_naming();

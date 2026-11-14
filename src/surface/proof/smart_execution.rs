@@ -113,7 +113,7 @@ impl<'a> Proof<'a> {
         let Some(execution) = self.execution() else {
             return String::new();
         };
-        let name_memory = |candidate: &crate::kernel::CMemory| {
+        let name_memory = |candidate: &crate::kernel::Memory| {
             if candidate == execution.core.state.memory() {
                 return "the current state".to_string();
             }

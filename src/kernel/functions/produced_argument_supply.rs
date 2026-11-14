@@ -8,10 +8,10 @@ use super::*;
 pub(super) fn prepare_produced_argument_supply(
     entry: &ExecutionState,
     evaluation: &mut ExecutionState,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Vec<Option<CResourceFact>>> {
+) -> ExecutionResult<Vec<Option<ResourceFact>>> {
     let mut positions = Vec::new();
     let clauses = interface
         .resource_ensures()
@@ -19,10 +19,10 @@ pub(super) fn prepare_produced_argument_supply(
         .enumerate()
         .filter_map(|(index, clause)| {
             crate::instrumentation::record_deterministic_work(1);
-            if clause.role() != CResourceTransferRole::Produce
-                || clause.snapshot() == CResourceSnapshot::Entry
+            if clause.role() != ResourceTransferRole::Produce
+                || clause.snapshot() == ResourceSnapshot::Entry
                 || clause.guard().is_some()
-                || !matches!(clause.term(), CResourceTerm::Memory(segment) if segment.guard().is_none())
+                || !matches!(clause.term(), ResourceTerm::Memory(segment) if segment.guard().is_none())
             {
                 return None;
             }

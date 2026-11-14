@@ -831,7 +831,7 @@ fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
         offset: PointerOffsetTerm::scaled_int32_node(value, 4),
     };
     let memory = crate::kernel::intern_c_memory(
-        CMemory::new()
+        Memory::new()
             .with_block("opaque-comparison", 64)
             .store(pointer(index.clone()), ProgramValue::Int32(value)),
     );
@@ -1229,7 +1229,10 @@ mod tests {
             assert_eq!(actual, imported(format, expected));
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
-        let c = BTreeMap::from([(variable, TypedCReplacement::Bitvector(9u32.into()))]);
+        let c = BTreeMap::from([(
+            variable,
+            TypedProgramValueReplacement::Bitvector(9u32.into()),
+        )]);
         let integer = BTreeMap::from([(variable, replacement)]);
         let algebraic = BTreeMap::new();
         let expected = TermRewrite::for_typed_variables(&c, &integer, &algebraic).bits(&native);

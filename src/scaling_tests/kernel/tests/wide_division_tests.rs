@@ -29,7 +29,7 @@ fn promoted_divisor_guard_queries_ignore_unrelated_ambient_facts() {
                 .unwrap()
             });
             assert_eq!(output.len(), 1);
-            assert!(matches!(output[0].outcome, CExpressionOutcome::Value(_)));
+            assert!(matches!(output[0].outcome, ExpressionOutcome::Value(_)));
             assert!(work < 4096, "{ty:?}, {size}: {work}");
             samples.push(work);
         }

@@ -150,14 +150,14 @@ pub(super) fn merge_pointer_results<'a>(
 }
 
 pub(super) fn execution_pointer_result(
-    cases: &[Vec<CContractPathSet>],
+    cases: &[Vec<ContractPathSet>],
 ) -> Option<Arc<PurePointerResult>> {
     let mut result = PurePointerResult {
         classes: BTreeSet::new(),
         arguments: BTreeSet::new(),
     };
     for path in cases.iter().flatten().flat_map(|set| &set.paths) {
-        let CFunctionOutcome::Return { value, state } = super::api::path_function_outcome(path)?
+        let FunctionOutcome::Return { value, state } = super::api::path_function_outcome(path)?
         else {
             continue;
         };
@@ -196,9 +196,9 @@ pub(super) fn check_requirements(
     parameters: &[ProgramParameter],
     requirements: &ObjectTypeRequirements,
     values: &mut [ProgramValue],
-    memory: &CMemory,
+    memory: &Memory,
     assumptions: &PureFactContext,
-) -> Option<CRuntimeError> {
+) -> Option<RuntimeError> {
     check_requirement_slice(
         name,
         parameters,
@@ -212,11 +212,11 @@ pub(super) fn check_requirements(
 
 pub(super) fn check_value_requirements(
     name: &str,
-    interface: &CFunctionContractInterface,
+    interface: &FunctionContractInterface,
     values: &mut [ProgramValue],
-    memory: &CMemory,
+    memory: &Memory,
     assumptions: &PureFactContext,
-) -> Option<CRuntimeError> {
+) -> Option<RuntimeError> {
     check_requirement_slice(
         name,
         interface.value_parameters(),
@@ -233,23 +233,23 @@ fn check_requirement_slice(
     parameters: &[ProgramParameter],
     requirements: &ObjectTypeRequirements,
     values: &mut [ProgramValue],
-    memory: &CMemory,
+    memory: &Memory,
     assumptions: &PureFactContext,
     offset: usize,
-) -> Option<CRuntimeError> {
+) -> Option<RuntimeError> {
     requirements
         .range(offset..offset + parameters.len())
         .find_map(|(index, class)| {
             crate::instrumentation::record_deterministic_work(1);
             let local = index - offset;
             let Some(value) = values.get_mut(local) else {
-                return Some(CRuntimeError::FunctionContract(format!(
+                return Some(RuntimeError::FunctionContract(format!(
                     "call to `{name}` lacks value for typed parameter `{}`",
                     parameters[local].name()
                 )));
             };
             (!refine_object_pointer_argument(value, class, memory, assumptions)).then(|| {
-            CRuntimeError::FunctionContract(format!(
+            RuntimeError::FunctionContract(format!(
                 "call to `{name}` parameter `{}` requires original object class `{class}` or null",
                 parameters[local].name()
             ))
@@ -273,7 +273,7 @@ mod tests {
             block: "declared_node".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = CMemory::new().with_classed_block(object.block.clone(), Some(class()), 8);
+        let memory = Memory::new().with_classed_block(object.block.clone(), Some(class()), 8);
         let make = |designation| {
             let ProgramValue::Pointer(pointer) = ProgramValue::typed_pointer(
                 Pointer::symbolic(Variable(900_010)),
@@ -304,7 +304,7 @@ mod tests {
 
         let other = CAccessClass::Struct(CStructClass::opaque("other"));
         for (mut value, declared) in [
-            (original.clone(), CMemory::new()),
+            (original.clone(), Memory::new()),
             (
                 make(Pointer {
                     offset: PointerOffsetTerm::Constant(4),
@@ -395,7 +395,7 @@ mod tests {
         assert!(refine_object_pointer_argument(
             &mut decoded,
             &class(),
-            &CMemory::new(),
+            &Memory::new(),
             &facts
         ));
         let word = super::super::eval::cast_c_value_to_type(

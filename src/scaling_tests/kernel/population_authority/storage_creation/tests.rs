@@ -1,4 +1,4 @@
-// Scaling tests of `src/kernel/population_authority/c_creation/tests.rs`: deterministic work measured at several
+// Scaling tests of `src/kernel/population_authority/storage_creation/tests.rs`: deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
@@ -513,14 +513,14 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
                 None,
             )
             .unwrap();
-        let mut resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
-            CResource::PopulationAuthority(description.clone()),
+        let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own(
+            Resource::PopulationAuthority(description.clone()),
         ));
         for index in 0..size {
             let other =
                 member_description(PointerBlock::Symbolic(Variable(9_860_000 + index as u64)));
             resources = resources
-                .unchecked_with_fact(CResourceFact::own(CResource::PopulationAuthority(other)));
+                .unchecked_with_fact(ResourceFact::own(Resource::PopulationAuthority(other)));
         }
         let mut state = ExecutionState::new()
             .with_population_creation_tracking()

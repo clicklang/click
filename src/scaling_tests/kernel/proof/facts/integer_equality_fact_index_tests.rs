@@ -92,7 +92,7 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
 fn quantified_loadable_alpha_query_ignores_unrelated_snapshot_size() {
     let mut work = Vec::new();
     for size in [8usize, 16, 32, 64] {
-        let mut source_memory = CMemory::new();
+        let mut source_memory = Memory::new();
         for index in 0..size {
             source_memory =
                 source_memory.with_block(format!("quantified-viewable-work-{index}"), 8);
@@ -239,7 +239,7 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 128] {
         let mut memories = Vec::with_capacity(size + 1);
-        let base = CMemory::new().with_block("same-bucket-facts", 8);
+        let base = Memory::new().with_block("same-bucket-facts", 8);
         for value in 0..=size {
             let memory = base.clone().store(
                 Pointer {

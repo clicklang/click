@@ -378,7 +378,7 @@ mod tests {
         use crate::kernel::machine_integer::comparison::condition_for_operand_views;
         let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_c_memory(
-            crate::kernel::CMemory::new().with_block("snapshot-comparison", 4),
+            crate::kernel::Memory::new().with_block("snapshot-comparison", 4),
         );
         let pointer = Pointer {
             block: "snapshot-comparison".into(),
@@ -432,7 +432,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let empty = crate::kernel::eval::capture_load_variable_registry();
         let memory = crate::kernel::intern_c_memory(
-            crate::kernel::CMemory::new().with_block("snapshot-key", 4),
+            crate::kernel::Memory::new().with_block("snapshot-key", 4),
         );
         let pointer = Pointer {
             block: "snapshot-key".into(),

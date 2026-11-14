@@ -190,9 +190,9 @@ mod tests {
     #[test]
     fn selected_opaque_sources_keep_types_snapshots_and_refusals() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(CMemory::new().with_block("opaque-source", 16));
+        let memory = intern_c_memory(Memory::new().with_block("opaque-source", 16));
         let later = intern_c_memory(memory.memory().clone().with_block("later", 16));
-        let pointer = CMemory::global_pointer("opaque-source");
+        let pointer = Memory::global_pointer("opaque-source");
         let opaque = |memory: SharedMemory, name| MachineTerm::If {
             condition: ConditionTerm::Variable(Variable(name)).into(),
             then_term: MachineTerm::MemoryLoad(memory, pointer.clone().into(), LoadKind::Int32)

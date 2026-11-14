@@ -322,7 +322,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
         let mut index = 1;
         for parameter in definition.parameters() {
             if parameter_is_click_array_ref(parameter) {
-                let Some(Term::CMemory(memory)) = arguments.get(index) else {
+                let Some(Term::Memory(memory)) = arguments.get(index) else {
                     return Err(format!(
                         "predicate `{}` argument `{}` is missing its array-ref memory",
                         definition.name(),

@@ -82,15 +82,15 @@ fn many_small_unmeasured_cycles_cost_linear_termination_work() {
             for index in [0, groups - 1] {
                 assert!(matches!(
                     verdicts.refusals[&ping(index)],
-                    CTerminationRefusal::UnmeasuredRecursion { .. }
+                    TerminationRefusal::UnmeasuredRecursion { .. }
                 ));
                 assert!(matches!(
                     verdicts.refusals[&pong(index)],
-                    CTerminationRefusal::UnmeasuredRecursion { .. }
+                    TerminationRefusal::UnmeasuredRecursion { .. }
                 ));
                 assert_eq!(
                     verdicts.refusals[&caller(index)],
-                    CTerminationRefusal::Callee {
+                    TerminationRefusal::Callee {
                         callee: ping(index)
                     }
                 );
@@ -121,7 +121,7 @@ fn one_large_cycle_costs_linear_termination_work() {
             assert!(
                 (0..size).all(|index| matches!(
                     verdicts.refusals[&name(index)],
-                    CTerminationRefusal::UnmeasuredRecursion { .. }
+                    TerminationRefusal::UnmeasuredRecursion { .. }
                 )),
                 "every member of an unmeasured cycle is refused for it"
             );
@@ -188,7 +188,7 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
             invariant_checks: Vec::new(),
             effect_checks: Vec::new(),
             resource_specs: Vec::new(),
-            ranking_measures: vec![CRankingComponent::ProgramExpression(
+            ranking_measures: vec![RankingComponent::ProgramExpression(
                 ProgramExpression::Subtract(
                     Box::new(crate::kernel::c_int32_literal(4)),
                     Box::new(i),
@@ -221,7 +221,7 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
         let loop_rules = BTreeMap::from([(
             "loops".to_string(),
             (0..size)
-                .map(|index| CVerifiedLoopRule {
+                .map(|index| VerifiedLoopRule {
                     symbolic_entry_state: ExecutionState::default(),
                     loop_statement: ranked_loop(),
                     loop_index: Some(index),
@@ -233,10 +233,10 @@ fn many_ranked_loops_in_one_function_cost_linear_termination_work() {
                 })
                 .collect::<Vec<_>>(),
         )]);
-        let rules = [CVerifiedFunctionRule {
+        let rules = [VerifiedFunctionRule {
             pointer_result: None,
             function,
-            loop_semantics: CLoopSemantics::ApplyVerifiedRules,
+            loop_semantics: LoopSemantics::ApplyVerifiedRules,
             checked_callees: None,
             applied_tactics: Default::default(),
         }];

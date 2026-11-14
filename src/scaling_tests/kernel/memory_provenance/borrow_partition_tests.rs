@@ -17,7 +17,7 @@ fn borrow_partition_query_does_not_scan_unrelated_resources_or_history() {
             for index in 0..size {
                 source = source
                     .clone()
-                    .unchecked_with_fact(CResourceFact::own_memory(range(910_000 + index)));
+                    .unchecked_with_fact(ResourceFact::own_memory(range(910_000 + index)));
                 context = context
                     .clone()
                     .assume_proposition(Proposition::CResourceComposition(source.clone()));

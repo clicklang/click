@@ -27,7 +27,7 @@ fn reads() -> [MachineTerm; 3] {
         block: "retained-snapshot".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let memory = CMemory::new().with_block(pointer.block.clone(), 64).store(
+    let memory = Memory::new().with_block(pointer.block.clone(), 64).store(
         pointer.clone(),
         ProgramValue::Int32(MachineTerm::constant(2)),
     );
@@ -183,7 +183,7 @@ fn snapshot_source_index_matches_retained_signed_and_unsigned_ring_terms() {
 #[test]
 fn cached_snapshot_syntax_never_caches_context_authority() {
     let _session = VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alias", 16));
+    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("snapshot-alias", 16));
     let pointers = [994110, 994111].map(|id| Pointer {
         block: "snapshot-alias".into(),
         offset: PointerOffsetTerm::Variable(Variable(id)),

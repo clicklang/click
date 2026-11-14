@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::threads::{
     JoinRuntimeAssumption, PendingThreadCreate, ThreadContext, ThreadHandle,
 };
-use crate::kernel::{CVerifiedFunctionTerminationRule, c_verified_function_termination_rules};
+use crate::kernel::{VerifiedFunctionTerminationRule, c_verified_function_termination_rules};
 
 fn pointer(index: usize) -> Pointer {
     Pointer {
@@ -11,18 +11,18 @@ fn pointer(index: usize) -> Pointer {
     }
 }
 
-fn range(index: usize, start: u32, end: u32) -> CMemoryRange {
-    CMemoryRange::new(pointer(index), start.into(), end.into())
+fn range(index: usize, start: u32, end: u32) -> MemoryRange {
+    MemoryRange::new(pointer(index), start.into(), end.into())
 }
 
 fn parent(size: usize) -> ExecutionState {
-    let mut memory = CMemory::new();
+    let mut memory = Memory::new();
     let mut resources = ResourceContext::new();
     for index in 0..size {
         memory = memory
             .with_block(pointer(index).block, 8)
             .store(pointer(index), int32(0));
-        resources = resources.unchecked_with_fact(CResourceFact::own_memory(range(index, 0, 2)));
+        resources = resources.unchecked_with_fact(ResourceFact::own_memory(range(index, 0, 2)));
     }
     ExecutionState::new()
         .with_population_creation_tracking()
@@ -34,12 +34,12 @@ fn byte_parent() -> ExecutionState {
     ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(pointer(0).block, 4)
                 .store(pointer(0), crate::kernel::uint8(0)),
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
-            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 pointer(0),
                 0.into(),
                 4.into(),
@@ -48,13 +48,13 @@ fn byte_parent() -> ExecutionState {
         ))
 }
 
-fn worker() -> (CVerifiedFunctionRule, CVerifiedFunctionTerminationRule) {
-    let owned = CResourceSpec::owned_memory(CMemorySegment::new(
+fn worker() -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
+    let owned = ResourceSpec::owned_memory(MemorySegment::new(
         c_variable("p"),
         c_int32_literal(0),
         c_int32_literal(1),
     ));
-    let viewed = CResourceSpec::viewed_memory(CMemorySegment::new(
+    let viewed = ResourceSpec::viewed_memory(MemorySegment::new(
         c_variable("p"),
         c_int32_literal(1),
         c_int32_literal(2),
@@ -77,14 +77,14 @@ fn worker() -> (CVerifiedFunctionRule, CVerifiedFunctionTerminationRule) {
                 pointer: Box::new(SpecExpression::ProgramExpression(c_variable("p"))),
                 value_type: ProgramType::Int32,
             },
-            operator: CComparisonOperator::Equal,
+            operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(77)),
         }],
         vec![],
         vec![
-            CFunctionContractClaim::body_safety(),
-            CFunctionContractClaim::ensure_proposition(0, 0),
-            CFunctionContractClaim::ensure_resource(1, 0),
+            FunctionContractClaim::body_safety(),
+            FunctionContractClaim::ensure_proposition(0, 0),
+            FunctionContractClaim::ensure_resource(1, 0),
         ],
         true,
     )
@@ -94,7 +94,7 @@ fn worker() -> (CVerifiedFunctionRule, CVerifiedFunctionTerminationRule) {
 
 fn certify_worker(
     function: ProgramFunction,
-) -> (CVerifiedFunctionRule, CVerifiedFunctionTerminationRule) {
+) -> (VerifiedFunctionRule, VerifiedFunctionTerminationRule) {
     let argument = if matches!(
         function.parameters()[0].c_type(),
         ProgramType::UInt8Pointer | ProgramType::VoidPointer
@@ -119,9 +119,9 @@ fn certify_worker(
         function.clone(),
         vec![argument],
         vec![],
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
-        CFunctionContractExecutionMode::VerifyLoops,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
+        FunctionContractExecutionMode::VerifyLoops,
     );
     let claims = c_verified_function_contract_claims(&function, &execution).unwrap_or_else(|| {
         panic!(
@@ -151,7 +151,7 @@ fn certify_worker(
 
 #[test]
 fn modeled_pthread_calls_cannot_fall_back_to_ordinary_function_rules() {
-    let environment = CExecutionEnvironment::new()
+    let environment = ExecutionEnvironment::new()
         .with_modeled_pthread_binding(Some(
             crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
         ))
@@ -169,14 +169,14 @@ fn modeled_pthread_calls_cannot_fall_back_to_ordinary_function_rules() {
             &ExecutionState::new(),
             &statement,
             &PureFactContext::new(),
-            CExecutionContext::execute_bodies(&environment),
+            ExecutionContext::execute_bodies(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
         assert_eq!(paths.len(), 1);
         assert!(matches!(
             &paths[0].outcome,
-            CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(message))
+            StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message))
                 if message.contains("assigned four-argument call")
         ));
     }
@@ -185,8 +185,8 @@ fn modeled_pthread_calls_cannot_fall_back_to_ordinary_function_rules() {
 fn spawn(
     context: &ThreadContext,
     index: usize,
-    worker: &CVerifiedFunctionRule,
-    termination: &CVerifiedFunctionTerminationRule,
+    worker: &VerifiedFunctionRule,
+    termination: &VerifiedFunctionTerminationRule,
     budget: &mut ExecutionBudget,
 ) -> (ThreadContext, ThreadHandle) {
     let (next, handle, _) = context
@@ -195,7 +195,7 @@ fn spawn(
             Some(termination),
             ProgramValue::pointer(pointer(index)),
             &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             budget,
         )
         .unwrap()
@@ -218,12 +218,12 @@ fn completion_right_survives_an_unrelated_c_statement_in_path_state() {
         spawned.parent(),
         &c_declare("unrelated", ProgramType::Int32),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
     assert_eq!(paths.len(), 1);
-    let CStatementOutcome::Normal(after) = &paths[0].outcome else {
+    let StatementOutcome::Normal(after) = &paths[0].outcome else {
         panic!("unrelated declaration should execute normally");
     };
     let carried = ThreadContext::new(*after.clone()).unwrap();
@@ -231,13 +231,13 @@ fn completion_right_survives_an_unrelated_c_statement_in_path_state() {
         carried.parent(),
         &c_return(c_int32_literal(0)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
     assert!(matches!(
         &returned[0].outcome,
-        CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(message))
+        StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message))
             if message.contains("live pthread completion right")
     ));
     let (joined, _) = carried
@@ -269,13 +269,13 @@ fn completion_right_survives_an_unrelated_c_statement_in_path_state() {
         joined.parent(),
         &c_return(c_int32_literal(0)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
     assert!(matches!(
         &returned[0].outcome,
-        CStatementOutcome::Return { .. }
+        StatementOutcome::Return { .. }
     ));
 }
 
@@ -297,7 +297,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
         &termination,
         &mut ExecutionBudget::new(),
     );
-    let environment = CExecutionEnvironment::new().with_modeled_pthread_binding(Some(
+    let environment = ExecutionEnvironment::new().with_modeled_pthread_binding(Some(
         crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
     ));
     let join = |handle: ThreadHandle| {
@@ -322,13 +322,13 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
             vec![c_uint64_literal(1), c_pointer_value(Pointer::null())],
         ),
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
     assert!(matches!(
         &guessed[0].outcome,
-        CStatementOutcome::RuntimeError(_)
+        StatementOutcome::RuntimeError(_)
     ));
     let paths = execute_c_statement_paths(
         &state,
@@ -341,11 +341,11 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
             ],
         ),
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
-    let CStatementOutcome::Normal(after_first) = &paths[0].outcome else {
+    let StatementOutcome::Normal(after_first) = &paths[0].outcome else {
         panic!("modeled C join should consume the first child");
     };
     assert_eq!(
@@ -365,7 +365,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
             ),
             PureFactContext::new(),
             environment.clone(),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            ExecutionSemantics::APPLY_VERIFIED_RULES,
             &mut ExecutionBudget::new(),
         );
     assert_eq!(checked.paths().len(), 1);
@@ -376,7 +376,7 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
     assert!(matches!(
         conclusion,
         Proposition::CStatementVerifies {
-            outcome: CStatementOutcome::Normal(_),
+            outcome: StatementOutcome::Normal(_),
             ..
         }
     ));
@@ -384,32 +384,29 @@ fn modeled_pthread_join_call_consumes_only_the_named_completion() {
         after_first,
         &join(first_handle),
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
     assert!(matches!(
         &duplicate[0].outcome,
-        CStatementOutcome::RuntimeError(_)
+        StatementOutcome::RuntimeError(_)
     ));
     let remaining = execute_c_statement_paths(
         after_first,
         &join(second_handle),
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
-    assert!(matches!(
-        &remaining[0].outcome,
-        CStatementOutcome::Normal(_)
-    ));
+    assert!(matches!(&remaining[0].outcome, StatementOutcome::Normal(_)));
 }
 
 #[test]
 fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
-    let owned = CResourceSpec::owned_memory(
-        CMemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(4))
+    let owned = ResourceSpec::owned_memory(
+        MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(4))
             .with_element_width(1),
     );
     let function = c_function(
@@ -433,14 +430,14 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         vec![],
         vec![],
         vec![
-            CFunctionContractClaim::body_safety(),
-            CFunctionContractClaim::ensure_resource(1, 0),
+            FunctionContractClaim::body_safety(),
+            FunctionContractClaim::ensure_resource(1, 0),
         ],
         true,
     )
     .with_resource_derived_mutable_frame();
     let (worker, termination) = certify_worker(function.clone());
-    let environment = CExecutionEnvironment::new()
+    let environment = ExecutionEnvironment::new()
         .with_modeled_pthread_binding(Some(
             crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
         ))
@@ -451,7 +448,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         byte_parent()
             .resources()
             .clone()
-            .unchecked_with_fact(CResourceFact::own_memory(range(1, 0, 1))),
+            .unchecked_with_fact(ResourceFact::own_memory(range(1, 0, 1))),
     );
     state.set_memory(
         state
@@ -468,11 +465,11 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
             &state,
             &declaration,
             &PureFactContext::new(),
-            CExecutionContext::apply_verified_rules(&environment),
+            ExecutionContext::apply_verified_rules(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
-        let CStatementOutcome::Normal(next) = &paths[0].outcome else {
+        let StatementOutcome::Normal(next) = &paths[0].outcome else {
             panic!("local declaration failed: {:?}", paths[0].outcome);
         };
         state = *next.clone();
@@ -481,11 +478,11 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         &state,
         &c_assign("thread", c_uint64_literal(999)),
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
-    let CStatementOutcome::Normal(initialized) = &initialized[0].outcome else {
+    let StatementOutcome::Normal(initialized) = &initialized[0].outcome else {
         panic!("prior handle value should initialize");
     };
     state = *initialized.clone();
@@ -506,11 +503,11 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         &state,
         &create,
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
-    let CStatementOutcome::Normal(pending) = &paths[0].outcome else {
+    let StatementOutcome::Normal(pending) = &paths[0].outcome else {
         panic!(
             "create should return a pending status: {:?}",
             paths[0].outcome
@@ -551,21 +548,21 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
             pending,
             &hostile,
             &PureFactContext::new(),
-            CExecutionContext::apply_verified_rules(&environment),
+            ExecutionContext::apply_verified_rules(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
-        assert!(!matches!(paths[0].outcome, CStatementOutcome::Normal(_)));
+        assert!(!matches!(paths[0].outcome, StatementOutcome::Normal(_)));
     }
     let stored = execute_c_statement_paths(
         pending,
         &external_store(1, int32(7), ProgramType::Int32, ProgramType::Int32Pointer),
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
-    let CStatementOutcome::Normal(mut delayed) = stored[0].outcome.clone() else {
+    let StatementOutcome::Normal(mut delayed) = stored[0].outcome.clone() else {
         panic!("disjoint store failed: {:?}", stored[0].outcome);
     };
     assert!(delayed.pending_thread_create.is_some());
@@ -579,11 +576,11 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
             &delayed,
             &statement,
             &PureFactContext::new(),
-            CExecutionContext::apply_verified_rules(&environment),
+            ExecutionContext::apply_verified_rules(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
-        let CStatementOutcome::Normal(next) = &paths[0].outcome else {
+        let StatementOutcome::Normal(next) = &paths[0].outcome else {
             panic!("delayed local step failed: {:?}", paths[0].outcome);
         };
         delayed = next.clone();
@@ -597,7 +594,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         &delayed,
         &status_branch,
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
@@ -610,7 +607,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         &delayed,
         &status_branch,
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
         &mut variables,
     )
@@ -637,14 +634,14 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         c_skip(),
         c_skip(),
     );
-    let refused = |paths: &[CStatementExecutionPath]| {
-        paths.len() == 1 && matches!(paths[0].outcome, CStatementOutcome::RuntimeError(_))
+    let refused = |paths: &[StatementExecutionPath]| {
+        paths.len() == 1 && matches!(paths[0].outcome, StatementOutcome::RuntimeError(_))
     };
     let executes = execute_c_statement_paths(
         &delayed,
         &memory_branch,
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
@@ -654,7 +651,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         &delayed,
         &memory_branch,
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
         &mut variables,
     )
@@ -663,7 +660,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     let mut success = None;
     let mut failure = None;
     for branch in branches {
-        let CStatementOutcome::Normal(state) = branch.outcome else {
+        let StatementOutcome::Normal(state) = branch.outcome else {
             panic!("status branch did not resolve: {:?}", branch.outcome);
         };
         assert!(state.pending_thread_create.is_none());
@@ -673,12 +670,12 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         );
         assert_eq!(
             state.memory().load(state.locals.slot("unrelated").unwrap()),
-            CExpressionOutcome::Value(int32(7)),
+            ExpressionOutcome::Value(int32(7)),
             "a permitted local assignment must remain in C memory after either status"
         );
         assert_eq!(
             state.memory().load(&pointer(1)),
-            CExpressionOutcome::Value(int32(7))
+            ExpressionOutcome::Value(int32(7))
         );
         if state
             .thread_ledger
@@ -698,13 +695,13 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         &failure,
         &c_assign("rc", c_variable("thread")),
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
     assert!(!matches!(
         premature_read[0].outcome,
-        CStatementOutcome::Normal(_)
+        StatementOutcome::Normal(_)
     ));
     assert_eq!(failure.resources(), state.resources());
     assert_eq!(
@@ -725,37 +722,37 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         &success,
         &join,
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
-    assert!(matches!(joined[0].outcome, CStatementOutcome::Normal(_)));
-    let CStatementOutcome::Normal(after_join) = &joined[0].outcome else {
+    assert!(matches!(joined[0].outcome, StatementOutcome::Normal(_)));
+    let StatementOutcome::Normal(after_join) = &joined[0].outcome else {
         unreachable!()
     };
     // The two caller scalar allocation owners survive alongside the recovered
     // thread argument and byte owners; no worker token or loan escapes join.
     assert_eq!(after_join.resources().facts().len(), 4);
     for fact in [
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-            CMemory::local_pointer("thread"),
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
+            Memory::local_pointer("thread"),
             0.into(),
             8.into(),
             1,
         )),
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-            CMemory::local_pointer("rc"),
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
+            Memory::local_pointer("rc"),
             0.into(),
             4.into(),
             1,
         )),
-        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        ResourceFact::own_memory(MemoryRange::new_with_element_width(
             pointer(0),
             0.into(),
             4.into(),
             1,
         )),
-        CResourceFact::own_memory(range(1, 0, 1)),
+        ResourceFact::own_memory(range(1, 0, 1)),
     ] {
         assert!(
             after_join
@@ -767,12 +764,12 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         &failure,
         &join,
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
     assert!(
-        !matches!(refused[0].outcome, CStatementOutcome::Normal(_)),
+        !matches!(refused[0].outcome, StatementOutcome::Normal(_)),
         "failed creation must not grant a join: {:?}",
         refused[0].outcome
     );
@@ -781,7 +778,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
 #[test]
 fn modeled_pthread_create_refuses_a_wrong_worker_abi() {
     let (worker, termination) = worker();
-    let environment = CExecutionEnvironment::new()
+    let environment = ExecutionEnvironment::new()
         .with_modeled_pthread_binding(Some(
             crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
         ))
@@ -797,11 +794,11 @@ fn modeled_pthread_create_refuses_a_wrong_worker_abi() {
             &state,
             &declaration,
             &PureFactContext::new(),
-            CExecutionContext::apply_verified_rules(&environment),
+            ExecutionContext::apply_verified_rules(&environment),
             &mut ExecutionBudget::new(),
         )
         .unwrap();
-        let CStatementOutcome::Normal(next) = &paths[0].outcome else {
+        let StatementOutcome::Normal(next) = &paths[0].outcome else {
             panic!("local declaration should succeed");
         };
         state = *next.clone();
@@ -819,13 +816,13 @@ fn modeled_pthread_create_refuses_a_wrong_worker_abi() {
             ],
         ),
         &PureFactContext::new(),
-        CExecutionContext::apply_verified_rules(&environment),
+        ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
     assert!(matches!(
         &paths[0].outcome,
-        CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(message))
+        StatementOutcome::RuntimeError(RuntimeError::FunctionContract(message))
             if message.contains("void *(*)(void *)")
     ));
 }
@@ -855,11 +852,11 @@ fn thread_join_preserves_other_child_loans_in_both_orders() {
             "join must not rewind memory"
         );
         assert!(joined.parent().resources().satisfies_fact(
-            &CResourceFact::own_memory(range(first_index, 0, 2)),
+            &ResourceFact::own_memory(range(first_index, 0, 2)),
             &assumptions,
         ));
         assert!(!joined.parent().resources().satisfies_fact(
-            &CResourceFact::own_memory(range(last_index, 0, 1)),
+            &ResourceFact::own_memory(range(last_index, 0, 1)),
             &assumptions,
         ));
         assert!(
@@ -896,7 +893,7 @@ fn thread_join_preserves_other_child_loans_in_both_orders() {
                 finished
                     .parent()
                     .resources()
-                    .satisfies_fact(&CResourceFact::own_memory(range(index, 0, 2)), &assumptions,)
+                    .satisfies_fact(&ResourceFact::own_memory(range(index, 0, 2)), &assumptions,)
             );
             assert!(
                 finished
@@ -925,7 +922,7 @@ fn thread_failed_creation_and_rejected_spawn_preserve_parent() {
             Some(&termination),
             ProgramValue::pointer(pointer(0)),
             &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             &mut budget,
         )
         .unwrap()
@@ -938,7 +935,7 @@ fn thread_failed_creation_and_rejected_spawn_preserve_parent() {
             Some(&termination),
             ProgramValue::pointer(pointer(1)),
             &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             &mut budget,
         )
         .unwrap()
@@ -953,7 +950,7 @@ fn thread_failed_creation_and_rejected_spawn_preserve_parent() {
                 Some(&termination),
                 ProgramValue::pointer(pointer(0)),
                 &PureFactContext::new(),
-                &CExecutionEnvironment::new(),
+                &ExecutionEnvironment::new(),
                 &mut budget,
             )
             .unwrap()
@@ -967,7 +964,7 @@ fn thread_failed_creation_and_rejected_spawn_preserve_parent() {
         )
         .unwrap();
     assert!(joined.parent().resources().satisfies_fact(
-        &CResourceFact::own_memory(range(1, 0, 2)),
+        &ResourceFact::own_memory(range(1, 0, 2)),
         &PureFactContext::new(),
     ));
     assert!(
@@ -1010,7 +1007,7 @@ fn thread_spawn_requires_exact_termination_evidence() {
                     evidence,
                     ProgramValue::pointer(pointer(0)),
                     &PureFactContext::new(),
-                    &CExecutionEnvironment::new(),
+                    &ExecutionEnvironment::new(),
                     &mut ExecutionBudget::new(),
                 )
                 .unwrap()
@@ -1030,7 +1027,7 @@ fn thread_empty_or_ambiguous_worker_frontier_is_a_refusal() {
         &worker,
         ProgramValue::pointer(pointer(0)),
         &PureFactContext::new(),
-        &CExecutionEnvironment::new(),
+        &ExecutionEnvironment::new(),
         &mut ExecutionBudget::new(),
     )
     .unwrap()
@@ -1044,7 +1041,7 @@ fn thread_empty_or_ambiguous_worker_frontier_is_a_refusal() {
                 None,
                 ProgramValue::pointer(pointer(0)),
                 &PureFactContext::new(),
-                &CExecutionEnvironment::new(),
+                &ExecutionEnvironment::new(),
                 &mut ExecutionBudget::new(),
             )
             .unwrap()
@@ -1063,7 +1060,7 @@ fn thread_guarantees_are_withheld_until_join() {
             Some(&termination),
             ProgramValue::pointer(pointer(0)),
             &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             &mut ExecutionBudget::new(),
         )
         .unwrap()
@@ -1073,7 +1070,7 @@ fn thread_guarantees_are_withheld_until_join() {
         Proposition::CMemoryEffectSummary { .. }
     ));
     assert!(!spawned.parent().resources().satisfies_fact(
-        &CResourceFact::own_memory(range(0, 0, 1)),
+        &ResourceFact::own_memory(range(0, 0, 1)),
         &PureFactContext::new(),
     ));
     let (_, facts) = spawned
@@ -1116,7 +1113,7 @@ fn thread_reborrowed_view_stays_pinned_until_child_joins() {
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
-        vec![CResourceSpec::viewed_memory(CMemorySegment::new(
+        vec![ResourceSpec::viewed_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -1127,11 +1124,11 @@ fn thread_reborrowed_view_stays_pinned_until_child_joins() {
         vec![],
         vec![],
         vec![],
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     );
     let (reader, termination) = certify_worker(function.clone());
-    let view = CResourceFact::view_memory(range(0, 0, 1));
+    let view = ResourceFact::view_memory(range(0, 0, 1));
     let state =
         parent(1).with_resource_context(ResourceContext::new().unchecked_with_fact(view.clone()));
     let state = c_state_with_borrowed_contract_inputs(
@@ -1216,7 +1213,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
-        vec![CResourceSpec::viewed_memory(CMemorySegment::new(
+        vec![ResourceSpec::viewed_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -1227,7 +1224,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
         vec![],
         vec![],
         vec![],
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     );
     let (reader, termination) = certify_worker(function);
@@ -1235,11 +1232,11 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
         block: "local:shared-reader".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let view = CResourceFact::view_memory(CMemoryRange::new(local.clone(), 0.into(), 1.into()));
+    let view = ResourceFact::view_memory(MemoryRange::new(local.clone(), 0.into(), 1.into()));
     let state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(
-            CMemory::new()
+            Memory::new()
                 .with_block(local.block.clone(), 4)
                 .store(local.clone(), int32(7)),
         );
@@ -1252,7 +1249,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
                 Some(&termination),
                 ProgramValue::pointer(local.clone()),
                 &PureFactContext::new(),
-                &CExecutionEnvironment::new(),
+                &ExecutionEnvironment::new(),
                 &mut budget,
             )
             .unwrap()
@@ -1271,7 +1268,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
                 Some(&termination),
                 ProgramValue::pointer(local.clone()),
                 &PureFactContext::new(),
-                &CExecutionEnvironment::new(),
+                &ExecutionEnvironment::new(),
                 &mut budget,
             )
             .unwrap()
@@ -1345,7 +1342,7 @@ fn two_workers_recover_one_escrowed_owner_only_after_both_join() {
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
-        vec![CResourceSpec::viewed_memory(CMemorySegment::new(
+        vec![ResourceSpec::viewed_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -1356,12 +1353,12 @@ fn two_workers_recover_one_escrowed_owner_only_after_both_join() {
         vec![],
         vec![],
         vec![],
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     );
     let (reader, termination) = certify_worker(function);
-    let owned = CResourceFact::own_memory(range(0, 0, 1));
-    let viewed = CResourceFact::view_memory(range(0, 0, 1));
+    let owned = ResourceFact::own_memory(range(0, 0, 1));
+    let viewed = ResourceFact::view_memory(range(0, 0, 1));
     let state =
         parent(1).with_resource_context(ResourceContext::new().unchecked_with_fact(owned.clone()));
     let original = ThreadContext::new(state).unwrap();
@@ -1371,7 +1368,7 @@ fn two_workers_recover_one_escrowed_owner_only_after_both_join() {
             Some(&termination),
             ProgramValue::pointer(pointer(0)),
             &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             &mut ExecutionBudget::new(),
         )
         .unwrap()
@@ -1468,7 +1465,7 @@ fn shared_reader_completion_right_is_consumed_once_on_its_own_path() {
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
-        vec![CResourceSpec::viewed_memory(CMemorySegment::new(
+        vec![ResourceSpec::viewed_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -1479,11 +1476,11 @@ fn shared_reader_completion_right_is_consumed_once_on_its_own_path() {
         vec![],
         vec![],
         vec![],
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     );
     let (reader, termination) = certify_worker(function.clone());
-    let view = CResourceFact::view_memory(range(0, 0, 1));
+    let view = ResourceFact::view_memory(range(0, 0, 1));
     let state = c_state_with_borrowed_contract_inputs(
         parent(1).with_resource_context(ResourceContext::new().unchecked_with_fact(view)),
         &function,
@@ -1577,20 +1574,20 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
                 accessor.clone(),
                 vec![c_pointer_value(pointer(0))],
                 PureFactContext::new(),
-                CExecutionEnvironment::new(),
-                CExecutionSemantics::EXECUTE_BODIES,
+                ExecutionEnvironment::new(),
+                ExecutionSemantics::EXECUTE_BODIES,
             )
             .unwrap();
             let Proposition::CFunctionExecutes { outcome, .. } = theorem.proposition() else {
                 panic!("function outcome");
             };
             if accessible {
-                assert!(matches!(outcome, CFunctionOutcome::Return { .. }));
+                assert!(matches!(outcome, FunctionOutcome::Return { .. }));
             } else {
                 assert!(
                     matches!(
                         outcome,
-                        CFunctionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+                        FunctionOutcome::RuntimeError(RuntimeError::MissingResource { .. })
                     ),
                     "parent access must be refused before join"
                 );
@@ -1608,9 +1605,9 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
         };
         let state = ExecutionState::new()
             .with_population_creation_tracking()
-            .with_memory(CMemory::new().with_block(local.block.clone(), 8))
+            .with_memory(Memory::new().with_block(local.block.clone(), 8))
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
-                CResourceFact::own_memory(CMemoryRange::new(local.clone(), 0.into(), 2.into())),
+                ResourceFact::own_memory(MemoryRange::new(local.clone(), 0.into(), 2.into())),
             ));
         let context = ThreadContext::new(state).unwrap();
         assert!(
@@ -1620,7 +1617,7 @@ fn thread_parent_c_access_requires_join_and_implicit_storage_transfers_refuse() 
                     Some(&termination),
                     ProgramValue::pointer(local),
                     &PureFactContext::new(),
-                    &CExecutionEnvironment::new(),
+                    &ExecutionEnvironment::new(),
                     &mut ExecutionBudget::new(),
                 )
                 .unwrap()
@@ -1638,7 +1635,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         c_return(c_load(c_variable("p"))),
     )
     .with_resource_summary(
-        vec![CResourceSpec::viewed_memory(CMemorySegment::new(
+        vec![ResourceSpec::viewed_memory(MemorySegment::new(
             c_variable("p"),
             c_int32_literal(0),
             c_int32_literal(1),
@@ -1649,7 +1646,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         vec![],
         vec![],
         vec![],
-        vec![CFunctionContractClaim::body_safety()],
+        vec![FunctionContractClaim::body_safety()],
         true,
     );
     let (reader, termination) = certify_worker(reader);
@@ -1657,11 +1654,11 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         &ExecutionState::new().with_population_creation_tracking(),
         &c_declare("job", ProgramType::Int32Array(2)),
         &PureFactContext::new(),
-        CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+        ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::new(),
     )
     .unwrap();
-    let CStatementOutcome::Normal(declared) = declaration.remove(0).outcome else {
+    let StatementOutcome::Normal(declared) = declaration.remove(0).outcome else {
         panic!("local declaration");
     };
     let local = declared.locals().slot("job").unwrap().clone();
@@ -1676,7 +1673,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
             Some(&termination),
             ProgramValue::pointer(local.clone()),
             &PureFactContext::new(),
-            &CExecutionEnvironment::new(),
+            &ExecutionEnvironment::new(),
             &mut ExecutionBudget::new(),
         )
         .unwrap()
@@ -1684,7 +1681,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     // The frame owns the array's bytes from its declaration. The view loan
     // escrows the lent element's backing and adds no ownership: the parent
     // keeps exactly the rest of the array.
-    let [CResourceFact::Own(CResource::Memory(declared_range), _)] = declared_resources.as_slice()
+    let [ResourceFact::Own(Resource::Memory(declared_range), _)] = declared_resources.as_slice()
     else {
         panic!("a local array's declaration owns its bytes");
     };
@@ -1695,7 +1692,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         .facts()
         .iter()
         .filter_map(|fact| match fact {
-            CResourceFact::Own(CResource::Memory(range), _) => Some(range),
+            ResourceFact::Own(Resource::Memory(range), _) => Some(range),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -1719,24 +1716,24 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     assert!(crate::kernel::eval::end_scope_automatic_lifetimes(active.parent(), &names).is_err());
     let state = active.parent();
     for outcome in [
-        CStatementOutcome::Normal(Box::new(state.clone())),
-        CStatementOutcome::Break(Box::new(state.clone())),
-        CStatementOutcome::Continue(Box::new(state.clone())),
-        CStatementOutcome::Return {
+        StatementOutcome::Normal(Box::new(state.clone())),
+        StatementOutcome::Break(Box::new(state.clone())),
+        StatementOutcome::Continue(Box::new(state.clone())),
+        StatementOutcome::Return {
             value: int32(0).into(),
             state: Box::new(state.clone()),
         },
-        CStatementOutcome::Throw {
+        StatementOutcome::Throw {
             value: int32(0).into(),
             state: Box::new(state.clone()),
         },
-        CStatementOutcome::Jump {
-            target: crate::kernel::CControlTargetId(1),
+        StatementOutcome::Jump {
+            target: crate::kernel::ControlTargetId(1),
             state: Box::new(state.clone()),
         },
     ] {
         let paths = crate::kernel::eval::paths_after_scope_exit(
-            vec![CStatementExecutionPath {
+            vec![StatementExecutionPath {
                 call_parameters: None,
                 outcome,
                 facts: vec![].into(),
@@ -1749,7 +1746,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         );
         assert!(matches!(
             paths[0].outcome,
-            CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(_))
+            StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
         ));
     }
     let writer = c_function(
@@ -1763,8 +1760,8 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         writer.clone(),
         vec![c_pointer_value(local.clone())],
         PureFactContext::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
     )
     .unwrap();
     let Proposition::Implies(requirement, _) = theorem.proposition() else {
@@ -1789,7 +1786,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         .facts()
         .iter()
         .map(|fact| match fact {
-            CResourceFact::Own(CResource::Memory(range), _) => {
+            ResourceFact::Own(Resource::Memory(range), _) => {
                 assert_eq!(range.base().block, declared_range.base().block);
                 let width = range.element_width();
                 (
@@ -1819,14 +1816,14 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         writer,
         vec![c_pointer_value(local.clone())],
         PureFactContext::new(),
-        CExecutionEnvironment::new(),
-        CExecutionSemantics::EXECUTE_BODIES,
+        ExecutionEnvironment::new(),
+        ExecutionSemantics::EXECUTE_BODIES,
     )
     .unwrap();
     assert!(matches!(
         theorem.proposition(),
         Proposition::CFunctionExecutes {
-            outcome: CFunctionOutcome::Return { .. },
+            outcome: FunctionOutcome::Return { .. },
             ..
         }
     ));

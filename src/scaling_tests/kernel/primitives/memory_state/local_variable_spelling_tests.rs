@@ -51,7 +51,7 @@ fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_r
             ProgramType::Int32,
             0,
             1_000_000,
-            CMemory::new().into(),
+            Memory::new().into(),
         );
         let state = state.with_memory(memory);
         let (name, work) = crate::instrumentation::measure_deterministic_work(|| {
