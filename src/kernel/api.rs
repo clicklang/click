@@ -2092,8 +2092,8 @@ pub(crate) fn program_expression_has_bool_type(
         ProgramExpression::Value(value) => value.program_type() == ProgramType::Bool,
         // A variant test is a claim on the enum value, never a number.
         ProgramExpression::EnumIs { .. } => true,
-        ProgramExpression::CallResult { call, .. } => state
-            .call_result(*call)
+        ProgramExpression::StepResult { step, .. } => state
+            .step_result(*step)
             .is_some_and(|value| value.program_type() == ProgramType::Bool),
         expression => {
             super::eval::program_expression_lvalue_type(state, expression)
@@ -2149,6 +2149,7 @@ pub fn program_assign(name: impl Into<String>, expression: ProgramExpression) ->
         name: name.into(),
         expression,
         source: Default::default(),
+        prior_result: None,
     }
 }
 

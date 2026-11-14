@@ -1320,23 +1320,30 @@ keep their names (its calls, `.result`s, test and body statements); after a
 loop that left on several, those names are refused, since each path recorded
 them at its own state.
 
-A call nested in an expression is a call step of its own,
-`ProgramStatement::CallResult { call, .. }`, run just before the statement that
-holds it. The step leaves the call's result in the path state by its number
-(`ExecutionState::call_results`), and the statement reads it there as
-`ProgramExpression::CallResult { call, .. }`; the result ends with the first
-statement that reads it, or with the condition that decides a branch. The
-surface spells it by its call, `statement(i).call(f, j).result`, from the state
-or from the call's recorded exit. A call's result has the callee's declared
-type, as an assignment to a local of that type would give it.
+An expression's effects are steps of their own, run just before the
+statement that holds the expression:
+
+- A call is `ProgramStatement::CallResult`. The surface spells its result by
+  its call, `statement(i).call(f, j).result`. The result has the callee's
+  declared type.
+- An assignment inside an expression, or a `++x` or `--x`, is a
+  `ProgramStatement::Assign`. The expression then reads the local.
+- A postfix `x++` or `x--` is a `ProgramStatement::Assign` with `prior_result`,
+  which keeps the value it replaces. The surface spells that value
+  `at(<the assignment's region>.entry, x)`.
+
+A step's result stays in the path state by its number
+(`ExecutionState::step_results`), and the statement reads it as
+`ProgramExpression::StepResult`. The result ends with the first statement that
+reads it, or with the condition that decides a branch.
 
 #### Where the implementation departs from this
 
 Other expressions with effects still move into locals:
 
-- The C front end assigns the value of `p++`, of an assignment inside an
-  expression, of `?:`, `&&`, `||`, `({ })` and `WRITE_ONCE`, and of a call
-  through a callback, to a temporary `__click_call_result<N>` (`fresh_synthesized_call_name` in
+- The C front end assigns the value of `?:`, `&&`, `||`, `({ })` and
+  `WRITE_ONCE`, and of a call through a callback, to a temporary
+  `__click_call_result<N>` (`fresh_synthesized_call_name` in
   `src/languages/c/syntax.rs`).
 - The Rust importer gives every MIR local the user did not name a local
   `__rust_mir_<N>` (`src/languages/rust/charon.rs`). MIR assigns every call's

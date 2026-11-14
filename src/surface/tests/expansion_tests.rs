@@ -1957,8 +1957,11 @@ fn explicitly_packaged_pointer_frame_expands_without_history_search() {
         .collect::<Vec<_>>();
     let verified = verify_c_sources(&source, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(&source, &verified, "probe").unwrap();
-    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
-        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    // Only `probe` was expanded; helper claims retain their written proofs.
+    without_implicit_solve_for_claim("probe.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]

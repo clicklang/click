@@ -1,9 +1,7 @@
-# A `transport using` after execution carries a distinct cell
+# Explicit preservation after execution carries a distinct cell
 
-The companion of `a_distinct_symbolic_cell_survives_a_store.md`, which writes
-the same `transport using` between execution steps. Written at
-function exit, after `step_until(function.exit)`, it carries the entry read of `a[m]` past the store to `a[i]` from
-the same listed premises, so the tactic means the same thing in both places.
+The companion of `a_distinct_symbolic_cell_survives_a_store.md` applies the
+same separation and preservation rules at function exit.
 
 ```c filename=a_transport_using_after_execution_carries_a_distinct_cell.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {
@@ -27,14 +25,15 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     mark entry;
     step();
     step_until(function.exit);
-    have at(entry, a[m]) == at(entry, a[m]) by normalize();
-    transport(
-        at(entry, a[m]) == at(entry, a[m]),
-        at(entry, a[m]) == a[m]
-    ) using {
-        at(entry, a[m]) == at(entry, a[m]);
-        m != i;
-    };
+    have separate(memory(a[i]), memory(a[m])) by {
+        apply(click::separation::elements(a, i, m)) using { m != i; };
+    }
+    have separate(statement(0).footprint, memory(a[m])) by {
+        normalize() using { separate(memory(a[i]), memory(a[m])); };
+    }
+    have a[m] == at(entry, a[m]) by {
+        preserve(separate(statement(0).footprint, memory(a[m])));
+    }
     solve();
 }
 ```

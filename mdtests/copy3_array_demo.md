@@ -217,10 +217,13 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                         at(region(3).entry, i) >= at(region(3).entry, 0);
                         to_integer(k) == to_integer((i - 1));
                     };
-                    transport(at(region(3).entry, src[k]) == old(src[k]), dst[k] == old(src[k])) using {
-                        at(region(3).entry, src[k]) == old(src[k]);
-                        to_integer(k) == to_integer((i - 1));
-                    };
+                    have dst[k] == old(src[k]) by {
+                        normalize() using {
+                            at(region(3).entry, src[k]) == old(src[k]);
+                            to_integer(k) == to_integer((i - 1));
+                        };
+                    }
+                    assumption();
                 }
             }
         }

@@ -2864,7 +2864,7 @@ pub(crate) fn collect_program_expression_variables(
     match expression {
         ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => {}
+        | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Variable(name) => {
             names.insert(name.clone());
         }
@@ -4767,7 +4767,7 @@ impl RecordedSnapshots {
                 self.source_layout
                     .as_ref()
                     .and_then(|layout| match layout.call_number(*index) {
-                        Some(call) => state.call_result(call).cloned(),
+                        Some(call) => state.step_result(call).cloned(),
                         None => layout
                             .call_result_local(*index)
                             .and_then(|local| state.locals().get(local))

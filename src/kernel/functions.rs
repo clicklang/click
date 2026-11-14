@@ -18551,7 +18551,7 @@ fn resolve_retained_aggregate_fields(
         ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => {}
+        | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::AddressOf(inner) | ProgramExpression::CheckedObjectAddress(inner) => {
             resolve_retained_aggregate_fields(entry, state, inner, false, assumptions, budget)?
         }

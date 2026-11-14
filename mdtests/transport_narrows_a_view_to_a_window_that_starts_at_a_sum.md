@@ -1,4 +1,4 @@
-# transport narrows a view to a window that starts at a sum
+# Containment narrows a view to a window that starts at a sum
 
 A window `p[a..b]` inside a viewable `p[0..n]` is `b - a` bytes from `a`. When `a` is itself a sum, `k + 3u64`, the window's own listed bounds, `a <= b` and `b <= n`, place it inside the source: the end cannot underflow and stays within the view.
 
@@ -23,11 +23,16 @@ uint8 first(const uint8* p, uint64 n, uint64 k) {
     have to_integer(k + 3u64) <= to_integer(k + 4u64);
     have to_integer(k + 4u64) <= to_integer(n);
     have viewable(p[k + 3u64..k + 4u64]) by {
-        transport(viewable(p[0..n]), viewable(p[k + 3u64..k + 4u64])) using {
-            viewable(p[0..n]);
-            0 <= to_integer(k + 3u64);
-            to_integer(k + 3u64) <= to_integer(k + 4u64);
-            to_integer(k + 4u64) <= to_integer(n);
+        have contains(memory(p[0u64..n]), memory(p[k + 3u64..k + 4u64])) by {
+            apply(click::separation::subrange(p, 0u64, n, k + 3u64, k + 4u64)) using {
+                0 <= to_integer(k + 3u64);
+                to_integer(k + 3u64) <= to_integer(k + 4u64);
+                to_integer(k + 4u64) <= to_integer(n);
+            };
+        }
+        apply(click::separation::viewable_restrict(memory(p[0u64..n]), memory(p[k + 3u64..k + 4u64]))) using {
+            viewable(p[0u64..n]);
+            contains(memory(p[0u64..n]), memory(p[k + 3u64..k + 4u64]));
         };
     }
     step_until(function.exit);

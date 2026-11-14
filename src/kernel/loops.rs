@@ -1501,8 +1501,8 @@ fn execute_modeled_pthread_create_paths(
                                             .is_err()
                                     }
                                     ModeledCreateStatus::CallResult(call) => {
-                                        success.set_call_result(call, result.clone());
-                                        failure.set_call_result(call, result);
+                                        success.set_step_result(call, result.clone());
+                                        failure.set_step_result(call, result);
                                         false
                                     }
                                     ModeledCreateStatus::Discarded => {
@@ -4428,7 +4428,7 @@ fn loop_exit_state_difference(
         next_local_frame,
         next_local_lifetime,
         enclosing_frame_holds_locals,
-        call_results,
+        step_results,
         locals,
         memory: _,
         resources: _,
@@ -4528,7 +4528,7 @@ fn loop_exit_state_difference(
         "enclosing frame holds automatic objects",
         values
     );
-    component!(call_results, "call results");
+    component!(step_results, "call results");
     Some(differences.join(", "))
 }
 
@@ -9561,7 +9561,7 @@ pub(super) fn collect_address_taken_in_expression(
         ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => {}
+        | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
             collect_address_taken_in_expression(expression, names)
         }
@@ -9614,7 +9614,7 @@ pub(super) fn collect_variable_names(expression: &ProgramExpression, names: &mut
         }
         ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => {}
+        | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => collect_variable_names(expression, names),
         ProgramExpression::Conditional {
             condition,

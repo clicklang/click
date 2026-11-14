@@ -252,12 +252,14 @@ void arena_write(struct region* region, int32 index, int32 value) {
         0 <= at(w, region->start + index);
         at(w, region->start + index) < at(w, region->arena->capacity);
     };
-    transport(at(w, region->arena->occupied) == at(w, region->arena->occupied),
-        region->arena->occupied == at(w, region->arena->occupied)) using {
-        at(w, separate(memory(*region->arena), memory(region->arena->data[0..region->arena->capacity])));
-        0 <= at(w, region->start + index);
-        at(w, region->start + index) < at(w, region->arena->capacity);
-    };
+    have region->arena->occupied == at(w, region->arena->occupied) by {
+        normalize() using {
+            at(w, region->arena->occupied) == at(w, region->arena->occupied);
+            0 <= at(w, (to_integer(region->start) + to_integer(index)));
+            at(w, (to_integer(region->start) + to_integer(index))) < to_integer(at(w,
+                region->arena->capacity));
+        };
+    }
 
     have forall (k: int32) {
         0 <= k and k < at(w, region->arena->capacity) implies

@@ -429,7 +429,7 @@ fn collect_spec_program_expression_carriers(
         ProgramExpression::Value(value) => collect_program_value_carriers(value, variables),
         ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => {}
+        | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. }
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
@@ -1747,7 +1747,7 @@ impl<'a> TermRewrite<'a> {
             ProgramExpression::FunctionAddress(name) => {
                 ProgramExpression::FunctionAddress(name.clone())
             }
-            ProgramExpression::CallResult { .. } => expression.clone(),
+            ProgramExpression::StepResult { .. } => expression.clone(),
             ProgramExpression::Cast {
                 expression,
                 target_type,

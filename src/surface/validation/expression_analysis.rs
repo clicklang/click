@@ -10,7 +10,7 @@ pub(in crate::surface) fn program_expression_uses_variable(
     match expression {
         ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => false,
+        | ProgramExpression::StepResult { .. } => false,
         ProgramExpression::Variable(name) => name == variable,
         ProgramExpression::Cast { expression, .. } => {
             program_expression_uses_variable(expression, variable)

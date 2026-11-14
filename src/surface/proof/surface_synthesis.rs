@@ -14,6 +14,8 @@ mod tests;
 
 mod folds;
 mod matches;
+mod pointer_indices;
+mod pointer_names;
 
 use crate::kernel::program_local_source_name as surface_local_name;
 
@@ -1190,7 +1192,7 @@ fn proof_binder_name(variable: Variable) -> Option<String> {
 }
 
 thread_local! {
-    static PROOF_LOCAL_VALUE_NAMES: std::cell::RefCell<Vec<(ProgramValue, String)>> =
+    static PROOF_LOCAL_VALUE_NAMES: std::cell::RefCell<Vec<pointer_names::NamedValue>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -1200,13 +1202,17 @@ pub(in crate::surface) fn with_proof_local_value_names<R>(
     names: Vec<(ProgramValue, String)>,
     operation: impl FnOnce() -> R,
 ) -> R {
-    struct Restore(Vec<(ProgramValue, String)>);
+    struct Restore(Vec<pointer_names::NamedValue>);
     impl Drop for Restore {
         fn drop(&mut self) {
             let previous = std::mem::take(&mut self.0);
             PROOF_LOCAL_VALUE_NAMES.with(|names| *names.borrow_mut() = previous);
         }
     }
+    let names = names
+        .into_iter()
+        .map(pointer_names::NamedValue::new)
+        .collect();
     let _restore = Restore(PROOF_LOCAL_VALUE_NAMES.with(|current| current.replace(names)));
     operation()
 }
@@ -1244,13 +1250,7 @@ pub(in crate::surface) fn synthesize_surface_value(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
 ) -> Option<ContractExpression> {
-    if let Some(name) = PROOF_LOCAL_VALUE_NAMES.with(|names| {
-        names
-            .borrow()
-            .iter()
-            .find(|(named, _)| named == value)
-            .map(|(_, name)| name.clone())
-    }) {
+    if let Some(name) = pointer_names::native_name(value) {
         return Some(ContractExpression::ProgramExpression(
             ProgramExpression::Variable(name),
         ));
@@ -4844,6 +4844,11 @@ fn synthesize_legacy_call_argument(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<SurfaceTerm> {
     Some(match value {
+        crate::kernel::PureFunctionArgument::Value(value @ ProgramValue::Pointer(_)) => {
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(pointer_names::native_name(
+                value,
+            )?))
+        }
         crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(word)) => {
             synthesize_surface_bool(
                 &ConditionTerm::truth_of_bool_word(word),
@@ -5223,62 +5228,9 @@ fn synthesize_local_aggregate_field(
         })
 }
 
+#[cfg(test)]
 pub(super) fn bitvector_term_is_load_free(term: &MachineTerm) -> bool {
-    let mut pending = vec![term];
-    while let Some(term) = pending.pop() {
-        if !consume_surface_synthesis_work("local-index") {
-            return false;
-        }
-        match term {
-            MachineTerm::MemoryLoad(_, _, _) => return false,
-            MachineTerm::PointerAddress(pointer, _) => {
-                pending.extend(pointer.offset.native_scaled_values_for_output());
-            }
-            MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-            crate::kernel::binary_bitvector32_term!(left, right) => {
-                pending.push(left);
-                pending.push(right);
-            }
-            crate::kernel::binary_wide_term!(left, right) => {
-                pending.push(left);
-                pending.push(right);
-            }
-            MachineTerm::Float32Binary { left, right, .. }
-            | MachineTerm::Float64Binary { left, right, .. } => {
-                pending.push(left);
-                pending.push(right);
-            }
-            crate::kernel::unary_machine_term!(value) => pending.push(value),
-            MachineTerm::If {
-                then_term,
-                else_term,
-                ..
-            } => {
-                pending.push(then_term);
-                pending.push(else_term);
-            }
-            MachineTerm::RangeFold {
-                start,
-                end,
-                initial,
-                body,
-                ..
-            } => {
-                pending.push(start);
-                pending.push(end);
-                pending.push(initial);
-                pending.push(body);
-            }
-            MachineTerm::PureFunctionApplication { arguments, .. } => {
-                pending.extend(arguments);
-            }
-            MachineTerm::ClickFunctionApplication { .. }
-            | MachineTerm::AlgebraicMatch { .. }
-            | MachineTerm::IntegerToMachine { .. }
-            | MachineTerm::BoolCast { .. } => return false,
-        }
-    }
-    true
+    pointer_indices::load_free(crate::kernel::MachineOperandView::Legacy(term))
 }
 
 fn synthesize_local_indexed_load(
@@ -5317,15 +5269,15 @@ fn synthesize_local_indexed_load(
         // can rediscover another local-relative form with a still larger
         // index indefinitely. More specific field and pointer forms are
         // tried by the surrounding reconstruction logic.
-        if !bitvector_term_is_load_free(&index) {
+        if !pointer_indices::load_free(index.operand_view()) {
             return None;
         }
         Some(ContractExpression::Index(
             Box::new(ContractExpression::ProgramExpression(
                 ProgramExpression::Variable(surface_local_name(name).to_string()),
             )),
-            Box::new(synthesize_surface_bitvector(
-                &index,
+            Box::new(pointer_indices::raise(
+                index.operand_view(),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -5359,23 +5311,23 @@ fn synthesize_static_storage_array_element_load(
                 return None;
             }
             let (source, shape) = owners.storage_arrays.get(name)?;
-            let index = pointer.element_index_from_base_with_width(slot, 4)?;
+            let index = pointer.shared_element_index_from_base_with_width(slot, 4)?;
             let base = ProgramExpression::Variable(source.clone());
             if shape.len() <= 1 {
-                if !bitvector_term_is_load_free(&index) {
+                if !pointer_indices::load_free(index.operand_view()) {
                     return None;
                 }
                 return Some(ContractExpression::Index(
                     Box::new(ContractExpression::ProgramExpression(base)),
-                    Box::new(synthesize_surface_bitvector(
-                        &index,
+                    Box::new(pointer_indices::raise(
+                        index.operand_view(),
                         parameter_binding,
                         state,
                         bound_variables,
                     )?),
                 ));
             }
-            let mut remaining = index.as_const()?;
+            let mut remaining = index.operand_view().word32_constant()?;
             let mut indexes = vec![ProgramExpression::Value(int32(0)); shape.len()];
             for (subscript, dimension) in indexes.iter_mut().zip(shape).rev() {
                 *subscript = ProgramExpression::Value(int32(remaining % dimension));
@@ -5617,9 +5569,21 @@ fn synthesis_element_index(
     pointer: &Pointer,
     base: &Pointer,
     element_width: u32,
-) -> Option<MachineTerm> {
-    if let Some(index) = pointer.element_index_from_base_with_width(base, element_width) {
-        return Some(index);
+) -> Option<pointer_indices::SourceIndex> {
+    // Legacy-only offsets already have a native source reader. Retain that
+    // result without importing temporary arithmetic. Any shared child selects
+    // the shared path, so this compatibility read cannot export a shared DAG.
+    let native = |offset: &PointerOffsetTerm| {
+        !offset.any_scaled_operand(|index| index.shared_operand().is_some())
+    };
+    if native(&pointer.offset)
+        && native(&base.offset)
+        && let Some(index) = pointer.element_index_from_base_with_width(base, element_width)
+    {
+        return Some(pointer_indices::SourceIndex::Native(index));
+    }
+    if let Some(index) = pointer.shared_element_index_from_base_with_width(base, element_width) {
+        return Some(pointer_indices::SourceIndex::Shared(index));
     }
     if pointer.block != base.block {
         return None;
@@ -5635,15 +5599,9 @@ fn synthesis_element_index(
             value,
             byte_width,
             unsigned,
-        } if *byte_width == i64::from(element_width) => {
-            // uint32 indexing observes the value by exact unsigned widening.
-            // Recover the original expression, whose re-lowering restores it.
-            // This is a structural inverse, never a fact-based narrowing.
-            match (unsigned, value.structural_value()) {
-                (true, cast_term!(UInt64From32, index)) => Some(index.as_ref().clone()),
-                _ => Some(value.structural_value().clone()),
-            }
-        }
+        } if *byte_width == i64::from(element_width) => Some(pointer_indices::SourceIndex::Shared(
+            pointer_indices::source_index(value, *unsigned),
+        )),
         _ => None,
     }
 }
@@ -5717,14 +5675,15 @@ fn synthesize_surface_pointer(
                 });
             };
             let base = name;
-            if index == MachineTerm::constant(0) {
+            if pointer_indices::literal(index.operand_view()) == Some(MachineTerm::constant(0)) {
                 return Some(base);
             }
-            let index =
-                synthesize_surface_bitvector(&index, parameter_binding, state, bound_variables)?;
-            let ContractExpression::ProgramExpression(index) = index else {
-                return None;
-            };
+            let index = contract_expression_to_program_expression(&pointer_indices::raise(
+                index.operand_view(),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?)?;
             Some(ProgramExpression::Add(Box::new(base), Box::new(index)))
         })
     {
@@ -5758,14 +5717,15 @@ fn synthesize_surface_pointer(
                 });
             };
             let base = name;
-            if index == MachineTerm::constant(0) {
+            if pointer_indices::literal(index.operand_view()) == Some(MachineTerm::constant(0)) {
                 return Some(base);
             }
-            let index =
-                synthesize_surface_bitvector(&index, parameter_binding, state, bound_variables)?;
-            let ContractExpression::ProgramExpression(index) = index else {
-                return None;
-            };
+            let index = contract_expression_to_program_expression(&pointer_indices::raise(
+                index.operand_view(),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?)?;
             Some(ProgramExpression::Add(Box::new(base), Box::new(index)))
         })
     {
@@ -5904,11 +5864,11 @@ fn state_call_result(
     state: &ExecutionState,
     matches: impl Fn(&ProgramValue) -> bool,
 ) -> Option<ContractExpression> {
-    let (call, _) = state.call_results.as_ref()?.iter().find(|(_, value)| {
+    let (step, _) = state.step_results.as_ref()?.iter().find(|(_, value)| {
         crate::instrumentation::record_deterministic_work(1);
         matches(value)
     })?;
-    crate::surface::diagnostics::call_step_region(*call).map(ContractExpression::RegionResult)
+    crate::surface::diagnostics::step_result_expression(*step)
 }
 
 /// `<region>.result` for a call's result temporary `local`, which no source

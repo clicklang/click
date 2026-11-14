@@ -1415,30 +1415,45 @@ pub(super) fn local_naming_tables(
         .collect::<BTreeMap<_, _>>();
     // The results of the running statement's call steps, each spelled by
     // its call: `statement(0).call(f, 0).result`.
-    if let Some(results) = &state.call_results {
-        values.extend(
-            results.iter().filter_map(|(call, value)| {
-                Some((call_step_result_spelling(*call)?, value.clone()))
-            }),
-        );
+    if let Some(results) = &state.step_results {
+        values.extend(results.iter().filter_map(|(call, value)| {
+            Some((
+                describe_contract_expression(&step_result_expression(*call)?),
+                value.clone(),
+            ))
+        }));
     }
     value_naming_tables(&values)
 }
 
-/// The call step numbered `call`, as the statements as written name it.
-pub(in crate::surface) fn call_step_region(call: u32) -> Option<CodeRegionRef> {
+/// The result of step `step`, as the statements as written name it: a call
+/// step's `<call>.result`, or `at(<assignment>.entry, x)` for the value an
+/// assignment step replaced in `x`.
+pub(in crate::surface) fn step_result_expression(step: u32) -> Option<ContractExpression> {
     let layout = spelling_layout()?;
-    let region = layout.call_region(call)?;
-    let steps = layout.source_path_spelling(region, ProgramPointKind::Exit)?;
-    Some(CodeRegionRef::Path(steps))
-}
-
-/// `<call>.result` for the result of the call step numbered `call`.
-pub(in crate::surface) fn call_step_result_spelling(call: u32) -> Option<String> {
-    Some(format!(
-        "{}.result",
-        describe_code_region_ref(&call_step_region(call)?)
-    ))
+    let region = layout.step_region(step)?;
+    match layout.prior_step_local(step) {
+        Some(local) => {
+            let steps = layout.source_path_spelling(region, ProgramPointKind::Entry)?;
+            Some(ContractExpression::At {
+                selector: crate::surface::SnapshotSelector::ProgramPoint(
+                    crate::surface::ProgramPointRef {
+                        region: CodeRegionRef::Path(steps),
+                        kind: ProgramPointKind::Entry,
+                    },
+                ),
+                expression: Box::new(ContractExpression::ProgramExpression(
+                    ProgramExpression::Variable(
+                        crate::kernel::program_local_source_name(local).to_string(),
+                    ),
+                )),
+            })
+        }
+        None => {
+            let steps = layout.source_path_spelling(region, ProgramPointKind::Exit)?;
+            Some(ContractExpression::RegionResult(CodeRegionRef::Path(steps)))
+        }
+    }
 }
 
 /// `<region>.result` for a call's result temporary, which no source name
@@ -5898,9 +5913,17 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             rust_variable_spelling(name).unwrap_or_else(|| name.clone())
         }
         ProgramExpression::FunctionAddress(name) => format!("&{name}"),
-        ProgramExpression::CallResult { function_name, .. } => {
-            format!("{}(…)", describe_called_function(function_name))
-        }
+        ProgramExpression::StepResult {
+            origin: crate::kernel::StepOrigin::Call(function_name),
+            ..
+        } => format!("{}(…)", describe_called_function(function_name)),
+        ProgramExpression::StepResult {
+            origin: crate::kernel::StepOrigin::Prior(local),
+            ..
+        } => format!(
+            "{} (before its update)",
+            rust_variable_spelling(local).unwrap_or_else(|| local.clone())
+        ),
         ProgramExpression::Cast {
             expression,
             target_type,

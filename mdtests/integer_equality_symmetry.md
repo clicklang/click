@@ -26,10 +26,10 @@ theorem reverse_citation(a: Integer, b: Integer) {
     }
 }
 
-theorem reverse_transport(a: Integer, b: Integer) {
+theorem reverse_assumption(a: Integer, b: Integer) {
     requires b == a;
     ensures a == b by {
-        transport(b == a, a == b) using { b == a; };
+        assumption();
     }
 }
 

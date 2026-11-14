@@ -208,10 +208,7 @@ void arena_release(struct region* region) {
         };
     }
     have region->end == e by {
-        transport(at(before_store, region->end) == e, region->end == e) using {
-            at(before_store, region->end) == e;
-            at(before_store, separate(memory(*region), memory(region->arena->live_regions)));
-        };
+        assumption();
     }
     have region->arena->data == old(region->arena->data);
     let after = fold(arena_live_count(region->arena), { live: n - 1 });

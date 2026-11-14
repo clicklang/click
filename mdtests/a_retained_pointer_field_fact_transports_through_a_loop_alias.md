@@ -119,10 +119,13 @@ void probe(struct node* g, struct node* n) {
                         step(set_word, { w: w });
 
                     have n->right == saved by {
-                        transport(at(before_call, n->right == saved), n->right == saved) using {
-                            at(before_call, n->right == saved);
-                            n == old(n);
-                        };
+                        have n->right == saved by {
+                            normalize() using {
+                                at(before_call, n->right == saved);
+                                n == old(n);
+                            };
+                        }
+                        assumption();
                     }
 
                     step(); step();

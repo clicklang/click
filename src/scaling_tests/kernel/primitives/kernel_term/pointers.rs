@@ -38,6 +38,12 @@ fn complete_pointer_import_retains_persistent_evidence_without_traversal() {
             .as_ref()
             .unwrap();
         assert!(before.premises.ptr_eq(&after.premises));
+        let named = SharedPointerValue::import(&source);
+        let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
+            named.same_source_payload(&shared)
+        });
+        assert!(matches);
+        assert_eq!(work, 1, "source matching must not walk {size} premises");
         assert_eq!(
             shared
                 .node()
@@ -88,6 +94,21 @@ fn complete_pointer_construction_retains_shared_extent_width_dags() {
                 .unwrap()
                 .width,
             &width
+        );
+        let equivalent = SharedPointerValue::new(shared.node().clone());
+        let mut different = shared.node().clone();
+        Arc::make_mut(different.qualifiers.as_mut().unwrap()).constant = false;
+        let different = SharedPointerValue::new(different);
+        let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {
+            (
+                shared.same_source_payload(&equivalent),
+                shared.same_source_payload(&different),
+            )
+        });
+        assert_eq!(matches, (true, false));
+        assert_eq!(
+            work, 2,
+            "source matching must not walk the {size}-node width DAG"
         );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }

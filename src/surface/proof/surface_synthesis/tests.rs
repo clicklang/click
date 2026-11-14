@@ -3515,6 +3515,7 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     }),
                     load_kind,
                 );
+                let exports = crate::kernel::KernelTermExport::machine_export_count();
                 let spelled = synthesize_surface_bitvector(
                     &load,
                     ParameterBinding::default(),
@@ -3522,6 +3523,10 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     &BTreeMap::new(),
                 )
                 .unwrap();
+                assert_eq!(
+                    crate::kernel::KernelTermExport::machine_export_count(),
+                    exports
+                );
                 assert!(
                     matches!(&spelled, ContractExpression::Index(..)),
                     "{spelled:?}"

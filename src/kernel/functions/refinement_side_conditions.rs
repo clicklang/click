@@ -506,7 +506,7 @@ pub(super) fn program_expression_supports_stateful_memory_refinement(
         ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => true,
+        | ProgramExpression::StepResult { .. } => true,
         ProgramExpression::Cast { expression, .. }
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
@@ -560,7 +560,7 @@ pub(in crate::kernel) fn program_expression_is_state_independent(
         ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => true,
+        | ProgramExpression::StepResult { .. } => true,
         ProgramExpression::Cast { expression, .. }
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
@@ -638,7 +638,7 @@ pub(super) fn program_expression_mentions_variable(
         ProgramExpression::Variable(variable) => variable == name,
         ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => false,
+        | ProgramExpression::StepResult { .. } => false,
         ProgramExpression::Cast { expression, .. }
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
@@ -698,7 +698,7 @@ pub(super) fn program_expression_takes_address_of_variable(
         ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => false,
+        | ProgramExpression::StepResult { .. } => false,
         ProgramExpression::Cast { expression, .. }
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
@@ -843,7 +843,7 @@ pub(super) fn program_expression_uses_object_address(
         ProgramExpression::Variable(variable) => variable == name,
         ProgramExpression::Value(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => false,
+        | ProgramExpression::StepResult { .. } => false,
         // A scalar or pointer load produces a value, not the address of the
         // containing object. Inline arrays still denote embedded storage.
         ProgramExpression::TypedLoad {

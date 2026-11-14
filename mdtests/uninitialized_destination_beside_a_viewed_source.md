@@ -149,22 +149,9 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
             rewrite(at(loop(0).exit, n) == at(loop(0).exit, i));
             assumption();
         }
-        transport(
-            forall (k: int32) {
-                at(loop(0).exit, 0) <= at(loop(0).exit, k) and
-                    at(loop(0).exit, k) < at(loop(0).exit, n) implies
-                    at(loop(0).exit, dst[k]) == old(src[k])
-            },
-            forall (k: int32) {
-                0 <= k and k < n implies dst[k] == old(src[k])
-            }
-        ) using {
-            forall (k: int32) {
-                at(loop(0).exit, 0) <= at(loop(0).exit, k) and
-                    at(loop(0).exit, k) < at(loop(0).exit, n) implies
-                    at(loop(0).exit, dst[k]) == old(src[k])
-            };
-        };
+        have forall (k: int32) { 0 <= k and k < n implies dst[k] == old(src[k]) } by {
+            assumption();
+        }
         assumption();
     }
     assumption();

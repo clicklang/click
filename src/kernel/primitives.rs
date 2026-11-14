@@ -3731,11 +3731,12 @@ pub enum ProgramExpression {
         variant: String,
         index: usize,
     },
-    /// The result of call `call` of this statement, which the statement's
-    /// own `ProgramStatement::CallResult` step made: the term the call returned.
-    CallResult {
-        call: u32,
-        function_name: String,
+    /// The result of step `step` of this statement: the term a call step
+    /// (`ProgramStatement::CallResult`) returned, or the value an assignment step
+    /// (`ProgramStatement::Assign` with `prior_result`) replaced.
+    StepResult {
+        step: u32,
+        origin: StepOrigin,
     },
     /// Whether an enum value is of variant `variant`, as a `bool`: the test
     /// a Rust `match` arm makes. An undecided test splits on the variant.
@@ -5391,6 +5392,10 @@ pub enum ProgramStatement {
         name: String,
         expression: ProgramExpression,
         source: super::source_access::StatementAssignSource,
+        /// Leaves the target's value from before this assignment as the
+        /// result of step N, which the rest of the statement reads: the
+        /// value of a postfix `p++`.
+        prior_result: Option<u32>,
     },
     CallAssign {
         target: String,
@@ -5398,7 +5403,7 @@ pub enum ProgramStatement {
         arguments: Vec<ProgramExpression>,
     },
     /// A call inside an expression of the statement that follows it: its
-    /// result is that statement's `ProgramExpression::CallResult { call, .. }`,
+    /// result is that statement's `ProgramExpression::StepResult { step, .. }`,
     /// never a variable of the program.
     CallResult {
         call: u32,
@@ -10168,28 +10173,38 @@ pub struct ExecutionState {
     /// call step sets one, the rest of the statement reads it, and the
     /// statement's end drops what it read. `None` is the canonical state at
     /// every statement boundary.
-    pub(crate) call_results: Option<Arc<BTreeMap<u32, ProgramValue>>>,
+    pub(crate) step_results: Option<Arc<BTreeMap<u32, ProgramValue>>>,
+}
+
+/// What made a statement's step result.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum StepOrigin {
+    /// A call of this function returned it.
+    Call(String),
+    /// It is this local's value before an assignment step replaced it, the
+    /// value of a postfix `x++` or `x--`.
+    Prior(String),
 }
 
 impl ProgramExpression {
-    /// Whether evaluating this expression reads a call's result.
-    pub(crate) fn reads_call_result(&self) -> bool {
+    /// Whether evaluating this expression reads a step's result.
+    pub(crate) fn reads_step_result(&self) -> bool {
         match self {
-            ProgramExpression::CallResult { .. } => true,
+            ProgramExpression::StepResult { .. } => true,
             ProgramExpression::Value(_)
             | ProgramExpression::Variable(_)
             | ProgramExpression::FunctionAddress(_) => false,
             ProgramExpression::EnumConstruct { fields, .. } => {
-                fields.iter().any(ProgramExpression::reads_call_result)
+                fields.iter().any(ProgramExpression::reads_step_result)
             }
             ProgramExpression::Conditional {
                 condition,
                 then_branch,
                 else_branch,
             } => {
-                condition.reads_call_result()
-                    || then_branch.reads_call_result()
-                    || else_branch.reads_call_result()
+                condition.reads_step_result()
+                    || then_branch.reads_step_result()
+                    || else_branch.reads_step_result()
             }
             ProgramExpression::Cast { expression, .. }
             | ProgramExpression::FloatNegate(expression)
@@ -10216,9 +10231,9 @@ impl ProgramExpression {
             | ProgramExpression::TypedLoad {
                 pointer: expression,
                 ..
-            } => expression.reads_call_result(),
+            } => expression.reads_step_result(),
             crate::kernel::binary_c_expression!(left, right) => {
-                left.reads_call_result() || right.reads_call_result()
+                left.reads_step_result() || right.reads_step_result()
             }
         }
     }
@@ -10226,16 +10241,16 @@ impl ProgramExpression {
 
 impl ExecutionState {
     /// Records the term call `call` of the running statement returned.
-    pub(super) fn set_call_result(&mut self, call: u32, value: ProgramValue) {
-        let mut results = self.call_results.as_deref().cloned().unwrap_or_default();
+    pub(super) fn set_step_result(&mut self, call: u32, value: ProgramValue) {
+        let mut results = self.step_results.as_deref().cloned().unwrap_or_default();
         results.insert(call, value);
-        self.call_results = Some(Arc::new(results));
+        self.step_results = Some(Arc::new(results));
     }
 
     /// The term call `call` of the running statement returned, once its call
     /// step has run.
-    pub(crate) fn call_result(&self, call: u32) -> Option<&ProgramValue> {
-        self.call_results.as_ref()?.get(&call)
+    pub(crate) fn step_result(&self, call: u32) -> Option<&ProgramValue> {
+        self.step_results.as_ref()?.get(&call)
     }
 }
 
