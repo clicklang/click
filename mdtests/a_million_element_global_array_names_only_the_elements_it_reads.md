@@ -1,8 +1,8 @@
 # a million-element global array names only the elements it reads
 
-A function's entry holds a global array it knows nothing about as one run of
-cells, and an element's entry value gets its load identity when something
-first reads that element. Collecting the variables the entry memory mentions
+A function's entry declares a global array it knows nothing about without
+contents, and an element's entry value, its load at function entry, gets its
+load identity when something first reads that element. Collecting the variables the entry memory mentions
 used to name every element instead, so a function over a one-million-element
 array minted a million load identities before its first statement and
 exhausted the load-variable registry.

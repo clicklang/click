@@ -5,7 +5,7 @@
 use super::*;
 
 #[test]
-fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
+fn wide_address_symbolic_arrays_keep_typed_loads_and_bounded_work() {
     for ty in [ProgramType::Int128, ProgramType::UInt128] {
         let mut samples = Vec::new();
         for count in [16, 64, 256, 1024, 1_000_000] {
@@ -37,14 +37,9 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
                 initialize_program_function_globals(&ExecutionState::new(), &function)
             });
             let memory = entry.memory.clone();
-            assert_eq!(memory.cells.representation_len(), 1);
-            let (loaded, read_work) = crate::instrumentation::measure_deterministic_work(|| {
-                memory.known_value(&at(count - 1)).unwrap()
-            });
-            assert_eq!(loaded.program_type(), ty);
-            let machine = MachineIntegerType::from_program_type(ty).unwrap();
-            assert!(machine.accepts_wide_term(&program_value_bitvector_term(&loaded).unwrap()));
-            assert_eq!(loaded, memory.known_value(&at(count - 1)).unwrap());
+            // Entry declares the array without contents; a read of an
+            // element is its typed entry load.
+            assert_eq!(memory.cells.representation_len(), 0);
             let state = ExecutionState::new()
                 .with_memory(memory.clone())
                 .with_resource_context(ResourceContext::new().unchecked_with_facts([
@@ -55,19 +50,21 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
                         16,
                     )),
                 ]));
-            assert_eq!(
+            let (loaded, read_work) = crate::instrumentation::measure_deterministic_work(|| {
                 value(
                     &state,
                     crate::kernel::program_expression::typed_load(
                         crate::kernel::program_expression::typed_pointer_value(
                             at(count - 1),
-                            ty.pointer_to().unwrap()
+                            ty.pointer_to().unwrap(),
                         ),
-                        ty
-                    )
-                ),
-                loaded
-            );
+                        ty,
+                    ),
+                )
+            });
+            assert_eq!(loaded.program_type(), ty);
+            let machine = MachineIntegerType::from_program_type(ty).unwrap();
+            assert!(machine.accepts_wide_term(&program_value_bitvector_term(&loaded).unwrap()));
             let replacement = value(
                 &ExecutionState::new(),
                 if ty == ProgramType::Int128 {
@@ -80,7 +77,7 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
                 .without_possible_aliasing_cells(&at(count - 1), 16, &PureFactContext::new())
                 .store(at(count - 1), replacement.clone());
             assert_eq!(changed.known_value(&at(count - 1)), Some(replacement));
-            assert!(changed.known_value(&at(count - 2)).is_some());
+            assert!(changed.known_value(&at(count - 2)).is_none());
             samples.push(setup_work + read_work);
         }
         assert!(samples.iter().all(|work| *work < 4096), "{samples:?}");

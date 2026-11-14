@@ -69,29 +69,7 @@ pub(super) fn initialize_program_function_globals_owned(
                         .clone()
                         .store(slot.clone(), global.initial_value().clone()),
                 );
-            } else {
-                state.set_memory(materialize_symbolic_cell(
-                    state.memory.clone(),
-                    &slot,
-                    global.program_type(),
-                ));
             }
-        } else if !initialize_missing_storage
-            && !global.is_constant()
-            && global.program_type().is_object_pointer()
-            && state
-                .memory
-                .known_value(&slot)
-                .is_some_and(|value| symbolic_pointer_placeholder(&value, &slot))
-        {
-            // Resource setup may declare a pointer's storage before the
-            // global binding is installed. Replace an untyped placeholder
-            // with the authoritative typed symbolic pointer cell.
-            state.set_memory(materialize_symbolic_cell(
-                state.memory.clone(),
-                &slot,
-                global.program_type(),
-            ));
         }
         state.locals.set_global_with_all_qualifiers(
             global.kernel_name().to_string(),
@@ -135,13 +113,6 @@ pub(super) fn initialize_program_function_globals_owned(
                     global_array.element_type(),
                     global_array.initial_values(),
                 ));
-            } else {
-                state.set_memory(materialize_symbolic_array(
-                    state.memory.clone(),
-                    &slot,
-                    global_array.element_type(),
-                    global_array.length(),
-                ));
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -183,12 +154,6 @@ pub(super) fn initialize_program_function_globals_owned(
                     state.memory.clone(),
                     &slot,
                     global_aggregate.initializers(),
-                ));
-            } else {
-                state.set_memory(materialize_symbolic_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    global_aggregate.layout(),
                 ));
             }
         }
@@ -238,13 +203,6 @@ pub(super) fn initialize_program_function_globals_owned(
                     &slot,
                     global_aggregate_array.initializers(),
                 ));
-            } else {
-                state.set_memory(materialize_symbolic_aggregate_array(
-                    state.memory.clone(),
-                    &slot,
-                    global_aggregate_array.layout(),
-                    global_aggregate_array.length(),
-                ));
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -289,29 +247,7 @@ pub(super) fn initialize_program_function_globals_owned(
                         .clone()
                         .store(slot.clone(), static_local.initial_value().clone()),
                 );
-            } else if !initialize_missing_storage
-                && !static_local.is_constant()
-                && state.memory.known_value(&slot).is_none()
-            {
-                state.set_memory(materialize_symbolic_cell(
-                    state.memory.clone(),
-                    &slot,
-                    static_local.program_type(),
-                ));
             }
-        } else if !initialize_missing_storage
-            && !static_local.is_constant()
-            && static_local.program_type().is_object_pointer()
-            && state
-                .memory
-                .known_value(&slot)
-                .is_some_and(|value| symbolic_pointer_placeholder(&value, &slot))
-        {
-            state.set_memory(materialize_symbolic_cell(
-                state.memory.clone(),
-                &slot,
-                static_local.program_type(),
-            ));
         }
         state.locals.set_global_with_all_qualifiers(
             static_local.kernel_name().to_string(),
@@ -360,13 +296,6 @@ pub(super) fn initialize_program_function_globals_owned(
                     static_array.element_type(),
                     static_array.initial_values(),
                 ));
-            } else {
-                state.set_memory(materialize_symbolic_array(
-                    state.memory.clone(),
-                    &slot,
-                    static_array.element_type(),
-                    static_array.length(),
-                ));
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -407,12 +336,6 @@ pub(super) fn initialize_program_function_globals_owned(
                     state.memory.clone(),
                     &slot,
                     static_aggregate.initializers(),
-                ));
-            } else {
-                state.set_memory(materialize_symbolic_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    static_aggregate.layout(),
                 ));
             }
         }
@@ -461,13 +384,6 @@ pub(super) fn initialize_program_function_globals_owned(
                     &slot,
                     static_aggregate_array.initializers(),
                 ));
-            } else {
-                state.set_memory(materialize_symbolic_aggregate_array(
-                    state.memory.clone(),
-                    &slot,
-                    static_aggregate_array.layout(),
-                    static_aggregate_array.length(),
-                ));
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -492,51 +408,6 @@ pub(super) fn initialize_program_function_globals_owned(
         }
     }
     state
-}
-
-pub(super) fn materialize_symbolic_cell(
-    memory: Memory,
-    pointer: &Pointer,
-    program_type: ProgramType,
-) -> Memory {
-    let symbolic_base = symbolic_memory_base(&memory, pointer);
-    if let Some(value) = crate::kernel::eval::symbolic_storage_cell_value(
-        &symbolic_base,
-        pointer,
-        program_type,
-        true,
-    ) {
-        memory.materialize_named_cell(pointer.clone(), value)
-    } else {
-        memory
-    }
-}
-
-pub(super) fn symbolic_pointer_placeholder(value: &ProgramValue, storage: &Pointer) -> bool {
-    let ProgramValue::Pointer(value) = value else {
-        return false;
-    };
-    value.pointer().block == storage.block
-        && !matches!(value.pointer().offset, PointerOffsetTerm::Constant(_))
-}
-
-/// Returns the stable symbolic value for a typed static-storage cell. The
-/// backing memory contains only the storage block, so resource lowering and
-/// ordinary function entry derive the same load identity even when the
-/// caller has not yet materialized the surrounding object.
-pub(in crate::kernel) fn symbolic_memory_base(memory: &Memory, pointer: &Pointer) -> Memory {
-    let size = memory
-        .blocks
-        .get(&pointer.block)
-        .and_then(|block| block.size().as_const())
-        .expect("symbolic static-storage block has a constant size");
-    let base = Memory::new().with_block_without_derivation(pointer.block.clone(), size);
-    // The base's block is the storage's, declared class included; otherwise
-    // the storage's own snapshots and this base would name its loads apart.
-    match memory.declared_class(pointer) {
-        Some(class) => base.with_block_declared_class(&pointer.block, class),
-        None => base,
-    }
 }
 
 /// Stores `contents` into the just-declared array storage at `base`, as a
@@ -581,258 +452,6 @@ pub(super) fn store_array_contents(
             break;
         }
         memory = memory.store(element(index), contents.value_at(index).clone());
-    }
-    memory
-}
-
-/// Every element of a symbolic static-storage array at `base` holds its
-/// symbolic entry value, as [`materialize_symbolic_cell`] of each element in
-/// order leaves it. The elements are one [`CellRun`] and their access widths
-/// one declaration, so entry costs the same whatever `length` is; where
-/// either is refused (an overlapping declaration, typed union views, a
-/// block a named cell does not initialize) the elements are materialized
-/// one by one.
-///
-/// [`CellRun`]: crate::kernel::primitives::CellRun
-pub(super) fn materialize_symbolic_array(
-    mut memory: Memory,
-    base: &Pointer,
-    element_type: ProgramType,
-    length: u32,
-) -> Memory {
-    // Only an element type with an entry value is a run's: the others leave
-    // no cell.
-    let has_value = element_type.is_pointer()
-        || matches!(
-            element_type,
-            ProgramType::Bool
-                | ProgramType::Int8
-                | ProgramType::Int16
-                | ProgramType::Int32
-                | ProgramType::UInt8
-                | ProgramType::UInt16
-                | ProgramType::UInt32
-                | ProgramType::Int64
-                | ProgramType::Int128
-                | ProgramType::UInt64
-                | ProgramType::UInt128
-                | ProgramType::Float32
-                | ProgramType::Float64
-        );
-    if length > 0 && has_value {
-        let source = crate::kernel::intern_memory(symbolic_memory_base(&memory, base));
-        // An object pointer's load records no width, so it declares none.
-        let widths_declared = element_type.is_object_pointer()
-            || crate::kernel::eval::declare_symbolic_array_access_widths(
-                &source,
-                base,
-                element_type.byte_width(),
-                length,
-                element_type.byte_width(),
-            );
-        if widths_declared {
-            match memory.with_symbolic_storage_run(base.clone(), element_type, length, source) {
-                Ok(materialized) => return materialized,
-                Err(unchanged) => memory = unchanged,
-            }
-        }
-    }
-    for index in 0..length {
-        // A checkpoint per element: a stopped run keeps the partial memory
-        // only until its caller's next checkpoint reports the limit.
-        if crate::instrumentation::deadline_exceeded() {
-            break;
-        }
-        let pointer = base.offset_by_bytes(index.saturating_mul(element_type.byte_width()));
-        memory = materialize_symbolic_cell(memory, &pointer, element_type);
-    }
-    memory
-}
-
-pub(super) fn materialize_symbolic_aggregate_fields(
-    mut memory: Memory,
-    base: &Pointer,
-    layout: &AggregateLayout,
-) -> Memory {
-    for field in layout.fields() {
-        let field_base = base.offset_by_bytes(field.offset_bytes());
-        match field.program_type() {
-            ProgramType::Int32Array(length) => {
-                memory =
-                    materialize_symbolic_array(memory, &field_base, ProgramType::Int32, length);
-            }
-            ProgramType::Int64Array(length) => {
-                memory =
-                    materialize_symbolic_array(memory, &field_base, ProgramType::Int64, length);
-            }
-            ProgramType::Int128Array(length) => {
-                memory =
-                    materialize_symbolic_array(memory, &field_base, ProgramType::Int128, length);
-            }
-            ProgramType::UInt64Array(length) => {
-                memory =
-                    materialize_symbolic_array(memory, &field_base, ProgramType::UInt64, length);
-            }
-            ProgramType::UInt128Array(length) => {
-                memory =
-                    materialize_symbolic_array(memory, &field_base, ProgramType::UInt128, length);
-            }
-            ProgramType::UInt8Array(length) => {
-                memory =
-                    materialize_symbolic_array(memory, &field_base, ProgramType::UInt8, length);
-            }
-            ProgramType::Float32Array(length) => {
-                memory =
-                    materialize_symbolic_array(memory, &field_base, ProgramType::Float32, length);
-            }
-            ProgramType::Float64Array(length) => {
-                memory =
-                    materialize_symbolic_array(memory, &field_base, ProgramType::Float64, length);
-            }
-            _ => {
-                memory = materialize_symbolic_cell(memory, &field_base, field.program_type());
-            }
-        }
-    }
-    for union in layout.unions() {
-        let union_base = base.offset_by_bytes(union.offset_bytes());
-        let views = union
-            .fields()
-            .iter()
-            .filter_map(|field| {
-                let pointer = union_base.offset_by_bytes(field.offset_bytes());
-                let symbolic_base = symbolic_memory_base(&memory, &pointer);
-                symbolic_load_value(&symbolic_base, &pointer, field.program_type())
-                    .map(|value| (pointer, field.program_type(), value))
-            })
-            .collect();
-        memory = memory.store_union_views(union_base, union.size_bytes(), views);
-    }
-    memory
-}
-
-/// Whether a symbolic static-storage cell of `program_type` holds an entry value:
-/// the element types [`materialize_symbolic_array`] makes a run of.
-pub(super) fn symbolic_storage_has_value(program_type: ProgramType) -> bool {
-    program_type.is_pointer()
-        || matches!(
-            program_type,
-            ProgramType::Bool
-                | ProgramType::Int8
-                | ProgramType::Int16
-                | ProgramType::Int32
-                | ProgramType::UInt8
-                | ProgramType::UInt16
-                | ProgramType::UInt32
-                | ProgramType::Int64
-                | ProgramType::Int128
-                | ProgramType::UInt64
-                | ProgramType::UInt128
-                | ProgramType::Float32
-                | ProgramType::Float64
-        )
-}
-
-/// The cells [`materialize_symbolic_aggregate_fields`] names in one struct
-/// of `layout`, as `(offset, type)` ascending: each scalar field, and each
-/// element of an inline scalar array field. `None` for a layout with unions
-/// or with a field kind that routine does not name this way.
-pub(super) fn symbolic_aggregate_cells(
-    layout: &AggregateLayout,
-) -> Option<Vec<(u32, ProgramType)>> {
-    if !layout.unions().is_empty() {
-        return None;
-    }
-    let mut cells = Vec::new();
-    for field in layout.fields() {
-        let (element_type, length) = match field.program_type() {
-            ProgramType::Int32Array(length) => (ProgramType::Int32, length),
-            ProgramType::Int64Array(length) => (ProgramType::Int64, length),
-            ProgramType::Int128Array(length) => (ProgramType::Int128, length),
-            ProgramType::UInt64Array(length) => (ProgramType::UInt64, length),
-            ProgramType::UInt128Array(length) => (ProgramType::UInt128, length),
-            ProgramType::UInt8Array(length) => (ProgramType::UInt8, length),
-            ProgramType::Float32Array(length) => (ProgramType::Float32, length),
-            ProgramType::Float64Array(length) => (ProgramType::Float64, length),
-            program_type if symbolic_storage_has_value(program_type) => (program_type, 1),
-            _ => return None,
-        };
-        for index in 0..length {
-            // A stopped run takes the element-by-element fallback, whose
-            // own checkpoints report the limit.
-            if crate::instrumentation::deadline_exceeded() {
-                return None;
-            }
-            cells.push((
-                field
-                    .offset_bytes()
-                    .checked_add(index.checked_mul(element_type.byte_width())?)?,
-                element_type,
-            ));
-        }
-    }
-    cells.sort_by_key(|(offset, _)| *offset);
-    Some(cells)
-}
-
-/// Every struct of a symbolic static-storage array of `length` structs at
-/// `base` holds its fields' symbolic entry values, as
-/// [`materialize_symbolic_aggregate_fields`] of each struct in order leaves
-/// them. Each field is one [`CellRun`] stepping by the struct's size, and
-/// the fields' access widths are one declaration, so entry costs the
-/// layout rather than the struct count; where either is refused, or the
-/// layout has more cells than there are structs, the structs are
-/// materialized one by one.
-///
-/// [`CellRun`]: crate::kernel::primitives::CellRun
-pub(super) fn materialize_symbolic_aggregate_array(
-    mut memory: Memory,
-    base: &Pointer,
-    layout: &AggregateLayout,
-    length: u32,
-) -> Memory {
-    if let Some(cells) = symbolic_aggregate_cells(layout)
-        && !cells.is_empty()
-        && cells.len() <= length as usize
-    {
-        let source = crate::kernel::intern_memory(symbolic_memory_base(&memory, base));
-        // An object pointer's load records no width, so it declares none.
-        let widths = cells
-            .iter()
-            .filter(|(_, program_type)| !program_type.is_object_pointer())
-            .map(|(offset, program_type)| (*offset, program_type.byte_width()))
-            .collect::<Vec<_>>();
-        let widths_declared = widths.is_empty()
-            || crate::kernel::eval::declare_symbolic_element_access_widths(
-                &source,
-                base,
-                layout.size_bytes(),
-                length,
-                &widths,
-            );
-        if widths_declared {
-            match memory.with_symbolic_storage_runs(
-                base,
-                layout.size_bytes(),
-                length,
-                &cells,
-                source,
-            ) {
-                Ok(materialized) => return materialized,
-                Err(unchanged) => memory = unchanged,
-            }
-        }
-    }
-    for index in 0..length {
-        if crate::instrumentation::deadline_exceeded() {
-            break;
-        }
-        let element_base = base.offset_by_bytes(
-            index
-                .checked_mul(layout.size_bytes())
-                .expect("validated aggregate symbolic offset"),
-        );
-        memory = materialize_symbolic_aggregate_fields(memory, &element_base, layout);
     }
     memory
 }
@@ -1382,7 +1001,10 @@ pub(super) fn aggregate_copy_source_holds_nothing(
     source_field: &Pointer,
     element_type: ProgramType,
 ) -> bool {
+    // Static storage is initialized for the whole run: a field function entry
+    // left without a cell holds its entry value, which the copy carries.
     memory.has_block(&source_field.block)
+        && !source_field.block.is_static_storage_block()
         && !matches!(
             source_field.block,
             PointerBlock::Symbolic(_) | PointerBlock::Temporary(_)

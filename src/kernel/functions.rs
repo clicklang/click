@@ -9542,6 +9542,34 @@ pub(crate) fn initialize_program_function_globals(
     initialize_program_function_globals_owned(state.clone(), function, false)
 }
 
+/// `memory` with the static-storage pointer `name` names cached as the read
+/// of its cell: the load at its version point, which a read of it there
+/// returns anyway. A resource clause based at the pointer seeds cells at the
+/// address it holds; the cache keeps a later read of the pointer from asking
+/// whether those seeded cells alias it. Function entry leaves static storage
+/// without contents, so nothing else caches the read. Other names, and a cell
+/// already held, leave `memory` unchanged.
+pub(crate) fn with_static_pointer_read_cached(
+    state: &ExecutionState,
+    memory: Memory,
+    name: &str,
+) -> Memory {
+    let locals = state.locals();
+    let (Some(program_type), Some(slot)) = (locals.object_type(name), locals.slot(name)) else {
+        return memory;
+    };
+    if !locals.is_global_object(name)
+        || !program_type.is_object_pointer()
+        || !slot.block.is_static_storage_block()
+        || !memory.has_block(&slot.block)
+        || memory.known_value(slot).is_some()
+    {
+        return memory;
+    }
+    let source = crate::kernel::intern_memory(memory.clone());
+    memory.materialize_cell_from_source(slot.clone(), program_type, source)
+}
+
 /// Constructs a fresh startup state, never an ordinary call transition.
 /// Storage identities coalesce aliases before permissions are issued. No
 /// incoming state is accepted, so this cannot replenish consumed resources.

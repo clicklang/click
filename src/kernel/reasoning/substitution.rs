@@ -6724,15 +6724,7 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                     substitute_pointer_variable_in_program_value(value, from, to),
                 )
             },
-            // A symbolic storage run's pointer slots each point into the
-            // block their own load variable names, so substituting one of
-            // those variables changes that slot alone.
-            |run| {
-                (*run.value_mode() == crate::kernel::primitives::RunValueMode::SymbolicStorage
-                    && run.element_type().is_pointer())
-                .then(|| run_slot_named_by_load_variable(run, from))
-                .flatten()
-            },
+            |_| None,
         )),
         union_cells: std::sync::Arc::new(
             memory

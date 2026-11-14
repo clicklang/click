@@ -6633,6 +6633,9 @@ fn transport_framed_atomic_pointer_offset(
 }
 
 mod shared_index_transport;
+// Prepared shared pointer transport; consumers activate after spelling.
+#[allow(dead_code)]
+mod shared_pointer_transport;
 pub(in crate::kernel) use shared_index_transport::{
     index_syntax_equal as pointer_index_syntax_equal, map_index as map_shared_pointer_index,
     map_index_with_descent as map_shared_pointer_index_with_descent,

@@ -3623,30 +3623,6 @@ impl Memory {
     /// program transition. Symbolic aggregate return values use this to make
     /// their known layout available for bounds checks while keeping the
     /// symbolic load identity independent of the caller's memory snapshot.
-    /// Gives a synthetic block the declared class of the storage it stands
-    /// for (`design/effective-types.md`). Synthetic memories record no
-    /// derivation, so the class needs none either.
-    pub(in crate::kernel) fn with_block_declared_class(
-        mut self,
-        block: &PointerBlock,
-        class: crate::kernel::effective_type::CAccessClass,
-    ) -> Self {
-        if let Some(mut declaration) = self.blocks.get(block).cloned() {
-            let diagnostic_base = self.clone();
-            declaration.declared_class = Some(class);
-            std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
-            self.record_diagnostic_transform(
-                "declare block access class",
-                vec![diagnostic_base],
-                vec![ProgramValue::pointer(Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Constant(0),
-                })],
-            );
-        }
-        self
-    }
-
     pub(in crate::kernel) fn with_block_without_derivation(
         mut self,
         block: impl Into<PointerBlock>,
@@ -5359,101 +5335,6 @@ impl Memory {
         ))
     }
 
-    /// [`Self::materialize_named_cell`] of every element of a symbolic
-    /// static-storage array of `count` elements of `element_type` at `base`,
-    /// each holding its symbolic entry value in `source`
-    /// ([`crate::kernel::eval::symbolic_storage_cell_value`]), as one
-    /// [`CellRun`] at a cost that does not depend on `count`; see
-    /// [`Self::with_named_cell_run`], whose refusals this shares. The
-    /// caller has declared the elements' access widths.
-    pub(crate) fn with_symbolic_storage_run(
-        self,
-        base: Pointer,
-        element_type: ProgramType,
-        count: u32,
-        source: SharedMemory,
-    ) -> Result<Self, Self> {
-        if count == 0 {
-            return Ok(self);
-        }
-        if base.block.is_local_block()
-            || matches!(base.block, PointerBlock::Heap(_))
-            || !self.run_can_stand_for_cells_at(&base)
-        {
-            return Err(self);
-        }
-        Ok(self.with_run_of_cells(
-            base,
-            element_type.byte_width(),
-            element_type,
-            0,
-            count,
-            source,
-            RunValueMode::SymbolicStorage,
-        ))
-    }
-
-    /// [`Self::with_symbolic_storage_run`] for an array of `count` structs
-    /// `stride` bytes apart at `base`, whose scalar fields are `fields` (each
-    /// one's offset within the struct and type): one [`CellRun`] per field,
-    /// stepping by `stride`, at a cost of the fields and the block's existing
-    /// cells rather than the struct count. A field element that already
-    /// holds a cell keeps it, as [`Self::materialize_named_cell`] would. The
-    /// refusals are [`Self::with_symbolic_storage_run`]'s, and a block that
-    /// already holds a run is refused too, so no two runs' slots meet.
-    pub(crate) fn with_symbolic_storage_runs(
-        mut self,
-        base: &Pointer,
-        stride: u32,
-        count: u32,
-        fields: &[(u32, ProgramType)],
-        source: SharedMemory,
-    ) -> Result<Self, Self> {
-        if base.block.is_local_block()
-            || matches!(base.block, PointerBlock::Heap(_))
-            || !self.run_can_stand_for_cells_at(base)
-            || self.cells.runs_in_block(&base.block).next().is_some()
-        {
-            return Err(self);
-        }
-        let existing = AliasCandidates::only_block(&base.block)
-            .entries(self.cells.concrete())
-            .map(|(pointer, _)| pointer.clone())
-            .collect::<Vec<_>>();
-        for (offset, element_type) in fields {
-            crate::instrumentation::record_deterministic_work(1 + existing.len());
-            let probe = CellRun::new_with_mode(
-                base.offset_by_bytes(*offset),
-                stride,
-                *element_type,
-                count,
-                source.clone(),
-                RunValueMode::SymbolicStorage,
-                IndexIntervals::default(),
-            );
-            let mut holes = IndexIntervals::default();
-            for pointer in &existing {
-                if let Some(index) = probe.slot_index(pointer) {
-                    holes.insert(index);
-                }
-            }
-            if holes.count() >= u64::from(count) {
-                continue;
-            }
-            let run = probe.with_holes(holes);
-            let derivation_base = intern_derivation_base(&mut self);
-            std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-            record_memory_derivation(
-                &mut self,
-                MemoryDerivation::CellsSeeded {
-                    base: derivation_base,
-                    run: std::sync::Arc::new(run),
-                },
-            );
-        }
-        Ok(self)
-    }
-
     /// A store of `value` into each of the `count` elements of `element_type`
     /// at `base`, in element order, as one [`CellRun`] at a cost that does
     /// not depend on `count`: the known initial contents of static storage
@@ -5948,7 +5829,7 @@ impl Memory {
                             source_base: source_base
                                 .offset_by_bytes(source_index * element.byte_width()),
                         },
-                        RunValueMode::Load | RunValueMode::SymbolicStorage => RunValueMode::Copy {
+                        RunValueMode::Load => RunValueMode::Copy {
                             source_base: run.slot_pointer(source_index),
                         },
                     };

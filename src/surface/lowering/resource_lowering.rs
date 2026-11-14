@@ -617,7 +617,8 @@ pub(in crate::surface) fn initial_call_state(
     // In particular, a resource such as `pointer[0..1]` must follow the
     // pointer value already present in the entry state, rather than deriving
     // a second pointer from the raw memory-load term for the pointer slot.
-    let memory = materialize_symbolic_access_resource_cells(memory, requires, parameter_binding)?;
+    let memory =
+        materialize_symbolic_access_resource_cells(memory, &state, requires, parameter_binding)?;
     let memory = mark_uninitialized_resource_memory(memory, requires, parameter_binding)?;
     let state = state.with_memory(memory);
     // Resource endpoints are named under the entry's declared pure premises.
@@ -927,9 +928,22 @@ fn seeds_symbolic_field_cell(element_type: ProgramType) -> bool {
 
 fn materialize_symbolic_access_resource_cells(
     mut memory: Memory,
+    state: &ExecutionState,
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
 ) -> Result<Memory, ClickError> {
+    // A segment based at a static pointer reads it before seeding the cells
+    // it points at; keep that read so a later read of the pointer is the
+    // same value rather than a question of whether those cells alias it.
+    let seed = |memory: Memory, segment: &ContractSegment| {
+        let memory = match &segment.base {
+            ProgramExpression::Variable(name) => {
+                crate::kernel::with_static_pointer_read_cached(state, memory, name)
+            }
+            _ => memory,
+        };
+        materialize_access_segment_cells(memory, segment, parameter_binding)
+    };
     for requirement in requires {
         let Requirement::Resource(resource) = requirement else {
             continue;
@@ -943,7 +957,7 @@ fn materialize_symbolic_access_resource_cells(
             ResourceClause::Named { .. } => {}
             ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
                 if !segment.is_uninitialized() {
-                    memory = materialize_access_segment_cells(memory, segment, parameter_binding)?;
+                    memory = seed(memory, segment)?;
                 }
             }
             ResourceClause::MemoryAggregate { segments, .. } => {
@@ -951,7 +965,7 @@ fn materialize_symbolic_access_resource_cells(
                     .iter()
                     .filter(|segment| !segment.is_uninitialized())
                 {
-                    memory = materialize_access_segment_cells(memory, segment, parameter_binding)?;
+                    memory = seed(memory, segment)?;
                 }
             }
             ResourceClause::Declared { .. }

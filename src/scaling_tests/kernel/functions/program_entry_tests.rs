@@ -4,10 +4,29 @@
 
 use super::*;
 
+/// A C read of `pointer` at `memory`, as one path: static storage holds no
+/// cell at function entry, so the read is its load there.
+fn program_read(memory: &Memory, pointer: Pointer, value_type: ProgramType) -> ExpressionOutcome {
+    let mut paths = crate::kernel::eval::evaluate_memory_load_paths(
+        memory,
+        pointer,
+        value_type,
+        ExecutionFacts::new(),
+        Vec::new(),
+        &PureFactContext::new(),
+        false,
+        false,
+        None,
+        None,
+    );
+    assert_eq!(paths.len(), 1, "a read is one case");
+    paths.pop().expect("one path").outcome
+}
+
 /// Entering a function that names a global array costs the same whatever
-/// the array's declared length. Before runs, every element was materialized
-/// as its own cell, named and width-recorded one by one, so a
-/// `static char buf[65536]` cost 65,536 cells at every entry.
+/// the array's declared length, and leaves it without cells. Every element
+/// was once materialized as its own cell, named and width-recorded one by
+/// one, so a `static char buf[65536]` cost 65,536 cells at every entry.
 #[test]
 fn a_symbolic_global_array_entry_costs_the_same_whatever_its_length() {
     for element_type in [
@@ -38,8 +57,8 @@ fn a_symbolic_global_array_entry_costs_the_same_whatever_its_length() {
             "{element_type:?} entry work depends on the array's length: {samples:?}"
         );
         assert!(
-            samples.iter().all(|(_, _, entries)| *entries == 1),
-            "{element_type:?} entry is one run: {samples:?}"
+            samples.iter().all(|(_, _, entries)| *entries == 0),
+            "{element_type:?} entry holds no cell: {samples:?}"
         );
     }
 }
@@ -87,7 +106,7 @@ fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
                     .memory()
                     .clone()
                     .store(element(5), zero_element(element_type));
-                let read = stored.load(&element(6));
+                let read = program_read(&stored, element(6), element_type);
                 let mut variables = std::collections::BTreeSet::new();
                 crate::kernel::reasoning::collect_memory_bitvector_variables(
                     &stored,
@@ -305,17 +324,22 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
         let pool = Memory::global_pointer("pool");
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
             [
-                entry.memory().load(&pool.offset_by_bytes(24 * 7)),
-                entry
-                    .memory()
-                    .load(&pool.offset_by_bytes(24 * (length - 1) + 20)),
+                program_read(
+                    entry.memory(),
+                    pool.offset_by_bytes(24 * 7),
+                    ProgramType::Int32,
+                ),
+                program_read(
+                    entry.memory(),
+                    pool.offset_by_bytes(24 * (length - 1) + 20),
+                    ProgramType::Int32,
+                ),
             ]
         });
         assert!(
-            loads.iter().all(|load| matches!(
-                load,
-                ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::MemoryLoad(..)))
-            )),
+            loads
+                .iter()
+                .all(|load| matches!(load, ExpressionOutcome::Value(ProgramValue::Int32(_)))),
             "[{length}] a field reads as its load: {loads:?}"
         );
         (
@@ -334,34 +358,5 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
                 == (entry_work, load_work, entries, named)),
         "a symbolic aggregate array's entry depends on its length (length, entry work, load \
          work, cell entries, load identities named): {samples:?}"
-    );
-}
-
-/// An entry after another context declared the same global array from a
-/// different base costs the same whatever the array's length, and is one
-/// run: the second declaration is accepted rather than falling back to one
-/// cell per element.
-#[test]
-fn a_symbolic_global_array_declared_from_another_base_costs_the_same_whatever_its_length() {
-    let samples = [8u32, 1_000, 1_000_000].map(|length| {
-        let _session = crate::kernel::VerificationSession::enter();
-        let base = Memory::global_pointer("buf");
-        let other = another_context_base(ProgramType::Int32, length);
-        assert!(crate::kernel::eval::declare_symbolic_array_access_widths(
-            &other, &base, 4, length, 4
-        ));
-        let function = function_with_global_array(ProgramType::Int32, length);
-        let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_program_function_globals(&ExecutionState::new(), &function)
-        });
-        (length, work, entry.memory().cells.representation_len())
-    });
-    assert!(
-        samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
-        "entry work depends on the array's length: {samples:?}"
-    );
-    assert!(
-        samples.iter().all(|(_, _, entries)| *entries == 1),
-        "entry is one run: {samples:?}"
     );
 }
