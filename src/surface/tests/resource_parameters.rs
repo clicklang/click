@@ -396,3 +396,19 @@ fn element_containment_expands_without_implicit_solve() {
         assert!(without_implicit_solve(|| verify_click_theorems(&source)).is_err());
     }
 }
+
+#[test]
+fn rebased_intervals_apply_and_replay_without_search() {
+    let (source, _) = mdtest_sources("mdtests/separation_rebase.md");
+    without_implicit_solve(|| verify_click_theorems(&source)).unwrap();
+    for label in ["rebase_narrow.ensures_0", "rebase_wide.ensures_0"] {
+        let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+        without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    }
+    for premise in ["requires 0 <= lo;", "requires lo <= hi;"] {
+        let missing = source.replace(premise, "");
+        assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+    }
+    let enlarged = source.replace("0..hi-lo]", "0..hi-lo+1]");
+    assert!(without_implicit_solve(|| verify_click_theorems(&enlarged)).is_err());
+}

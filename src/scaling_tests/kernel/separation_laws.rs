@@ -228,3 +228,25 @@ fn element_containment_does_not_enumerate_its_interval() {
         );
     }
 }
+
+#[test]
+fn rebase_law_does_not_enumerate_its_interval() {
+    for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+        let constant = |n| if format == MachineIntegerType::UInt64 {
+            MachineTerm::uint64_constant(n)
+        } else {
+            MachineTerm::constant(n as u32)
+        };
+        let costs = [4u64, 64, 4096, 1_000_000].map(|length| {
+            let _session = crate::kernel::VerificationSession::enter();
+            crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::prove_separation_rebase(
+                    PointerValue::new(Pointer::symbolic(Variable(8_390_003)), ProgramType::Int64Pointer),
+                    8, format, constant(1), constant(length),
+                )
+            }).1
+        });
+        assert!(costs[0] > 0);
+        assert!(costs.iter().all(|cost| *cost == costs[0]), "{format:?}: {costs:?}");
+    }
+}

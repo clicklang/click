@@ -22296,3 +22296,23 @@ fn instantiated_bound_to_result_expands_without_transport() {
     let false_claim = source.replace("p[i] < result", "p[i] + 1 < result");
     assert!(verify_c_sources(&false_claim, &sources).is_err());
 }
+
+#[test]
+fn displaced_native_view_expands_to_rebase_and_restriction() {
+    let (source, sources) = mdtest_sources("mdtests/native_view_window.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "window").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("separation::rebase"), "{expanded}");
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("window.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
