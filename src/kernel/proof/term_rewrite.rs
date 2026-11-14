@@ -24,6 +24,8 @@ mod graph_condition_tests;
 mod integer_conditional_tests;
 #[cfg(test)]
 mod pointer_application_tests;
+#[allow(dead_code)]
+mod retained_folds;
 mod shared_comparison;
 #[cfg(test)]
 mod shared_source_tests;
@@ -1713,6 +1715,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_context: Option<&'a PureFactContext>,
     collected_conditions: Option<Vec<ConditionTerm>>,
     integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
+    fold_integer_bridge: KernelTermExport,
     pointer_application_cache: HashMap<(u64, u64, bool, bool), PointerBlock>,
     pointer_origin_cache: HashMap<(PointerLoadId, u64, bool, bool), PointerBlock>,
     scope_renaming_max: u64,
@@ -1804,6 +1807,11 @@ impl<'a> TermRewrite<'a> {
     /// that can reach a refusing scope must ask before using the result.
     pub(crate) fn refusal(&self) -> Option<RewriteRefusal> {
         self.refusal_observed.set(true);
+        self.refusal_status()
+    }
+
+    // Internal traversal must not acknowledge a refusal on the caller's behalf.
+    fn refusal_status(&self) -> Option<RewriteRefusal> {
         if self.integer_work_exhausted {
             Some(RewriteRefusal::WorkExhausted)
         } else if self.unsupported_integer_scope {
@@ -2015,6 +2023,7 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             changed: false,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2117,6 +2126,7 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             changed: false,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2291,6 +2301,7 @@ impl<'a> TermRewrite<'a> {
             collected_conditions: None,
             changed: false,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2437,6 +2448,7 @@ impl<'a> TermRewrite<'a> {
             pointer_addresses_only: false,
             collected_conditions: None,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2533,6 +2545,7 @@ impl<'a> TermRewrite<'a> {
             pointer_addresses_only: false,
             collected_conditions: None,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2723,6 +2736,7 @@ impl<'a> TermRewrite<'a> {
             pointer_addresses_only: false,
             collected_conditions: None,
             integer_cache: HashMap::new(),
+            fold_integer_bridge: KernelTermExport::default(),
             pointer_application_cache: HashMap::new(),
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -4100,13 +4114,18 @@ impl<'a> TermRewrite<'a> {
                 self.integer_shared(left).into(),
                 self.integer_shared(right).into(),
             ),
-            IntegerTerm::RangeFold {
-                index,
-                initial,
-                accumulator,
-                item,
-                body,
-            } => self.rewrite_integer_range_fold(index, initial, *accumulator, *item, body),
+            IntegerTerm::RangeFold { .. } => {
+                let root = KernelTermImport::default().integer(shared);
+                let KernelTermNode::Fold(fold) = root.node() else {
+                    unreachable!("migrated Integer fold");
+                };
+                match self.retained_fold_in(fold) {
+                    Ok(fold) => fold
+                        .integer_compatibility(&mut self.fold_integer_bridge)
+                        .expect("rewritten Integer fold"),
+                    Err(_) => IntegerTerm::constant_i64(0),
+                }
+            }
             IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
                 self.rewrite_integer_match(scrutinee, arms)
             }

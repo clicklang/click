@@ -36,3 +36,36 @@ fn fold_payload_construction_retains_growing_shared_bodies_with_constant_work() 
         }
     }
 }
+
+#[test]
+fn nested_integer_fold_producers_keep_common_children_in_linear_work() {
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let index = IntegerRangeFoldIndex::Integer {
+            start: IntegerTerm::constant_i64(0).into(),
+            end: IntegerTerm::Variable(Variable(980001)).into(),
+        };
+        let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut value = IntegerTerm::Variable(Variable(980002));
+            for _ in 0..size {
+                value = IntegerTerm::range_fold(
+                    index.clone(),
+                    IntegerTerm::constant_i64(0),
+                    Variable(980003),
+                    Variable(980004),
+                    value,
+                );
+            }
+            value
+        });
+        let root = KernelTermImport::default().integer(&value.into());
+        let mut node = &root;
+        let mut folds = 0;
+        while let KernelTermNode::Fold(fold) = node.node() {
+            folds += 1;
+            node = &fold.arguments[3];
+        }
+        assert_eq!(folds, size);
+        assert!(work < 250 * size, "size={size}, work={work}");
+    }
+}

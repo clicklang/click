@@ -125,9 +125,8 @@ fast-gate binary. This enforcement does not replace deterministic scaling tests.
 ## 7. Preserve branch contexts
 
 Branching retains the parent `PureFactContext` and extends a cheap persistent
-clone. Do not add a premise and then withdraw it to backtrack. Exact withdrawal
-helpers exist only under `cfg(test)` for missing-premise controls; they may
-rebuild indexes and must not become production APIs. Opposite truth-value assumptions record
+clone. Contexts only grow and fork: there is no fact withdrawal, and a
+missing-premise control queries the context built without the premise. Opposite truth-value assumptions record
 falsehood while retaining the original
 condition and its indexes. Treat explicit context restriction separately from
 branch undo.

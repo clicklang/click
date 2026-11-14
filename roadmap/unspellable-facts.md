@@ -226,6 +226,49 @@ readers remain staged until common fold roots are activated. Validation: nine
 focused parity/scaling cases and the full scaling plus related-reader selection
 (1,574 tests) pass.
 
+6c prepares scoped rewriting of the common fold payload. Machine children use
+the retained operand walker directly; Integer children reuse the existing
+capture-safe fold walker through a rewrite-local, memoized Integer compatibility
+bridge. Range endpoints retain shared machine operands, including the existing
+UInt64-range/Int32-endpoint carrier convention. The result reports existing
+scope/work refusals explicitly. Bounds and initial values stay outside binders,
+body rewriting restores the enclosing scope, and pointer substitution preserves
+read snapshots. This remains staged until fold roots are activated; the Integer
+compatibility boundary has not been removed. All four focused parity/scaling
+tests and the full scaling plus rewrite selection (1,682 tests) pass.
+
+6d shares the machine fold alpha-key implementation between native and common
+children. Bound-variable ordinals apply only to the body, with the enclosing
+scope restored on success or refusal; free variables and snapshot identities
+remain distinct. Integer checking uses a named compatibility adapter retaining
+shared endpoints, also reused by scoped rewriting. This does not activate fold
+producers or change fold reduction laws. Fold child keys remain boxed so this
+variant does not enlarge ordinary scalar keys. The full scaling, related fact
+matching/arithmetic, rewrite and registration selection passes 1,676 tests.
+
+6e adds the existing `.fold(...)` Surface spelling for retained Integer and
+machine fold payloads. Body binders use separate Integer/C namespaces;
+bounds and initial values stay outside their scope. A single name-freshening
+pass avoids capture and processes nested folds iteratively. Integer-index
+bounds use existing typed `let` bindings to retain their carrier through
+lowering. Round trips compare exact alpha identity, not printed binder IDs.
+Concrete machine-fold normalization is unchanged: a rewrite-to-concrete proof
+expands and replays without implicit search. This supplies the spelling
+boundary; live common fold producer activation remains 6f and 6g. Validation:
+the full scaling and related Surface selection passes all 1,634 tests.
+
+6f activates Integer `KernelTermNode::Fold` roots and the existing Integer fold
+constructor produces through them. The evaluator's native Integer result
+carrier remains an explicit shallow reading whose operands retain common
+handles. Free-variable/capture collection, current-memory dependencies and
+scoped rewriting now consume the common fold children; nested summaries filter
+only body binders. Internal refusal inspection does not acknowledge a refusal
+on behalf of the external rewrite caller. Existing range evaluation, fold laws
+and scoped obligations are unchanged. Focused checks pass 25 tests, and the
+full scaling plus fold/variable/rewrite selection passes all 1,870 tests.
+Opaque endpoints reuse their existing numeric observation identity. The full
+non-nightly proof corpus passes with zero fact-stability differences.
+
 ## Chunk 5: execution value handoffs
 
 Retain already-supported machine-integer results through execution, one PR per

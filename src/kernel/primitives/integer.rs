@@ -378,6 +378,14 @@ impl Hash for SharedIntegerRangeEndpoint {
 }
 
 impl SharedIntegerRangeEndpoint {
+    pub(crate) fn from_shared(root: KernelTerm) -> Option<Self> {
+        SharedMachineIntegerTerm::from_shared(
+            MachineIntegerType::Int32,
+            root.with_machine_observation_type(MachineIntegerType::Int32),
+        )
+        .map(|node| Self { node })
+    }
+
     pub(crate) fn machine_operand(&self) -> &SharedMachineIntegerTerm {
         &self.node
     }
@@ -1855,13 +1863,23 @@ impl IntegerTerm {
         item: Variable,
         body: Self,
     ) -> Self {
-        Self::RangeFold {
+        let native = Self::RangeFold {
             index,
             initial: SharedIntegerTerm::intern(initial),
             accumulator,
             item,
             body: SharedIntegerTerm::intern(body),
-        }
+        };
+        let fold = KernelFold::import_integer(&mut KernelTermImport::default(), &native)
+            .expect("Integer fold producer");
+        let root = fold.into_term();
+        // SpecIntegerPath still returns the native Integer carrier. This is
+        // one shallow root reading; its children retain their common handles.
+        KernelTermExport::default()
+            .integer(&root)
+            .expect("Integer fold result reading")
+            .as_ref()
+            .clone()
     }
 
     /// Apply the checked empty-range or one-element fold law when both

@@ -47,6 +47,16 @@ pub(super) fn collect_fold_memory_loads(
             continue;
         }
         match term.node() {
+            KernelTermNode::Fold(fold) => {
+                let endpoint_width = match fold.index.ty() {
+                    KernelType::C(ty) => Some(ty.byte_width()),
+                    _ => width,
+                };
+                pending.push((&fold.arguments[3], width));
+                pending.push((&fold.arguments[2], width));
+                pending.push((&fold.arguments[1], endpoint_width));
+                pending.push((&fold.arguments[0], endpoint_width));
+            }
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 match value.value() {
                     PureFunctionArgument::Integer(value) => {
