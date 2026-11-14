@@ -710,3 +710,49 @@ fn pointer_read_roots_and_handoffs_do_not_expand_defining_address_dags() {
         }
     }
 }
+
+#[test]
+fn formed_pointer_roots_keep_prepared_displacement_dags() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|n| {
+                KernelTerm::shared_pointer_value(SharedPointerValue::import(&PointerValue::new(
+                    Pointer::symbolic(Variable(1022100 + n)),
+                    ProgramType::Int32Pointer,
+                )))
+            })
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut offset = KernelPointerOffset::Constant(0).into_shared().unwrap();
+            for _ in 0..size {
+                offset = KernelPointerOffset::Add([offset.clone(), offset])
+                    .into_shared()
+                    .unwrap();
+            }
+            let source = SharedPointerValue::import(&PointerValue::new(
+                Pointer::symbolic(Variable(1022700)),
+                ProgramType::Int32Pointer,
+            ));
+            let mut payload = source.node().clone();
+            payload.address =
+                SharedPointerAddress::new(payload.address.node().block.clone(), offset);
+            payload.designation = payload.address.clone();
+            let payload = SharedPointerValue::new(payload);
+            let exports = KernelTermExport::machine_export_count();
+            let (root, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let root = KernelTerm::shared_pointer_value(payload.clone());
+                assert_eq!(root, KernelTerm::shared_pointer_value(payload.clone()));
+                let mut value = crate::kernel::ExecutionValue::from(root.clone());
+                for _ in 0..32 {
+                    value = value.clone();
+                }
+                assert_eq!(value.shared(), Some(&root));
+                root
+            });
+            assert!(root.0.pointer_leaf.get().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(work <= 32, "size={size} unrelated={unrelated} work={work}");
+        }
+    }
+}

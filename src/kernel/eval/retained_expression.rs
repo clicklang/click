@@ -131,7 +131,23 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                     budget,
                 )?
                 .into_iter()
-                .map(Into::into)
+                .map(|path| {
+                    if matches!(
+                        expression,
+                        ProgramExpression::Value(ProgramValue::Pointer(_))
+                            | ProgramExpression::Variable(_)
+                            | ProgramExpression::FunctionAddress(_)
+                            | ProgramExpression::AddressOf(_)
+                            | ProgramExpression::CheckedObjectAddress(_)
+                            | ProgramExpression::Subobject { .. }
+                            | ProgramExpression::PointerOffsetBytes { .. }
+                            | ProgramExpression::Cast { .. }
+                    ) {
+                        path.map_value(ExecutionValue::retain_formed_pointer)
+                    } else {
+                        path.into()
+                    }
+                })
                 .collect());
             }
         }
@@ -474,6 +490,95 @@ fn retained_binary(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn formed_pointer_roots_match_native_values_qualifiers_and_obligations() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut state = ExecutionState::new();
+        state
+            .locals
+            .set("x", ProgramValue::Int32(MachineTerm::constant(7)));
+        let array = Pointer::symbolic(Variable(1022001));
+        state
+            .locals
+            .set_array_object_at("array", ProgramType::Int32, 4, array.clone());
+        state.set_memory(Memory::new().with_block(array.block, 16));
+        let pointer = PointerValue::new(
+            Pointer::symbolic(Variable(1022000)),
+            ProgramType::Int32Pointer,
+        )
+        .with_pointee_constant(true)
+        .with_pointee_volatile(true);
+        let source = ProgramExpression::Value(ProgramValue::Pointer(pointer));
+        let mut expressions = vec![
+            ProgramExpression::Value(ProgramValue::typed_pointer(
+                Pointer::null(),
+                ProgramType::VoidPointer,
+            )),
+            source.clone(),
+            ProgramExpression::Variable("array".into()),
+            ProgramExpression::FunctionAddress("callback".into()),
+            ProgramExpression::AddressOf(Box::new(ProgramExpression::Variable("x".into()))),
+            ProgramExpression::CheckedObjectAddress(Box::new(ProgramExpression::Variable(
+                "x".into(),
+            ))),
+            ProgramExpression::Subobject {
+                pointer: Box::new(source.clone()),
+                width: 4,
+            },
+            ProgramExpression::PointerOffsetBytes {
+                pointer: Box::new(source.clone()),
+                bytes: 0,
+            },
+        ];
+        for explicit_qualification in [false, true] {
+            expressions.push(ProgramExpression::Cast {
+                expression: Box::new(source.clone()),
+                target_type: ProgramType::UInt8Pointer,
+                integer_mode: IntegerCastMode::Standard,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification,
+            });
+        }
+        let assumptions = PureFactContext::new();
+        for expression in expressions {
+            let expected = super::super::expression::evaluate_native_expression_paths(
+                &state,
+                &expression,
+                &assumptions,
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            let actual = evaluate_expression_value_paths(
+                &state,
+                &expression,
+                &assumptions,
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            assert_eq!(actual.len(), expected.len());
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                if let ExpressionOutcome::Value(ProgramValue::Pointer(expected_pointer)) =
+                    &expected.outcome
+                {
+                    let ExpressionOutcome::Value(value) = &actual.outcome else {
+                        panic!("formed pointer");
+                    };
+                    let retained = value
+                        .shared()
+                        .and_then(KernelTerm::pointer_payload)
+                        .expect("formed common root");
+                    assert!(
+                        retained.same_source_payload(&SharedPointerValue::import(expected_pointer)),
+                        "{expression:?}"
+                    );
+                }
+                assert_eq!(actual.into_native(), expected, "{expression:?}");
+            }
+        }
+    }
+
     #[test]
     fn retained_pointer_reads_preserve_freed_value_refusal() {
         let _session = crate::kernel::VerificationSession::enter();

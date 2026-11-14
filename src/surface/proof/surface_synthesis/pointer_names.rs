@@ -84,6 +84,16 @@ mod tests {
                     raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new()),
                     Some(expression.clone()),
                 );
+                let formed_root = crate::kernel::KernelTerm::shared_pointer_value(retained.clone());
+                assert_eq!(
+                    raise_kernel_term(
+                        &formed_root,
+                        ParameterBinding::default(),
+                        &state,
+                        &BTreeMap::new()
+                    ),
+                    Some(expression.clone()),
+                );
                 if let Some(root) = read_root {
                     assert_eq!(
                         raise_kernel_term(

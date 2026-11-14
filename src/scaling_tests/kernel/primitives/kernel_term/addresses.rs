@@ -49,3 +49,19 @@ fn block_import_charges_selected_bytes_not_unrelated_literal_bytes() {
         assert_eq!(work, 9 + size);
     }
 }
+
+#[test]
+fn named_pointer_admission_cost_is_independent_of_prior_imports() {
+    for size in [16, 64, 256] {
+        let block = PointerBlock::Concrete("n".repeat(size));
+        let mut retained = Vec::new();
+        for _ in 0..3 {
+            let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+                SharedPointerBlock::import_with_upkeep(&block, true)
+            });
+            assert_eq!(work, 9 + size);
+            retained.push(value);
+        }
+        assert!(retained.windows(2).all(|pair| pair[0] == pair[1]));
+    }
+}

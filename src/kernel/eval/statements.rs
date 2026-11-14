@@ -3101,9 +3101,12 @@ fn execute_program_return_expression_paths(
             obligations,
         } = expression_path;
         match outcome {
-            ExpressionOutcome::Value(ExecutionValue::Native(ProgramValue::Pointer(pointer)))
-                if state.memory.heap.pending_allocations.contains_key(&pointer) =>
+            ExpressionOutcome::Value(value)
+                if value.pointer().is_some_and(|pointer| {
+                    state.memory.heap.pending_allocations.contains_key(pointer)
+                }) =>
             {
+                let pointer = value.pointer().expect("pending pointer result").clone();
                 for truthiness_path in pending_allocation_outcome_paths(
                     pointer.pointer().clone(),
                     facts,

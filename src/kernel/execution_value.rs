@@ -14,11 +14,9 @@ impl PartialEq for ExecutionValue {
             (Self::Native(a), Self::Native(b)) => a == b,
             (Self::Shared(a), Self::Shared(b)) => {
                 a == b
-                    || matches!((a.node(), b.node()),
-                        (KernelTermNode::PointerRead { value: a, .. },
-                         KernelTermNode::PointerRead { value: b, .. })
-                        if a.same_source_payload(b))
-                    || match (a.pointer_read_native(), b.pointer_read_native()) {
+                    || matches!((a.pointer_payload(), b.pointer_payload()),
+                        (Some(a), Some(b)) if a.same_source_payload(b))
+                    || match (a.pointer_native(), b.pointer_native()) {
                         (Some(a), Some(b)) => a == b,
                         _ => false,
                     }
@@ -51,7 +49,7 @@ impl ExecutionValue {
     pub fn native_payload(&self) -> Option<&ProgramValue> {
         match self {
             Self::Native(value) => Some(value),
-            Self::Shared(root) => root.pointer_read_native(),
+            Self::Shared(root) => root.pointer_native(),
         }
     }
     pub fn pointer(&self) -> Option<&PointerValue> {
@@ -88,11 +86,24 @@ impl ExecutionValue {
         Self::Native(value)
     }
 
+    /// Admit a completed address formation or cast. Load roots keep their
+    /// definitions; other pointer producers are activated by their own slices.
+    pub(in crate::kernel) fn retain_formed_pointer(value: ProgramValue) -> Self {
+        let value = Self::retain_native(value);
+        match value {
+            Self::Native(ProgramValue::Pointer(pointer)) => {
+                KernelTerm::shared_pointer_value(SharedPointerValue::import_produced(&pointer))
+                    .into()
+            }
+            value => value,
+        }
+    }
+
     pub fn into_native(self) -> ProgramValue {
         match self {
             Self::Native(value) => value,
             Self::Shared(term) => {
-                if let Some(value) = term.pointer_read_native() {
+                if let Some(value) = term.pointer_native() {
                     return value.clone();
                 }
                 if matches!(term.node(), KernelTermNode::Call { .. }) {

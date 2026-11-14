@@ -307,6 +307,14 @@ existing checks. Surface naming preserves complete metadata. Ordinary pointer
 formation and arithmetic, calls and storage handoffs remain in their subsequent
 slices.
 
+7m admits completed null/object/function address formation, array/aggregate
+decay, field-address projections and pointer casts into complete common pointer
+roots. Native formation and cast operations retain their existing checks,
+qualifier policies and obligations; shared readers and Surface naming consume
+the prepared result. The pending-allocation return check accepts that carrier
+without changing allocation resolution. Arithmetic and other producer families
+remain separate slices.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface

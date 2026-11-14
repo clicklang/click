@@ -120,20 +120,26 @@ impl SharedPointerValue {
             )
     }
     pub(crate) fn import(value: &PointerValue) -> Self {
+        Self::import_addresses(value, SharedPointerAddress::import)
+    }
+    pub(crate) fn import_produced(value: &PointerValue) -> Self {
+        Self::import_addresses(value, SharedPointerAddress::import_produced)
+    }
+    fn import_addresses(
+        value: &PointerValue,
+        address: fn(&Pointer) -> SharedPointerAddress,
+    ) -> Self {
         Self::new(KernelPointerValue {
-            address: SharedPointerAddress::import(&value.pointer),
-            designation: SharedPointerAddress::import(&value.designation),
-            opaque_extent: value
-                .opaque_extent
-                .as_ref()
-                .map(|address| SharedPointerAddress::import(address)),
+            address: address(&value.pointer),
+            designation: address(&value.designation),
+            opaque_extent: value.opaque_extent.as_ref().map(|pointer| address(pointer)),
             program_type: value.program_type,
             qualifiers: value.qualifiers.as_ref().map(|q| {
                 Arc::new(KernelPointerQualifiers {
                     volatile: q.volatile,
                     constant: q.constant,
                     extent: q.extent.as_ref().map(|extent| KernelSubobjectExtent {
-                        start: SharedPointerAddress::import(&extent.start),
+                        start: address(&extent.start),
                         width: KernelTerm::retained_machine_operand(
                             MachineIntegerType::Int32,
                             MachineOperandView::Legacy(&extent.width),
@@ -183,6 +189,34 @@ impl SharedPointerValue {
                 })
                 .transpose()?,
         })
+    }
+}
+
+impl KernelTerm {
+    pub(crate) fn shared_pointer_value(value: SharedPointerValue) -> Self {
+        Self::intern(
+            KernelType::Program(value.node().program_type),
+            KernelTermNode::PointerValue(value),
+        )
+    }
+
+    pub(crate) fn pointer_payload(&self) -> Option<&SharedPointerValue> {
+        match self.node() {
+            KernelTermNode::PointerValue(value) | KernelTermNode::PointerRead { value, .. } => {
+                Some(value)
+            }
+            _ => None,
+        }
+    }
+
+    /// Explicit native compatibility view; common handoffs retain only the root.
+    pub(crate) fn pointer_native(&self) -> Option<&ProgramValue> {
+        let value = self.pointer_payload()?;
+        Some(self.0.pointer_leaf.get_or_init(|| {
+            Box::new(ProgramValue::Pointer(
+                value.export().expect("retained pointer result"),
+            ))
+        }))
     }
 }
 
