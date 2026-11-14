@@ -695,7 +695,6 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("an execution frontier has an execution context")
         };
-        let at_function_entry = parent_execution.core.frontier.is_at_function_entry();
         let arm_presentation = |surface_fact: ClickProposition, fact: &Proposition, value: bool| {
             let mut presentation = parent_execution.presentation.clone();
             presentation
@@ -719,7 +718,6 @@ impl<'a> Proof<'a> {
                     ProofCaseCondition::Cases(_) => true,
                 },
                 fact: Some(fact.clone()),
-                at_function_entry,
                 match_arm: None,
             });
             // Record this checked case before its body opens nested cases.

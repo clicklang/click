@@ -1850,8 +1850,31 @@ impl PartialEq for ProofEntryContext {
 
 impl Eq for ProofEntryContext {}
 
+/// The initial context already has one owner per source function. Reuse its
+/// opened native entry directly, without a second declaration-key cache.
+#[derive(Clone, Default)]
+pub(super) struct SharedOpenedClaimEntry(
+    Arc<std::sync::Mutex<Option<crate::kernel::proof::OpenedContractEntry>>>,
+);
+
+impl SharedOpenedClaimEntry {
+    pub(super) fn get_or_open(
+        &self,
+        open: impl FnOnce() -> Result<crate::kernel::proof::OpenedContractEntry, ClickError>,
+    ) -> Result<crate::kernel::proof::OpenedContractEntry, ClickError> {
+        let mut slot = self.0.lock().expect("opened contract entry");
+        if let Some(entry) = slot.as_ref() {
+            return Ok(entry.clone());
+        }
+        let entry = open()?;
+        *slot = Some(entry.clone());
+        Ok(entry)
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct InitialClaimContext {
+    pub(super) opened_entry: SharedOpenedClaimEntry,
     pub(super) state: ExecutionState,
     pub(super) arguments: Vec<ProgramExpression>,
     /// The entry facts, with the context the setup built from them kept
@@ -1861,6 +1884,7 @@ pub(super) struct InitialClaimContext {
     pub(super) surface_propositions: SurfacePropositionMap,
 }
 
+#[cfg(test)]
 pub(super) fn initial_claim_context(
     function_block: &FunctionBlock,
     parsed_function: &crate::languages::interface::ImportedFunction,
@@ -2468,6 +2492,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         &requirement_pure_facts.context(),
     )?;
     Ok(InitialClaimContext {
+        opened_entry: SharedOpenedClaimEntry::default(),
         state,
         arguments,
         pure_facts: requirement_pure_facts,

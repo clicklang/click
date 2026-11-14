@@ -42,8 +42,8 @@ pub(crate) use execution::OutcomeForkArm;
 pub(crate) use execution::{
     CheckedBranchSplit, CheckedBranchSplitError, CheckedCallEvent, CheckedCallEvents,
     CheckedCallOutcomeSplit, CheckedExecutionEvent, CheckedProofCasePartition, CheckedReturnPath,
-    EvidenceRefusal, ExceptionalContinuation, ExecutionEvidence, ExecutionFrontier,
-    ExecutionProofCore, ExecutionRegionKind, FrontierPosition, LoopControlExit,
+    ContractEntryAuthority, EvidenceRefusal, ExceptionalContinuation, ExecutionEvidence,
+    ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition, LoopControlExit,
     OpenedContractEntry, OutcomeEvidenceFork, ProofExecutionContinuation, ProofExecutionState,
     RejectedResourceRewriteFact, ResourceRewriteCheckError, UnestablishedInterfaceGoal,
     checked_branch_fact_is_available, old_reference_state, take_unestablished_interface_goal,
