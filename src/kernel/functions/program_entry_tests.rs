@@ -288,14 +288,13 @@ fn function_with_global_array(element_type: ProgramType, length: u32) -> Program
     )])
 }
 
-/// An ordinary function's entry names every element of a global array it has
-/// no initializer authority over by its symbolic entry value. The elements
-/// are one run and their access widths one declaration, and together they
-/// are exactly what materializing each element by itself leaves: the same
-/// cells, and the same width recorded at every element before and after the
-/// elements are named one by one.
+/// An ordinary function's entry declares a global array it has no
+/// initializer authority over and leaves it without contents, whatever its
+/// length: no cell, run or width record. A read of an element is its entry
+/// load, the same term whichever entry memory it is read at, and a store into
+/// the array writes that element alone.
 #[test]
-fn a_symbolic_global_array_entry_holds_exactly_the_per_element_cells() {
+fn a_symbolic_global_array_entry_holds_no_cells() {
     for element_type in [
         ProgramType::Int8,
         ProgramType::Int32,
@@ -307,58 +306,21 @@ fn a_symbolic_global_array_entry_holds_exactly_the_per_element_cells() {
         ProgramType::UInt8Pointer,
     ] {
         for length in [1u32, 5, 64, 65, 300] {
-            // Reset the naming caches together with their registries. A cached
-            // load handle cannot outlive the registry defining its pointer read.
             let _session = crate::kernel::VerificationSession::enter();
             let function = function_with_global_array(element_type, length);
             let entry = initialize_program_function_globals(&ExecutionState::new(), &function);
             let base = Memory::global_pointer("buf");
             let width = element_type.byte_width();
+            let slot = |index: u32| base.offset_by_bytes(index * width);
+            assert!(entry.memory().has_block(&base.block));
             assert_eq!(
                 entry.memory().cells.representation_len(),
-                1,
-                "{element_type:?}[{length}] is one run"
+                0,
+                "{element_type:?}[{length}] holds no cell"
             );
-            let source = crate::kernel::intern_memory(symbolic_memory_base(entry.memory(), &base));
-            let slot = |index: u32| base.offset_by_bytes(index * width);
-            // An object pointer's entry load records no width.
-            let expected_width = (!element_type.is_object_pointer()).then_some(width);
-            let widths = |memory: &SharedMemory| {
-                (0..length)
-                    .map(|index| {
-                        (
-                            crate::kernel::eval::recorded_load_access_width(memory, &slot(index)),
-                            crate::kernel::load_access_width_at_address_or_widest(&slot(index)),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            };
-            let declared = widths(&source);
-            assert!(
-                declared.iter().all(|(exact, _)| *exact == expected_width),
-                "{element_type:?}[{length}] declares its widths: {declared:?}"
-            );
-            let mut reference =
-                Memory::new().with_block_or_read_only(base.block.clone(), length * width, false);
-            for index in 0..length {
-                reference = materialize_symbolic_cell(reference, &slot(index), element_type);
-            }
-            assert_eq!(
-                entry.memory().cells.logical(),
-                reference.cells.logical(),
-                "{element_type:?}[{length}] holds the per-element cells"
-            );
-            // Recording each element's width again, as the per-element path
-            // just did, changes no answer: the declaration was those records.
-            assert_eq!(widths(&source), declared, "{element_type:?}[{length}]");
-            for index in [0, length / 2, length - 1] {
-                assert_eq!(
-                    entry.memory().load(&slot(index)),
-                    reference.load(&slot(index)),
-                    "{element_type:?}[{length}] element {index}"
-                );
-            }
-            // A store into the array writes that element alone.
+            // Entering again from the entry state declares nothing new.
+            let again = initialize_program_function_globals(&entry, &function);
+            assert_eq!(again.memory(), entry.memory(), "{element_type:?}[{length}]");
             let stored = zero_element(element_type);
             let written = entry
                 .memory()
@@ -369,63 +331,14 @@ fn a_symbolic_global_array_entry_holds_exactly_the_per_element_cells() {
                 ExpressionOutcome::Value(stored)
             );
             if length > 1 {
-                assert_eq!(written.load(&slot(0)), reference.load(&slot(0)));
+                assert_eq!(
+                    written.cells.representation_len(),
+                    1,
+                    "{element_type:?}[{length}]"
+                );
             }
         }
     }
-}
-
-/// A base memory for `buf` other than the one an entry builds, as another
-/// context constructing the array from its own base would hold: the same
-/// block beside an unrelated one.
-fn another_context_base(element_type: ProgramType, length: u32) -> SharedMemory {
-    let base = Memory::global_pointer("buf");
-    crate::kernel::intern_memory(
-        Memory::new()
-            .with_block_without_derivation(base.block, length * element_type.byte_width())
-            .with_block_without_derivation(Memory::global_pointer("unrelated").block, 4),
-    )
-}
-
-/// Each context that constructs a global array declares its element widths
-/// from its own base. A declaration from another base does not refuse the
-/// entry's: the entry is still one run, and both bases answer with the
-/// element width. Refused, the entry fell back to one cell per element.
-#[test]
-fn a_symbolic_global_array_declared_from_another_base_is_still_one_run() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let (element_type, length) = (ProgramType::Int32, 300u32);
-    let base = Memory::global_pointer("buf");
-    let other = another_context_base(element_type, length);
-    assert!(crate::kernel::eval::declare_symbolic_array_access_widths(
-        &other, &base, 4, length, 4
-    ));
-    let entry = initialize_program_function_globals(
-        &ExecutionState::new(),
-        &function_with_global_array(element_type, length),
-    );
-    assert_eq!(entry.memory().cells.representation_len(), 1);
-    let own = crate::kernel::intern_memory(symbolic_memory_base(entry.memory(), &base));
-    assert!(own != other);
-    for source in [&own, &other] {
-        for index in [0, length / 2, length - 1] {
-            assert_eq!(
-                crate::kernel::eval::recorded_load_access_width(
-                    source,
-                    &base.offset_by_bytes(index * 4)
-                ),
-                Some(4)
-            );
-        }
-    }
-    // Another layout at the same address is still refused.
-    assert!(!crate::kernel::eval::declare_symbolic_array_access_widths(
-        &other,
-        &base,
-        2,
-        length * 2,
-        2
-    ));
 }
 
 /// A function over a global `int32 buf[length] = {[2] = 7, [length - 1] = 3}`
@@ -648,41 +561,21 @@ fn owned_bytes(resources: &ResourceContext) -> BTreeMap<PointerBlock, Vec<(i64, 
     bytes
 }
 
-/// An ordinary function's entry names every field of a symbolic array of
-/// structs as its symbolic entry value, one run per field, and that leaves
-/// exactly the cells of materializing every struct's fields one by one. A
-/// layout with more cells than there are structs is materialized struct by
-/// struct.
+/// An ordinary function's entry leaves a symbolic array of structs, global
+/// or static, without contents, whatever its length.
 #[test]
-fn a_symbolic_aggregate_array_at_function_entry_holds_exactly_the_per_struct_cells() {
+fn a_symbolic_aggregate_array_at_function_entry_holds_no_cells() {
     for length in [1u32, 2, 5, 64, 65] {
         let _session = crate::kernel::VerificationSession::enter();
         let function = function_with_aggregate_arrays(length, 0, false);
         let entry = initialize_program_function_globals(&ExecutionState::new(), &function);
-        let layout = node_layout(0);
-        let mut reference = Memory::new();
         for pointer in [
             Memory::global_pointer("pool"),
             Memory::static_pointer("main", "slots"),
         ] {
-            reference = reference.clone().with_block_or_read_only(
-                pointer.block.clone(),
-                length * layout.size_bytes(),
-                false,
-            );
-            for element in 0..length {
-                reference = materialize_symbolic_aggregate_fields(
-                    reference,
-                    &pointer.offset_by_bytes(element * layout.size_bytes()),
-                    &layout,
-                );
-            }
+            assert!(entry.memory().has_block(&pointer.block), "[{length}]");
         }
-        assert_eq!(
-            entry.memory().cells.logical(),
-            reference.cells.logical(),
-            "[{length}] holds the per-struct cells"
-        );
+        assert_eq!(entry.memory().cells.representation_len(), 0, "[{length}]");
     }
 }
 

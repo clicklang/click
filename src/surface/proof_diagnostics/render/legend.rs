@@ -490,9 +490,6 @@ impl SnapshotLabels {
                 };
                 let mode = match run.value_mode() {
                     crate::kernel::RunValueMode::Load => format!("reads from {source}"),
-                    crate::kernel::RunValueMode::SymbolicStorage => {
-                        format!("symbolic storage from {source}")
-                    }
                     crate::kernel::RunValueMode::Copy { source_base } => format!(
                         "copy from {source} at {}",
                         self.pointer_value_name(source_base)

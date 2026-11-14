@@ -1,10 +1,9 @@
 # a symbolic index reads a large file-scope array
 
-A file-scope array's entry cells are one run: element `k` holds the load of
-element `k` at the storage's symbolic base. A read at a symbolic index the
-facts place inside the array reads that run as one family, so its value is
-the load of the indexed element, which the requirement written over the same
-element constrains.
+A file-scope array has no cells at function entry: element `k` holds its
+load at function entry, `old(words[k])`. A read at a symbolic index the facts
+place inside the array is one load of the indexed element at entry, which the
+requirement written over the same element constrains.
 
 Each element used to be its own cell, and the read asked them one at a time,
 splitting off a case per element and recursing into the rest. A thousand

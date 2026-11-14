@@ -105,6 +105,17 @@ kinds:
 Entry states have no parent edge. Failed allocation returns to the existing
 pre-allocation identity instead of recording a backward edge.
 
+The history root a proof path starts from (the empty memory, or the startup
+state for a program-entry `main`) is the `function.entry` point. Entry
+construction (declaring static storage and parameter objects, seeding resource
+cells) is recorded on top of it and is no point of its own, so a version walk
+that crosses it ends at the root (`HistoryEnds`), and a read of memory nothing
+has changed since is spelled `old(...)`. Ordinary function entry declares
+static storage (globals, static locals, their arrays and fields) without
+contents: a read that finds no cell is a load at its version point, the root
+when nothing wrote it, and a symbolic index into a never-written array is one
+load whatever the array's length.
+
 A scalar program store retains its original input before invalidating cached
 values, records initialization and effective types, and interns only the completed
 store. Cache cleanup is not a separate transition on this path. If invalidation

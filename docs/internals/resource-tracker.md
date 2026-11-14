@@ -47,6 +47,9 @@ an address, a call's havoc with its write set, a loop's havoc, a free, an
 allocation, a declaration, a lifetime end, cells forgotten, the beginning of
 the history — with a `StopReason`: the step `Affected` the resource, or it was
 `NotShownSeparate` and by which `SeparationCheck`, or the history ends there.
+The history's beginning is the `function.entry` point: the root a proof path
+starts from, below everything entry construction records
+([memory derivation DAG](memory-dag.md)).
 
 `Resource` is borrowed, so asking costs the same as the walks cost before.
 `Explanation` is bounded: the resource, the answer, and how many recorded steps

@@ -1230,6 +1230,37 @@ pub(crate) fn cell_value_on_path(
     }
 }
 
+/// The snapshot a static-storage cell is read at on the querying path, when
+/// that path's facts carry the cell unwritten from `at` back to the root
+/// (`function.entry`) and nothing on the way caches its value. A store the
+/// naming walk could not place, such as `g[u] = 7` on a path that knows
+/// `u != 0`, leaves an untouched `g[0]` its entry value: the read is the load
+/// at the root, as it is with no store at all. The path's facts cross the
+/// steps the naming walk cannot (as in [`cell_value_on_path`]); from the
+/// snapshot they reach, the memoized naming walk must run to the root. The
+/// snapshot is returned, and a load there is named at the root.
+pub(crate) fn static_cell_unwritten_since_entry_on_path(
+    at: &SharedMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+) -> Option<SharedMemory> {
+    if !pointer.block.is_static_storage_block() {
+        return None;
+    }
+    match cell_source::memory_dag_cell_source(at, pointer, bytes, assumptions, false)? {
+        cell_source::MemoryDagCell::Unwritten { node, .. }
+            if node != *at
+                && node.known_value(pointer).is_none()
+                && cell_last_same_version(&node, pointer, bytes)
+                    .is_some_and(|version| version.reason == StopReason::HistoryEnds) =>
+        {
+            Some(node)
+        }
+        _ => None,
+    }
+}
+
 thread_local! {
     static CELL_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<

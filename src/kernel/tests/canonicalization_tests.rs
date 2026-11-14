@@ -1105,52 +1105,6 @@ fn nested_snapshot_load_named(
     )
 }
 
-/// Symbolic pointer storage holds complete read identities, not pointer
-/// parameters backed by scalar load handles. Replacing the scalar handle as
-/// though it were a pointer parameter must leave every complete read intact.
-#[test]
-fn a_scalar_load_handle_does_not_substitute_a_complete_pointer_array_read() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let block = PointerBlock::Concrete("symbolic-pointer-array".to_string());
-    let at = |offset: i64| Pointer {
-        block: block.clone(),
-        offset: PointerOffsetTerm::Constant(offset),
-    };
-    let elements = 100u32;
-    let width = ProgramType::Int32Pointer.byte_width();
-    let size = width * elements;
-    let source = crate::kernel::intern_memory(
-        Memory::new().with_block_without_derivation(block.clone(), size),
-    );
-    let Ok(memory) = Memory::new()
-        .with_block("symbolic-pointer-array", size)
-        .with_symbolic_storage_run(at(0), ProgramType::Int32Pointer, elements, source.clone())
-    else {
-        panic!("a symbolic array over a fresh block is one run");
-    };
-    let element = |memory: &Memory, index: i64| {
-        memory
-            .cells
-            .get(&at(index * i64::from(width)))
-            .expect("every element holds a cell")
-    };
-    let bits =
-        MachineTerm::MemoryLoad(source, Box::new(at(50 * i64::from(width))), LoadKind::Int32);
-    let (named, _) = crate::kernel::load_variable_for_term(&bits).unwrap();
-    let ProgramValue::Pointer(observed) = element(&memory, 50) else {
-        panic!("pointer cell")
-    };
-    assert!(observed.pointer() == &Pointer::loaded(&bits).unwrap());
-    // The scalar carrier is not a pointer parameter. Substituting it cannot
-    // replace the complete read's address or its provenance.
-    let target = Memory::global_pointer("target");
-    let substituted =
-        crate::kernel::reasoning::substitute_pointer_variable_in_memory(&memory, named, &target);
-    for index in [0, 1, 49, 50, 51, 99] {
-        assert_eq!(element(&substituted, index), element(&memory, index));
-    }
-}
-
 /// A live memory's variables read from its interned counts are exactly the
 /// variables a walk of its every entry finds, through stores, a seeded run,
 /// a store into the run and a store that brings back an overwritten value.
