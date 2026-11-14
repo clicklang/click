@@ -97,7 +97,8 @@ pub(crate) use separation_laws::{
 };
 pub(crate) use separation_laws::{
     prove_separation_contains_element, prove_separation_distinct_elements,
-    prove_separation_elements, prove_separation_restrict, prove_separation_subrange,
+    prove_separation_elements, prove_separation_rebase, prove_separation_restrict,
+    prove_separation_subrange,
 };
 mod loops;
 pub(crate) mod machine_integer;

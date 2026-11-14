@@ -22296,3 +22296,48 @@ fn instantiated_bound_to_result_expands_without_transport() {
     let false_claim = source.replace("p[i] < result", "p[i] + 1 < result");
     assert!(verify_c_sources(&false_claim, &sources).is_err());
 }
+
+#[test]
+fn displaced_native_view_expands_to_rebase_and_restriction() {
+    let (source, sources) = mdtest_sources("mdtests/native_view_window.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "window").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("separation::rebase"), "{expanded}");
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim("window.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn instantiated_indexed_read_expands_without_transport() {
+    let c_source = "void keep(int32 p[], int32 n, int32 *q) { *q = 9; }";
+    let source = r#"
+        verifying "keep.c";
+        void keep(int32 p[], int32 n, int32 *q) {
+            views p[0..n];
+            owns q[0];
+            requires separate(memory(q[0]), memory(p[0..n]));
+            requires forall (i: int32) { 0 <= i and i < n implies p[i] == 7 };
+            ensures forall (i: int32) { 0 <= i and i < n implies p[i] == 7 };
+        } by { step_until(function.exit); solve(); }
+    "#;
+    let sources = [("keep.c", c_source)];
+    let expanded = expand_function_proof_source(source, &sources, "keep").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(expanded.contains("instantiate("), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    let missing = source.replace(
+        "requires forall (i: int32) { 0 <= i and i < n implies p[i] == 7 };",
+        "",
+    );
+    assert!(verify_c_sources(&missing, &sources).is_err());
+}

@@ -9325,7 +9325,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter(|source| matches!(source, ClickProposition::Loadable { .. }))
         {
             let goals = if *wide {
-                native_viewability_restriction_steps(source, target, surfaces)
+                rebased_viewability_restriction_steps(source, target, surfaces)
+                    .or_else(|| native_viewability_restriction_steps(source, target, surfaces))
             } else {
                 computed_viewability_restriction_steps(source, target, surfaces)
             };

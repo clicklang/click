@@ -16,6 +16,9 @@ mod matches;
 pub(crate) use matches::KernelMatch;
 pub(crate) use matches::KernelMatchArm;
 mod reads;
+// Prepared pointer payloads; producer activation follows scoped consumers and spelling.
+#[allow(dead_code)]
+mod offsets;
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
 use std::collections::{HashMap, VecDeque};

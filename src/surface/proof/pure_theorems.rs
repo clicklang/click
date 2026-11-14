@@ -180,7 +180,9 @@ pub(in crate::surface) fn kernel_law_index_types(
             InterfaceType::Int64(crate::languages::c::syntax::LongRank::Long),
             InterfaceType::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
-        "click::separation::subrange" | "click::separation::contains_element" => vec![
+        "click::separation::subrange"
+        | "click::separation::contains_element"
+        | "click::separation::rebase" => vec![
             InterfaceType::Int32,
             InterfaceType::UInt64(crate::languages::c::syntax::LongRank::Long),
         ],
@@ -2703,6 +2705,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
             Some(
                 "click::separation::subrange"
                     | "click::separation::contains_element"
+                    | "click::separation::rebase"
                     | "click::separation::elements"
                     | "click::separation::distinct_elements"
             )
@@ -2742,6 +2745,7 @@ fn verify_kernel_standard_theorem_axiom(
         "click::separation::restrict" => (4, 3),
         name if name.split("::<").next() == Some("click::separation::subrange") => (5, 3),
         name if name.split("::<").next() == Some("click::separation::contains_element") => (4, 2),
+        name if name.split("::<").next() == Some("click::separation::rebase") => (3, 2),
         name if matches!(
             name.split("::<").next(),
             Some("click::separation::elements" | "click::separation::distinct_elements")
@@ -2828,7 +2832,11 @@ fn verify_kernel_standard_theorem_axiom(
         }
     } else if matches!(
         theorem.name().split("::<").next(),
-        Some("click::separation::subrange" | "click::separation::contains_element")
+        Some(
+            "click::separation::subrange"
+                | "click::separation::contains_element"
+                | "click::separation::rebase"
+        )
     ) {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
@@ -2860,7 +2868,16 @@ fn verify_kernel_standard_theorem_axiom(
                 "interval law bounds must have the same type",
             ));
         }
-        if theorem.name().split("::<").next() == Some("click::separation::contains_element") {
+        if theorem.name().split("::<").next() == Some("click::separation::rebase") {
+            crate::kernel::prove_separation_rebase(
+                pointer.clone(),
+                width,
+                format,
+                bounds[0].1.clone(),
+                bounds[1].1.clone(),
+            )
+        } else if theorem.name().split("::<").next() == Some("click::separation::contains_element")
+        {
             crate::kernel::prove_separation_contains_element(
                 pointer.clone(),
                 width,
