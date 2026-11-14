@@ -321,6 +321,80 @@ impl<S> DerefMut for OutcomeProofState<S> {
     }
 }
 
+/// The contract closer's distinct ordinary obligations, in proof order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ContractClosingGoal {
+    ReturnedResources,
+    AllocationLifetime,
+    WriteFootprint,
+}
+
+impl ContractClosingGoal {
+    const ORDER: [Self; 3] = [
+        Self::ReturnedResources,
+        Self::AllocationLifetime,
+        Self::WriteFootprint,
+    ];
+
+    pub(crate) fn description(self) -> &'static str {
+        match self {
+            Self::ReturnedResources => "joint returned resources",
+            Self::AllocationLifetime => "allocation lifetime",
+            Self::WriteFootprint => "write footprint",
+        }
+    }
+
+    fn bit(self) -> u8 {
+        1 << self as u8
+    }
+}
+
+/// Persistent fixed-size goal state; closing one goal never visits claims or facts.
+#[derive(Clone, Copy)]
+pub(crate) struct ContractClosingGoals {
+    open: u8,
+}
+
+impl ContractClosingGoals {
+    pub(in crate::kernel) fn open() -> Self {
+        Self { open: 0b111 }
+    }
+
+    pub(crate) fn first_open(self) -> Option<ContractClosingGoal> {
+        crate::instrumentation::record_deterministic_work(1);
+        ContractClosingGoal::ORDER
+            .into_iter()
+            .find(|goal| self.open & goal.bit() != 0)
+    }
+
+    pub(crate) fn is_closed(self, goal: ContractClosingGoal) -> bool {
+        self.open & goal.bit() == 0
+    }
+
+    pub(in crate::kernel) fn close(self, goal: ContractClosingGoal) -> Self {
+        crate::instrumentation::record_deterministic_work(1);
+        Self {
+            open: self.open & !goal.bit(),
+        }
+    }
+
+    pub(in crate::kernel) fn reopen(self, goal: ContractClosingGoal) -> Self {
+        Self {
+            open: self.open | goal.bit(),
+        }
+    }
+}
+
+/// One selector for source clauses and obligations introduced by contract closing.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum OutcomeGoal {
+    Claim {
+        position: usize,
+        key: CFunctionContractClaimKey,
+    },
+    Closing(ContractClosingGoal),
+}
+
 /// The remaining obligation for one checked returning path, paired with
 /// opaque result-presentation data.
 #[derive(Clone)]
@@ -341,6 +415,27 @@ impl<S> FunctionOutcomeObligation<S> {
             claims: None,
             closing: None,
         }
+    }
+}
+
+impl<S> FunctionOutcomeObligation<S> {
+    /// Unopened contracts cannot be mistaken for completed contracts.
+    pub(crate) fn first_open_goal(&self) -> Result<Option<OutcomeGoal>, &'static str> {
+        let claims = self
+            .claims
+            .as_ref()
+            .ok_or("contract claim obligations have not been opened")?;
+        let closing = self
+            .closing
+            .as_ref()
+            .ok_or("contract closing obligations have not been opened")?;
+        if let Some((position, key)) = claims.first_open_goal() {
+            return Ok(Some(OutcomeGoal::Claim {
+                position,
+                key: key.clone(),
+            }));
+        }
+        Ok(closing.first_open_goal().map(OutcomeGoal::Closing))
     }
 }
 
@@ -461,6 +556,14 @@ impl OutcomeClaimGoals {
         result
     }
 
+    fn first_open_goal(&self) -> Option<(usize, &CFunctionContractClaimKey)> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.open
+            .iter()
+            .next()
+            .map(|(position, key)| (*position, key))
+    }
+
     /// The claim a closer acts on, retaining the contract's input order.
     #[cfg(test)]
     pub(crate) fn first_open(&self) -> Option<&CFunctionContractClaimKey> {
@@ -468,6 +571,7 @@ impl OutcomeClaimGoals {
         self.open.iter().next().map(|(_, key)| key)
     }
 
+    #[cfg(test)]
     pub(crate) fn first_open_position(&self) -> Option<usize> {
         crate::instrumentation::record_deterministic_work(1);
         self.open.iter().next().map(|(position, _)| *position)
@@ -728,6 +832,169 @@ mod outcome_claim_goal_tests {
             ClaimGoalError::AlreadyClosed
         );
     }
+    fn closing_execution() -> crate::kernel::CCheckedFunctionExecution {
+        use crate::kernel::*;
+        prove_checked_c_function_execution_with_environment(
+            CState::new(),
+            c_function(
+                CType::Int32,
+                "closing_goals",
+                vec![],
+                c_return(c_int32_literal(0)),
+            ),
+            vec![],
+            PureFactContext::new(),
+            CExecutionEnvironment::new(),
+            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            CFunctionContractExecutionMode::VerifyLoops,
+        )
+    }
+
+    fn outcome_root(
+        goal: FunctionOutcomeObligation<Arc<OutcomeProofState<()>>>,
+    ) -> super::super::ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> {
+        super::super::ProofObject::root(
+            (),
+            super::super::ProofBranch::new(
+                ProofObligation::FunctionOutcome(goal),
+                super::super::ProofBranchState {
+                    facts: super::super::ProofFacts::from_ordered(&[]),
+                    unfolded_predicates: super::super::PersistentOrderedSet::default(),
+                    execution: None,
+                },
+            ),
+        )
+    }
+
+    #[test]
+    fn outcome_completion_requires_opened_claims_and_all_closing_goals() {
+        let execution = closing_execution();
+        let core = outcome();
+        let data = Arc::new(OutcomeProofState::new(core.clone(), ()));
+        let mut goal = FunctionOutcomeObligation::new(0, data);
+        assert!(
+            outcome_root(goal.clone())
+                .complete_function_outcome()
+                .is_err()
+        );
+        goal.claims = Some(OutcomeClaimGoals::open([], false));
+        let context = crate::kernel::CContractClosingContext::new(&execution);
+        let closing = context.open(0, &core);
+        goal.closing = Some(closing.clone());
+        assert_eq!(
+            goal.first_open_goal(),
+            Ok(Some(OutcomeGoal::Closing(
+                ContractClosingGoal::ReturnedResources
+            )))
+        );
+        let original = outcome_root(goal.clone());
+        assert!(!original.is_complete());
+        assert!(
+            original
+                .complete_function_outcome()
+                .err()
+                .unwrap()
+                .contains("joint returned resources")
+        );
+        let (transitioned, _) = closing
+            .apply_resource_transition(
+                &crate::kernel::CState::new(),
+                crate::kernel::CFunctionOutcome::Return {
+                    value: crate::kernel::api::int32(0).into(),
+                    state: Box::new(crate::kernel::CState::new()),
+                },
+                &crate::kernel::PureFactContext::new(),
+            )
+            .unwrap();
+        goal.closing = Some(transitioned.clone());
+        assert_eq!(
+            goal.first_open_goal(),
+            Ok(Some(OutcomeGoal::Closing(
+                ContractClosingGoal::AllocationLifetime
+            )))
+        );
+        assert!(
+            outcome_root(goal.clone())
+                .complete_function_outcome()
+                .is_err()
+        );
+        let path = &execution.paths()[0];
+        let specification =
+            crate::kernel::CheckedPathSpecification::new(execution.function(), path).unwrap();
+        let (closed, _) = transitioned
+            .close(
+                &execution,
+                path,
+                &specification,
+                &core,
+                goal.claims.as_ref().unwrap(),
+                &super::super::ProofFacts::from_ordered(&[]),
+            )
+            .unwrap();
+        goal.closing = Some(closed.clone());
+        assert_eq!(goal.first_open_goal(), Ok(None));
+        let completed = outcome_root(goal.clone())
+            .complete_function_outcome()
+            .unwrap();
+        assert!(completed.is_complete());
+        assert!(completed.completion().is_some());
+        assert!(
+            original.complete_function_outcome().is_err(),
+            "completion cannot leak to a sibling"
+        );
+        goal.closing = Some(closed.after_resource_change());
+        assert_eq!(
+            goal.first_open_goal(),
+            Ok(Some(OutcomeGoal::Closing(
+                ContractClosingGoal::ReturnedResources
+            )))
+        );
+        assert!(
+            outcome_root(goal.clone())
+                .complete_function_outcome()
+                .is_err()
+        );
+        for missing in ContractClosingGoal::ORDER {
+            let mut partial = context.open(0, &core);
+            for kind in ContractClosingGoal::ORDER {
+                if kind != missing {
+                    partial = partial.fixture_close_goal(kind);
+                }
+            }
+            goal.closing = Some(partial);
+            let error = outcome_root(goal.clone())
+                .complete_function_outcome()
+                .err()
+                .unwrap();
+            assert!(error.contains(missing.description()), "{error}");
+        }
+    }
+
+    #[test]
+    fn closing_goal_identity_survives_out_of_order_closure_and_forks() {
+        let initial = ContractClosingGoals::open();
+        let last_closed = initial.close(ContractClosingGoal::WriteFootprint);
+        assert_eq!(
+            initial.first_open(),
+            Some(ContractClosingGoal::ReturnedResources)
+        );
+        assert_eq!(
+            last_closed.first_open(),
+            Some(ContractClosingGoal::ReturnedResources)
+        );
+        let resources_closed = last_closed.close(ContractClosingGoal::ReturnedResources);
+        assert_eq!(
+            resources_closed.first_open(),
+            Some(ContractClosingGoal::AllocationLifetime)
+        );
+        let complete = resources_closed.close(ContractClosingGoal::AllocationLifetime);
+        assert_eq!(complete.first_open(), None);
+        assert_eq!(
+            last_closed.first_open(),
+            Some(ContractClosingGoal::ReturnedResources)
+        );
+    }
+
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/obligations/outcome_claim_goals.rs");
     }
