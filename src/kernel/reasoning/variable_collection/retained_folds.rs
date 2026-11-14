@@ -172,10 +172,21 @@ pub(super) fn common_variables(
                 if !finish {
                     pending.push((term, true));
                     pending.extend(term.children().iter().rev().map(|child| (child, false)));
+                    if let KernelTermNode::Match(matched) = term.node() {
+                        pending.extend(
+                            matched
+                                .arms
+                                .iter()
+                                .flat_map(|arm| &arm.bindings)
+                                .map(|child| (child, false)),
+                        );
+                    }
                     continue;
                 }
                 let mut result = Variables::default();
-                if let KernelTermNode::Fold(fold) = term.node() {
+                if let KernelTermNode::Match(matched) = term.node() {
+                    result = super::retained_matches::match_variables(matched, mode, summaries);
+                } else if let KernelTermNode::Fold(fold) = term.node() {
                     for child in &fold.arguments[..3] {
                         result = union(&result, &summaries[&child.id()]);
                     }
@@ -560,13 +571,19 @@ pub(super) fn collect_native_fold_variables(
     mode: FoldVariableRead,
     variables: &mut BTreeSet<Variable>,
 ) -> bool {
-    if !matches!(term, IntegerTerm::RangeFold { .. }) {
+    if !matches!(
+        term,
+        IntegerTerm::RangeFold { .. } | IntegerTerm::AlgebraicMatch { .. }
+    ) {
         return false;
     }
     let root = crate::kernel::KernelTermImport::default().integer(&term.clone().into());
-    let KernelTermNode::Fold(fold) = root.node() else {
-        unreachable!("migrated Integer fold");
-    };
-    collect_fold_variables(fold, mode, variables);
+    match root.node() {
+        KernelTermNode::Fold(fold) => collect_fold_variables(fold, mode, variables),
+        KernelTermNode::Match(matched) => {
+            super::retained_matches::collect_match_variables(matched, mode, variables)
+        }
+        _ => unreachable!("migrated Integer scope"),
+    }
     true
 }

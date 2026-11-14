@@ -132,6 +132,7 @@ impl TermRewrite<'_> {
                 if !matches
                     && root.has_machine_conversions()
                     && (source.is_none()
+                        || source.as_ref().is_some_and(KernelTerm::has_machine_matches)
                         || matches!(from, MachineOperandView::Shared(value) if value.has_machine_conversions()))
                 {
                     let Some(found) = opaque_sources
@@ -195,6 +196,9 @@ impl TermRewrite<'_> {
                 continue;
             }
             let value = match term.node() {
+                KernelTermNode::Match(matched) => self
+                    .rewrite_retained_match_value_in(matched)?
+                    .with_machine_observation_type(format),
                 KernelTermNode::Fold(fold) => self
                     .retained_fold_in(fold)
                     .ok()?

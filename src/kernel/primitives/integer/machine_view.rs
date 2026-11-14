@@ -53,7 +53,8 @@ pub(crate) fn shared_machine_syntax_variables(
                 | KernelTermNode::Legacy(_)
                 | KernelTermNode::MemoryLoad { .. }
                 | KernelTermNode::Call { .. }
-                | KernelTermNode::Fold(_) => Default::default(),
+                | KernelTermNode::Fold(_)
+                | KernelTermNode::Match(_) => Default::default(),
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => {
                     if !finish {
@@ -122,6 +123,7 @@ pub(crate) fn shared_machine_conversion_leaves(
                     | KernelTermNode::Call { .. }
                     | KernelTermNode::MachineIf { .. }
                     | KernelTermNode::Fold(_)
+                    | KernelTermNode::Match(_)
             )
         },
         visit,
@@ -488,7 +490,93 @@ impl SharedMachineIntegerTerm {
     }
 }
 
+pub(crate) struct MachineMatchView<'a> {
+    pub(crate) scrutinee: std::borrow::Cow<'a, AlgebraicTerm>,
+    pub(crate) arms: Vec<MachineMatchArmView<'a>>,
+}
+pub(crate) struct MachineMatchArmView<'a> {
+    pub(crate) variant: &'a str,
+    pub(crate) bindings: std::borrow::Cow<'a, [AlgebraicValue]>,
+    pub(crate) body: MachineOperandView<'a>,
+}
+
 impl<'a> MachineOperandView<'a> {
+    /// The selected scrutinee alone; equality-premise selection does not need arms.
+    pub(crate) fn match_scrutinee(self) -> Option<std::borrow::Cow<'a, AlgebraicTerm>> {
+        use std::borrow::Cow;
+        match self {
+            Self::Legacy(MachineTerm::AlgebraicMatch { scrutinee, .. }) => {
+                Some(Cow::Borrowed(scrutinee))
+            }
+            Self::Shared(root) => {
+                let KernelTermNode::Match(matched) = root.node() else {
+                    return None;
+                };
+                if let KernelTermNode::Legacy(value) = matched.arguments[0].node()
+                    && let PureFunctionArgument::Algebraic(value) = value.value()
+                {
+                    return Some(Cow::Borrowed(value));
+                }
+                let PureFunctionArgument::Algebraic(value) = KernelTermExport::default()
+                    .argument(&matched.arguments[0])
+                    .ok()?
+                else {
+                    return None;
+                };
+                Some(Cow::Owned(value))
+            }
+            _ => None,
+        }
+    }
+
+    /// Borrow arm bodies; only the still-native typed descriptors are read.
+    pub(crate) fn matched(self) -> Option<MachineMatchView<'a>> {
+        use std::borrow::Cow;
+        match self {
+            Self::Legacy(MachineTerm::AlgebraicMatch { scrutinee, arms }) => {
+                Some(MachineMatchView {
+                    scrutinee: Cow::Borrowed(scrutinee),
+                    arms: arms
+                        .iter()
+                        .map(|arm| MachineMatchArmView {
+                            variant: &arm.variant,
+                            bindings: Cow::Borrowed(&arm.bindings),
+                            body: Self::Legacy(&arm.body),
+                        })
+                        .collect(),
+                })
+            }
+            Self::Shared(root) => {
+                let KernelTermNode::Match(matched) = root.node() else {
+                    return None;
+                };
+                let mut export = KernelTermExport::default();
+                let PureFunctionArgument::Algebraic(scrutinee) =
+                    export.argument(&matched.arguments[0]).ok()?
+                else {
+                    return None;
+                };
+                let arms = matched
+                    .arms
+                    .iter()
+                    .zip(&matched.arguments[1..])
+                    .map(|(arm, body)| {
+                        Some(MachineMatchArmView {
+                            variant: &arm.variant,
+                            bindings: Cow::Owned(arm.export_bindings(&mut export).ok()?),
+                            body: Self::Shared(body),
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some(MachineMatchView {
+                    scrutinee: Cow::Owned(scrutinee),
+                    arms,
+                })
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn fold(self) -> Option<(Variable, Variable, [Self; 4])> {
         match self {
             Self::Shared(root) => match root.node() {
@@ -893,7 +981,8 @@ impl<'a> MachineOperandView<'a> {
                 KernelTermNode::MachineLiteral(_) => crate::kernel::root_width(&self.literal()?),
                 KernelTermNode::Variable(_)
                 | KernelTermNode::MachineIf { .. }
-                | KernelTermNode::Fold(_) => None,
+                | KernelTermNode::Fold(_)
+                | KernelTermNode::Match(_) => None,
                 KernelTermNode::MemoryLoad { kind, .. } => Some(CarrierWidth::of_load(*kind)),
                 KernelTermNode::IntegerToMachine { destination, .. } => {
                     Some(CarrierWidth::of_machine_type(*destination))

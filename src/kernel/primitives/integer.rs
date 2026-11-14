@@ -810,7 +810,14 @@ impl SharedMachineIntegerTerm {
                     .map(|root| root.with_machine_observation_type(ty))
             })
             .or_else(|| KernelTermImport::default().machine_arithmetic(ty, value))?;
-        let shared = Self::from_shared(ty, root)?;
+        // Scoped machine forms can retain opaque calls in their bodies.
+        // Use the same numeric observation as `intern`, while preserving
+        // the exact imported root at its producer boundary.
+        let shared = if root.has_opaque_observation_boundary() && root.has_machine_control_terms() {
+            Self::observe_shared(ty, root)
+        } else {
+            Self::from_shared(ty, root)
+        }?;
         shared.remember_explicit_import(MachineIntegerKey::native(ty, value.clone()));
         Some(shared)
     }
@@ -1854,6 +1861,26 @@ impl IntegerTerm {
 
     pub fn parse_constant(value: &str) -> Option<Self> {
         BigInt::from_str(value).ok().map(Self::constant)
+    }
+
+    pub(crate) fn algebraic_match(
+        scrutinee: AlgebraicTerm,
+        arms: Vec<AlgebraicIntegerMatchArm>,
+    ) -> Self {
+        let native = Self::AlgebraicMatch {
+            scrutinee: Box::new(scrutinee),
+            arms,
+        };
+        let matched =
+            crate::kernel::KernelMatch::import_integer(&mut KernelTermImport::default(), &native)
+                .expect("Integer match producer");
+        // The path result still has a shallow native Integer reading. Arm
+        // bodies retain their common handles across this explicit boundary.
+        KernelTermExport::default()
+            .integer(&matched.into_term())
+            .expect("Integer match result reading")
+            .as_ref()
+            .clone()
     }
 
     pub fn range_fold(

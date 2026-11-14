@@ -67,6 +67,27 @@ fn collect_machine_operand_carriers(
     }
     if let Some(leaves) = shared_machine_conversion_leaves(root, || variables.visit()) {
         for (_, leaf) in leaves.iter() {
+            if let KernelTermNode::Match(matched) = leaf.node() {
+                let mut export = KernelTermExport::default();
+                let mut seen = BTreeSet::new();
+                for child in matched
+                    .arguments
+                    .iter()
+                    .chain(matched.arms.iter().flat_map(|arm| &arm.bindings))
+                {
+                    if let KernelType::C(ty) = child.ty()
+                        && MachineIntegerType::from_c_type(*ty).is_some()
+                    {
+                        collect_machine_operand_carriers(
+                            MachineOperandView::Shared(child),
+                            variables,
+                        );
+                    } else if let Ok(argument) = export.argument(child) {
+                        collect_argument_carriers(&argument, variables, &mut seen);
+                    }
+                }
+                continue;
+            }
             if let KernelTermNode::Fold(fold) = leaf.node() {
                 variables.c.insert(fold.accumulator);
                 variables.c.insert(fold.item);
@@ -4194,8 +4215,20 @@ impl<'a> TermRewrite<'a> {
                     Err(_) => IntegerTerm::constant_i64(0),
                 }
             }
-            IntegerTerm::AlgebraicMatch { scrutinee, arms } => {
-                self.rewrite_integer_match(scrutinee, arms)
+            IntegerTerm::AlgebraicMatch { .. } => {
+                let root = KernelTermImport::default().integer(shared);
+                let KernelTermNode::Match(matched) = root.node() else {
+                    unreachable!("Integer match")
+                };
+                match self.rewrite_retained_match_value_in(matched) {
+                    Some(root) => self
+                        .fold_integer_bridge
+                        .integer(&root)
+                        .expect("Integer match reading")
+                        .as_ref()
+                        .clone(),
+                    None => IntegerTerm::constant_i64(0),
+                }
             }
             IntegerTerm::If {
                 condition,
@@ -4575,106 +4608,6 @@ impl<'a> TermRewrite<'a> {
         replacement
     }
 
-    fn rewrite_integer_match(
-        &mut self,
-        original_scrutinee: &AlgebraicTerm,
-        arms: &[crate::kernel::AlgebraicIntegerMatchArm],
-    ) -> IntegerTerm {
-        let exhausted = || IntegerTerm::AlgebraicMatch {
-            scrutinee: Box::new(exhausted_algebraic(original_scrutinee)),
-            arms: Vec::new(),
-        };
-        self.reserve_match_variables(original_scrutinee, arms);
-        if self.integer_work_exhausted {
-            return exhausted();
-        }
-        let scrutinee = self.algebraic(original_scrutinee);
-        if self.integer_work_exhausted {
-            return exhausted();
-        }
-        let mut rewritten_arms = Vec::with_capacity(arms.len());
-        for arm in arms {
-            // Pattern declarations are already in the carrier of the arm.
-            // Rewrite only their identity after installing the arm scope; a
-            // normal term walk here would substitute a declaration itself.
-            let saved_scope_id = self.scope_id;
-            let saved_shadowed = self.integer_shadowed;
-            let mut changes = Vec::new();
-            let mut bindings = arm.bindings.clone();
-            if !self.rewrite_match_bindings(&mut bindings, &mut changes) {
-                self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                return exhausted();
-            }
-            let body = if self.conditions.is_some() {
-                arm.body.clone()
-            } else {
-                self.integer(&arm.body).into()
-            };
-            self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-            if self.integer_work_exhausted {
-                return exhausted();
-            }
-            rewritten_arms.push(crate::kernel::AlgebraicIntegerMatchArm {
-                binding_names: arm.binding_names.clone(),
-                variant: arm.variant.clone(),
-                bindings,
-                body,
-            });
-        }
-        if let Some(value) = self.rewrite_integer_match_iota(&scrutinee, &rewritten_arms) {
-            return value;
-        }
-        if self.integer_work_exhausted {
-            return exhausted();
-        }
-        IntegerTerm::AlgebraicMatch {
-            scrutinee: Box::new(scrutinee),
-            arms: rewritten_arms,
-        }
-    }
-
-    fn rewrite_integer_match_iota(
-        &mut self,
-        scrutinee: &AlgebraicTerm,
-        arms: &[crate::kernel::AlgebraicIntegerMatchArm],
-    ) -> Option<IntegerTerm> {
-        let fields = scrutinee.checked_constructor_fields()?;
-        let variant = match &scrutinee.node {
-            AlgebraicTermNode::Constructor { variant, .. } => variant,
-            _ => unreachable!(),
-        };
-        let arm = arms.iter().find(|arm| arm.variant == *variant)?;
-        let schema = scrutinee
-            .algebraic_type
-            .variants
-            .iter()
-            .find(|schema| schema.name == *variant)?;
-        if arm.bindings.len() != fields.len() {
-            return None;
-        }
-        let (c_replacements, integer_replacements, algebraic_replacements) =
-            match_field_replacements(&arm.bindings, fields, &schema.fields)?;
-        let mut field_rewrite = TermRewrite::for_typed_variables(
-            &c_replacements,
-            &integer_replacements,
-            &algebraic_replacements,
-        );
-        let value = field_rewrite.integer(&arm.body);
-        self.changed |= field_rewrite.changed;
-        field_rewrite.refusal_observed.set(true);
-        self.unsupported_integer_scope |= field_rewrite.unsupported_integer_scope;
-        self.integer_work_exhausted |= field_rewrite.integer_work_exhausted;
-        #[cfg(test)]
-        {
-            self.visits += field_rewrite.visits;
-        }
-        if self.unsupported_integer_scope || self.integer_work_exhausted {
-            return None;
-        }
-        self.changed = true;
-        Some(value)
-    }
-
     fn rewrite_bitvector_match_iota(
         &mut self,
         scrutinee: &AlgebraicTerm,
@@ -4960,39 +4893,6 @@ impl<'a> TermRewrite<'a> {
         }
         self.scope_id = scope_id;
         self.integer_shadowed = integer_shadowed;
-    }
-
-    fn reserve_match_variables(
-        &mut self,
-        scrutinee: &AlgebraicTerm,
-        arms: &[crate::kernel::AlgebraicIntegerMatchArm],
-    ) {
-        self.ensure_replacement_carriers();
-        if self.source_variables_reserved {
-            return;
-        }
-        let mut variables = self.new_carrier_variables();
-        let mut seen = BTreeSet::new();
-        collect_algebraic_carriers_seen(scrutinee, &mut variables, &mut seen);
-        if variables.exhausted() {
-            self.reserve_source_variables(variables);
-            return;
-        }
-        for arm in arms {
-            for binding in &arm.bindings {
-                collect_algebraic_value_carriers(binding, &mut variables, &mut seen);
-                if variables.exhausted() {
-                    self.reserve_source_variables(variables);
-                    return;
-                }
-            }
-            collect_integer_shared_carriers(&arm.body, &mut variables, &mut seen);
-            if variables.exhausted() {
-                self.reserve_source_variables(variables);
-                return;
-            }
-        }
-        self.reserve_source_variables(variables);
     }
 
     fn ensure_replacement_carriers(&mut self) {
@@ -6097,6 +5997,29 @@ impl<'a> TermRewrite<'a> {
             }
             let view = MachineOperandView::Legacy(native);
             match shared.node() {
+                KernelTermNode::Match(matched) => {
+                    let MachineTerm::AlgebraicMatch { scrutinee, arms } = native else {
+                        return false;
+                    };
+                    let mut export = KernelTermExport::default();
+                    if export.argument(&matched.arguments[0]).ok()
+                        != Some(PureFunctionArgument::Algebraic((**scrutinee).clone()))
+                        || arms.len() != matched.arms.len()
+                    {
+                        return false;
+                    }
+                    for ((native, arm), body) in
+                        arms.iter().zip(&matched.arms).zip(&matched.arguments[1..])
+                    {
+                        if native.variant != arm.variant
+                            || arm.export_bindings(&mut export).ok().as_ref()
+                                != Some(&native.bindings)
+                        {
+                            return false;
+                        }
+                        pending.push((&native.body, body));
+                    }
+                }
                 KernelTermNode::Variable(variable) => {
                     if view.variable() != Some(variable) {
                         return false;

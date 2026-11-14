@@ -49,7 +49,7 @@ fn export_value(
 }
 
 impl KernelMatchArm {
-    fn import(
+    pub(crate) fn import(
         import: &mut KernelTermImport,
         variant: &str,
         bindings: &[AlgebraicValue],
@@ -94,6 +94,10 @@ impl KernelMatchArm {
 }
 
 impl KernelMatch {
+    pub(crate) fn into_term(self) -> KernelTerm {
+        KernelTerm::intern(self.result_type.clone(), KernelTermNode::Match(self))
+    }
+
     pub(crate) fn new(
         result_type: KernelType,
         scrutinee: KernelTerm,
@@ -359,6 +363,77 @@ mod tests {
     fn names() -> BindingNames {
         BindingNames::written(&["field".into()])
     }
+    #[test]
+    fn numeric_match_roots_preserve_observation_identity_and_typed_arms() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = MachineTerm::AlgebraicMatch {
+            scrutinee: Box::new(scrutinee()),
+            arms: vec![AlgebraicBitvectorMatchArm {
+                variant: "Box".into(),
+                bindings: binding(),
+                binding_names: names(),
+                body: MachineTerm::add(
+                    MachineTerm::Variable(Variable(991981)),
+                    MachineTerm::constant(1),
+                ),
+            }],
+        };
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let a = KernelTermImport::default().machine(format, &native);
+            let b = KernelTermImport::default().machine(format, &native);
+            assert!(matches!(a.node(), KernelTermNode::Match(_)));
+            let exports = KernelTermExport::machine_export_count();
+            let observed = SharedMachineIntegerTerm::observe_shared(format, a.clone()).unwrap();
+            assert_eq!(
+                observed,
+                SharedMachineIntegerTerm::observe_shared(format, b.clone()).unwrap()
+            );
+            assert_eq!(
+                observed,
+                SharedMachineIntegerTerm::intern(format, native.clone())
+            );
+            assert!(crate::kernel::shared_machine_syntax_equal(&a, &b));
+            let other = if format == MachineIntegerType::Int32 {
+                MachineIntegerType::UInt64
+            } else {
+                MachineIntegerType::Int32
+            };
+            let reread = a.with_machine_observation_type(other);
+            assert_eq!(
+                SharedMachineIntegerTerm::observe_shared(other, reread).unwrap(),
+                SharedMachineIntegerTerm::intern(other, native.clone())
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(KernelTermExport::machine(&a).unwrap(), native);
+        }
+    }
+
+    #[test]
+    fn numeric_match_imports_share_opaque_body_observation_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let native = MachineTerm::AlgebraicMatch {
+            scrutinee: Box::new(scrutinee()),
+            arms: vec![AlgebraicBitvectorMatchArm {
+                variant: "Box".into(),
+                bindings: binding(),
+                binding_names: names(),
+                body: MachineTerm::ClickFunctionApplication {
+                    name: "opaque_body".into(),
+                    arguments: vec![],
+                },
+            }],
+        };
+        let format = MachineIntegerType::Int32;
+        let root = KernelTermImport::default().machine(format, &native);
+        let exports = KernelTermExport::machine_export_count();
+        let observed = SharedMachineIntegerTerm::observe_shared(format, root).unwrap();
+        // Exercise a cold arithmetic import before `intern` records an alias.
+        let imported = SharedMachineIntegerTerm::import_arithmetic(format, &native).unwrap();
+        assert_eq!(observed, imported);
+        assert_eq!(observed, SharedMachineIntegerTerm::intern(format, native));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
     #[test]
     fn match_payload_round_trips_each_result_family_and_binding_names() {
         let mut import = KernelTermImport::default();

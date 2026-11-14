@@ -521,6 +521,7 @@ fn match_on_symbolic_algebraic_value_remains_one_expression_path() {
         algebraic_type: algebraic_type.clone(),
         node: SpecAlgebraicExpressionNode::Variable(Variable(41)),
     });
+    let exports = KernelTermExport::machine_export_count();
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
         &CState::new(),
         &expression,
@@ -531,6 +532,10 @@ fn match_on_symbolic_algebraic_value_remains_one_expression_path() {
     .expect("a pure match is a symbolic expression, not a path split");
 
     assert_eq!(paths.len(), 1);
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+    assert!(
+        matches!(&paths[0].value, SpecValue::Shared(root) if matches!(root.node(), crate::kernel::KernelTermNode::Match(_)))
+    );
     assert!(paths[0].facts.is_empty());
     assert!(paths[0].obligations.is_empty());
     let CValue::Int32(MachineTerm::AlgebraicMatch { scrutinee, arms }) =
@@ -589,6 +594,16 @@ fn nested_match_binder_remains_symbolic_inside_its_arm() {
     .expect("a nested algebraic binder should remain available to the arm body");
 
     assert_eq!(paths.len(), 1);
+    let SpecValue::Shared(root) = &paths[0].value else {
+        panic!("shared outer match");
+    };
+    let crate::kernel::KernelTermNode::Match(matched) = root.node() else {
+        panic!("match root");
+    };
+    assert!(matches!(
+        matched.arguments[2].node(),
+        crate::kernel::KernelTermNode::Match(_)
+    ));
     let CValue::Int32(MachineTerm::AlgebraicMatch { arms, .. }) =
         &paths[0].value.clone().into_native()
     else {

@@ -527,16 +527,15 @@ impl PureFactContext {
         {
             return Some(value);
         }
-        if !matches!(condition, ConditionTerm::Compare { .. })
+        let checked_shared_word_order = !matches!(condition, ConditionTerm::Compare { .. })
             && crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
                 .is_some_and(|view| {
                     matches!(
                         view.format,
                         MachineIntegerType::Int32 | MachineIntegerType::UInt32
                     )
-                })
-            && let Some(value) = self.decide_from_order_facts(condition)
-        {
+                });
+        if checked_shared_word_order && let Some(value) = self.decide_from_order_facts(condition) {
             return Some(value);
         }
         // Retained comparison rules keep their compatibility dispatch order:
@@ -749,7 +748,16 @@ impl PureFactContext {
                     .get(condition)
                     .copied()
                     .or_else(|| self.decide_from_overflow_facts(condition))
-                    .or_else(|| self.decide_from_order_facts(condition))
+                    // The retained word query above already checked these
+                    // facts. Only a changed simplification needs another
+                    // order query (handled in the branch above).
+                    .or_else(|| {
+                        if checked_shared_word_order {
+                            None
+                        } else {
+                            self.decide_from_order_facts(condition)
+                        }
+                    })
             }
         }
     }

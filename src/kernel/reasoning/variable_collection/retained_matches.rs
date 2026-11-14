@@ -12,6 +12,15 @@ pub(crate) fn collect_match_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     let mut summaries = std::collections::HashMap::new();
+    let result = match_variables(matched, mode, &mut summaries);
+    variables.extend(result.iter().copied());
+}
+
+pub(super) fn match_variables(
+    matched: &KernelMatch,
+    mode: FoldVariableRead,
+    summaries: &mut std::collections::HashMap<u64, Variables>,
+) -> Variables {
     let integer_result = matched.result_type == KernelType::Integer;
     let machine_result = matches!(matched.result_type, KernelType::C(_));
     let scrutinee = &matched.arguments[0];
@@ -35,16 +44,16 @@ pub(crate) fn collect_match_variables(
             }
             result
         } else {
-            common_variables(scrutinee, mode, &mut summaries)
+            common_variables(scrutinee, mode, summaries)
         }
     } else {
-        common_variables(scrutinee, mode, &mut summaries)
+        common_variables(scrutinee, mode, summaries)
     };
     for (arm, body) in matched.arms.iter().zip(&matched.arguments[1..]) {
         if checked_collection_checkpoint() {
             break;
         }
-        let mut body = common_variables(body, mode, &mut summaries);
+        let mut body = common_variables(body, mode, summaries);
         if mode == FoldVariableRead::IntegerFree && integer_result {
             for binding in &arm.bindings {
                 if checked_collection_checkpoint() {
@@ -63,13 +72,13 @@ pub(crate) fn collect_match_variables(
                 if checked_collection_checkpoint() {
                     break;
                 }
-                let binding = common_variables(binding, mode, &mut summaries);
+                let binding = common_variables(binding, mode, summaries);
                 body = union(&body, &binding);
             }
         }
         result = union(&result, &body);
     }
-    variables.extend(result.iter().copied());
+    result
 }
 
 #[cfg(test)]

@@ -145,7 +145,11 @@ impl Comparison {
                 }
                 continue;
             }
-            if left.fold().is_some() || right.fold().is_some() {
+            if left.fold().is_some()
+                || right.fold().is_some()
+                || left.matched().is_some()
+                || right.matched().is_some()
+            {
                 if !crate::kernel::machine_operand_syntax_cmp(left, right).is_eq() {
                     return false;
                 }

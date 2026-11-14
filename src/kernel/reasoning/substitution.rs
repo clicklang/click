@@ -3222,6 +3222,29 @@ fn collect_scoped_leaf_bound_variables(
                 collect_scoped_leaf_bound_variables(leaf, variables)
             });
         }
+    } else if let MachineOperandView::Shared(root) = leaf
+        && let KernelTermNode::Match(matched) = root.node()
+    {
+        let mut export = crate::kernel::KernelTermExport::default();
+        if let PureFunctionArgument::Algebraic(scrutinee) = export
+            .argument(&matched.arguments[0])
+            .expect("match scrutinee")
+        {
+            collect_algebraic_bound_variables(&scrutinee, variables);
+        }
+        for arm in &matched.arms {
+            for binding in arm
+                .export_bindings(&mut export)
+                .expect("match declarations")
+            {
+                collect_algebraic_value_bound_variables(&binding, variables);
+            }
+        }
+        for body in &matched.arguments[1..] {
+            visit_machine_operand_scoped_leaves(MachineOperandView::Shared(body), |leaf| {
+                collect_scoped_leaf_bound_variables(leaf, variables)
+            });
+        }
     } else {
         collect_bitvector_bound_variables(
             &leaf.read_source().expect("native scoped leaf"),

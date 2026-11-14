@@ -3346,10 +3346,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                     Some(body)
                 })
                 .ok_or(ExecutionLimit::Paths)?,
-            _ => IntegerTerm::AlgebraicMatch {
-                scrutinee: Box::new(scrutinee_path.value),
-                arms: lowered_arms,
-            },
+            _ => IntegerTerm::algebraic_match(scrutinee_path.value, lowered_arms),
         };
         result.push(SpecIntegerPath {
             value,
@@ -6738,6 +6735,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 ) {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
                     let mut parameter_arms = Vec::new();
+                    let mut compatibility_arms = Vec::new();
                     let mut result_type = None;
                     let facts = scrutinee_path.facts.clone();
                     let mut obligations = scrutinee_path.obligations.clone();
@@ -6819,7 +6817,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         result_type = Some(body_type);
                         // The only remaining body facts are derived read equations.
                         // They belong to this arm, not to the enclosing match.
-                        if let CValue::Parameter(body) = body_path.value.clone().into_native() {
+                        if let CType::Parameter(_) = body_type {
+                            let CValue::Parameter(body) = body_path.value.into_native() else {
+                                return Err(ExecutionLimit::Paths);
+                            };
                             // A value of a Rust type parameter is a term of
                             // its type, so the match is one too.
                             parameter_arms.push(AlgebraicResultMatchArm {
@@ -6830,39 +6831,65 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             });
                             continue;
                         }
-                        let Some(body) = c_value_bitvector_term(&body_path.value.native()) else {
-                            return Err(ExecutionLimit::Paths);
+                        let Some((format, operand)) = body_path.value.machine() else {
+                            // Bool and floating-point matches retain their existing
+                            // native carrier until those carrier boundaries migrate.
+                            let body = c_value_bitvector_term(&body_path.value.native())
+                                .ok_or(ExecutionLimit::Paths)?;
+                            compatibility_arms.push(AlgebraicBitvectorMatchArm {
+                                binding_names: crate::kernel::BindingNames::written(&arm.bindings),
+                                variant: arm.variant.clone(),
+                                bindings,
+                                body,
+                            });
+                            continue;
                         };
-                        lowered_arms.push(AlgebraicBitvectorMatchArm {
-                            binding_names: crate::kernel::BindingNames::written(&arm.bindings),
-                            variant: arm.variant.clone(),
-                            bindings,
+                        let body = KernelTerm::retained_machine_operand(format, operand);
+                        lowered_arms.push(crate::kernel::KernelMatchArm::import(
+                            &mut KernelTermImport::default(),
+                            &arm.variant,
+                            &bindings,
                             body,
-                        });
+                            &crate::kernel::BindingNames::written(&arm.bindings),
+                        ));
                     }
                     let Some(result_type) = result_type else {
                         return Err(ExecutionLimit::Paths);
                     };
                     let value = if let CType::Parameter(name) = result_type {
-                        CValue::Parameter(Box::new(AlgebraicTerm {
+                        SpecValue::from(CValue::Parameter(Box::new(AlgebraicTerm {
                             algebraic_type: name.algebraic_type(),
                             node: AlgebraicTermNode::Match {
                                 scrutinee: Box::new(scrutinee_path.value),
                                 arms: parameter_arms,
                             },
-                        }))
-                    } else {
-                        c_value_from_bitvector_term(
-                            result_type,
-                            MachineTerm::AlgebraicMatch {
-                                scrutinee: Box::new(scrutinee_path.value),
-                                arms: lowered_arms,
-                            },
+                        })))
+                    } else if MachineIntegerType::from_c_type(result_type).is_none() {
+                        SpecValue::from(
+                            c_value_from_bitvector_term(
+                                result_type,
+                                MachineTerm::AlgebraicMatch {
+                                    scrutinee: Box::new(scrutinee_path.value),
+                                    arms: compatibility_arms,
+                                },
+                            )
+                            .ok_or(ExecutionLimit::Paths)?,
                         )
-                        .ok_or(ExecutionLimit::Paths)?
+                    } else {
+                        let scrutinee = KernelTermImport::default()
+                            .argument(&PureFunctionArgument::Algebraic(scrutinee_path.value));
+                        SpecValue::Shared(
+                            crate::kernel::KernelMatch::new(
+                                KernelType::C(result_type),
+                                scrutinee,
+                                lowered_arms,
+                            )
+                            .expect("numeric match producer")
+                            .into_term(),
+                        )
                     };
                     paths.push(SpecExpressionPath {
-                        value: value.into(),
+                        value,
                         facts,
                         obligations,
                     });

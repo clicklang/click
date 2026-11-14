@@ -3071,6 +3071,9 @@ pub(super) fn raise_kernel_term(
     }
     Some(match term.node() {
         Node::Fold(fold) => folds::raise_fold(fold, parameter_binding, state, bound_variables)?,
+        Node::Match(matched) => {
+            matches::raise_match(matched, parameter_binding, state, bound_variables)?
+        }
         Node::IntegerLiteral(value) if value.sign() == num_bigint::Sign::Minus => {
             SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral((-value).to_string())))
         }

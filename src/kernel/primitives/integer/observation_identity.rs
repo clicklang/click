@@ -68,7 +68,10 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 if view.binary().is_some()
                     || view.unary().is_some()
                     || view.cast().is_some()
-                    || matches!(value, MachineTerm::If { .. })
+                    || matches!(
+                        value,
+                        MachineTerm::If { .. } | MachineTerm::AlgebraicMatch { .. }
+                    )
                 {
                     let replacement = KernelTerm::retained_machine_operand(format, view);
                     expanded.insert(term.id(), replacement.clone());
@@ -83,6 +86,12 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let children = match term.node() {
+                KernelTermNode::Match(matched) => matched
+                    .arguments
+                    .iter()
+                    .chain(matched.arms.iter().flat_map(|arm| arm.bindings.iter()))
+                    .cloned()
+                    .collect(),
                 KernelTermNode::Fold(fold) => fold.arguments.to_vec(),
                 KernelTermNode::MachineBinary { arguments, .. }
                 | KernelTermNode::BoolCompare { arguments, .. }
@@ -104,6 +113,14 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                 continue;
             }
             let normalized = match term.node() {
+                KernelTermNode::Match(matched) => {
+                    let mut matched = matched.clone();
+                    matched.arguments = matched.arguments.iter().map(|child| get(child)).collect();
+                    for arm in &mut matched.arms {
+                        arm.bindings = arm.bindings.iter().map(|child| get(child)).collect();
+                    }
+                    matched.into_term().with_machine_observation_type(format)
+                }
                 KernelTermNode::Fold(fold) => KernelFold {
                     index: fold.index,
                     accumulator: fold.accumulator,
@@ -121,6 +138,9 @@ pub(super) fn normalize(root: &KernelTerm) -> KernelTerm {
                         value.clone(),
                     ));
                     KernelTerm::machine_observation_leaf(format, value.clone(), identity)
+                }
+                KernelTermNode::Legacy(value) => {
+                    KernelTerm::native_observation_leaf(value.value().clone())
                 }
                 KernelTermNode::LegacyBool(_) => {
                     let condition = KernelTermExport::condition(&term).expect("retained guard");

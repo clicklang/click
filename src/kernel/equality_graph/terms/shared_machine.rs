@@ -106,7 +106,7 @@ impl TermClasses {
                 continue;
             }
             let class = match term.node() {
-                N::Fold(_) => {
+                N::Fold(_) | N::Match(_) => {
                     let format = match width {
                         W::Bits8 => MachineIntegerType::UInt8,
                         W::Bits16 => MachineIntegerType::UInt16,

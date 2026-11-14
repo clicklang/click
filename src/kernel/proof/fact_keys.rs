@@ -1301,6 +1301,12 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                         bindings,
                         next_binder,
                     )?,
+                    V::Shared(root) if matches!(root.node(), N::Match(_)) => {
+                        let N::Match(matched) = root.node() else {
+                            unreachable!()
+                        };
+                        match_keys::retained_machine::<ALLOW_LOADS>(matched, bindings, next_binder)?
+                    }
                     V::Shared(root) if matches!(root.node(), N::Fold(_)) => {
                         let N::Fold(fold) = root.node() else {
                             unreachable!()
