@@ -38,7 +38,7 @@ impl KernelTerm {
     pub(crate) fn machine_if_shared(format: MachineIntegerType, arguments: [Self; 3]) -> Self {
         debug_assert_eq!(arguments[0].ty(), &KernelType::Bool);
         Self::intern(
-            KernelType::C(format.c_type()),
+            KernelType::Program(format.c_type()),
             KernelTermNode::MachineIf { arguments },
         )
     }
@@ -52,7 +52,7 @@ impl KernelTerm {
             return Some(operand);
         }
         if let KernelTermNode::Call { name, arguments } = self.node()
-            && matches!(self.ty(), KernelType::C(ty) if MachineIntegerType::from_c_type(*ty).is_some())
+            && matches!(self.ty(), KernelType::Program(ty) if MachineIntegerType::from_c_type(*ty).is_some())
         {
             // A bounded compatibility reading of this root. Machine arguments
             // keep their shared handles; no surrounding prefix is exported.
@@ -62,7 +62,7 @@ impl KernelTerm {
                 let arguments = arguments
                     .iter()
                     .map(|argument| {
-                        if let KernelType::C(ty) = argument.ty()
+                        if let KernelType::Program(ty) = argument.ty()
                             && let Some(format) = MachineIntegerType::from_c_type(*ty)
                             && let Some(value) =
                                 SharedMachineIntegerTerm::from_shared(format, argument.clone())
@@ -128,7 +128,7 @@ impl KernelTerm {
         arguments: [Self; 2],
     ) -> Self {
         Self::intern(
-            KernelType::C(result.c_type()),
+            KernelType::Program(result.c_type()),
             KernelTermNode::MachineBinary {
                 format,
                 operator,
@@ -143,7 +143,7 @@ impl KernelTerm {
         operand: Self,
     ) -> Self {
         Self::intern(
-            KernelType::C(format.c_type()),
+            KernelType::Program(format.c_type()),
             KernelTermNode::MachineUnary {
                 format,
                 operator,
@@ -159,7 +159,7 @@ impl KernelTerm {
         operand: Self,
     ) -> Self {
         Self::intern(
-            KernelType::C(destination.c_type()),
+            KernelType::Program(destination.c_type()),
             KernelTermNode::MachineCast {
                 encoding,
                 source,
@@ -172,14 +172,14 @@ impl KernelTerm {
     /// Change only the observation's numeric interpretation. The underlying
     /// word node and its format-tagged operations remain exactly as written.
     pub(crate) fn with_machine_observation_type(&self, format: MachineIntegerType) -> Self {
-        if self.ty() == &KernelType::C(format.c_type()) {
+        if self.ty() == &KernelType::Program(format.c_type()) {
             return self.clone();
         }
         if !matches!(
             self.node(),
             KernelTermNode::MachineIf { .. } | KernelTermNode::Match(_)
         ) {
-            return Self::intern(KernelType::C(format.c_type()), self.node().clone());
+            return Self::intern(KernelType::Program(format.c_type()), self.node().clone());
         }
         // A conditional's arms have its observation type, unlike an arithmetic
         // operator whose own format determines its operands. Reinterpret the
@@ -195,7 +195,7 @@ impl KernelTerm {
                     continue;
                 }
                 crate::instrumentation::record_deterministic_work(1);
-                if term.ty() == &KernelType::C(format.c_type()) {
+                if term.ty() == &KernelType::Program(format.c_type()) {
                     cache.insert(key, term.clone());
                     continue;
                 }
@@ -220,13 +220,13 @@ impl KernelTerm {
                         continue;
                     }
                     let mut matched = matched.clone();
-                    matched.result_type = KernelType::C(format.c_type());
+                    matched.result_type = KernelType::Program(format.c_type());
                     for body in &mut matched.arguments[1..] {
                         *body = cache[&(body.id(), format)].clone();
                     }
                     matched.into_term()
                 } else {
-                    Self::intern(KernelType::C(format.c_type()), term.node().clone())
+                    Self::intern(KernelType::Program(format.c_type()), term.node().clone())
                 };
                 cache.insert(key, value);
             }
@@ -252,12 +252,12 @@ impl KernelTerm {
             MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply
         ) || arguments
             .iter()
-            .any(|arg| arg.ty() != &KernelType::C(format.c_type()))
+            .any(|arg| arg.ty() != &KernelType::Program(format.c_type()))
         {
             return Err("arithmetic requires matching 32-bit or 64-bit integer operands");
         }
         Ok(Self::intern(
-            KernelType::C(format.c_type()),
+            KernelType::Program(format.c_type()),
             KernelTermNode::MachineBinary {
                 format,
                 operator,
@@ -559,7 +559,10 @@ impl KernelTermImport {
         };
         // Interning charges the one selected source node; no other bridge
         // or evaluator is invoked for these literal/variable leaves.
-        Some(KernelTerm::intern(KernelType::C(result.c_type()), node))
+        Some(KernelTerm::intern(
+            KernelType::Program(result.c_type()),
+            node,
+        ))
     }
 
     /// Construct a common machine call root. Numeric children retain their
@@ -589,7 +592,7 @@ impl KernelTermImport {
             })
             .collect();
         let root = KernelTerm::checked_call(
-            KernelType::C(result.c_type()),
+            KernelType::Program(result.c_type()),
             application.name().into(),
             arguments,
         );
@@ -706,7 +709,7 @@ impl KernelTermImport {
                 )));
             }
         };
-        KernelTerm::intern(KernelType::C(result.c_type()), node)
+        KernelTerm::intern(KernelType::Program(result.c_type()), node)
     }
 }
 
@@ -730,7 +733,7 @@ impl KernelTermExport {
         Ok(match term.node() {
             Node::Fold(fold) => fold.export_machine()?,
             Node::Match(matched) => matched.export_machine(&mut KernelTermExport::default())?,
-            Node::Call { name, arguments } if matches!(term.ty(), KernelType::C(ty) if MachineIntegerType::from_c_type(*ty).is_some()) =>
+            Node::Call { name, arguments } if matches!(term.ty(), KernelType::Program(ty) if MachineIntegerType::from_c_type(*ty).is_some()) =>
             {
                 let mut export = Self::default();
                 Old::ClickFunctionApplication {
@@ -883,7 +886,7 @@ mod tests {
                 };
                 let source = PureFunctionArgument::Value(wrap_exact(format, bits));
                 let common = KernelTermImport::default().argument(&source);
-                assert_eq!(common.ty(), &KernelType::C(format.c_type()));
+                assert_eq!(common.ty(), &KernelType::Program(format.c_type()));
                 assert_eq!(common.children().len(), 2);
                 assert_eq!(
                     KernelTermExport::default().argument(&common).unwrap(),
@@ -927,12 +930,15 @@ mod tests {
             ));
             let common = KernelTermImport::default().argument(&value);
             assert!(matches!(common.node(), KernelTermNode::MachineCast { .. }));
-            assert_eq!(common.children()[0].ty(), &KernelType::C(source.c_type()));
+            assert_eq!(
+                common.children()[0].ty(),
+                &KernelType::Program(source.c_type())
+            );
             assert!(matches!(
                 common.children()[0].node(),
                 KernelTermNode::Variable(_)
             ));
-            assert_eq!(common.ty(), &KernelType::C(destination.c_type()));
+            assert_eq!(common.ty(), &KernelType::Program(destination.c_type()));
             assert_eq!(
                 KernelTermExport::default().argument(&common).unwrap(),
                 value
@@ -970,8 +976,11 @@ mod tests {
             value: Box::new(MachineTerm::constant(u32::MAX)),
         }));
         let term = KernelTermImport::default().argument(&source);
-        assert_eq!(term.children()[0].ty(), &KernelType::C(ProgramType::Int32));
-        assert_eq!(term.ty(), &KernelType::C(ProgramType::UInt64));
+        assert_eq!(
+            term.children()[0].ty(),
+            &KernelType::Program(ProgramType::Int32)
+        );
+        assert_eq!(term.ty(), &KernelType::Program(ProgramType::UInt64));
         assert!(matches!(term.node(), KernelTermNode::MachineCast { .. }));
         assert_eq!(KernelTermExport::default().argument(&term).unwrap(), source);
     }
@@ -1158,7 +1167,7 @@ impl KernelTerm {
             return b;
         }
         Self::intern(
-            KernelType::C(Ty::Int32.c_type()),
+            KernelType::Program(Ty::Int32.c_type()),
             KernelTermNode::MachineBinary {
                 format: Ty::Int32,
                 operator,

@@ -91,7 +91,7 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
                 .unchecked_with_fact(ResourceFact::own_memory(field_range.clone()))
                 .unchecked_with_fact(ResourceFact::own_memory(data_range.clone())),
         );
-    let assumptions = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+    let assumptions = PureFactContext::new().assume_proposition(Proposition::ResourceSeparate {
         left: Box::new(
             crate::kernel::region_footprint::byte_resource(&Resource::Memory(field_range)).unwrap(),
         ),

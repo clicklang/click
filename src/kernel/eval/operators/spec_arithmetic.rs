@@ -43,8 +43,8 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
     if matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight) {
         return apply_spec_shift(op, left, right, facts, inherited);
     }
-    let (left, right) = promote_c_bool_scalar_operands(left.clone(), right.clone());
-    let (left, right, width) = apply_c_scalar_terms(left, right)?;
+    let (left, right) = promote_program_bool_scalar_operands(left.clone(), right.clone());
+    let (left, right, width) = apply_program_scalar_terms(left, right)?;
     let format = width.format();
     let mut obligations = inherited.to_vec();
     let mut domain = Vec::new();
@@ -158,8 +158,8 @@ fn apply_spec_shift_with_count_width(
     count_width: Option<u32>,
 ) -> Option<ExpressionPath> {
     let width = scalar_width(left, left)?;
-    let left = promote_c_path_value(left.clone(), width.format())?;
-    let (right, unsigned_count, right_is_wide) = promote_c_shift_count(right.clone())?;
+    let left = promote_program_path_value(left.clone(), width.format())?;
+    let (right, unsigned_count, right_is_wide) = promote_program_shift_count(right.clone())?;
     let wide = matches!(width, ScalarWidth::Int64 | ScalarWidth::UInt64);
     let count = if wide && !right_is_wide {
         if unsigned_count {
@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn logical_shift_value_agrees_with_c_for_defined_mixed_width_operands() {
+    fn logical_shift_value_agrees_with_program_for_defined_mixed_width_operands() {
         let values = [
             ProgramValue::Int32(MachineTerm::constant(8)),
             ProgramValue::UInt32(MachineTerm::uint32_constant(8)),
@@ -362,9 +362,9 @@ mod tests {
                     )
                     .unwrap();
                     let apply = if op == MachineBinaryOp::ShiftLeft {
-                        apply_c_shift_left
+                        apply_program_shift_left
                     } else {
-                        apply_c_shift_right
+                        apply_program_shift_right
                     };
                     let executed = apply(
                         left.clone(),
@@ -519,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn a_zero_divisor_is_owed_only_by_c_definedness_and_keeps_the_opaque_quotient() {
+    fn a_zero_divisor_is_owed_only_by_program_definedness_and_keeps_the_opaque_quotient() {
         for format in [
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,

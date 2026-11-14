@@ -30,7 +30,7 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
     };
     let left = clause("left");
     let right = clause("right");
-    let function = c_function(ProgramType::Void, "borrow", Vec::new(), c_skip())
+    let function = program_function(ProgramType::Void, "borrow", Vec::new(), program_skip())
         .with_resource_summary(vec![left.clone(), right.clone()], vec![right, left]);
     let children = ["child:left", "child:right"].map(|name| {
         ResourceFact::own_composite(

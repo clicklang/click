@@ -245,7 +245,7 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
 
 fn simplified_pointer_read_retention_work(count: u64, unrelated: u64) -> usize {
     let _session = VerificationSession::enter();
-    let memory = intern_c_memory(Memory::new());
+    let memory = intern_memory(Memory::new());
     let mut context = PureFactContext::new();
     for index in 0..unrelated {
         context = context.assume_proposition(eq(var(90000 + index), var(91000 + index)));
@@ -302,7 +302,7 @@ fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
         offset: PointerOffsetTerm::Constant(0),
     };
     let mut memory =
-        intern_c_memory(Memory::new().store(other.clone(), ProgramValue::UInt32(0u32.into())));
+        intern_memory(Memory::new().store(other.clone(), ProgramValue::UInt32(0u32.into())));
     let name = |memory: &SharedMemory, cell: &Pointer| {
         Pointer::loaded_value(
             &crate::kernel::memory_provenance::canonical_value_load_memory(memory, cell, 8),
@@ -318,7 +318,7 @@ fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
     }
     let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
         for index in 1..=count {
-            memory = intern_c_memory(
+            memory = intern_memory(
                 memory
                     .memory()
                     .clone()
@@ -378,7 +378,7 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
                     .clone()
                     .store(slot.clone(), ProgramValue::Pointer(value.clone()));
                 let next = PointerValue::new(
-                    Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot),
+                    Pointer::loaded_value(&intern_memory_ref(&memory), &slot),
                     ProgramType::Int32Pointer,
                 );
                 assert!(facts.equality_graph.knows_condition(
@@ -421,7 +421,7 @@ fn pointer_domain_queries_scale_with_selected_read_definitions() {
                     slot.clone(),
                     ProgramValue::typed_pointer(previous.clone(), ProgramType::Int32Pointer),
                 );
-                let read = Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot);
+                let read = Pointer::loaded_value(&intern_memory_ref(&memory), &slot);
                 assert!(graph.designations_equal(&read, &target));
                 assert!(graph.opaque_extent_is_root(&read));
                 if previous != target {

@@ -669,7 +669,7 @@ mod tests {
     use crate::kernel::{
         ExecutionBudget, FunctionOutcome, ProgramExpression, ProgramFunction, ProgramType,
         ProgramValue, ResourceAccessMode, ResourceContext, ResourceQuantity, ResourceSnapshot,
-        c_function, c_skip,
+        program_function, program_skip,
     };
 
     fn mutex() -> Pointer {
@@ -723,7 +723,7 @@ mod tests {
             HelperEffect::Acquire => (vec![access.clone()], vec![access, guard]),
             HelperEffect::Release => (vec![access.clone(), guard], vec![access]),
         };
-        c_function(ProgramType::Void, name, vec![], c_skip())
+        program_function(ProgramType::Void, name, vec![], program_skip())
             .with_resource_summary(requires, ensures)
     }
 
@@ -748,7 +748,7 @@ mod tests {
                         },
                     )));
         }
-        crate::kernel::api::c_state_with_borrowed_contract_inputs(
+        crate::kernel::api::execution_state_with_borrowed_contract_inputs(
             state,
             function,
             &[],
@@ -877,8 +877,13 @@ mod tests {
             .acquire_current(&mutex(), &assumptions)
             .unwrap();
         let guard = spec(true, ResourceTransferRole::Borrow);
-        let function = c_function(ProgramType::Void, "preserve_exact_guard", vec![], c_skip())
-            .with_resource_summary(vec![guard.clone()], vec![guard]);
+        let function = program_function(
+            ProgramType::Void,
+            "preserve_exact_guard",
+            vec![],
+            program_skip(),
+        )
+        .with_resource_summary(vec![guard.clone()], vec![guard]);
         assert!(certifies(input.state(), &function, input.state()));
         assert!(!certifies(input.state(), &function, replaced.state()));
     }
@@ -887,8 +892,13 @@ mod tests {
     fn helper_effect_roles_cannot_be_moved_to_the_opposite_section() {
         let access = spec(false, ResourceTransferRole::Borrow);
         let guard = spec(true, ResourceTransferRole::Consume);
-        let wrong = c_function(ProgramType::Void, "wrong_guard_section", vec![], c_skip())
-            .with_resource_summary(vec![access.clone()], vec![access, guard]);
+        let wrong = program_function(
+            ProgramType::Void,
+            "wrong_guard_section",
+            vec![],
+            program_skip(),
+        )
+        .with_resource_summary(vec![access.clone()], vec![access, guard]);
         assert!(classify(wrong.contract_interface()).is_err());
     }
 

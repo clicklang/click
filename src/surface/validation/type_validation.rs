@@ -474,7 +474,7 @@ fn validate_scoped_integer_proposition_one(
             let previous_c = variables.remove(name);
             let previous_integer = integer_bindings.remove(name);
             match click_type {
-                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
+                ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     variables.insert(name.clone(), *c_type);
                 }
                 ClickType::Integer => {
@@ -582,7 +582,7 @@ fn integer_expression_kind(
         ContractExpression::Binding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
-        ContractExpression::CFragment(ProgramExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => {
             (locals.contains(name) || integer_bindings.contains(name)).then_some(true)
         }
@@ -831,7 +831,7 @@ fn contains_scoped_expression_shape(
         | ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard => false,
@@ -862,7 +862,7 @@ fn contains_integer_expression_signal(
         ContractExpression::Binding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
-        ContractExpression::CFragment(ProgramExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name) => {
             locals.contains(name) || integer_bindings.contains(name)
         }
@@ -968,10 +968,12 @@ pub(super) enum SpecValueType {
 
 fn spec_value_matches_click_type(actual: &SpecValueType, expected: &ClickType) -> bool {
     match (actual, expected) {
-        (SpecValueType::Scalar(None), ClickType::C(_) | ClickType::CObjectPointer { .. }) => true,
+        (SpecValueType::Scalar(None), ClickType::Program(_) | ClickType::CObjectPointer { .. }) => {
+            true
+        }
         (
             SpecValueType::Scalar(Some(actual)),
-            ClickType::C(expected)
+            ClickType::Program(expected)
             | ClickType::CObjectPointer {
                 c_type: expected, ..
             },
@@ -993,8 +995,9 @@ pub(super) fn narrow_arithmetic_value_type(
     position: &str,
     infer: &mut dyn FnMut(&ContractExpression) -> Result<SpecValueType, ClickError>,
 ) -> Result<Option<SpecValueType>, ClickError> {
-    let ClickType::C(c_type @ (C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16)) =
-        expected
+    let ClickType::Program(
+        c_type @ (C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16),
+    ) = expected
     else {
         return Ok(None);
     };
@@ -1082,7 +1085,7 @@ pub(super) fn infer_scoped_spec_value_type(
         ContractExpression::Binding(name) if integer_bindings.contains(name) => {
             Ok(SpecValueType::Integer)
         }
-        ContractExpression::CFragment(ProgramExpression::Variable(name))
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
         | ContractExpression::CBinding(name)
             if integer_bindings.contains(name) =>
         {
@@ -1444,13 +1447,13 @@ pub(super) fn infer_scoped_spec_value_type(
                     // The C null pointer constant types as any pointer
                     // parameter, in a pure function exactly as in a resource
                     // argument.
-                    ClickType::C(expected)
+                    ClickType::Program(expected)
                     | ClickType::CObjectPointer {
                         c_type: expected, ..
                     } if crate::surface::lowering::argument_is_null_pointer_constant(
                         argument, *expected,
                     ) => {}
-                    ClickType::C(expected)
+                    ClickType::Program(expected)
                     | ClickType::CObjectPointer {
                         c_type: expected, ..
                     } => {
@@ -1480,7 +1483,7 @@ pub(super) fn infer_scoped_spec_value_type(
                     ));
                 }
                 ClickType::Integer => SpecValueType::Integer,
-                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
+                ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     SpecValueType::Scalar(Some(*c_type))
                 }
                 ClickType::Algebraic(application) => SpecValueType::Algebraic(application.clone()),
@@ -1621,7 +1624,7 @@ pub(super) fn infer_scoped_range_fold_bindings(
             |ty: &SpecValueType| matches!(ty, SpecValueType::Scalar(Some(C0Type::UInt64(_))));
         let literal = |expression: &ContractExpression| {
             matches!(
-                contract_expression_as_c_fragment(expression),
+                contract_expression_as_program_expression(expression),
                 Some(ProgramExpression::Value(ProgramValue::Int32(value)))
                     if value.as_const().is_some_and(|value| value <= i32::MAX as u32)
             )
@@ -1690,14 +1693,14 @@ pub(super) fn infer_scoped_range_fold_bindings(
                 "C-valued range fold requires an int32 accumulator in {context}; other C accumulator types are not supported"
             )));
         }
-        ClickType::C(C0Type::Int32)
+        ClickType::Program(C0Type::Int32)
     };
     let item_type = if integer_index {
         ClickType::Integer
     } else if uint64_index {
-        ClickType::C(C0Type::UInt64(LongRank::Long))
+        ClickType::Program(C0Type::UInt64(LongRank::Long))
     } else {
-        ClickType::C(C0Type::Int32)
+        ClickType::Program(C0Type::Int32)
     };
     Ok((accumulator_type, item_type))
 }
@@ -1736,7 +1739,7 @@ fn infer_scoped_range_fold_type(
             ClickType::Integer => {
                 body_integer_bindings.insert(name.clone());
             }
-            ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
+            ClickType::Program(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
                 body_variables.insert(name.clone(), *ty);
             }
             _ => unreachable!(),
@@ -1756,7 +1759,7 @@ fn infer_scoped_range_fold_type(
             "range fold body must preserve Integer accumulator in {context}"
         ))),
         (
-            ClickType::C(initial)
+            ClickType::Program(initial)
             | ClickType::CObjectPointer {
                 c_type: initial, ..
             },
@@ -2136,12 +2139,12 @@ pub(super) fn validate_to_nat_argument_type(
 fn return_type_needs_instantiation(click_type: &ClickType) -> bool {
     match click_type {
         ClickType::Resource => false,
-        ClickType::Parameter(_) | ClickType::C(C0Type::ParameterPointer(_)) => true,
+        ClickType::Parameter(_) | ClickType::Program(C0Type::ParameterPointer(_)) => true,
         ClickType::Algebraic(application) => application
             .arguments
             .iter()
             .any(return_type_needs_instantiation),
-        ClickType::C(_) | ClickType::CObjectPointer { .. } | ClickType::Integer => false,
+        ClickType::Program(_) | ClickType::CObjectPointer { .. } | ClickType::Integer => false,
     }
 }
 
@@ -2363,7 +2366,7 @@ fn infer_spec_value_type(
                                 SpecValueType::Algebraic(application) => {
                                     Some(ClickType::Algebraic(application))
                                 }
-                                SpecValueType::Scalar(c_type) => c_type.map(ClickType::C),
+                                SpecValueType::Scalar(c_type) => c_type.map(ClickType::Program),
                                 SpecValueType::Integer => Some(ClickType::Integer),
                                 SpecValueType::Sequence(_) => None,
                             },
@@ -2399,7 +2402,7 @@ fn infer_spec_value_type(
                     ));
                 }
                 ClickType::Algebraic(application) => SpecValueType::Algebraic(application),
-                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
+                ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     SpecValueType::Scalar(Some(c_type))
                 }
                 ClickType::Integer => SpecValueType::Integer,
@@ -2865,7 +2868,7 @@ pub(in crate::surface) fn describe_click_type(click_type: &ClickType) -> String 
     match click_type {
         ClickType::Resource => "Resource".into(),
         ClickType::Parameter(name) => name.clone(),
-        ClickType::C(c_type) => describe_c0_type(*c_type),
+        ClickType::Program(c_type) => describe_c0_type(*c_type),
         ClickType::CObjectPointer {
             c_type,
             struct_name,
@@ -3143,7 +3146,7 @@ pub(super) fn infer_contract_expression_type(
         | ContractExpression::RegionAllocation(_)
         | ContractExpression::RegionParameter { .. } => Ok(None),
         ContractExpression::ResourceField(access) => match &access.click_type {
-            Some(ClickType::C(ty)) => Ok(Some(*ty)),
+            Some(ClickType::Program(ty)) => Ok(Some(*ty)),
             Some(ClickType::Integer) => Ok(None),
             _ => Err(ClickError::new("expected a scalar resource field")),
         },
@@ -3208,27 +3211,30 @@ pub(super) fn infer_contract_expression_type(
             lowered: expression,
             ..
         }
-        | ContractExpression::CFragment(expression)
+        | ContractExpression::ProgramExpression(expression)
         | ContractExpression::Field {
             lowered: expression,
             ..
         } => {
-            if !variables.contains_key("result") && c_expression_uses_variable(expression, "result")
+            if !variables.contains_key("result")
+                && program_expression_uses_variable(expression, "result")
             {
                 return Err(ClickError::new(format!(
                     "`result` is not available in {context}"
                 )));
             }
             validate_pointer_cast_operands(expression, variables, context)?;
-            Ok(infer_c_expression_type(expression, variables))
+            Ok(infer_program_expression_type(expression, variables))
         }
         ContractExpression::ArrayIndex { lowered, .. } => {
-            if !variables.contains_key("result") && c_expression_uses_variable(lowered, "result") {
+            if !variables.contains_key("result")
+                && program_expression_uses_variable(lowered, "result")
+            {
                 return Err(ClickError::new(format!(
                     "`result` is not available in {context}"
                 )));
             }
-            Ok(infer_c_expression_type(lowered, variables))
+            Ok(infer_program_expression_type(lowered, variables))
         }
         ContractExpression::Binding(name) => Ok(variables.get(name).copied()),
         // C locals are resolved against the concrete program state during
@@ -3462,7 +3468,7 @@ pub(in crate::surface) fn validate_void_pointer_cast_source(
     variables: &BTreeMap<String, C0Type>,
     context: &str,
 ) -> Result<(), ClickError> {
-    let actual = infer_c_expression_type(operand, variables);
+    let actual = infer_program_expression_type(operand, variables);
     if actual.is_some_and(|ty| {
         !ty.is_object_pointer() && !matches!(ty, C0Type::Int64(_) | C0Type::UInt64(_))
     }) || matches!(operand, ProgramExpression::FunctionAddress(_))
@@ -3489,7 +3495,7 @@ fn validate_pointer_cast_operands(
             if target_type.is_pointer() {
                 if !matches!(target_type, ProgramType::FunctionPointer(_))
                     && matches!(
-                        infer_c_expression_type(operand, variables),
+                        infer_program_expression_type(operand, variables),
                         Some(C0Type::Int64(_) | C0Type::UInt64(_))
                     )
                 {
@@ -3500,7 +3506,7 @@ fn validate_pointer_cast_operands(
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
                 if *target_type == ProgramType::UInt8Pointer && pointee_struct.is_none() {
-                    let actual = infer_c_expression_type(operand, variables);
+                    let actual = infer_program_expression_type(operand, variables);
                     if actual.is_some()
                         && !actual.is_some_and(|ty| {
                             ty.to_kernel_type().pointee_type().is_some_and(|element| {
@@ -3514,7 +3520,7 @@ fn validate_pointer_cast_operands(
                     }
                     return validate_pointer_cast_operands(operand, variables, context);
                 }
-                match infer_c_expression_type(operand, variables) {
+                match infer_program_expression_type(operand, variables) {
                     None | Some(C0Type::VoidPointer) => {}
                     Some(actual) => {
                         return Err(ClickError::new(format!(
@@ -3564,12 +3570,12 @@ fn validate_pointer_cast_operands(
     }
 }
 
-pub(in crate::surface) fn infer_c_expression_type(
+pub(in crate::surface) fn infer_program_expression_type(
     expression: &ProgramExpression,
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
     match expression {
-        ProgramExpression::Value(ProgramValue::PointerInteger(_)) => infer_c_expression_type(
+        ProgramExpression::Value(ProgramValue::PointerInteger(_)) => infer_program_expression_type(
             &ProgramExpression::Value(match expression {
                 ProgramExpression::Value(v) => v.numeric_value().clone(),
                 _ => unreachable!(),
@@ -3662,9 +3668,9 @@ pub(in crate::surface) fn infer_c_expression_type(
             then_branch,
             else_branch,
         } => {
-            let _ = infer_c_expression_type(condition, variables)?;
-            let then_type = infer_c_expression_type(then_branch, variables);
-            let else_type = infer_c_expression_type(else_branch, variables);
+            let _ = infer_program_expression_type(condition, variables)?;
+            let then_type = infer_program_expression_type(then_branch, variables);
+            let else_type = infer_program_expression_type(else_branch, variables);
             match (then_type, else_type) {
                 (Some(left), Some(right)) => arithmetic_result_type(Some(left), Some(right)),
                 _ => None,
@@ -3676,7 +3682,7 @@ pub(in crate::surface) fn infer_c_expression_type(
             value,
             variant,
             index,
-        } => match infer_c_expression_type(value, variables)? {
+        } => match infer_program_expression_type(value, variables)? {
             C0Type::Parameter(enum_type) => enum_type
                 .algebraic_type()
                 .variants
@@ -3684,7 +3690,7 @@ pub(in crate::surface) fn infer_c_expression_type(
                 .find(|declared| &declared.name == variant)
                 .and_then(|declared| declared.fields.get(*index))
                 .and_then(|field| match field {
-                    crate::kernel::AlgebraicValueType::C(c_type) => {
+                    crate::kernel::AlgebraicValueType::Program(c_type) => {
                         Some(crate::surface::generics::c0_type_from_kernel(*c_type))
                     }
                     _ => None,
@@ -3692,15 +3698,16 @@ pub(in crate::surface) fn infer_c_expression_type(
             _ => None,
         },
         ProgramExpression::EnumIs { value, .. } => matches!(
-            infer_c_expression_type(value, variables),
+            infer_program_expression_type(value, variables),
             Some(C0Type::Parameter(_))
         )
         .then_some(C0Type::Bool),
         ProgramExpression::FloatNegate(expression) => {
-            infer_c_expression_type(expression, variables).filter(|c_type| type_is_float(*c_type))
+            infer_program_expression_type(expression, variables)
+                .filter(|c_type| type_is_float(*c_type))
         }
         ProgramExpression::FloatClassification { expression, .. } => matches!(
-            infer_c_expression_type(expression, variables),
+            infer_program_expression_type(expression, variables),
             Some(C0Type::Float32 | C0Type::Float64)
         )
         .then_some(C0Type::Int32),
@@ -3710,7 +3717,7 @@ pub(in crate::surface) fn infer_c_expression_type(
         | ProgramExpression::CallResult { .. } => None,
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. } => {
-            infer_c_expression_type(pointer, variables)
+            infer_program_expression_type(pointer, variables)
         }
         ProgramExpression::LessThan(_, _)
         | ProgramExpression::LessEqual(_, _)
@@ -3724,16 +3731,16 @@ pub(in crate::surface) fn infer_c_expression_type(
         ProgramExpression::Add(left, right) => infer_c_add_type(left, right, variables),
         ProgramExpression::Subtract(left, right) => infer_c_subtract_type(left, right, variables),
         ProgramExpression::Multiply(left, right) | ProgramExpression::Divide(left, right) => {
-            let left = infer_c_expression_type(left, variables);
-            let right = infer_c_expression_type(right, variables);
+            let left = infer_program_expression_type(left, variables);
+            let right = infer_program_expression_type(right, variables);
             arithmetic_result_type(left, right)
         }
         ProgramExpression::Remainder(left, right)
         | ProgramExpression::BitwiseAnd(left, right)
         | ProgramExpression::BitwiseOr(left, right)
         | ProgramExpression::BitwiseXor(left, right) => {
-            let left = infer_c_expression_type(left, variables);
-            let right = infer_c_expression_type(right, variables);
+            let left = infer_program_expression_type(left, variables);
+            let right = infer_program_expression_type(right, variables);
             match (left, right) {
                 (Some(left), Some(right)) if type_is_scalar(left) && type_is_scalar(right) => {
                     Some(scalar_arithmetic_result_type(left, right))
@@ -3746,15 +3753,17 @@ pub(in crate::surface) fn infer_c_expression_type(
         }
         ProgramExpression::RustShiftLeft(left, right)
         | ProgramExpression::RustShiftRight(left, right) => {
-            let left = infer_c_expression_type(left, variables)?;
-            let right = infer_c_expression_type(right, variables)?;
+            let left = infer_program_expression_type(left, variables)?;
+            let right = infer_program_expression_type(right, variables)?;
             (type_is_scalar(left) && type_is_scalar(right)).then_some(left)
         }
-        ProgramExpression::BitwiseNot(expression) => infer_c_expression_type(expression, variables)
-            .filter(|c_type| type_is_scalar(*c_type))
-            .map(|c_type| scalar_arithmetic_result_type(c_type, c_type)),
+        ProgramExpression::BitwiseNot(expression) => {
+            infer_program_expression_type(expression, variables)
+                .filter(|c_type| type_is_scalar(*c_type))
+                .map(|c_type| scalar_arithmetic_result_type(c_type, c_type))
+        }
         ProgramExpression::Load(pointer) => {
-            infer_c_expression_type(pointer, variables).and_then(pointer_element_type)
+            infer_program_expression_type(pointer, variables).and_then(pointer_element_type)
         }
         ProgramExpression::TypedLoad { value_type, .. } => Some(match value_type {
             ProgramType::Parameter(name) => C0Type::Parameter(*name),
@@ -3817,7 +3826,7 @@ pub(in crate::surface) fn infer_c_expression_type(
             }
         }),
         ProgramExpression::Index(base, _) => {
-            infer_c_expression_type(base, variables).and_then(pointer_element_type)
+            infer_program_expression_type(base, variables).and_then(pointer_element_type)
         }
     }
 }
@@ -3866,8 +3875,8 @@ fn infer_c_add_type(
     right: &ProgramExpression,
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
-    let left = infer_c_expression_type(left, variables);
-    let right = infer_c_expression_type(right, variables);
+    let left = infer_program_expression_type(left, variables);
+    let right = infer_program_expression_type(right, variables);
     pointer_arithmetic_type(left, right).or_else(|| arithmetic_result_type(left, right))
 }
 
@@ -3876,8 +3885,8 @@ fn infer_c_subtract_type(
     right: &ProgramExpression,
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
-    let left = infer_c_expression_type(left, variables);
-    let right = infer_c_expression_type(right, variables);
+    let left = infer_program_expression_type(left, variables);
+    let right = infer_program_expression_type(right, variables);
     match (left, right) {
         (Some(left), Some(right)) if type_is_data_pointer(left) && type_is_scalar(right) => {
             Some(left)
@@ -3922,8 +3931,8 @@ fn infer_c_shift_type(
     right: &ProgramExpression,
     variables: &BTreeMap<String, C0Type>,
 ) -> Option<C0Type> {
-    let left_type = infer_c_expression_type(left, variables)?;
-    let right_type = infer_c_expression_type(right, variables)?;
+    let left_type = infer_program_expression_type(left, variables)?;
+    let right_type = infer_program_expression_type(right, variables)?;
     if !type_is_scalar(left_type) || !type_is_scalar(right_type) {
         return None;
     }
@@ -4043,19 +4052,19 @@ fn validate_contract_segment_expression_types(
     context: &str,
 ) -> Result<(), ClickError> {
     let _ = infer_contract_expression_type(
-        &ContractExpression::CFragment(segment.base.clone()),
+        &ContractExpression::ProgramExpression(segment.base.clone()),
         variables,
         click_functions,
         context,
     )?;
     let _ = infer_contract_expression_type(
-        &ContractExpression::CFragment(segment.start.clone()),
+        &ContractExpression::ProgramExpression(segment.start.clone()),
         variables,
         click_functions,
         context,
     )?;
     let _ = infer_contract_expression_type(
-        &ContractExpression::CFragment(segment.end.clone()),
+        &ContractExpression::ProgramExpression(segment.end.clone()),
         variables,
         click_functions,
         context,
@@ -4351,14 +4360,14 @@ fn validate_predicate_calls_in_proposition_one(
     }
 }
 
-pub(super) fn validate_c_valued_function_folds(
+pub(super) fn validate_program_valued_function_folds(
     definition: &ClickFunctionDefinition,
     click_functions: &BTreeMap<String, ClickFunctionType>,
 ) -> Result<(), ClickError> {
     let Some(body) = definition.body() else {
         return Ok(());
     };
-    if !matches!(definition.return_type(), ClickType::C(_))
+    if !matches!(definition.return_type(), ClickType::Program(_))
         || !contains_scoped_expression_shape(body, ScopedExpressionShape::RangeFold)
     {
         return Ok(());
@@ -4414,17 +4423,17 @@ fn validate_contract_segment_calls(
     context: &str,
 ) -> Result<(), ClickError> {
     validate_contract_expression_calls(
-        &ContractExpression::CFragment(segment.base.clone()),
+        &ContractExpression::ProgramExpression(segment.base.clone()),
         click_functions,
         context,
     )?;
     validate_contract_expression_calls(
-        &ContractExpression::CFragment(segment.start.clone()),
+        &ContractExpression::ProgramExpression(segment.start.clone()),
         click_functions,
         context,
     )?;
     validate_contract_expression_calls(
-        &ContractExpression::CFragment(segment.end.clone()),
+        &ContractExpression::ProgramExpression(segment.end.clone()),
         click_functions,
         context,
     )
@@ -4476,7 +4485,7 @@ fn validate_contract_expression_calls(
             validate_contract_expression_calls(right, click_functions, context)
         }
         ContractExpression::QualifiedC { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_) => Ok(()),
         ContractExpression::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {

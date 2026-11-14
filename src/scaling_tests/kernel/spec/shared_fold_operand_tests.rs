@@ -4,7 +4,8 @@ fn conservative_carrier_queries_do_not_rewalk_growing_prefixes() {
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(998100));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998100));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
@@ -14,7 +15,7 @@ fn conservative_carrier_queries_do_not_rewalk_growing_prefixes() {
                     [
                         root.clone(),
                         KernelTerm::variable(
-                            KernelType::C(ProgramType::Int32),
+                            KernelType::Program(ProgramType::Int32),
                             Variable(998101 + index),
                         ),
                     ],
@@ -41,7 +42,8 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
         for size in [16u64, 64, 256] {
             let _session = VerificationSession::enter();
             let item = Variable(1003000);
-            let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(1003001));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(1003001));
             let seed = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -52,7 +54,7 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
                         [
                             root.clone(),
                             KernelTerm::variable(
-                                KernelType::C(format.c_type()),
+                                KernelType::Program(format.c_type()),
                                 Variable(1003002 + index),
                             ),
                         ],
@@ -76,9 +78,9 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
                     assert_eq!(
                         sort,
                         if format == MachineIntegerType::Int32 {
-                            Sort::CInt32
+                            Sort::ProgramInt32
                         } else {
-                            Sort::CMachineInteger(format)
+                            Sort::ProgramInteger(format)
                         }
                     );
                     let Proposition::And(lower, upper) = guard else {

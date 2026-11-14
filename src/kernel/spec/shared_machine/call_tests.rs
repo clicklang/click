@@ -352,7 +352,7 @@ fn actual_call_producers_keep_all_integer_types_and_nested_arguments() {
             let SpecValue::Shared(root) = &paths[0].value else {
                 panic!("common call result")
             };
-            assert_eq!(root.ty(), &KernelType::C(format.c_type()));
+            assert_eq!(root.ty(), &KernelType::Program(format.c_type()));
             assert!(matches!(root.node(), KernelTermNode::Call { .. }));
             assert!(paths[0].facts.is_empty());
             assert!(paths[0].obligations.is_empty());
@@ -361,7 +361,7 @@ fn actual_call_producers_keep_all_integer_types_and_nested_arguments() {
             let native = expected[0].value.clone().into_native();
             assert_eq!(
                 KernelTermExport::machine(root).unwrap(),
-                native_term(&c_value_bitvector_term(&native).unwrap())
+                native_term(&program_value_bitvector_term(&native).unwrap())
             );
         }
     }
@@ -475,7 +475,7 @@ fn actual_call_arithmetic_keeps_native_values_and_definedness() {
             let native = expected[0].value.clone().into_native();
             assert_eq!(
                 KernelTermExport::machine(root).unwrap(),
-                c_value_bitvector_term(&native).unwrap()
+                program_value_bitvector_term(&native).unwrap()
             );
             assert_eq!(actual[0].facts, expected[0].facts);
             assert_eq!(actual[0].obligations.len(), expected[0].obligations.len());

@@ -5,7 +5,7 @@ fn pointer_index_dependency_comparison_and_hashing_visit_each_dag_node_once() {
     for depth in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007220));
+        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1007220));
         for _ in 0..depth {
             root =
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
@@ -44,7 +44,7 @@ fn growing_pointer_index_fingerprints_reuse_shared_prefixes() {
     for count in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007221));
+        let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1007221));
         let before = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..count {

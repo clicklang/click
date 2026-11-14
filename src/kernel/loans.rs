@@ -5884,7 +5884,7 @@ impl LoanLedger {
         if matches!(footprint, Resource::Emp) || memory_range_is_empty(range) {
             return None;
         }
-        Some(super::Proposition::CResourceSeparate {
+        Some(super::Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(range.clone())),
             right: Box::new(footprint),
         })

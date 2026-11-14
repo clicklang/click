@@ -7,7 +7,7 @@ every input. The exit is now the body's end state, where `i` is the head's
 abstract value incremented once, and `result == 99` is refused there.
 
 The provable claim on the same C is
-[`c_do_while.md`](c_do_while.md)'s `do_while_invariant`.
+[`program_do_while.md`](program_do_while.md)'s `do_while_invariant`.
 
 ```c filename=do_while_any.c
 int32 do_while_any(int32 i) {

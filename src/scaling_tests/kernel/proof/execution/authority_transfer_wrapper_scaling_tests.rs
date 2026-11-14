@@ -27,7 +27,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
         )],
         vec![],
     );
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "wrapper_scaling",
         vec![],

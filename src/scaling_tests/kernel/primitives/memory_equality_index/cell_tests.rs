@@ -1190,12 +1190,12 @@ fn composition_object_evidence_ignores_unrelated_admitted_sources() {
     for size in [16u64, 64, 256, 1024] {
         let mut facts = PureFactContext::new();
         for id in 1..=size {
-            facts = facts.assume_proposition(Proposition::CResourceComposition(
+            facts = facts.assume_proposition(Proposition::ResourceComposition(
                 ResourceContext::new().unchecked_with_fact(view(&external(id), 0, 4)),
             ));
         }
         let sibling = facts.clone();
-        facts = facts.assume_proposition(Proposition::CResourceComposition(
+        facts = facts.assume_proposition(Proposition::ResourceComposition(
             ResourceContext::new().unchecked_with_fact(target_fact.clone()),
         ));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1254,11 +1254,11 @@ fn composition_provenance_admission_follows_sibling_deltas_not_the_shared_frame(
             .unchecked_with_fact(right_fact.clone());
         let parent = empty
             .clone()
-            .assume_proposition(Proposition::CResourceComposition(left));
+            .assume_proposition(Proposition::ResourceComposition(left));
         let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
             parent
                 .clone()
-                .assume_proposition(Proposition::CResourceComposition(right))
+                .assume_proposition(Proposition::ResourceComposition(right))
         });
         assert_eq!(
             facts
@@ -1279,7 +1279,7 @@ fn composition_provenance_admission_follows_sibling_deltas_not_the_shared_frame(
                 .is_none()
         );
         let (returned, returning_work) = crate::instrumentation::measure_deterministic_work(|| {
-            facts.assume_proposition(Proposition::CResourceComposition(common))
+            facts.assume_proposition(Proposition::ResourceComposition(common))
         });
         assert_eq!(
             returned
@@ -1501,7 +1501,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let read = |context: &PureFactContext, memory: &Memory| {
-            let snapshot = crate::kernel::intern_c_memory_ref(memory);
+            let snapshot = crate::kernel::intern_memory_ref(memory);
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &snapshot,
                 &field,
@@ -1518,7 +1518,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
         let range = |base: PointerValue, start: u32, end: u32| {
             MemoryRange::from_pointer_value(&base, start.into(), end.into(), 4)
         };
-        let separation = Proposition::CResourceSeparate {
+        let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(range(
                 PointerValue::new(field.clone(), ProgramType::Int32Pointer),
                 0,
@@ -1626,7 +1626,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let read = |context: &PureFactContext, memory: &Memory| {
-            let snapshot = crate::kernel::intern_c_memory_ref(memory);
+            let snapshot = crate::kernel::intern_memory_ref(memory);
             let variable = crate::kernel::load_variable_for_cell_with_origin(
                 &snapshot,
                 &field,
@@ -1646,7 +1646,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
         let range = |base: Pointer, start: u32, end: u32| {
             MemoryRange::new_with_element_width(base, start.into(), end.into(), 4)
         };
-        let separation = Proposition::CResourceSeparate {
+        let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(range(field.clone(), 0, 2))),
             right: Box::new(Resource::Memory(range(source.clone(), 0, 8))),
         };
@@ -1768,7 +1768,7 @@ fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
                 ProgramValue::Int32(1u32.into()),
             );
         }
-        let snapshot = crate::kernel::intern_c_memory_ref(&memory);
+        let snapshot = crate::kernel::intern_memory_ref(&memory);
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &snapshot,
             &field,
@@ -1881,10 +1881,10 @@ fn query_read_definition_merges_scale_with_changed_suppliers() {
             block: PointerBlock::Heap(989_810),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let first = crate::kernel::intern_c_memory(
+        let first = crate::kernel::intern_memory(
             Memory::new().store(unrelated.clone(), ProgramValue::UInt32(1u32.into())),
         );
-        let later = crate::kernel::intern_c_memory(
+        let later = crate::kernel::intern_memory(
             first
                 .memory()
                 .clone()

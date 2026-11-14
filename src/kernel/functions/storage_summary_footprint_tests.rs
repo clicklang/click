@@ -5,11 +5,11 @@ fn outside(owned: Vec<MemoryRange>, required: MemoryRange) -> Vec<StorageWriteOu
         ProgramType::Int32,
         "caller",
         Vec::new(),
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     );
     let memory = Memory::new();
     let facts = [
-        ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+        ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
             before: memory.clone(),
             after: memory,
             mutable_ranges: vec![required],

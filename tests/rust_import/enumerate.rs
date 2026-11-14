@@ -13,7 +13,7 @@ fn prepared_enumeration() -> click::languages::rust::PreparedRustImport {
 /// element is the slice's there, with no cursor to state.
 #[test]
 fn charon_enumerated_slice_loops_verify_from_their_count() {
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared_enumeration())
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared_enumeration())
         .unwrap_or_else(|error| panic!("{error:?}"));
 }
 

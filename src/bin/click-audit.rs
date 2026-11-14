@@ -9,16 +9,16 @@ use std::time::{Duration, Instant};
 
 use crate::git::{git_commit_id, git_repo_root, git_show};
 use click::cli::{
-    self, CInput, MdTestExpectation, TargetSelection, containing_directory, find_mdtests,
-    format_duration, looks_like_mdtest, parse_duration, prepare_mdtest_inputs,
+    self, MdTestExpectation, TargetSelection, VerificationInput, containing_directory,
+    find_mdtests, format_duration, looks_like_mdtest, parse_duration, prepare_mdtest_inputs,
     read_lone_sidecar_inputs, read_mdtest_project_if_needed, select_targets, shell_quote,
     source_refs,
 };
 use click::surface::{
-    C0VerificationSession, ClickProject, SourcePosition, VerifiedCTheorem,
-    c0_incremental_selection, click_import_sites, expand_c0_claim_source_by_label,
-    expand_c0_prepared_claim_source_by_label, expand_c0_prepared_tactic_source_at,
-    expand_c0_tactic_source_at, expand_program_prepared_claim_source_by_label,
+    ClickProject, ProgramVerificationSession, SourcePosition, VerifiedProgramTheorem,
+    c_incremental_selection, click_import_sites, expand_c_claim_source_by_label,
+    expand_c_prepared_claim_source_by_label, expand_c_prepared_tactic_source_at,
+    expand_c_tactic_source_at, expand_program_prepared_claim_source_by_label,
     expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, expand_verified_function_claim_source_by_label,
     project_smart_tactic_source_sites, project_tactic_source_position, smart_tactic_source_sites,
@@ -464,19 +464,23 @@ impl Drop for AuditSessionWorker {
 
 fn start_session(
     source: &AuditSource,
-) -> Result<(C0VerificationSession, Vec<VerifiedCTheorem>), String> {
+) -> Result<(ProgramVerificationSession, Vec<VerifiedProgramTheorem>), String> {
     let session = match &source.inputs {
-        CInput::Bundle(sources) => match &source.project {
-            Some(project) => C0VerificationSession::new_project(project, &source_refs(sources)),
-            None => C0VerificationSession::new(&source.click_source, &source_refs(sources)),
+        VerificationInput::Bundle(sources) => match &source.project {
+            Some(project) => {
+                ProgramVerificationSession::new_project(project, &source_refs(sources))
+            }
+            None => ProgramVerificationSession::new(&source.click_source, &source_refs(sources)),
         },
-        CInput::Prepared(imports) => match &source.project {
-            Some(project) => C0VerificationSession::new_prepared_project(project, imports),
-            None => C0VerificationSession::new_prepared(&source.click_source, imports),
+        VerificationInput::Prepared(imports) => match &source.project {
+            Some(project) => ProgramVerificationSession::new_prepared_project(project, imports),
+            None => ProgramVerificationSession::new_prepared(&source.click_source, imports),
         },
-        CInput::PreparedProgram(import) => match &source.project {
-            Some(project) => C0VerificationSession::new_program_prepared_project(project, import),
-            None => C0VerificationSession::new_program_prepared(&source.click_source, import),
+        VerificationInput::PreparedProgram(import) => match &source.project {
+            Some(project) => {
+                ProgramVerificationSession::new_program_prepared_project(project, import)
+            }
+            None => ProgramVerificationSession::new_program_prepared(&source.click_source, import),
         },
     }
     .map_err(|error| error.report())?;
@@ -484,7 +488,7 @@ fn start_session(
 }
 
 fn verify_in_session(
-    session: &C0VerificationSession,
+    session: &ProgramVerificationSession,
     source: &AuditSource,
     request: &SessionRequest,
 ) -> Result<PhaseCost, String> {
@@ -495,14 +499,16 @@ fn verify_in_session(
         ..
     } = request;
     let verify = || match &source.inputs {
-        CInput::Bundle(_) => match &source.project {
+        VerificationInput::Bundle(_) => match &source.project {
             Some(_) => session.verify_at_project(click_source, position.line, position.column),
             None => session.verify_at(click_source, position.line, position.column),
         },
-        CInput::Prepared(_) | CInput::PreparedProgram(_) => match &source.project {
-            Some(_) => session.verify_at_project(click_source, position.line, position.column),
-            None => session.verify_at_prepared(click_source, position.line, position.column),
-        },
+        VerificationInput::Prepared(_) | VerificationInput::PreparedProgram(_) => {
+            match &source.project {
+                Some(_) => session.verify_at_project(click_source, position.line, position.column),
+                None => session.verify_at_prepared(click_source, position.line, position.column),
+            }
+        }
     };
     let ((), cost) = run_phase("rewritten-sidecar verification", *limit, || {
         verify().map(|_| ()).map_err(|error| error.report())
@@ -1308,7 +1314,7 @@ struct AuditSource {
     container_source: String,
     click_source: String,
     c_sources: Vec<(String, String)>,
-    inputs: CInput,
+    inputs: VerificationInput,
     project: Option<ClickProject>,
     line_offset: usize,
     mdtest: Option<cli::MdTest>,
@@ -1344,8 +1350,8 @@ fn load_audit_source_from_text(
     }
     let (project, inputs) = read_lone_sidecar_inputs(path, &container_source)?;
     let c_sources = match &inputs {
-        CInput::Bundle(sources) => sources.clone(),
-        CInput::Prepared(_) | CInput::PreparedProgram(_) => Vec::new(),
+        VerificationInput::Bundle(sources) => sources.clone(),
+        VerificationInput::Prepared(_) | VerificationInput::PreparedProgram(_) => Vec::new(),
     };
     Ok(AuditSource {
         click_source: container_source.clone(),
@@ -1753,7 +1759,7 @@ fn select_changed_sites(
         };
         let current_refs = source_refs(&current.c_sources);
         let baseline_refs = source_refs(&baseline.c_sources);
-        let selection = match c0_incremental_selection(
+        let selection = match c_incremental_selection(
             &current.click_source,
             &current_refs,
             &baseline.click_source,
@@ -1869,7 +1875,7 @@ fn load_baseline_audit_source(
     Ok(Some(AuditSource {
         click_source: container_source.clone(),
         container_source,
-        inputs: CInput::Bundle(c_sources.clone()),
+        inputs: VerificationInput::Bundle(c_sources.clone()),
         project: None,
         c_sources,
         line_offset: 0,
@@ -2253,15 +2259,13 @@ fn expand_claim_with_source(
         (Some(project), inputs) => {
             expand_project_claim_source_by_label(project, &inputs.program_inputs(), claim_label)
         }
-        (None, CInput::Bundle(sources)) => expand_c0_claim_source_by_label(
-            &source.click_source,
-            &source_refs(sources),
-            claim_label,
-        ),
-        (None, CInput::Prepared(imports)) => {
-            expand_c0_prepared_claim_source_by_label(&source.click_source, imports, claim_label)
+        (None, VerificationInput::Bundle(sources)) => {
+            expand_c_claim_source_by_label(&source.click_source, &source_refs(sources), claim_label)
         }
-        (None, CInput::PreparedProgram(import)) => {
+        (None, VerificationInput::Prepared(imports)) => {
+            expand_c_prepared_claim_source_by_label(&source.click_source, imports, claim_label)
+        }
+        (None, VerificationInput::PreparedProgram(import)) => {
             expand_program_prepared_claim_source_by_label(&source.click_source, import, claim_label)
         }
     }
@@ -2280,7 +2284,7 @@ fn expand_claim_with_source(
 /// The names of the smart tactics the inventory finds in `claim_label`.
 fn claim_smart_sites(
     source: &str,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     project: Option<&ClickProject>,
     claim_label: &str,
 ) -> Result<Vec<String>, String> {
@@ -2295,7 +2299,7 @@ fn claim_smart_sites(
 
 fn smart_sites_for_source(
     source: &str,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     project: Option<&ClickProject>,
 ) -> Result<Vec<click::surface::SmartTacticSourceSite>, String> {
     let sites = match (project, inputs) {
@@ -2635,21 +2639,23 @@ fn expand_location_with_source_parts(
         (Some(project), inputs) => {
             expand_project_tactic_source_at(project, &inputs.program_inputs(), click_line, column)
         }
-        (None, CInput::Bundle(sources)) => expand_c0_tactic_source_at(
+        (None, VerificationInput::Bundle(sources)) => expand_c_tactic_source_at(
             &source.click_source,
             &source_refs(sources),
             click_line,
             column,
         ),
-        (None, CInput::Prepared(imports)) => {
-            expand_c0_prepared_tactic_source_at(&source.click_source, imports, click_line, column)
+        (None, VerificationInput::Prepared(imports)) => {
+            expand_c_prepared_tactic_source_at(&source.click_source, imports, click_line, column)
         }
-        (None, CInput::PreparedProgram(import)) => expand_program_prepared_tactic_source_at(
-            &source.click_source,
-            import,
-            click_line,
-            column,
-        ),
+        (None, VerificationInput::PreparedProgram(import)) => {
+            expand_program_prepared_tactic_source_at(
+                &source.click_source,
+                import,
+                click_line,
+                column,
+            )
+        }
     }
     .map_err(|error| error.report())?;
     if looks_like_mdtest(click_path) {
@@ -2724,7 +2730,7 @@ fn claim_source_position_for_source(
 
 fn claim_source_position_for_inputs(
     click_source: &str,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     claim_label: &str,
 ) -> Result<SourcePosition, String> {
     let position = tactic_source_position(click_source, &inputs.program_inputs(), claim_label, 0);
@@ -2774,7 +2780,7 @@ fn reexpand_source_with_inputs(
     rewritten_click_source: &str,
     rewritten_container: &str,
 ) -> Result<String, String> {
-    let claim_sites = |source: &str, inputs: &CInput, project: Option<&ClickProject>| {
+    let claim_sites = |source: &str, inputs: &VerificationInput, project: Option<&ClickProject>| {
         claim_smart_sites(source, inputs, project, claim_label)
     };
     let original_sites = claim_sites(

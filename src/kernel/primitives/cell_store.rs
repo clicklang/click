@@ -3184,7 +3184,7 @@ mod tests {
     fn symbolic_run_reads_keep_the_element_width_instead_of_the_unknown_default() {
         for copy in [false, true] {
             let _session = crate::kernel::VerificationSession::enter();
-            let source = crate::kernel::intern_c_memory(Memory::new());
+            let source = crate::kernel::intern_memory(Memory::new());
             let base = Pointer::symbolic(Variable(993_140)).offset_by_bytes(8);
             let destination = Pointer::symbolic(Variable(993_141));
             let run = CellRun::new_with_mode(
@@ -3224,7 +3224,7 @@ mod tests {
     }
 
     fn source(tag: u32) -> SharedMemory {
-        crate::kernel::intern_c_memory(
+        crate::kernel::intern_memory(
             Memory::new().with_block(format!("cell-store-source-{tag}").as_str(), 4),
         )
     }

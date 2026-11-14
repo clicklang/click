@@ -4,12 +4,12 @@ use crate::kernel::loans::{CheckedLoanCallEvidenceSequence, empty_checked_loan_e
 mod scalar_arrays;
 
 #[cfg(test)]
-pub(in crate::kernel) fn execute_c_statement(
+pub(in crate::kernel) fn execute_execution_statement(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &PureFactContext,
 ) -> Option<StatementOutcome> {
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         state,
         statement,
         assumptions,
@@ -25,14 +25,14 @@ pub(in crate::kernel) fn execute_c_statement(
     Some(path.outcome)
 }
 
-pub(in crate::kernel) fn execute_c_lvalue_assignment_paths(
+pub(in crate::kernel) fn execute_program_lvalue_assignment_paths(
     state: &ExecutionState,
     target: &ProgramExpression,
     value: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    execute_c_lvalue_assignment_paths_with_source(
+    execute_program_lvalue_assignment_paths_with_source(
         state,
         target,
         value,
@@ -42,7 +42,7 @@ pub(in crate::kernel) fn execute_c_lvalue_assignment_paths(
     )
 }
 
-fn execute_c_lvalue_assignment_paths_with_source(
+fn execute_program_lvalue_assignment_paths_with_source(
     state: &ExecutionState,
     target: &ProgramExpression,
     value: &ProgramExpression,
@@ -51,7 +51,7 @@ fn execute_c_lvalue_assignment_paths_with_source(
     store_source: StatementStoreSource,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
-    for target_path in evaluate_c_lvalue_paths(state, target, assumptions, budget)? {
+    for target_path in evaluate_program_lvalue_paths(state, target, assumptions, budget)? {
         let LValuePath {
             outcome: target_outcome,
             facts: target_facts,
@@ -94,7 +94,7 @@ fn execute_c_lvalue_assignment_paths_with_source(
 
             match value_path.outcome {
                 ExpressionOutcome::Value(value) => {
-                    paths.extend(write_c_lvalue_paths_for_initialization(
+                    paths.extend(write_program_lvalue_paths_for_initialization(
                         state,
                         target_lvalue.clone(),
                         value,
@@ -125,7 +125,7 @@ fn execute_c_lvalue_assignment_paths_with_source(
     Ok(paths)
 }
 
-fn execute_c_lvalue_update_paths(
+fn execute_program_lvalue_update_paths(
     state: &ExecutionState,
     target: &ProgramExpression,
     operator: UpdateOperator,
@@ -138,7 +138,7 @@ fn execute_c_lvalue_update_paths(
         _ => None,
     };
     let mut paths = Vec::new();
-    for target_path in evaluate_c_lvalue_paths(state, target, assumptions, budget)? {
+    for target_path in evaluate_program_lvalue_paths(state, target, assumptions, budget)? {
         let LValuePath {
             outcome,
             facts,
@@ -191,7 +191,7 @@ fn execute_c_lvalue_update_paths(
             continue;
         }
 
-        for current_path in read_c_lvalue_paths(
+        for current_path in read_program_lvalue_paths(
             state,
             LValueOutcome::LValue(lvalue.clone()),
             facts,
@@ -224,7 +224,7 @@ fn execute_c_lvalue_update_paths(
             let operand_assumptions =
                 assumptions_with_path_context(assumptions, &current_facts, &current_obligations);
             for operand_path in
-                evaluate_c_expression_paths(state, operand, &operand_assumptions, budget)?
+                evaluate_program_expression_paths(state, operand, &operand_assumptions, budget)?
             {
                 let ExpressionPath {
                     outcome: operand_outcome,
@@ -254,14 +254,14 @@ fn execute_c_lvalue_update_paths(
                     continue;
                 };
 
-                let update_expression = c_update_expression(
+                let update_expression = program_update_expression(
                     operator,
                     ProgramExpression::Value(current.clone()),
                     ProgramExpression::Value(operand_value),
                 );
                 let update_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
-                for result_path in evaluate_c_expression_paths(
+                for result_path in evaluate_program_expression_paths(
                     state,
                     &update_expression,
                     &update_assumptions,
@@ -282,16 +282,18 @@ fn execute_c_lvalue_update_paths(
                         continue;
                     };
                     match outcome {
-                        ExpressionOutcome::Value(value) => paths.extend(write_c_lvalue_paths(
-                            state,
-                            lvalue.clone(),
-                            value,
-                            facts,
-                            obligations,
-                            assumptions,
-                            budget,
-                            Default::default(),
-                        )?),
+                        ExpressionOutcome::Value(value) => {
+                            paths.extend(write_program_lvalue_paths(
+                                state,
+                                lvalue.clone(),
+                                value,
+                                facts,
+                                obligations,
+                                assumptions,
+                                budget,
+                                Default::default(),
+                            )?)
+                        }
                         ExpressionOutcome::UndefinedBehavior(error) => {
                             paths.push(StatementExecutionPath::new(
                                 StatementOutcome::UndefinedBehavior(error),
@@ -315,7 +317,7 @@ fn execute_c_lvalue_update_paths(
     Ok(paths)
 }
 
-fn c_update_expression(
+fn program_update_expression(
     operator: UpdateOperator,
     left: ProgramExpression,
     right: ProgramExpression,
@@ -444,7 +446,7 @@ fn allocation_retirement_outcome(
     stable_loan_memory_range_outcome(state, range, assumptions)
 }
 
-pub(in crate::kernel) fn write_c_lvalue_paths(
+pub(in crate::kernel) fn write_program_lvalue_paths(
     state: &ExecutionState,
     lvalue: LValue,
     value: ProgramValue,
@@ -454,7 +456,7 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
     budget: &mut ExecutionBudget,
     store_source: StatementStoreSource,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    write_c_lvalue_paths_for_initialization(
+    write_program_lvalue_paths_for_initialization(
         state,
         lvalue,
         value.into(),
@@ -467,7 +469,7 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
     )
 }
 
-fn write_c_lvalue_paths_for_initialization(
+fn write_program_lvalue_paths_for_initialization(
     state: &ExecutionState,
     lvalue: LValue,
     value: ExecutionValue,
@@ -523,7 +525,7 @@ fn write_c_lvalue_paths_for_initialization(
             }
         };
         let state = state.clone().with_resource_context(resources);
-        let mut paths = write_c_lvalue_paths_without_local_reference(
+        let mut paths = write_program_lvalue_paths_without_local_reference(
             &state,
             lvalue,
             value,
@@ -547,7 +549,7 @@ fn write_c_lvalue_paths_for_initialization(
         }
         return Ok(paths);
     }
-    write_c_lvalue_paths_without_local_reference(
+    write_program_lvalue_paths_without_local_reference(
         state,
         lvalue,
         value,
@@ -560,7 +562,7 @@ fn write_c_lvalue_paths_for_initialization(
     )
 }
 
-fn write_c_lvalue_paths_without_local_reference(
+fn write_program_lvalue_paths_without_local_reference(
     state: &ExecutionState,
     lvalue: LValue,
     value: ExecutionValue,
@@ -602,7 +604,7 @@ fn write_c_lvalue_paths_without_local_reference(
             .observable_facts_assuming_valid(&effective_assumptions)
             .into_iter()
             .find_map(|fact| match fact {
-                Proposition::CResourceComposition(owner) => Some(owner),
+                Proposition::ResourceComposition(owner) => Some(owner),
                 _ => None,
             });
         effective_assumptions.with_store_owner(owner)
@@ -643,7 +645,7 @@ fn write_c_lvalue_paths_without_local_reference(
         ) {
         value
     } else {
-        let Some(value) = crate::kernel::functions::coerce_c_value_with_pointee_constant(
+        let Some(value) = crate::kernel::functions::coerce_program_value_with_pointee_constant(
             value
                 .into_native()
                 .with_pointer_pointee_volatile(pointee_volatile),
@@ -976,7 +978,7 @@ fn write_c_lvalue_paths_without_local_reference(
             // wider one, as before.
             let (written_pointer, written_value) = if value.byte_width() == 1
                 && let Some(cell) =
-                    containing_integer_cell(&state.memory, &pointer, budget.c_byte_order())
+                    containing_integer_cell(&state.memory, &pointer, budget.program_byte_order())
                 && let Some(updated) = integer_cell_with_byte(&cell, &value)
             {
                 (cell.pointer, updated)
@@ -984,7 +986,7 @@ fn write_c_lvalue_paths_without_local_reference(
                 &state.memory,
                 &pointer,
                 &value,
-                budget.c_byte_order(),
+                budget.program_byte_order(),
             ) {
                 assembled
             } else {
@@ -1038,7 +1040,7 @@ fn write_c_lvalue_paths_without_local_reference(
                     &effective_assumptions,
                 ) {
                     Some(opened) => {
-                        facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
+                        facts.push(ExecutionPureFact::new(Proposition::ResourceComposition(
                             opened.clone(),
                         )));
                         effective_assumptions.with_additional_store_owner(opened)
@@ -1097,7 +1099,7 @@ fn write_c_lvalue_paths_without_local_reference(
                 facts.push(ExecutionPureFact::logical_read_equation(
                     stored.clone(),
                     Pointer::loaded_value(
-                        &crate::kernel::intern_c_memory_ref(state.memory()),
+                        &crate::kernel::intern_memory_ref(state.memory()),
                         &written_pointer,
                     ),
                 ));
@@ -1122,7 +1124,7 @@ fn write_c_lvalue_paths_without_local_reference(
     }
 }
 
-fn execute_c_aggregate_copy_paths(
+fn execute_program_aggregate_copy_paths(
     state: &ExecutionState,
     target: &ProgramExpression,
     source: &ProgramExpression,
@@ -1131,7 +1133,7 @@ fn execute_c_aggregate_copy_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
-    for target_path in evaluate_c_expression_paths(state, target, assumptions, budget)? {
+    for target_path in evaluate_program_expression_paths(state, target, assumptions, budget)? {
         let ExpressionPath {
             outcome: target_outcome,
             facts: target_facts,
@@ -1145,7 +1147,9 @@ fn execute_c_aggregate_copy_paths(
         }
         let value_assumptions =
             assumptions_with_path_context(assumptions, &target_facts, &target_obligations);
-        for source_path in evaluate_c_expression_paths(state, source, &value_assumptions, budget)? {
+        for source_path in
+            evaluate_program_expression_paths(state, source, &value_assumptions, budget)?
+        {
             let ExpressionPath {
                 outcome: source_outcome,
                 facts: source_facts,
@@ -1366,7 +1370,7 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     None
 }
 
-pub(super) fn execute_c_heap_allocate_paths(
+pub(super) fn execute_program_heap_allocate_paths(
     state: &ExecutionState,
     target: &str,
     bytes_expression: &ProgramExpression,
@@ -1422,7 +1426,7 @@ pub(super) fn execute_c_heap_allocate_paths(
     let evaluated_size_expression = element_count_expression.unwrap_or(bytes_expression);
     let mut paths = Vec::new();
     for size_path in
-        evaluate_c_expression_paths(state, evaluated_size_expression, assumptions, budget)?
+        evaluate_program_expression_paths(state, evaluated_size_expression, assumptions, budget)?
     {
         let ExpressionPath {
             outcome,
@@ -1538,9 +1542,9 @@ pub(super) fn execute_c_heap_allocate_paths(
                     object_class.clone(),
                 ));
         success_state.record_pending_population_storage_creation(pointer.block.clone());
-        let assigned = execute_c_lvalue_assignment_paths(
+        let assigned = execute_program_lvalue_assignment_paths(
             &success_state,
-            &c_variable(target.to_string()),
+            &crate::kernel::program_expression::variable(target.to_string()),
             &ProgramExpression::Value(
                 ProgramValue::typed_pointer(pointer, target_type)
                     .with_pointer_object_class(object_class),
@@ -1889,7 +1893,8 @@ fn heap_element_count_expression(
 ) -> Option<&ProgramExpression> {
     let is_element_width_expression = |expression: &ProgramExpression| {
         expression == &ProgramExpression::Value(int32(element_width))
-            || expression == &crate::kernel::c_uint64_literal(u64::from(element_width))
+            || expression
+                == &crate::kernel::program_expression::uint64_literal(u64::from(element_width))
     };
     match bytes_expression {
         ProgramExpression::Multiply(left, right) if is_element_width_expression(right) => {
@@ -2113,7 +2118,7 @@ fn allocation_size_validity_refusal(
     }
 }
 
-pub(crate) fn execute_c_realloc_assign_paths(
+pub(crate) fn execute_program_realloc_assign_paths(
     state: &ExecutionState,
     target: &str,
     arguments: &[ProgramExpression],
@@ -2164,7 +2169,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
     let element_count_expression = heap_element_count_expression(size_expression, element_width);
 
     let mut paths = Vec::new();
-    for old_path in evaluate_c_expression_paths(state, old_expression, assumptions, budget)? {
+    for old_path in evaluate_program_expression_paths(state, old_expression, assumptions, budget)? {
         let ExpressionPath {
             outcome,
             facts,
@@ -2201,7 +2206,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
         // existing pending-allocation machinery so a later null check can
         // resolve this branch just like malloc/calloc.
         if old_pointer == Pointer::null() {
-            for allocation_path in execute_c_heap_allocate_paths(
+            for allocation_path in execute_program_heap_allocate_paths(
                 state,
                 target,
                 size_expression,
@@ -2252,7 +2257,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
         let (old_complete_range, old_range_width) =
             heap_block_range(old_pointer.clone(), &old_bytes, element_width);
         let old_allocation_range = old_bytes.byte_range(old_pointer.clone());
-        for new_size_path in evaluate_c_expression_paths(
+        for new_size_path in evaluate_program_expression_paths(
             state,
             element_count_expression.unwrap_or(size_expression),
             &effective_assumptions,
@@ -2550,9 +2555,9 @@ pub(crate) fn execute_c_realloc_assign_paths(
                     initialized_prefix,
                 );
             let pending_state = state.clone().with_memory(pending_memory);
-            let assigned = execute_c_lvalue_assignment_paths(
+            let assigned = execute_program_lvalue_assignment_paths(
                 &pending_state,
-                &c_variable(target.to_string()),
+                &crate::kernel::program_expression::variable(target.to_string()),
                 &ProgramExpression::Value(ProgramValue::typed_pointer(
                     pending_pointer,
                     target_type,
@@ -2584,14 +2589,14 @@ pub(crate) fn execute_c_realloc_assign_paths(
     Ok(paths)
 }
 
-fn execute_c_heap_free_paths(
+fn execute_program_heap_free_paths(
     state: &ExecutionState,
     expression: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
-    for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
+    for path in evaluate_program_expression_paths(state, expression, assumptions, budget)? {
         let ExpressionPath {
             outcome,
             mut facts,
@@ -2853,7 +2858,7 @@ fn execute_c_heap_free_paths(
             }
         }
         facts.push(ExecutionPureFact::internal(
-            Proposition::CHeapAllocationFreed {
+            Proposition::HeapAllocationFreed {
                 before: before_free,
                 after: memory.clone(),
                 allocation_base: pointer.pointer().clone(),
@@ -3076,7 +3081,7 @@ pub(in crate::kernel) fn return_authority_refusal(
     }
 }
 
-fn execute_c_return_expression_paths(
+fn execute_program_return_expression_paths(
     state: &ExecutionState,
     expression: &ProgramExpression,
     assumptions: &PureFactContext,
@@ -3413,10 +3418,10 @@ pub(in crate::kernel) fn paths_after_scope_exit(
 /// [`execute_statement_paths`], serves both; each place they differ is a
 /// branch on this value.
 pub(in crate::kernel) enum StatementJudgment<'generator, 'scope> {
-    /// `CStatementExecutes`: concrete operational outcomes. A loop runs by
+    /// `ProgramStatementExecutes`: concrete operational outcomes. A loop runs by
     /// unrolling its iterations.
     Executes,
-    /// `CStatementVerifies`: an annotated loop is stepped as its checked
+    /// `ProgramStatementVerifies`: an annotated loop is stepped as its checked
     /// abstraction instead, from an environment's verified loop rule or from
     /// its own invariant and effect checks, and may end in
     /// `VerificationDiverges`. The generator names the identities an
@@ -3424,8 +3429,8 @@ pub(in crate::kernel) enum StatementJudgment<'generator, 'scope> {
     Verifies(&'generator mut KernelVariableGenerator<'scope>),
 }
 
-/// `CStatementExecutes` for `statement`.
-pub(in crate::kernel) fn execute_c_statement_paths(
+/// `ProgramStatementExecutes` for `statement`.
+pub(in crate::kernel) fn execute_execution_statement_paths(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &PureFactContext,
@@ -3525,7 +3530,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                 "independent kernel execution",
                 verification_operation_name(statement),
                 || {
-                    execute_c_statement_leaf_paths(
+                    execute_execution_statement_leaf_paths(
                         state,
                         statement,
                         assumptions,
@@ -3536,7 +3541,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                 },
             )
         }
-        _ => execute_c_statement_leaf_paths(
+        _ => execute_execution_statement_leaf_paths(
             state,
             statement,
             assumptions,
@@ -3655,7 +3660,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
     }
 }
 
-fn execute_c_statement_leaf_paths(
+fn execute_execution_statement_leaf_paths(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &PureFactContext,
@@ -3663,7 +3668,7 @@ fn execute_c_statement_leaf_paths(
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    budget.install_c_byte_order(execution_context.environment.byte_order());
+    budget.install_program_byte_order(execution_context.environment.byte_order());
     if let Some(pending) = &state.pending_thread_create {
         if let Some(resolved) = pending.resolve(state, assumptions) {
             return execute_statement_paths(
@@ -3768,7 +3773,7 @@ fn execute_c_statement_leaf_paths(
             ProgramStatement::TypedStore { .. } if pending.has_local_handle_slot(state) => {}
             ProgramStatement::Skip | ProgramStatement::Seq(_) => {}
             ProgramStatement::If { condition, .. }
-                if super::super::functions::c_expression_is_state_independent(condition) => {}
+                if super::super::functions::program_expression_is_state_independent(condition) => {}
             _ => {
                 budget.consume_statement_step()?;
                 return Ok(vec![StatementExecutionPath::new(
@@ -3869,7 +3874,7 @@ fn execute_c_statement_leaf_paths(
         // A loop's test continues the pass when its condition holds and
         // leaves the loop when it does not. Leaving is the loop's exit, the
         // outcome a `break` also has; the frontier records which one it was.
-        ProgramStatement::LoopTest { condition } => execute_c_statement_leaf_paths(
+        ProgramStatement::LoopTest { condition } => execute_execution_statement_leaf_paths(
             state,
             &ProgramStatement::If {
                 condition: condition.clone(),
@@ -4014,7 +4019,7 @@ fn execute_c_statement_leaf_paths(
                             )
                             .with_constant(*constant)
                             .with_pointee_constant(*pointee_constant);
-                            paths.extend(write_c_lvalue_paths_for_initialization(
+                            paths.extend(write_program_lvalue_paths_for_initialization(
                                 declared,
                                 lvalue,
                                 value,
@@ -4113,7 +4118,14 @@ fn execute_c_statement_leaf_paths(
             target,
             source,
             layout,
-        } => execute_c_aggregate_copy_paths(state, target, source, layout, assumptions, budget)?,
+        } => execute_program_aggregate_copy_paths(
+            state,
+            target,
+            source,
+            layout,
+            assumptions,
+            budget,
+        )?,
         ProgramStatement::InitializeScalarArray {
             target,
             source,
@@ -4137,9 +4149,9 @@ fn execute_c_statement_leaf_paths(
             expression,
             source,
         } => {
-            let mut paths = execute_c_lvalue_assignment_paths(
+            let mut paths = execute_program_lvalue_assignment_paths(
                 state,
-                &c_variable(name.clone()),
+                &crate::kernel::program_expression::variable(name.clone()),
                 expression,
                 assumptions,
                 budget,
@@ -4174,7 +4186,7 @@ fn execute_c_statement_leaf_paths(
             target,
             function_name,
             arguments,
-        } => execute_c_call_assign_paths(
+        } => execute_program_call_assign_paths(
             state,
             target,
             function_name,
@@ -4186,7 +4198,7 @@ fn execute_c_statement_leaf_paths(
         ProgramStatement::Call {
             function_name,
             arguments,
-        } => execute_c_call_paths(
+        } => execute_program_call_paths(
             state,
             None,
             function_name,
@@ -4204,7 +4216,7 @@ fn execute_c_statement_leaf_paths(
             result_type,
             result_pointee_constant,
         } => {
-            let mut paths = execute_c_call_paths(
+            let mut paths = execute_program_call_paths(
                 state,
                 Some(*call),
                 function_name,
@@ -4225,7 +4237,7 @@ fn execute_c_statement_leaf_paths(
                 // assigned to a local of that type.
                 let value = match result_type {
                     Some(c_type) => {
-                        match crate::kernel::functions::coerce_c_value_with_pointee_constant(
+                        match crate::kernel::functions::coerce_program_value_with_pointee_constant(
                             value,
                             *c_type,
                             *result_pointee_constant,
@@ -4254,7 +4266,7 @@ fn execute_c_statement_leaf_paths(
             zeroed,
             object_type,
             ends_program_on_failure,
-        } => execute_c_heap_allocate_paths(
+        } => execute_program_heap_allocate_paths(
             state,
             target,
             bytes,
@@ -4265,10 +4277,10 @@ fn execute_c_statement_leaf_paths(
             budget,
         )?,
         ProgramStatement::HeapFree { pointer } => {
-            execute_c_heap_free_paths(state, pointer, assumptions, budget)?
+            execute_program_heap_free_paths(state, pointer, assumptions, budget)?
         }
         ProgramStatement::Assert { condition, label } => {
-            execute_c_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
+            execute_program_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
         }
         ProgramStatement::Seq(_) => unreachable!("sequences dispatch before leaf execution"),
         ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)) => {
@@ -4289,7 +4301,7 @@ fn execute_c_statement_leaf_paths(
             )]
         }
         ProgramStatement::Return(expression) => {
-            execute_c_return_expression_paths(state, expression, assumptions, budget)?
+            execute_program_return_expression_paths(state, expression, assumptions, budget)?
         }
         ProgramStatement::Throw(expression) => {
             let mut paths = Vec::new();
@@ -4358,10 +4370,10 @@ fn execute_c_statement_leaf_paths(
                         });
                         continue;
                     }
-                    let bound_handler = c_seq(
-                        c_declare(binding.clone(), ProgramType::Int32),
-                        c_seq(
-                            c_assign(
+                    let bound_handler = program_seq(
+                        program_declare(binding.clone(), ProgramType::Int32),
+                        program_seq(
+                            program_assign(
                                 binding.clone(),
                                 ProgramExpression::Value(value.clone().into_native()),
                             ),
@@ -4385,7 +4397,7 @@ fn execute_c_statement_leaf_paths(
             }
             paths
         }
-        ProgramStatement::Store { pointer, value } => execute_c_lvalue_assignment_paths(
+        ProgramStatement::Store { pointer, value } => execute_program_lvalue_assignment_paths(
             state,
             &ProgramExpression::Load(Box::new(pointer.clone())),
             value,
@@ -4400,7 +4412,7 @@ fn execute_c_statement_leaf_paths(
             volatile,
             pointee_constant,
             source,
-        } => execute_c_lvalue_assignment_paths_with_source(
+        } => execute_program_lvalue_assignment_paths_with_source(
             state,
             &ProgramExpression::TypedLoad {
                 pointer: Box::new(pointer.clone()),
@@ -4419,14 +4431,22 @@ fn execute_c_statement_leaf_paths(
             target,
             operator,
             operand,
-        } => execute_c_lvalue_update_paths(state, target, *operator, operand, assumptions, budget)?,
+        } => execute_program_lvalue_update_paths(
+            state,
+            target,
+            *operator,
+            operand,
+            assumptions,
+            budget,
+        )?,
         ProgramStatement::If {
             condition,
             then_branch,
             else_branch,
         } => {
             let mut paths = Vec::new();
-            for condition_path in evaluate_c_condition_paths(state, condition, assumptions, budget)?
+            for condition_path in
+                evaluate_program_condition_paths(state, condition, assumptions, budget)?
             {
                 let ExpressionPath {
                     outcome,
@@ -4436,7 +4456,7 @@ fn execute_c_statement_leaf_paths(
                 match outcome {
                     ExpressionOutcome::Value(value) => {
                         let truthiness_paths =
-                            c_truthiness_paths(value, facts, obligations, assumptions);
+                            program_truthiness_paths(value, facts, obligations, assumptions);
                         for truthiness_path in truthiness_paths {
                             let branch = if truthiness_path.is_true {
                                 then_branch
@@ -4540,7 +4560,7 @@ fn execute_c_statement_leaf_paths(
             };
             match abstracted {
                 Some(paths) => paths,
-                None => execute_c_while_paths(
+                None => execute_program_while_paths(
                     state,
                     condition,
                     invariant,
@@ -4553,7 +4573,7 @@ fn execute_c_statement_leaf_paths(
                 )?,
             }
         }
-        ProgramStatement::Switch { expression, cases } => execute_c_switch_paths(
+        ProgramStatement::Switch { expression, cases } => execute_program_switch_paths(
             state,
             expression,
             cases,
@@ -4572,7 +4592,7 @@ fn execute_c_statement_leaf_paths(
         && statement_reads_call_result(statement)
     {
         for path in &mut paths {
-            if let Some(state) = c_statement_outcome_state_mut(&mut path.outcome) {
+            if let Some(state) = execution_statement_outcome_state_mut(&mut path.outcome) {
                 state.call_results = None;
             }
         }
@@ -4602,7 +4622,9 @@ fn statement_reads_call_result(statement: &ProgramStatement) -> bool {
 }
 
 /// The state an outcome continues in, when it has one.
-fn c_statement_outcome_state_mut(outcome: &mut StatementOutcome) -> Option<&mut ExecutionState> {
+fn execution_statement_outcome_state_mut(
+    outcome: &mut StatementOutcome,
+) -> Option<&mut ExecutionState> {
     match outcome {
         StatementOutcome::Normal(state)
         | StatementOutcome::Break(state)
@@ -4614,7 +4636,7 @@ fn c_statement_outcome_state_mut(outcome: &mut StatementOutcome) -> Option<&mut 
     }
 }
 
-fn execute_c_switch_paths(
+fn execute_program_switch_paths(
     state: &ExecutionState,
     expression: &ProgramExpression,
     cases: &[SwitchCase],
@@ -4631,7 +4653,8 @@ fn execute_c_switch_paths(
         collect_scope_declared_names(&case.body, &mut declared);
     }
     let mut paths = Vec::new();
-    for selector_path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
+    for selector_path in evaluate_program_expression_paths(state, expression, assumptions, budget)?
+    {
         let ExpressionPath {
             outcome,
             facts,
@@ -4639,7 +4662,8 @@ fn execute_c_switch_paths(
         } = selector_path;
         match outcome {
             ExpressionOutcome::Value(value) => {
-                let Some(selector) = promote_c_path_value(value, MachineIntegerType::Int32) else {
+                let Some(selector) = promote_program_path_value(value, MachineIntegerType::Int32)
+                else {
                     paths.push(StatementExecutionPath::new(
                         StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                         facts,
@@ -4647,7 +4671,7 @@ fn execute_c_switch_paths(
                     ));
                     continue;
                 };
-                paths.extend(execute_c_switch_dispatch_paths(
+                paths.extend(execute_program_switch_dispatch_paths(
                     state,
                     &selector,
                     cases,
@@ -4675,7 +4699,7 @@ fn execute_c_switch_paths(
     Ok(paths_after_scope_exit(paths, &declared))
 }
 
-fn execute_c_switch_dispatch_paths(
+fn execute_program_switch_dispatch_paths(
     state: &ExecutionState,
     selector: &MachineTerm,
     cases: &[SwitchCase],
@@ -4690,7 +4714,7 @@ fn execute_c_switch_dispatch_paths(
     if case_index == cases.len() {
         let default_index = cases.iter().position(|case| case.value.is_none());
         return match default_index {
-            Some(default_index) => execute_c_switch_suffix_paths(
+            Some(default_index) => execute_program_switch_suffix_paths(
                 state,
                 cases,
                 default_index,
@@ -4711,7 +4735,7 @@ fn execute_c_switch_dispatch_paths(
 
     let case = &cases[case_index];
     let Some(value) = case.value else {
-        return execute_c_switch_dispatch_paths(
+        return execute_program_switch_dispatch_paths(
             state,
             selector,
             cases,
@@ -4726,7 +4750,9 @@ fn execute_c_switch_dispatch_paths(
     };
     let condition = ConditionTerm::equal(selector.clone(), MachineTerm::constant(value));
     let mut paths = Vec::new();
-    for condition_path in condition_as_c_int32_paths(condition, facts, obligations, assumptions) {
+    for condition_path in
+        condition_as_program_int32_paths(condition, facts, obligations, assumptions)
+    {
         let ExpressionPath {
             outcome,
             facts,
@@ -4736,7 +4762,7 @@ fn execute_c_switch_dispatch_paths(
             unreachable!("switch case conditions produce promoted int32 values");
         };
         if result.as_const() == Some(1) {
-            paths.extend(execute_c_switch_suffix_paths(
+            paths.extend(execute_program_switch_suffix_paths(
                 state,
                 cases,
                 case_index,
@@ -4748,7 +4774,7 @@ fn execute_c_switch_dispatch_paths(
                 judgment,
             )?);
         } else {
-            paths.extend(execute_c_switch_dispatch_paths(
+            paths.extend(execute_program_switch_dispatch_paths(
                 state,
                 selector,
                 cases,
@@ -4765,7 +4791,7 @@ fn execute_c_switch_dispatch_paths(
     Ok(paths)
 }
 
-fn execute_c_switch_suffix_paths(
+fn execute_program_switch_suffix_paths(
     state: &ExecutionState,
     cases: &[SwitchCase],
     case_index: usize,
@@ -4803,17 +4829,19 @@ fn execute_c_switch_suffix_paths(
             continue;
         };
         match case_path.outcome {
-            StatementOutcome::Normal(next_state) => paths.extend(execute_c_switch_suffix_paths(
-                &next_state,
-                cases,
-                case_index + 1,
-                case_facts,
-                case_obligations,
-                assumptions,
-                execution_context,
-                budget,
-                judgment,
-            )?),
+            StatementOutcome::Normal(next_state) => {
+                paths.extend(execute_program_switch_suffix_paths(
+                    &next_state,
+                    cases,
+                    case_index + 1,
+                    case_facts,
+                    case_obligations,
+                    assumptions,
+                    execution_context,
+                    budget,
+                    judgment,
+                )?)
+            }
             StatementOutcome::Break(next_state) => paths.push(StatementExecutionPath::new(
                 StatementOutcome::Normal(next_state),
                 case_facts,
@@ -4835,7 +4863,7 @@ fn execute_c_switch_suffix_paths(
     Ok(paths)
 }
 
-pub(in crate::kernel) fn execute_c_assert_paths(
+pub(in crate::kernel) fn execute_program_assert_paths(
     state: &ExecutionState,
     condition: &ProgramExpression,
     label: Option<&str>,
@@ -4843,7 +4871,7 @@ pub(in crate::kernel) fn execute_c_assert_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let mut paths = Vec::new();
-    for condition_path in evaluate_c_condition_paths(state, condition, assumptions, budget)? {
+    for condition_path in evaluate_program_condition_paths(state, condition, assumptions, budget)? {
         let ExpressionPath {
             outcome,
             facts,
@@ -4852,7 +4880,9 @@ pub(in crate::kernel) fn execute_c_assert_paths(
         match outcome {
             ExpressionOutcome::Value(value) => {
                 let assertion_obligation = assertion_truthiness_obligation(&value, label);
-                for truthiness_path in c_truthiness_paths(value, facts, obligations, assumptions) {
+                for truthiness_path in
+                    program_truthiness_paths(value, facts, obligations, assumptions)
+                {
                     let mut obligations = truthiness_path.obligations;
                     if !truthiness_path.is_true {
                         obligations.push(assertion_obligation.clone());
@@ -4898,7 +4928,7 @@ pub(in crate::kernel) fn assertion_truthiness_obligation(
     }
 }
 
-pub(in crate::kernel) fn execute_c_while_paths(
+pub(in crate::kernel) fn execute_program_while_paths(
     state: &ExecutionState,
     condition: &ProgramExpression,
     invariant: &[Proposition],
@@ -4958,7 +4988,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
         let loop_assumptions = assumptions_with_propositions(&current_assumptions, invariant);
 
         let condition_paths = if check_condition {
-            evaluate_c_condition_paths(&current_state, condition, &loop_assumptions, budget)?
+            evaluate_program_condition_paths(&current_state, condition, &loop_assumptions, budget)?
         } else {
             vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::constant(1))),
@@ -4972,7 +5002,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
             for path in &condition_paths {
                 crate::instrumentation::record_deterministic_work(1);
                 if let ExpressionOutcome::Value(value) = &path.outcome {
-                    for truth in c_truthiness_paths(
+                    for truth in program_truthiness_paths(
                         value.clone(),
                         path.facts.clone(),
                         path.obligations.clone(),
@@ -5005,7 +5035,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
 
             match condition_path.outcome {
                 ExpressionOutcome::Value(value) => {
-                    let truthiness_paths = c_truthiness_paths(
+                    let truthiness_paths = program_truthiness_paths(
                         value,
                         condition_facts,
                         condition_obligations,
@@ -5312,7 +5342,7 @@ fn zero_fill_declared_array(
     for cell in zero_fill.cells.iter() {
         crate::instrumentation::record_deterministic_work(1);
         let mut obligations = Vec::new();
-        let value = crate::kernel::functions::coerce_c_value_with_pointee_constant(
+        let value = crate::kernel::functions::coerce_program_value_with_pointee_constant(
             cell.zero.clone(),
             cell.value_type,
             cell.pointee_constant,

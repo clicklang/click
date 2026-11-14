@@ -36,10 +36,12 @@ pub(crate) fn algebraic_value_variable(value: &AlgebraicValue) -> Option<Variabl
             node: AlgebraicTermNode::Variable(variable),
             ..
         }) => Some(*variable),
-        AlgebraicValue::C(value) => match crate::kernel::spec::c_value_bitvector_term(value) {
-            Some(MachineTerm::Variable(variable)) => Some(variable),
-            _ => None,
-        },
+        AlgebraicValue::Program(value) => {
+            match crate::kernel::spec::program_value_bitvector_term(value) {
+                Some(MachineTerm::Variable(variable)) => Some(variable),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }

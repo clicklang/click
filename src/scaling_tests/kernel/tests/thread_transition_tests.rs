@@ -105,17 +105,19 @@ fn thread_recovery_work_depends_on_one_child_not_the_outstanding_registry() {
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn joining_one_of_many_shared_readers_touches_only_its_share_branch() {
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "thread_reader",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(
         vec![ResourceSpec::viewed_memory(MemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         ))],
         vec![],
     )
@@ -128,10 +130,10 @@ fn joining_one_of_many_shared_readers_touches_only_its_share_branch() {
     );
     let (reader, termination) = certify_worker(function.clone());
     let view = ResourceFact::view_memory(range(0, 0, 1));
-    let state = c_state_with_borrowed_contract_inputs(
+    let state = execution_state_with_borrowed_contract_inputs(
         parent(1).with_resource_context(ResourceContext::new().unchecked_with_fact(view.clone())),
         &function,
-        &[c_pointer_value(pointer(0))],
+        &[crate::kernel::program_expression::pointer_value(pointer(0))],
         &PureFactContext::new(),
     )
     .unwrap();

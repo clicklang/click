@@ -714,7 +714,7 @@ fn each_sidecar_spends_its_own_work_budget() {
         .iter()
         .map(|path| {
             let (_, project, inputs) = load_sidecar_inputs(path, Some(root)).unwrap();
-            let CInput::Bundle(sources) = inputs else {
+            let VerificationInput::Bundle(sources) = inputs else {
                 panic!("plain C fixtures use source bundles")
             };
             (project, sources)
@@ -724,9 +724,9 @@ fn each_sidecar_spends_its_own_work_budget() {
         .iter()
         .map(|(project, sources)| {
             // Compare warm runs, as profiling these same sources will do below.
-            verify_c0_project(project, &source_refs(sources)).unwrap();
+            verify_c_project(project, &source_refs(sources)).unwrap();
             let (result, work) = instrumentation::measure_deterministic_work(|| {
-                verify_c0_project(project, &source_refs(sources))
+                verify_c_project(project, &source_refs(sources))
             });
             result.unwrap();
             work
@@ -739,7 +739,7 @@ fn each_sidecar_spends_its_own_work_budget() {
     let mut shared_exhausted = false;
     let shared = within_work_limit(limit, &mut shared_exhausted, || {
         for (project, sources) in &prepared {
-            verify_c0_project(project, &source_refs(sources)).map_err(|error| error.report())?;
+            verify_c_project(project, &source_refs(sources)).map_err(|error| error.report())?;
         }
         Ok(())
     });
@@ -786,7 +786,7 @@ fn quarantined_mdtests_are_profileable() {
     let source = load_profiled_source(&path, None).expect("a quarantined mdtest still extracts");
 
     assert!(source.click_source.contains("bubble_sort3_two_pass"));
-    assert!(matches!(&source.inputs, CInput::Bundle(sources) if !sources.is_empty()));
+    assert!(matches!(&source.inputs, VerificationInput::Bundle(sources) if !sources.is_empty()));
     assert!(
         source.line_offset > 0,
         "positions inside an mdtest sidecar must be offset to the markdown file"
@@ -797,7 +797,10 @@ fn quarantined_mdtests_are_profileable() {
 fn cpp_mdtests_profile_the_compiler_imported_source() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_scalar_catch.md");
     let source = load_profiled_source(&path, None).expect("prepare C++ mdtest");
-    assert!(matches!(source.inputs, CInput::PreparedProgram(_)));
+    assert!(matches!(
+        source.inputs,
+        VerificationInput::PreparedProgram(_)
+    ));
     assert!(source.project.is_some());
     assert!(source.line_offset > 0);
     verify_mdtest(&path).expect("profile verification uses the C++ semantics");

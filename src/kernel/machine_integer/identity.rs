@@ -245,7 +245,7 @@ fn explicit_operation_identity_keeps_its_read_operands() {
     );
     let memory = Memory::new().store(address.clone(), ProgramValue::Int32(stored));
     let read = crate::kernel::canonical_form_of_load(
-        crate::kernel::intern_c_memory_ref(&memory),
+        crate::kernel::intern_memory_ref(&memory),
         address,
         LoadKind::Int32,
     );

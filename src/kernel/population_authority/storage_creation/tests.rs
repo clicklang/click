@@ -3,9 +3,9 @@ use crate::kernel::prelude::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn pending_malloc(state: &ExecutionState) -> ExecutionState {
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         state,
-        &c_heap_allocate("p", 16),
+        &program_heap_allocate("p", 16),
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -81,13 +81,13 @@ fn only_successful_real_malloc_records_creation() {
         );
     assert!(!imported.population_storage_created_here(created));
 
-    let helper = c_function(
+    let helper = program_function(
         ProgramType::Void,
         "helper",
-        vec![c_parameter("q", ProgramType::Int32Pointer)],
-        c_return(c_void_value()),
+        vec![program_parameter("q", ProgramType::Int32Pointer)],
+        program_return(program_void_value()),
     );
-    let callee = bind_c_function_arguments(
+    let callee = bind_program_function_arguments(
         &succeeded,
         &helper,
         &[ProgramValue::pointer(created.pointer().clone())],
@@ -133,9 +133,9 @@ fn only_successful_real_malloc_records_creation() {
         "the new identity preserves the caller's creation right"
     );
 
-    let freed = execute_c_statement_paths(
+    let freed = execute_execution_statement_paths(
         &succeeded,
-        &c_heap_free(c_variable("p")),
+        &program_heap_free(crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -171,23 +171,23 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
     let Some(ProgramValue::Pointer(pending_pointer)) = local_native_output_163.as_deref() else {
         unreachable!();
     };
-    let helper = c_function(
+    let helper = program_function(
         ProgramType::Int32,
         "resolve_in_helper",
-        vec![c_parameter("q", ProgramType::Int32Pointer)],
-        c_if(
-            c_variable("q"),
-            c_return(c_int32_literal(1)),
-            c_return(c_int32_literal(0)),
+        vec![program_parameter("q", ProgramType::Int32Pointer)],
+        program_if(
+            crate::kernel::program_expression::variable("q"),
+            program_return(crate::kernel::program_expression::int32_literal(1)),
+            program_return(crate::kernel::program_expression::int32_literal(0)),
         ),
     );
-    let callee = bind_c_function_arguments(
+    let callee = bind_program_function_arguments(
         &pending,
         &helper,
         &[ProgramValue::pointer(pending_pointer.pointer().clone())],
     )
     .expect("bind actual helper environment");
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         &callee,
         helper.body(),
         &PureFactContext::new(),
@@ -231,9 +231,9 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
 #[test]
 fn actual_stack_declaration_grants_one_lifetime_creation_event() {
     let entry = ExecutionState::new().with_population_creation_tracking();
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         &entry,
-        &c_declare("x", ProgramType::Int32),
+        &program_declare("x", ProgramType::Int32),
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -256,9 +256,9 @@ fn actual_stack_declaration_grants_one_lifetime_creation_event() {
     let ended = crate::kernel::eval::end_scope_automatic_lifetimes(declared, &["x".to_owned()])
         .expect("scope exit");
     assert!(!ended.population_storage_created_here(&slot));
-    let second = execute_c_statement_paths(
+    let second = execute_execution_statement_paths(
         &ended,
-        &c_declare("x", ProgramType::Int32),
+        &program_declare("x", ProgramType::Int32),
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -1238,7 +1238,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
     let reference = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "reference".into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
     );
     let authority = ResourceSpec::new(
@@ -1259,7 +1259,9 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
     let cell = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
-            pointer: Box::new(SpecExpression::ProgramExpression(c_variable("p"))),
+            pointer: Box::new(SpecExpression::ProgramExpression(
+                crate::kernel::program_expression::variable("p"),
+            )),
             elements: Box::new(SpecExpression::Value(int32(0))),
             byte_width: 4,
         }),
@@ -1267,18 +1269,20 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
     };
     let count = SpecExpression::CountedResourceCount {
         name: "reference".into(),
-        arguments: vec![Some(SpecExpression::ProgramExpression(c_variable("p")))],
+        arguments: vec![Some(SpecExpression::ProgramExpression(
+            crate::kernel::program_expression::variable("p"),
+        ))],
     };
     let mut definition = CompositeResourceDefinition::new(
         "control",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![
             ResourceSpec::owned_memory(MemorySegment::new(
-                c_variable("p"),
-                c_int32_literal(0),
-                c_int32_literal(1),
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
             )),
             authority,
         ],
@@ -1299,7 +1303,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
                 resource: Box::new(ResourceSpec::composite(
                     ResourceAccessMode::Own,
                     "item".into(),
-                    vec![c_variable("p")],
+                    vec![crate::kernel::program_expression::variable("p")],
                     vec![ProgramType::Int32Pointer],
                 )),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
@@ -1463,7 +1467,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let reference = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "reference".into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
     );
     let authority = ResourceSpec::new(
@@ -1484,7 +1488,9 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let cell = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::PointerOffset {
-            pointer: Box::new(SpecExpression::ProgramExpression(c_variable("p"))),
+            pointer: Box::new(SpecExpression::ProgramExpression(
+                crate::kernel::program_expression::variable("p"),
+            )),
             elements: Box::new(SpecExpression::Value(int32(0))),
             byte_width: 4,
         }),
@@ -1492,18 +1498,20 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     };
     let count = SpecExpression::CountedResourceCount {
         name: "reference".into(),
-        arguments: vec![Some(SpecExpression::ProgramExpression(c_variable("p")))],
+        arguments: vec![Some(SpecExpression::ProgramExpression(
+            crate::kernel::program_expression::variable("p"),
+        ))],
     };
     let definition = CompositeResourceDefinition::new(
         "control",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![
             ResourceSpec::owned_memory(MemorySegment::new(
-                c_variable("p"),
-                c_int32_literal(0),
-                c_int32_literal(1),
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
             )),
             authority,
         ],
@@ -2433,7 +2441,7 @@ fn opaque_numeric_count_delta_survives_exact_call_custody() {
 fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
     let block = PointerBlock::ExternalArgument;
     let description = member_description(block.clone());
-    let [AlgebraicValue::C(pointer)] = description.arguments() else {
+    let [AlgebraicValue::Program(pointer)] = description.arguments() else {
         panic!("pointer anchor")
     };
     let count = SpecExpression::CountedResourceCount {
@@ -2506,7 +2514,7 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
 #[test]
 fn count_uses_its_written_anchor_not_a_proven_alias() {
     let description = member_description(PointerBlock::ExternalArgument);
-    let [AlgebraicValue::C(ProgramValue::Pointer(anchor))] = description.arguments() else {
+    let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = description.arguments() else {
         panic!("pointer anchor")
     };
     let alias = Pointer {
@@ -2664,7 +2672,7 @@ mod wildcard_scope_tests {
             })
             .into(),
         ];
-        arguments.extend(keys.iter().map(|key| AlgebraicValue::C(int32(*key))));
+        arguments.extend(keys.iter().map(|key| AlgebraicValue::Program(int32(*key))));
         ResourceDescription::new(
             "slot".into(),
             arguments.into(),
@@ -2858,7 +2866,7 @@ mod wildcard_scope_tests {
             .unwrap();
         let key = MachineTerm::Variable(Variable(9_870_001));
         let mut arguments = member.arguments().to_vec();
-        arguments[1] = AlgebraicValue::C(ProgramValue::Int32(key));
+        arguments[1] = AlgebraicValue::Program(ProgramValue::Int32(key));
         let aliased = ResourceDescription::new(
             member.family().into(),
             arguments.into(),
@@ -3202,7 +3210,7 @@ mod wildcard_scope_tests {
             .unwrap();
         let known = description(&pool, &[7]);
         let mut arguments = known.arguments().to_vec();
-        arguments[1] = AlgebraicValue::C(ProgramValue::Int32(MachineTerm::Variable(
+        arguments[1] = AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
             Variable::allocate_fresh().unwrap(),
         )));
         let unknown =
@@ -3499,7 +3507,7 @@ fn local_named_wildcard_members_count_occurrences_not_field_values() {
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let scope = ResourceDescription::new(
@@ -3662,7 +3670,7 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
     let member_spec = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "reference".into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
     );
     let authority_spec = ResourceSpec::new(
@@ -3680,22 +3688,22 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
         ResourceSnapshot::Current,
     )
     .unwrap();
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "inspect",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_void_value()),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(program_void_value()),
     )
     .with_resource_summary(vec![authority_spec, member_spec.clone()], vec![])
     .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
         "reference",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![],
         vec![],
     )]);
-    let AlgebraicValue::C(pointer) = &description.arguments()[0] else {
+    let AlgebraicValue::Program(pointer) = &description.arguments()[0] else {
         unreachable!();
     };
     let member_only_function = function
@@ -3717,7 +3725,7 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
             .observe_symbolic(&description)
             .unwrap()
             .entry_count;
-        let entry = c_function_contract_entry(
+        let entry = program_function_contract_entry(
             &state,
             &function,
             &[ProgramExpression::Value(pointer.clone())],
@@ -3739,7 +3747,7 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
         );
         let without_authority =
             state.with_resource_context(ResourceContext::new().unchecked_with_fact(member.clone()));
-        let entry_without_authority = c_function_contract_entry(
+        let entry_without_authority = program_function_contract_entry(
             &without_authority,
             &member_only_function,
             &[ProgramExpression::Value(pointer.clone())],
@@ -3768,7 +3776,7 @@ fn check_named_authority_import(arity: Option<usize>) {
     let base = member_description(PointerBlock::ExternalArgument);
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let mut description = ResourceDescription::new(
@@ -3854,7 +3862,7 @@ fn check_named_authority_import(arity: Option<usize>) {
         // Same family, different explicit anchor: field recovery must not
         // select the first imported population merely by family or block.
         let other_pattern = pattern.map_values(|_| {
-            AlgebraicValue::C(ProgramValue::typed_pointer(
+            AlgebraicValue::Program(ProgramValue::typed_pointer(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Constant(4),
@@ -3939,7 +3947,7 @@ fn check_named_authority_import(arity: Option<usize>) {
             description.arguments().to_vec().into(),
             ResourceFieldSchema::new(vec![(
                 "serial".into(),
-                ResourceFieldType::C(ProgramType::UInt8),
+                ResourceFieldType::Program(ProgramType::UInt8),
             )])
             .unwrap(),
         );
@@ -4092,7 +4100,7 @@ fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let scope = ResourceDescription::new(

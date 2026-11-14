@@ -38,7 +38,7 @@ fn owned_range(base: Pointer, start: u32, end: u32) -> ResourceFact {
 fn owned_instance(identity: u64) -> ResourceFact {
     let schema = ResourceFieldSchema::new(vec![(
         "revision".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     ResourceFact::own(Resource::Instance(
@@ -121,9 +121,9 @@ fn private_local_copy_ignores_unrelated_resources() {
                         .collect(),
                 );
                 let declare = |state: &ExecutionState, name: &str, c_type: ProgramType| {
-                    let mut paths = execute_c_statement_paths(
+                    let mut paths = execute_execution_statement_paths(
                         state,
-                        &c_declare(name, c_type),
+                        &program_declare(name, c_type),
                         &PureFactContext::new(),
                         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                         &mut ExecutionBudget::default(),
@@ -147,7 +147,12 @@ fn private_local_copy_ignores_unrelated_resources() {
                         ProgramExpression::Value(value),
                     )
                 } else {
-                    (ProgramType::Int32, int32(0), int32(9), c_int32_literal(9))
+                    (
+                        ProgramType::Int32,
+                        int32(0),
+                        int32(9),
+                        crate::kernel::program_expression::int32_literal(9),
+                    )
                 };
                 let mut state = if address_backed {
                     declare(&ExecutionState::new(), "target", c_type)
@@ -159,9 +164,9 @@ fn private_local_copy_ignores_unrelated_resources() {
                 }
                 let resources = state.resources().clone();
                 let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    execute_c_statement_paths(
+                    execute_execution_statement_paths(
                         &state,
-                        &c_assign("target", expression.clone()),
+                        &program_assign("target", expression.clone()),
                         &PureFactContext::new(),
                         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                         &mut ExecutionBudget::default(),
@@ -392,25 +397,25 @@ fn indexed_validity_still_finds_every_violation_kind() {
 fn field_endpoint_definitions() -> Vec<CompositeResourceDefinition> {
     let suffix_schema = ResourceFieldSchema::new(vec![(
         "start".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let holder_schema = ResourceFieldSchema::new(vec![(
         "at".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let suffix = CompositeResourceDefinition::new(
         "suffix",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment {
             uninitialized: false,
             value_runs: Default::default(),
-            base: c_variable("p"),
-            start: c_variable("start"),
-            end: c_int32_literal(8),
+            base: crate::kernel::program_expression::variable("p"),
+            start: crate::kernel::program_expression::variable("start"),
+            end: crate::kernel::program_expression::int32_literal(8),
             element_width: 4,
             guard: None,
         })],
@@ -419,7 +424,7 @@ fn field_endpoint_definitions() -> Vec<CompositeResourceDefinition> {
     .with_instance_schema(Some(suffix_schema));
     let holder = CompositeResourceDefinition::new(
         "holder",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![],
@@ -429,7 +434,9 @@ fn field_endpoint_definitions() -> Vec<CompositeResourceDefinition> {
         name: "rest".into(),
         resource: "suffix".into(),
         binding: Variable(90),
-        arguments: vec![SpecExpression::ProgramExpression(c_variable("p"))],
+        arguments: vec![SpecExpression::ProgramExpression(
+            crate::kernel::program_expression::variable("p"),
+        )],
         field_bindings: vec![ResourceChildField::Parent(0)],
     }])
     .with_instance_schema(Some(holder_schema));
@@ -444,7 +451,7 @@ fn field_endpoint_instance(name: &str, field: &str, identity: u64) -> ResourceIn
         vec![ProgramValue::pointer(heap_base(TARGET_HEAP)).into()].into(),
         ResourceFieldSchema::new(vec![(
             field.into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap(),
         vec![int32(2).into()].into(),
@@ -515,7 +522,7 @@ fn field_endpoint_fold_and_unfold_ignore_unrelated_resources() {
 fn window_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
     let schema = ResourceFieldSchema::new(vec![(
         "start".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let contains = (0..cells)
@@ -523,13 +530,13 @@ fn window_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
             ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("p"),
+                base: crate::kernel::program_expression::variable("p"),
                 start: if cell == 0 {
-                    c_variable("start")
+                    crate::kernel::program_expression::variable("start")
                 } else {
-                    c_int32_literal(cell)
+                    crate::kernel::program_expression::int32_literal(cell)
                 },
-                end: c_int32_literal(cell + 1),
+                end: crate::kernel::program_expression::int32_literal(cell + 1),
                 element_width: 4,
                 guard: None,
             })
@@ -538,7 +545,7 @@ fn window_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
     vec![
         CompositeResourceDefinition::new(
             "window",
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             contains,
@@ -556,7 +563,7 @@ fn window_instance(block: u64, identity: u64) -> ResourceFact {
             vec![ProgramValue::pointer(heap_base(block)).into()].into(),
             ResourceFieldSchema::new(vec![(
                 "start".into(),
-                ResourceFieldType::C(ProgramType::Int32),
+                ResourceFieldType::Program(ProgramType::Int32),
             )])
             .unwrap(),
             vec![int32(0).into()].into(),
@@ -660,7 +667,7 @@ fn unmatched_instance_body_views_are_linear_in_the_body() {
 fn holder_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
     let schema = ResourceFieldSchema::new(vec![(
         "start".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let child_contains = (0..cells)
@@ -668,9 +675,9 @@ fn holder_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
             ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("p"),
-                start: c_int32_literal(cell),
-                end: c_int32_literal(cell + 1),
+                base: crate::kernel::program_expression::variable("p"),
+                start: crate::kernel::program_expression::int32_literal(cell),
+                end: crate::kernel::program_expression::int32_literal(cell + 1),
                 element_width: 4,
                 guard: None,
             })
@@ -679,7 +686,7 @@ fn holder_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
     vec![
         CompositeResourceDefinition::new(
             "cells",
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             child_contains,
@@ -687,13 +694,13 @@ fn holder_definitions(cells: u32) -> Vec<CompositeResourceDefinition> {
         ),
         CompositeResourceDefinition::new(
             "holder",
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             vec![ResourceSpec::composite(
                 ResourceAccessMode::Own,
                 "cells".into(),
-                vec![c_variable("p")],
+                vec![crate::kernel::program_expression::variable("p")],
                 vec![ProgramType::Int32Pointer],
             )],
             vec![],
@@ -710,7 +717,7 @@ fn holder_instance(block: u64, identity: u64) -> ResourceFact {
             vec![ProgramValue::pointer(heap_base(block)).into()].into(),
             ResourceFieldSchema::new(vec![(
                 "start".into(),
-                ResourceFieldType::C(ProgramType::Int32),
+                ResourceFieldType::Program(ProgramType::Int32),
             )])
             .unwrap(),
             vec![int32(0).into()].into(),
@@ -1013,7 +1020,7 @@ fn parameter_frame(count: usize) -> (ResourceContext, PureFactContext) {
             vec![ProgramValue::pointer(parameter_base(FIRST_PARAMETER - 1))],
         ));
     let assumptions =
-        PureFactContext::new().assume_proposition(Proposition::CResourceComposition(frame.clone()));
+        PureFactContext::new().assume_proposition(Proposition::ResourceComposition(frame.clone()));
     (frame, assumptions)
 }
 
@@ -1174,7 +1181,7 @@ fn holding_a_parameter_composition_states_no_pairs() {
         let (frame, _) = parameter_frame(size);
         let (assumptions, work) = crate::instrumentation::measure_deterministic_work(|| {
             PureFactContext::new()
-                .assume_proposition(Proposition::CResourceComposition(frame.clone()))
+                .assume_proposition(Proposition::ResourceComposition(frame.clone()))
         });
         assert_eq!(
             assumptions.memory_separation_candidate_count(
@@ -1372,7 +1379,7 @@ fn normalizing_external_ranges_compares_only_related_bases() {
 fn tag_schema() -> ResourceFieldSchema {
     ResourceFieldSchema::new(vec![(
         "tag".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap()
 }
@@ -1392,9 +1399,9 @@ fn layered_definitions(layers: usize) -> Vec<CompositeResourceDefinition> {
                 vec![ResourceSpec::owned_memory(MemorySegment {
                     uninitialized: false,
                     value_runs: Default::default(),
-                    base: c_variable("p"),
-                    start: c_int32_literal(0),
-                    end: c_int32_literal(1),
+                    base: crate::kernel::program_expression::variable("p"),
+                    start: crate::kernel::program_expression::int32_literal(0),
+                    end: crate::kernel::program_expression::int32_literal(1),
                     element_width: 4,
                     guard: None,
                 })]
@@ -1408,13 +1415,15 @@ fn layered_definitions(layers: usize) -> Vec<CompositeResourceDefinition> {
                     name: "child".into(),
                     resource: layer_name(layer - 1),
                     binding: Variable(5_000_000 + layer as u64),
-                    arguments: vec![SpecExpression::ProgramExpression(c_variable("p"))],
+                    arguments: vec![SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable("p"),
+                    )],
                     field_bindings: vec![ResourceChildField::Parent(0)],
                 }]
             };
             CompositeResourceDefinition::new(
                 layer_name(layer),
-                vec![c_parameter("p", ProgramType::Int32Pointer)],
+                vec![program_parameter("p", ProgramType::Int32Pointer)],
                 None,
                 false,
                 contains,
@@ -1501,23 +1510,26 @@ fn a_layered_footprint_is_linear_in_its_definitions() {
 fn a_recursive_footprint_is_constant_in_live_nodes() {
     let mut definitions = vec![CompositeResourceDefinition::new(
         "list",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         true,
         vec![
             ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("p"),
-                start: c_int32_literal(0),
-                end: c_int32_literal(1),
+                base: crate::kernel::program_expression::variable("p"),
+                start: crate::kernel::program_expression::int32_literal(0),
+                end: crate::kernel::program_expression::int32_literal(1),
                 element_width: 4,
                 guard: None,
             }),
             ResourceSpec::composite(
                 ResourceAccessMode::Own,
                 "list".into(),
-                vec![c_pointer_offset_bytes(c_variable("p"), 4)],
+                vec![crate::kernel::program_expression::pointer_offset_bytes(
+                    crate::kernel::program_expression::variable("p"),
+                    4,
+                )],
                 vec![ProgramType::Int32Pointer],
             ),
         ],
@@ -1562,33 +1574,39 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
 /// descriptor's first field and then the pool's.
 fn slot_definitions() -> Vec<CompositeResourceDefinition> {
     let schema = ResourceFieldSchema::new(vec![
-        ("at".into(), ResourceFieldType::C(ProgramType::Int32)),
-        ("end".into(), ResourceFieldType::C(ProgramType::Int32)),
+        ("at".into(), ResourceFieldType::Program(ProgramType::Int32)),
+        ("end".into(), ResourceFieldType::Program(ProgramType::Int32)),
     ])
     .unwrap();
-    let pool = c_typed_load(c_variable("s"), ProgramType::Int32Pointer);
+    let pool = crate::kernel::program_expression::typed_load(
+        crate::kernel::program_expression::variable("s"),
+        ProgramType::Int32Pointer,
+    );
     vec![
         CompositeResourceDefinition::new(
             "slot",
-            vec![c_parameter("s", ProgramType::Int32Pointer)],
+            vec![program_parameter("s", ProgramType::Int32Pointer)],
             None,
             false,
             vec![
                 ResourceSpec::owned_memory(MemorySegment {
                     uninitialized: false,
                     value_runs: Default::default(),
-                    base: c_variable("s"),
-                    start: c_int32_literal(0),
-                    end: c_int32_literal(4),
+                    base: crate::kernel::program_expression::variable("s"),
+                    start: crate::kernel::program_expression::int32_literal(0),
+                    end: crate::kernel::program_expression::int32_literal(4),
                     element_width: 4,
                     guard: None,
                 }),
                 ResourceSpec::owned_memory(MemorySegment {
                     uninitialized: false,
                     value_runs: Default::default(),
-                    base: c_typed_load(pool, ProgramType::Int32Pointer),
-                    start: c_variable("at"),
-                    end: c_variable("end"),
+                    base: crate::kernel::program_expression::typed_load(
+                        pool,
+                        ProgramType::Int32Pointer,
+                    ),
+                    start: crate::kernel::program_expression::variable("at"),
+                    end: crate::kernel::program_expression::variable("end"),
                     element_width: 4,
                     guard: None,
                 }),
@@ -1611,13 +1629,13 @@ fn external_descriptor(identity: u64) -> Pointer {
 fn materialized_pointer(source: &Memory, cell: &Pointer) -> ProgramValue {
     ProgramValue::Pointer(PointerValue::from_read(
         Pointer::loaded(&MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(source),
+            crate::kernel::intern_memory_ref(source),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         ))
         .unwrap(),
         ProgramType::Int32Pointer,
-        &crate::kernel::intern_c_memory_ref(source),
+        &crate::kernel::intern_memory_ref(source),
         cell,
     ))
 }
@@ -1647,8 +1665,8 @@ fn unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors() {
             vec![ProgramValue::typed_pointer(region.clone(), ProgramType::Int32Pointer).into()]
                 .into(),
             ResourceFieldSchema::new(vec![
-                ("at".into(), ResourceFieldType::C(ProgramType::Int32)),
-                ("end".into(), ResourceFieldType::C(ProgramType::Int32)),
+                ("at".into(), ResourceFieldType::Program(ProgramType::Int32)),
+                ("end".into(), ResourceFieldType::Program(ProgramType::Int32)),
             ])
             .unwrap(),
             vec![int32(0).into(), int32(2).into()].into(),
@@ -1725,7 +1743,7 @@ fn parameter_window_instance(parameter: u64, identity: u64) -> ResourceFact {
             vec![ProgramValue::pointer(parameter_base(parameter)).into()].into(),
             ResourceFieldSchema::new(vec![(
                 "start".into(),
-                ResourceFieldType::C(ProgramType::Int32),
+                ResourceFieldType::Program(ProgramType::Int32),
             )])
             .unwrap(),
             vec![int32(0).into()].into(),
@@ -1743,7 +1761,7 @@ const STORE_KEPT_PARAMETER: u64 = 97_001;
 fn framed_store_beside_instances(state: &ExecutionState, kept: &[Pointer]) -> (usize, usize) {
     let write = parameter_base(STORE_WRITTEN_PARAMETER);
     let assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::CResourceComposition(state.resources().clone()));
+        .assume_proposition(Proposition::ResourceComposition(state.resources().clone()));
     let (memory, work) = crate::instrumentation::measure_deterministic_work(|| {
         let assumptions = match crate::kernel::functions::store_opened_instance_composition(
             state,
@@ -1752,7 +1770,7 @@ fn framed_store_beside_instances(state: &ExecutionState, kept: &[Pointer]) -> (u
             &assumptions,
         ) {
             Some(opened) => {
-                assumptions.assume_proposition(Proposition::CResourceComposition(opened))
+                assumptions.assume_proposition(Proposition::ResourceComposition(opened))
             }
             None => assumptions.clone(),
         };
@@ -1959,7 +1977,7 @@ fn observable_projection_reuses_private_local_deltas_and_unchanged_queries() {
             for _ in 0..16 {
                 assert_eq!(
                     resources.observable_facts_assuming_valid(&assumptions),
-                    vec![Proposition::CResourceComposition(expected.clone())]
+                    vec![Proposition::ResourceComposition(expected.clone())]
                 );
             }
         });
@@ -2019,7 +2037,7 @@ fn observable_projection_queries_do_not_enumerate_retained_owners() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..16 {
                 let result = context.observable_facts_assuming_valid(&assumptions);
-                let [Proposition::CResourceComposition(observed)] = result.as_slice() else {
+                let [Proposition::ResourceComposition(observed)] = result.as_slice() else {
                     panic!("owned composition is observable");
                 };
                 assert!(std::sync::Arc::ptr_eq(&observed.storage, &expected.storage));
@@ -2413,17 +2431,17 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> ExecutionState {
 /// allocation in the expanded byte-representation round trip).
 #[test]
 fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
-    let helper = c_function(
+    let helper = program_function(
         ProgramType::Int32,
         "peek",
-        vec![c_parameter("data", ProgramType::Int32Pointer)],
-        c_return(c_int32_literal(0)),
+        vec![program_parameter("data", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     )
     .with_resource_summary(
         vec![ResourceSpec::viewed_memory(MemorySegment::new(
-            c_variable("data"),
-            c_int32_literal(0),
-            c_int32_literal(4),
+            crate::kernel::program_expression::variable("data"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(4),
         ))],
         Vec::new(),
     );
@@ -2436,7 +2454,11 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
             checked_callees: None,
             applied_tactics: Default::default(),
         });
-    let call = c_call_assign("observed", "peek", vec![c_variable("p")]);
+    let call = program_call_assign(
+        "observed",
+        "peek",
+        vec![crate::kernel::program_expression::variable("p")],
+    );
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [2usize, 4, 8, 16] {
@@ -2449,7 +2471,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
         caller
             .resources()
             .synchronize_memory_equalities(&assumptions);
-        crate::kernel::reasoning::variable_collection::collect_c_state_bitvector_variables(
+        crate::kernel::reasoning::variable_collection::collect_execution_state_bitvector_variables(
             &caller,
             &mut BTreeSet::new(),
         );
@@ -2457,7 +2479,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
             .resources()
             .observable_facts_assuming_valid(&assumptions);
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let paths = execute_c_statement_paths(
+            let paths = execute_execution_statement_paths(
                 &caller,
                 &call,
                 &assumptions,
@@ -2487,7 +2509,7 @@ fn a_view_lending_call_and_its_observation_ignore_unrelated_allocations() {
         let mut cold = after.resources().clone();
         cold.observable_projection = Default::default();
         assert_eq!(observed, cold.observable_facts_assuming_valid(&assumptions));
-        let [Proposition::CResourceComposition(composition)] = observed.as_slice() else {
+        let [Proposition::ResourceComposition(composition)] = observed.as_slice() else {
             panic!("the caller's owned heap is observable: {observed:?}");
         };
         // Every allocation's token and bytes stay; no pointer local's slot is
@@ -2565,8 +2587,8 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
             binding_variables: vec![],
             contains: vec![ResourceSpec::owned_memory(MemorySegment::new(
                 ProgramExpression::Value(ProgramValue::pointer(heap_base(TARGET_HEAP))),
-                c_int32_literal(0),
-                c_int32_literal(2),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(2),
             ))],
             facts: vec![],
             children: vec![],

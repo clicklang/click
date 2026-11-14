@@ -10,7 +10,8 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
         let value = MachineTerm::Variable(Variable(910_001));
-        let written = ContractExpression::CFragment(ProgramExpression::Variable("x".into()));
+        let written =
+            ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
         let mut facts = Vec::new();
         let mut surfaces = SurfacePropositionMap::default();
         for index in 0..size {
@@ -25,7 +26,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
             );
             let surface = relate(
                 written.clone(),
-                ContractExpression::CFragment(ProgramExpression::Value(int32(100 + index))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(100 + index))),
                 Relation::Less,
             );
             surfaces.record_lowering(&surface, &fact).unwrap();
@@ -130,8 +131,9 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             MachineTerm::Variable(Variable(911_002)),
             MachineTerm::Variable(Variable(911_003)),
         );
-        let written =
-            |name: &str| ContractExpression::CFragment(ProgramExpression::Variable(name.into()));
+        let written = |name: &str| {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
+        };
         let mut surfaces = SurfacePropositionMap::default();
         let order = Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -160,7 +162,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             );
             let surface = relate(
                 written("y"),
-                ContractExpression::CFragment(ProgramExpression::Value(int32(100 + index))),
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(100 + index))),
                 Relation::Less,
             );
             surfaces.record_lowering(&surface, &fact).unwrap();

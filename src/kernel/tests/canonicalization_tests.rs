@@ -261,16 +261,20 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
         .with_local("data", ProgramValue::pointer(data))
         .with_memory(memory)
         .with_resource_context(view_memory_context(len_cell.clone(), 0, 1));
-    let statement = c_return(c_add(
-        c_variable("data"),
-        c_typed_load(c_variable("len_ptr"), ProgramType::Int32),
+    let statement = program_return(crate::kernel::program_expression::add(
+        crate::kernel::program_expression::variable("data"),
+        crate::kernel::program_expression::typed_load(
+            crate::kernel::program_expression::variable("len_ptr"),
+            ProgramType::Int32,
+        ),
     ));
-    let execution = prove_symbolic_c_execution_paths(state, statement, PureFactContext::new());
+    let execution =
+        prove_symbolic_program_execution_paths(state, statement, PureFactContext::new());
 
     assert!(!execution.paths().is_empty());
     let mut saw_a_canonical_offset = false;
     for path in execution.paths() {
-        let Proposition::CStatementExecutes { outcome, .. } =
+        let Proposition::ProgramStatementExecutes { outcome, .. } =
             path.theorem().proposition().peel_implications()
         else {
             panic!("execution should prove a statement judgment");
@@ -307,13 +311,18 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
         .with_local("pp", ProgramValue::pointer(cell.clone()))
         .with_memory(memory)
         .with_resource_context(view_memory_context(cell.clone(), 0, 1));
-    let statement = c_return(c_typed_load(c_variable("pp"), ProgramType::Int32Pointer));
-    let execution = prove_symbolic_c_execution_paths(state, statement, PureFactContext::new());
+    let statement = program_return(crate::kernel::program_expression::typed_load(
+        crate::kernel::program_expression::variable("pp"),
+        ProgramType::Int32Pointer,
+    ));
+    let execution =
+        prove_symbolic_program_execution_paths(state, statement, PureFactContext::new());
 
     assert!(!execution.paths().is_empty());
     let mut saw_a_named_read = false;
     for path in execution.paths() {
-        let Proposition::CStatementExecutes { outcome, .. } = path.theorem().proposition() else {
+        let Proposition::ProgramStatementExecutes { outcome, .. } = path.theorem().proposition()
+        else {
             panic!("execution should prove a statement judgment");
         };
         let StatementOutcome::Return { value, .. } = outcome else {
@@ -341,7 +350,7 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
 fn unresolved_canonicalization_test_load() -> MachineTerm {
     let memory = Memory::new().with_block("canonical-shapes", 8);
     MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(memory),
+        crate::kernel::intern_memory(memory),
         Box::new(Pointer {
             block: "canonical-shapes".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -557,12 +566,12 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
     // a block this load cannot observe.
     let drifted = base.clone().with_block("unrelated", 4);
     let load_at_base = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(base.clone()),
+        crate::kernel::intern_memory(base.clone()),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let load_at_drifted = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(drifted),
+        crate::kernel::intern_memory(drifted),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -583,7 +592,7 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
         ProgramValue::Int32(MachineTerm::constant(7)),
     );
     let resolved = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(stored),
+        crate::kernel::intern_memory(stored),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -604,7 +613,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
         ProgramValue::Int32(MachineTerm::constant(7)),
     );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(memory),
+        crate::kernel::intern_memory(memory),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -657,12 +666,12 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
     let base = Memory::new().with_block("deep-cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
     let mut left = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(base),
+        crate::kernel::intern_memory(base),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let mut right = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(drifted),
+        crate::kernel::intern_memory(drifted),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -710,7 +719,7 @@ fn shared_offsets_retain_snapshot_identity_through_canonicalization() {
     let scaled = |memory: Memory| {
         PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -732,7 +741,7 @@ fn shared_offsets_retain_snapshot_identity_through_canonicalization() {
     };
     let other_scaled = PointerOffsetTerm::scaled_int32_node(
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(base.clone()),
+            crate::kernel::intern_memory(base.clone()),
             Box::new(other),
             crate::kernel::LoadKind::Int32,
         ),
@@ -792,7 +801,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     // `data[index]` with `index == 0` in scope is the cell `data[0]`: the
     // two structural reads retain different addresses. Congruence in the
     // equality graph identifies them only with the required index equality.
-    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("data", 8));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("data", 8));
     let index = MachineTerm::Variable(Variable(7));
     let indexed = MachineTerm::MemoryLoad(
         memory.clone(),
@@ -843,20 +852,19 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     );
     assert!(crate::kernel::search::ProofSearch::derive_proposition(&(other), &goal).is_none());
 
-    let other_epoch =
-        crate::kernel::intern_c_memory(memory.as_ref().clone().with_call_memory_havoc(
-            Variable(8),
-            &[MemoryRange::new(
-                Pointer {
-                    block: "data".into(),
-                    offset: PointerOffsetTerm::Constant(0),
-                },
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
-            )],
-            &PureFactContext::new(),
-            None,
-        ));
+    let other_epoch = crate::kernel::intern_memory(memory.as_ref().clone().with_call_memory_havoc(
+        Variable(8),
+        &[MemoryRange::new(
+            Pointer {
+                block: "data".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
+        )],
+        &PureFactContext::new(),
+        None,
+    ));
     let other_epoch_load = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
         other_epoch,
         Box::new(Pointer {
@@ -904,7 +912,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
     // the load variable's address. Instantiating `k := 0` must reach through
     // the load variable and produce the load variable used by a direct read
     // of `p[0]`.
-    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("p", 12));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("p", 12));
     let bound = Variable(3_000_000);
     let cell = |offset: PointerOffsetTerm| {
         MachineTerm::MemoryLoad(
@@ -945,7 +953,7 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
     // `p[j]` and `p[2]` are one cell when `j <= 2` and `not (j < 2)`: no
     // recorded equality mentions the index, so the comparison must view the
     // load variables as their loads and decide the addresses from bounds.
-    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("p", 12));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("p", 12));
     let j = MachineTerm::Variable(Variable(7));
     let cell = |offset: PointerOffsetTerm| {
         crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
@@ -992,7 +1000,7 @@ fn load_variable_free_variables_include_its_snapshot_cells() {
         ProgramValue::Int32(MachineTerm::constant(5)),
     );
     let load_variable = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(written),
+        crate::kernel::intern_memory(written),
         Box::new(Pointer {
             block: "p".into(),
             offset: PointerOffsetTerm::Constant(8),
@@ -1078,7 +1086,7 @@ fn nested_snapshot_load_named(
     for level in 0..depth {
         let offset = 8 * level as i64;
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(memory),
+            crate::kernel::intern_memory(memory),
             Box::new(at(offset)),
             crate::kernel::LoadKind::Int32,
         );
@@ -1089,7 +1097,7 @@ fn nested_snapshot_load_named(
         ]));
     }
     MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(memory),
+        crate::kernel::intern_memory(memory),
         Box::new(at(8 * depth as i64)),
         crate::kernel::LoadKind::Int32,
     )
@@ -1109,7 +1117,7 @@ fn a_scalar_load_handle_does_not_substitute_a_complete_pointer_array_read() {
     let elements = 100u32;
     let width = ProgramType::Int32Pointer.byte_width();
     let size = width * elements;
-    let source = crate::kernel::intern_c_memory(
+    let source = crate::kernel::intern_memory(
         Memory::new().with_block_without_derivation(block.clone(), size),
     );
     let Ok(memory) = Memory::new()
@@ -1155,7 +1163,7 @@ fn a_live_memorys_counted_variables_are_its_walked_variables() {
         ),
     };
     let value = |variable: u64| ProgramValue::Int32(MachineTerm::Variable(Variable(variable)));
-    let source = crate::kernel::intern_c_memory(Memory::new().with_block("counted-source", 64));
+    let source = crate::kernel::intern_memory(Memory::new().with_block("counted-source", 64));
     let mut memory = Memory::new();
     let mut states = Vec::new();
     for (offset, variable) in [(0, 7_950_010), (4, 7_950_011)] {
@@ -1284,7 +1292,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
     };
     let entry = Memory::new().with_block("fields", 16);
     let loaded = crate::kernel::eval::canonical_cell_load(
-        intern_c_memory(entry.clone()),
+        intern_memory(entry.clone()),
         field.clone(),
         ProgramType::Int32Pointer,
     );
@@ -1292,7 +1300,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
     let pointer_at = |value: Pointer| ProgramValue::typed_pointer(value, ProgramType::Int32Pointer);
     let name_at = |memory: Memory, cell: &Pointer| {
         crate::kernel::eval::canonical_cell_load(
-            intern_c_memory(memory),
+            intern_memory(memory),
             cell.clone(),
             ProgramType::Int32Pointer,
         )
@@ -1372,7 +1380,7 @@ fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
 fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     use crate::kernel::primitives::{AliasCandidates, SlotSet};
     let block = PointerBlock::Symbolic(Variable(7_960_100));
-    let source = crate::kernel::intern_c_memory(Memory::new().with_block("wrap-source", 64));
+    let source = crate::kernel::intern_memory(Memory::new().with_block("wrap-source", 64));
     let base = Pointer {
         block: block.clone(),
         offset: PointerOffsetTerm::Constant(0),

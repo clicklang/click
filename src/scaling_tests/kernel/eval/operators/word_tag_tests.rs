@@ -23,7 +23,7 @@ fn checked_word_tag_addition_ignores_unrelated_facts() {
             );
         }
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            apply_c_add(
+            apply_program_add(
                 &ExecutionState::new(),
                 value,
                 ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
@@ -70,7 +70,7 @@ fn commuted_word_tag_or_ignores_unrelated_facts() {
             panic!("word carrier")
         };
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            apply_c_bitwise_binary(
+            apply_program_bitwise_binary(
                 tag_value,
                 value.clone(),
                 Vec::new().into(),

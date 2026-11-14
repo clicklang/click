@@ -37,7 +37,7 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
     let before = Memory::new();
     let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             Box::new(target.clone()),
             crate::kernel::LoadKind::Int32,
         )

@@ -98,8 +98,10 @@ impl ContractClosingContext {
             .get_or_init(|| {
                 let state = match &self.checked_entry {
                     Some(entry) => entry.callee_entry().clone(),
-                    None => c_function_entry_state(&self.caller, &self.function, &self.arguments)
-                        .ok_or_else(|| "could not bind the contract entry".to_string())?,
+                    None => {
+                        program_function_entry_state(&self.caller, &self.function, &self.arguments)
+                            .ok_or_else(|| "could not bind the contract entry".to_string())?
+                    }
                 };
                 let mut budget = ExecutionBudget::beside_live_state();
                 let resources = if self.function.resource_derived_mutable_frame() {
@@ -256,7 +258,7 @@ impl ContractExitObligations {
         outcome: FunctionOutcome,
         assumptions: &PureFactContext,
     ) -> Result<(Self, FunctionOutcome), String> {
-        let outcome = checked_c_function_contract_resource_transition(
+        let outcome = checked_program_function_contract_resource_transition(
             caller,
             &self.context.function,
             &self.context.arguments,
@@ -643,7 +645,7 @@ impl ContractExitObligations {
             || function.resource_derived_mutable_frame()
         {
             let has_storage_write = crate::kernel::memory_effect_write_pointers(effects).iter().any(|pointer| pointer.block.is_static_storage_block())
-                || effects.iter().any(|fact| matches!(fact.proposition(), Proposition::CMemoryEffectSummary { mutable_ranges, .. } if mutable_ranges.iter().any(|range| range.base().block.is_static_storage_block())));
+                || effects.iter().any(|fact| matches!(fact.proposition(), Proposition::MemoryEffectSummary { mutable_ranges, .. } if mutable_ranges.iter().any(|range| range.base().block.is_static_storage_block())));
             if has_storage_write {
                 let entry = context.entry()?;
                 match storage_writes_outside_owned_footprint(
@@ -683,7 +685,7 @@ pub(crate) fn check_empty_footprint(
         }
     }
     for fact in effects {
-        if let Proposition::CMemoryEffectSummary {
+        if let Proposition::MemoryEffectSummary {
             before,
             mutable_ranges,
             ..
@@ -691,8 +693,8 @@ pub(crate) fn check_empty_footprint(
         {
             for range in mutable_ranges {
                 if preexisting_write(range.base(), caller, assumptions)
-                    && (!c_memory_holds_live_heap_allocation_at(before, range.base(), assumptions)
-                        || c_memory_holds_live_heap_allocation_at(
+                    && (!memory_holds_live_heap_allocation_at(before, range.base(), assumptions)
+                        || memory_holds_live_heap_allocation_at(
                             caller.memory(),
                             range.base(),
                             assumptions,

@@ -331,7 +331,7 @@ mod tests {
             start: parent.pointer().clone(),
             width: 4u32.into(),
         }));
-        let snapshot = crate::kernel::intern_c_memory(Memory::new());
+        let snapshot = crate::kernel::intern_memory(Memory::new());
         let cell = Pointer::symbolic(Variable(824_002));
         let read_address = Pointer::symbolic(Variable(824_003));
         let read =
@@ -347,7 +347,7 @@ mod tests {
     fn equal_storage_addresses_preserve_a_complete_pointer_reads_designation() {
         let a = value(825_001);
         let b = value(825_002);
-        let snapshot = crate::kernel::intern_c_memory(Memory::new());
+        let snapshot = crate::kernel::intern_memory(Memory::new());
         let x = PointerValue::from_read(
             Pointer::symbolic(Variable(825_003)),
             ProgramType::Int32Pointer,

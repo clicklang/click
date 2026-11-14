@@ -194,7 +194,7 @@ fn push_havoc_comparison(
                 identity,
                 "c{}{kind}{}",
                 other.format().name(),
-                other.c_symbol()
+                other.program_symbol()
             );
             ""
         }
@@ -2161,7 +2161,7 @@ impl LocalEnvironment {
         term: &'t KernelTerm,
     ) -> impl Iterator<Item = &'a str> + use<'a, 't> {
         self.names_holding_integer_matching(held_kernel_term_fingerprint(term), move |held| {
-            let KernelType::C(ty) = term.ty() else {
+            let KernelType::Program(ty) = term.ty() else {
                 return false;
             };
             let Some(format) = MachineIntegerType::from_c_type(*ty) else {
@@ -2750,7 +2750,7 @@ impl CallKeptRanges {
     /// if that edge is one: what a call's effect summary may keep beside its
     /// declared write set.
     pub(in crate::kernel) fn recorded_on(after: &Memory) -> Option<Self> {
-        let derivation = crate::kernel::intern_c_memory_ref(after).derivation()?;
+        let derivation = crate::kernel::intern_memory_ref(after).derivation()?;
         let MemoryDerivation::CallHavoc {
             kept_by_caller: Some(kept),
             ..
@@ -3345,7 +3345,7 @@ impl Memory {
         }
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
-        record_c_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
+        record_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
         self
     }
 
@@ -3432,7 +3432,7 @@ impl Memory {
         declaration.declared_class = Some(declared_class);
         declaration.read_only = read_only;
         std::sync::Arc::make_mut(&mut memory.blocks).insert(block.clone(), declaration);
-        record_c_memory_derivation(&mut memory, MemoryDerivation::BlockDeclared { base, block });
+        record_memory_derivation(&mut memory, MemoryDerivation::BlockDeclared { base, block });
         memory
     }
 
@@ -3465,7 +3465,7 @@ impl Memory {
         declaration.declared_class = declared_class
             .or_else(|| crate::kernel::effective_type::CAccessClass::of_kernel_type(c_type));
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
-        record_c_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
+        record_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
         self
     }
 
@@ -3482,7 +3482,7 @@ impl Memory {
         assert!(declaration.declared_scalar_type.is_some());
         declaration.read_only = true;
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), declaration);
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut self,
             MemoryDerivation::BlockDeclared {
                 base,
@@ -3610,7 +3610,7 @@ impl Memory {
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.blocks)
             .insert(block.clone(), MemoryBlock::read_only(size));
-        record_c_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
+        record_memory_derivation(&mut self, MemoryDerivation::BlockDeclared { base, block });
         self
     }
 
@@ -3699,7 +3699,7 @@ impl Memory {
                 .initialized
                 .forget_block(block);
         }
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut memory,
             MemoryDerivation::LocalLifetimeEnded {
                 base,
@@ -3846,7 +3846,7 @@ impl Memory {
             ask_every_slot,
         );
         if let Some(base) = base {
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
                 MemoryDerivation::HeapFreed {
                     base,
@@ -4121,7 +4121,7 @@ impl Memory {
                     .live_allocations
                     .insert(base, bytes);
                 if let Some(prior) = prior {
-                    record_c_memory_derivation(
+                    record_memory_derivation(
                         &mut self,
                         MemoryDerivation::ContractAllocationClaimsChanged { base: prior },
                     );
@@ -4203,7 +4203,7 @@ impl Memory {
         if !retirement_keeps_its_call_havocs_forget_mark(&prior, base, bytes) {
             self.mark_forgotten_from(&prior);
         }
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut self,
             MemoryDerivation::ContractAllocationRetired {
                 base: prior,
@@ -4245,7 +4245,7 @@ impl Memory {
                 .insert(base.clone());
         }
         if let Some(prior) = prior {
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
                 MemoryDerivation::HeapAllocationPending {
                     base: prior,
@@ -4445,7 +4445,7 @@ impl Memory {
                     .insert(resolved_base.clone());
             }
             if let Some(prior) = prior {
-                record_c_memory_derivation(
+                record_memory_derivation(
                     &mut self,
                     MemoryDerivation::HeapAllocated {
                         base: prior,
@@ -4455,7 +4455,7 @@ impl Memory {
                 );
             }
         } else if let Some(prior) = prior {
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
                 MemoryDerivation::HeapAllocationFailed { base: prior },
             );
@@ -4589,7 +4589,7 @@ impl Memory {
             MemoryBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
         );
         if let Some(base) = base {
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
                 MemoryDerivation::LoopHavoc {
                     base,
@@ -4724,7 +4724,7 @@ impl Memory {
     ) -> Result<Self, String> {
         let mut incoming = std::iter::once(&self)
             .chain(sibling_memories.iter().copied())
-            .map(intern_c_memory_ref)
+            .map(intern_memory_ref)
             .collect::<Vec<_>>();
         incoming.sort_by_key(SharedMemory::arena_id);
         incoming.dedup();
@@ -5012,7 +5012,7 @@ impl Memory {
         forgotten.join_inputs = incoming
             .iter()
             .map(|memory| ForgottenFrom {
-                content_hash: c_memory_content_hash(memory.memory()),
+                content_hash: memory_content_hash(memory.memory()),
                 arena_id: memory.arena_id(),
             })
             .collect();
@@ -5031,7 +5031,7 @@ impl Memory {
             effective_types,
         });
         self.forget_zero_readings_under(forgotten_blocks.iter());
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut self,
             MemoryDerivation::BranchJoin {
                 base: incoming[0].clone(),
@@ -5126,7 +5126,7 @@ impl Memory {
             MemoryBlock::new(0),
         );
         if let Some(base) = base {
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
                 MemoryDerivation::CallHavoc {
                     base,
@@ -5438,7 +5438,7 @@ impl Memory {
             let run = probe.with_holes(holes);
             let derivation_base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
                 MemoryDerivation::CellsSeeded {
                     base: derivation_base,
@@ -5484,7 +5484,7 @@ impl Memory {
         {
             return Err(self);
         }
-        let source = crate::kernel::intern_c_memory(Memory::new());
+        let source = crate::kernel::intern_memory(Memory::new());
         Ok(self.with_run_of_cells(
             base,
             element_type.byte_width(),
@@ -5532,7 +5532,7 @@ impl Memory {
         {
             return Err(self);
         }
-        let source = crate::kernel::intern_c_memory(Memory::new());
+        let source = crate::kernel::intern_memory(Memory::new());
         for run in runs.iter().filter(|run| run.count > 0) {
             crate::instrumentation::record_deterministic_work(1);
             let run = CellRun::new_with_mode(
@@ -5546,7 +5546,7 @@ impl Memory {
             );
             let derivation_base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
                 MemoryDerivation::CellsSeeded {
                     base: derivation_base,
@@ -5798,13 +5798,13 @@ impl Memory {
                 element_type.byte_width(),
                 element_type,
                 length,
-                crate::kernel::intern_c_memory(Memory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 RunValueMode::Constant(value),
                 IndexIntervals::default(),
             );
             let derivation_base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
                 MemoryDerivation::CellsSeeded {
                     base: derivation_base,
@@ -5886,7 +5886,7 @@ impl Memory {
         {
             return Err(RuntimeError::FunctionContract("scalar-array snapshot requires valid aligned storage; fresh storage must be complete and empty".into()));
         }
-        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        let snapshot = crate::kernel::intern_memory(self.clone());
         let mut captured_runs = Vec::new();
         let mut captured_cells = Vec::new();
         if copy {
@@ -6006,7 +6006,7 @@ impl Memory {
                 element.byte_width(),
                 element,
                 count,
-                crate::kernel::intern_c_memory(Memory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 RunValueMode::Constant(value),
                 IndexIntervals::default(),
             ));
@@ -6017,7 +6017,7 @@ impl Memory {
         for run in captured_runs {
             let derivation_base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
                 MemoryDerivation::CellsSeeded {
                     base: derivation_base,
@@ -6098,7 +6098,7 @@ impl Memory {
         let run = probe.with_holes(holes);
         let derivation_base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut self,
             MemoryDerivation::CellsSeeded {
                 base: derivation_base,
@@ -6182,7 +6182,7 @@ impl Memory {
         }
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.cells).insert(pointer, value);
-        record_c_memory_derivation(&mut self, MemoryDerivation::CellObserved { base });
+        record_memory_derivation(&mut self, MemoryDerivation::CellObserved { base });
         self
     }
 
@@ -6270,7 +6270,7 @@ impl Memory {
         if !self.union_cells.is_empty() {
             self.remove_union_views_at(&pointer);
         }
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut self,
             MemoryDerivation::Store {
                 base,
@@ -6669,7 +6669,7 @@ impl Memory {
         };
         let field_end = field_start + i64::from(c_type.byte_width());
         let mut memory = self.clone();
-        let source = intern_c_memory_ref(&memory);
+        let source = intern_memory_ref(&memory);
         let overlaps = |pointer: &Pointer| {
             pointer.block == base.block
                 && pointer
@@ -6976,7 +6976,7 @@ impl Memory {
             std::sync::Arc::make_mut(&mut self.heap)
                 .initialized
                 .record(pointer, bytes);
-            record_c_memory_derivation(
+            record_memory_derivation(
                 &mut self,
                 MemoryDerivation::ObjectInitializationRecorded {
                     base,
@@ -7056,9 +7056,9 @@ impl Memory {
             memory.mark_forgotten_from(&base);
         }
         let base_id = base.arena_id();
-        record_c_memory_derivation(&mut memory, MemoryDerivation::CellsForgotten { base });
+        record_memory_derivation(&mut memory, MemoryDerivation::CellsForgotten { base });
         debug_assert!(
-            !lost_knowledge || intern_c_memory_ref(&memory).arena_id() > base_id,
+            !lost_knowledge || intern_memory_ref(&memory).arena_id() > base_id,
             "a forget that lost knowledge landed on an older snapshot"
         );
         memory
@@ -7518,7 +7518,7 @@ impl Memory {
             .filter(|&(block, contents)| {
                 contents.is_read_only() && matches!(block, PointerBlock::StringLiteral { .. })
             })
-            .map(|(block, contents)| Proposition::CMemoryLoadable {
+            .map(|(block, contents)| Proposition::MemoryLoadable {
                 memory: self.clone(),
                 base: Pointer {
                     block: block.clone(),
@@ -7560,7 +7560,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int32_load(&self, pointer: &Pointer) -> ProgramValue {
         int32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         ))
@@ -7570,7 +7570,7 @@ impl Memory {
     /// one unsigned read ([`MachineTerm::memory_read`]).
     pub(in crate::kernel) fn symbolic_int8_load(&self, pointer: &Pointer) -> ProgramValue {
         int8(MachineTerm::memory_read(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             pointer.clone(),
             LoadKind::Int8,
         ))
@@ -7578,7 +7578,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int16_load(&self, pointer: &Pointer) -> ProgramValue {
         int16(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Int16,
         ))
@@ -7586,7 +7586,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint8_load(&self, pointer: &Pointer) -> ProgramValue {
         uint8(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::UInt8,
         ))
@@ -7594,7 +7594,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint16_load(&self, pointer: &Pointer) -> ProgramValue {
         uint16(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::UInt16,
         ))
@@ -7602,7 +7602,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint32_load(&self, pointer: &Pointer) -> ProgramValue {
         uint32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::UInt32,
         ))
@@ -7610,7 +7610,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_int64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Int64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
@@ -7618,7 +7618,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_uint64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::UInt64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Bits64,
         ))
@@ -7633,7 +7633,7 @@ impl Memory {
             return None;
         }
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::of_type(ty.c_type())?,
         );
@@ -7646,7 +7646,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Float32(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Float32,
         ))
@@ -7654,7 +7654,7 @@ impl Memory {
 
     pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Pointer) -> ProgramValue {
         ProgramValue::Float64(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(self.clone()),
+            crate::kernel::intern_memory(self.clone()),
             Box::new(pointer.clone()),
             LoadKind::Float64,
         ))
@@ -7667,7 +7667,7 @@ impl Memory {
         pointer: &Pointer,
         value_type: ProgramType,
     ) -> ProgramValue {
-        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        let snapshot = crate::kernel::intern_memory(self.clone());
         // A version read is a named read, or a value the memory holds for the
         // cell, either of which already carries its definition.
         match Pointer::version_read_value(&snapshot, pointer) {
@@ -7683,7 +7683,7 @@ impl Memory {
         pointer: &Pointer,
         value_type: ProgramType,
     ) -> ProgramValue {
-        let snapshot = crate::kernel::intern_c_memory(self.clone());
+        let snapshot = crate::kernel::intern_memory(self.clone());
         let value = Pointer::loaded(&MachineTerm::MemoryLoad(
             snapshot.clone(),
             Box::new(pointer.clone()),
@@ -7712,7 +7712,7 @@ impl ExecutionState {
             return None;
         };
         Some(AlgebraicTermNode::parameter_load(
-            crate::kernel::intern_c_memory(self.memory().clone()),
+            crate::kernel::intern_memory(self.memory().clone()),
             slot.clone(),
             value_type,
         ))
@@ -8405,7 +8405,7 @@ impl ExecutionState {
             self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
         let mut counts = Vec::with_capacity(descriptions.len());
         for description in descriptions {
-            let [AlgebraicValue::C(ProgramValue::Pointer(pointer))] = description.arguments()
+            let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
             else {
                 return Err("control authority needs one pointer anchor".into());
             };
@@ -8574,7 +8574,8 @@ impl ExecutionState {
             self.authority_wrapper_candidates(selected, definition, assumptions, true)?;
         let mut components = Vec::with_capacity(descriptions.len());
         for description in &descriptions {
-            let [AlgebraicValue::C(ProgramValue::Pointer(anchor_value))] = description.arguments()
+            let [AlgebraicValue::Program(ProgramValue::Pointer(anchor_value))] =
+                description.arguments()
             else {
                 return Err("control authority needs one pointer anchor".into());
             };
@@ -8658,7 +8659,7 @@ impl ExecutionState {
             components.push((
                 description.clone(),
                 Some(MachineTerm::MemoryLoad(
-                    intern_c_memory_ref(&self.memory),
+                    intern_memory_ref(&self.memory),
                     Box::new(anchor.clone()),
                     LoadKind::Int32,
                 )),
@@ -8697,7 +8698,7 @@ impl ExecutionState {
         evaluation.population_effects = self.population_effects.clone();
         for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
             let value = argument
-                .as_c_value()
+                .as_program_value()
                 .ok_or("control resource needs concrete arguments")?;
             if parameter.c_type() != value.c_type() {
                 return Err("control resource argument has the wrong type".into());
@@ -8853,7 +8854,8 @@ impl ExecutionState {
         if quantity.as_const() != Some(1) {
             return Err("Requires one authority(R(p))".into());
         }
-        let [AlgebraicValue::C(ProgramValue::Pointer(pointer))] = description.arguments() else {
+        let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
+        else {
             return Err("authority requires one pointer anchor".into());
         };
         let anchor = pointer.pointer();
@@ -8973,7 +8975,7 @@ impl ExecutionState {
             arguments.clone(),
             super::super::ResourceFieldSchema::new(vec![]).expect("empty resource schema is valid"),
         );
-        let Some(AlgebraicValue::C(ProgramValue::Pointer(pointer))) =
+        let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
             description.arguments().first()
         else {
             return Err("Requires an exact pointer-anchored authorized resource R(p)".into());
@@ -9216,7 +9218,7 @@ impl ExecutionState {
                     .map_err(|refusal| format!("named member change refused: {refusal}"))?
             }
         } else if produce {
-            let Some(AlgebraicValue::C(ProgramValue::Pointer(pointer))) =
+            let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
                 description.arguments().first()
             else {
                 return Ok(());
@@ -9976,7 +9978,7 @@ fn local_block_object_name(block: &PointerBlock) -> Option<&str> {
 /// it. No other pointer can reach the object either: arithmetic that leaves
 /// the object it was derived from is undefined behaviour, which Click enforces
 /// with the bounds obligation on every displaced access
-/// (`CMemoryCanStore` / `access_in_bounds`), and an integer cast to a pointer
+/// (`MemoryCanStore` / `access_in_bounds`), and an integer cast to a pointer
 /// is outside the supported C0 subset. A `&x` written in a *proof* creates no
 /// runtime pointer, so an annotation cannot make an object addressable that
 /// the program never addresses.

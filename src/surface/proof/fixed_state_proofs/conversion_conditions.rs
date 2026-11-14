@@ -34,7 +34,7 @@ pub(in crate::surface::proof) enum StatedForm<'a> {
     /// A written contract expression: a witness value, a theorem argument.
     Expression(&'a ContractExpression),
     /// A written C fragment: a segment bound, a resource quantity.
-    CFragment(&'a ProgramExpression),
+    ProgramExpression(&'a ProgramExpression),
 }
 
 impl StatedForm<'_> {
@@ -46,8 +46,8 @@ impl StatedForm<'_> {
             Self::Expression(expression) => {
                 crate::surface::diagnostics::describe_contract_expression(expression)
             }
-            Self::CFragment(expression) => {
-                crate::surface::diagnostics::describe_c_expression(expression)
+            Self::ProgramExpression(expression) => {
+                crate::surface::diagnostics::describe_program_expression(expression)
             }
         }
     }
@@ -55,7 +55,7 @@ impl StatedForm<'_> {
     fn noun(&self) -> &'static str {
         match self {
             Self::Proposition(_) => "the proposition",
-            Self::Expression(_) | Self::CFragment(_) => "the expression",
+            Self::Expression(_) | Self::ProgramExpression(_) => "the expression",
         }
     }
 }
@@ -186,7 +186,7 @@ fn spell_condition(
         || render::render_proposition_labeled(condition, labels),
         crate::surface::diagnostics::describe_click_proposition,
     );
-    if let Proposition::CMemoryLoadable { bytes, .. } = condition {
+    if let Proposition::MemoryLoadable { bytes, .. } = condition {
         let width = bytes
             .as_const()
             .map_or_else(|| "the".to_string(), |bytes| format!("the {bytes}"));
@@ -247,7 +247,7 @@ fn spell_condition(
         // the same reconstruction for the loadability of that cell, which is
         // where the array-index spelling lives.
         let cell = loadable_cell(
-            site.spell_proposition(&Proposition::CMemoryLoadable {
+            site.spell_proposition(&Proposition::MemoryLoadable {
                 memory: site.state.memory().clone(),
                 base: pointer.clone(),
                 bytes: MachineTerm::constant(4),
@@ -293,11 +293,15 @@ fn loadable_cell(surface: Option<&ClickProposition>) -> Option<Cell> {
     };
     let (base, start, _) = segment.surface_range()?;
     if constant_index(start) == Some(0)
-        && let ContractExpression::CFragment(ProgramExpression::Add(pointer, index)) = base
+        && let ContractExpression::ProgramExpression(ProgramExpression::Add(pointer, index)) = base
     {
         return Some(Cell {
-            base: spelled_alone(&ContractExpression::CFragment(pointer.as_ref().clone())),
-            index: spelled_alone(&ContractExpression::CFragment(index.as_ref().clone())),
+            base: spelled_alone(&ContractExpression::ProgramExpression(
+                pointer.as_ref().clone(),
+            )),
+            index: spelled_alone(&ContractExpression::ProgramExpression(
+                index.as_ref().clone(),
+            )),
         });
     }
     Some(Cell {
@@ -308,7 +312,7 @@ fn loadable_cell(surface: Option<&ClickProposition>) -> Option<Cell> {
 
 /// The constant an index expression is, when it is one.
 fn constant_index(expression: &ContractExpression) -> Option<u32> {
-    let ContractExpression::CFragment(ProgramExpression::Value(ProgramValue::Int32(term))) =
+    let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(term))) =
         expression
     else {
         return None;
@@ -476,7 +480,7 @@ fn loadability_explanation(
     site: &StatedSite<'_>,
     labels: &mut render::SnapshotLabels,
 ) -> Option<String> {
-    let Proposition::CMemoryLoadable { base, bytes, .. } = missing else {
+    let Proposition::MemoryLoadable { base, bytes, .. } = missing else {
         return None;
     };
     // A wider range over the same object is the interesting case: it is what
@@ -486,7 +490,7 @@ fn loadability_explanation(
         .memory_loadable_candidates_for_base(base)
         .take(PREMISE_LIMIT)
         .find(|fact| match fact {
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 base: range_base,
                 bytes: range_bytes,
                 ..
@@ -816,7 +820,7 @@ fn written_range_fold(form: &StatedForm<'_>) -> Option<WrittenRangeFold> {
         StatedForm::Expression(expression) => {
             walk_written_expressions(expression, &mut take_first_fold);
         }
-        StatedForm::CFragment(_) => {}
+        StatedForm::ProgramExpression(_) => {}
     }
     let expression = fold?;
     let ContractExpression::RangeFold { item, body, .. } = &expression else {
@@ -858,7 +862,7 @@ pub(in crate::surface) fn walk_written_expressions(
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
         | ContractExpression::QualifiedC { .. }
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)

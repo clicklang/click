@@ -19,7 +19,7 @@ fn charon_chunk_proof_preserves_source_and_checks_obligations() {
     let p = project();
     let prepared = p.prepared().unwrap();
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     for invalid in [
         proof.replacen("views bytes[0..bytes.len()];", "", 1),
         proof.replace(
@@ -28,7 +28,7 @@ fn charon_chunk_proof_preserves_source_and_checks_obligations() {
         ),
         proof.replace("bytes[k] == old(bytes[k])", "bytes[k] != old(bytes[k])"),
     ] {
-        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
 }
 #[cfg(not(feature = "fast-gate"))]

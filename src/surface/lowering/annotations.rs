@@ -117,7 +117,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
         | ContractExpression::CBinding(_)
-        | ContractExpression::CFragment(_)
+        | ContractExpression::ProgramExpression(_)
         | ContractExpression::CUnary { .. }
         | ContractExpression::ResourceWildcard => None,
         ContractExpression::AlgebraicConstructor { arguments, .. }
@@ -196,8 +196,8 @@ pub(in crate::surface) fn resolve_resource_field_schema(
                         "Resource values are supported as theorem parameters only",
                     ));
                 }
-                ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
-                    crate::kernel::ResourceFieldType::C(ty.to_kernel_type())
+                ClickType::Program(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
+                    crate::kernel::ResourceFieldType::Program(ty.to_kernel_type())
                 }
                 ClickType::Algebraic(application) => crate::kernel::ResourceFieldType::Algebraic(
                     algebraic_kernel_type(environment, application).map_err(ClickError::new)?,
@@ -349,9 +349,9 @@ pub(in crate::surface) fn check_resource_field_schemas(
                         crate::kernel::ResourceFieldType::Integer => {
                             AlgebraicValue::Integer(crate::kernel::IntegerTerm::Variable(variable))
                         }
-                        crate::kernel::ResourceFieldType::C(ty) => {
-                            AlgebraicValue::C(crate::kernel::symbolic_call_result(*ty, variable))
-                        }
+                        crate::kernel::ResourceFieldType::Program(ty) => AlgebraicValue::Program(
+                            crate::kernel::symbolic_call_result(*ty, variable),
+                        ),
                         crate::kernel::ResourceFieldType::Algebraic(ty) => {
                             AlgebraicValue::Algebraic(AlgebraicTerm {
                                 algebraic_type: ty.clone(),
@@ -492,11 +492,13 @@ fn contract_expression_is_algebraic(
         ContractExpression::AlgebraicConstructor { .. }
         | ContractExpression::AlgebraicVariable { .. } => true,
         ContractExpression::Binding(name)
-        | ContractExpression::CFragment(ProgramExpression::Variable(name)) => lexical_bindings
-            .iter()
-            .rev()
-            .find_map(|(binding, algebraic)| (binding == name).then_some(*algebraic))
-            .unwrap_or_else(|| environment.algebraic_values.contains_key(name)),
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+            lexical_bindings
+                .iter()
+                .rev()
+                .find_map(|(binding, algebraic)| (binding == name).then_some(*algebraic))
+                .unwrap_or_else(|| environment.algebraic_values.contains_key(name))
+        }
         ContractExpression::Old(inner)
         | ContractExpression::At {
             expression: inner, ..
@@ -567,7 +569,7 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             .parameters()
             .iter()
             .map(|parameter| match parameter.click_type() {
-                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
+                ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     Some((parameter.name().to_string(), c_type.to_kernel_type()))
                 }
                 _ => None,
@@ -836,7 +838,7 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
                     .iter()
                     .map(|argument| {
                         // Keep ordinary C argument evaluation on its existing checked path.
-                        match resource_argument_to_c_expression(argument) {
+                        match resource_argument_to_program_expression(argument) {
                             Ok(expression) => Ok(SpecExpression::ProgramExpression(expression)),
                             Err(_) => lowerer
                                 .lower_contract_expression_to_spec(argument, &environment)
@@ -1309,15 +1311,17 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         // loop is given the ranges every other loop of `previous` holds.
         let checked_entry = match frame_entry.checked_entry_state {
             Some(state) => state.clone(),
-            None => {
-                crate::kernel::c_function_entry_state(entry_state, &previous.function, arguments)
-                    .ok_or_else(|| {
-                        ClickError::new(format!(
-                            "could not construct the resource-derived loop entry for `{}`",
-                            parsed_function.name()
-                        ))
-                    })?
-            }
+            None => crate::kernel::program_function_entry_state(
+                entry_state,
+                &previous.function,
+                arguments,
+            )
+            .ok_or_else(|| {
+                ClickError::new(format!(
+                    "could not construct the resource-derived loop entry for `{}`",
+                    parsed_function.name()
+                ))
+            })?,
         };
         let mut budget = crate::kernel::ExecutionBudget::for_new_execution();
         match crate::kernel::establish_resource_derived_loop_frames(
@@ -1793,8 +1797,8 @@ fn annotate_function(
         let effect_checks = lowerer.loop_frame_checks(0)?;
         let resource_specs = lowerer.loop_resource_specs(0);
         let (ranking_measures, structural_measure) = lowerer.loop_measure_clauses(0)?;
-        let mut loop_body = crate::kernel::c_while_with_invariant_and_effect_checks(
-            crate::kernel::c_int32_literal(1),
+        let mut loop_body = crate::kernel::program_while_with_invariant_and_effect_checks(
+            crate::kernel::program_expression::int32_literal(1),
             Vec::new(),
             invariant_checks,
             effect_checks,
@@ -1817,7 +1821,7 @@ fn annotate_function(
         .take()
         .map(|records| (records, contract_mutable.clone()));
     let source_body = parsed_kernel_function.body().clone();
-    let mut function = c_function(
+    let mut function = program_function(
         if parsed_function.return_struct_name().is_some() {
             ProgramType::UInt8Pointer
         } else {
@@ -1898,7 +1902,7 @@ fn annotate_function(
     // ranks calls to, and a function without an expression measure ranks
     // none.
     let recursion_binder = match function_block.decreases() {
-        Some(CFunctionDecrease::Binder(binder)) if !function_block.recursion_peers().is_empty() => {
+        Some(FunctionDecrease::Binder(binder)) if !function_block.recursion_peers().is_empty() => {
             Some(binder.clone())
         }
         _ => None,
@@ -1928,13 +1932,15 @@ fn annotate_function(
         {
             let checked_entry = match frame_entry.checked_entry_state {
                 Some(state) => state.clone(),
-                None => crate::kernel::c_function_entry_state(entry_state, &function, arguments)
-                    .ok_or_else(|| {
+                None => {
+                    crate::kernel::program_function_entry_state(entry_state, &function, arguments)
+                        .ok_or_else(|| {
                         ClickError::new(format!(
                             "could not construct the resource-derived loop entry for `{}`",
                             parsed_function.name()
                         ))
-                    })?,
+                    })?
+                }
             };
             let mut budget = crate::kernel::ExecutionBudget::for_new_execution();
             // The frames are read off the function's own entry clauses.
@@ -2554,7 +2560,7 @@ pub(in crate::surface) fn function_contract_summary(
 ) -> Result<FunctionContractSummary, ClickError> {
     let resolved_block = resolved_function_block(function_block)?;
     let function_block: &FunctionBlock = &resolved_block;
-    let entry_state = crate::kernel::initialize_c_function_globals(
+    let entry_state = crate::kernel::initialize_program_function_globals(
         &ExecutionState::new().with_population_creation_tracking(),
         &parsed_function.to_kernel_function(),
     );
@@ -3312,7 +3318,9 @@ fn library_iterator_local_types(
                 .arguments
                 .iter()
                 .map(|argument| match argument {
-                    ClickType::C(c_type) => Some(AlgebraicValueType::C(c_type.to_kernel_type())),
+                    ClickType::Program(c_type) => {
+                        Some(AlgebraicValueType::Program(c_type.to_kernel_type()))
+                    }
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -3616,7 +3624,7 @@ impl AnnotationLowerer<'_> {
                 else_branch,
             } => {
                 self.next_statement_index();
-                c_if(
+                program_if(
                     condition.clone(),
                     self.lower_kernel_statement(then_branch)?,
                     self.lower_kernel_statement(else_branch)?,
@@ -3675,7 +3683,7 @@ impl AnnotationLowerer<'_> {
                 cleanup_unwind,
             } => {
                 self.next_statement_index();
-                crate::kernel::c_try_catch_int32_with_cleanup(
+                crate::kernel::program_try_catch_int32_with_cleanup(
                     self.lower_kernel_statement(try_body)?,
                     binding.clone(),
                     self.lower_kernel_statement(handler)?,
@@ -3695,7 +3703,7 @@ impl AnnotationLowerer<'_> {
         control_targets: &BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
     ) -> Result<ProgramStatement, ClickError> {
         Ok(match statement {
-            syntax::C0Statement::Seq(first, second) => c_seq(
+            syntax::C0Statement::Seq(first, second) => program_seq(
                 self.lower_statement(first, control_targets)?,
                 self.lower_statement(second, control_targets)?,
             ),
@@ -3716,7 +3724,7 @@ impl AnnotationLowerer<'_> {
                     self.loop_measure_clauses(loop_index)?;
                 self.end_loop_record(loop_index, true);
                 if matches!(statement, syntax::C0Statement::DoWhile { .. }) {
-                    c_do_while_with_invariant_and_effect_checks(
+                    program_do_while_with_invariant_and_effect_checks(
                         condition.to_kernel_expression(),
                         invariant_checks,
                         effect_checks,
@@ -3726,7 +3734,7 @@ impl AnnotationLowerer<'_> {
                     .with_loop_ranking_measures(ranking_measures)
                     .with_loop_structural_measure(structural_measure)
                 } else {
-                    c_while_with_invariant_and_effect_checks(
+                    program_while_with_invariant_and_effect_checks(
                         condition.to_kernel_expression(),
                         Vec::new(),
                         invariant_checks,
@@ -3757,14 +3765,14 @@ impl AnnotationLowerer<'_> {
                 let (ranking_measures, structural_measure) =
                     self.loop_measure_clauses(loop_index)?;
                 self.end_loop_record(loop_index, false);
-                c_seq(
+                program_seq(
                     lowered_initializer,
-                    c_while_with_invariant_and_effect_checks(
+                    program_while_with_invariant_and_effect_checks(
                         condition.to_kernel_expression(),
                         Vec::new(),
                         invariant_checks,
                         effect_checks,
-                        crate::kernel::c_for_body_with_step(lowered_body, lowered_step),
+                        crate::kernel::program_for_body_with_step(lowered_body, lowered_step),
                     )
                     .with_loop_resource_specs(resource_specs)
                     .with_loop_ranking_measures(ranking_measures)
@@ -3778,7 +3786,7 @@ impl AnnotationLowerer<'_> {
                 ..
             } => {
                 self.next_statement_index();
-                c_if(
+                program_if(
                     condition.to_kernel_expression(),
                     self.lower_statement(then_branch, control_targets)?,
                     self.lower_statement(else_branch, control_targets)?,
@@ -3929,10 +3937,10 @@ impl AnnotationLowerer<'_> {
                 )));
             }
             if written.is_none()
-                && let Ok(c_expression) = resource_argument_to_c_expression(expression)
+                && let Ok(program_expression) = resource_argument_to_program_expression(expression)
             {
                 components.push(crate::kernel::RankingComponent::ProgramExpression(
-                    c_expression,
+                    program_expression,
                 ));
                 continue;
             }
@@ -4014,7 +4022,7 @@ impl AnnotationLowerer<'_> {
     ///
     /// `decreases n` for a C int32 parameter `n`, and a structural resource
     /// measure, keep naming exactly what they named before: those clauses are read by
-    /// `c_function_termination_plans` and analysed by the checker, and nothing
+    /// `program_function_termination_plans` and analysed by the checker, and nothing
     /// about them reaches the interface. Anything else is a pure expression,
     /// lowered here the way a `requires` is, in this same function-contract
     /// context, so it names no state of its own and the kernel is the one
@@ -4025,7 +4033,7 @@ impl AnnotationLowerer<'_> {
         context: &SpecElaborationContext,
     ) -> Result<Vec<crate::kernel::RankingComponent>, ClickError> {
         let components = match function_block.decreases() {
-            Some(CFunctionDecrease::Numeric(expression)) => {
+            Some(FunctionDecrease::Numeric(expression)) => {
                 // A bare name of a C int32 parameter is today's numeric
                 // measure, resolved against the parameter list by the
                 // termination plan, which is also what refuses a name that
@@ -4037,7 +4045,8 @@ impl AnnotationLowerer<'_> {
                 // the call-ranked form, where MIR temporary values are known.
                 if let ContractExpression::Binding(name)
                 | ContractExpression::CBinding(name)
-                | ContractExpression::CFragment(ProgramExpression::Variable(name)) = expression
+                | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
+                    expression
                     && !function_block.call_ranked_numeric_recursion
                     && function_block
                         .signature()
@@ -4050,7 +4059,7 @@ impl AnnotationLowerer<'_> {
                 }
                 std::slice::from_ref(expression)
             }
-            Some(CFunctionDecrease::Lexicographic(components)) => components.as_slice(),
+            Some(FunctionDecrease::Lexicographic(components)) => components.as_slice(),
             _ => return Ok(Vec::new()),
         };
         components
@@ -4878,7 +4887,7 @@ impl AnnotationLowerer<'_> {
                                     self.lower_contract_algebraic_to_spec(argument, environment)?,
                                 );
                             }
-                            ClickType::C(_) | ClickType::CObjectPointer { .. }
+                            ClickType::Program(_) | ClickType::CObjectPointer { .. }
                                 if parameter_is_click_array_ref(parameter) =>
                             {
                                 predicate_environment.array_refs.insert(
@@ -4886,7 +4895,7 @@ impl AnnotationLowerer<'_> {
                                     self.lower_array_ref_to_spec(argument, environment)?,
                                 );
                             }
-                            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+                            ClickType::Program(_) | ClickType::CObjectPointer { .. } => {
                                 predicate_environment.values.insert(
                                     parameter.name().to_string(),
                                     self.lower_pure_parameter_argument_to_spec(
@@ -5034,8 +5043,8 @@ impl AnnotationLowerer<'_> {
                         right: self.lower_contract_integer_to_spec(right, environment)?,
                     });
                 }
-                let has_algebraic = self.enum_c_value_type(left, environment).is_some()
-                    || self.enum_c_value_type(right, environment).is_some()
+                let has_algebraic = self.enum_program_value_type(left, environment).is_some()
+                    || self.enum_program_value_type(right, environment).is_some()
                     || contract_expression_is_algebraic(
                         left,
                         self.spec_definitions.functions,
@@ -5143,8 +5152,10 @@ impl AnnotationLowerer<'_> {
                     memory: segment_environment.current_memory.clone(),
                     base: self
                         .lower_contract_segment_base_to_spec(&segment.base, &segment_environment)?,
-                    start: self.lower_c_fragment_to_spec(&segment.start, &segment_environment)?,
-                    end: self.lower_c_fragment_to_spec(&segment.end, &segment_environment)?,
+                    start: self
+                        .lower_program_expression_to_spec(&segment.start, &segment_environment)?,
+                    end: self
+                        .lower_program_expression_to_spec(&segment.end, &segment_environment)?,
                     element_width: self
                         .contract_segment_element_width(segment, &segment_environment)?,
                 })
@@ -5251,15 +5262,15 @@ impl AnnotationLowerer<'_> {
         [start, end].into_iter().any(|bound| {
             matches!(
                 self.contract_expression_click_type(bound, environment),
-                Some(ClickType::C(C0Type::UInt64(_)))
-            ) || matches!(bound, ContractExpression::CFragment(ProgramExpression::Variable(name))
+                Some(ClickType::Program(C0Type::UInt64(_)))
+            ) || matches!(bound, ContractExpression::ProgramExpression(ProgramExpression::Variable(name))
                     if self.c_variable_type(name) == Some(ProgramType::UInt64))
-                || matches!(bound, ContractExpression::CFragment(ProgramExpression::Value(value))
+                || matches!(bound, ContractExpression::ProgramExpression(ProgramExpression::Value(value))
                     if value.c_type() == ProgramType::UInt64)
                 // A written cast, `n as uint64`, has the type it names.
                 || matches!(
                     generics::explicit_cast_click_type(bound),
-                    Some(ClickType::C(C0Type::UInt64(_)))
+                    Some(ClickType::Program(C0Type::UInt64(_)))
                 )
         })
     }
@@ -5379,7 +5390,7 @@ impl AnnotationLowerer<'_> {
                     if integer_index {
                         Some(ClickType::Integer)
                     } else {
-                        Some(ClickType::C(C0Type::Int32))
+                        Some(ClickType::Program(C0Type::Int32))
                     },
                 ));
                 let body_type = self.contract_expression_click_type_in_scope(
@@ -5395,7 +5406,7 @@ impl AnnotationLowerer<'_> {
                     initial_type.or(body_type)
                 }
             }
-            ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 if let Some((_, click_type)) = lexical_bindings
                     .iter()
                     .rev()
@@ -5524,7 +5535,7 @@ impl AnnotationLowerer<'_> {
                 if has_contextual_literal
                     && !matches!(
                         result_type.as_ref(),
-                        Some(ClickType::Integer) | Some(ClickType::C(_))
+                        Some(ClickType::Integer) | Some(ClickType::Program(_))
                     )
                 {
                     return None;
@@ -5653,7 +5664,8 @@ impl AnnotationLowerer<'_> {
                 let mut body_environment = environment.clone();
                 for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
                     match binding_type {
-                        AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _) => {
+                        AlgebraicValueType::Program(_)
+                        | AlgebraicValueType::ObjectPointer(_, _) => {
                             body_environment.integer_values.remove(binding);
                             body_environment.algebraic_values.remove(binding);
                             body_environment.values.insert(
@@ -5748,7 +5760,7 @@ impl AnnotationLowerer<'_> {
         // until contextual typing identifies it as an Integer.  Resolve it
         // through the active scoped environment so fold accumulator and
         // captured Integer references retain their preallocated kernel terms.
-        if let ContractExpression::CFragment(ProgramExpression::Variable(name)) = expression
+        if let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) = expression
             && let Some(value) = environment.integer_values.get(name)
         {
             return Ok(value.clone());
@@ -5934,9 +5946,9 @@ impl AnnotationLowerer<'_> {
                     ) -> bool {
                         match expression {
                             ContractExpression::Binding(name)
-                            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
-                                environment.integer_values.contains_key(name)
-                            }
+                            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                                name,
+                            )) => environment.integer_values.contains_key(name),
                             ContractExpression::CBinding(_) => false,
                             ContractExpression::ResourceField(access) => {
                                 access.click_type == Some(ClickType::Integer)
@@ -5998,7 +6010,7 @@ impl AnnotationLowerer<'_> {
                     matches!(expression, SpecExpression::Cast(_, ProgramType::UInt64))
                         || matches!(
                             spec_expression_click_type(expression),
-                            Some(ClickType::C(syntax::C0Type::UInt64(_)))
+                            Some(ClickType::Program(syntax::C0Type::UInt64(_)))
                         )
                 };
                 let as_uint64 = |expression: SpecExpression| match &expression {
@@ -6060,13 +6072,13 @@ impl AnnotationLowerer<'_> {
             // name as that C value.
             ContractExpression::Let {
                 name,
-                click_type: click_type @ (None | Some(ClickType::C(_))),
+                click_type: click_type @ (None | Some(ClickType::Program(_))),
                 value,
                 body,
             } if !self.contract_expression_is_integer(value, environment) => {
                 let mut value = self.lower_contract_expression_to_spec(value, environment)?;
                 // A typed `let`'s value is at its declared type (G2).
-                if let Some(ClickType::C(c_type)) = click_type {
+                if let Some(ClickType::Program(c_type)) = click_type {
                     value = value.at_machine_type(c_type.to_kernel_type());
                 }
                 let mut body_environment = environment.clone();
@@ -6122,7 +6134,7 @@ impl AnnotationLowerer<'_> {
                 memory: environment.current_memory.clone(),
                 pointer: Box::new(pointer),
                 value_type: self
-                    .c_expression_array_element_type(pointer_expression, environment)
+                    .program_expression_array_element_type(pointer_expression, environment)
                     .unwrap_or(ProgramType::Int32),
             }),
             _ => Ok(pointer),
@@ -6188,7 +6200,7 @@ impl AnnotationLowerer<'_> {
                             && pointee_struct.is_none()
                             && !matches!(
                                 self.contract_expression_click_type(operand, environment),
-                                Some(ClickType::C(C0Type::Int64(_) | C0Type::UInt64(_)))
+                                Some(ClickType::Program(C0Type::Int64(_) | C0Type::UInt64(_)))
                             )
                             && !self
                                 .contract_pointer_element_type(operand, environment)
@@ -6245,7 +6257,7 @@ impl AnnotationLowerer<'_> {
                         let values = if environment.contract_result_in_scope {
                             BTreeMap::from([(
                                 "result".to_string(),
-                                ContractExpression::CFragment(ProgramExpression::Variable(
+                                ContractExpression::ProgramExpression(ProgramExpression::Variable(
                                     crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
                                 )),
                             )])
@@ -6256,13 +6268,13 @@ impl AnnotationLowerer<'_> {
                             expression,
                             &ContractSubstitutions::for_contract_result(&values),
                         )?;
-                        let lowered = contract_expression_as_c_fragment(&rebound)
+                        let lowered = contract_expression_as_program_expression(&rebound)
                             .ok_or("address operand is not a C expression")?;
                         // Substitution has resolved the built-in result while
                         // retaining explicit C bindings such as `c(result)`.
                         let mut rebound_environment = environment.clone();
                         rebound_environment.contract_result_in_scope = false;
-                        self.lower_c_fragment_to_spec(&lowered, &rebound_environment)
+                        self.lower_program_expression_to_spec(&lowered, &rebound_environment)
                     }
                     _ => Err("invalid C unary operation".to_string()),
                 }
@@ -6290,7 +6302,7 @@ impl AnnotationLowerer<'_> {
                 let from_start = matches!(start, ContractExpression::IntegerLiteral(text) if text == "0")
                     || matches!(
                         start,
-                        ContractExpression::CFragment(ProgramExpression::Value(_))
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(_))
                     ) && crate::surface::diagnostics::describe_contract_expression(start)
                         == "0u64";
                 let (requirement, value) = if from_start {
@@ -6341,11 +6353,11 @@ impl AnnotationLowerer<'_> {
                 Ok(SpecExpression::Value(value))
             }
             ContractExpression::ResourceField(access) => {
-                let Some(ClickType::C(c_type)) = &access.click_type else {
+                let Some(ClickType::Program(c_type)) = &access.click_type else {
                     return Err("expected a scalar resource field".into());
                 };
                 if let Some(value) = self.fixed_resource_field(access, environment)? {
-                    let AlgebraicValue::C(value) = value else {
+                    let AlgebraicValue::Program(value) = value else {
                         return Err("resource field type mismatch".into());
                     };
                     return Ok(SpecExpression::Value(value));
@@ -6380,7 +6392,7 @@ impl AnnotationLowerer<'_> {
                     let mut body_environment = environment.clone();
                     for (binding, field) in arm.bindings.iter().zip(fields.iter()) {
                         match field {
-                            SpecAlgebraicValue::C(field) => {
+                            SpecAlgebraicValue::Program(field) => {
                                 body_environment.integer_values.remove(binding);
                                 body_environment.algebraic_values.remove(binding);
                                 body_environment
@@ -6417,7 +6429,7 @@ impl AnnotationLowerer<'_> {
                         let mut body_environment = environment.clone();
                         for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
                             match binding_type {
-                                AlgebraicValueType::C(_)
+                                AlgebraicValueType::Program(_)
                                 | AlgebraicValueType::ObjectPointer(_, _) => {
                                     body_environment.values.remove(binding);
                                     body_environment.algebraic_values.remove(binding);
@@ -6472,7 +6484,7 @@ impl AnnotationLowerer<'_> {
                 lowered,
                 offset_bytes,
                 ..
-            } if contract_expression_has_explicit_c_result_reference(base) => {
+            } if contract_expression_has_explicit_program_result_reference(base) => {
                 self.lower_snapshot_field_to_spec(base, lowered, *offset_bytes, environment)
             }
             ContractExpression::ArrayIndex {
@@ -6480,10 +6492,10 @@ impl AnnotationLowerer<'_> {
                 indexes,
                 dimensions,
                 lowered,
-            } if contract_expression_has_explicit_c_result_reference(base)
+            } if contract_expression_has_explicit_program_result_reference(base)
                 || indexes
                     .iter()
-                    .any(contract_expression_has_explicit_c_result_reference) =>
+                    .any(contract_expression_has_explicit_program_result_reference) =>
             {
                 let pointer = self.lower_contract_expression_to_spec(base, environment)?;
                 let mut offset = None;
@@ -6513,7 +6525,7 @@ impl AnnotationLowerer<'_> {
                 match lowered {
                     ProgramExpression::Index(lowered_base, _) => {
                         let value_type = self
-                            .c_expression_array_element_type(lowered_base, environment)
+                            .program_expression_array_element_type(lowered_base, environment)
                             .unwrap_or(ProgramType::Int32);
                         Ok(SpecExpression::MemoryLoad {
                             memory: environment.current_memory.clone(),
@@ -6533,10 +6545,12 @@ impl AnnotationLowerer<'_> {
                             pointer: Box::new(pointer),
                             elements: Box::new(SpecExpression::Multiply(
                                 Box::new(offset),
-                                Box::new(self.lower_c_fragment_to_spec(width, environment)?),
+                                Box::new(
+                                    self.lower_program_expression_to_spec(width, environment)?,
+                                ),
                             )),
                             byte_width: self
-                                .c_expression_array_element_width(lowered_base, environment)
+                                .program_expression_array_element_width(lowered_base, environment)
                                 .unwrap_or(1),
                         })
                     }
@@ -6547,11 +6561,11 @@ impl AnnotationLowerer<'_> {
                 lowered: expression,
                 ..
             }
-            | ContractExpression::CFragment(expression)
+            | ContractExpression::ProgramExpression(expression)
             | ContractExpression::ArrayIndex {
                 lowered: expression,
                 ..
-            } => self.lower_c_fragment_to_spec(expression, environment),
+            } => self.lower_program_expression_to_spec(expression, environment),
             ContractExpression::Field {
                 base,
                 lowered,
@@ -6570,7 +6584,7 @@ impl AnnotationLowerer<'_> {
                 lowered,
                 ..
             } => {
-                if let Some(ClickType::C(c_type)) =
+                if let Some(ClickType::Program(c_type)) =
                     self.contract_expression_click_type(base, environment)
                     && !c_type.is_pointer()
                 {
@@ -6580,7 +6594,7 @@ impl AnnotationLowerer<'_> {
                         describe_c0_type(c_type),
                     ));
                 }
-                self.lower_c_fragment_to_spec(lowered, environment)
+                self.lower_program_expression_to_spec(lowered, environment)
             }
             ContractExpression::Binding(name) => {
                 if environment.algebraic_values.contains_key(name) {
@@ -6588,12 +6602,14 @@ impl AnnotationLowerer<'_> {
                         "algebraic binding `{name}` is not valid in a C-valued expression"
                     ));
                 }
-                self.lower_c_fragment_to_spec(
+                self.lower_program_expression_to_spec(
                     &ProgramExpression::Variable(name.clone()),
                     environment,
                 )
             }
-            ContractExpression::CBinding(name) => self.lower_c_binding_to_spec(name, environment),
+            ContractExpression::CBinding(name) => {
+                self.lower_program_binding_to_spec(name, environment)
+            }
             ContractExpression::ResourceCount(resource) => {
                 let ResourceClause::Declared {
                     name, arguments, ..
@@ -6808,7 +6824,9 @@ impl AnnotationLowerer<'_> {
                 let projection = match base.as_ref() {
                     ContractExpression::Field { lowered, .. }
                     | ContractExpression::ArrayIndex { lowered, .. }
-                    | ContractExpression::CFragment(lowered) => aggregate_projection_root(lowered),
+                    | ContractExpression::ProgramExpression(lowered) => {
+                        aggregate_projection_root(lowered)
+                    }
                     _ => None,
                 }
                 .filter(|parameter| {
@@ -6881,12 +6899,12 @@ impl AnnotationLowerer<'_> {
                 // guard the kernel's carrier here as well as in validation.
                 let c_type = |expression: &SpecExpression| match expression {
                     SpecExpression::Cast(_, ty) | SpecExpression::PointerCoercion(_, ty) => {
-                        Some(ClickType::C(generics::c0_type_from_kernel(*ty)))
+                        Some(ClickType::Program(generics::c0_type_from_kernel(*ty)))
                     }
                     _ => spec_expression_click_type(expression),
                 };
                 let unsupported = |expression: &SpecExpression| {
-                    c_type(expression).is_some_and(|ty| ty != ClickType::C(C0Type::Int32))
+                    c_type(expression).is_some_and(|ty| ty != ClickType::Program(C0Type::Int32))
                 };
                 if unsupported(&start) || unsupported(&end) {
                     return Err("C-valued range fold requires int32 bounds; uint64 bounds require an Integer accumulator".to_string());
@@ -6953,20 +6971,20 @@ impl AnnotationLowerer<'_> {
                 }
                 let mut value = self.lower_contract_expression_to_spec(value, environment)?;
                 // A typed `let`'s value is at its declared type (G2).
-                if let Some(ClickType::C(c_type)) = click_type {
+                if let Some(ClickType::Program(c_type)) = click_type {
                     value = value.at_machine_type(c_type.to_kernel_type());
                 }
-                if let (Some(ClickType::C(c_type)), SpecExpression::Value(fixed)) =
+                if let (Some(ClickType::Program(c_type)), SpecExpression::Value(fixed)) =
                     (click_type, &value)
-                    && !c_value_matches_click_type(fixed, *c_type)
+                    && !program_value_matches_click_type(fixed, *c_type)
                 {
                     return Err(format!(
                         "let binding `{name}` evaluated to `{}` of type `{}`, which does not match the declared type `{}`",
-                        crate::surface::diagnostics::describe_c_value(
+                        crate::surface::diagnostics::describe_program_value(
                             fixed,
                             ParameterBinding::default()
                         ),
-                        crate::kernel::c_type_spelling(fixed.c_type()),
+                        crate::kernel::program_type_spelling(fixed.c_type()),
                         crate::surface::validation::describe_c0_type(*c_type)
                     ));
                 }
@@ -6991,12 +7009,12 @@ impl AnnotationLowerer<'_> {
 
     /// The Rust enum type of C name `name`, a parameter, local or `result`
     /// that holds an enum's value.
-    fn enum_c_name_type(
+    fn enum_program_name_type(
         &self,
         name: &str,
         environment: &SpecElaborationContext,
     ) -> Option<crate::kernel::TypeParameterName> {
-        match self.c_name_type(name, environment)? {
+        match self.program_name_type(name, environment)? {
             ProgramType::Parameter(enum_type) if crate::surface::holds_spec_value(enum_type) => {
                 Some(enum_type)
             }
@@ -7006,7 +7024,11 @@ impl AnnotationLowerer<'_> {
 
     /// The C type of C name `name`, a parameter, local or `result`, unless a
     /// spec binding shadows it.
-    fn c_name_type(&self, name: &str, environment: &SpecElaborationContext) -> Option<ProgramType> {
+    fn program_name_type(
+        &self,
+        name: &str,
+        environment: &SpecElaborationContext,
+    ) -> Option<ProgramType> {
         if environment.algebraic_values.contains_key(name) {
             return None;
         }
@@ -7036,7 +7058,7 @@ impl AnnotationLowerer<'_> {
 
     /// The Rust enum type of the value `expression` names: a C name that
     /// holds one, or `*r` for a reference `r` to one.
-    fn enum_c_value_type(
+    fn enum_program_value_type(
         &self,
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
@@ -7044,14 +7066,14 @@ impl AnnotationLowerer<'_> {
         match expression {
             ContractExpression::Binding(name)
             | ContractExpression::CBinding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
-                self.enum_c_name_type(name, environment)
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                self.enum_program_name_type(name, environment)
             }
-            ContractExpression::CFragment(ProgramExpression::Load(pointer)) => {
+            ContractExpression::ProgramExpression(ProgramExpression::Load(pointer)) => {
                 let ProgramExpression::Variable(name) = pointer.as_ref() else {
                     return None;
                 };
-                match self.c_name_type(name, environment)? {
+                match self.program_name_type(name, environment)? {
                     ProgramType::ParameterPointer(enum_type)
                         if crate::surface::holds_spec_value(enum_type) =>
                     {
@@ -7060,7 +7082,7 @@ impl AnnotationLowerer<'_> {
                     _ => None,
                 }
             }
-            ContractExpression::Old(inner) => self.enum_c_value_type(inner, environment),
+            ContractExpression::Old(inner) => self.enum_program_value_type(inner, environment),
             // The enum value a call returned.
             ContractExpression::RegionResult(region) => {
                 match self.snapshots?.region_result_value(region).ok()? {
@@ -7080,7 +7102,7 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecAlgebraicExpression, String> {
-        if let Some(enum_type) = self.enum_c_value_type(expression, environment) {
+        if let Some(enum_type) = self.enum_program_value_type(expression, environment) {
             return Ok(SpecAlgebraicExpression {
                 algebraic_type: enum_type.algebraic_type(),
                 node: SpecAlgebraicExpressionNode::ProgramValue(Box::new(
@@ -7134,11 +7156,13 @@ impl AnnotationLowerer<'_> {
                 self.symbolic_algebraic_variable(name, algebraic_type, *binder_index)
             }
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => environment
-                .algebraic_values
-                .get(name)
-                .cloned()
-                .ok_or_else(|| format!("`{name}` is not an algebraic binding in this scope")),
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                environment
+                    .algebraic_values
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| format!("`{name}` is not an algebraic binding in this scope"))
+            }
             ContractExpression::AlgebraicConstructor {
                 algebraic_type,
                 variant,
@@ -7182,7 +7206,7 @@ impl AnnotationLowerer<'_> {
                         // how a model says this node is the root. Without the
                         // field's declared type the literal lowers as an
                         // `int32` zero and the constructor denotes no value.
-                        AlgebraicValueType::C(c_type)
+                        AlgebraicValueType::Program(c_type)
                         | AlgebraicValueType::ObjectPointer(c_type, _)
                             if c_type.is_pointer()
                                 && matches!(
@@ -7190,7 +7214,7 @@ impl AnnotationLowerer<'_> {
                                     ContractExpression::IntegerLiteral(text) if text == "0"
                                 ) =>
                         {
-                            Ok(SpecAlgebraicValue::C(SpecExpression::Value(
+                            Ok(SpecAlgebraicValue::Program(SpecExpression::Value(
                                 crate::kernel::ProgramValue::typed_pointer(
                                     crate::kernel::Pointer::null(),
                                     *c_type,
@@ -7205,7 +7229,7 @@ impl AnnotationLowerer<'_> {
                         // literals, `3 - 1`, is the literal it denotes. A
                         // literal the type cannot hold is refused, never
                         // wrapped.
-                        AlgebraicValueType::C(c_type)
+                        AlgebraicValueType::Program(c_type)
                             if crate::kernel::MachineIntegerType::from_c_type(*c_type).is_some()
                                 && integer_constant_spelling(argument).is_some() =>
                         {
@@ -7215,7 +7239,7 @@ impl AnnotationLowerer<'_> {
                                 .expect("the guard matched an integer type");
                             crate::kernel::MachineIntegerConstant::parse_decimal(ty.format(), &text)
                                 .and_then(|value| ty.constant_value(value))
-                                .map(|value| SpecAlgebraicValue::C(SpecExpression::Value(value)))
+                                .map(|value| SpecAlgebraicValue::Program(SpecExpression::Value(value)))
                                 .ok_or_else(|| {
                                     format!(
                                         "the literal `{text}` is not a value of field type `{}` of `{variant}`",
@@ -7223,7 +7247,7 @@ impl AnnotationLowerer<'_> {
                                     )
                                 })
                         }
-                        AlgebraicValueType::C(c_type)
+                        AlgebraicValueType::Program(c_type)
                         | AlgebraicValueType::ObjectPointer(c_type, _) => {
                             // Validation admits only an argument whose type
                             // converts to the field's exactly, so an integer
@@ -7239,7 +7263,7 @@ impl AnnotationLowerer<'_> {
                                     .is_some_and(|actual| actual.to_kernel_type() != *c_type);
                             let value =
                                 self.lower_contract_expression_to_spec(argument, environment)?;
-                            Ok(SpecAlgebraicValue::C(if *c_type == ProgramType::VoidPointer {
+                            Ok(SpecAlgebraicValue::Program(if *c_type == ProgramType::VoidPointer {
                                 SpecExpression::PointerCoercion(Box::new(value), *c_type)
                             } else if widens {
                                 SpecExpression::Cast(Box::new(value), *c_type)
@@ -7276,7 +7300,7 @@ impl AnnotationLowerer<'_> {
                     let mut body_environment = environment.clone();
                     for (binding, field) in arm.bindings.iter().zip(fields.iter()) {
                         match field {
-                            SpecAlgebraicValue::C(field) => {
+                            SpecAlgebraicValue::Program(field) => {
                                 body_environment.integer_values.remove(binding);
                                 body_environment.algebraic_values.remove(binding);
                                 body_environment
@@ -7313,7 +7337,8 @@ impl AnnotationLowerer<'_> {
                     let mut body_environment = environment.clone();
                     for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
                         match binding_type {
-                            AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _) => {
+                            AlgebraicValueType::Program(_)
+                            | AlgebraicValueType::ObjectPointer(_, _) => {
                                 body_environment.values.remove(binding);
                                 body_environment.algebraic_values.remove(binding);
                             }
@@ -7581,7 +7606,7 @@ impl AnnotationLowerer<'_> {
                     // parameter and lowers to that pointer type's null value, not
                     // to an `int32` zero, so `rb_parent_is(sub, 0)` compares the
                     // model's parent payload with a pointer.
-                    ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. }
+                    ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. }
                         if crate::surface::lowering::argument_is_null_pointer_constant(
                             argument, *c_type,
                         ) =>
@@ -7607,7 +7632,7 @@ impl AnnotationLowerer<'_> {
                             None => crate::kernel::SpecPureFunctionArgument::Value(pointer),
                         })
                     }
-                    ClickType::C(_) | ClickType::CObjectPointer { .. }
+                    ClickType::Program(_) | ClickType::CObjectPointer { .. }
                         if parameter_is_click_array_ref(parameter) =>
                     {
                         let array_ref = self.lower_array_ref_to_spec(argument, environment)?;
@@ -7630,7 +7655,7 @@ impl AnnotationLowerer<'_> {
                             element_type: array_ref.element_type,
                         })
                     }
-                    ClickType::C(c_type) => {
+                    ClickType::Program(c_type) => {
                         // An argument is at its parameter's type (G2).
                         let value = self
                             .lower_pure_parameter_argument_to_spec(
@@ -7758,10 +7783,10 @@ impl AnnotationLowerer<'_> {
             }
             // A `T*` parameter binds `T` from the argument's pointer type,
             // as a `T` parameter binds it from the argument's type.
-            ClickType::C(C0Type::ParameterPointer(_)) | ClickType::Parameter(_) => {
+            ClickType::Program(C0Type::ParameterPointer(_)) | ClickType::Parameter(_) => {
                 self.infer_unconstrained_call_argument_type(argument, environment)
             }
-            ClickType::C(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
+            ClickType::Program(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
             ClickType::Integer => Ok(Some(ClickType::Integer)),
         }
     }
@@ -7798,10 +7823,10 @@ impl AnnotationLowerer<'_> {
                     .get(name)
                     .and_then(spec_expression_click_type))
             }
-            ContractExpression::CFragment(ProgramExpression::Value(value)) => {
-                Ok(Some(generics::click_type_from_c_value(value)))
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+                Ok(Some(generics::click_type_from_program_value(value)))
             }
-            ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 if let Some(value) = environment.algebraic_values.get(name) {
                     return Ok(Some(generics::click_type_from_algebraic_value_type(
                         &value.algebraic_type.value_type(),
@@ -7921,7 +7946,7 @@ impl AnnotationLowerer<'_> {
         // needs the instantiated generic pointee's physical stride.
         if !matches!(segment.surface, ContractSegmentSurface::Range { .. }) {
             return Ok(self
-                .c_expression_array_element_type(&segment.base, environment)
+                .program_expression_array_element_type(&segment.base, environment)
                 .unwrap_or(ProgramType::Int32)
                 .byte_width());
         }
@@ -7936,9 +7961,9 @@ impl AnnotationLowerer<'_> {
             return self.spec_definitions.pointer_element_width(pointer);
         }
         Ok(self
-            .c_expression_array_element_width(&segment.base, environment)
+            .program_expression_array_element_width(&segment.base, environment)
             .unwrap_or_else(|| {
-                self.c_expression_array_element_type(&segment.base, environment)
+                self.program_expression_array_element_type(&segment.base, environment)
                     .unwrap_or(ProgramType::Int32)
                     .byte_width()
             }))
@@ -7964,7 +7989,7 @@ impl AnnotationLowerer<'_> {
         expression: &ProgramExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
-        self.lower_c_fragment_to_spec(expression, environment)
+        self.lower_program_expression_to_spec(expression, environment)
     }
 
     fn lower_resource_subject_to_spec(
@@ -8045,8 +8070,8 @@ impl AnnotationLowerer<'_> {
                 let environment = self.spec_segment_environment(segment, environment)?;
                 Ok(SpecResource::Memory {
                     base: self.lower_contract_segment_base_to_spec(&segment.base, &environment)?,
-                    start: self.lower_c_fragment_to_spec(&segment.start, &environment)?,
-                    end: self.lower_c_fragment_to_spec(&segment.end, &environment)?,
+                    start: self.lower_program_expression_to_spec(&segment.start, &environment)?,
+                    end: self.lower_program_expression_to_spec(&segment.end, &environment)?,
                     element_width: self.contract_segment_element_width(segment, &environment)?,
                 })
             }
@@ -8274,8 +8299,8 @@ impl AnnotationLowerer<'_> {
         if super::resource_lowering::array_field_elements(value_type).is_some() {
             return Err(format!("read an element of `{}.{field_name}`", spelled()));
         }
-        let read = ContractExpression::CFragment(ProgramExpression::TypedLoad {
-            pointer: Box::new(crate::kernel::c_pointer_offset_bytes(
+        let read = ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
+            pointer: Box::new(crate::kernel::program_expression::pointer_offset_bytes(
                 ProgramExpression::Variable(name.to_string()),
                 offset,
             )),
@@ -8430,7 +8455,7 @@ impl AnnotationLowerer<'_> {
             })
     }
 
-    fn lower_c_binding_to_spec(
+    fn lower_program_binding_to_spec(
         &self,
         name: &str,
         environment: &SpecElaborationContext,
@@ -8526,7 +8551,7 @@ impl AnnotationLowerer<'_> {
         }
     }
 
-    fn lower_c_fragment_to_spec(
+    fn lower_program_expression_to_spec(
         &self,
         expression: &ProgramExpression,
         environment: &SpecElaborationContext,
@@ -8548,17 +8573,18 @@ impl AnnotationLowerer<'_> {
                     ..
                 }
             )
-            && let Some(element_type) = self.c_expression_array_element_type(base, environment)
+            && let Some(element_type) =
+                self.program_expression_array_element_type(base, environment)
             && let Some(pointer_type) = element_type.pointer_to()
         {
             // An inline array decays to its logical address without reading
             // its elements. Preserve that rule when taking an element's address.
             return Ok(SpecExpression::PointerOffset {
                 pointer: Box::new(SpecExpression::PointerCoercion(
-                    Box::new(self.lower_c_fragment_to_spec(base, environment)?),
+                    Box::new(self.lower_program_expression_to_spec(base, environment)?),
                     pointer_type,
                 )),
-                elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
+                elements: Box::new(self.lower_program_expression_to_spec(index, environment)?),
                 byte_width: element_type.byte_width(),
             });
         }
@@ -8566,13 +8592,13 @@ impl AnnotationLowerer<'_> {
             && let ProgramExpression::AddressOf(target)
             | ProgramExpression::CheckedObjectAddress(target) = expression
             && let ProgramExpression::Index(base, index) = target.as_ref()
-            && let Some(byte_width) = self.c_expression_array_element_width(base, environment)
+            && let Some(byte_width) = self.program_expression_array_element_width(base, environment)
         {
             // Taking an element's address retains its physical stride,
             // including the concrete layout of a generic struct pointee.
             return Ok(SpecExpression::PointerOffset {
-                pointer: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
-                elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
+                pointer: Box::new(self.lower_program_expression_to_spec(base, environment)?),
+                elements: Box::new(self.lower_program_expression_to_spec(index, environment)?),
                 byte_width,
             });
         }
@@ -8640,13 +8666,13 @@ impl AnnotationLowerer<'_> {
             };
             return Ok(SpecExpression::Let {
                 name,
-                value: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
+                value: Box::new(self.lower_program_expression_to_spec(base, environment)?),
                 body: Box::new(SpecExpression::ProgramExpression(address)),
             });
         }
         match expression {
             ProgramExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),
-            ProgramExpression::Variable(name) => self.lower_c_binding_to_spec(
+            ProgramExpression::Variable(name) => self.lower_program_binding_to_spec(
                 if name == "result" && environment.contract_result_in_scope {
                     crate::kernel::C_CONTRACT_RESULT_NAME
                 } else {
@@ -8655,12 +8681,12 @@ impl AnnotationLowerer<'_> {
                 environment,
             ),
             ProgramExpression::Subobject { pointer, width } => Ok(SpecExpression::Subobject {
-                pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
+                pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
                 width: *width,
             }),
             ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
                 Ok(SpecExpression::PointerOffset {
-                    pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
+                    pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
                     elements: Box::new(SpecExpression::Value(int32(*bytes))),
                     byte_width: 1,
                 })
@@ -8668,91 +8694,101 @@ impl AnnotationLowerer<'_> {
             // Arithmetic on a pointer offsets it by whole elements, as C does.
             ProgramExpression::Add(left, right) => {
                 if let Some(element_width) =
-                    self.c_expression_array_element_width(left, environment)
+                    self.program_expression_array_element_width(left, environment)
                 {
                     return Ok(SpecExpression::PointerOffset {
-                        pointer: Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                        elements: Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                        pointer: Box::new(
+                            self.lower_program_expression_to_spec(left, environment)?,
+                        ),
+                        elements: Box::new(
+                            self.lower_program_expression_to_spec(right, environment)?,
+                        ),
                         byte_width: element_width,
                     });
                 }
                 if let Some(element_width) =
-                    self.c_expression_array_element_width(right, environment)
+                    self.program_expression_array_element_width(right, environment)
                 {
                     return Ok(SpecExpression::PointerOffset {
-                        pointer: Box::new(self.lower_c_fragment_to_spec(right, environment)?),
-                        elements: Box::new(self.lower_c_fragment_to_spec(left, environment)?),
+                        pointer: Box::new(
+                            self.lower_program_expression_to_spec(right, environment)?,
+                        ),
+                        elements: Box::new(
+                            self.lower_program_expression_to_spec(left, environment)?,
+                        ),
                         byte_width: element_width,
                     });
                 }
                 Ok(SpecExpression::Add(
-                    Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                    Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                    Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                    Box::new(self.lower_program_expression_to_spec(right, environment)?),
                 ))
             }
             ProgramExpression::Subtract(left, right) => {
                 if let Some(element_width) =
-                    self.c_expression_array_element_width(left, environment)
+                    self.program_expression_array_element_width(left, environment)
                     && self
-                        .c_expression_array_element_type(right, environment)
+                        .program_expression_array_element_type(right, environment)
                         .is_none()
                 {
                     return Ok(SpecExpression::PointerOffset {
-                        pointer: Box::new(self.lower_c_fragment_to_spec(left, environment)?),
+                        pointer: Box::new(
+                            self.lower_program_expression_to_spec(left, environment)?,
+                        ),
                         elements: Box::new(SpecExpression::Subtract(
                             Box::new(SpecExpression::Value(int32(0))),
-                            Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                            Box::new(self.lower_program_expression_to_spec(right, environment)?),
                         )),
                         byte_width: element_width,
                     });
                 }
                 Ok(SpecExpression::Subtract(
-                    Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                    Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                    Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                    Box::new(self.lower_program_expression_to_spec(right, environment)?),
                 ))
             }
             ProgramExpression::Multiply(left, right) => Ok(SpecExpression::Multiply(
-                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
             ProgramExpression::Divide(left, right) => Ok(SpecExpression::Divide(
-                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
             ProgramExpression::Remainder(left, right) => Ok(SpecExpression::Remainder(
-                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
             ProgramExpression::ShiftLeft(left, right) => Ok(SpecExpression::ShiftLeft(
-                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
             ProgramExpression::RustShiftLeft(left, right) => Ok(SpecExpression::RustShiftLeft(
-                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
             ProgramExpression::ShiftRight(left, right) => Ok(SpecExpression::ShiftRight(
-                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
             ProgramExpression::RustShiftRight(left, right) => Ok(SpecExpression::RustShiftRight(
-                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
             ProgramExpression::BitwiseAnd(left, right) => Ok(SpecExpression::BitwiseAnd(
-                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
             ProgramExpression::BitwiseOr(left, right) => Ok(SpecExpression::BitwiseOr(
-                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
             ProgramExpression::BitwiseXor(left, right) => Ok(SpecExpression::BitwiseXor(
-                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
-                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+                Box::new(self.lower_program_expression_to_spec(left, environment)?),
+                Box::new(self.lower_program_expression_to_spec(right, environment)?),
             )),
             ProgramExpression::BitwiseNot(expression) => Ok(SpecExpression::BitwiseNot(Box::new(
-                self.lower_c_fragment_to_spec(expression, environment)?,
+                self.lower_program_expression_to_spec(expression, environment)?,
             ))),
             // Keep scalar operands in the selected environment, including
             // historical range bounds. Raw C evaluation would read live locals
@@ -8774,11 +8810,12 @@ impl AnnotationLowerer<'_> {
                         || matches!(expression.as_ref(), ProgramExpression::Variable(name)
                             if environment.values.contains_key(name))
                         || self
-                            .c_expression_array_element_width(expression, environment)
+                            .program_expression_array_element_width(expression, environment)
                             .is_some())
                 || target_type.is_pointer() =>
             {
-                let value = Box::new(self.lower_c_fragment_to_spec(expression, environment)?);
+                let value =
+                    Box::new(self.lower_program_expression_to_spec(expression, environment)?);
                 Ok(
                     if *integer_mode == crate::kernel::IntegerCastMode::PointerCoercion {
                         SpecExpression::PointerCoercion(value, *target_type)
@@ -8789,11 +8826,11 @@ impl AnnotationLowerer<'_> {
             }
             ProgramExpression::Index(base, index) => {
                 let element_type = self
-                    .c_expression_array_element_type(base, environment)
+                    .program_expression_array_element_type(base, environment)
                     .unwrap_or(ProgramType::Int32);
                 let pointer = SpecExpression::PointerOffset {
-                    pointer: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
-                    elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
+                    pointer: Box::new(self.lower_program_expression_to_spec(base, environment)?),
+                    elements: Box::new(self.lower_program_expression_to_spec(index, environment)?),
                     byte_width: element_type.byte_width(),
                 };
                 Ok(SpecExpression::MemoryLoad {
@@ -8813,7 +8850,7 @@ impl AnnotationLowerer<'_> {
                     | ProgramType::UInt128Array(_)
                     | ProgramType::UInt64Array(_),
                 ..
-            } => self.lower_c_fragment_to_spec(pointer, environment),
+            } => self.lower_program_expression_to_spec(pointer, environment),
             ProgramExpression::TypedLoad {
                 pointer,
                 value_type,
@@ -8839,31 +8876,34 @@ impl AnnotationLowerer<'_> {
                     return Ok(SpecExpression::AggregateFieldValue {
                         parameter: parameter.to_string(),
                         pointer: Box::new(
-                            self.lower_c_fragment_to_spec(pointer, &projection_environment)?,
+                            self.lower_program_expression_to_spec(
+                                pointer,
+                                &projection_environment,
+                            )?,
                         ),
                         value_type: *value_type,
                     });
                 }
                 Ok(SpecExpression::MemoryLoad {
                     memory: environment.current_memory.clone(),
-                    pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
+                    pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
                     value_type: *value_type,
                 })
             }
             ProgramExpression::Load(pointer) => Ok(SpecExpression::MemoryLoad {
                 memory: environment.current_memory.clone(),
-                pointer: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
+                pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
                 value_type: self
-                    .c_expression_array_element_type(pointer, environment)
+                    .program_expression_array_element_type(pointer, environment)
                     .unwrap_or(ProgramType::Int32),
             }),
             expression => {
                 let expression = if environment.contract_result_in_scope {
-                    substitute_c_fragment_in(
+                    substitute_program_expression_in(
                         expression,
                         &ContractSubstitutions::for_contract_result(&BTreeMap::from([(
                             "result".to_string(),
-                            ContractExpression::CFragment(ProgramExpression::Variable(
+                            ContractExpression::ProgramExpression(ProgramExpression::Variable(
                                 crate::kernel::C_CONTRACT_RESULT_NAME.to_string(),
                             )),
                         )])),
@@ -8943,7 +8983,7 @@ impl AnnotationLowerer<'_> {
                 expression,
             } => self.lower_at_array_ref_to_spec(selector, expression, environment),
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => {
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
                 if let Some(array_ref) = environment.array_refs.get(name) {
                     return Ok(array_ref.clone());
                 }
@@ -8956,7 +8996,7 @@ impl AnnotationLowerer<'_> {
                         .get(name)
                         .cloned()
                         .unwrap_or_else(|| environment.current_memory.clone()),
-                    pointer: self.lower_c_fragment_to_spec(
+                    pointer: self.lower_program_expression_to_spec(
                         &ProgramExpression::Variable(name.clone()),
                         environment,
                     )?,
@@ -9171,26 +9211,28 @@ impl AnnotationLowerer<'_> {
                     self.contract_array_element_type(operand, environment)
                 }
                 _ => self
-                    .c_expression_array_element_type(lowered, environment)
+                    .program_expression_array_element_type(lowered, environment)
                     .unwrap_or(ProgramType::Int32),
             },
             ContractExpression::Binding(name)
-            | ContractExpression::CFragment(ProgramExpression::Variable(name)) => environment
-                .array_refs
-                .get(name)
-                .map(|array_ref| array_ref.element_type)
-                .unwrap_or_else(|| {
-                    self.array_ref_element_type_for_name_in_environment(name, environment)
-                }),
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                environment
+                    .array_refs
+                    .get(name)
+                    .map(|array_ref| array_ref.element_type)
+                    .unwrap_or_else(|| {
+                        self.array_ref_element_type_for_name_in_environment(name, environment)
+                    })
+            }
             // A held resource's arguments are substituted as C values. A
             // pointer value carries its own pointee type, which is the
             // element an index steps by; `uint8*` must not read as `int32*`.
-            ContractExpression::CFragment(lowered) => self
-                .c_expression_array_element_type(lowered, environment)
+            ContractExpression::ProgramExpression(lowered) => self
+                .program_expression_array_element_type(lowered, environment)
                 .unwrap_or(ProgramType::Int32),
             ContractExpression::QualifiedC { lowered, .. }
             | ContractExpression::Field { lowered, .. } => self
-                .c_expression_array_element_type(lowered, environment)
+                .program_expression_array_element_type(lowered, environment)
                 .unwrap_or(ProgramType::Int32),
             ContractExpression::At { expression, .. } => {
                 self.contract_array_element_type(expression, environment)
@@ -9238,7 +9280,7 @@ impl AnnotationLowerer<'_> {
             .functions
             .get(name)
             .is_some_and(|definition| match definition.return_type() {
-                ClickType::C(c_type) => {
+                ClickType::Program(c_type) => {
                     c_type.is_pointer() || matches!(c_type, C0Type::ParameterPointer(_))
                 }
                 ClickType::CObjectPointer { .. } => true,
@@ -9261,15 +9303,15 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
         match expression {
-            ContractExpression::CBinding(name) => self.c_expression_array_element_width(
+            ContractExpression::CBinding(name) => self.program_expression_array_element_width(
                 &ProgramExpression::Variable(name.clone()),
                 environment,
             ),
             ContractExpression::CUnary { lowered, .. }
             | ContractExpression::QualifiedC { lowered, .. }
-            | ContractExpression::CFragment(lowered)
+            | ContractExpression::ProgramExpression(lowered)
             | ContractExpression::Field { lowered, .. } => {
-                self.c_expression_array_element_width(lowered, environment)
+                self.program_expression_array_element_width(lowered, environment)
             }
             ContractExpression::Old(inner)
             | ContractExpression::At {
@@ -9301,7 +9343,7 @@ impl AnnotationLowerer<'_> {
                 ProgramExpression::PointerOffsetBytes { .. } => {
                     self.contract_pointer_element_type(operand, environment)
                 }
-                _ => self.c_expression_array_element_type(lowered, environment),
+                _ => self.program_expression_array_element_type(lowered, environment),
             },
             ContractExpression::CBinding(name) => environment
                 .array_refs
@@ -9319,11 +9361,11 @@ impl AnnotationLowerer<'_> {
                 lowered: expression,
                 ..
             }
-            | ContractExpression::CFragment(expression)
+            | ContractExpression::ProgramExpression(expression)
             | ContractExpression::Field {
                 lowered: expression,
                 ..
-            } => self.c_expression_array_element_type(expression, environment),
+            } => self.program_expression_array_element_type(expression, environment),
             ContractExpression::Old(expression) | ContractExpression::At { expression, .. } => {
                 self.contract_pointer_element_type(expression, environment)
             }
@@ -9337,7 +9379,7 @@ impl AnnotationLowerer<'_> {
         }
     }
 
-    fn c_expression_array_element_type(
+    fn program_expression_array_element_type(
         &self,
         expression: &ProgramExpression,
         environment: &SpecElaborationContext,
@@ -9345,7 +9387,7 @@ impl AnnotationLowerer<'_> {
         if matches!(expression, ProgramExpression::Variable(name) if name == "result")
             && environment.contract_result_in_scope
         {
-            return self.c_expression_array_element_type(
+            return self.program_expression_array_element_type(
                 &ProgramExpression::Variable(crate::kernel::C_CONTRACT_RESULT_NAME.to_string()),
                 environment,
             );
@@ -9392,13 +9434,13 @@ impl AnnotationLowerer<'_> {
             },
             ProgramExpression::PointerOffsetBytes { pointer, .. }
             | ProgramExpression::Subobject { pointer, .. } => {
-                self.c_expression_array_element_type(pointer, environment)
+                self.program_expression_array_element_type(pointer, environment)
             }
             ProgramExpression::Add(left, right) => self
-                .c_expression_array_element_type(left, environment)
-                .or_else(|| self.c_expression_array_element_type(right, environment)),
+                .program_expression_array_element_type(left, environment)
+                .or_else(|| self.program_expression_array_element_type(right, environment)),
             ProgramExpression::Subtract(left, _) => {
-                self.c_expression_array_element_type(left, environment)
+                self.program_expression_array_element_type(left, environment)
             }
             _ => None,
         }
@@ -9407,7 +9449,7 @@ impl AnnotationLowerer<'_> {
     /// The physical width used by C pointer arithmetic.  A pointer to a
     /// struct has the nominal compatible `int32*` kernel carrier, so its
     /// pointee layout must be consulted before falling back to `ProgramType`.
-    fn c_expression_array_element_width(
+    fn program_expression_array_element_width(
         &self,
         expression: &ProgramExpression,
         environment: &SpecElaborationContext,
@@ -9423,7 +9465,7 @@ impl AnnotationLowerer<'_> {
         if matches!(expression, ProgramExpression::Variable(name) if name == "result")
             && environment.contract_result_in_scope
         {
-            return self.c_expression_array_element_width(
+            return self.program_expression_array_element_width(
                 &ProgramExpression::Variable(crate::kernel::C_CONTRACT_RESULT_NAME.to_string()),
                 environment,
             );
@@ -9436,7 +9478,7 @@ impl AnnotationLowerer<'_> {
                 let ProgramExpression::Index(base, _) = target.as_ref() else {
                     unreachable!()
                 };
-                self.c_expression_array_element_width(base, environment)
+                self.program_expression_array_element_width(base, environment)
             }
             ProgramExpression::AddressOf(target)
             | ProgramExpression::CheckedObjectAddress(target) => match target.as_ref() {
@@ -9494,13 +9536,13 @@ impl AnnotationLowerer<'_> {
             },
             ProgramExpression::PointerOffsetBytes { pointer, .. }
             | ProgramExpression::Subobject { pointer, .. } => {
-                self.c_expression_array_element_width(pointer, environment)
+                self.program_expression_array_element_width(pointer, environment)
             }
             ProgramExpression::Add(left, right) => self
-                .c_expression_array_element_width(left, environment)
-                .or_else(|| self.c_expression_array_element_width(right, environment)),
+                .program_expression_array_element_width(left, environment)
+                .or_else(|| self.program_expression_array_element_width(right, environment)),
             ProgramExpression::Subtract(left, _) => {
-                self.c_expression_array_element_width(left, environment)
+                self.program_expression_array_element_width(left, environment)
             }
             _ => None,
         }
@@ -9572,7 +9614,9 @@ fn aggregate_projection_root(expression: &ProgramExpression) -> Option<&str> {
 fn spec_expression_click_type(expression: &SpecExpression) -> Option<ClickType> {
     let c_type = match expression {
         SpecExpression::ResourceField { c_type, .. } => *c_type,
-        SpecExpression::Value(value) => return Some(generics::click_type_from_c_value(value)),
+        SpecExpression::Value(value) => {
+            return Some(generics::click_type_from_program_value(value));
+        }
         SpecExpression::PureFunctionApplication {
             result_type,
             result_object_class: Some(class),
@@ -9604,7 +9648,7 @@ fn spec_expression_click_type(expression: &SpecExpression) -> Option<ClickType> 
         SpecExpression::PointerOffset { .. } => ProgramType::VoidPointer,
         _ => return None,
     };
-    Some(ClickType::C(generics::c0_type_from_kernel(c_type)))
+    Some(ClickType::Program(generics::c0_type_from_kernel(c_type)))
 }
 
 fn algebraic_kernel_type_arguments(
@@ -9623,7 +9667,7 @@ fn click_type_to_algebraic_value_type(
     match click_type {
         ClickType::Resource => Err("Resource is not an algebraic field type".into()),
         ClickType::Parameter(name) => Err(format!("unresolved type parameter `{name}`")),
-        ClickType::C(c_type) => Ok(AlgebraicValueType::C(c_type.to_kernel_type())),
+        ClickType::Program(c_type) => Ok(AlgebraicValueType::Program(c_type.to_kernel_type())),
         ClickType::CObjectPointer { c_type, .. } => Ok(AlgebraicValueType::ObjectPointer(
             c_type.to_kernel_type(),
             click_type
@@ -9768,7 +9812,7 @@ fn instantiate_algebraic_kernel_field_type(
         AlgebraicFieldType::Integer => Ok(AlgebraicValueType::Integer),
         AlgebraicFieldType::C { c_type, .. } => Ok(match field.pointer_object_class() {
             Some(class) => AlgebraicValueType::ObjectPointer(c_type.to_kernel_type(), class),
-            None => AlgebraicValueType::C(c_type.to_kernel_type()),
+            None => AlgebraicValueType::Program(c_type.to_kernel_type()),
         }),
         AlgebraicFieldType::Parameter(name) => definition
             .type_parameters()
@@ -9783,13 +9827,13 @@ fn instantiate_algebraic_kernel_field_type(
             .position(|parameter| parameter == name)
             .and_then(|index| arguments.get(index))
         {
-            Some(AlgebraicValueType::C(element)) => {
+            Some(AlgebraicValueType::Program(element)) => {
                 crate::surface::generics::c0_type_from_kernel(*element)
                     .pointer_type()
-                    .map(|pointer| AlgebraicValueType::C(pointer.to_kernel_type()))
+                    .map(|pointer| AlgebraicValueType::Program(pointer.to_kernel_type()))
                     .ok_or_else(|| format!("`{name}*` needs `{name}` to be a C scalar type"))
             }
-            Some(AlgebraicValueType::Parameter(parameter)) => Ok(AlgebraicValueType::C(
+            Some(AlgebraicValueType::Parameter(parameter)) => Ok(AlgebraicValueType::Program(
                 crate::kernel::ProgramType::ParameterPointer(
                     crate::kernel::TypeParameterName::intern(parameter),
                 ),
@@ -10029,7 +10073,7 @@ pub(in crate::surface) fn region_parameter_read(
 fn literal_element_index(index: &ContractExpression) -> Option<u32> {
     match index {
         ContractExpression::IntegerLiteral(value) => value.parse().ok(),
-        ContractExpression::CFragment(ProgramExpression::Value(
+        ContractExpression::ProgramExpression(ProgramExpression::Value(
             ProgramValue::Int32(term)
             | ProgramValue::UInt32(term)
             | ProgramValue::Int64(term)

@@ -60,7 +60,7 @@ snapshot is then a pointer-identity hit with no comparison.
 
 Execution carries the arena's canonical storage forward. A producer interns
 its input as the edge's base and continues from the base's stored instance
-(`intern_derivation_base`), and `record_c_memory_derivation` replaces the
+(`intern_derivation_base`), and `record_memory_derivation` replaces the
 result with the stored instance of its content, an O(1) handle clone, so
 every snapshot a path carries, and every fact, term, or certified store built
 from it, is the instance the arena holds. Equal snapshots therefore share
@@ -256,7 +256,7 @@ the forget mark is what makes it unrepresentable, checked where the mark is
 set. Where a step lost nothing, the older node is an ancestor whose history is
 this path's own prefix: the load path's distinct-cell reduction drops only
 cells the loaded pointer is proven distinct from, so every step between that
-ancestor and here is one of those stores. `record_c_memory_derivation` counts
+ancestor and here is one of those stores. `record_memory_derivation` counts
 the edges it drops by kind, and the mdtest harness prints the corpus totals, so
 a new producer that records its steps nowhere is named by a gate run.
 

@@ -4,13 +4,14 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use click::cli::{
-    self, CInput, RunLimits, containing_directory, looks_like_mdtest, parse_duration,
-    parse_source_line_location, prepare_mdtest_inputs, read_c_inputs, read_click_project,
-    read_lone_sidecar_inputs, read_mdtest, read_mdtest_project_if_needed, source_refs,
+    self, RunLimits, VerificationInput, containing_directory, looks_like_mdtest, parse_duration,
+    parse_source_line_location, prepare_mdtest_inputs, read_click_project,
+    read_lone_sidecar_inputs, read_mdtest, read_mdtest_project_if_needed, read_verification_inputs,
+    source_refs,
 };
 use click::surface::{
     ClickProject, SmartTacticCandidate, SmartTacticSelectionError,
-    expand_c0_prepared_tactic_source_at, expand_c0_tactic_source_at,
+    expand_c_prepared_tactic_source_at, expand_c_tactic_source_at,
     expand_program_prepared_tactic_source_at, expand_project_tactic_source_at,
     map_verifying_source_paths, project_select_smart_tactic, project_tactic_source_position,
     tactic_source_position, verify_project_at, verify_sources_at,
@@ -213,7 +214,7 @@ fn write_context_preserved(
     }
     let source_dir = containing_directory(&arguments.click_path).to_path_buf();
     let output_dir = containing_directory(output);
-    let original_inputs = read_c_inputs(&arguments.click_path, &artifact.source)?;
+    let original_inputs = read_verification_inputs(&arguments.click_path, &artifact.source)?;
     let same_directory = same_path(&source_dir, output_dir);
     let same_name = output.file_name() == arguments.click_path.file_name();
     if original_inputs.is_prepared() {
@@ -439,7 +440,7 @@ impl SelectionReport<'_> {
 fn expand_selection(
     project: Option<&ClickProject>,
     click_source: &str,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     selection: &Selection,
     report: &SelectionReport<'_>,
 ) -> Result<(String, String), String> {
@@ -456,13 +457,13 @@ fn expand_selection(
                     *line,
                     *column,
                 ),
-                (None, CInput::Bundle(sources)) => {
-                    expand_c0_tactic_source_at(click_source, &source_refs(sources), *line, *column)
+                (None, VerificationInput::Bundle(sources)) => {
+                    expand_c_tactic_source_at(click_source, &source_refs(sources), *line, *column)
                 }
-                (None, CInput::Prepared(imports)) => {
-                    expand_c0_prepared_tactic_source_at(click_source, imports, *line, *column)
+                (None, VerificationInput::Prepared(imports)) => {
+                    expand_c_prepared_tactic_source_at(click_source, imports, *line, *column)
                 }
-                (None, CInput::PreparedProgram(import)) => {
+                (None, VerificationInput::PreparedProgram(import)) => {
                     expand_program_prepared_tactic_source_at(click_source, import, *line, *column)
                 }
             }
@@ -566,7 +567,7 @@ fn expansion_limit_error(
 fn select_smart_tactic(
     project: Option<&ClickProject>,
     click_source: &str,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
@@ -590,7 +591,7 @@ fn verified_expansion(
     project: Option<&ClickProject>,
     click_source: &str,
     expanded: String,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     claim: &str,
     whole_claim: bool,
 ) -> Result<String, String> {
@@ -610,7 +611,7 @@ fn verified_expansion(
 fn verify_expansion(
     project: Option<&ClickProject>,
     expanded: &str,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     claim: &str,
     whole_claim: bool,
 ) -> Result<(), String> {
@@ -629,7 +630,7 @@ fn verify_expansion(
 fn verify_expansion_now(
     project: Option<&ClickProject>,
     expanded: &str,
-    inputs: &CInput,
+    inputs: &VerificationInput,
     claim: &str,
 ) -> Result<(), String> {
     let (result, events) = click::instrumentation::collect(|| {
@@ -707,7 +708,7 @@ fn atomic_replace(path: &Path, contents: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use click::surface::c0_tactic_source_position;
+    use click::surface::c_tactic_source_position;
     use std::env;
     use std::time::Duration;
 
@@ -728,7 +729,7 @@ mod tests {
                 run(&arguments).expect("symbolic supplier evidence must expand and recheck");
             let parsed = click::cli::parse_mdtest(&path, &expanded).unwrap();
             let sources = source_refs(&parsed.c_sources);
-            click::surface::verify_c0_sources(parsed.click_source.as_deref().unwrap(), &sources)
+            click::surface::verify_c_sources(parsed.click_source.as_deref().unwrap(), &sources)
                 .expect("fresh ordinary verification must reconstruct supplier evidence");
         }
     }
@@ -841,7 +842,7 @@ int32 identity(int32 x) {
         let output_path = directory.join("expanded.click");
         fs::write(directory.join("identity.c"), c_source).unwrap();
         fs::write(&click_path, click_source).unwrap();
-        let position = c0_tactic_source_position(
+        let position = c_tactic_source_position(
             click_source,
             &[("identity.c", c_source)],
             "identity.ensures_0",
@@ -1007,7 +1008,7 @@ int32 bad(int32 x) {
         fs::write(directory.join("bad.c"), bad_c).unwrap();
         fs::write(&click_path, click_source).unwrap();
         let sources = [("good.c", good_c), ("bad.c", bad_c)];
-        let position = c0_tactic_source_position(click_source, &sources, "good.ensures_0", 0)
+        let position = c_tactic_source_position(click_source, &sources, "good.ensures_0", 0)
             .expect("selected tactic should have a source position");
         let arguments = Arguments {
             click_path,
@@ -1470,7 +1471,8 @@ int32 identity(int32 x) {
     ensures result == x;
 }
 "#;
-        let inputs = CInput::Bundle(vec![("identity.c".to_string(), c_source.to_string())]);
+        let inputs =
+            VerificationInput::Bundle(vec![("identity.c".to_string(), c_source.to_string())]);
         let check = || verify_expansion(None, click_source, &inputs, "identity.ensures_0", false);
 
         check().expect("the generated proof verifies within the default budgets");
@@ -1506,7 +1508,7 @@ int32 identity(int32 x) {
         let output_path = directory.join("expanded.click");
         fs::write(directory.join("identity.c"), c_source).unwrap();
         fs::write(&click_path, click_source).unwrap();
-        let position = c0_tactic_source_position(
+        let position = c_tactic_source_position(
             click_source,
             &[("identity.c", c_source)],
             "identity.ensures_0",
@@ -1547,8 +1549,8 @@ int32 identity(int32 x) {
 #[cfg(test)]
 mod output_context_tests {
     use super::*;
-    use click::cli::CInput;
-    use click::surface::verify_c0_sources;
+    use click::cli::VerificationInput;
+    use click::surface::verify_c_sources;
     use std::env;
 
     fn setup_source_bundle(sequence: u64) -> (PathBuf, PathBuf, PathBuf) {
@@ -1576,13 +1578,13 @@ int32 identity(int32 x) {
 
     fn assert_emitted_verifies(output: &Path) {
         let emitted = fs::read_to_string(output).expect("the expansion artifact exists");
-        let inputs = read_c_inputs(output, &emitted)
+        let inputs = read_verification_inputs(output, &emitted)
             .expect("the emitted artifact must load its inputs at the output path");
         let sources = match inputs {
-            CInput::Bundle(sources) => sources,
+            VerificationInput::Bundle(sources) => sources,
             _ => panic!("a source-bundle expansion must select a source bundle"),
         };
-        verify_c0_sources(&emitted, &[(&sources[0].0, sources[0].1.as_str())])
+        verify_c_sources(&emitted, &[(&sources[0].0, sources[0].1.as_str())])
             .expect("the emitted artifact must verify through the output-path loading rules");
     }
 
@@ -1756,8 +1758,9 @@ mod prepared_output_tests {
     fn the_prepared_fixture_selects_the_prepared_input_route() {
         let directory = setup_prepared(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
         let click_path = directory.join("main.click");
-        let inputs = read_c_inputs(&click_path, &fs::read_to_string(&click_path).unwrap())
-            .expect("a locked manifest must select the prepared route");
+        let inputs =
+            read_verification_inputs(&click_path, &fs::read_to_string(&click_path).unwrap())
+                .expect("a locked manifest must select the prepared route");
         assert!(inputs.is_prepared(), "the fixture must be prepared");
         fs::remove_dir_all(directory).unwrap();
     }

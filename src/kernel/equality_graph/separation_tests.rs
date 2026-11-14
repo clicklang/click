@@ -8,7 +8,7 @@ fn range(p: &Pointer, start: u32, end: u32) -> MemoryRange {
     MemoryRange::new_with_element_width(p.clone(), start.into(), end.into(), 8)
 }
 fn separate(a: &Pointer, b: &Pointer) -> Proposition {
-    Proposition::CResourceSeparate {
+    Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(range(a, 0, 1))),
         right: Box::new(Resource::Memory(range(b, 0, 1))),
     }
@@ -105,11 +105,11 @@ fn numeric_aliases_transfer_only_address_separation_not_pointer_identity() {
 fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_separation() {
     let _session = VerificationSession::enter();
     let (a, b) = (pointer(40), pointer(41));
-    let empty = Proposition::CResourceSeparate {
+    let empty = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(range(&a, 0, 0))),
         right: Box::new(Resource::Memory(range(&b, 0, 1))),
     };
-    let unknown = Proposition::CResourceSeparate {
+    let unknown = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(MemoryRange::new(
             a.clone(),
             0u32.into(),
@@ -117,7 +117,7 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
         ))),
         right: Box::new(Resource::Memory(range(&b, 0, 1))),
     };
-    let views = Proposition::CResourceComposition(
+    let views = Proposition::ResourceComposition(
         ResourceContext::new()
             .unchecked_with_fact(ResourceFact::view_memory(range(&a, 0, 1)))
             .unchecked_with_fact(ResourceFact::view_memory(range(&b, 0, 1))),
@@ -139,7 +139,7 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
 fn separated_nonzero_range_starts_use_their_byte_addresses() {
     let _session = VerificationSession::enter();
     let (a, b) = (pointer(60), pointer(61));
-    let source = Proposition::CResourceSeparate {
+    let source = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(range(&a, 2, 3))),
         right: Box::new(Resource::Memory(range(&b, 1, 2))),
     };

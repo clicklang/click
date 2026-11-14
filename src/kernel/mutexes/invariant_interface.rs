@@ -28,7 +28,8 @@ impl MutexInvariantInterface {
                 .iter()
                 .zip(instance.arguments())
                 .any(|(parameter, argument)| {
-                    argument.as_c_value().map(|value| value.c_type()) != Some(parameter.c_type())
+                    argument.as_program_value().map(|value| value.c_type())
+                        != Some(parameter.c_type())
                 })
         {
             return Err("selected mutex resource does not match its declaration");
@@ -64,7 +65,7 @@ mod tests {
             vec![ProgramValue::pointer(Pointer::symbolic(Variable(70))).into()].into(),
             ResourceFieldSchema::new(vec![(
                 "value".into(),
-                ResourceFieldType::C(ProgramType::Int32),
+                ResourceFieldType::Program(ProgramType::Int32),
             )])
             .unwrap(),
             vec![int32(value).into()].into(),
@@ -170,7 +171,7 @@ mod tests {
         let definition = definitions.remove("counter_state").unwrap();
         let wrong_schema = ResourceFieldSchema::new(vec![(
             "different".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         definitions.insert(
@@ -406,7 +407,7 @@ mod tests {
         let mut wrong_schema = instance(2, 99);
         wrong_schema.schema = ResourceFieldSchema::new(vec![(
             "other".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         for candidate in [wrong_family, wrong_arguments, wrong_schema] {

@@ -15,16 +15,16 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
             let zero = value(
                 &ExecutionState::new(),
                 if ty == ProgramType::Int128 {
-                    c_int128_literal(0)
+                    crate::kernel::program_expression::int128_literal(0)
                 } else {
-                    c_uint128_literal(0)
+                    crate::kernel::program_expression::uint128_literal(0)
                 },
             );
-            let function = c_function(
+            let function = program_function(
                 ProgramType::Int32,
                 "wide_array",
                 vec![],
-                c_return(c_int32_literal(0)),
+                program_return(crate::kernel::program_expression::int32_literal(0)),
             )
             .with_global_arrays(vec![GlobalArray::new_with_kernel_name(
                 "wide-run",
@@ -34,7 +34,7 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
                 ArrayContents::new(count, zero, []),
             )]);
             let (entry, setup_work) = crate::instrumentation::measure_deterministic_work(|| {
-                initialize_c_function_globals(&ExecutionState::new(), &function)
+                initialize_program_function_globals(&ExecutionState::new(), &function)
             });
             let memory = entry.memory.clone();
             assert_eq!(memory.cells.representation_len(), 1);
@@ -43,7 +43,7 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
             });
             assert_eq!(loaded.c_type(), ty);
             let machine = MachineIntegerType::from_c_type(ty).unwrap();
-            assert!(machine.accepts_wide_term(&c_value_bitvector_term(&loaded).unwrap()));
+            assert!(machine.accepts_wide_term(&program_value_bitvector_term(&loaded).unwrap()));
             assert_eq!(loaded, memory.known_value(&at(count - 1)).unwrap());
             let state = ExecutionState::new()
                 .with_memory(memory.clone())
@@ -58,8 +58,11 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
             assert_eq!(
                 value(
                     &state,
-                    c_typed_load(
-                        c_typed_pointer_value(at(count - 1), ty.pointer_to().unwrap()),
+                    crate::kernel::program_expression::typed_load(
+                        crate::kernel::program_expression::typed_pointer_value(
+                            at(count - 1),
+                            ty.pointer_to().unwrap()
+                        ),
                         ty
                     )
                 ),
@@ -68,9 +71,9 @@ fn wide_address_symbolic_array_runs_keep_typed_loads_and_bounded_work() {
             let replacement = value(
                 &ExecutionState::new(),
                 if ty == ProgramType::Int128 {
-                    c_int128_literal(i128::MIN)
+                    crate::kernel::program_expression::int128_literal(i128::MIN)
                 } else {
-                    c_uint128_literal(u128::MAX)
+                    crate::kernel::program_expression::uint128_literal(u128::MAX)
                 },
             );
             let changed = memory

@@ -1,5 +1,5 @@
 use super::*;
-use crate::surface::C0VerificationSession;
+use crate::surface::ProgramVerificationSession;
 
 const ARTIFACT: &[u8] = include_bytes!(
     "../../../../design/charon-trial/into-slices/.click/iteration/iteration.rs.ullbc"
@@ -44,11 +44,11 @@ fn charon_slice_into_iter_preserves_actual_typed_state_and_checked_reads() {
         )));
     }
     let prepared = super::super::import::prepared_for_test(export).unwrap();
-    C0VerificationSession::new_program_prepared(CLAIM, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(CLAIM, &prepared).unwrap();
     let empty = include_str!("../../../../design/charon-trial/into-slices/empty.click");
-    C0VerificationSession::new_program_prepared(empty, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(empty, &prepared).unwrap();
     assert!(
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             &empty.replace("result == 0u32", "result == 1u32"),
             &prepared
         )
@@ -63,7 +63,7 @@ fn charon_slice_into_iter_preserves_actual_typed_state_and_checked_reads() {
         CLAIM.replace("views values[0..1];", ""),
     ] {
         assert_ne!(bad, CLAIM);
-        assert!(C0VerificationSession::new_program_prepared(&bad, &prepared).is_err());
+        assert!(ProgramVerificationSession::new_program_prepared(&bad, &prepared).is_err());
     }
 }
 

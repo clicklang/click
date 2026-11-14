@@ -93,7 +93,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
             .with_heap_allocation_claim(source.clone(), HeapExtent::int32(16))
             .unwrap();
         let mut context =
-            PureFactContext::new().assume_proposition(Proposition::CMemoryReadDefined {
+            PureFactContext::new().assume_proposition(Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: field.clone(),
                 value_type: ProgramType::Int32,
@@ -105,7 +105,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
                 ConditionTerm::pointer_equal(source.clone(), query.clone()),
                 true,
             );
-            context = context.assume_proposition(Proposition::CMemoryReadDefined {
+            context = context.assume_proposition(Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: Pointer::symbolic(Variable(910_000 + index)),
                 value_type: ProgramType::Int32,
@@ -159,7 +159,7 @@ fn read_validity_snapshot_buckets_keep_exact_hits_and_bounded_misses() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             memory = memory.store(other.clone(), ProgramValue::Int32((index as u32).into()));
-            context = context.assume_proposition(Proposition::CMemoryReadDefined {
+            context = context.assume_proposition(Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: source.clone(),
                 value_type: ProgramType::Int32,

@@ -4380,7 +4380,7 @@ impl ProgramType {
 
 /// The variable a scalar C value is, when it is exactly one: a symbolic
 /// binder's or a call result's value, not an expression over one.
-pub(crate) fn single_variable_of_c_value(value: &ProgramValue) -> Option<Variable> {
+pub(crate) fn single_variable_of_program_value(value: &ProgramValue) -> Option<Variable> {
     match value.numeric_value() {
         ProgramValue::Bool(MachineTerm::Variable(variable))
         | ProgramValue::Int8(MachineTerm::Variable(variable))
@@ -6289,10 +6289,10 @@ mod format_range_premise_tests {
                     MachineCastSpelling::Generic,
                     source,
                     format,
-                    KernelTerm::variable(KernelType::C(source.c_type()), variable),
+                    KernelTerm::variable(KernelType::Program(source.c_type()), variable),
                 )
             } else {
-                let leaf = KernelTerm::variable(KernelType::C(format.c_type()), variable);
+                let leaf = KernelTerm::variable(KernelType::Program(format.c_type()), variable);
                 KernelTerm::machine_binary_shared(
                     format,
                     MachineBinaryOp::Add,

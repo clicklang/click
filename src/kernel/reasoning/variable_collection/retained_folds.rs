@@ -16,7 +16,7 @@ impl FoldVariableRead {
     fn binder_sort(self, ty: &KernelType) -> bool {
         match self {
             Self::IntegerFree | Self::IntegerBinders => *ty == KernelType::Integer,
-            Self::MachineCapture | Self::MachineBinders => matches!(ty, KernelType::C(_)),
+            Self::MachineCapture | Self::MachineBinders => matches!(ty, KernelType::Program(_)),
             Self::ExpressionFree => true,
         }
     }
@@ -148,7 +148,7 @@ pub(super) fn common_variables(
                         leaf_variables.insert(*variable);
                     }
                 }
-                KernelType::C(_) => collect_machine_leaf(
+                KernelType::Program(_) => collect_machine_leaf(
                     &MachineTerm::Variable(*variable),
                     mode,
                     &mut leaf_variables,
@@ -285,7 +285,7 @@ fn collect_argument(
                 collect_machine_bitvector_variables(value, variables)
             }
             PureFunctionArgument::Value(value) => {
-                collect_c_value_bitvector_variables(value, variables)
+                collect_program_value_bitvector_variables(value, variables)
             }
             PureFunctionArgument::Algebraic(value) => {
                 collect_algebraic_term_bitvector_variables(value, variables)
@@ -294,7 +294,7 @@ fn collect_argument(
                 memory, pointer, ..
             } => {
                 collect_memory_bitvector_variables(memory, variables);
-                collect_c_value_bitvector_variables(pointer, variables);
+                collect_program_value_bitvector_variables(pointer, variables);
             }
         },
     }

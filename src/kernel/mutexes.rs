@@ -2093,7 +2093,7 @@ impl MutexLedger {
                 Some(end <= 0 || delta.constant >= extent)
             })();
             let stated_separation =
-                assumptions.proves_exact(&super::Proposition::CResourceSeparate {
+                assumptions.proves_exact(&super::Proposition::ResourceSeparate {
                     left: Box::new(allocation_resource.clone()),
                     right: Box::new(storage.clone()),
                 }) || (allocation.element_width() == 1
@@ -3304,7 +3304,7 @@ mod tests {
             ));
         }
         for continue_after in [false, true] {
-            let paths = eval::execute_c_statement_paths(
+            let paths = eval::execute_execution_statement_paths(
                 &state,
                 &ProgramStatement::ForStep {
                     step: Box::new(ProgramStatement::Skip),
@@ -3432,20 +3432,20 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_c_store_rejects_live_storage_and_accepts_destroyed_storage() {
+    fn ordinary_program_store_rejects_live_storage_and_accepts_destroyed_storage() {
         use super::super::*;
         let (state, address) = automatic_holder();
         register_block_alignment(&address.block, 8);
         let context = MutexContext::new(state)
             .initialize_empty(address.clone(), 40)
             .unwrap();
-        let statement = c_typed_store(
+        let statement = program_typed_store(
             ProgramExpression::Value(ProgramValue::pointer(address.clone())),
-            c_int32_literal(7),
+            crate::kernel::program_expression::int32_literal(7),
             ProgramType::Int32,
         );
         let assumptions = PureFactContext::new();
-        let outcome = eval::execute_c_statement(context.state(), &statement, &assumptions);
+        let outcome = eval::execute_execution_statement(context.state(), &statement, &assumptions);
         assert!(
             matches!(
                 outcome,
@@ -3457,7 +3457,7 @@ mod tests {
         );
         let destroyed = context.destroy(&address, &assumptions).unwrap();
         let Some(StatementOutcome::Normal(after)) =
-            eval::execute_c_statement(destroyed.state(), &statement, &assumptions)
+            eval::execute_execution_statement(destroyed.state(), &statement, &assumptions)
         else {
             panic!("destroyed storage should be writable");
         };
@@ -3499,7 +3499,7 @@ mod tests {
                     address.clone(),
                 ))],
             };
-            let paths = eval::execute_c_statement_paths(
+            let paths = eval::execute_execution_statement_paths(
                 &state,
                 &statement,
                 &assumptions,
@@ -3530,7 +3530,7 @@ mod tests {
         assert!(storage_write_refusal(context.state(), &write, &assumptions).is_some());
         let separated = assumptions
             .clone()
-            .assume_proposition(Proposition::CResourceSeparate {
+            .assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(write.clone())),
                 right: Box::new(Resource::Memory(storage_range(&address, 40))),
             });
@@ -3551,7 +3551,7 @@ mod tests {
         assert!(abstract_guard_acquisition_refusal(&state, &requested, &assumptions).is_some());
         let separated = assumptions
             .clone()
-            .assume_proposition(Proposition::CResourceSeparate {
+            .assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(storage_range(&requested, 40))),
                 right: Box::new(Resource::Memory(storage_range(&held, 40))),
             });
@@ -3765,10 +3765,10 @@ mod tests {
             function_name: "pthread_mutex_init".into(),
             arguments: vec![
                 ProgramExpression::Value(ProgramValue::pointer(pointer.clone())),
-                c_int32_literal(0),
+                crate::kernel::program_expression::int32_literal(0),
             ],
         };
-        let paths = eval::execute_c_statement_paths(
+        let paths = eval::execute_execution_statement_paths(
             &state,
             &statement,
             &PureFactContext::new(),
@@ -3845,7 +3845,7 @@ mod tests {
             let environment = ExecutionEnvironment::new().with_modeled_pthread_binding(Some(
                 crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
             ));
-            let paths = eval::execute_c_statement_paths(
+            let paths = eval::execute_execution_statement_paths(
                 context.state(),
                 &ProgramStatement::Call {
                     function_name: name.into(),
@@ -4010,7 +4010,7 @@ mod tests {
         );
         let separated = assumptions
             .clone()
-            .assume_proposition(Proposition::CResourceSeparate {
+            .assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(allocation.clone())),
                 right: Box::new(Resource::Memory(storage)),
             });
@@ -4064,7 +4064,7 @@ mod tests {
                 if hidden {
                     state.resources = ResourceContext::new();
                 }
-                let paths = eval::execute_c_statement_paths(
+                let paths = eval::execute_execution_statement_paths(
                     &state,
                     &declaration,
                     &PureFactContext::new(),
@@ -4077,7 +4077,7 @@ mod tests {
                         if local == "holder" && mutex == &address));
             }
             let destroyed = context.destroy(&address, &PureFactContext::new()).unwrap();
-            let paths = eval::execute_c_statement_paths(
+            let paths = eval::execute_execution_statement_paths(
                 destroyed.state(),
                 &declaration,
                 &PureFactContext::new(),
@@ -4136,7 +4136,7 @@ mod tests {
             .initialize_empty(mutex.clone(), 40)
             .unwrap();
         let held = head.acquire_current(&mutex, &assumptions).unwrap();
-        let mismatch = crate::kernel::c_loop_state_components_match_at_back_edge(
+        let mismatch = crate::kernel::loop_state_components_match_at_back_edge(
             head.state(),
             held.state(),
             &assumptions,
@@ -4146,7 +4146,7 @@ mod tests {
         assert!(mismatch.contains("mutex ownership"), "{mismatch}");
 
         let released = held.release_current(&mutex, &assumptions).unwrap();
-        crate::kernel::c_loop_state_components_match_at_back_edge(
+        crate::kernel::loop_state_components_match_at_back_edge(
             head.state(),
             released.state(),
             &assumptions,
@@ -4183,7 +4183,7 @@ mod tests {
                     .check_protocol_state_since(replaced.state().mutex_ledger.as_ref().unwrap()),
                 Err(MutexProtocolMismatch::Initialization),
             );
-            let error = crate::kernel::c_loop_state_components_match_at_back_edge(
+            let error = crate::kernel::loop_state_components_match_at_back_edge(
                 head.state(),
                 replaced.state(),
                 &assumptions,
@@ -4255,7 +4255,7 @@ mod tests {
         let local = local.acquire_current(&mutex(1), &assumptions).unwrap();
         let local = local.release_current(&mutex(1), &assumptions).unwrap();
         let next = local.destroy(&mutex(1), &assumptions).unwrap();
-        crate::kernel::c_loop_state_components_match_at_back_edge(
+        crate::kernel::loop_state_components_match_at_back_edge(
             head.state(),
             next.state(),
             &assumptions,
@@ -4279,7 +4279,7 @@ mod tests {
     fn invariant(identity: u64, revision: u32) -> ResourceFact {
         let schema = ResourceFieldSchema::new(vec![(
             "revision".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         ResourceFact::own(Resource::Instance(
@@ -4313,7 +4313,7 @@ mod tests {
         let address = mutex(0);
         let schema = ResourceFieldSchema::new(vec![(
             "revision".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         let instance = ResourceInstance::new(
@@ -4455,7 +4455,7 @@ mod tests {
                 address.clone(),
             ))],
         };
-        let paths = eval::execute_c_statement_paths(
+        let paths = eval::execute_execution_statement_paths(
             state,
             &statement,
             &PureFactContext::new(),
@@ -5242,7 +5242,7 @@ mod tests {
     }
 
     #[test]
-    fn c_path_lock_unlock_destroy_returns_the_folded_resource() {
+    fn program_path_lock_unlock_destroy_returns_the_folded_resource() {
         let assumptions = PureFactContext::new();
         let fact = invariant(1, 0);
         let mutex = mutex(0);

@@ -1646,8 +1646,8 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let before =
-            crate::kernel::intern_c_memory(Memory::new().with_block("affine-fold-snapshot", 8));
-        let after = crate::kernel::intern_c_memory(before.as_ref().clone().store(
+            crate::kernel::intern_memory(Memory::new().with_block("affine-fold-snapshot", 8));
+        let after = crate::kernel::intern_memory(before.as_ref().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(7)),
         ));

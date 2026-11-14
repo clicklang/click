@@ -61,7 +61,7 @@ fn ranking_member_diagnostic(bundle: &InvariantBodyContext) -> String {
         bundle
             .ranking_measures
             .iter()
-            .map(crate::kernel::c_ranking_measure_source)
+            .map(crate::kernel::ranking_measure_source)
             .collect()
     };
     let tuple = match measures.as_slice() {
@@ -92,17 +92,17 @@ mod ranking_diagnostic_tests {
                 Box::new(ContractExpression::Binding("n".into())),
                 Box::new(ContractExpression::Binding("t".into())),
             )),
-            Box::new(ContractExpression::CFragment(
-                crate::kernel::c_uint32_literal(1),
+            Box::new(ContractExpression::ProgramExpression(
+                crate::kernel::program_expression::uint32_literal(1),
             )),
         );
         let key = crate::surface::verification::termination_measure_source(&measure);
         let component = crate::kernel::RankingComponent::PureInteger {
             source: key,
             expression: crate::kernel::SpecIntegerExpression::FromMachine(Box::new(
-                crate::kernel::SpecExpression::ProgramExpression(crate::kernel::c_uint32_literal(
-                    1,
-                )),
+                crate::kernel::SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::uint32_literal(1),
+                ),
             )),
         };
         let mut bundle = InvariantBodyContext {
@@ -133,7 +133,7 @@ mod ranking_diagnostic_tests {
 /// condition that matches the statement at the frontier is one of those. The
 /// check is one indexed source lookup and one comparison against the written
 /// condition, so it reads no fact context.
-fn c_branch_condition_at_frontier(
+fn program_branch_condition_at_frontier(
     execution: &ExecutionProofState,
     context: &ExecutionProofContext<'_>,
     condition: &ClickProposition,
@@ -159,7 +159,7 @@ fn c_branch_condition_at_frontier(
     else {
         return Ok(None);
     };
-    if surface_c_condition(&source, &execution.core.state)? != *condition {
+    if surface_program_condition(&source, &execution.core.state)? != *condition {
         return Ok(None);
     }
     Ok(Some(surface_at_snapshot(
@@ -844,12 +844,12 @@ impl<'a> Proof<'a> {
                     crate::instrumentation::record_deterministic_work(1);
                     let value = self.evaluate_at_frontier(
                         context,
-                        &ContractExpression::CFragment(argument.clone()),
+                        &ContractExpression::ProgramExpression(argument.clone()),
                         &format!("call argument `{name}`"),
                     )?;
                     produced_arguments.push((
                         name.clone(),
-                        ContractExpression::CFragment(ProgramExpression::Value(value)),
+                        ContractExpression::ProgramExpression(ProgramExpression::Value(value)),
                     ));
                 }
             }
@@ -914,7 +914,7 @@ impl<'a> Proof<'a> {
                 })?;
                 Some((
                     name.clone(),
-                    ContractExpression::CFragment(ProgramExpression::Value(value)),
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(value)),
                 ))
             }
             None => None,
@@ -1027,7 +1027,7 @@ impl<'a> Proof<'a> {
             }
             let (value, obligations) = capture_resource_field_initializer(
                 &argument,
-                &crate::kernel::ResourceFieldType::C(parameter.c_type()),
+                &crate::kernel::ResourceFieldType::Program(parameter.c_type()),
                 self.facts().assumptions(),
                 ContractEnvironment::new(&values, &array_refs),
                 pre_state,
@@ -1050,7 +1050,7 @@ impl<'a> Proof<'a> {
                     .with_unresolved_requirement(&obligation),
                 )?;
             }
-            let crate::kernel::AlgebraicValue::C(value) = value else {
+            let crate::kernel::AlgebraicValue::Program(value) = value else {
                 unreachable!("a C parameter captures a C value")
             };
             arguments.push(value);
@@ -1386,19 +1386,20 @@ impl<'a> Proof<'a> {
                     {
                         path.clone()
                     } else {
-                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                        crate::kernel::program_function_execution_candidate_with_additional_facts(
                             path,
                             &additional,
                         )
                     }
                 })
                 .collect();
-            let completed = crate::kernel::c_function_execution_candidates_from_retained_paths(
-                completed.state().clone(),
-                completed.function().clone(),
-                completed.arguments().to_vec(),
-                paths,
-            );
+            let completed =
+                crate::kernel::program_function_execution_candidates_from_retained_paths(
+                    completed.state().clone(),
+                    completed.function().clone(),
+                    completed.arguments().to_vec(),
+                    paths,
+                );
             if let Some(leaf) = &mut execution.presentation.checked_leaf_facts {
                 Arc::make_mut(leaf).0 = completed
                     .candidate_at(0)
@@ -1561,7 +1562,7 @@ impl<'a> Proof<'a> {
         // them: whatever the body called the instance it ends holding, the
         // binder names it, and a body that ends with no instance at those
         // arguments fails here by name.
-        let back_edge_state = crate::kernel::c_loop_state_with_loop_binders_rebound(
+        let back_edge_state = crate::kernel::loop_state_with_loop_binders_rebound(
             loop_head_state,
             &execution.core.state,
             binders,
@@ -1583,7 +1584,7 @@ impl<'a> Proof<'a> {
         {
             return Err(self.step_error(format!("loop state join: {failure}")));
         }
-        let invariant_obligations = crate::kernel::c_loop_invariant_obligations_at_back_edge(
+        let invariant_obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
             &back_edge_state,
             loop_entry_state,
             invariant_checks,
@@ -1595,7 +1596,7 @@ impl<'a> Proof<'a> {
             .into_iter()
             .map(|obligation| obligation.proposition().clone())
             .fold(assumptions, PureFactContext::assume_proposition);
-        if !crate::kernel::c_loop_condition_may_continue(&back_edge_state, condition, &assumptions)
+        if !crate::kernel::loop_condition_may_continue(&back_edge_state, condition, &assumptions)
             .map_err(|message| {
                 self.step_error(format!("loop condition classification: {message}"))
             })?
@@ -1608,7 +1609,7 @@ impl<'a> Proof<'a> {
         // the loop declares `owns` or `views` clauses of its own. A binder's
         // model is what its invariants constrain, so the ownership comparison
         // sets it aside; the invariant obligations above checked it.
-        crate::kernel::c_loop_binder_state_components_match_at_back_edge(
+        crate::kernel::loop_binder_state_components_match_at_back_edge(
             loop_head_state,
             &back_edge_state,
             binders,
@@ -1695,7 +1696,7 @@ impl<'a> Proof<'a> {
         // bundle closer can name it after the loop body has overwritten the
         // cells the condition read.
         let c_branch_condition =
-            c_branch_condition_at_frontier(&base_execution, context, condition)?;
+            program_branch_condition_at_frontier(&base_execution, context, condition)?;
         let mut arms: [Option<(ProofFacts, ExecutionProofState, Vec<Proposition>)>; 2] =
             [None, None];
         let lowering_condition = self.substitute_fixed_state_locals_in_proposition(condition)?;

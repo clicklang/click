@@ -26,12 +26,12 @@ fn check_zero_prefixes(unresolved: bool, cancellation: bool) {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let base = KernelTerm::variable(KernelType::C(format.c_type()), Variable(997631));
+        let base = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(997631));
         let zero = KernelTermImport::default()
             .machine_arithmetic(format, &0u32.into())
             .unwrap();
         let right = if unresolved {
-            KernelTerm::variable(KernelType::C(format.c_type()), Variable(997632))
+            KernelTerm::variable(KernelType::Program(format.c_type()), Variable(997632))
         } else {
             base.clone()
         };

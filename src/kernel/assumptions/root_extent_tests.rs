@@ -1,7 +1,7 @@
 use super::*;
 
 fn read_pointer(id: u64) -> PointerValue {
-    let memory = crate::kernel::intern_c_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let cell = Pointer::symbolic(Variable(id));
     PointerValue::from_read(
         Pointer::loaded_value(&memory, &cell),

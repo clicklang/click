@@ -66,9 +66,9 @@ fn statement_outcome_reconstruction_preserves_holder_identity() {
         .with_local("x", int32(0))
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(owner));
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         &state,
-        &c_assign("x", c_int32_literal(1)),
+        &program_assign("x", crate::kernel::program_expression::int32_literal(1)),
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
         &mut ExecutionBudget::default(),
@@ -135,10 +135,11 @@ fn abstract_join_rejects_divergent_loan_roots_without_scanning_ledgers() {
         ledger.apply(&second.transition).expect("second successor"),
     ));
 
-    let error = abstract_c_state_for_join(&first_state, &std::collections::BTreeMap::new(), 0)
-        .expect("single-state join retains its root");
+    let error =
+        abstract_execution_state_for_join(&first_state, &std::collections::BTreeMap::new(), 0)
+            .expect("single-state join retains its root");
     assert_eq!(error.state.loan_ledger(), first_state.loan_ledger());
-    let error = abstract_c_state_for_join_across(
+    let error = abstract_execution_state_for_join_across(
         &first_state,
         &[&first_state, &second_state],
         &std::collections::BTreeMap::new(),
@@ -173,7 +174,7 @@ fn abstract_join_rejects_a_loan_ended_on_only_one_arm() {
 
     let kept = ExecutionState::new().with_loan_ledger(Some(lent.clone()));
     let closed = ExecutionState::new().with_loan_ledger(Some(recovered.clone()));
-    let error = abstract_c_state_for_join_across(
+    let error = abstract_execution_state_for_join_across(
         &closed,
         &[&closed, &kept],
         &std::collections::BTreeMap::new(),
@@ -181,7 +182,7 @@ fn abstract_join_rejects_a_loan_ended_on_only_one_arm() {
     )
     .expect_err("a loan ended on one arm only must not join into ownership");
     assert!(error.contains("stable-view loan state"), "{error}");
-    let error = abstract_c_state_for_join_across(
+    let error = abstract_execution_state_for_join_across(
         &kept,
         &[&kept, &closed],
         &std::collections::BTreeMap::new(),
@@ -191,7 +192,7 @@ fn abstract_join_rejects_a_loan_ended_on_only_one_arm() {
     assert!(error.contains("stable-view loan state"), "{error}");
 
     let closed_too = ExecutionState::new().with_loan_ledger(Some(recovered.clone()));
-    let joined = abstract_c_state_for_join_across(
+    let joined = abstract_execution_state_for_join_across(
         &closed,
         &[&closed, &closed_too],
         &std::collections::BTreeMap::new(),
@@ -240,8 +241,9 @@ fn abstract_join_keeps_one_shared_view_root_and_drops_its_occurrence_sidecar() {
     let (arm, binding) = arm_with_view_binding(&ledger, owner, reader, "shared");
     let sibling = arm.clone();
 
-    let abstraction = abstract_c_state_for_interface_join_across(&arm, &[&arm, &sibling], 0)
-        .expect("arms holding the same root have one deterministic abstraction");
+    let abstraction =
+        abstract_execution_state_for_interface_join_across(&arm, &[&arm, &sibling], 0)
+            .expect("arms holding the same root have one deterministic abstraction");
     let abstraction = abstraction.state;
 
     // The root survives the join; the bookkeeping of the discarded resource
@@ -273,7 +275,7 @@ fn abstract_join_rejects_a_changed_view_root_on_one_ledger() {
     // Same ledger root and same holder: only the checked occurrence binding
     // moved, and a join must not pick one arm's authority for the successor.
     assert_eq!(arm.loan_ledger(), sibling.loan_ledger());
-    let error = abstract_c_state_for_interface_join_across(&arm, &[&arm, &sibling], 0)
+    let error = abstract_execution_state_for_interface_join_across(&arm, &[&arm, &sibling], 0)
         .expect_err("a changed view root must not be silently selected");
     assert!(error.contains("stable-view occurrence bindings"));
 }
@@ -292,7 +294,7 @@ fn abstract_join_rejects_an_arm_that_dropped_its_view_root() {
         );
 
     assert_eq!(dropped.loan_view_bindings().iter().count(), 0);
-    let error = abstract_c_state_for_interface_join_across(&arm, &[&arm, &dropped], 0)
+    let error = abstract_execution_state_for_interface_join_across(&arm, &[&arm, &dropped], 0)
         .expect_err("an arm that dropped its root must not inherit the other arm's");
     assert!(error.contains("stable-view occurrence bindings"));
 }
@@ -307,7 +309,7 @@ fn abstract_join_rejects_divergent_holders_on_one_ledger_root() {
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(reader));
 
-    let error = abstract_c_state_for_join_across(
+    let error = abstract_execution_state_for_join_across(
         &owner_state,
         &[&owner_state, &reader_state],
         &std::collections::BTreeMap::new(),
@@ -327,7 +329,7 @@ fn loop_backedge_rejects_divergent_holders_on_one_ledger_root() {
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(reader));
 
-    let error = c_loop_state_components_match_at_back_edge(
+    let error = loop_state_components_match_at_back_edge(
         &top_state,
         &next_state,
         &PureFactContext::new(),
@@ -373,7 +375,7 @@ fn interface_join_does_not_visit_cells_its_arms_share() {
         let ((from_then, from_else), work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 let abstract_arm = |state: &ExecutionState| {
-                    abstract_c_state_for_interface_join_across(state, &siblings, 0)
+                    abstract_execution_state_for_interface_join_across(state, &siblings, 0)
                         .expect("the arms join")
                 };
                 let from_then = abstract_arm(&then_state);
@@ -416,7 +418,7 @@ fn interface_join_does_not_visit_locals_its_arms_share() {
         let ((from_then, from_else), work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 let abstract_arm = |state: &ExecutionState| {
-                    abstract_c_state_for_interface_join_across(state, &siblings, 0)
+                    abstract_execution_state_for_interface_join_across(state, &siblings, 0)
                         .expect("the arms join")
                 };
                 (abstract_arm(&then_state), abstract_arm(&else_state))
@@ -466,7 +468,7 @@ fn interface_join_provenance_uses_checked_arms_before_marker_union() {
     );
     let siblings = [&then_state, &else_state];
     let abstract_arm = |state| {
-        abstract_c_state_for_interface_join_across(state, &siblings, 9)
+        abstract_execution_state_for_interface_join_across(state, &siblings, 9)
             .expect("the checked arms can be abstracted")
     };
     let left = abstract_arm(&then_state);

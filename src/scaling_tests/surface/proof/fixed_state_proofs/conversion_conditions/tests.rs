@@ -2,14 +2,14 @@
 fn loadability_explanation_ignores_unrelated_objects() {
     let (values, state) = indexed_pointer_site();
     let expression = ProgramExpression::Variable("index".into());
-    let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
-    let missing = Proposition::CMemoryLoadable {
+    let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
+    let missing = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: pointer_base(&values),
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    let covering = Proposition::CMemoryLoadable {
+    let covering = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: pointer_base(&values),
         bytes: MachineTerm::constant(8),
@@ -22,7 +22,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
         crate::kernel::clear_integer_bridge_memo();
         let mut context = PureFactContext::new();
         for index in 0..size {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: state.memory().clone(),
                 base: Pointer {
                     block: PointerBlock::Heap(index),
@@ -60,7 +60,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let (values, state) = indexed_pointer_site();
         let expression = ProgramExpression::Variable("index".into());
-        let site = StatedSite::new(StatedForm::CFragment(&expression), &state, &values);
+        let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
         let mut context = PureFactContext::new();
         for i in 0..ambient {
             context = context.assume_condition(
@@ -86,7 +86,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                 );
                 context = context.assume_proposition(Proposition::ForAll {
                     var: Variable(785_000 + i),
-                    sort: crate::kernel::Sort::CInt32,
+                    sort: crate::kernel::Sort::ProgramInt32,
                     name: crate::kernel::BinderName::written("other"),
                     body: Box::new(Proposition::Implies(
                         Box::new(condition.clone()),
@@ -108,7 +108,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
             .map(|i| {
                 crate::kernel::ProofObligation::verification_condition(Proposition::ForAll {
                     var: Variable(790_000 + i),
-                    sort: crate::kernel::Sort::CInt32,
+                    sort: crate::kernel::Sort::ProgramInt32,
                     name: crate::kernel::BinderName::written("k"),
                     body: Box::new(Proposition::ConditionIs(
                         ConditionTerm::Compare {

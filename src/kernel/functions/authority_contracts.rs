@@ -555,7 +555,7 @@ pub(super) fn authority_two_control_births(
                 || child.guard().is_some()
                 || !child.resource_arguments().is_empty()
                 || anchor.len() != 1
-                || anchor[0] != c_variable(parameter.name())
+                || anchor[0] != crate::kernel::program_expression::variable(parameter.name())
             {
                 return None;
             }

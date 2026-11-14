@@ -10,7 +10,7 @@ fn ownership_footprint_does_not_walk_pointer_aliases() {
                 MemoryRange::new(pointer(0), 0u32.into(), 2u32.into()),
             ));
             let mut facts = PureFactContext::new()
-                .assume_proposition(Proposition::CResourceComposition(owner.clone()))
+                .assume_proposition(Proposition::ResourceComposition(owner.clone()))
                 .with_store_owner(Some(owner));
             for i in 1..=size {
                 let base = if related { pointer(0) } else { pointer(2 * i) };

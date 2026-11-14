@@ -206,11 +206,11 @@ fn reject_helper_contracts(index: usize, mutations: &[(&str, &str)]) {
     let p = adler2_helpers_project();
     let prepared = p.prepared().unwrap();
     let proof = helper_proof(index);
-    C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     for (before, after) in mutations {
         let invalid = proof.replace(before, after);
         assert_ne!(invalid, proof, "missing mutation: {before}");
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .expect("false helper contract was accepted");
         assert_eq!(
@@ -239,7 +239,7 @@ fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
             .iter()
             .any(|f| f.name.ends_with("_I7_compute") && f.mir.is_some())
     );
-    C0VerificationSession::new_program_prepared(helper_library(), &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(helper_library(), &prepared).unwrap();
     // Module identity is checked even when all the proved helpers are unchanged.
     fs::write(
         p.root.join("../../vendor/adler2-2.0.1/src/lib.rs"),
@@ -280,13 +280,13 @@ fn charon_adler2_helper_expansion_uses_retained_native_certificate() {
     let prepared = p.prepared().unwrap();
     let proof = helper_proof(0);
     let (_session, verified) =
-        C0VerificationSession::new_program_prepared(&proof, &prepared).unwrap();
+        ProgramVerificationSession::new_program_prepared(&proof, &prepared).unwrap();
     let claim = format!("{}.contract", verified[0].function_block.signature().name());
     let expanded =
         click::surface::expand_verified_function_claim_source_by_label(&proof, &verified, &claim)
             .unwrap()
             .expect("a lowered Rust method retains its original certificate");
-    C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
 }
 
 fn reject_helper_byte_bounds(lane: usize) {
@@ -639,7 +639,8 @@ fn charon_adler2_helpers_mul_tools_recheck_expanded_certificate() {
 fn charon_adler2_helpers_live_refresh_proves_original_bodies() {
     let p = adler2_helpers_project();
     p.refresh().unwrap();
-    C0VerificationSession::new_program_prepared(helper_library(), p.prepared().unwrap()).unwrap();
+    ProgramVerificationSession::new_program_prepared(helper_library(), p.prepared().unwrap())
+        .unwrap();
 }
 
 const BOUNDS: &str = include_str!("../../design/adler32/project/adler2/bounds.click");
@@ -650,7 +651,7 @@ const RECOMBINATION: &str = include_str!("../../design/adler32/project/adler2/re
 fn charon_adler2_recombination_bounds_verify_with_original_helpers() {
     let p = adler2_helpers_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(
+    ProgramVerificationSession::new_program_prepared(
         &format!("{}\n{RECOMBINATION}", helper_library()),
         &prepared,
     )
@@ -815,7 +816,7 @@ fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
 fn charon_adler2_lane_bounds_verify_with_original_helper_contracts() {
     let p = adler2_helpers_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(
+    ProgramVerificationSession::new_program_prepared(
         &format!("{}\n{BOUNDS}", helper_library()),
         &prepared,
     )
@@ -994,7 +995,7 @@ fn charon_adler2_iterator_bounds_verify_with_locked_original_helpers() {
     let prepared = p.prepared().unwrap();
     let source = format!("{}\nimport \"iterator-bounds.click\";\n", helper_library());
     let project = click::cli::read_click_project(&p.root.join("borrow.click"), &source).unwrap();
-    C0VerificationSession::new_program_prepared_project(&project, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared_project(&project, &prepared).unwrap();
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -1133,7 +1134,7 @@ fn charon_adler2_empty_compute_rejects_missing_ownership() {
 #[ignore = "nightly: complete original computation boundary proof"]
 fn charon_adler2_empty_compute_proves_original_body_and_rejects_false_outputs() {
     let p = adler2_helpers_project();
-    C0VerificationSession::new_program_prepared(HELPERS, p.prepared().unwrap()).unwrap();
+    ProgramVerificationSession::new_program_prepared(HELPERS, p.prepared().unwrap()).unwrap();
     reject_empty_compute("ensures self.a == 1;", "ensures self.a == 2;");
     reject_empty_compute("ensures self.b == 0;", "ensures self.b == 1;");
     reject_empty_compute("requires self.a == 1;", "requires self.a == 2;");
@@ -1193,7 +1194,7 @@ fn charon_adler2_single_byte_compute_rejects_empty_input() {
 #[ignore = "nightly: original single-byte computation proof and false-output rejections"]
 fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outputs() {
     let p = compute_project(SINGLE_BYTE_COMPUTE);
-    C0VerificationSession::new_program_prepared(
+    ProgramVerificationSession::new_program_prepared(
         &compute_proof(SINGLE_BYTE_COMPUTE),
         p.prepared().unwrap(),
     )
@@ -1298,8 +1299,11 @@ fn charon_adler2_short_tail_compute_rejects_wrong_extent_and_constructor() {
 
 fn check_short_tail_compute(contract: &str, bytes: usize) {
     let p = compute_project(contract);
-    C0VerificationSession::new_program_prepared(&compute_proof(contract), p.prepared().unwrap())
-        .unwrap();
+    ProgramVerificationSession::new_program_prepared(
+        &compute_proof(contract),
+        p.prepared().unwrap(),
+    )
+    .unwrap();
     for field in ["a", "b"] {
         reject_compute(
             contract,
@@ -1392,7 +1396,7 @@ fn charon_adler2_four_byte_compute_rejects_missing_extent_view_and_constructor()
 #[ignore = "nightly: original four-byte vector computation and false-result/read rejections"]
 fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_outputs() {
     let p = compute_project(FOUR_BYTE_COMPUTE);
-    C0VerificationSession::new_program_prepared(
+    ProgramVerificationSession::new_program_prepared(
         &compute_proof(FOUR_BYTE_COMPUTE),
         p.prepared().unwrap(),
     )
@@ -1562,7 +1566,7 @@ fn charon_adler2_small_batch_compute_rejects_stale_scalar_a() {
 #[ignore = "nightly: original 0..22207-byte vector and tail computation from canonical states"]
 fn charon_adler2_small_batch_compute_proves_original_body() {
     let p = compute_project(SMALL_BATCH_COMPUTE);
-    C0VerificationSession::new_program_prepared(
+    ProgramVerificationSession::new_program_prepared(
         &compute_proof(SMALL_BATCH_COMPUTE),
         p.prepared().unwrap(),
     )
@@ -1789,7 +1793,7 @@ fn charon_adler2_small_batch_compute_tools_recheck_original_contract() {
 #[test]
 #[ignore = "nightly: checksum lemma expansion and mutation checks"]
 fn charon_adler2_small_partition_verifies_and_expands() {
-    click::surface::verify_c0_sources(SMALL_PARTITION, &[]).unwrap();
+    click::surface::verify_c_sources(SMALL_PARTITION, &[]).unwrap();
     for claim in [
         "adler_small_prefix_divisible.ensures_0",
         "adler_small_tail_metadata.ensures_0",
@@ -1797,7 +1801,7 @@ fn charon_adler2_small_partition_verifies_and_expands() {
         "adler_small_tail_indices.ensures_2",
     ] {
         let expanded =
-            click::surface::expand_c0_claim_source_by_label(SMALL_PARTITION, &[], claim).unwrap();
+            click::surface::expand_c_claim_source_by_label(SMALL_PARTITION, &[], claim).unwrap();
         recheck_expanded_theorem(SMALL_PARTITION, &expanded, claim);
     }
 }
@@ -1805,14 +1809,14 @@ fn charon_adler2_small_partition_verifies_and_expands() {
 #[test]
 #[ignore = "nightly: checksum lemma expansion and mutation checks"]
 fn charon_adler2_scalar_tail_bounds_verify_expand_and_reject_false_updates() {
-    click::surface::verify_c0_sources(TAIL_BOUNDS, &[]).unwrap();
+    click::surface::verify_c_sources(TAIL_BOUNDS, &[]).unwrap();
     for claim in [
         "adler_tail_iterator_step.ensures_0",
         "adler_tail_iterator_step.ensures_3",
         "adler_tail_remaining_progress.ensures_0",
     ] {
         let expanded =
-            click::surface::expand_c0_claim_source_by_label(TAIL_BOUNDS, &[], claim).unwrap();
+            click::surface::expand_c_claim_source_by_label(TAIL_BOUNDS, &[], claim).unwrap();
         recheck_expanded_theorem(TAIL_BOUNDS, &expanded, claim);
     }
     for (before, after) in [
@@ -1835,7 +1839,7 @@ fn charon_adler2_scalar_tail_bounds_verify_expand_and_reject_false_updates() {
 #[test]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_partition_rejects_false_metadata() {
-    click::surface::verify_c0_sources(SMALL_PARTITION, &[])
+    click::surface::verify_c_sources(SMALL_PARTITION, &[])
         .expect("the unchanged metadata theorems must verify before mutation");
     for (before, after) in [
         (
@@ -1860,7 +1864,7 @@ fn charon_adler2_small_partition_rejects_false_metadata() {
         let invalid = SMALL_PARTITION.replace(before, after);
         assert_ne!(invalid, SMALL_PARTITION, "{before}");
         assert!(
-            click::surface::verify_c0_sources(&invalid, &[]).is_err(),
+            click::surface::verify_c_sources(&invalid, &[]).is_err(),
             "{before}"
         );
     }
@@ -1869,14 +1873,14 @@ fn charon_adler2_small_partition_rejects_false_metadata() {
 // The original scalar tail needs safe A/B updates and actual remaining progress.
 #[test]
 fn charon_adler2_scalar_tail_bounds_verify() {
-    click::surface::verify_c0_sources(TAIL_BOUNDS, &[]).unwrap();
+    click::surface::verify_c_sources(TAIL_BOUNDS, &[]).unwrap();
 }
 
 // Full-width lengths must agree with four-byte prefixes and short-tail indices.
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_adler2_small_partition_verifies() {
-    click::surface::verify_c0_sources(SMALL_PARTITION, &[]).unwrap();
+    click::surface::verify_c_sources(SMALL_PARTITION, &[]).unwrap();
 }
 
 const COMMON_ADLER_SPEC: &str = include_str!("../../design/adler32/project/adler32-spec.click");
@@ -1900,7 +1904,7 @@ fn adler_specifications() -> String {
 #[test]
 #[ignore = "nightly: 2.6s in the parallel gate"]
 fn adler_common_spec_recurrences_and_bounds_verify() {
-    click::surface::verify_c0_sources(COMMON_ADLER_SPEC, &[]).unwrap();
+    click::surface::verify_c_sources(COMMON_ADLER_SPEC, &[]).unwrap();
 }
 
 #[test]
@@ -1914,7 +1918,7 @@ fn adler_four_byte_recombination_matches_the_common_spec() {
         let offset = source.find(&format!("theorem {theorem}(")).unwrap();
         let body = offset + source[offset..].find(" by {\n").unwrap() + " by {\n".len();
         let line = source[..body].bytes().filter(|&b| b == b'\n').count() + 1;
-        click::surface::verify_c0_sources_at(&source, &[], line, 2).unwrap();
+        click::surface::verify_c_sources_at(&source, &[], line, 2).unwrap();
     }
 }
 
@@ -1936,7 +1940,7 @@ fn adler_four_byte_recombination_rejects_reversed_byte_weights() {
         .unwrap();
     let body = offset + source[offset..].find(" by {\n").unwrap() + " by {\n".len();
     let line = source[..body].bytes().filter(|&b| b == b'\n').count() + 1;
-    let error = click::surface::verify_c0_sources_at(&source, &[], line, 2)
+    let error = click::surface::verify_c_sources_at(&source, &[], line, 2)
         .expect_err("reversed middle-byte weights were accepted");
     assert!(
         !error.message().contains("budget exhausted"),
@@ -1966,7 +1970,7 @@ fn adler_four_byte_recombination_rejects_off_by_one_residues() {
             .unwrap();
         let body = offset + source[offset..].find(" by {\n").unwrap() + " by {\n".len();
         let line = source[..body].bytes().filter(|&b| b == b'\n').count() + 1;
-        let error = click::surface::verify_c0_sources_at(&source, &[], line, 2)
+        let error = click::surface::verify_c_sources_at(&source, &[], line, 2)
             .expect_err("an off-by-one native residue was accepted");
         assert!(
             !error.message().contains("budget exhausted"),
@@ -2054,7 +2058,7 @@ fn reject_isolated_theorem(original: &str, changed: &str, owner: &str) {
 #[test]
 #[ignore = "nightly: common checksum specification expansion and mutation checks"]
 fn adler_common_spec_expands_and_rejects_false_results() {
-    click::surface::verify_c0_sources(COMMON_ADLER_SPEC, &[]).unwrap();
+    click::surface::verify_c_sources(COMMON_ADLER_SPEC, &[]).unwrap();
     for claim in [
         "adler_byte_observation_same_index.ensures_0",
         "adler_sum_append_four.ensures_0",
@@ -2092,7 +2096,7 @@ fn adler_common_spec_expands_and_rejects_false_results() {
         "adler_spec_extensional.ensures_0",
     ] {
         let expanded =
-            click::surface::expand_c0_claim_source_by_label(COMMON_ADLER_SPEC, &[], claim)
+            click::surface::expand_c_claim_source_by_label(COMMON_ADLER_SPEC, &[], claim)
                 .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
         recheck_expanded_theorem(COMMON_ADLER_SPEC, &expanded, claim);
     }
@@ -2294,7 +2298,7 @@ fn charon_adler2_general_partition_and_outer_progress_verify() {
     let proof = format!(
         "verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_LEMMAS}\n{STORED_GUARD_PROOF}"
     );
-    click::surface::verify_c0_sources(&proof, &[("stored-guard.c", STORED_GUARD_C)]).unwrap();
+    click::surface::verify_c_sources(&proof, &[("stored-guard.c", STORED_GUARD_C)]).unwrap();
 }
 
 #[test]
@@ -2304,13 +2308,13 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
         "verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_LEMMAS}\n{STORED_GUARD_PROOF}"
     );
     let guard_sources = [("stored-guard.c", STORED_GUARD_C)];
-    let expanded_guard = click::surface::expand_c0_claim_source_by_label(
+    let expanded_guard = click::surface::expand_c_claim_source_by_label(
         &guard_proof,
         &guard_sources,
         "adler_stored_guard.contract",
     )
     .unwrap();
-    click::surface::verify_c0_sources(&expanded_guard, &guard_sources).unwrap();
+    click::surface::verify_c_sources(&expanded_guard, &guard_sources).unwrap();
     // This full check also verifies every unchanged GENERAL_PARTITION theorem.
     // The pure expansion below cold-checks its complete owner separately.
     for (before, after) in [
@@ -2322,10 +2326,10 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
         let invalid = format!(
             "verifying \"stored-guard.c\";\n{GENERAL_PARTITION}\n{STORED_GUARD_LEMMAS}\n{invalid_guard}"
         );
-        assert!(click::surface::verify_c0_sources(&invalid, &guard_sources).is_err());
+        assert!(click::surface::verify_c_sources(&invalid, &guard_sources).is_err());
     }
     let claim = "adler_full_batch_within_advance.ensures_0";
-    let expanded = click::surface::expand_c0_claim_source_by_label(GENERAL_PARTITION, &[], claim)
+    let expanded = click::surface::expand_c_claim_source_by_label(GENERAL_PARTITION, &[], claim)
         .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
     recheck_expanded_theorem(GENERAL_PARTITION, &expanded, claim);
 }
@@ -2334,7 +2338,7 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
 #[ignore = "nightly: whole unchanged computation for every slice length"]
 fn charon_adler2_general_compute_proves_original_body() {
     let p = compute_project(GENERAL_COMPUTE);
-    C0VerificationSession::new_program_prepared(
+    ProgramVerificationSession::new_program_prepared(
         &compute_proof(GENERAL_COMPUTE),
         p.prepared().unwrap(),
     )
@@ -2363,14 +2367,14 @@ const LANE_STATE: &str = include_str!("../../design/adler32/project/adler2/lane-
 #[ignore = "nightly: 3.2s in the parallel gate"]
 fn adler_lane_state_recurrences_and_reductions_verify() {
     let source = format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}");
-    click::surface::verify_c0_sources(&source, &[]).unwrap();
+    click::surface::verify_c_sources(&source, &[]).unwrap();
 }
 
 #[test]
 #[ignore = "nightly: lane-state expansion and mutation checks"]
 fn adler_lane_state_expands_and_rejects_false_relations() {
     let source = format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}");
-    click::surface::verify_c0_sources(&source, &[]).unwrap();
+    click::surface::verify_c_sources(&source, &[]).unwrap();
     for claim in [
         "adler_four_lane_state_step.ensures_0",
         "adler_four_lane_state_step.ensures_1",
@@ -2381,7 +2385,7 @@ fn adler_lane_state_expands_and_rejects_false_relations() {
         "adler_prefix_b_step_four.ensures_0",
         "adler_prefix_b_step_one.ensures_0",
     ] {
-        let expanded = click::surface::expand_c0_claim_source_by_label(&source, &[], claim)
+        let expanded = click::surface::expand_c_claim_source_by_label(&source, &[], claim)
             .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
         recheck_expanded_theorem(&source, &expanded, claim);
     }
@@ -2451,10 +2455,10 @@ fn charon_adler2_helpers_from_rejects_wrong_mathematical_bytes() {
 // native count. The selected count and pointer lemmas require the signed limit.
 #[test]
 fn adler_bounded_native_count_observations_verify() {
-    click::surface::verify_c0_sources(BOUNDED_COUNT, &[]).unwrap();
+    click::surface::verify_c_sources(BOUNDED_COUNT, &[]).unwrap();
     let changed = BOUNDED_COUNT.replacen(" requires count <= 2147483647u64;", "", 1);
     assert_ne!(changed, BOUNDED_COUNT);
-    let error = click::surface::verify_c0_sources(&changed, &[])
+    let error = click::surface::verify_c_sources(&changed, &[])
         .expect_err("unbounded truncating observation accepted");
     assert!(
         !error.message().contains("budget exhausted"),
@@ -2477,7 +2481,7 @@ fn restoration_project() -> Project {
 #[test]
 fn charon_adler2_restoration_extracts_original_checksum_words() {
     let p = restoration_project();
-    C0VerificationSession::new_program_prepared(RESTORATION, p.prepared().unwrap()).unwrap();
+    ProgramVerificationSession::new_program_prepared(RESTORATION, p.prepared().unwrap()).unwrap();
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -2494,7 +2498,7 @@ fn charon_adler2_restoration_rejects_false_words_and_expands() {
     ] {
         let changed = RESTORATION.replacen(before, after, 1);
         assert_ne!(changed, RESTORATION);
-        let error = C0VerificationSession::new_program_prepared(&changed, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&changed, &prepared)
             .err()
             .expect("incorrect saved word observation must be refused");
         assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
@@ -2528,7 +2532,7 @@ fn charon_adler2_restoration_live_refresh_checks_original_body() {
         serde_json::json!(["adler2::adler32_slice", "adler2::Adler32::from_checksum"])
     );
     p.refresh().unwrap();
-    C0VerificationSession::new_program_prepared(RESTORATION, p.prepared().unwrap()).unwrap();
+    ProgramVerificationSession::new_program_prepared(RESTORATION, p.prepared().unwrap()).unwrap();
 }
 
 #[test]
@@ -2539,7 +2543,7 @@ fn charon_adler2_checksum_packs_original_shared_fields() {
     let source = format!(
         "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}"
     );
-    C0VerificationSession::new_program_prepared(&source, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&source, &prepared).unwrap();
 }
 
 #[test]
@@ -2550,7 +2554,7 @@ fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
     let original = format!(
         "verifying \"../../vendor/adler2-2.0.1/src/lib.rs\";\n{COMMON_ADLER_SPEC}\n{PACKING}\n{CHECKSUM}"
     );
-    C0VerificationSession::new_program_prepared(&original, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&original, &prepared).unwrap();
     for (before, after) in [
         (
             "65536 * old(to_integer(self.b))",
@@ -2689,8 +2693,11 @@ fn charon_adler2_public_checksum_matches_one_byte_spec() {
 #[ignore = "nightly: original public checksum and all helper bodies"]
 fn charon_adler2_public_checksum_checks_all_original_callee_bodies() {
     let p = adler2_helpers_project();
-    C0VerificationSession::new_program_prepared(&public_one_byte_proof(), p.prepared().unwrap())
-        .unwrap();
+    ProgramVerificationSession::new_program_prepared(
+        &public_one_byte_proof(),
+        p.prepared().unwrap(),
+    )
+    .unwrap();
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -2954,7 +2961,7 @@ fn adler_incremental_bridges_expand_and_reject_false_observations() {
     );
     assert_ne!(invalid, PACKING);
     assert!(
-        click::surface::verify_c0_sources(&format!("{COMMON_ADLER_SPEC}\n{invalid}"), &[]).is_err()
+        click::surface::verify_c_sources(&format!("{COMMON_ADLER_SPEC}\n{invalid}"), &[]).is_err()
     );
 }
 
@@ -3221,7 +3228,7 @@ const SERIAL_TAIL_SPEC: &str =
 #[ignore = "nightly: 2.7s in the parallel gate"]
 fn adler_serial_tail_native_results_match_the_common_spec() {
     let source = format!("{COMMON_ADLER_SPEC}\n{SERIAL_TAIL_SPEC}");
-    click::surface::verify_c0_sources(&source, &[]).unwrap();
+    click::surface::verify_c_sources(&source, &[]).unwrap();
 }
 
 #[test]
@@ -3248,7 +3255,7 @@ fn charon_adler2_public_serial_tails_tools_check_all_original_bodies() {
 #[ignore = "nightly: serial-tail specification expansion and mutation checks"]
 fn adler_serial_tail_spec_expands_and_rejects_false_weights() {
     let source = format!("{COMMON_ADLER_SPEC}\n{SERIAL_TAIL_SPEC}");
-    click::surface::verify_c0_sources(&source, &[]).unwrap();
+    click::surface::verify_c_sources(&source, &[]).unwrap();
     for claim in [
         "adler_spec_two.ensures_0",
         "adler_spec_two.ensures_1",
@@ -3262,7 +3269,7 @@ fn adler_serial_tail_spec_expands_and_rejects_false_weights() {
         "adler_serial_three_result_spec.ensures_0",
         "adler_serial_three_result_spec.ensures_1",
     ] {
-        let expanded = click::surface::expand_c0_claim_source_by_label(&source, &[], claim)
+        let expanded = click::surface::expand_c_claim_source_by_label(&source, &[], claim)
             .unwrap_or_else(|error| panic!("{claim}: {}", error.message()));
         recheck_expanded_theorem(&source, &expanded, claim);
     }
@@ -3298,7 +3305,7 @@ fn batch_prefix_proof(source: &str) -> String {
 #[test]
 #[ignore = "nightly: native deferred full-batch B transition library"]
 fn adler_deferred_batch_b_transitions_verify() {
-    click::surface::verify_c0_sources(&batch_prefix_proof(BATCH_PREFIX), &[]).unwrap();
+    click::surface::verify_c_sources(&batch_prefix_proof(BATCH_PREFIX), &[]).unwrap();
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -3350,7 +3357,7 @@ fn adler_deferred_batch_b_tools_expand_and_reverify() {
 #[ignore = "nightly: deferred B position, weighting, overflow and reduction mutations"]
 fn adler_deferred_batch_b_rejects_false_transitions() {
     let original = batch_prefix_proof(BATCH_PREFIX);
-    click::surface::verify_c0_sources(&original, &[]).unwrap();
+    click::surface::verify_c_sources(&original, &[]).unwrap();
     for (owner, before, after) in [
         (
             "adler_native_deferred_b_step",
@@ -3441,7 +3448,7 @@ fn vector_prefix_proof() -> String {
 #[test]
 #[ignore = "nightly: complete common specification and native vector-prefix library"]
 fn adler_native_vector_prefix_transitions_match_common_fields() {
-    click::surface::verify_c0_sources(&vector_prefix_proof(), &[]).unwrap();
+    click::surface::verify_c_sources(&vector_prefix_proof(), &[]).unwrap();
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -3502,7 +3509,7 @@ fn adler_native_vector_prefix_tools_expand_and_reverify() {
 #[ignore = "nightly: native vector-prefix byte, overflow, residue and cursor mutations"]
 fn adler_native_vector_prefix_rejects_false_transitions() {
     let original = vector_prefix_proof();
-    click::surface::verify_c0_sources(&original, &[]).unwrap();
+    click::surface::verify_c_sources(&original, &[]).unwrap();
     for (owner, before, after) in [
         (
             "adler_native_four_lane_a_prefix_step",
@@ -3572,7 +3579,7 @@ fn adler_native_vector_prefix_rejects_false_transitions() {
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn adler_small_native_count_byte_addresses_and_observations_verify() {
-    click::surface::verify_c0_sources(COUNT_BRIDGE, &[]).unwrap();
+    click::surface::verify_c_sources(COUNT_BRIDGE, &[]).unwrap();
 }
 
 #[test]
@@ -3596,7 +3603,7 @@ fn adler_count_byte_observations_reject_wrong_positions_and_missing_guards() {
     ] {
         let changed = COUNT_BRIDGE.replacen(before, after, 1);
         assert_ne!(changed, COUNT_BRIDGE, "{before}");
-        let error = click::surface::verify_c0_sources(&changed, &[])
+        let error = click::surface::verify_c_sources(&changed, &[])
             .expect_err("different bytes and missing signed-index guards must be refused");
         assert!(
             !error.message().contains("budget exhausted"),
@@ -3626,7 +3633,7 @@ fn adler_remaining_count_byte_observations_reject_wrong_positions_and_missing_gu
     ] {
         let changed = COUNT_BRIDGE.replacen(before, after, 1);
         assert_ne!(changed, COUNT_BRIDGE, "{before}");
-        let error = click::surface::verify_c0_sources(&changed, &[])
+        let error = click::surface::verify_c_sources(&changed, &[])
             .expect_err("wrong previous-chunk positions and missing guards must be refused");
         assert!(
             !error.message().contains("budget exhausted"),
@@ -3667,7 +3674,7 @@ fn adler_count_byte_observation_tools_expand_and_reverify() {
 #[test]
 #[ignore = "nightly: remainder address claims and expansion tools"]
 fn adler_remainder_positions_verify_expand_and_reverify() {
-    click::surface::verify_c0_sources(REMAINDER_PREFIX, &[]).unwrap();
+    click::surface::verify_c_sources(REMAINDER_PREFIX, &[]).unwrap();
     let p = Project::isolated("");
     fs::write(p.root.join("borrow.click"), REMAINDER_PREFIX).unwrap();
     for theorem in [

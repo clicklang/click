@@ -249,7 +249,7 @@ impl<'a> SpecNode<'a> {
                 }
             },
             N::AlgebraicValue(value) => match value {
-                SpecAlgebraicValue::C(expression) => visit(N::Expression(expression)),
+                SpecAlgebraicValue::Program(expression) => visit(N::Expression(expression)),
                 SpecAlgebraicValue::Integer(integer) => visit(N::Integer(integer)),
                 SpecAlgebraicValue::Algebraic(algebraic) => visit(N::Algebraic(algebraic)),
             },

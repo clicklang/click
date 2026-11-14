@@ -214,16 +214,16 @@ fn parser_deep_const_preserves_supported_pointer_qualifier_levels() {
             format!("struct node {{ int value; }}; int probe({spelling} p) {{ return 0; }}");
         let function =
             syntax::parse_function(&c_source).expect("C must accept the same qualifiers");
-        let c_parameter = &function.parameters()[0];
-        assert_eq!(parameter.c_type(), c_parameter.c_type(), "{spelling}");
+        let program_parameter = &function.parameters()[0];
+        assert_eq!(parameter.c_type(), program_parameter.c_type(), "{spelling}");
         assert_eq!(
             parameter.is_constant(),
-            c_parameter.is_constant(),
+            program_parameter.is_constant(),
             "{spelling}"
         );
         assert_eq!(
             parameter.pointee_is_constant(),
-            c_parameter.pointee_is_constant(),
+            program_parameter.pointee_is_constant(),
             "{spelling}"
         );
     }
@@ -775,7 +775,7 @@ fn parses_expanded_typed_loads_and_old_loadability() {
     assert!(matches!(
         &premises[1],
         ClickProposition::Comparison {
-            left: ContractExpression::CFragment(ProgramExpression::TypedLoad {
+            left: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
                 value_type: ProgramType::Int32Pointer,
                 ..
             }),
@@ -893,7 +893,7 @@ fn parses_checked_signature_and_contract_clauses() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            click_type: ClickType::C(C0Type::Int32Pointer),
+            click_type: ClickType::Program(C0Type::Int32Pointer),
             name: "p".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -963,7 +963,7 @@ fn parses_void_c_function_contracts_without_a_result_binding() {
         C0Type::Void
     );
 
-    let error = verify_c0_sources(
+    let error = verify_c_sources(
         r#"
             verifying "destroy.c";
             void destroy(int32* value) {
@@ -997,7 +997,7 @@ fn parses_pure_theorem_definition() {
     assert_eq!(
         theorem.parameters(),
         &[FunctionParameter {
-            click_type: ClickType::C(C0Type::Int32),
+            click_type: ClickType::Program(C0Type::Int32),
             name: "x".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -2617,9 +2617,9 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
         surface,
         ClickProposition::PredicateCall {
             name: "valid_pool".to_string(),
-            arguments: vec![ContractExpression::CFragment(ProgramExpression::Variable(
-                "pool".to_string(),
-            ))],
+            arguments: vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Variable("pool".to_string(),)
+            )],
         }
     );
 }
@@ -2646,9 +2646,9 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
         )
     };
     let state = Term::ExecutionState(Box::new(ExecutionState::new()));
-    let m = vec![ContractExpression::CFragment(ProgramExpression::Variable(
-        "m".to_string(),
-    ))];
+    let m = vec![ContractExpression::ProgramExpression(
+        ProgramExpression::Variable("m".to_string()),
+    )];
     assert_eq!(
         synthesize(
             crate::kernel::MUTEX_HELD_PREDICATE_NAME.to_string(),
@@ -2674,7 +2674,7 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
         ),
         Some(ClickProposition::PredicateCall {
             name: "ordered".to_string(),
-            arguments: vec![ContractExpression::CFragment(
+            arguments: vec![ContractExpression::ProgramExpression(
                 ProgramExpression::FunctionAddress("compare".to_string(),)
             )],
         })
@@ -2714,7 +2714,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(Memory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 Box::new(owner.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2743,7 +2743,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     assert_eq!(describe_contract_expression(&left), "owner->len");
 
     let data_pointer = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(Memory::new()),
+        crate::kernel::intern_memory(Memory::new()),
         Box::new(owner.offset_by_bytes(8)),
         crate::kernel::LoadKind::Int32,
     );
@@ -2756,7 +2756,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(Memory::new()),
+                crate::kernel::intern_memory(Memory::new()),
                 Box::new(first_data_cell),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -2805,7 +2805,7 @@ fn proof_source_printing_preserves_proposition_precedence() {
     );
 
     let quantified = ClickProposition::ForAll {
-        click_type: ClickType::C(C0Type::Int32),
+        click_type: ClickType::Program(C0Type::Int32),
         name: "k".to_string(),
         written_name: None,
         body: Box::new(ClickProposition::Implies(
@@ -2897,8 +2897,8 @@ theorem impossible_interval() {
     }
 }
 "#;
-    let error = verify_c0_sources(opaque, &[])
-        .expect_err("normalize must not construct a quantified proof");
+    let error =
+        verify_c_sources(opaque, &[]).expect_err("normalize must not construct a quantified proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 
     let explicit = r#"
@@ -2910,7 +2910,7 @@ theorem impossible_interval() {
     }
 }
 "#;
-    verify_c0_sources(explicit, &[]).expect("the explicit enumeration should verify");
+    verify_c_sources(explicit, &[]).expect("the explicit enumeration should verify");
 }
 
 #[test]
@@ -2921,7 +2921,7 @@ theorem reflexive_pair() {
     ensures 1 == 1 and 2 == 2 by { normalize(); }
 }
 "#;
-    let error = verify_c0_sources(opaque, &[])
+    let error = verify_c_sources(opaque, &[])
         .expect_err("normalize must not construct a conjunction proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 
@@ -2932,7 +2932,7 @@ theorem reflexive_pair() {
     }
 }
 "#;
-    verify_c0_sources(explicit, &[]).expect("the explicit conjunction proof should verify");
+    verify_c_sources(explicit, &[]).expect("the explicit conjunction proof should verify");
 
     let opaque_using = r#"
 theorem cited_pair(x: int32) {
@@ -2940,7 +2940,7 @@ theorem cited_pair(x: int32) {
     ensures x == 0 and x == x by { normalize() using { x == 0; } }
 }
 "#;
-    let error = verify_c0_sources(opaque_using, &[])
+    let error = verify_c_sources(opaque_using, &[])
         .expect_err("normalize using must not construct a conjunction proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 }
@@ -2953,7 +2953,7 @@ theorem reflexive_choice() {
     ensures 1 == 1 or 2 == 3 by { normalize(); }
 }
 "#;
-    let error = verify_c0_sources(opaque, &[])
+    let error = verify_c_sources(opaque, &[])
         .expect_err("normalize must not construct a disjunction proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 
@@ -2965,7 +2965,7 @@ theorem reflexive_choice() {
     }
 }
 "#;
-    verify_c0_sources(explicit_left, &[]).expect("the explicit left-disjunct proof should verify");
+    verify_c_sources(explicit_left, &[]).expect("the explicit left-disjunct proof should verify");
 
     let explicit_right = r#"
 theorem reflexive_choice() {
@@ -2975,8 +2975,7 @@ theorem reflexive_choice() {
     }
 }
 "#;
-    verify_c0_sources(explicit_right, &[])
-        .expect("the explicit right-disjunct proof should verify");
+    verify_c_sources(explicit_right, &[]).expect("the explicit right-disjunct proof should verify");
 
     let opaque_using = r#"
 theorem cited_choice(x: int32) {
@@ -2984,7 +2983,7 @@ theorem cited_choice(x: int32) {
     ensures x == 1 or x == 0 by { normalize() using { x == 0; } }
 }
 "#;
-    let error = verify_c0_sources(opaque_using, &[])
+    let error = verify_c_sources(opaque_using, &[])
         .expect_err("normalize using must not construct a disjunction proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 }
@@ -3035,7 +3034,7 @@ theorem reflexive_implication(x: int32) {
     ensures x == 0 implies x == 0 by { normalize(); }
 }
 "#;
-    let error = verify_c0_sources(opaque, &[])
+    let error = verify_c_sources(opaque, &[])
         .expect_err("normalize must not construct an implication proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 
@@ -3047,7 +3046,7 @@ theorem reflexive_implication(x: int32) {
     }
 }
 "#;
-    verify_c0_sources(explicit, &[]).expect("the explicit implication proof should verify");
+    verify_c_sources(explicit, &[]).expect("the explicit implication proof should verify");
 
     let opaque_using = r#"
 theorem cited_implication(x: int32) {
@@ -3055,7 +3054,7 @@ theorem cited_implication(x: int32) {
     ensures x == 0 implies x == 0 by { normalize() using { x == 0; } }
 }
 "#;
-    let error = verify_c0_sources(opaque_using, &[])
+    let error = verify_c_sources(opaque_using, &[])
         .expect_err("normalize using must not construct an implication proof");
     assert!(error.message().contains("normalize"), "{error:?}");
 }
@@ -3340,8 +3339,12 @@ fn parses_loadable_segment_proposition() {
             Requirement::Proposition(ClickProposition::PredicateCall {
                 name: "shifted_loadable".to_string(),
                 arguments: vec![
-                    ContractExpression::CFragment(ProgramExpression::Variable("p".to_string())),
-                    ContractExpression::CFragment(ProgramExpression::Variable("n".to_string())),
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        "p".to_string()
+                    )),
+                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        "n".to_string()
+                    )),
                 ],
             }),
         ]
@@ -3524,7 +3527,7 @@ fn rejects_reversed_constant_loadable_segment() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("read_second.c", c_source)])
+    let error = verify_c_sources(click_source, &[("read_second.c", c_source)])
         .expect_err("reversed concrete segment should fail");
 
     assert!(
@@ -3546,7 +3549,7 @@ fn parses_array_parameter_signature_as_pointer() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            click_type: ClickType::C(C0Type::Int32Pointer),
+            click_type: ClickType::Program(C0Type::Int32Pointer),
             name: "p".to_string(),
             struct_name: None,
             function_pointer_signature: None,
@@ -3575,7 +3578,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
     assert_eq!(
         function.signature().parameters(),
         &[FunctionParameter {
-            click_type: ClickType::C(C0Type::Int32Pointer),
+            click_type: ClickType::Program(C0Type::Int32Pointer),
             name: "obj".to_string(),
             struct_name: Some("json_object".to_string()),
             function_pointer_signature: None,
@@ -3595,7 +3598,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
                 end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Field {
                     value_bytes: None,
-                    base: Some(Box::new(ContractExpression::CFragment(
+                    base: Some(Box::new(ContractExpression::ProgramExpression(
                         ProgramExpression::Variable("obj".to_string())
                     ))),
                     name: "ref_count".to_string(),
@@ -3659,7 +3662,7 @@ fn parses_chained_struct_fields_with_imported_pointee_types() {
             assumption();
         }
     "#;
-    let file = parse_c0_click_file(click_source, &[("read_nested.c", c_source)])
+    let file = parse_click_file_with_c_sources(click_source, &[("read_nested.c", c_source)])
         .expect("contract field chains should use imported struct pointee types");
     let Ensure::Proposition(ClickProposition::Comparison { right, .. }) =
         file.function_blocks()[0].ensures()[0].ensure()
@@ -3707,7 +3710,7 @@ fn nested_field_segments_keep_the_terminal_field_offset() {
             ensures result == 7;
         }
     "#;
-    let file = parse_c0_click_file(click_source, &[("write_nested.c", c_source)])
+    let file = parse_click_file_with_c_sources(click_source, &[("write_nested.c", c_source)])
         .expect("nested field segments should retain imported terminal field metadata");
     let Requirement::Resource(ResourceClause::OwnMemory(required)) =
         &file.function_blocks()[0].requires()[1]
@@ -3727,7 +3730,7 @@ fn nested_field_segments_keep_the_terminal_field_offset() {
         ));
     }
 
-    verify_c0_sources(click_source, &[("write_nested.c", c_source)])
+    verify_c_sources(click_source, &[("write_nested.c", c_source)])
         .expect("the corrected nested segment should verify the write");
 }
 
@@ -3754,7 +3757,7 @@ fn parses_struct_object_segments_without_exposing_layout_cells() {
             ensures separate(memory(*owner), memory(owner->data[0..owner->cap]));
         }
     "#;
-    let file = parse_c0_click_file(click_source, &[("initialize.c", c_source)])
+    let file = parse_click_file_with_c_sources(click_source, &[("initialize.c", c_source)])
         .expect("whole struct objects should have a source-level segment spelling");
     let function = &file.function_blocks()[0];
     let Requirement::LoadableSegment { segment: range } = &function.requires()[0] else {
@@ -3808,7 +3811,7 @@ fn an_embedded_struct_is_viewed_as_a_place() {
         }
     "#;
     // An embedded struct is viewed like any other place.
-    verify_c0_sources(click_source, &[("aggregate_resource_places.c", c_source)]).unwrap();
+    verify_c_sources(click_source, &[("aggregate_resource_places.c", c_source)]).unwrap();
 }
 
 #[test]
@@ -3839,7 +3842,7 @@ fn parses_pilot_struct_field_owned_segment() {
             end: ProgramExpression::Value(int32(1)),
             surface: ContractSegmentSurface::Field {
                 value_bytes: None,
-                base: Some(Box::new(ContractExpression::CFragment(
+                base: Some(Box::new(ContractExpression::ProgramExpression(
                     ProgramExpression::Variable("obj".to_string())
                 ))),
                 name: "ref_count".to_string(),
@@ -4142,7 +4145,7 @@ fn diverges_stays_an_ordinary_identifier_elsewhere() {
                 ensures result == diverges;
             }
         "#;
-    verify_c0_sources(click_source, &[("diverges.c", c_source)])
+    verify_c_sources(click_source, &[("diverges.c", c_source)])
         .expect("`diverges` must still name a C function and a parameter");
 }
 
@@ -4159,7 +4162,7 @@ fn diverges_must_follow_throws_in_a_signature() {
                 ensures result == x;
             }
         "#;
-    let error = verify_c0_sources(click_source, &[("f.c", c_source)])
+    let error = verify_c_sources(click_source, &[("f.c", c_source)])
         .expect_err("`diverges throws` must be refused");
     assert!(
         error
@@ -4172,7 +4175,7 @@ fn diverges_must_follow_throws_in_a_signature() {
     // The accepted order parses; `f` has no loop or call that could fail to
     // return, so the marker itself is then refused as unjustified.
     let ordered = click_source.replace("diverges throws int32", "throws int32 diverges");
-    let error = verify_c0_sources(&ordered, &[("f.c", c_source)])
+    let error = verify_c_sources(&ordered, &[("f.c", c_source)])
         .expect_err("a marker with nothing to justify it is refused");
     assert!(
         error.message().contains("`f` is declared `diverges`, but"),
@@ -4204,14 +4207,14 @@ fn external_contracts_accept_diverges_and_still_reject_decreases() {
                 ensures result == 0;
             }
         "#;
-    verify_c0_sources(marked, &[("wait.c", c_source)])
+    verify_c_sources(marked, &[("wait.c", c_source)])
         .expect("an external contract takes the marker");
 
     let ranked = marked.replace(
         "extern int32 wait_event(int32 fd) diverges {",
         "extern int32 wait_event(int32 fd) diverges {\n                decreases fd;",
     );
-    let error = verify_c0_sources(&ranked, &[("wait.c", c_source)])
+    let error = verify_c_sources(&ranked, &[("wait.c", c_source)])
         .expect_err("an external contract cannot carry a `decreases` clause");
     assert!(
         error
@@ -4243,7 +4246,7 @@ fn loop_diverges_round_trips_through_expansion() {
             }} by {{ {body} }}
         "#
     );
-    let verified = verify_c0_sources(&click_source, &[("spin.c", c_source)])
+    let verified = verify_c_sources(&click_source, &[("spin.c", c_source)])
         .expect("a marked perpetual loop proves partial correctness");
     let expanded = verified[0]
         .expanded_proof_source()
@@ -4252,7 +4255,7 @@ fn loop_diverges_round_trips_through_expansion() {
         expanded.contains("loop diverges {"),
         "expansion must reprint the loop marker:\n{expanded}"
     );
-    verify_c0_sources(
+    verify_c_sources(
         &click_source.replace(&format!("by {{ {body} }}"), &expanded),
         &[("spin.c", c_source)],
     )
@@ -4274,9 +4277,9 @@ fn loop_diverges_round_trips_through_expansion() {
             .map(|offset| offset + 1)
             .unwrap_or(0)
         + 1;
-    let in_place = expand_c0_tactic_source_at(&click_source, &[("spin.c", c_source)], line, column)
+    let in_place = expand_c_tactic_source_at(&click_source, &[("spin.c", c_source)], line, column)
         .expect("a marked signature must not hide the proof body");
-    verify_c0_sources(&in_place, &[("spin.c", c_source)])
+    verify_c_sources(&in_place, &[("spin.c", c_source)])
         .expect("the in-place expansion checks unchanged");
 }
 
@@ -4325,8 +4328,9 @@ fn a_diverges_function_never_yields_termination_evidence() {
                 solve();
             }
         "#;
-    let (session, _) = C0VerificationSession::new(click_source, &[("drain_then_wait.c", c_source)])
-        .expect("a marked function still verifies its ranked loop's bundle");
+    let (session, _) =
+        ProgramVerificationSession::new(click_source, &[("drain_then_wait.c", c_source)])
+            .expect("a marked function still verifies its ranked loop's bundle");
     assert!(!session.function_termination_is_verified("drain_then_wait"));
 }
 
@@ -4390,7 +4394,7 @@ fn resource_array_extent_excludes_struct_padding() {
         verifying "array.c";
         uint8 read(struct packet* p) { views p->bytes; ensures result == p->bytes[2]; }
     "#;
-    let file = parse_c0_click_file(click_source, &[("array.c", c_source)]).unwrap();
+    let file = parse_click_file_with_c_sources(click_source, &[("array.c", c_source)]).unwrap();
     let Requirement::Resource(ResourceClause::ViewMemory(segment)) =
         &file.function_blocks()[0].requires()[0]
     else {
@@ -4415,7 +4419,7 @@ fn a_child_resource_is_owned_like_any_other() {
         "{inner} resource outer(p: struct cell*) {{ owns inner(p); owns p->other; }} \
          verifying \"cell.c\"; {proof}"
     );
-    verify_c0_sources(&source, &[("cell.c", c_source)]).unwrap();
+    verify_c_sources(&source, &[("cell.c", c_source)]).unwrap();
     for (child, expected) in [
         (
             "contains inner(p);",
@@ -4430,7 +4434,7 @@ fn a_child_resource_is_owned_like_any_other() {
             "{inner} resource outer(p: struct cell*) {{ {child} owns p->other; }} \
              verifying \"cell.c\"; {proof}"
         );
-        let error = verify_c0_sources(&source, &[("cell.c", c_source)])
+        let error = verify_c_sources(&source, &[("cell.c", c_source)])
             .expect_err("the child clause is not the one spelling");
         assert!(error.message.contains(expected), "{child}: {error:?}");
     }
@@ -4449,13 +4453,13 @@ fn an_invariant_label_names_it_in_a_failure() {
              }} step_until(function.exit); solve(); }}"
         )
     };
-    let labelled = verify_c0_sources(&sidecar("upper:"), &[("count.c", c_source)])
+    let labelled = verify_c_sources(&sidecar("upper:"), &[("count.c", c_source)])
         .expect_err("the invariant does not hold at entry");
     assert!(
         labelled.message.contains("loop 0 invariant `upper` entry"),
         "{labelled:?}"
     );
-    let unlabelled = verify_c0_sources(&sidecar(""), &[("count.c", c_source)])
+    let unlabelled = verify_c_sources(&sidecar(""), &[("count.c", c_source)])
         .expect_err("the invariant does not hold at entry");
     assert!(
         unlabelled.message.contains("loop 0 invariant 0 entry"),
@@ -4474,7 +4478,7 @@ fn nonzero_member_addresses_preserve_their_typed_place_when_printed() {
             ensures 1 == 1;
         }
     "#;
-    let file = parse_c0_click_file(source, &[("member.c", c)]).unwrap();
+    let file = parse_click_file_with_c_sources(source, &[("member.c", c)]).unwrap();
     let Requirement::Proposition(original) = &file.function_blocks()[0].requires()[0] else {
         panic!("expected a pointer comparison");
     };
@@ -4482,7 +4486,7 @@ fn nonzero_member_addresses_preserve_their_typed_place_when_printed() {
     let rewritten = format!(
         "verifying \"member.c\"; void check(struct node *p, struct node *q) {{ requires {rendered}; ensures 1 == 1; }}"
     );
-    let reparsed = parse_c0_click_file(&rewritten, &[("member.c", c)]).unwrap();
+    let reparsed = parse_click_file_with_c_sources(&rewritten, &[("member.c", c)]).unwrap();
     let Requirement::Proposition(round_trip) = &reparsed.function_blocks()[0].requires()[0] else {
         panic!("expected the printed pointer comparison");
     };
@@ -4502,8 +4506,8 @@ fn pointer_storage_views_name_the_field_alone() {
             ensures result == p->data[0];
         }
     "#;
-    verify_c0_sources(click_source, &[("pointer.c", c_source)]).unwrap();
-    let file = parse_c0_click_file(click_source, &[("pointer.c", c_source)]).unwrap();
+    verify_c_sources(click_source, &[("pointer.c", c_source)]).unwrap();
+    let file = parse_click_file_with_c_sources(click_source, &[("pointer.c", c_source)]).unwrap();
     let Requirement::Resource(ResourceClause::ViewMemory(segment)) =
         &file.function_blocks()[0].requires()[0]
     else {
@@ -4545,7 +4549,7 @@ fn a_contract_cannot_return_one_place_twice() {
         ),
     ] {
         let source = format!("verifying \"cell.c\"; {contract}");
-        let error = verify_c0_sources(&source, &[("cell.c", c_source)])
+        let error = verify_c_sources(&source, &[("cell.c", c_source)])
             .expect_err("the contract returns one place twice");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
         assert!(
@@ -4561,7 +4565,7 @@ fn a_contract_cannot_return_one_place_twice() {
         "contract int32 Fields(struct cell* p) { consumes p->value; consumes p->data; produces p->value; produces p->data; }",
     ] {
         let source = format!("verifying \"cell.c\"; {contract}");
-        let refused = match verify_c0_sources(&source, &[("cell.c", c_source)]) {
+        let refused = match verify_c_sources(&source, &[("cell.c", c_source)]) {
             Err(error) => error.message,
             Ok(_) => String::new(),
         };
@@ -4590,7 +4594,7 @@ fn a_reference_parameter_does_not_match_a_c_pointer() {
     let c_source = "int32 read(int32* p) { return p[0]; }";
     let source = "verifying \"read.c\"; int32 read(int32& p) { views p; ensures result == p; } \
 ";
-    let error = verify_c0_sources(source, &[("read.c", c_source)])
+    let error = verify_c_sources(source, &[("read.c", c_source)])
         .expect_err("a C parameter is not a reference");
     assert!(
         error
@@ -4613,7 +4617,7 @@ fn a_contract_cannot_return_overlapping_places() {
          int32 get(struct cell* p) { views p->value; ensures result == result; }",
     ] {
         let source = format!("verifying \"cell.c\"; {contract}");
-        let error = verify_c0_sources(&source, &[("cell.c", c_source)])
+        let error = verify_c_sources(&source, &[("cell.c", c_source)])
             .expect_err("the contract returns overlapping places");
         assert!(
             error
@@ -4631,7 +4635,7 @@ fn a_contract_cannot_return_overlapping_places() {
          int32 keep(int32* q, int32 n) { ensures result == 0; }",
     ] {
         let source = format!("verifying \"range.c\"; {contract}");
-        let error = verify_c0_sources(&source, &[("range.c", range_source)])
+        let error = verify_c_sources(&source, &[("range.c", range_source)])
             .expect_err("the contract returns overlapping places");
         assert!(
             error
@@ -4642,7 +4646,7 @@ fn a_contract_cannot_return_overlapping_places() {
     }
     let open = "verifying \"range.c\"; int32 keep(int32* q, int32 n) { requires n >= 0; \
         owns q[0..n]; produces q[1]; }";
-    let error = verify_c0_sources(open, &[("range.c", range_source)])
+    let error = verify_c_sources(open, &[("range.c", range_source)])
         .expect_err("the exit state still refuses what the entry could not decide");
     assert!(
         !error.message.contains("would return overlapping places"),
@@ -4651,7 +4655,7 @@ fn a_contract_cannot_return_overlapping_places() {
     // Two fields of one struct do not overlap.
     let disjoint = "verifying \"cell.c\"; int32 get(struct cell* p) { owns p->value; \
         owns p->other; ensures result == result; }";
-    verify_c0_sources(disjoint, &[("cell.c", c_source)]).unwrap();
+    verify_c_sources(disjoint, &[("cell.c", c_source)]).unwrap();
 }
 
 /// A resource that declares no fields keeps a named child's fields in a
@@ -4666,7 +4670,7 @@ fn a_hidden_record_needs_its_child_declared_first() {
         int32 get(struct pair* p) { owns x: pair(p); }";
     let c_source = "struct cell { int32 value; }; struct pair { struct cell* a; }; \
         int32 get(struct pair* p) { return 0; }";
-    let error = verify_c0_sources(source, &[("pair.c", c_source)])
+    let error = verify_c_sources(source, &[("pair.c", c_source)])
         .expect_err("the child is declared after the parent that names it");
     assert!(
         error.message.contains(
@@ -4824,7 +4828,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     .expect("the Rust spelling parses");
     // A trait's type argument names the method as the importer does:
     // a scalar by its name, a reference as `ref_`, a record as `value_`.
-    for (header, method, name, parameter, c_parameter) in [
+    for (header, method, name, parameter, program_parameter) in [
         (
             "MulAssign<u32>",
             "mul_assign",
@@ -4854,7 +4858,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
             ))
             .unwrap_or_else(|error| panic!("{header}: {error:?}")).function_blocks(),
             parser::parse(&format!(
-                "verifying \"l.c\"; void {name}(struct Lanes* self, {c_parameter}) {{ \
+                "verifying \"l.c\"; void {name}(struct Lanes* self, {program_parameter}) {{ \
                  ensures 0 == 0; }}"
             ))
             .expect("the C-shaped spelling parses").function_blocks(),
@@ -5029,7 +5033,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
         ),
     ] {
         let source = format!("verifying \"place.c\"; {contract}");
-        let error = verify_c0_sources(&source, &[("place.c", c_source)])
+        let error = verify_c_sources(&source, &[("place.c", c_source)])
             .expect_err("the access is not authorized");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
     }
@@ -5088,7 +5092,7 @@ resource pair(node: struct node*) { field weight: int32; owns node->left; owns n
 verifying "relink.c";
 void relink(struct node* node) { requires node != 0; owns links: pair(node); owns node->right->augmented; }
 "#;
-    let error = verify_c0_sources(click_source, &[("relink.c", c_source)]).unwrap_err();
+    let error = verify_c_sources(click_source, &[("relink.c", c_source)]).unwrap_err();
     assert!(
         error
             .message
@@ -5120,7 +5124,7 @@ void relink(struct node* node) { requires node != 0; owns links: pair(node); own
 fn a_production_obligation_names_the_same_struct_place_as_its_missing_fact() {
     let c_source = "struct cell { int32 a; int32 b; }; int32 release(struct cell* p) { return 0; }";
     let source = r#"verifying "cell.c"; int32 release(struct cell* p) { produces p[0..1]; ensures result == 0; }"#;
-    let error = verify_c0_sources(source, &[("cell.c", c_source)]).unwrap_err();
+    let error = verify_c_sources(source, &[("cell.c", c_source)]).unwrap_err();
     assert!(
         error.message.contains("missing resource fact `owns *p`"),
         "{error:?}"
@@ -5142,8 +5146,8 @@ fn a_struct_pointer_range_counts_structs() {
     let contract = |clause: &str| {
         format!("verifying \"cells.c\"; int32 second(struct cell* p) {{ {clause} }}")
     };
-    verify_c0_sources(&contract("views p[0..2];"), &[("cells.c", c_source)]).unwrap();
-    let error = verify_c0_sources(&contract("views p[0..1];"), &[("cells.c", c_source)])
+    verify_c_sources(&contract("views p[0..2];"), &[("cells.c", c_source)]).unwrap();
+    let error = verify_c_sources(&contract("views p[0..1];"), &[("cells.c", c_source)])
         .expect_err("one struct does not cover the second");
     assert!(
         error
@@ -5153,7 +5157,7 @@ fn a_struct_pointer_range_counts_structs() {
     );
 
     let link = "verifying \"cells.c\"; struct cell* first(struct cell** link) { views *link; }";
-    let file = parse_c0_click_file(link, &[("cells.c", c_source)]).unwrap();
+    let file = parse_click_file_with_c_sources(link, &[("cells.c", c_source)]).unwrap();
     let Requirement::Resource(ResourceClause::ViewMemory(segment)) =
         &file.function_blocks()[0].requires()[0]
     else {
@@ -5189,7 +5193,7 @@ fn a_resource_clause_names_a_place() {
         "int32 read_next(struct node* n) { views n->next; owns *n->next; }",
     ] {
         let source = format!("verifying \"place.c\"; {contract}");
-        verify_c0_sources(&source, &[("place.c", c_source)])
+        verify_c_sources(&source, &[("place.c", c_source)])
             .unwrap_or_else(|error| panic!("{contract}: {error:?}"));
     }
     for (contract, expected) in [
@@ -5224,7 +5228,7 @@ fn a_resource_clause_names_a_place() {
         ),
     ] {
         let source = format!("verifying \"place.c\"; {contract}");
-        let error = verify_c0_sources(&source, &[("place.c", c_source)])
+        let error = verify_c_sources(&source, &[("place.c", c_source)])
             .expect_err("the clause names no ownable place");
         assert!(error.message.contains(expected), "{contract}: {error:?}");
     }
@@ -5240,10 +5244,10 @@ fn a_whole_struct_view_reads_and_does_not_write() {
         int32 write(struct packet* p) { p->other = 1; return 0; }";
     let read = "verifying \"pointer.c\"; int32 read(struct packet* p) { views *p; \
         ensures result == p->other; }";
-    verify_c0_sources(read, &[("pointer.c", c_source)]).unwrap();
+    verify_c_sources(read, &[("pointer.c", c_source)]).unwrap();
     let write = "verifying \"pointer.c\"; int32 write(struct packet* p) { views *p; } \
 ";
-    let error = verify_c0_sources(write, &[("pointer.c", c_source)])
+    let error = verify_c_sources(write, &[("pointer.c", c_source)])
         .expect_err("a view does not authorize a write");
     assert!(error.message.contains("missing resource fact"), "{error:?}");
 }
@@ -5316,9 +5320,9 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
         ("alpha.c", "static inline int callback(void) { return 1; }"),
         ("beta.c", "static inline int callback(void) { return 2; }"),
     ];
-    let file = parse_c0_click_file(source, &inputs).unwrap();
+    let file = parse_click_file_with_c_sources(source, &inputs).unwrap();
     assert!(!file.c_function_names.contains_key("callback"));
-    let error = verify_c0_sources(source, &inputs).unwrap_err();
+    let error = verify_c_sources(source, &inputs).unwrap_err();
     assert!(
         error
             .message()
@@ -5359,8 +5363,8 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
         theorem an_index_is_a_usize(n: usize) {
             ensures forall (k: usize) { k < n implies k < n };
         }";
-    verify_c0_sources(accepted, &rust_source).expect("the Rust spellings verify");
-    let error = verify_c0_sources(
+    verify_c_sources(accepted, &rust_source).expect("the Rust spellings verify");
+    let error = verify_c_sources(
         "verifying \"bytes.rs\"; function big(x: u32) -> bool { x > 255u32 }
          theorem two_hundred_is_big() {
              ensures big(200u32) by { unfold(big(200u32)); normalize(); }
@@ -5373,7 +5377,7 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
         "{}",
         error.message
     );
-    let error = verify_c0_sources(
+    let error = verify_c_sources(
         "verifying \"bytes.rs\"; theorem wrong(b: bool) {
              requires b == (3u32 > 5u32);
              ensures b by solve();
@@ -5911,9 +5915,9 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
             (variable, arithmetic)
         };
         let premise = ClickProposition::Comparison {
-            left: ContractExpression::CFragment(left),
+            left: ContractExpression::ProgramExpression(left),
             operator: ComparisonOperator::LessThan,
-            right: ContractExpression::CFragment(right),
+            right: ContractExpression::ProgramExpression(right),
         };
         let printed = printing::source_click_proposition(&premise);
         let source = format!(
@@ -6204,7 +6208,7 @@ test_batches! {
 
 #[test]
 fn local_storage_and_resource_stars_have_round_tripping_spellings() {
-    let declaration = crate::kernel::prove_c_statement_execution(
+    let declaration = crate::kernel::prove_execution_statement_execution(
         ExecutionState::new(),
         crate::kernel::ProgramStatement::Declare {
             name: "i".into(),
@@ -6221,7 +6225,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
         },
     )
     .unwrap();
-    let Proposition::CStatementExecutes {
+    let Proposition::ProgramStatementExecutes {
         outcome: crate::kernel::StatementOutcome::Normal(state),
         ..
     } = declaration.proposition()
@@ -6229,7 +6233,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
         panic!("local declaration did not finish");
     };
     let local = state.resources().facts()[0].resource().clone();
-    let original = Proposition::CResourceSeparate {
+    let original = Proposition::ResourceSeparate {
         left: Box::new(local.clone()),
         right: Box::new(crate::kernel::Resource::star(
             local,

@@ -10,11 +10,11 @@ fn quantified_single_match_does_not_check_the_whole_alpha_bucket() {
     let quantified = |name: String| Proposition::ForAll {
         name: Default::default(),
         var: Variable(1),
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::Exists {
             name,
             var: Variable(2),
-            sort: Sort::CInt32,
+            sort: Sort::ProgramInt32,
             body: Box::new(Proposition::ConditionIs(
                 ConditionTerm::equal(
                     MachineTerm::Variable(Variable(1)),
@@ -63,7 +63,7 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
             p = Proposition::ForAll {
                 name: Default::default(),
                 var: Variable(base + index as u64),
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body: Box::new(p),
             };
         }
@@ -86,7 +86,7 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
             facts = facts.with_fact(Proposition::ForAll {
                 name: Default::default(),
                 var: Variable(9000),
-                sort: Sort::CInt32,
+                sort: Sort::ProgramInt32,
                 body: Box::new(Proposition::ConditionIs(
                     ConditionTerm::equal(
                         MachineTerm::Variable(Variable(9000)),

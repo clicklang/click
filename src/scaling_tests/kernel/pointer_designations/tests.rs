@@ -104,7 +104,7 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut obligations = Vec::new();
-            let word = crate::kernel::eval::cast_c_value_to_type(
+            let word = crate::kernel::eval::cast_program_value_to_type(
                 ProgramValue::Pointer(pointer.clone()),
                 ProgramType::UInt64,
                 crate::kernel::eval::IntegerConversion::Modular,
@@ -112,7 +112,7 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
                 &context,
             )
             .unwrap();
-            let back = crate::kernel::eval::cast_c_value_to_type(
+            let back = crate::kernel::eval::cast_program_value_to_type(
                 word,
                 ProgramType::Int32Pointer,
                 crate::kernel::eval::IntegerConversion::Modular,
@@ -144,7 +144,7 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     let reconstructed = |id| {
         let word = ProgramValue::UInt64(MachineTerm::Variable(Variable(id)))
             .complete_word(Pointer::symbolic(Variable(id + 1)));
-        let value = crate::kernel::eval::cast_c_value_to_type(
+        let value = crate::kernel::eval::cast_program_value_to_type(
             word,
             ProgramType::Int32Pointer,
             crate::kernel::eval::IntegerConversion::Modular,
@@ -204,7 +204,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             memory = memory.with_block(pointer.block.clone(), 8);
             older.push(pointer);
         }
-        let before = intern_c_memory_ref(&memory);
+        let before = intern_memory_ref(&memory);
         let read = |snapshot: &SharedMemory, pointer: &Pointer| {
             PointerValue::from_read(
                 Pointer::loaded_value(snapshot, pointer),
@@ -246,7 +246,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         )];
         let after =
             memory.with_call_memory_havoc(Variable(994_003), &writes, &context, Some(&kept));
-        let separation = Proposition::CResourceSeparate {
+        let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(writes[0].clone())),
             right: Box::new(Resource::Memory(range)),
         };
@@ -258,7 +258,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             &after,
             &selected,
             ProgramType::Int32Pointer,
-            &[Proposition::CMemoryEffectSummary {
+            &[Proposition::MemoryEffectSummary {
                 before: before.memory().clone(),
                 after: after.clone(),
                 mutable_ranges: writes.to_vec(),
@@ -268,7 +268,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         .expect("the explicitly separated call preserves the selected pointer");
         let context = context.assume_proposition(preservation.clone());
         let missing = missing.assume_proposition(preservation);
-        let target = read(&intern_c_memory_ref(&after), &selected);
+        let target = read(&intern_memory_ref(&after), &selected);
         let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.pointer_designations_match(&target, &value)
         });
@@ -276,7 +276,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         samples.push(work);
         assert!(!missing.pointer_designations_match(&target, &value));
         let overwritten = after.store(selected.clone(), ProgramValue::UInt32(0u32.into()));
-        let partial = read(&intern_c_memory_ref(&overwritten), &selected);
+        let partial = read(&intern_memory_ref(&overwritten), &selected);
         assert!(!context.pointer_designations_match(&partial, &value));
     }
     eprintln!("recent pointer origin work: {samples:?}");

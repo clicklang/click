@@ -383,7 +383,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
     } else {
         0
     };
-    let entry_goals = crate::kernel::c_loop_entry_goals(
+    let entry_goals = crate::kernel::loop_entry_goals(
         &context.state,
         invariant_checks,
         &assumptions_from_propositions(&context.pure_facts),
@@ -852,7 +852,7 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
         let ProgramStatement::If { condition, .. } = source_statement else {
             return Err(proof.step_error("source branch does not match the lowered statement"));
         };
-        let condition = surface_c_condition(&condition, view.state)?;
+        let condition = surface_program_condition(&condition, view.state)?;
         let (split, ids) = proof.split_preservation_case(&condition, 0)?;
         splits += 1;
         for id in ids.into_iter().flatten() {
@@ -1039,7 +1039,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     // The invariants are available at the body entry as kernel facts. A
     // pre-tested loop also has its condition there; a do-while does not, so
     // it must not be recorded as an available premise for the first body.
-    let loop_condition = surface_c_condition(condition, preservation.state())?;
+    let loop_condition = surface_program_condition(condition, preservation.state())?;
     // The loop head's own clauses, in declaration order, are what a smart
     // bundle closure may cite for a ranking member. Each declared invariant
     // is named twice, once as written and once re-read at iteration entry:
@@ -1561,14 +1561,14 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             // The body must return to the head it started from, which carries
             // the loop's own resource context when the loop declares one.
             let join_assumptions = checked.back_edge_assumptions(&checked_execution);
-            let rebound = crate::kernel::c_loop_state_with_loop_binders_rebound(
+            let rebound = crate::kernel::loop_state_with_loop_binders_rebound(
                 preservation.state(),
                 &checked_execution.core.state,
                 preservation.binders(),
                 &join_assumptions,
             );
             let back_edge_fails = rebound.as_ref().map_or(true, |rebound| {
-                crate::kernel::c_loop_binder_state_components_match_at_back_edge(
+                crate::kernel::loop_binder_state_components_match_at_back_edge(
                     preservation.state(),
                     rebound,
                     preservation.binders(),

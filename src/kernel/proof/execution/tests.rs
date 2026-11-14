@@ -62,7 +62,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{
     ComparisonOperator, CompositeResourceDefinition, MachineTerm, Memory, Pointer, PointerBlock,
     PointerOffsetTerm, ProgramType, ProgramValue, ResourceAccessMode, ResourceFact, ResourceSpec,
-    SpecExpression, c_function, int32,
+    SpecExpression, int32, program_function,
 };
 
 /// One arm state holding a checked view rooted in a fresh loan.
@@ -176,7 +176,7 @@ fn constructor_partition_fixture_with_type(
     let variants: Arc<[AlgebraicVariantType]> = (0..width)
         .map(|index| AlgebraicVariantType {
             name: format!("C{index}"),
-            fields: vec![AlgebraicValueType::C(payload_type)],
+            fields: vec![AlgebraicValueType::Program(payload_type)],
         })
         .collect::<Vec<_>>()
         .into();
@@ -195,7 +195,7 @@ fn constructor_partition_fixture_with_type(
         node: AlgebraicTermNode::Variable(Variable(8)),
     };
     let state = ExecutionState::new();
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "entry",
         vec![],
@@ -282,7 +282,7 @@ fn constructor_partition_exclusion_requires_its_exact_contradiction() {
     let (core, mut value) = constructor_partition_fixture(2);
     value.node = crate::kernel::AlgebraicTermNode::Constructor {
         variant: "C0".into(),
-        fields: vec![crate::kernel::AlgebraicValue::C(int32(11))],
+        fields: vec![crate::kernel::AlgebraicValue::Program(int32(11))],
     };
     let root = ProofFacts::default();
     let (partition, _, _) = core
@@ -439,7 +439,7 @@ fn constructor_partition_reserves_algebraic_variables_in_opaque_environment_term
     use crate::kernel::{AlgebraicTermNode, ExecutionEnvironment, PureFunctionArgument};
     let (core, mut value) = constructor_partition_fixture(2);
     value.node = AlgebraicTermNode::Variable(Variable(4_065_536));
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "opaque_environment",
         vec![],
@@ -514,9 +514,9 @@ fn cached_body_loadability_preserves_exact_range_and_snapshot_barriers() {
         crate::kernel::ProgramType::Int32,
         0,
         8,
-        crate::kernel::intern_c_memory_ref(&before),
+        crate::kernel::intern_memory_ref(&before),
     );
-    let view = |memory, pointer, width, wide| Proposition::CMemoryLoadable {
+    let view = |memory, pointer, width, wide| Proposition::MemoryLoadable {
         memory,
         base: pointer,
         bytes: MachineTerm::constant(width),
@@ -539,7 +539,7 @@ fn cached_body_loadability_preserves_exact_range_and_snapshot_barriers() {
     let havoc =
         cached.with_call_memory_havoc(Variable(901_020), &[], &PureFactContext::new(), None);
     assert!(!check(view(havoc, at("body"), 8, false)));
-    assert!(!check(Proposition::CMemoryCanStore {
+    assert!(!check(Proposition::MemoryCanStore {
         memory: before.clone(),
         pointer: at("body"),
         byte_width: 8
@@ -554,7 +554,7 @@ fn instance_rewrite_refusal_retains_rejected_and_allowed_facts() {
     };
     let schema = ResourceFieldSchema::new(vec![(
         "value".into(),
-        ResourceFieldType::C(crate::kernel::ProgramType::Int32),
+        ResourceFieldType::Program(crate::kernel::ProgramType::Int32),
     )])
     .unwrap();
     let instance = ResourceInstance::new(
@@ -582,7 +582,7 @@ fn instance_rewrite_refusal_retains_rejected_and_allowed_facts() {
     let before = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
     let facts = ProofFacts::default();
-    let function = c_function(
+    let function = program_function(
         crate::kernel::ProgramType::Int32,
         "refusal",
         vec![],
@@ -652,9 +652,9 @@ fn returned_proposition_trace(
     facts: &ProofFacts,
 ) -> (ProgramFunction, Vec<CheckedExecutionEvent>) {
     let statement = ProgramStatement::Return(ProgramExpression::Value(int32(0)));
-    let function = c_function(ProgramType::Int32, "test", vec![], statement.clone());
+    let function = program_function(ProgramType::Int32, "test", vec![], statement.clone());
     let events = vec![
-        CheckedExecutionEvent::Statement(Theorem::new(Proposition::CStatementVerifies {
+        CheckedExecutionEvent::Statement(Theorem::new(Proposition::ProgramStatementVerifies {
             state: Box::new(state.clone()),
             statement: Box::new(statement),
             outcome: StatementOutcome::Return {
@@ -683,7 +683,7 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
             .collect();
         let state = ExecutionState::new();
         let effects: ExecutionFacts = [ExecutionPureFact::certified(
-            Proposition::CMemoryMutatesOnly {
+            Proposition::MemoryMutatesOnly {
                 before: state.memory().clone(),
                 after: state.memory().clone(),
                 writes: vec![],
@@ -829,19 +829,18 @@ fn return_proposition_checks_resource_compositions_without_granting_ownership() 
     let context = returned_proposition_context(&state);
     for overlaps in [false, true] {
         let pointer = crate::kernel::Pointer::symbolic(Variable(42));
-        let fact =
-            Proposition::CResourceComposition(ResourceContext::new().unchecked_with_facts([
-                ResourceFact::own_memory(crate::kernel::MemoryRange::new(
-                    pointer.clone(),
-                    0.into(),
-                    1.into(),
-                )),
-                ResourceFact::own_memory(crate::kernel::MemoryRange::new(
-                    pointer,
-                    if overlaps { 0.into() } else { 1.into() },
-                    2.into(),
-                )),
-            ]));
+        let fact = Proposition::ResourceComposition(ResourceContext::new().unchecked_with_facts([
+            ResourceFact::own_memory(crate::kernel::MemoryRange::new(
+                pointer.clone(),
+                0.into(),
+                1.into(),
+            )),
+            ResourceFact::own_memory(crate::kernel::MemoryRange::new(
+                pointer,
+                if overlaps { 0.into() } else { 1.into() },
+                2.into(),
+            )),
+        ]));
         let roots = base.clone().with_fact(fact.clone());
         let (function, mut events) = returned_proposition_trace(&state, &base);
         events.push(returned_proposition_event(
@@ -870,7 +869,7 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
     let empty = ProofFacts::default();
     let (function, original) = returned_proposition_trace(&state, &empty);
     let context = returned_proposition_context(&state);
-    let read = |memory, base, bytes| Proposition::CMemoryLoadable {
+    let read = |memory, base, bytes| Proposition::MemoryLoadable {
         memory,
         base,
         bytes,
@@ -959,9 +958,7 @@ fn return_proposition_accepts_the_store_loadability_of_a_pointer_cell() {
 
 #[test]
 fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
-    use crate::kernel::{
-        ComparisonOperator, SpecExpression, SpecProposition, c_parameter, c_variable,
-    };
+    use crate::kernel::{ComparisonOperator, SpecExpression, SpecProposition, program_parameter};
     let value = ProgramValue::Int32(MachineTerm::Variable(Variable(42)));
     let fact = Proposition::ConditionIs(
         crate::kernel::ConditionTerm::signed_less_equal(
@@ -972,14 +969,16 @@ fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
     );
     let definition = CompositeResourceDefinition::new(
         "positive",
-        vec![c_parameter("n", ProgramType::Int32)],
+        vec![program_parameter("n", ProgramType::Int32)],
         None,
         false,
         vec![],
         vec![SpecProposition::Comparison {
             left: SpecExpression::Value(int32(1)),
             operator: ComparisonOperator::LessEqual,
-            right: SpecExpression::ProgramExpression(c_variable("n")),
+            right: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
+                "n",
+            )),
         }],
     );
     let owned = ResourceFact::own_composite("positive".into(), vec![value.clone()]);
@@ -1023,8 +1022,7 @@ fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
 #[test]
 fn return_argument_facts_do_not_project_mutable_memory_invariants() {
     use crate::kernel::{
-        ComparisonOperator, MemorySegment, SpecExpression, SpecProposition, c_index,
-        c_int32_literal, c_parameter, c_variable,
+        ComparisonOperator, MemorySegment, SpecExpression, SpecProposition, program_parameter,
     };
     let pointer = Pointer::symbolic(Variable(42));
     let held = ResourceFact::own_composite(
@@ -1036,16 +1034,19 @@ fn return_argument_facts_do_not_project_mutable_memory_invariants() {
     );
     let definition = CompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         ))],
         vec![SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(c_index(c_variable("p"), c_int32_literal(0))),
+            left: SpecExpression::ProgramExpression(crate::kernel::program_expression::index(
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(0),
+            )),
             operator: ComparisonOperator::Equal,
             right: SpecExpression::Value(int32(7)),
         }],
@@ -1126,7 +1127,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance};
     let schema = ResourceFieldSchema::new(vec![(
         "model".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let instance = ResourceInstance::new(
@@ -1206,7 +1207,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     )));
     assert!(trace_completion(&function, &valid, facts.assumptions(), false).is_ok());
     for extra in [
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory: before.memory().clone(),
             base: Pointer::symbolic(Variable(42)),
             bytes: 4.into(),
@@ -1237,7 +1238,7 @@ fn return_exchange_keeps_the_published_body_snapshot() {
     let pointer = Pointer::symbolic(Variable(810_000));
     let schema = ResourceFieldSchema::new(vec![(
         "model".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let instance = ResourceInstance::new(
@@ -1349,7 +1350,10 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
         node: AlgebraicTermNode::Variable(Variable(43)),
     };
     let schema = ResourceFieldSchema::new(vec![
-        ("value".into(), ResourceFieldType::C(ProgramType::Int32)),
+        (
+            "value".into(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        ),
         ("model".into(), ResourceFieldType::Algebraic(ty.clone())),
     ])
     .unwrap();
@@ -1436,12 +1440,12 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
         )
         .unwrap();
         let statement = ProgramStatement::Return(ProgramExpression::Value(int32(0)));
-        let function = c_function(ProgramType::Int32, "test", vec![], statement.clone())
+        let function = program_function(ProgramType::Int32, "test", vec![], statement.clone())
             .with_composite_resource_definitions(vec![definition]);
         let mut core = ExecutionProofCore::at_entry(before, ExecutionFrontier::default());
         let mut trace = ExecutionEvidence::default();
         trace.push(CheckedExecutionEvent::Statement(Theorem::new(
-            Proposition::CStatementVerifies {
+            Proposition::ProgramStatementVerifies {
                 state: Box::new(open.clone()),
                 statement: Box::new(statement),
                 outcome: StatementOutcome::Return {
@@ -1484,7 +1488,7 @@ fn condition_event(
     condition: &ProgramExpression,
     value: bool,
 ) -> CheckedExecutionEvent {
-    CheckedExecutionEvent::Condition(Theorem::new(Proposition::CConditionEvaluates {
+    CheckedExecutionEvent::Condition(Theorem::new(Proposition::ProgramConditionEvaluates {
         state: Box::new(state.clone()),
         condition: condition.clone(),
         outcome: ConditionOutcome::Value(value),
@@ -1508,7 +1512,7 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
             &assumptions,
             None,
         ));
-    let theorem = Theorem::new(Proposition::CStatementVerifies {
+    let theorem = Theorem::new(Proposition::ProgramStatementVerifies {
         state: Box::new(before.clone()),
         statement: Box::new(ProgramStatement::Skip),
         outcome: StatementOutcome::Normal(Box::new(after)),
@@ -1533,7 +1537,7 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
         &assumptions,
         None,
     );
-    let unrelated = CheckedCallEvent::new(crate::kernel::intern_c_memory(unrelated));
+    let unrelated = CheckedCallEvent::new(crate::kernel::intern_memory(unrelated));
     assert_eq!(
         validate_checked_event_shapes(&[
             CheckedExecutionEvent::Statement(theorem),
@@ -1546,8 +1550,8 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
 
 #[test]
 fn checked_call_authority_is_path_local_across_forks() {
-    let ancestor_view = crate::kernel::intern_c_memory(Memory::new());
-    let sibling_view = crate::kernel::intern_c_memory(
+    let ancestor_view = crate::kernel::intern_memory(Memory::new());
+    let sibling_view = crate::kernel::intern_memory(
         Memory::new().with_block_without_derivation("local:sibling", 4),
     );
     let mut ancestor = CheckedCallEvents::default();
@@ -1570,7 +1574,7 @@ fn checked_call_view_lookup_does_not_scan_unrelated_events() {
         let mut events = CheckedCallEvents::new();
         let mut selected = None;
         for index in 0..event_count {
-            let view = crate::kernel::intern_c_memory(
+            let view = crate::kernel::intern_memory(
                 Memory::new().with_block_without_derivation(format!("local:call-{index}"), 4),
             );
             let event = events.new_event(view.clone());
@@ -1614,7 +1618,7 @@ fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
     ));
     assert!(!checked_interface_pointer_equality(
         &arm,
-        &Proposition::CMemoryLoadable {
+        &Proposition::MemoryLoadable {
             memory: Memory::new(),
             base: a,
             bytes: MachineTerm::constant(8),
@@ -1626,14 +1630,15 @@ fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
 #[test]
 fn entry_interface_materialization_retains_source_and_does_not_rebind() {
     let caller = ExecutionState::new();
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "entry_interface",
-        vec![crate::kernel::c_parameter("n", ProgramType::Int32)],
-        ProgramStatement::Return(crate::kernel::c_variable("n")),
+        vec![crate::kernel::program_parameter("n", ProgramType::Int32)],
+        ProgramStatement::Return(crate::kernel::program_expression::variable("n")),
     );
     let arguments = [ProgramExpression::Value(int32(7))];
-    let bound = crate::kernel::c_function_entry_state(&caller, &function, &arguments).unwrap();
+    let bound =
+        crate::kernel::program_function_entry_state(&caller, &function, &arguments).unwrap();
     let mut core = ExecutionProofCore::at_entry(caller.clone(), ExecutionFrontier::default());
     assert!(core.materialize_function_entry().is_err());
     core.record_checked_function_entry(&function, &arguments, &bound, PureFactContext::new())
@@ -1657,25 +1662,27 @@ fn entry_interface_materialization_retains_source_and_does_not_rebind() {
 fn checked_entry_accepts_only_body_annotations_with_identical_entry_metadata() {
     let returned = ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void));
     let condition = ProgramExpression::Value(int32(1));
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "entry_annotations",
         Vec::new(),
-        crate::kernel::api::c_while(condition.clone(), Vec::new(), returned.clone()),
+        crate::kernel::api::program_while(condition.clone(), Vec::new(), returned.clone()),
     );
     let caller = ExecutionState::new();
-    let state = crate::kernel::c_function_entry_state(&caller, &function, &[]).unwrap();
+    let state = crate::kernel::program_function_entry_state(&caller, &function, &[]).unwrap();
     let entry =
         CheckedFunctionEntry::check(&caller, &function, &[], &state, PureFactContext::new())
             .unwrap();
-    let annotated = function.clone().with_body(crate::kernel::api::c_while(
-        condition.clone(),
-        vec![Proposition::ConditionIs(
-            crate::kernel::ConditionTerm::Constant(true),
-            true,
-        )],
-        returned.clone(),
-    ));
+    let annotated = function
+        .clone()
+        .with_body(crate::kernel::api::program_while(
+            condition.clone(),
+            vec![Proposition::ConditionIs(
+                crate::kernel::ConditionTerm::Constant(true),
+                true,
+            )],
+            returned.clone(),
+        ));
     assert_ne!(annotated, function);
     assert_eq!(entry.trace_entry_state(&annotated, &[]), Some(&state));
     assert!(
@@ -1700,7 +1707,7 @@ fn checked_entry_accepts_only_body_annotations_with_identical_entry_metadata() {
 
 #[test]
 fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes() {
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "checked_entry",
         Vec::new(),
@@ -1723,7 +1730,7 @@ fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes(
             ProgramValue::Int32(MachineTerm::constant(1)),
         ))
         .with_observed_population_family("item");
-    let entry_state = crate::kernel::c_function_entry_state(&caller, &function, &[])
+    let entry_state = crate::kernel::program_function_entry_state(&caller, &function, &[])
         .expect("the empty argument list should bind");
     let checked = CheckedFunctionEntry::check(
         &caller,
@@ -1775,7 +1782,7 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
         vec![child_spec],
         Vec::new(),
     );
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "resource_events",
         Vec::new(),
@@ -1935,7 +1942,7 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
         "observation must not discover an unrecorded implication"
     );
 
-    let changed_definition = c_function(
+    let changed_definition = program_function(
         ProgramType::Void,
         "resource_events",
         Vec::new(),
@@ -1984,12 +1991,12 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
             .clone()
             .store(right_pointer.clone(), int32(2)),
     );
-    let left_effect = ExecutionPureFact::certified(Proposition::CMemoryMutatesOnly {
+    let left_effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: left.memory().clone(),
         writes: vec![(left_pointer.clone(), 8)],
     });
-    let right_effect = ExecutionPureFact::certified(Proposition::CMemoryMutatesOnly {
+    let right_effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: right.memory().clone(),
         writes: vec![(right_pointer.clone(), 4)],
@@ -2017,10 +2024,13 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
         supplied,
     ));
 
-    let joined =
-        crate::kernel::abstract_c_state_for_interface_join_across(&left, &[&left, &right], 0)
-            .expect("alternative memories should have one deterministic abstraction")
-            .state;
+    let joined = crate::kernel::abstract_execution_state_for_interface_join_across(
+        &left,
+        &[&left, &right],
+        0,
+    )
+    .expect("alternative memories should have one deterministic abstraction")
+    .state;
     let facts = ProofFacts::default();
     let summaries = checked_interface_effect_facts(
         &before,
@@ -2034,7 +2044,7 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
         summaries.to_vec().as_slice(),
         [fact] if matches!(
             fact.proposition(),
-            Proposition::CMemoryMutatesOnly { before: effect_before, after, writes }
+            Proposition::MemoryMutatesOnly { before: effect_before, after, writes }
                 if effect_before == before.memory()
                     && after == joined.memory()
                     && writes == &vec![(left_pointer, 8), (right_pointer, 4)]
@@ -2052,7 +2062,7 @@ fn checked_interface_effects_reject_uncertified_memory_effects() {
     let after = before
         .clone()
         .with_memory(before.memory().clone().store(pointer.clone(), int32(1)));
-    let effect = ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
+    let effect = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: after.memory().clone(),
         writes: vec![(pointer, 4)],
@@ -2093,7 +2103,7 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     );
     let parent = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
 
-    let mutation = ExecutionPureFact::certified(Proposition::CMemoryMutatesOnly {
+    let mutation = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: after.memory().clone(),
         writes: vec![(declared_pointer.clone(), 4)],
@@ -2112,7 +2122,7 @@ fn checked_interface_effects_require_memory_diff_coverage() {
         Err("an interface arm memory effect does not cover its memory diff")
     );
 
-    let summary = ExecutionPureFact::certified(Proposition::CMemoryEffectSummary {
+    let summary = ExecutionPureFact::certified(Proposition::MemoryEffectSummary {
         before: before.memory().clone(),
         after: after.memory().clone(),
         mutable_ranges: vec![MemoryRange::new(
@@ -2145,7 +2155,7 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     );
     let erased_parent =
         ExecutionProofCore::at_entry(erased_before.clone(), ExecutionFrontier::default());
-    let erased_summary = ExecutionPureFact::certified(Proposition::CMemoryEffectSummary {
+    let erased_summary = ExecutionPureFact::certified(Proposition::MemoryEffectSummary {
         before: erased_before.memory().clone(),
         after: erased_after.memory().clone(),
         mutable_ranges: vec![MemoryRange::new(
@@ -2192,7 +2202,7 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
     );
     let retained = before.clone();
     let parent = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
-    let free_effect = ExecutionPureFact::certified(Proposition::CHeapAllocationFreed {
+    let free_effect = ExecutionPureFact::certified(Proposition::HeapAllocationFreed {
         before: before.memory().clone(),
         after: freed.memory().clone(),
         allocation_base: allocation_base.clone(),
@@ -2203,9 +2213,10 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
     freed_core.effect_facts.push(free_effect.clone());
     let retained_core = parent.clone();
     let siblings = [&freed, &retained];
-    let joined = crate::kernel::abstract_c_state_for_interface_join_across(&freed, &siblings, 0)
-        .expect("the conditional heap states should abstract")
-        .state;
+    let joined =
+        crate::kernel::abstract_execution_state_for_interface_join_across(&freed, &siblings, 0)
+            .expect("the conditional heap states should abstract")
+            .state;
     let facts = ProofFacts::default();
     let summaries = checked_interface_effect_facts(
         &before,
@@ -2217,7 +2228,7 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
     .expect("a conditional free should be checked at the branch boundary");
     assert!(summaries.is_empty());
 
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "conditional_heap_free",
         Vec::new(),
@@ -2507,7 +2518,7 @@ fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
 
 #[test]
 fn checked_branch_join_accepts_empty_arms_only_at_the_artifact_tail() {
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "branch",
         Vec::new(),
@@ -2555,7 +2566,7 @@ fn checked_branch_join_accepts_empty_arms_only_at_the_artifact_tail() {
     };
     let parent = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
     let at_branch = FrontierPosition::StatementEntry {
-        remaining: Arc::new(crate::kernel::c_seq(
+        remaining: Arc::new(crate::kernel::program_seq(
             split.branch_statement.clone(),
             split.continuation.clone().expect("a continuation"),
         )),
@@ -2820,7 +2831,7 @@ fn interface_assertion_requires_an_available_proof_not_derivability() {
 #[test]
 fn interface_load_definition_rejects_wrong_variable_address_and_snapshot() {
     use crate::kernel::{ConditionTerm, Memory, Pointer};
-    let memory = crate::kernel::intern_c_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let pointer = Pointer {
         block: "interface_definition".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -2859,7 +2870,7 @@ fn interface_load_definition_rejects_wrong_variable_address_and_snapshot() {
     );
     let wrong_snapshot = equation(
         variable,
-        crate::kernel::intern_c_memory(Memory::new().with_block("different", 4)),
+        crate::kernel::intern_memory(Memory::new().with_block("different", 4)),
         pointer,
     );
     for wrong in [wrong_variable, wrong_address, wrong_snapshot] {
@@ -2870,7 +2881,7 @@ fn interface_load_definition_rejects_wrong_variable_address_and_snapshot() {
 
 #[test]
 fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "interface",
         Vec::new(),
@@ -2920,7 +2931,7 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
     };
     let parent = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
     let at_branch = FrontierPosition::StatementEntry {
-        remaining: Arc::new(crate::kernel::c_seq(
+        remaining: Arc::new(crate::kernel::program_seq(
             split.branch_statement.clone(),
             split.continuation.clone().expect("a continuation"),
         )),
@@ -3075,7 +3086,7 @@ fn named_pointer_cell_requires_its_complete_read_and_provenance() {
     let address = Pointer::symbolic(Variable(986_101));
     let memory = Memory::new();
     let name = crate::kernel::canonical_form_of_load(
-        crate::kernel::intern_c_memory(memory.clone()),
+        crate::kernel::intern_memory(memory.clone()),
         address.clone(),
         LoadKind::Int32,
     );
@@ -3100,7 +3111,7 @@ fn named_pointer_cell_requires_its_complete_read_and_provenance() {
     }
     let changed = memory.store(address.offset_by_bytes(4), ProgramValue::Int32(7.into()));
     let next = crate::kernel::canonical_form_of_load(
-        crate::kernel::intern_c_memory(changed),
+        crate::kernel::intern_memory(changed),
         address,
         LoadKind::Int32,
     );

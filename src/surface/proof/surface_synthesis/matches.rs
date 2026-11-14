@@ -77,7 +77,7 @@ fn raise_arms<'a, T: 'a>(
         for (index, declaration) in declarations.iter().enumerate() {
             let (carrier, variable) = typed_declaration_variable(declaration)?;
             let carrier = match carrier {
-                BindingCarrier::C => folds::BinderCarrier::C,
+                BindingCarrier::Program => folds::BinderCarrier::Program,
                 BindingCarrier::Integer => folds::BinderCarrier::Integer,
                 BindingCarrier::Algebraic => folds::BinderCarrier::Algebraic,
             };
@@ -148,7 +148,7 @@ mod tests {
         };
         for (ty, value) in [
             (
-                AlgebraicValueType::C(ProgramType::Bool),
+                AlgebraicValueType::Program(ProgramType::Bool),
                 PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
                     ConditionTerm::Variable(variable),
@@ -162,11 +162,11 @@ mod tests {
                 PureFunctionArgument::Value(ProgramValue::Parameter(Box::new(algebraic.clone()))),
             ),
             (
-                AlgebraicValueType::C(ProgramType::Int32),
+                AlgebraicValueType::Program(ProgramType::Int32),
                 PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(variable))),
             ),
             (
-                AlgebraicValueType::C(ProgramType::UInt64),
+                AlgebraicValueType::Program(ProgramType::UInt64),
                 PureFunctionArgument::Value(ProgramValue::UInt64(MachineTerm::Variable(variable))),
             ),
             (
@@ -221,7 +221,7 @@ mod tests {
             assert_eq!(*scrutinee, SurfaceTerm::Binding("payload".into()));
             assert_eq!(arms[0].bindings, vec!["item"]);
             assert!(
-                matches!(&arms[0].body, SurfaceTerm::Binding(name) | SurfaceTerm::CFragment(ProgramExpression::Variable(name)) if name == "item")
+                matches!(&arms[0].body, SurfaceTerm::Binding(name) | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) if name == "item")
             );
             assert!(folds::scoped_binder_name(folds::BinderCarrier::Algebraic, variable).is_none());
             assert!(folds::binder_name(true, variable).is_none());
@@ -233,7 +233,7 @@ mod tests {
         let mut import = KernelTermImport::default();
         let id = Variable(991960);
         let scrutinee = KernelMatch::test_scrutinee(vec![
-            AlgebraicValueType::C(ProgramType::Int32),
+            AlgebraicValueType::Program(ProgramType::Int32),
             AlgebraicValueType::Integer,
         ]);
         let AlgebraicTermNode::Variable(scrutinee_id) = scrutinee.node else {

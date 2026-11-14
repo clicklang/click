@@ -1,5 +1,5 @@
 use super::*;
-use crate::surface::C0VerificationSession;
+use crate::surface::ProgramVerificationSession;
 
 #[test]
 fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() {
@@ -53,7 +53,7 @@ fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() 
                 "verifying \"bounds.rs\"; fn {name}() -> u32 {{ ensures result == 7u32; }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-                C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+                ProgramVerificationSession::new_program_prepared(&sidecar, &prepared)
             });
             verified.unwrap();
             samples.push((shape, work));
@@ -124,7 +124,7 @@ fn charon_external_array_operations_keep_lowering_and_proof_work_bounded() {
                 "verifying \"external.rs\"; fn {name}({parameters}) {{ owns target[0..{count}]; {contract} }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-                C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+                ProgramVerificationSession::new_program_prepared(&sidecar, &prepared)
             });
             verified.unwrap();
             samples.push((statements(function.body()), work));

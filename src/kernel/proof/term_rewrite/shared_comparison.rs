@@ -104,7 +104,7 @@ impl TermRewrite<'_> {
                 local.borrow_mut().insert(term.id(), term.clone());
                 continue;
             }
-            let KernelType::C(ty) = term.ty() else {
+            let KernelType::Program(ty) = term.ty() else {
                 return None;
             };
             let format = MachineIntegerType::from_c_type(*ty)?;
@@ -830,7 +830,7 @@ fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
         block: PointerBlock::Concrete("opaque-comparison".into()),
         offset: PointerOffsetTerm::scaled_int32_node(value, 4),
     };
-    let memory = crate::kernel::intern_c_memory(
+    let memory = crate::kernel::intern_memory(
         Memory::new()
             .with_block("opaque-comparison", 64)
             .store(pointer(index.clone()), ProgramValue::Int32(value)),
@@ -1640,7 +1640,7 @@ mod call_tests {
         let missing = MachineTerm::Variable(Variable(995862));
         for format in crate::kernel::machine_integer::FORMATS {
             let argument =
-                KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(995860));
+                KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(995860));
             let root = call(format, argument);
             let native = KernelTermExport::machine(&root).unwrap();
             let expected = TermRewrite::for_bits_checked(&from, &to).bits(&native);

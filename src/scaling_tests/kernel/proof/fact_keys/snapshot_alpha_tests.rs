@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn snapshot_alpha_work_ignores_unrelated_heap_size() {
     let make_memory = |unrelated_size| {
-        crate::kernel::intern_c_memory(
+        crate::kernel::intern_memory(
             Memory::new()
                 .with_block("snapshot-alpha", 8)
                 .with_block("unrelated-snapshot-alpha", unrelated_size),
@@ -96,7 +96,7 @@ fn snapshot_alpha_registered_load_branching_dags_stay_linear() {
 
 #[test]
 fn snapshot_alpha_nested_shared_load_dags_scale_linearly() {
-    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("snapshot-alpha", 8));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("snapshot-alpha", 8));
     let mut work = Vec::new();
     for depth in [8usize, 16, 32, 64] {
         let item = Variable(315_001);
@@ -128,7 +128,7 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
     let samples = [8usize, 32, 96].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let mut term = KernelTerm::variable(KernelType::C(format.c_type()), Variable(98123));
+        let mut term = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(98123));
         for _ in 0..size {
             term = KernelTerm::machine_binary_shared(
                 format,
@@ -140,7 +140,7 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
         let proposition = Proposition::ForAll {
             var: Variable(98123),
             name: crate::kernel::BinderName::written("i"),
-            sort: Sort::CMachineInteger(format),
+            sort: Sort::ProgramInteger(format),
             body: Box::new(Proposition::ConditionIs(
                 ConditionTerm::IntegerLessThan(
                     IntegerTerm::Machine(operand.clone()).into(),
@@ -216,7 +216,7 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
                 ProgramValue::Int32(0u32.into()),
             );
         }
-        let memory = crate::kernel::intern_c_memory(memory);
+        let memory = crate::kernel::intern_memory(memory);
         let (left, right) = (fold(&memory), fold(&memory));
         let (equal, measured) = crate::instrumentation::measure_deterministic_work(|| {
             integer_terms_alpha_equivalent(&left, &right)

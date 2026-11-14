@@ -10,8 +10,8 @@ fn incomparable_values(left: &ProgramValue, right: &ProgramValue) -> ClickError 
     let describe = |value: &ProgramValue| {
         format!(
             "`{}` of type `{}`",
-            crate::surface::diagnostics::describe_c_value(value, ParameterBinding::default()),
-            crate::kernel::c_type_spelling(value.c_type())
+            crate::surface::diagnostics::describe_program_value(value, ParameterBinding::default()),
+            crate::kernel::program_type_spelling(value.c_type())
         )
     };
     ClickError::new(format!(
@@ -126,7 +126,7 @@ pub(in crate::surface) fn comparison_proposition(
         ));
     }
     // A 32-bit comparison reads its operands at its own format, as the
-    // kernel's specification comparisons do (`c_value_word32_term`).
+    // kernel's specification comparisons do (`program_value_word32_term`).
     let unsigned = matches!(
         (&left, &right),
         (ProgramValue::UInt32(_), _) | (_, ProgramValue::UInt32(_))
@@ -137,7 +137,8 @@ pub(in crate::surface) fn comparison_proposition(
         MachineIntegerType::Int32
     };
     let word = |value: &ProgramValue| {
-        crate::kernel::c_value_word32_term(value, format).map(|term| normalize_bitvector(&term))
+        crate::kernel::program_value_word32_term(value, format)
+            .map(|term| normalize_bitvector(&term))
     };
     if let (Some(left_term), Some(right_term)) = (word(&left), word(&right)) {
         let Some((condition, value)) =

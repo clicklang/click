@@ -493,7 +493,7 @@ fn checked_empty_lookup_scales_over_unrelated_retired_populations() {
 #[test]
 fn count_lookup_does_not_scan_unrelated_authority_heads() {
     let description = member_description(PointerBlock::ExternalArgument);
-    let [AlgebraicValue::C(ProgramValue::Pointer(anchor))] = description.arguments() else {
+    let [AlgebraicValue::Program(ProgramValue::Pointer(anchor))] = description.arguments() else {
         panic!("pointer anchor")
     };
     let count = SpecExpression::CountedResourceCount {
@@ -884,7 +884,7 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let description = ResourceDescription::new(
@@ -984,7 +984,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
         });
         let schema = ResourceFieldSchema::new(vec![(
             "serial".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         let mut scope = ResourceDescription::new(
@@ -1118,7 +1118,7 @@ fn imported_named_death_receipts_are_indexed_beside_growing_related_members() {
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let description = ResourceDescription::new(

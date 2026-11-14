@@ -2,11 +2,11 @@ use super::*;
 
 #[test]
 fn mutex_automatic_frame_retirement_requires_destruction() {
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "scope",
         vec![],
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     );
     for name in ["holder", "frame:holder", "lifetime:holder"] {
         let state = ExecutionState::new().with_local(name, int32(0));

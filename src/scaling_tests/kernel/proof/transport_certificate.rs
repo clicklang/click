@@ -79,14 +79,14 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
             let _reads = typed_reads::ReadScope::enter();
             let (mut certificate, _) = tests::fixture(history, false);
             let TransportNode::Premise {
-                proposition: Proposition::CMemoryMutatesOnly { before, after, .. },
+                proposition: Proposition::MemoryMutatesOnly { before, after, .. },
                 ..
             } = &certificate.nodes[0]
             else {
                 unreachable!()
             };
-            let before = intern_c_memory(before.clone());
-            let after = intern_c_memory(after.clone());
+            let before = intern_memory(before.clone());
+            let after = intern_memory(after.clone());
             let TransportNode::Premise {
                 proposition,
                 result,
@@ -94,7 +94,7 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
             else {
                 unreachable!()
             };
-            let Proposition::CResourceSeparate { right, .. } = proposition else {
+            let Proposition::ResourceSeparate { right, .. } = proposition else {
                 unreachable!()
             };
             let Resource::Memory(range) = right.as_ref() else {
@@ -208,7 +208,7 @@ fn region_footprint_preservation_does_not_walk_prior_memory_history() {
         else {
             unreachable!()
         };
-        let Proposition::CMemoryMutatesOnly { before, after, .. } = effect else {
+        let Proposition::MemoryMutatesOnly { before, after, .. } = effect else {
             unreachable!()
         };
         let entry = ExecutionState::new().with_memory(before.clone());
@@ -224,13 +224,13 @@ fn region_footprint_preservation_does_not_walk_prior_memory_history() {
                 )
             });
         let TransportNode::Premise {
-            proposition: Proposition::CResourceSeparate { right, .. },
+            proposition: Proposition::ResourceSeparate { right, .. },
             ..
         } = &original.nodes[1]
         else {
             unreachable!()
         };
-        let separation = Proposition::CResourceSeparate {
+        let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Footprint(footprint)),
             right: right.clone(),
         };
@@ -315,13 +315,13 @@ fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
         let kept = Resource::Memory(range(1000));
         let ranges = (0..count).map(range).collect::<Vec<_>>();
         let facts = ranges.iter().fold(PureFactContext::new(), |facts, range| {
-            facts.assume_proposition(Proposition::CResourceSeparate {
+            facts.assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(range.clone())),
                 right: Box::new(kept.clone()),
             })
         });
         let effects = vec![ExecutionPureFact::certified(
-            Proposition::CMemoryEffectSummary {
+            Proposition::MemoryEffectSummary {
                 before: state.memory().clone(),
                 after: state.memory().clone(),
                 mutable_ranges: ranges,
@@ -364,7 +364,7 @@ fn two_footprints_do_not_expand_into_a_cartesian_product() {
             &crate::kernel::ExecutionFacts::new(),
         ));
         let effects = vec![ExecutionPureFact::certified(
-            Proposition::CMemoryEffectSummary {
+            Proposition::MemoryEffectSummary {
                 before: state.memory().clone(),
                 after: state.memory().clone(),
                 mutable_ranges: (0..count)
@@ -455,7 +455,7 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
         facts = facts.with_fact(separation);
         facts = facts.with_fact(old.clone());
         for i in 0..size {
-            let Proposition::CMemoryReadDefined {
+            let Proposition::MemoryReadDefined {
                 memory,
                 pointer,
                 value_type,
@@ -463,14 +463,14 @@ fn definedness_preservation_ignores_history_and_ambient_facts() {
             else {
                 unreachable!()
             };
-            facts = facts.with_fact(Proposition::CMemoryReadDefined {
+            facts = facts.with_fact(Proposition::MemoryReadDefined {
                 memory: memory
                     .clone()
                     .store(pointer.clone(), ProgramValue::Int32((i as u32).into())),
                 pointer: pointer.clone(),
                 value_type: *value_type,
             });
-            facts = facts.with_fact(Proposition::CMemoryReadDefined {
+            facts = facts.with_fact(Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: Pointer::symbolic(Variable(8_500_000 + i)),
                 value_type: *value_type,

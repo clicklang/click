@@ -77,7 +77,7 @@ fn snapshot_blind_surface_selection_scales_by_index_height() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(memory),
+                    crate::kernel::intern_memory(memory),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
@@ -255,7 +255,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(Memory::new()),
+                    crate::kernel::intern_memory(Memory::new()),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),

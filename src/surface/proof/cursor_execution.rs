@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::CheckedCallEventScope;
 use crate::kernel::ExecutionFactSource;
-use crate::kernel::abstract_c_state_for_interface_join_across;
+use crate::kernel::abstract_execution_state_for_interface_join_across;
 use std::sync::Arc;
 
 /// Checks a branch interface directly against the structural join's
@@ -125,10 +125,14 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         .old_reference_state(&execution.core.frontier, state)
         .clone();
     let abstraction = match sibling_join_states {
-        Some(states) => {
-            abstract_c_state_for_interface_join_across(state, states, join_next_kernel_variable)
+        Some(states) => abstract_execution_state_for_interface_join_across(
+            state,
+            states,
+            join_next_kernel_variable,
+        ),
+        None => {
+            abstract_execution_state_for_join(state, &BTreeMap::new(), join_next_kernel_variable)
         }
-        None => abstract_c_state_for_join(state, &BTreeMap::new(), join_next_kernel_variable),
     };
     let abstraction = abstraction.map_err(|message| {
         ClickError::new(format!(
@@ -369,12 +373,12 @@ pub(super) fn fact_transport_transition_facts(
     facts: &(impl ExecutionFactSource + ?Sized),
     source: &Proposition,
 ) -> ExecutionFacts {
-    let source_memories = c_condition_fact_memories(source);
+    let source_memories = program_condition_fact_memories(source);
     let matching_effect = facts.fact_iter().position(|fact| {
         let before = match fact.proposition() {
-            Proposition::CMemoryMutatesOnly { before, .. }
-            | Proposition::CMemoryEffectSummary { before, .. }
-            | Proposition::CHeapAllocationFreed { before, .. } => before,
+            Proposition::MemoryMutatesOnly { before, .. }
+            | Proposition::MemoryEffectSummary { before, .. }
+            | Proposition::HeapAllocationFreed { before, .. } => before,
             _ => return false,
         };
         source_memories.contains(before)
@@ -399,9 +403,9 @@ pub(super) fn fact_transport_transition_facts(
 fn is_memory_effect_proposition(proposition: &Proposition) -> bool {
     matches!(
         proposition,
-        Proposition::CMemoryMutatesOnly { .. }
-            | Proposition::CMemoryEffectSummary { .. }
-            | Proposition::CHeapAllocationFreed { .. }
+        Proposition::MemoryMutatesOnly { .. }
+            | Proposition::MemoryEffectSummary { .. }
+            | Proposition::HeapAllocationFreed { .. }
     )
 }
 
@@ -535,7 +539,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     let state: &mut ExecutionState = &mut execution.core.state;
 
     let statement_index = execution.core.frontier.next_statement_index;
-    let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+    let _site_scope = crate::surface::diagnostics::StatementSiteScope::enter(
         &proof_context.constants.source_layout,
         statement_index,
         proof_context.parsed_function,
@@ -568,7 +572,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     if let Some(split) = enum_switch_proof_match(&statement, &current_state, context) {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` reached a Rust `match` of `{}`, whose variant is not known here; each variant is its own proof arm. Write `{}` here, or end the script here and let its implicit tail split it",
-            describe_c_expression(&ProgramExpression::Variable(split.scrutinee_name().to_string())),
+            describe_program_expression(&ProgramExpression::Variable(split.scrutinee_name().to_string())),
             split.outline(),
         ))
         .with_path_case_match(split));
@@ -630,7 +634,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
             .collect::<String>();
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not prove that the next C `if` condition `{}` is {expected}; got {} feasible condition paths{paths}\n{}",
-            describe_c_expression(&condition),
+            describe_program_expression(&condition),
             condition_transitions.len(),
             describe_step_proof_context(
                 available_pure_facts,
@@ -721,7 +725,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
                 ClickError::new(format!(
                     "{}{}",
                     crate::surface::diagnostics::describe_runtime_error_over_locals(&error, &state),
-                    crate::surface::diagnostics::describe_c_statement_site(),
+                    crate::surface::diagnostics::describe_execution_statement_site(),
                 ))
                 .with_kind(runtime_refusal_kind(&error))
             })?;
@@ -774,7 +778,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
         }
     } else {
         let spliced = match remaining {
-            Some(tail) => c_seq(selected_branch, tail),
+            Some(tail) => program_seq(selected_branch, tail),
             None => selected_branch,
         };
         execution.core.frontier.position = FrontierPosition::StatementEntry {
@@ -925,7 +929,7 @@ fn execute_concrete_loop_head_step(
                 .record_effect(execution.core.last_footprint.as_ref());
         }
         let loop_head = match remaining {
-            Some(remaining) => c_seq(loop_head, remaining),
+            Some(remaining) => program_seq(loop_head, remaining),
             None => loop_head,
         };
         execution
@@ -973,7 +977,7 @@ fn execute_concrete_loop_head_step(
     if condition_transitions.len() != 1 {
         return Err(ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not prove one exact truth value for loop({loop_index}) condition `{}`; got {} feasible condition paths\n{}",
-            describe_c_expression(&condition),
+            describe_program_expression(&condition),
             condition_transitions.len(),
             describe_proof_context(
                 available_pure_facts,
@@ -1007,7 +1011,7 @@ fn execute_concrete_loop_head_step(
 
     if condition_transition.is_true {
         let loop_head = match remaining {
-            Some(remaining) => c_seq(loop_head, remaining),
+            Some(remaining) => program_seq(loop_head, remaining),
             None => loop_head,
         };
         execution
@@ -1056,7 +1060,7 @@ fn execute_concrete_loop_head_step(
                     &error,
                     &current_state
                 ),
-                crate::surface::diagnostics::describe_c_statement_site(),
+                crate::surface::diagnostics::describe_execution_statement_site(),
             ))
             .with_kind(runtime_refusal_kind(&error))
         })?;
@@ -1142,7 +1146,7 @@ pub(super) fn next_top_level_statement_from_frontier_position(
                 )
             } else {
                 let execution_start_state = state.clone();
-                let current_state = c_function_entry_state(&execution_start_state, function, arguments)
+                let current_state = program_function_entry_state(&execution_start_state, function, arguments)
                     .ok_or_else(|| {
                         ClickError::new(format!(
                             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not bind function arguments"
@@ -1563,8 +1567,8 @@ pub(super) fn route_throw_to_handler(
     let mut state = thrown_state.clone();
     let mut facts = PureFactList::from(throw_facts.to_vec());
     for statement in [
-        c_declare(handler.binding.clone(), crate::kernel::ProgramType::Int32),
-        c_assign(
+        program_declare(handler.binding.clone(), crate::kernel::ProgramType::Int32),
+        program_assign(
             handler.binding.clone(),
             ProgramExpression::Value(throw_value.clone()),
         ),
@@ -2032,7 +2036,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
                 None => transition.pure_facts.context(),
             };
             let case_outcomes =
-                crate::kernel::c_function_outcomes_from_statement_outcome_with_resource_cases(
+                crate::kernel::program_function_outcomes_from_statement_outcome_with_resource_cases(
                     &prepared.execution_start_state,
                     function,
                     arguments,
@@ -2057,7 +2061,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
             append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
             *available_pure_facts = transition.pure_facts.clone();
             let completed =
-                crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
+                crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
                     prepared.execution_start_state.clone(),
                     function.clone(),
                     arguments.to_vec(),
@@ -2203,7 +2207,7 @@ fn execute_step_from_frontier_position_selecting_path(
     let state: &mut ExecutionState = &mut execution.core.state;
 
     let mut statement_index = execution.core.frontier.next_statement_index;
-    let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+    let _site_scope = crate::surface::diagnostics::StatementSiteScope::enter(
         &proof_context.constants.source_layout,
         statement_index,
         proof_context.parsed_function,
@@ -2533,7 +2537,7 @@ fn execute_step_from_frontier_position_selecting_path(
         })
         && let Some(tail @ ProgramStatement::Return(_)) = remaining.as_ref()
     {
-        let whole_suffix = c_seq(step_statement.clone(), tail.clone());
+        let whole_suffix = program_seq(step_statement.clone(), tail.clone());
         let mut next_opaque_call = next_opaque_call_before_step;
         let mut next_kernel_variable = next_kernel_variable_before_step;
         let (suffix_transitions, _) = certified_statement_transitions(
@@ -2761,7 +2765,7 @@ fn execute_step_from_frontier_position_selecting_path(
         for transition in transitions {
             let return_assumptions = transition.pure_facts.context();
             let case_outcomes =
-                crate::kernel::c_function_outcomes_from_statement_outcome_with_resource_cases(
+                crate::kernel::program_function_outcomes_from_statement_outcome_with_resource_cases(
                     &execution_start_state,
                     function,
                     arguments,
@@ -2800,7 +2804,7 @@ fn execute_step_from_frontier_position_selecting_path(
         append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
         let state: &mut ExecutionState = &mut execution.core.state;
         let completed =
-            crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
+            crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
                 execution_start_state.clone(),
                 function.clone(),
                 arguments.to_vec(),
@@ -2980,7 +2984,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     let requirement = ProofObligation::verification_condition(goal.clone());
                     crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
                         ClickError::new(format!(
-                            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires proof excluding {}{}", kind.description(), crate::surface::diagnostics::describe_c_statement_site()
+                            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires proof excluding {}{}", kind.description(), crate::surface::diagnostics::describe_execution_statement_site()
                         )).with_reported_goal(goal.clone()).with_unresolved_requirement(&requirement),
                     )?;
                     transitions.retain(|transition| {
@@ -3004,7 +3008,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 let error = ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
                     describe_function_outcome(&outcome, parameter_binding),
-                    crate::surface::diagnostics::describe_c_statement_site(),
+                    crate::surface::diagnostics::describe_execution_statement_site(),
                     if required.is_some() {
                         // The structured diagnostic supplies the facts/resources
                         // with the goal's label map. An embedded context dump
@@ -3087,7 +3091,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 detail,
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
-                crate::surface::diagnostics::describe_c_statement_site(),
+                crate::surface::diagnostics::describe_execution_statement_site(),
                 describe_step_proof_context(
                 available_pure_facts, context,
                     &current_resources,
@@ -3122,9 +3126,9 @@ fn execute_step_from_frontier_position_selecting_path(
             };
             let error = ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires exactly one statement successor for `{}`, got {}{}\n{}{}{}{}",
-                describe_c_statement_head(&step_statement),
+                describe_execution_statement_head(&step_statement),
                 transitions.len(),
-                crate::surface::diagnostics::describe_c_statement_site(),
+                crate::surface::diagnostics::describe_execution_statement_site(),
                 describe_undecided_statement_successors(&transitions, parameter_binding),
                 case_split_guidance,
                 describe_multiple_statement_successors_guidance(
@@ -3224,13 +3228,14 @@ fn execute_step_from_frontier_position_selecting_path(
                     returned_facts = returned_facts.with_kernel_checked_fact(fact.clone());
                 }
             }
-            let (outcome, obligations) = crate::kernel::c_function_outcome_from_statement_outcome(
-                &execution_start_state,
-                function,
-                returned.outcome.clone(),
-                returned.obligations.clone(),
-                returned_facts.assumptions(),
-            );
+            let (outcome, obligations) =
+                crate::kernel::program_function_outcome_from_statement_outcome(
+                    &execution_start_state,
+                    function,
+                    returned.outcome.clone(),
+                    returned.obligations.clone(),
+                    returned_facts.assumptions(),
+                );
             let completed_execution_facts =
                 completed_execution_facts(&parent, &returned.execution_facts);
             let loan_evidence = crate::kernel::concat_checked_loan_evidence(
@@ -3323,9 +3328,9 @@ fn execute_step_from_frontier_position_selecting_path(
                 ContractExpression::Index(
                     Box::new(ContractExpression::Add(
                         Box::new(at(&store_entry_point, *base)),
-                        Box::new(ContractExpression::CFragment(ProgramExpression::Value(
-                            int32(0),
-                        ))),
+                        Box::new(ContractExpression::ProgramExpression(
+                            ProgramExpression::Value(int32(0)),
+                        )),
                     )),
                     Box::new(at(&store_entry_point, *index)),
                 )
@@ -3397,7 +3402,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         crate::surface::diagnostics::describe_runtime_error_over_locals(
                             &error, state
                         ),
-                        crate::surface::diagnostics::describe_c_statement_site(),
+                        crate::surface::diagnostics::describe_execution_statement_site(),
                     ))
                     .with_kind(runtime_refusal_kind(&error))
                 })?;
@@ -3582,7 +3587,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     successor_pure_facts.context()
                 };
                 let case_outcomes =
-                    crate::kernel::c_function_outcomes_from_statement_outcome_with_resource_cases(
+                    crate::kernel::program_function_outcomes_from_statement_outcome_with_resource_cases(
                         &execution_start_state,
                         function,
                         arguments,
@@ -3606,7 +3611,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 }
                 append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
                 let completed =
-                    crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
+                    crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
                         execution_start_state.clone(),
                         function.clone(),
                         arguments.to_vec(),
@@ -3727,7 +3732,7 @@ fn execute_step_from_frontier_position_selecting_path(
             )];
             append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
             let completed =
-                crate::kernel::c_function_execution_candidates_from_outcomes_with_loan_evidence(
+                crate::kernel::program_function_execution_candidates_from_outcomes_with_loan_evidence(
                     execution_start_state.clone(),
                     function.clone(),
                     arguments.to_vec(),
@@ -3759,7 +3764,7 @@ fn execute_step_from_frontier_position_selecting_path(
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
                 describe_function_outcome(&outcome, parameter_binding),
-                crate::surface::diagnostics::describe_c_statement_site(),
+                crate::surface::diagnostics::describe_execution_statement_site(),
                 if required.is_some() {
                     // The structured diagnostic supplies the facts/resources
                     // with the goal's label map. An embedded context dump
@@ -3816,7 +3821,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 detail,
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
-                crate::surface::diagnostics::describe_c_statement_site(),
+                crate::surface::diagnostics::describe_execution_statement_site(),
                 describe_step_proof_context(
                 available_pure_facts, context,
                     &current_resources,
@@ -3884,7 +3889,7 @@ pub(super) fn record_current_statement_entry(
     tactic_name: &str,
 ) -> Result<(), ClickError> {
     let current_state = match &frontier.position {
-        FrontierPosition::FunctionEntry => c_function_entry_state(state, function, arguments)
+        FrontierPosition::FunctionEntry => program_function_entry_state(state, function, arguments)
             .ok_or_else(|| {
                 ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not bind function arguments"
@@ -4039,7 +4044,7 @@ fn enum_switch_proof_match(
         })
         .collect();
     Some(ProofMatch {
-        scrutinee: ContractExpression::CFragment(ProgramExpression::Variable(name.clone())),
+        scrutinee: ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
         ensuring: None,
         arms,
     })
@@ -4172,7 +4177,7 @@ pub(super) fn sequence_from_statements(
         let mut statements = level.into_iter();
         while let Some(first) = statements.next() {
             next_level.push(match statements.next() {
-                Some(second) => c_seq(first, second),
+                Some(second) => program_seq(first, second),
                 None => first,
             });
         }
@@ -4289,7 +4294,11 @@ fn describe_call_bindings(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| {
-            format!("{} = {}", parameter.name(), describe_c_expression(argument))
+            format!(
+                "{} = {}",
+                parameter.name(),
+                describe_program_expression(argument)
+            )
         })
         .collect::<Vec<_>>();
     if bindings.is_empty() {
@@ -4322,12 +4331,12 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ProgramStatement::Assign {
             name, expression, ..
         } if crate::surface::diagnostics::is_call_result_temporary(name) => {
-            describe_c_expression(expression)
+            describe_program_expression(expression)
         }
         ProgramStatement::Assign {
             name, expression, ..
         } => {
-            format!("{name} = {}", describe_c_expression(expression))
+            format!("{name} = {}", describe_program_expression(expression))
         }
         ProgramStatement::CallAssign {
             target,
@@ -4339,7 +4348,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
                 crate::surface::diagnostics::describe_called_function(function_name),
                 arguments
                     .iter()
-                    .map(describe_c_expression)
+                    .map(describe_program_expression)
                     .collect::<Vec<_>>()
                     .join(", ")
             );
@@ -4362,7 +4371,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
             crate::surface::diagnostics::describe_called_function(function_name),
             arguments
                 .iter()
-                .map(describe_c_expression)
+                .map(describe_program_expression)
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
@@ -4380,27 +4389,30 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
             } else {
                 "malloc"
             };
-            format!("{target} = {function}({})", describe_c_expression(bytes))
+            format!(
+                "{target} = {function}({})",
+                describe_program_expression(bytes)
+            )
         }
         ProgramStatement::HeapFree { pointer } => {
-            format!("free({})", describe_c_expression(pointer))
+            format!("free({})", describe_program_expression(pointer))
         }
         ProgramStatement::Assert { condition, .. } => {
-            format!("assert({})", describe_c_expression(condition))
+            format!("assert({})", describe_program_expression(condition))
         }
         ProgramStatement::Return(expression) => {
-            format!("return {}", describe_c_expression(expression))
+            format!("return {}", describe_program_expression(expression))
         }
         ProgramStatement::Throw(expression) => {
-            format!("throw {}", describe_c_expression(expression))
+            format!("throw {}", describe_program_expression(expression))
         }
         ProgramStatement::TryCatchInt32 { binding, .. } => format!("try ... catch (int {binding})"),
         ProgramStatement::Store { pointer, value }
         | ProgramStatement::TypedStore { pointer, value, .. } => {
             format!(
                 "*{} = {}",
-                describe_c_expression(pointer),
-                describe_c_expression(value)
+                describe_program_expression(pointer),
+                describe_program_expression(value)
             )
         }
         ProgramStatement::InitializeScalarArray {
@@ -4412,7 +4424,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         } => format!(
             "{} {} with {} scalar elements{}",
             if *fresh { "initialize" } else { "write" },
-            describe_c_expression(target),
+            describe_program_expression(target),
             count,
             if *copy {
                 " by snapshot copy"
@@ -4422,27 +4434,30 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ),
         ProgramStatement::CopyAggregate { target, source, .. } => format!(
             "copy aggregate {} <- {}",
-            describe_c_expression(target),
-            describe_c_expression(source)
+            describe_program_expression(target),
+            describe_program_expression(source)
         ),
         ProgramStatement::Update {
             target, operand, ..
         } => format!(
             "update {} with {}",
-            describe_c_expression(target),
-            describe_c_expression(operand)
+            describe_program_expression(target),
+            describe_program_expression(operand)
         ),
         ProgramStatement::If { condition, .. } => {
-            format!("if ({})", describe_c_expression(condition))
+            format!("if ({})", describe_program_expression(condition))
         }
         ProgramStatement::LoopTest { condition } => {
-            format!("the loop's test ({})", describe_c_expression(condition))
+            format!(
+                "the loop's test ({})",
+                describe_program_expression(condition)
+            )
         }
         ProgramStatement::While { condition, .. } => {
-            format!("while ({})", describe_c_expression(condition))
+            format!("while ({})", describe_program_expression(condition))
         }
         ProgramStatement::Switch { expression, .. } => {
-            format!("switch ({})", describe_c_expression(expression))
+            format!("switch ({})", describe_program_expression(expression))
         }
     }
 }

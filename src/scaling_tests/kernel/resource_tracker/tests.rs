@@ -128,12 +128,12 @@ fn adjacent_cell_preservation_costs_only_the_selected_edge() {
         let assumptions = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
-                let previous = intern_c_memory(memory.clone());
+                let previous = intern_memory(memory.clone());
                 memory = memory
                     .clone()
                     .store(at(block("global:unrelated"), index * 4), one());
                 let source = cell_source::memory_dag_cell_source(
-                    &intern_c_memory(memory.clone()),
+                    &intern_memory(memory.clone()),
                     &cell,
                     4,
                     &assumptions,
@@ -214,7 +214,7 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
 fn fresh_cell_offsets_share_the_whole_block_version_prefix() {
     let samples = [8usize, 16, 32, 64].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let entry = intern_c_memory(Memory::new());
+        let entry = intern_memory(Memory::new());
         let mut memory = entry.memory().clone();
         for index in 0..size {
             memory = memory.store(
@@ -266,7 +266,7 @@ fn forgotten_cell_recovery_ignores_older_history_and_unrelated_cache_entries() {
                 before = before.store(pointer.clone(), one());
                 before = before.store(at(block("global:h"), index * 4), one());
             }
-            let forgotten = intern_c_memory(before.without_possible_aliasing_cells(
+            let forgotten = intern_memory(before.without_possible_aliasing_cells(
                 &pointer.offset_by_bytes(1),
                 1,
                 &assumptions,
@@ -314,8 +314,8 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
                 )));
         }
         let base = Memory::new();
-        let before = intern_c_memory(base.clone());
-        let after = intern_c_memory(base.with_loop_memory_havoc_preserving_frame(
+        let before = intern_memory(base.clone());
+        let after = intern_memory(base.with_loop_memory_havoc_preserving_frame(
             Variable(980117),
             &std::collections::BTreeSet::new(),
             Some(&[range(field.clone(), 128), range(ambiguous.clone(), 128)]),
@@ -353,7 +353,7 @@ fn cold_cell_source_lookup_does_not_search_older_stores() {
         for index in 0..size {
             memory = memory.store(at(block("global:other"), index * 4), one());
         }
-        let memory = intern_c_memory(memory);
+        let memory = intern_memory(memory);
         let facts = PureFactContext::new();
         let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
             cell_source::memory_dag_cell_source(&memory, &cell, 4, &facts, false).unwrap()
@@ -397,7 +397,7 @@ fn cold_cell_source_lookup_does_not_search_older_stores() {
             matches!(answer, cell_source::MemoryDagCell::Stored { value, .. } if value == one())
         );
         assert!(walked >= size as usize, "size={size}: {walked}");
-        let latest = intern_c_memory(
+        let latest = intern_memory(
             memory
                 .memory()
                 .clone()
@@ -427,7 +427,7 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer::symbolic(crate::kernel::Variable(1081601));
-        let memory = intern_c_memory(Memory::new().store(address.clone(), one()));
+        let memory = intern_memory(Memory::new().store(address.clone(), one()));
         let read =
             MachineTerm::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32);
         let mut root =
@@ -464,7 +464,7 @@ fn shared_conditional_guard_reads_keep_snapshot_identity_in_linear_work() {
     };
     for size in [16usize, 64, 256] {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(Memory::new().with_declared_scalar_block(
+        let memory = intern_memory(Memory::new().with_declared_scalar_block(
             block("global:g"),
             4,
             ProgramType::Int32,
@@ -476,7 +476,8 @@ fn shared_conditional_guard_reads_keep_snapshot_identity_in_linear_work() {
             MachineTerm::constant(0),
         );
         let guard = KernelTermImport::default().condition(&guard);
-        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(998201));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998201));
         for _ in 0..size {
             root = KernelTerm::machine_if_shared(
                 MachineIntegerType::Int32,

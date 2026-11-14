@@ -21,7 +21,7 @@ fn memory_load_queries_retain_growing_shared_arithmetic() {
                     [
                         root.clone(),
                         KernelTerm::variable(
-                            KernelType::C(ProgramType::Int32),
+                            KernelType::Program(ProgramType::Int32),
                             Variable(996000 + index),
                         ),
                     ],

@@ -9,16 +9,20 @@ fn local_pointer() -> Pointer {
 
 fn owned_cell_spec() -> ResourceSpec {
     ResourceSpec::owned_memory(MemorySegment::new(
-        c_variable("p"),
-        c_int32_literal(0),
-        c_int32_literal(1),
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     ))
 }
 
 fn uninitialized_cell_spec() -> ResourceSpec {
     ResourceSpec::owned_memory(
-        MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1))
-            .with_uninitialized(true),
+        MemorySegment::new(
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
+        )
+        .with_uninitialized(true),
     )
 }
 
@@ -49,10 +53,12 @@ fn apply(
             checked_callees: None,
             applied_tactics: Default::default(),
         });
-    execute_c_function_call_paths(
+    execute_program_function_call_paths(
         state,
         &function,
-        &[c_pointer_value(pointer.clone())],
+        &[crate::kernel::program_expression::pointer_value(
+            pointer.clone(),
+        )],
         &PureFactContext::new(),
         ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
@@ -63,11 +69,14 @@ fn apply(
 #[test]
 fn an_owning_call_requires_the_caller_to_initialize_the_range() {
     let pointer = local_pointer();
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "read_owned",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_index(c_variable("p"), c_int32_literal(0))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::index(
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+        )),
     )
     .with_resource_summary(vec![owned_cell_spec()], Vec::new());
     let paths = apply(function, &caller_state(&pointer), &pointer);
@@ -83,13 +92,16 @@ fn an_owning_call_requires_the_caller_to_initialize_the_range() {
 #[test]
 fn owned_write_keeps_an_uninitialized_output_writable() {
     let pointer = local_pointer();
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "write_owned",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_store(
-            c_index(c_variable("p"), c_int32_literal(0)),
-            c_int32_literal(7),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_store(
+            crate::kernel::program_expression::index(
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(0),
+            ),
+            crate::kernel::program_expression::int32_literal(7),
         ),
     )
     .with_resource_summary(vec![uninitialized_cell_spec()], Vec::new())
@@ -97,9 +109,9 @@ fn owned_write_keeps_an_uninitialized_output_writable() {
         Vec::new(),
         Vec::new(),
         vec![MemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         )],
         Vec::new(),
         true,

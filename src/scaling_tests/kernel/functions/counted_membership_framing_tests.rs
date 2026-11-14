@@ -15,7 +15,7 @@ fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
     let ordinary = |name: String, next: Option<String>| {
         CompositeResourceDefinition::new(
             name,
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             next.into_iter()
@@ -23,7 +23,7 @@ fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
                     ResourceSpec::composite(
                         ResourceAccessMode::Own,
                         next,
-                        vec![c_variable("p")],
+                        vec![crate::kernel::program_expression::variable("p")],
                         vec![ProgramType::Int32Pointer],
                     )
                 })
@@ -34,12 +34,12 @@ fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
     let population = || {
         CompositeResourceDefinition::authority_control(
             "z-count",
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             vec![ResourceSpec::owned_memory(MemorySegment::new(
-                c_variable("p"),
-                c_int32_literal(0),
-                c_int32_literal(1),
+                crate::kernel::program_expression::variable("p"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
             ))],
             vec![],
         )
@@ -214,7 +214,7 @@ fn call_frame_preparation_ignores_unrelated_retained_instances() {
         let _session = VerificationSession::enter();
         let schema = ResourceFieldSchema::new(vec![(
             "tag".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         let residual = (0..size).fold(ResourceContext::new(), |resources, index| {
@@ -269,29 +269,31 @@ fn call_frame_preparation_must_not_open_unrelated_composites() {
             let body = if memory_bound {
                 vec![
                     ResourceSpec::owned_memory(MemorySegment::new(
-                        c_variable("length"),
-                        c_int32_literal(0),
-                        c_int32_literal(1),
+                        crate::kernel::program_expression::variable("length"),
+                        crate::kernel::program_expression::int32_literal(0),
+                        crate::kernel::program_expression::int32_literal(1),
                     )),
                     ResourceSpec::owned_memory(MemorySegment::new(
-                        c_variable("p"),
-                        c_int32_literal(0),
-                        c_load(c_variable("length")),
+                        crate::kernel::program_expression::variable("p"),
+                        crate::kernel::program_expression::int32_literal(0),
+                        crate::kernel::program_expression::load(
+                            crate::kernel::program_expression::variable("length"),
+                        ),
                     )),
                 ]
             } else {
                 vec![ResourceSpec::composite(
                     ResourceAccessMode::Own,
                     "boxed".into(),
-                    vec![c_variable("p")],
+                    vec![crate::kernel::program_expression::variable("p")],
                     vec![ProgramType::Int32Pointer],
                 )]
             };
             let wrapper = CompositeResourceDefinition::new(
                 "wrapper",
                 vec![
-                    c_parameter("p", ProgramType::Int32Pointer),
-                    c_parameter("length", ProgramType::Int32Pointer),
+                    program_parameter("p", ProgramType::Int32Pointer),
+                    program_parameter("length", ProgramType::Int32Pointer),
                 ],
                 None,
                 false,

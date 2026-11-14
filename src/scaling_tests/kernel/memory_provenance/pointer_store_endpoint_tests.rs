@@ -20,7 +20,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         true,
     );
     let endpoint = |memory: Memory| MemoryDagCell::Unwritten {
-        node: intern_c_memory(memory),
+        node: intern_memory(memory),
         path: Vec::new(),
     };
     let mut samples = Vec::new();

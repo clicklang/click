@@ -12,7 +12,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let alias = Pointer::symbolic(Variable(941_001));
-    let validity = Proposition::CMemoryReadDefined {
+    let validity = Proposition::MemoryReadDefined {
         memory: memory.clone(),
         pointer: pointer.offset_by_bytes(4),
         value_type: ProgramType::Int32,
@@ -25,7 +25,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
             true,
         ));
         for index in 1..=count {
-            unrelated = unrelated.assume_proposition(Proposition::CMemoryReadDefined {
+            unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: Pointer {
                     block: PointerBlock::Heap(942_000 + index),
@@ -59,7 +59,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let validity = Proposition::CMemoryReadDefined {
+    let validity = Proposition::MemoryReadDefined {
         memory: memory.clone(),
         pointer: pointer.clone(),
         value_type: ProgramType::Int32,
@@ -68,7 +68,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
     for count in [0, 16, 64, 256] {
         let mut unrelated = PureFactContext::new();
         for index in 1..=count {
-            unrelated = unrelated.assume_proposition(Proposition::CMemoryReadDefined {
+            unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
                 memory: memory.clone(),
                 pointer: Pointer {
                     block: PointerBlock::ExternalArgument,
@@ -139,7 +139,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
                 int32(1),
             );
         }
-        let fact = Proposition::CMemoryReadDefined {
+        let fact = Proposition::MemoryReadDefined {
             memory: memory.clone(),
             pointer: address.clone(),
             value_type: ProgramType::Int32,
@@ -163,7 +163,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         let (failed, _, _) = pending
             .resolve_pending_heap_allocation(&request, false)
             .unwrap();
-        let goal = Proposition::CMemoryReadDefined {
+        let goal = Proposition::MemoryReadDefined {
             memory: failed.clone(),
             pointer: address.clone(),
             value_type: ProgramType::Int32,
@@ -221,9 +221,9 @@ fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
             .with_resource_context(resources)
             .with_local("p", ProgramValue::pointer(base.clone()));
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            execute_c_statement_paths(
+            execute_execution_statement_paths(
                 &state,
-                &c_heap_free(c_variable("p")),
+                &program_heap_free(crate::kernel::program_expression::variable("p")),
                 &PureFactContext::new(),
                 ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::default(),
@@ -273,9 +273,16 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
             .with_resource_context(resources)
             .with_local("q", ProgramValue::pointer(Pointer::null()));
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
-            execute_c_statement_paths(
+            execute_execution_statement_paths(
                 &state,
-                &c_call_assign("q", "realloc", vec![c_variable("p"), c_int32_literal(8)]),
+                &program_call_assign(
+                    "q",
+                    "realloc",
+                    vec![
+                        crate::kernel::program_expression::variable("p"),
+                        crate::kernel::program_expression::int32_literal(8),
+                    ],
+                ),
                 &PureFactContext::new(),
                 ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                 &mut ExecutionBudget::default(),
@@ -454,9 +461,9 @@ fn sequential_free_pointer_frames_stay_near_linear() {
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for base in bases {
                 state = state.clone().with_local("p", ProgramValue::pointer(base));
-                let paths = execute_c_statement_paths(
+                let paths = execute_execution_statement_paths(
                     &state,
-                    &c_heap_free(c_variable("p")),
+                    &program_heap_free(crate::kernel::program_expression::variable("p")),
                     &assumptions,
                     ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
                     &mut ExecutionBudget::default(),

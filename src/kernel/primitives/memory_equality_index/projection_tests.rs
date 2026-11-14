@@ -99,22 +99,24 @@ fn fixture() -> (
     let definition = CompositeResourceDefinition::new(
         "dependent_projection",
         vec![
-            c_parameter("slot", ProgramType::Int32Pointer),
-            c_parameter("alias", ProgramType::Int32Pointer),
-            c_parameter("target", ProgramType::Int32Pointer),
+            program_parameter("slot", ProgramType::Int32Pointer),
+            program_parameter("alias", ProgramType::Int32Pointer),
+            program_parameter("target", ProgramType::Int32Pointer),
         ],
         None,
         false,
         vec![
             ResourceSpec::owned_memory(MemorySegment::new(
-                c_variable("slot"),
-                c_int32_literal(0),
-                c_int32_literal(1),
+                crate::kernel::program_expression::variable("slot"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(1),
             )),
             ResourceSpec::owned_memory(MemorySegment::new(
-                c_variable("target"),
-                c_int32_literal(0),
-                c_load(c_variable("alias")),
+                crate::kernel::program_expression::variable("target"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("alias"),
+                ),
             )),
         ],
         Vec::new(),

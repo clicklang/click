@@ -886,11 +886,11 @@ mod tests {
     #[test]
     fn named_read_bounds_are_available_to_structural_indices() {
         use crate::kernel::{
-            LoadKind, Memory, Pointer, ProgramValue, VerificationSession, intern_c_memory,
+            LoadKind, Memory, Pointer, ProgramValue, VerificationSession, intern_memory,
         };
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(998_301));
-        let memory = intern_c_memory(Memory::new());
+        let memory = intern_memory(Memory::new());
         let name = crate::kernel::eval::load_variable_for_cell(&memory, &address, LoadKind::Int32);
         let read = crate::kernel::eval::registered_load_term_for_variable(&name).unwrap();
         let named = MachineTerm::Variable(name);
@@ -924,7 +924,7 @@ mod tests {
                 graph.decide_word_equality_views(shared.operand_view(), V::Legacy(&lower)),
                 Some(true)
             );
-            let changed = intern_c_memory(
+            let changed = intern_memory(
                 memory
                     .memory()
                     .clone()

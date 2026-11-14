@@ -5,7 +5,7 @@ use crate::kernel::{
 };
 
 fn retained_index(ty: MachineIntegerType, id: u64) -> SharedMachineIntegerTerm {
-    let atom = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+    let atom = KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
     let zero = KernelTerm::retained_machine_operand(
         ty,
         MachineOperandView::Legacy(&if ty == MachineIntegerType::UInt64 {

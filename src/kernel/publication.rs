@@ -118,7 +118,7 @@ pub(super) fn execute_publication_paths(
         )))]);
     }
     let mut paths = Vec::new();
-    for argument_path in super::functions::evaluate_c_arguments_paths(
+    for argument_path in super::functions::evaluate_program_arguments_paths(
         state,
         arguments,
         assumptions,

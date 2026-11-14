@@ -64,7 +64,7 @@ impl EqualityGraph {
                 }) => {
                     for field in fields {
                         match field {
-                            AlgebraicValue::C(value) => pending.push(Work::Value(value)),
+                            AlgebraicValue::Program(value) => pending.push(Work::Value(value)),
                             AlgebraicValue::Algebraic(model) => pending.push(Work::Model(model)),
                             AlgebraicValue::Integer(_) => {}
                         }

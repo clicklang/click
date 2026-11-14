@@ -30,7 +30,7 @@ fn exit_local_argument_lookup_skips_unrelated_locals() {
                 &[PureFactContext::new(), PureFactContext::new()],
             )
         });
-        assert_eq!(arguments, vec![Some(AlgebraicValue::C(int32(3)))]);
+        assert_eq!(arguments, vec![Some(AlgebraicValue::Program(int32(3)))]);
         costs.push(work);
     }
     assert!(
@@ -68,7 +68,7 @@ fn exit_local_argument_context_indexing_is_linear_and_shared() {
         for _ in 0..size {
             assert_eq!(
                 loop_exit_local_arguments(&successor, &exits, &binder, &instances, &contexts),
-                vec![Some(AlgebraicValue::C(int32(3)))]
+                vec![Some(AlgebraicValue::Program(int32(3)))]
             );
         }
         assert_eq!(

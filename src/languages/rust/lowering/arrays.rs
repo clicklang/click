@@ -36,9 +36,9 @@ impl Context<'_> {
         let layout = array_layout(element, length)?;
         self.local_arrays.insert(name.into());
         self.arrays.insert(name.into(), (length, element, false));
-        Ok(c_seq(
+        Ok(program_seq(
             // Fresh storage supplies transferable authority for helper calls.
-            c_begin_aggregate_construction(name, layout),
+            program_begin_aggregate_construction(name, layout),
             self.assign_array(self.array_pointer(name)?, element, length, initializer)?,
         ))
     }
@@ -70,7 +70,7 @@ impl Context<'_> {
             ProgramType::Int32 => Type::I32,
             _ => return Err("unsupported fixed array element".into()),
         };
-        let mut captures = c_skip();
+        let mut captures = program_skip();
         let mut values = Vec::new();
         match value {
             E::Array { elements } => {
@@ -80,8 +80,8 @@ impl Context<'_> {
                 for e in elements {
                     let (prefix, value) = self.prepared_expr(e)?;
                     let (capture, name) = self.capture_operand(value, &source_type)?;
-                    captures = c_seq(captures, c_seq(prefix, capture));
-                    values.push(c_variable(name));
+                    captures = program_seq(captures, program_seq(prefix, capture));
+                    values.push(crate::kernel::program_expression::variable(name));
                 }
             }
             E::Repeat {
@@ -94,36 +94,44 @@ impl Context<'_> {
                 // Rust evaluates the operand once, even for a zero count.
                 let (prefix, value) = self.prepared_expr(value)?;
                 let (capture, name) = self.capture_operand(value, &source_type)?;
-                captures = c_seq(prefix, capture);
-                values.resize(length as usize, c_variable(name));
+                captures = program_seq(prefix, capture);
+                values.resize(
+                    length as usize,
+                    crate::kernel::program_expression::variable(name),
+                );
             }
             _ => {
                 let (source, source_length, source_element) = self.indexed_parts(value)?;
-                if source_length != c_uint64_literal(length) || source_element != element {
+                if source_length != crate::kernel::program_expression::uint64_literal(length)
+                    || source_element != element
+                {
                     return Err("whole-array copy disagrees with destination type".into());
                 }
                 if length == 0 {
-                    return Ok(c_skip());
+                    return Ok(program_skip());
                 }
-                return Ok(c_copy_aggregate(
+                return Ok(program_copy_aggregate(
                     target,
                     source,
                     array_layout(element, length)?,
                 ));
             }
         }
-        let mut stores = c_skip();
+        let mut stores = program_skip();
         for (index, value) in values.into_iter().enumerate() {
-            stores = c_seq(
+            stores = program_seq(
                 stores,
-                c_typed_store(
-                    c_add(target.clone(), c_uint64_literal(index as u64)),
+                program_typed_store(
+                    crate::kernel::program_expression::add(
+                        target.clone(),
+                        crate::kernel::program_expression::uint64_literal(index as u64),
+                    ),
                     value,
                     element,
                 ),
             );
         }
-        Ok(c_seq(captures, stores))
+        Ok(program_seq(captures, stores))
     }
 }
 
@@ -153,17 +161,25 @@ impl Context<'_> {
                 };
                 let (prefix, value) = self.prepared_expr(value)?;
                 let (capture, name) = self.capture_operand(value, &value_type)?;
-                Ok(c_seq(
-                    c_seq(prefix, capture),
-                    c_write_scalar_array_region(target, c_variable(name), element, count, false),
+                Ok(program_seq(
+                    program_seq(prefix, capture),
+                    program_write_scalar_array_region(
+                        target,
+                        crate::kernel::program_expression::variable(name),
+                        element,
+                        count,
+                        false,
+                    ),
                 ))
             }
             _ => {
                 let (source, source_length, source_element) = self.indexed_parts(value)?;
-                if source_length != c_uint64_literal(length) || source_element != element {
+                if source_length != crate::kernel::program_expression::uint64_literal(length)
+                    || source_element != element
+                {
                     return Err("array region copy disagrees with destination type".into());
                 }
-                Ok(c_write_scalar_array_region(
+                Ok(program_write_scalar_array_region(
                     target, source, element, count, true,
                 ))
             }

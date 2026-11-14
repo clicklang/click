@@ -31,7 +31,7 @@ pub(super) fn with_contract_interface_argument_views(
         // caller's int32 `0`, but the callee parameter is a pointer.  Using
         // the raw caller value would overwrite the correctly coerced binding
         // and make pointer preconditions impossible to lower.
-        let value = coerce_c_contract_argument_without_obligations(value, parameter)
+        let value = coerce_contract_argument_without_obligations(value, parameter)
             .expect("function arguments were type-checked before building contract views");
         let value = value
             .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
@@ -380,7 +380,7 @@ pub(super) fn coerce_function_return_value(
             function.return_type(),
         ));
     }
-    coerce_c_value_with_pointee_constant(
+    coerce_program_value_with_pointee_constant(
         value,
         function.return_type(),
         function.return_pointee_is_constant(),
@@ -389,7 +389,7 @@ pub(super) fn coerce_function_return_value(
     )
 }
 
-pub(in crate::kernel) fn coerce_c_value_with_pointee_constant(
+pub(in crate::kernel) fn coerce_program_value_with_pointee_constant(
     value: ProgramValue,
     c_type: ProgramType,
     pointee_constant: bool,
@@ -405,7 +405,7 @@ pub(in crate::kernel) fn coerce_c_value_with_pointee_constant(
         return None;
     }
     Some(
-        coerce_c_value_to_type(value, c_type, obligations, assumptions)?
+        coerce_program_value_to_type(value, c_type, obligations, assumptions)?
             .with_pointer_pointee_constant(pointee_constant),
     )
 }
@@ -538,7 +538,7 @@ pub(in crate::kernel) fn add_memory_store_obligation(
     add_proof_obligation(
         &mut obligations,
         assumptions,
-        Proposition::CMemoryCanStore {
+        Proposition::MemoryCanStore {
             memory: memory.clone(),
             pointer: pointer.clone(),
             byte_width: value.byte_width(),
@@ -547,7 +547,7 @@ pub(in crate::kernel) fn add_memory_store_obligation(
     Some(obligations)
 }
 
-pub(in crate::kernel) fn evaluate_c_arguments_paths(
+pub(in crate::kernel) fn evaluate_program_arguments_paths(
     state: &ExecutionState,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
@@ -572,7 +572,7 @@ pub(in crate::kernel) fn evaluate_c_arguments_paths(
             let argument_assumptions =
                 assumptions_with_path_context(assumptions, &path.facts, &path.obligations);
             for argument_path in
-                evaluate_c_expression_paths(state, argument, &argument_assumptions, budget)?
+                evaluate_program_expression_paths(state, argument, &argument_assumptions, budget)?
             {
                 let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                     &path.facts,
@@ -698,7 +698,7 @@ pub(super) fn append_string_literal_loadable_facts(
     };
     for literal in function.string_literals() {
         let base = Memory::string_literal_pointer(function.name(), literal.name(), literal.bytes());
-        let proposition = Proposition::CMemoryLoadable {
+        let proposition = Proposition::MemoryLoadable {
             memory: state.memory.clone(),
             base,
             bytes: MachineTerm::constant(literal.bytes().len() as u32),
@@ -710,19 +710,19 @@ pub(super) fn append_string_literal_loadable_facts(
     }
 }
 
-pub(in crate::kernel) fn bind_c_function_arguments(
+pub(in crate::kernel) fn bind_program_function_arguments(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     values: &[ProgramValue],
 ) -> Option<ExecutionState> {
-    bind_c_function_arguments_with(caller_state, function, values, false)
+    bind_program_function_arguments_with(caller_state, function, values, false)
 }
 
-/// [`bind_c_function_arguments`], except that with `input_aggregates` each
+/// [`bind_program_function_arguments`], except that with `input_aggregates` each
 /// by-value aggregate parameter's object is declared and not copied into:
 /// it is the function's input itself, whose cells the producer of a proof's
 /// entry names as their own entry values.
-pub(in crate::kernel) fn bind_c_function_arguments_with(
+pub(in crate::kernel) fn bind_program_function_arguments_with(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     values: &[ProgramValue],
@@ -809,7 +809,7 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
     callee_state.loan_ledger = caller_state.loan_ledger.clone();
     callee_state.loan_participant = caller_state.loan_participant;
     callee_state.loan_view_bindings = caller_state.loan_view_bindings.clone();
-    callee_state = initialize_c_function_globals(&callee_state, function);
+    callee_state = initialize_program_function_globals(&callee_state, function);
     for (parameter, value) in function.parameters().iter().zip(values) {
         if let Some(layout) = parameter.aggregate_layout() {
             let ProgramValue::Pointer(pointer) = value else {
@@ -861,7 +861,7 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
                 .unchecked_with_fact(private_aggregate_storage_owner(slot, layout));
             continue;
         }
-        let value = coerce_c_function_argument_without_obligations(value, parameter)?
+        let value = coerce_program_function_argument_without_obligations(value, parameter)?
             .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
             .with_pointer_declared_object_class(parameter.pointee_class());
@@ -924,7 +924,7 @@ pub(in crate::kernel) fn bind_c_function_arguments_with(
 /// concrete declaration identity so global and static names in the interface
 /// resolve to the program's stable storage; that identity is not body-proof
 /// evidence. Named callbacks supply no concrete storage.
-pub(super) fn bind_c_contract_arguments(
+pub(super) fn bind_contract_arguments(
     caller_state: &ExecutionState,
     interface: &FunctionContractInterface,
     values: &[ProgramValue],
@@ -972,7 +972,7 @@ pub(super) fn bind_c_contract_arguments(
     callee_state.loan_participant = caller_state.loan_participant;
     callee_state.loan_view_bindings = caller_state.loan_view_bindings.clone();
     if let Some(function) = storage {
-        callee_state = initialize_c_function_globals(&callee_state, function);
+        callee_state = initialize_program_function_globals(&callee_state, function);
     }
     for (parameter, value) in interface.parameters().iter().zip(values) {
         if let Some(layout) = parameter.aggregate_layout() {
@@ -1004,7 +1004,7 @@ pub(super) fn bind_c_contract_arguments(
             );
             continue;
         }
-        let value = coerce_c_function_argument_without_obligations(value, parameter)?
+        let value = coerce_program_function_argument_without_obligations(value, parameter)?
             .with_pointer_pointee_volatile(parameter.pointee_is_volatile())
             .with_pointer_pointee_constant(parameter.pointee_is_constant())
             .with_pointer_declared_object_class(parameter.pointee_class());
@@ -1023,19 +1023,19 @@ pub(super) fn bind_c_contract_arguments(
     Some(callee_state)
 }
 
-pub(super) fn coerce_c_function_argument_without_obligations(
+pub(super) fn coerce_program_function_argument_without_obligations(
     value: &ProgramValue,
     parameter: &ProgramParameter,
 ) -> Option<ProgramValue> {
-    coerce_c_contract_argument_without_obligations(value, parameter)
+    coerce_contract_argument_without_obligations(value, parameter)
 }
 
-pub(super) fn coerce_c_contract_argument_without_obligations(
+pub(super) fn coerce_contract_argument_without_obligations(
     value: &ProgramValue,
     parameter: &ProgramParameter,
 ) -> Option<ProgramValue> {
     let mut obligations = Vec::new();
-    let value = coerce_c_value_with_pointee_constant(
+    let value = coerce_program_value_with_pointee_constant(
         value.clone(),
         parameter.c_type(),
         parameter.pointee_is_constant(),
@@ -1045,13 +1045,13 @@ pub(super) fn coerce_c_contract_argument_without_obligations(
     obligations.is_empty().then_some(value)
 }
 
-pub(super) fn coerce_c_function_arguments(
+pub(super) fn coerce_program_function_arguments(
     function: &ProgramFunction,
     values: &[ProgramValue],
     existing_obligations: &[ProofObligation],
     assumptions: &PureFactContext,
 ) -> Option<(Vec<ProgramValue>, Vec<ProofObligation>)> {
-    coerce_c_contract_arguments(
+    coerce_contract_arguments(
         function.contract_interface(),
         values,
         existing_obligations,
@@ -1059,7 +1059,7 @@ pub(super) fn coerce_c_function_arguments(
     )
 }
 
-pub(super) fn coerce_c_contract_arguments(
+pub(super) fn coerce_contract_arguments(
     interface: &FunctionContractInterface,
     values: &[ProgramValue],
     existing_obligations: &[ProofObligation],
@@ -1089,7 +1089,7 @@ pub(super) fn coerce_c_contract_arguments(
                 }
                 value => value.clone(),
             };
-            coerced.push(coerce_c_value_with_pointee_constant(
+            coerced.push(coerce_program_value_with_pointee_constant(
                 value,
                 parameter.c_type(),
                 parameter.pointee_is_constant(),

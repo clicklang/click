@@ -6,7 +6,7 @@ fn produced_read_supply_scales_with_outputs_and_ignores_the_caller_frame() {
     let mut samples = Vec::new();
     for count in [4, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let function = c_function(ProgramType::Void, "outputs", vec![], c_skip())
+        let function = program_function(ProgramType::Void, "outputs", vec![], program_skip())
             .with_resource_summary(vec![], (0..count).map(output).collect());
         let entry = state(count);
         let mut evaluation = entry.clone();
@@ -30,7 +30,7 @@ fn produced_read_supply_scales_with_outputs_and_ignores_the_caller_frame() {
     let mut samples = Vec::new();
     for count in [0, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let function = c_function(ProgramType::Void, "outputs", vec![], c_skip())
+        let function = program_function(ProgramType::Void, "outputs", vec![], program_skip())
             .with_resource_summary(vec![], vec![output(0)]);
         let mut entry = state(1);
         let mut bindings = BTreeMap::new();

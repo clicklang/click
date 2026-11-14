@@ -2,9 +2,9 @@ use super::*;
 
 fn output(index: u32) -> ResourceSpec {
     ResourceSpec::owned_memory(MemorySegment::new(
-        c_variable("cells"),
-        c_int32_literal(index),
-        c_int32_literal(index + 1),
+        crate::kernel::program_expression::variable("cells"),
+        crate::kernel::program_expression::int32_literal(index),
+        crate::kernel::program_expression::int32_literal(index + 1),
     ))
     .with_role(ResourceTransferRole::Produce)
     .with_snapshot(ResourceSnapshot::Post)
@@ -25,11 +25,15 @@ fn state(count: u32) -> ExecutionState {
 #[test]
 fn output_supply_keeps_entry_and_guarded_clauses_out_of_post_reads() {
     let guard = SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(c_int32_literal(0)),
+        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
+            0,
+        )),
         operator: ComparisonOperator::Equal,
-        right: SpecExpression::ProgramExpression(c_int32_literal(1)),
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
+            1,
+        )),
     };
-    let function = c_function(ProgramType::Void, "outputs", vec![], c_skip())
+    let function = program_function(ProgramType::Void, "outputs", vec![], program_skip())
         .with_resource_summary(
             vec![],
             vec![
@@ -37,8 +41,12 @@ fn output_supply_keeps_entry_and_guarded_clauses_out_of_post_reads() {
                 output(1).with_snapshot(ResourceSnapshot::Entry),
                 output(2).with_guard(guard.clone()),
                 ResourceSpec::owned_memory(
-                    MemorySegment::new(c_variable("cells"), c_int32_literal(3), c_int32_literal(4))
-                        .with_guard(guard),
+                    MemorySegment::new(
+                        crate::kernel::program_expression::variable("cells"),
+                        crate::kernel::program_expression::int32_literal(3),
+                        crate::kernel::program_expression::int32_literal(4),
+                    )
+                    .with_guard(guard),
                 )
                 .with_role(ResourceTransferRole::Produce)
                 .with_snapshot(ResourceSnapshot::Post),
@@ -65,7 +73,7 @@ fn output_supply_keeps_entry_and_guarded_clauses_out_of_post_reads() {
 
 #[test]
 fn a_primitive_output_that_cannot_be_addressed_grants_no_authority() {
-    let function = c_function(ProgramType::Void, "outputs", vec![], c_skip())
+    let function = program_function(ProgramType::Void, "outputs", vec![], program_skip())
         .with_resource_summary(vec![], vec![output(0)]);
     // The address expression has no value, so the clause remains pending for
     // the ordinary return evaluator. Preparation must invent neither a value

@@ -71,7 +71,7 @@ pub(crate) fn integer_key(fold: &KernelFold) -> Option<IntegerFoldAlphaKey> {
 }
 
 fn machine_key(fold: &KernelFold) -> Option<(AlphaBitvectorKey, usize)> {
-    if fold.result_type() != &KernelType::C(ProgramType::Int32) {
+    if fold.result_type() != &KernelType::Program(ProgramType::Int32) {
         return None;
     }
     let mut bindings = bindings();
@@ -201,7 +201,7 @@ mod tests {
                 81,
                 82,
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory_ref(memory),
+                    crate::kernel::intern_memory_ref(memory),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,
                 ),

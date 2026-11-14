@@ -20,11 +20,11 @@ fn promoted_divisor_guard_queries_ignore_unrelated_ambient_facts() {
                 .assume_condition(native_divisor_equal(ty, 0), false)
                 .assume_proposition(promoted_division_safe_guard(ty));
             let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
-                evaluate_c_expression_paths(
+                evaluate_program_expression_paths(
                     &ExecutionState::new(),
                     &expression,
                     &context,
-                    &mut ExecutionBudget::for_c_expression(&expression),
+                    &mut ExecutionBudget::for_program_expression(&expression),
                 )
                 .unwrap()
             });

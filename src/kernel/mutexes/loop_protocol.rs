@@ -339,13 +339,12 @@ mod tests {
 mod loop_rule_tests {
     use super::*;
     use crate::kernel::functions::{loop_instance_guard, rewrite_resource_instance};
-    use crate::kernel::loops::{c_loop_binder_state_components_match_at_back_edge, c_loop_binders};
+    use crate::kernel::loops::{loop_binder_state_components_match_at_back_edge, loop_binders};
     use crate::kernel::{
         ComparisonOperator, CompositeResourceDefinition, PointerOffsetTerm, ProgramExpression,
         ProgramType, ProgramValue, ResourceAccessMode, ResourceFamily, ResourceFieldSchema,
         ResourceFieldType, ResourceInstance, ResourceQuantity, ResourceSnapshot, ResourceSpec,
-        ResourceTerm, ResourceTransferRole, SpecExpression, SpecProposition, Variable, c_variable,
-        int32,
+        ResourceTerm, ResourceTransferRole, SpecExpression, SpecProposition, Variable, int32,
     };
 
     fn address() -> Pointer {
@@ -357,7 +356,7 @@ mod loop_rule_tests {
     fn schema() -> ResourceFieldSchema {
         ResourceFieldSchema::new(vec![(
             "parity".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap()
     }
@@ -377,7 +376,9 @@ mod loop_rule_tests {
             "loop_guard",
             vec![],
             Some(SpecProposition::Comparison {
-                left: SpecExpression::ProgramExpression(c_variable("parity")),
+                left: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable("parity"),
+                ),
                 operator: ComparisonOperator::Equal,
                 right: SpecExpression::Value(int32(1)),
             }),
@@ -453,9 +454,9 @@ mod loop_rule_tests {
     #[test]
     fn checked_loop_guard_join_accepts_ordinary_folded_acquisition() {
         let (top, next, definition) = top_and_next();
-        let binders = c_loop_binders(&[binder()]);
+        let binders = loop_binders(&[binder()]);
         assert!(
-            c_loop_binder_state_components_match_at_back_edge(
+            loop_binder_state_components_match_at_back_edge(
                 &top,
                 &next,
                 &binders,
@@ -470,12 +471,12 @@ mod loop_rule_tests {
     fn checked_loop_guard_join_rejects_missing_or_inconsistent_custody() {
         let (top, next, definition) = top_and_next();
         let assumptions = PureFactContext::new();
-        let binders = c_loop_binders(&[binder()]);
+        let binders = loop_binders(&[binder()]);
         let (opened, _) =
             rewrite_resource_instance(&next, &instance(1), &definition, &assumptions, true)
                 .unwrap();
         assert!(
-            c_loop_binder_state_components_match_at_back_edge(
+            loop_binder_state_components_match_at_back_edge(
                 &top,
                 &opened,
                 &binders,
@@ -492,7 +493,7 @@ mod loop_rule_tests {
             rewrite_resource_instance(&opened, &instance(0), &definition, &assumptions, false)
                 .unwrap();
         assert!(
-            c_loop_binder_state_components_match_at_back_edge(
+            loop_binder_state_components_match_at_back_edge(
                 &top,
                 &idle,
                 &binders,
@@ -504,7 +505,7 @@ mod loop_rule_tests {
         );
         let duplicate = vec![binders[0].clone(), binders[0].clone()];
         assert!(
-            c_loop_binder_state_components_match_at_back_edge(
+            loop_binder_state_components_match_at_back_edge(
                 &top,
                 &next,
                 &duplicate,
@@ -527,10 +528,10 @@ mod loop_rule_tests {
             .unwrap();
         forged.resources = forged.resources.clone().unchecked_with_fact(guard);
         assert!(
-            c_loop_binder_state_components_match_at_back_edge(
+            loop_binder_state_components_match_at_back_edge(
                 &top,
                 &forged,
-                &c_loop_binders(&[binder()]),
+                &loop_binders(&[binder()]),
                 &PureFactContext::new(),
                 &[definition]
             )
@@ -543,9 +544,10 @@ mod loop_rule_tests {
         let (state, _, definition) = top_and_next();
         let mut invalid = Vec::new();
         let mut candidate = definition.clone();
-        candidate
-            .parameters
-            .push(crate::kernel::c_parameter("extra", ProgramType::Int32));
+        candidate.parameters.push(crate::kernel::program_parameter(
+            "extra",
+            ProgramType::Int32,
+        ));
         invalid.push(candidate);
         let mut candidate = definition.clone();
         candidate.recursive = true;

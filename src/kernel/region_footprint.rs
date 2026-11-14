@@ -63,7 +63,7 @@ impl RegionFootprint {
         for fact in effects.fact_iter() {
             crate::instrumentation::record_deterministic_work(1);
             match fact.proposition() {
-                Proposition::CMemoryMutatesOnly { writes, .. } => {
+                Proposition::MemoryMutatesOnly { writes, .. } => {
                     extra_effect |= !writes.is_empty();
                     for (pointer, bytes) in writes {
                         members.push_back(Resource::Memory(MemoryRange::new_with_element_width(
@@ -74,7 +74,7 @@ impl RegionFootprint {
                         )));
                     }
                 }
-                Proposition::CMemoryEffectSummary { mutable_ranges, .. } => {
+                Proposition::MemoryEffectSummary { mutable_ranges, .. } => {
                     effect_count += 1;
                     resource_bound = fact.resource_effect_bound.as_deref().cloned();
                     if let Some(bound) = &resource_bound {
@@ -97,7 +97,7 @@ impl RegionFootprint {
                     // is a separate fact, not a replacement for these members.
                     members.extend(mutable_ranges.iter().cloned().map(Resource::Memory));
                 }
-                Proposition::CHeapAllocationFreed {
+                Proposition::HeapAllocationFreed {
                     allocation_base,
                     bytes,
                     ..
@@ -257,11 +257,11 @@ pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFact
                 let (Some(left), Some(right)) = (byte_resource(left), byte_resource(right)) else {
                     return false;
                 };
-                let forward = Proposition::CResourceSeparate {
+                let forward = Proposition::ResourceSeparate {
                     left: Box::new(left.clone()),
                     right: Box::new(right.clone()),
                 };
-                let reverse = Proposition::CResourceSeparate {
+                let reverse = Proposition::ResourceSeparate {
                     left: Box::new(right),
                     right: Box::new(left),
                 };
@@ -300,11 +300,11 @@ pub(crate) fn byte_resource(resource: &Resource) -> Option<Resource> {
 
 pub(crate) fn byte_premise(premise: &Proposition) -> Option<Proposition> {
     Some(match premise {
-        Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
+        Proposition::ResourceSeparate { left, right } => Proposition::ResourceSeparate {
             left: Box::new(byte_resource(left)?),
             right: Box::new(byte_resource(right)?),
         },
-        Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
+        Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
             parent: Box::new(byte_resource(parent)?),
             child: Box::new(byte_resource(child)?),
         },

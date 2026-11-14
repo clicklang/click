@@ -344,7 +344,7 @@ live allocations, keeps a tombstone only when every arm agrees that the
 allocation is retired, and forgets branch-local cell values behind a memory
 provenance barrier. It then checks that the exported resource expands to the
 allocation on the retaining arm and not on the freeing arm. A conditional
-`CHeapAllocationFreed` fact is therefore validated inside the branch evidence
+`HeapAllocationFreed` fact is therefore validated inside the branch evidence
 but is not published as an unconditional free effect for the joined state.
 An unrelated resource cannot hide the lifetime difference.
 
@@ -428,7 +428,7 @@ is established before opening goals; a failed registered contract goal never
 falls back to a local lowering.
 
 There is one lowering. A claim goal is the contract's elaborated ensure
-lowered by the kernel at the path's outcome (`c_function_ensure_goals`); a
+lowered by the kernel at the path's outcome (`program_function_ensure_goals`); a
 registered predicate ensure is the predicate identity, which the proof
 unfolds on the goal, and an explicit closer also tries the unfolded body
 when the proof unfolded that predicate. Every proposition a proof states,
@@ -437,7 +437,7 @@ goes the same way: elaborated into the kernel's spec form exactly as a
 contract clause is (`elaborate_fixed_state_proposition`, with the proof's
 recorded snapshots, `old(...)` as the function entry, `result`, and the
 proof's current locals as fixed values) and lowered by the kernel
-(`c_lower_spec_proposition_at_state`), under one reasoning policy
+(`program_lower_spec_proposition_at_state`), under one reasoning policy
 (`proof_lowering_assumptions`): a proposition that applies a pure function
 keeps its memory reads symbolic. A `branch ensuring` or proof `if ensuring`
 fact is checked in each arm under that same policy and the arm's facts, and
@@ -445,7 +445,7 @@ its elaboration reads a local array by its element type and binds
 quantifiers as a `have` does, so an arm holds an interface fact exactly when
 a `have` of the same text there would; an expression a proof evaluates goes
 the same way (`elaborate_fixed_state_expression`,
-`c_evaluate_spec_expression_at_state`). Every pure-function call stays a
+`program_evaluate_speprogram_expression_at_state`). Every pure-function call stays a
 typed logical application during lowering, including calls whose arguments
 are constants. Only the checked `unfold(function(args))` proof step exposes
 one instantiated defining equation; lowering itself never executes Click.
@@ -456,7 +456,7 @@ goal are elaborated and lowered the same way, so a declared standard
 theorem matches its kernel axiom by spelling. So are the C fragments stated
 outside proofs: a resource clause's quantity, arguments, and segment bounds,
 an effect footprint, a resource definition's reads
-(`evaluate_c_fragment_through_kernel`), and a predicate body unfolded on a
+(`evaluate_program_expression_through_kernel`), and a predicate body unfolded on a
 kernel proposition, which is elaborated with the parameters bound to the
 decoded arguments and lowered at the decoded state. A C fragment stated at
 a state that does not justify a load it makes is refused there, unless the
@@ -509,7 +509,7 @@ claim goal the proof was rooted at rather than the rewritten form.
 That lowering is not an isomorphism, so it reports what it did. A quantified
 body's path facts are folded into kernel implications that no written
 connective produced, and a quantifier binds its written name to a kernel
-variable the written syntax never names. `c_lower_spec_proposition_at_state`
+variable the written syntax never names. `program_lower_spec_proposition_at_state`
 therefore also returns the head chain of the proposition it built: per
 outermost node, whether lowering inserted it as a path-fact or obligation
 guard, or the spec wrote it, and, for a written universal, the written name

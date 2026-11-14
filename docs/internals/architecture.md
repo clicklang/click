@@ -31,7 +31,7 @@ language's role.
 ## Data flow
 
 The C target-language and Surface Click specification-language parsers
-retain source spans. Validation builds a `C0VerificationSession`, which owns checked declarations and function blocks.
+retain source spans. Validation builds a `ProgramVerificationSession`, which owns checked declarations and function blocks.
 Lowering records the relationship between surface propositions and kernel
 propositions so diagnostics and expansion can return to source language.
 Those records are presentation hints, not evidence that a fact is available.

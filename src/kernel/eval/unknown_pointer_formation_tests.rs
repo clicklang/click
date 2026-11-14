@@ -158,16 +158,16 @@ fn slice_entry_bounds_allow_formation_without_read_authority() {
             "length",
             ProgramValue::UInt64(MachineTerm::uint64_constant(2)),
         );
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "slice_metadata",
         vec![
-            c_parameter("p", ProgramType::Int32Pointer).with_slice_length_parameter(1),
-            c_parameter("n", ProgramType::UInt64),
+            program_parameter("p", ProgramType::Int32Pointer).with_slice_length_parameter(1),
+            program_parameter("n", ProgramType::UInt64),
         ],
-        c_skip(),
+        program_skip(),
     );
-    let entry = crate::kernel::c_function_contract_entry(
+    let entry = crate::kernel::program_function_contract_entry(
         &state,
         &function,
         &[
@@ -197,13 +197,16 @@ fn fixed_array_reference_bounds_allow_formation_without_read_authority() {
     for bytes in [0, 4, 16] {
         let p = pointer(930_460 + u64::from(bytes));
         let state = ExecutionState::new().with_local("data", ProgramValue::Pointer(p.clone()));
-        let function = c_function(
+        let function = program_function(
             ProgramType::Void,
             "array_metadata",
-            vec![c_parameter("p", ProgramType::Int32Pointer).with_fixed_reference_extent(bytes)],
-            c_skip(),
+            vec![
+                program_parameter("p", ProgramType::Int32Pointer)
+                    .with_fixed_reference_extent(bytes),
+            ],
+            program_skip(),
         );
-        let entry = crate::kernel::c_function_contract_entry(
+        let entry = crate::kernel::program_function_contract_entry(
             &state,
             &function,
             &[ProgramExpression::Value(ProgramValue::Pointer(p.clone()))],
@@ -427,7 +430,7 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
 #[test]
 fn a_registered_zero_index_permits_null_pointer_formation() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let address = Pointer::symbolic(Variable(933_100));
     let load =
         crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Int32, 4);

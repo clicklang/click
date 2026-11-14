@@ -43,7 +43,7 @@ fn model_source(pointer: &Pointer, condition: bool) -> Proposition {
         algebraic_type: ty,
         node: AlgebraicTermNode::Constructor {
             variant: "Node".into(),
-            fields: vec![AlgebraicValue::C(value(pointer, true))],
+            fields: vec![AlgebraicValue::Program(value(pointer, true))],
         },
     };
     if condition {

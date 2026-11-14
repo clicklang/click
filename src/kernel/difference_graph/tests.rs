@@ -946,7 +946,7 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
     };
     let memory = crate::kernel::Memory::new().with_block("difference-graph-cell", 4);
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(memory),
+        crate::kernel::intern_memory(memory),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -2054,7 +2054,7 @@ fn cached_context_graph_tracks_shared_order_addition() {
         MachineIntegerType::Int64,
         MachineIntegerType::UInt64,
     ] {
-        let ty = KernelType::C(format.c_type());
+        let ty = KernelType::Program(format.c_type());
         let a = KernelTerm::variable(ty.clone(), Variable(993221));
         let b = KernelTerm::variable(ty, Variable(993222));
         let a =
@@ -2114,7 +2114,7 @@ fn retained_equalities_exclusions_and_aliases_follow_context_updates() {
         MachineIntegerType::Int64,
         MachineIntegerType::UInt64,
     ] {
-        let x = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993231));
+        let x = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(993231));
         let root =
             KernelTerm::machine_binary_shared(format, MachineBinaryOp::Multiply, [x.clone(), x]);
         let seven = if format.format().bits() == 32 {
@@ -2173,7 +2173,7 @@ fn retained_wide_residues_keep_wrapping_low_bits_and_require_sources() {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineOperandView as V};
     let _session = crate::kernel::VerificationSession::enter();
     for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
-        let var = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993241));
+        let var = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(993241));
         let root = KernelTerm::machine_binary_shared(
             format,
             MachineBinaryOp::Multiply,
@@ -2237,7 +2237,7 @@ fn native_equality_after_shared_admission_keeps_existing_bounds() {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineOperandView as V};
     let _session = crate::kernel::VerificationSession::enter();
     for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
-        let x = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993261));
+        let x = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(993261));
         let root =
             KernelTerm::machine_binary_shared(format, MachineBinaryOp::Multiply, [x.clone(), x]);
         let five = if format.format().bits() == 32 {
@@ -2286,7 +2286,7 @@ fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
         MachineIntegerType::Int16,
         MachineIntegerType::UInt16,
     ] {
-        let x = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993281));
+        let x = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(993281));
         let root =
             KernelTerm::machine_binary_shared(format, MachineBinaryOp::Multiply, [x.clone(), x]);
         let seven = MachineTerm::narrow_constant(format, 7);
@@ -2345,7 +2345,7 @@ fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
             }
         }
-        let word = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993282));
+        let word = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(993282));
         let ones = MachineTerm::narrow_constant(format, u128::MAX);
         let zero = MachineTerm::narrow_constant(format, 0);
         let equality = condition_for_operand_views(

@@ -243,7 +243,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         .map(ExecutionPureFact::new)
                         .collect::<ExecutionFacts>();
                     let published =
-                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                        crate::kernel::program_function_execution_candidate_with_additional_facts(
                             path,
                             &additional,
                         );
@@ -269,7 +269,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             })?;
             evidence_plan.push(fork);
         }
-        let candidates = crate::kernel::c_function_execution_candidates_from_retained_paths(
+        let candidates = crate::kernel::program_function_execution_candidates_from_retained_paths(
             checked.state().clone(),
             checked.function().clone(),
             checked.arguments().to_vec(),

@@ -58,7 +58,7 @@ fn logical_pointer_field_uses_current_pointee_memory() {
     let paths = evaluate(&state);
     assert_eq!(paths.len(), 1);
     assert_eq!(
-        crate::kernel::eval::read_over_write_c_value(&paths[0].value.clone().into_native()),
+        crate::kernel::eval::read_over_write_program_value(&paths[0].value.clone().into_native()),
         int32(7)
     );
     assert!(paths[0].obligations.is_empty());

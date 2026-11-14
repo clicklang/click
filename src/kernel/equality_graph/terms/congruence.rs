@@ -864,8 +864,10 @@ impl TermClasses {
                         // A value of an abstract type is its algebraic term,
                         // so a field holding one is congruent with a field
                         // holding an equal one.
-                        V::C(ProgramValue::Parameter(term)) => pending.push(Work::Algebraic(term)),
-                        V::C(value) => pending.push(Work::Value(value)),
+                        V::Program(ProgramValue::Parameter(term)) => {
+                            pending.push(Work::Algebraic(term))
+                        }
+                        V::Program(value) => pending.push(Work::Value(value)),
                         V::Algebraic(term) => pending.push(Work::Algebraic(term)),
                         V::Integer(term) => {
                             pending.push(Work::Wrap(ArgumentTag::Integer));
@@ -1255,7 +1257,7 @@ impl TermClasses {
                             element_type,
                         } => {
                             pending.push(Work::Wrap(ArgumentTag::Array(
-                                crate::kernel::intern_c_memory(memory.clone()).read_identity(),
+                                crate::kernel::intern_memory(memory.clone()).read_identity(),
                                 *element_type,
                             )));
                             pending.push(Work::Value(pointer));
@@ -1536,7 +1538,7 @@ impl TermClasses {
         while let Some(work) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             let node = match work {
-                Work::Type(V::C(ty)) => Node::TypeC(*ty),
+                Work::Type(V::Program(ty)) => Node::TypeC(*ty),
                 Work::Type(V::ObjectPointer(ty, class)) => {
                     Node::TypeObjectPointer(*ty, class.clone())
                 }

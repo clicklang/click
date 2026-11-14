@@ -448,8 +448,8 @@ fn algebraic_terms_equal_with_load_atoms(
     }
     let values = |left: &AlgebraicValue, right: &AlgebraicValue| match (left, right) {
         (
-            AlgebraicValue::C(ProgramValue::Parameter(left)),
-            AlgebraicValue::C(ProgramValue::Parameter(right)),
+            AlgebraicValue::Program(ProgramValue::Parameter(left)),
+            AlgebraicValue::Program(ProgramValue::Parameter(right)),
         ) => algebraic_terms_equal_with_load_atoms(left, right, loads_match),
         (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
             algebraic_terms_equal_with_load_atoms(left, right, loads_match)
@@ -656,7 +656,7 @@ pub(in crate::kernel) fn condition_match_key(
     })
 }
 
-/// The key a `CResourceContains` fact is filed under: a memory range's base
+/// The key a `ResourceContains` fact is filed under: a memory range's base
 /// block, or any other resource itself. `resource_contains_builtin` relates a
 /// memory parent only to ranges over related addresses, and any other parent
 /// only to itself.
@@ -782,7 +782,7 @@ pub(super) fn resources_equal_ignoring_memories(left: &Resource, right: &Resourc
                     .iter()
                     .zip(right_arguments.iter())
                     .all(|(left, right)| match (left, right) {
-                        (AlgebraicValue::C(left), AlgebraicValue::C(right)) => {
+                        (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) => {
                             values_match(left, right)
                         }
                         _ => left == right,
@@ -1732,7 +1732,7 @@ mod exact_materialization_tests {
         (0..length).fold(MachineTerm::constant(tail), |value, _| {
             let memory = Memory::new().store(pointer.clone(), ProgramValue::Int32(value));
             MachineTerm::MemoryLoad(
-                intern_c_memory(memory),
+                intern_memory(memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -1772,9 +1772,7 @@ mod exact_materialization_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let unsigned = MachineTerm::MemoryLoad(
-            intern_c_memory(
-                Memory::new().store(pointer.clone(), ProgramValue::UInt32(17u32.into())),
-            ),
+            intern_memory(Memory::new().store(pointer.clone(), ProgramValue::UInt32(17u32.into()))),
             Box::new(pointer),
             LoadKind::UInt32,
         );
@@ -1820,7 +1818,7 @@ mod exact_materialization_tests {
         let before = Memory::new().with_block("retained-snapshot", 64);
         let load = |memory| {
             MachineTerm::MemoryLoad(
-                intern_c_memory(memory),
+                intern_memory(memory),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
             )
@@ -2987,7 +2985,7 @@ fn collect_algebraic_value_memory_loads(
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     match value {
-        AlgebraicValue::C(value) => {
+        AlgebraicValue::Program(value) => {
             collect_cvalue_memory_loads(value, current_memory, loads, seen_integers)
         }
         AlgebraicValue::Integer(value) => {
@@ -3444,8 +3442,8 @@ pub(crate) fn algebraic_constructor_field_equalities(
         .iter()
         .zip(right_fields)
         .map(|(left, right)| match (left, right) {
-            (AlgebraicValue::C(left), AlgebraicValue::C(right)) => {
-                c_value_comparison_proposition(left, ComparisonOperator::Equal, right)
+            (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) => {
+                program_value_comparison_proposition(left, ComparisonOperator::Equal, right)
             }
             (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
                 Some(Proposition::Equal(
@@ -5560,7 +5558,7 @@ impl PureFactContext {
             proposition,
             Proposition::Equal(..)
                 | Proposition::Predicate { .. }
-                | Proposition::CResourceSeparate { .. }
+                | Proposition::ResourceSeparate { .. }
                 | Proposition::ConditionIs(
                     ConditionTerm::AlgebraicEqual(..) | ConditionTerm::PointerValueEqual(..),
                     true
@@ -5593,7 +5591,7 @@ impl PureFactContext {
     }
 
     fn adjust_memory_loadable_fact(&mut self, proposition: &Proposition) {
-        if let Proposition::CMemoryReadDefined {
+        if let Proposition::MemoryReadDefined {
             pointer,
             value_type,
             ..
@@ -5616,7 +5614,7 @@ impl PureFactContext {
             };
             return;
         }
-        let Proposition::CMemoryLoadable { base, .. } = proposition else {
+        let Proposition::MemoryLoadable { base, .. } = proposition else {
             return;
         };
         let object = base.object_identity();
@@ -6006,7 +6004,7 @@ impl PureFactContext {
             .chain(related)
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
             .filter(move |fact| match fact {
-                Proposition::CMemoryLoadable { base: source, .. } => {
+                Proposition::MemoryLoadable { base: source, .. } => {
                     !base.blocks_proven_distinct(source)
                 }
                 _ => false,
@@ -6104,7 +6102,7 @@ impl PureFactContext {
                 })
                 .and_then(|facts| facts.iter().next())
                 .filter(|fact| match fact {
-                    Proposition::CMemoryLoadable { base, .. } => !keys
+                    Proposition::MemoryLoadable { base, .. } => !keys
                         .contains(&(base.block.clone(), memory_blind_pointer_fingerprint(base))),
                     _ => false,
                 });
@@ -6238,9 +6236,9 @@ impl PureFactContext {
 
     /// Files a memory effect fact under both of its memories.
     fn adjust_memory_effect_fact(&mut self, proposition: &Proposition) {
-        let (Proposition::CMemoryEffectSummary { before, after, .. }
-        | Proposition::CMemoryMutatesOnly { before, after, .. }
-        | Proposition::CHeapAllocationFreed { before, after, .. }) = proposition
+        let (Proposition::MemoryEffectSummary { before, after, .. }
+        | Proposition::MemoryMutatesOnly { before, after, .. }
+        | Proposition::HeapAllocationFreed { before, after, .. }) = proposition
         else {
             return;
         };
@@ -6285,18 +6283,18 @@ impl PureFactContext {
                 .filter(move |fact| {
                     matches!(
                         fact,
-                        Proposition::CMemoryEffectSummary { before, .. }
-                        | Proposition::CMemoryMutatesOnly { before, .. }
-                        | Proposition::CHeapAllocationFreed { before, .. }
+                        Proposition::MemoryEffectSummary { before, .. }
+                        | Proposition::MemoryMutatesOnly { before, .. }
+                        | Proposition::HeapAllocationFreed { before, .. }
                             if before == memory
                     )
                 })
         })
     }
 
-    /// Files a `CResourceContains` fact under its parent's key.
+    /// Files a `ResourceContains` fact under its parent's key.
     fn adjust_resource_contains_fact(&mut self, proposition: &Proposition) {
-        let Proposition::CResourceContains { parent, child } = proposition else {
+        let Proposition::ResourceContains { parent, child } = proposition else {
             return;
         };
         match &**child {
@@ -6347,7 +6345,7 @@ impl PureFactContext {
                 .flat_map(crate::persistent::PersistentSet::iter)
             {
                 crate::instrumentation::record_deterministic_work(1);
-                let Proposition::CResourceContains { parent, .. } = fact else {
+                let Proposition::ResourceContains { parent, .. } = fact else {
                     continue;
                 };
                 if let Resource::Memory(range) = &**parent {
@@ -6390,7 +6388,7 @@ impl PureFactContext {
         separations
     }
 
-    /// The `CResourceContains` facts whose parent `current` may contain by
+    /// The `ResourceContains` facts whose parent `current` may contain by
     /// `resource_contains_builtin`: filed under `current` itself, or for a
     /// memory range under its base block and the blocks of the base's exact
     /// aliases.
@@ -6475,11 +6473,11 @@ impl PureFactContext {
         }
     }
 
-    /// Maintains the residual separation-fact list: `CResourceSeparate`
+    /// Maintains the residual separation-fact list: `ResourceSeparate`
     /// facts with at least one non-memory side, which the block-pair index
     /// cannot serve but whose containment may entail memory separation.
     fn adjust_nonmemory_separation_fact(&mut self, proposition: &Proposition) {
-        let Proposition::CResourceSeparate { left, right } = proposition else {
+        let Proposition::ResourceSeparate { left, right } = proposition else {
             return;
         };
         if Self::proposition_memory_separation(proposition).is_some() {
@@ -6601,7 +6599,7 @@ impl PureFactContext {
                 {
                     record_implicit_reasoning_provenance(
                         self,
-                        &Proposition::CResourceComposition(source.clone()),
+                        &Proposition::ResourceComposition(source.clone()),
                     );
                     return Some((source, a, b));
                 }
@@ -6645,7 +6643,7 @@ impl PureFactContext {
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
         self.execution_variable_ceiling
             .file_proposition(&proposition);
-        if let Proposition::CResourceComposition(resources) = proposition {
+        if let Proposition::ResourceComposition(resources) = proposition {
             if !self.resource_compositions.contains(&resources) {
                 self.resource_compositions =
                     self.resource_compositions.with_value(resources.clone());
@@ -6674,7 +6672,7 @@ impl PureFactContext {
                     .disjunction_facts
                     .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
             }
-            if matches!(proposition, Proposition::CResourceSeparate { .. }) {
+            if matches!(proposition, Proposition::ResourceSeparate { .. }) {
                 self.separation_facts = self
                     .separation_facts
                     .with_value(crate::kernel::clone_proposition_iteratively(&proposition));
@@ -6847,13 +6845,13 @@ impl PureFactContext {
                 owners.push(opened);
                 self.with_store_owners(owners)
             }
-            None => self.assume_proposition(Proposition::CResourceComposition(opened)),
+            None => self.assume_proposition(Proposition::ResourceComposition(opened)),
         }
     }
 
     fn with_store_owners(mut self, owners: Vec<ResourceContext>) -> Self {
         for owner in &owners {
-            self = self.assume_proposition(Proposition::CResourceComposition(owner.clone()));
+            self = self.assume_proposition(Proposition::ResourceComposition(owner.clone()));
         }
         if let Some(previous) = &self.store_owners {
             self.content_fingerprint ^= Self::fingerprint(5, previous);
@@ -7197,8 +7195,8 @@ impl PureFactContext {
         if !self.comparison_views.is_empty()
             && matches!(
                 proposition,
-                Proposition::CResourceContains { .. }
-                    | Proposition::CResourceSeparate { .. }
+                Proposition::ResourceContains { .. }
+                    | Proposition::ResourceSeparate { .. }
                     | Proposition::Not(_)
                     | Proposition::And(_, _)
                     | Proposition::Or(_, _)
@@ -7229,7 +7227,7 @@ impl PureFactContext {
             Proposition::And(left, right) => {
                 self.contains_assumed_exact(left) && self.contains_assumed_exact(right)
             }
-            Proposition::CResourceComposition(resources) => {
+            Proposition::ResourceComposition(resources) => {
                 self.resource_compositions.contains(resources)
             }
             Proposition::Not(body) => match body.as_ref() {
@@ -10013,7 +10011,7 @@ impl ProofObligation {
                 crate::instrumentation::record_deterministic_work(1);
                 match goal {
                     Proposition::ForAll {
-                        sort: Sort::CInt32,
+                        sort: Sort::ProgramInt32,
                         body,
                         ..
                     } => pending.push(body),
@@ -10154,7 +10152,7 @@ impl ProofObligation {
     }
 
     pub fn memory_loadable_bytes(memory: Memory, pointer: Pointer, byte_width: u32) -> Self {
-        Self::new(Proposition::CMemoryLoadable {
+        Self::new(Proposition::MemoryLoadable {
             memory,
             base: pointer,
             bytes: MachineTerm::constant(byte_width),
@@ -10163,7 +10161,7 @@ impl ProofObligation {
     }
 
     pub fn memory_can_store_bytes(memory: Memory, pointer: Pointer, byte_width: u32) -> Self {
-        Self::new(Proposition::CMemoryCanStore {
+        Self::new(Proposition::MemoryCanStore {
             memory,
             pointer,
             byte_width,
@@ -10392,7 +10390,7 @@ impl ExecutionPureFact {
         authorized_range: Option<MemoryRange>,
     ) -> Self {
         Self {
-            proposition: Proposition::CMemoryMutatesOnly {
+            proposition: Proposition::MemoryMutatesOnly {
                 before: before.clone(),
                 after: after.clone(),
                 writes: vec![(pointer.clone(), value.byte_width())],
@@ -10835,7 +10833,7 @@ mod dynamic_current_load_tests {
     fn records_unmaterialized_loads_and_integer_machine_carriers() {
         let pointer = pointer();
         let memory = Memory::new();
-        let snapshot = crate::kernel::intern_c_memory_ref(&memory);
+        let snapshot = crate::kernel::intern_memory_ref(&memory);
         let load = MachineTerm::MemoryLoad(
             snapshot,
             Box::new(pointer.clone()),
@@ -10878,7 +10876,7 @@ mod dynamic_current_load_tests {
         let load = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             format,
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(pointer()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -11162,7 +11160,8 @@ mod integer_observation_tests {
         ] {
             let _session = crate::kernel::VerificationSession::enter();
             let ty = MachineIntegerType::Int32;
-            let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+            let variable =
+                |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
             let root = KernelTerm::machine_binary_shared(
                 ty,
                 Op::Multiply,
@@ -11749,7 +11748,7 @@ mod integer_observation_tests {
     fn quantified_over_k(antecedent: Proposition) -> Proposition {
         Proposition::ForAll {
             var: Variable(830),
-            sort: Sort::CMachineInteger(MachineIntegerType::UInt64),
+            sort: Sort::ProgramInteger(MachineIntegerType::UInt64),
             body: Box::new(Proposition::Implies(
                 Box::new(antecedent),
                 Box::new(Proposition::ConditionIs(
@@ -12419,7 +12418,7 @@ mod execution_variable_ceiling_tests {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(&memory),
+                crate::kernel::intern_memory_ref(&memory),
                 Box::new(word(4)),
                 crate::kernel::LoadKind::Int32,
             )),
@@ -12448,7 +12447,7 @@ mod execution_variable_ceiling_tests {
     #[test]
     fn shared_ceiling_keeps_live_load_dependencies_and_execution_id_limits() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory_ref(&Memory::new().with_block("a", 8).store(
+        let memory = crate::kernel::intern_memory_ref(&Memory::new().with_block("a", 8).store(
             word(0),
             ProgramValue::Int32(MachineTerm::Variable(execution_variable(71))),
         ));
@@ -12458,14 +12457,14 @@ mod execution_variable_ceiling_tests {
             LoadKind::Int32,
             4,
         );
-        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), load);
+        let mut root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), load);
         for variable in [execution_variable(3), Variable(7), Variable(u64::MAX)] {
             root = KernelTerm::machine_binary_shared(
                 MachineIntegerType::Int32,
                 MachineBinaryOp::Multiply,
                 [
                     root,
-                    KernelTerm::variable(KernelType::C(ProgramType::Int32), variable),
+                    KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable),
                 ],
             );
         }
@@ -12513,12 +12512,11 @@ mod execution_variable_ceiling_tests {
             let resources = (0..size).fold(ResourceContext::new(), |resources, index| {
                 resources.unchecked_with_fact(owned(index))
             });
-            let composition = Proposition::CResourceComposition(resources.clone());
+            let composition = Proposition::ResourceComposition(resources.clone());
             let ceiling = proposition_syntax_execution_variable_ceiling(&composition);
             assert_eq!(ceiling, walked(&composition), "size {size}");
             assert_eq!(ceiling, (Some(execution_variable(size - 1)), false));
-            let next =
-                Proposition::CResourceComposition(resources.unchecked_with_fact(owned(size)));
+            let next = Proposition::ResourceComposition(resources.unchecked_with_fact(owned(size)));
             COLLECTED_RESOURCE_FACTS.with(|count| count.set(0));
             let ceiling = proposition_syntax_execution_variable_ceiling(&next);
             assert_eq!(ceiling, (Some(execution_variable(size)), false));
@@ -12574,7 +12572,8 @@ mod annotated_numeric_pointer_condition_tests {
             MachineTerm::object_pointer_address(p, Some(CAccessClass::Scalar(CScalarClass::Int)))
         };
         let source = ConditionTerm::uint64_equal(address(p.clone()), address(q.clone()));
-        let target = crate::kernel::eval::c_pointer_comparison_condition(p.clone(), q.clone());
+        let target =
+            crate::kernel::eval::program_pointer_comparison_condition(p.clone(), q.clone());
         for value in [false, true] {
             let context = PureFactContext::new().assume_condition(source.clone(), value);
             assert_eq!(context.fast_leaf_decision(&target, &[]), Some(value));
@@ -12866,7 +12865,7 @@ impl UniversalConclusionKey {
                 Proposition::ConditionIs(condition, _) => {
                     keys.insert(UniversalConclusionKey::of_condition(condition));
                 }
-                Proposition::CMemoryLoadable { .. } => {
+                Proposition::MemoryLoadable { .. } => {
                     keys.insert(UniversalConclusionKey::Loadable);
                 }
                 _ => {}
@@ -13035,7 +13034,7 @@ mod shared_load_atom_comparison_tests {
             _ => unreachable!(),
         };
         let load = |block: &str| {
-            let memory = crate::kernel::intern_c_memory(Memory::new().with_block(block, 16));
+            let memory = crate::kernel::intern_memory(Memory::new().with_block(block, 16));
             let pointer = Pointer {
                 block: block.into(),
                 offset: PointerOffsetTerm::Constant(0),
@@ -13076,7 +13075,7 @@ mod shared_load_atom_comparison_tests {
                             .machine_arithmetic(ty, &MachineTerm::Variable(v))
                             .unwrap()
                     } else {
-                        KernelTerm::variable(KernelType::C(ty.c_type()), v)
+                        KernelTerm::variable(KernelType::Program(ty.c_type()), v)
                     }
                 };
                 let product = |v, op| {
@@ -13167,7 +13166,7 @@ mod shared_load_atom_comparison_tests {
             block: "elsewhere".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let effect = Proposition::CMemoryEffectSummary {
+        let effect = Proposition::MemoryEffectSummary {
             before: before.clone(),
             after: after.clone(),
             mutable_ranges: vec![MemoryRange::new(elsewhere, 0u32.into(), 1u32.into())],
@@ -13182,7 +13181,7 @@ mod shared_load_atom_comparison_tests {
         )
         .expect("disjoint selected footprint");
         let condition = |memory: &Memory| {
-            let memory = crate::kernel::intern_c_memory(memory.clone());
+            let memory = crate::kernel::intern_memory(memory.clone());
             let variable = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 &loaded,
@@ -13193,8 +13192,8 @@ mod shared_load_atom_comparison_tests {
                 MachineIntegerType::Int32,
                 MachineBinaryOp::Multiply,
                 [
-                    KernelTerm::variable(KernelType::C(ProgramType::Int32), variable),
-                    KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(990002)),
+                    KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable),
+                    KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(990002)),
                 ],
             );
             ConditionTerm::integer_less_equal(
@@ -13325,7 +13324,8 @@ mod shared_load_atom_comparison_tests {
                     },
                     false,
                 )]);
-                let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+                let variable =
+                    |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
                 let root = KernelTerm::machine_binary_shared(
                     ty,
                     MachineBinaryOp::Multiply,
@@ -13433,7 +13433,7 @@ mod shared_read_memory_collection_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let raw = MachineTerm::MemoryLoad(
-            intern_c_memory(memory.clone()),
+            intern_memory(memory.clone()),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
@@ -13546,14 +13546,14 @@ mod pointer_index_walk_tests {
                 block: PointerBlock::Concrete("r7-read".into()),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let old = intern_c_memory(memory.clone());
+            let old = intern_memory(memory.clone());
             let changed = memory.clone().store(
                 address.clone(),
                 ProgramValue::Int32(MachineTerm::constant(7)),
             );
             let mut fingerprints = Vec::new();
             let mut previous = None;
-            for snapshot in [old, intern_c_memory(changed.clone())] {
+            for snapshot in [old, intern_memory(changed.clone())] {
                 let native = MachineTerm::Binary {
                     format: ty,
                     op: MachineBinaryOp::Add,

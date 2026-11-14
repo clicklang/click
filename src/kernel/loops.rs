@@ -84,7 +84,7 @@ pub(super) fn assign_call_result(
         ) {
         value
     } else {
-        super::functions::coerce_c_value_with_pointee_constant(
+        super::functions::coerce_program_value_with_pointee_constant(
             value.into_native(),
             c_type,
             pointee_constant,
@@ -150,7 +150,7 @@ fn authority_call_refusal_path() -> StatementExecutionPath {
     )
 }
 
-pub(super) fn execute_c_call_assign_paths(
+pub(super) fn execute_program_call_assign_paths(
     state: &ExecutionState,
     target: &str,
     function_name: &str,
@@ -271,11 +271,11 @@ pub(super) fn execute_c_call_assign_paths(
                 Vec::new(),
             )]);
         }
-        return execute_c_realloc_assign_paths(state, target, arguments, assumptions, budget);
+        return execute_program_realloc_assign_paths(state, target, arguments, assumptions, budget);
     }
 
     if let Some(ProgramType::FunctionPointer(signature)) = state.locals.object_type(function_name) {
-        return execute_c_indirect_call_assign_paths(
+        return execute_program_indirect_call_assign_paths(
             state,
             target,
             function_name,
@@ -329,7 +329,7 @@ pub(super) fn execute_c_call_assign_paths(
         state
     };
 
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         call_state,
         function,
         arguments,
@@ -551,7 +551,7 @@ pub(super) fn execute_c_call_assign_paths(
     Ok(paths)
 }
 
-pub(super) fn execute_c_call_paths(
+pub(super) fn execute_program_call_paths(
     state: &ExecutionState,
     result_call: Option<u32>,
     function_name: &str,
@@ -662,7 +662,7 @@ pub(super) fn execute_c_call_paths(
         return Ok(vec![path]);
     }
     if let Some(ProgramType::FunctionPointer(signature)) = state.locals.object_type(function_name) {
-        let paths = execute_c_indirect_call_paths(
+        let paths = execute_program_indirect_call_paths(
             state,
             function_name,
             ProgramType::FunctionPointer(signature),
@@ -709,7 +709,7 @@ pub(super) fn execute_c_call_paths(
         )]);
     };
 
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         state,
         function,
         arguments,
@@ -885,7 +885,7 @@ fn execute_modeled_pthread_mutex_paths(
         )]);
     }
     let mut paths = Vec::new();
-    for mut path in super::functions::evaluate_c_arguments_paths(
+    for mut path in super::functions::evaluate_program_arguments_paths(
         state,
         arguments,
         assumptions,
@@ -1109,7 +1109,7 @@ fn execute_modeled_pthread_mutex_paths(
                             .map_err(|error| error.into_runtime_error(mutex.pointer()))?;
                         if !ranges.is_empty() {
                             path.facts.push(
-                                ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+                                ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
                                     before,
                                     after,
                                     mutable_ranges: ranges,
@@ -1164,7 +1164,7 @@ fn execute_modeled_pthread_mutex_paths(
                 )?;
                 if !ranges.is_empty() {
                     path.facts.push(
-                        ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+                        ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
                             before: next.memory.clone(),
                             after: fresh.memory.clone(),
                             mutable_ranges: ranges,
@@ -1245,7 +1245,7 @@ fn modeled_pthread_handle_store(
         pointee_constant: false,
         source: Default::default(),
     };
-    let paths = super::eval::execute_c_statement_paths(
+    let paths = super::eval::execute_execution_statement_paths(
         state,
         &statement,
         assumptions,
@@ -1352,7 +1352,7 @@ fn execute_modeled_pthread_create_paths(
         )]);
     }
     let mut paths = Vec::new();
-    for mut path in super::functions::evaluate_c_arguments_paths(
+    for mut path in super::functions::evaluate_program_arguments_paths(
         state,
         arguments,
         assumptions,
@@ -1440,7 +1440,7 @@ fn execute_modeled_pthread_create_paths(
                             let checked_success = modeled_pthread_handle_store(
                                 success.parent(),
                                 slot,
-                                handle.c_value(),
+                                handle.program_value(),
                                 &current,
                                 environment,
                                 budget,
@@ -1526,7 +1526,7 @@ fn execute_modeled_pthread_create_paths(
                                         Some(super::threads::PendingThreadCreate::new(
                                             status,
                                             output_slot.clone(),
-                                            handle.c_value(),
+                                            handle.program_value(),
                                             &success,
                                             &failure,
                                         ));
@@ -1576,7 +1576,7 @@ fn execute_modeled_pthread_join_paths(
         )]);
     }
     let mut paths = Vec::new();
-    for mut path in super::functions::evaluate_c_arguments_paths(
+    for mut path in super::functions::evaluate_program_arguments_paths(
         state,
         arguments,
         assumptions,
@@ -1593,7 +1593,9 @@ fn execute_modeled_pthread_join_paths(
             }
         } else if !matches!(&path.values[1], ProgramValue::Pointer(pointer) if pointer.is_null()) {
             refusal("modeled-pthread join requires a null result slot")
-        } else if let Some(handle) = super::threads::ThreadHandle::from_c_value(&path.values[0]) {
+        } else if let Some(handle) =
+            super::threads::ThreadHandle::from_program_value(&path.values[0])
+        {
             let current = super::reasoning::path_facts::assumptions_with_path_context(
                 assumptions,
                 &path.facts,
@@ -1641,7 +1643,7 @@ fn execute_modeled_pthread_join_paths(
     Ok(paths)
 }
 
-fn execute_c_indirect_call_assign_paths(
+fn execute_program_indirect_call_assign_paths(
     state: &ExecutionState,
     target: &str,
     function_name: &str,
@@ -1651,7 +1653,7 @@ fn execute_c_indirect_call_assign_paths(
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    let paths = execute_c_indirect_call_paths(
+    let paths = execute_program_indirect_call_paths(
         state,
         function_name,
         function_type,
@@ -1707,7 +1709,7 @@ fn execute_c_indirect_call_assign_paths(
         .collect())
 }
 
-fn execute_c_indirect_call_paths(
+fn execute_program_indirect_call_paths(
     state: &ExecutionState,
     function_name: &str,
     function_type: ProgramType,
@@ -1716,7 +1718,7 @@ fn execute_c_indirect_call_paths(
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<FunctionPath>> {
-    budget.install_c_byte_order(execution_context.environment.byte_order());
+    budget.install_program_byte_order(execution_context.environment.byte_order());
     if function_type == ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED) {
         return Ok(vec![FunctionPath::new(
             FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -1727,9 +1729,9 @@ fn execute_c_indirect_call_paths(
         )]);
     }
     let mut paths = Vec::new();
-    for target_path in evaluate_c_expression_paths(
+    for target_path in evaluate_program_expression_paths(
         state,
-        &c_variable(function_name.to_string()),
+        &crate::kernel::program_expression::variable(function_name.to_string()),
         assumptions,
         budget,
     )? {
@@ -1786,7 +1788,7 @@ fn execute_c_indirect_call_paths(
                             ));
                             continue;
                         }
-                        for mut call_path in execute_c_function_contracts_paths(
+                        for mut call_path in execute_program_function_contracts_paths(
                             state,
                             &contracts,
                             arguments,
@@ -1856,7 +1858,7 @@ fn execute_c_indirect_call_paths(
             }
             let target_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
-            for mut call_path in execute_c_function_call_paths(
+            for mut call_path in execute_program_function_call_paths(
                 state,
                 function,
                 arguments,
@@ -1899,9 +1901,9 @@ fn execute_c_indirect_call_paths(
     Ok(paths)
 }
 
-/// `CStatementVerifies` for `statement`: the one statement driver under the
+/// `ProgramStatementVerifies` for `statement`: the one statement driver under the
 /// verification judgment.
-pub(super) fn execute_c_statement_verification_paths(
+pub(super) fn execute_execution_statement_verification_paths(
     state: &ExecutionState,
     statement: &ProgramStatement,
     assumptions: &PureFactContext,
@@ -1981,7 +1983,7 @@ pub(in crate::kernel) fn abstract_loop_paths(
     // Loop verification and verified-call execution share one symbolic
     // identity stream: `variables` allocates from `budget`, so nothing has
     // to be synchronized across this boundary.
-    let paths = execute_c_while_exit_paths(
+    let paths = execute_program_while_exit_paths(
         state,
         WhileLoop::of(statement).expect("matched a while statement"),
         assumptions,
@@ -2005,13 +2007,13 @@ pub(in crate::kernel) fn abstract_loop_paths(
 /// counted resource populations are separate semantic state and must either
 /// be unchanged at the loop-state join.
 #[cfg(test)]
-pub(crate) fn c_loop_state_components_match_at_back_edge(
+pub(crate) fn loop_state_components_match_at_back_edge(
     top_state: &ExecutionState,
     next_state: &ExecutionState,
     assumptions: &PureFactContext,
     composite_resource_definitions: &[CompositeResourceDefinition],
 ) -> Result<(), String> {
-    c_loop_state_components_match_at_back_edge_inner(
+    loop_state_components_match_at_back_edge_inner(
         top_state,
         next_state,
         composite_resource_definitions,
@@ -2021,7 +2023,7 @@ pub(crate) fn c_loop_state_components_match_at_back_edge(
 }
 
 /// Validate protocol custody before forgetting a loop binder's model values.
-pub(crate) fn c_loop_binder_state_components_match_at_back_edge(
+pub(crate) fn loop_binder_state_components_match_at_back_edge(
     top: &ExecutionState,
     next: &ExecutionState,
     binders: &[LoopBinder],
@@ -2062,9 +2064,9 @@ pub(crate) fn c_loop_binder_state_components_match_at_back_edge(
         check_loop_guard_custody(next, &mutex, &held, assumptions)?;
         checked.push(mutex);
     }
-    c_loop_state_components_match_at_back_edge_inner(
+    loop_state_components_match_at_back_edge_inner(
         top,
-        &c_loop_state_with_head_binder_models(next, top, binders),
+        &loop_state_with_head_binder_models(next, top, binders),
         definitions,
         assumptions,
         &checked,
@@ -2094,12 +2096,12 @@ fn check_loop_guard_custody(
 /// This is deliberately conservative for non-value condition outcomes: an
 /// unresolved condition is treated as potentially continuing, so callers do
 /// not export a state-changing body path as a final exit accidentally.
-pub(crate) fn c_loop_condition_may_continue(
+pub(crate) fn loop_condition_may_continue(
     state: &ExecutionState,
     condition: &ProgramExpression,
     assumptions: &PureFactContext,
 ) -> Result<bool, String> {
-    c_loop_condition_feasibility(state, condition, assumptions)
+    loop_condition_feasibility(state, condition, assumptions)
         .map(|(may_continue, _)| may_continue)
         .map_err(|limit| {
             format!(
@@ -2109,13 +2111,14 @@ pub(crate) fn c_loop_condition_may_continue(
         })
 }
 
-fn c_loop_condition_feasibility(
+fn loop_condition_feasibility(
     state: &ExecutionState,
     condition: &ProgramExpression,
     assumptions: &PureFactContext,
 ) -> ExecutionResult<(bool, bool)> {
-    let mut budget = ExecutionBudget::beside_live_state().with_c_expression_cost(condition);
-    let expression_paths = evaluate_c_condition_paths(state, condition, assumptions, &mut budget)?;
+    let mut budget = ExecutionBudget::beside_live_state().with_program_expression_cost(condition);
+    let expression_paths =
+        evaluate_program_condition_paths(state, condition, assumptions, &mut budget)?;
     let mut may_continue = false;
     let mut may_exit = false;
     for path in expression_paths {
@@ -2124,7 +2127,9 @@ fn c_loop_condition_feasibility(
                 if condition_path_is_ruled_out(&path.facts, assumptions) {
                     continue;
                 }
-                for path in c_truthiness_paths(value, path.facts, path.obligations, assumptions) {
+                for path in
+                    program_truthiness_paths(value, path.facts, path.obligations, assumptions)
+                {
                     if path.is_true {
                         may_continue = true;
                     } else {
@@ -2225,7 +2230,7 @@ fn condition_complement(condition: &ConditionTerm) -> Option<ConditionTerm> {
     }
 }
 
-fn c_loop_state_components_match_at_back_edge_inner(
+fn loop_state_components_match_at_back_edge_inner(
     top_state: &ExecutionState,
     next_state: &ExecutionState,
     composite_resource_definitions: &[CompositeResourceDefinition],
@@ -2271,9 +2276,12 @@ fn c_loop_state_components_match_at_back_edge_inner(
     // The head keeps a pointer local's subobject only if every back edge
     // returns the local to that same subobject.
     if top_state.locals().object_values().any(|(name, value)| {
-        c_value_subobject_extent(value).is_some()
-            && next_state.locals().get(name).map(c_value_subobject_extent)
-                != Some(c_value_subobject_extent(value))
+        program_value_subobject_extent(value).is_some()
+            && next_state
+                .locals()
+                .get(name)
+                .map(program_value_subobject_extent)
+                != Some(program_value_subobject_extent(value))
     }) {
         changed.push("pointer subobject extents");
     }
@@ -2285,9 +2293,9 @@ fn c_loop_state_components_match_at_back_edge_inner(
         .locals()
         .object_values()
         .find_map(|(name, value)| {
-            let head = c_value_object_class(value)?;
+            let head = program_value_object_class(value)?;
             let next = next_state.locals().get(name);
-            let back_edge = next.map(c_value_object_class);
+            let back_edge = next.map(program_value_object_class);
             if back_edge == Some(Some(head.clone()))
                 || next
                     .and_then(|value| value.pointer())
@@ -2415,7 +2423,7 @@ impl<'a> WhileLoop<'a> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn execute_c_while_exit_paths_with_proven_phases(
+pub(super) fn execute_program_while_exit_paths_with_proven_phases(
     state: &ExecutionState,
     while_loop: WhileLoop<'_>,
     assumptions: &PureFactContext,
@@ -2428,7 +2436,7 @@ pub(super) fn execute_c_while_exit_paths_with_proven_phases(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
-    execute_c_while_exit_paths(
+    execute_program_while_exit_paths(
         state,
         while_loop,
         assumptions,
@@ -2593,7 +2601,7 @@ fn join_loop_exit_paths(
                         // resource context, not an observable exit guard.
                         // Dropping this conjunct weakens the path disjunction
                         // and keeps its pure successor facts spellable.
-                        && !matches!(proposition, Proposition::CResourceComposition(_))
+                        && !matches!(proposition, Proposition::ResourceComposition(_))
                         && !matches!(
                             proposition,
                             Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
@@ -2960,7 +2968,7 @@ fn abstract_loop_exit_states(
     );
     let mut rebound = Vec::with_capacity(states.len());
     for (index, state) in states.iter().enumerate() {
-        match c_loop_state_with_loop_binders_rebound(
+        match loop_state_with_loop_binders_rebound(
             &head.top,
             state,
             binders,
@@ -3076,7 +3084,7 @@ fn loop_exit_argument_contexts(
                     .diff(&assumptions.resource_compositions)
                 {
                     if !in_exit && !retained.resource_compositions.contains(composition) {
-                        retained = retained.assume_proposition(Proposition::CResourceComposition(
+                        retained = retained.assume_proposition(Proposition::ResourceComposition(
                             composition.clone(),
                         ));
                     }
@@ -3181,7 +3189,7 @@ fn indexed_loop_exit_load_equality(
     value: &ProgramValue,
 ) -> Option<bool> {
     let Proposition::ConditionIs(condition, expected) =
-        c_value_comparison_proposition(load, ComparisonOperator::Equal, value)?
+        program_value_comparison_proposition(load, ComparisonOperator::Equal, value)?
     else {
         return None;
     };
@@ -3271,14 +3279,13 @@ impl LoopExitRestatement {
         // loop spells this disjunct as `x == <value>`, and `cases` needs the
         // exported fact to be exactly what that spelling lowers to.
         self.equations.push(
-            c_value_comparison_proposition(fresh, ComparisonOperator::Equal, held).unwrap_or_else(
-                || {
+            program_value_comparison_proposition(fresh, ComparisonOperator::Equal, held)
+                .unwrap_or_else(|| {
                     Proposition::Equal(
                         Term::ProgramValue(fresh.clone()),
                         Term::ProgramValue(held.clone()),
                     )
-                },
-            ),
+                }),
         );
         if let (Some(MachineTerm::Variable(from)), Some(to)) =
             (scalar_bitvector(held), scalar_bitvector(fresh))
@@ -3290,7 +3297,7 @@ impl LoopExitRestatement {
     /// Records that this exit's `held` resource argument or field became the
     /// successor's `fresh` one.
     fn pin_resource_value(&mut self, fresh: &AlgebraicValue, held: &AlgebraicValue) {
-        if let (AlgebraicValue::C(fresh), AlgebraicValue::C(held)) = (fresh, held) {
+        if let (AlgebraicValue::Program(fresh), AlgebraicValue::Program(held)) = (fresh, held) {
             self.pin(fresh, held);
             return;
         }
@@ -3580,13 +3587,13 @@ fn loop_exit_local_arguments(
                 let argument = instance.arguments().get(position)?;
                 if !crate::kernel::resource_arguments_proven_equal(
                     argument,
-                    &AlgebraicValue::C(held.clone()),
+                    &AlgebraicValue::Program(held.clone()),
                     context,
                 ) {
                     return None;
                 }
             }
-            Some(AlgebraicValue::C(fresh.clone()))
+            Some(AlgebraicValue::Program(fresh.clone()))
         })
         .collect()
 }
@@ -3679,8 +3686,8 @@ fn fresh_resource_value_like(
     let variable = variables.next_in(budget).map_err(exhausted_identities)?;
     Ok(match value {
         AlgebraicValue::Integer(_) => AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-        AlgebraicValue::C(value) => {
-            AlgebraicValue::C(symbolic_call_result(value.c_type(), variable))
+        AlgebraicValue::Program(value) => {
+            AlgebraicValue::Program(symbolic_call_result(value.c_type(), variable))
         }
         AlgebraicValue::Algebraic(term) => AlgebraicValue::Algebraic(AlgebraicTerm {
             algebraic_type: term.algebraic_type.clone(),
@@ -3703,7 +3710,7 @@ fn exhausted_identities(limit: ExecutionLimit) -> String {
 fn resource_value_term(value: &AlgebraicValue) -> Term {
     match value {
         AlgebraicValue::Integer(term) => Term::Integer(term.clone()),
-        AlgebraicValue::C(value) => Term::ProgramValue(value.clone()),
+        AlgebraicValue::Program(value) => Term::ProgramValue(value.clone()),
         AlgebraicValue::Algebraic(term) => Term::Algebraic(term.clone()),
     }
 }
@@ -3865,7 +3872,7 @@ fn join_loop_exit_storage_bookkeeping(
                 MemoryBlock::new(0),
             );
         }
-        let minted = crate::kernel::intern_c_memory(
+        let minted = crate::kernel::intern_memory(
             Memory::new().with_block(format!("loop-exit-join:{}", marker.0).as_str(), 0),
         );
         memory.mark_forgotten_from(&minted);
@@ -3918,7 +3925,7 @@ fn abstract_loop_exit_locals(
         // Exits that agree on the subobject a pointer designates keep it.
         let fresh = match held
             .iter()
-            .map(c_value_subobject_extent)
+            .map(program_value_subobject_extent)
             .collect::<Vec<_>>()
         {
             extents if extents[1..].iter().all(|extent| *extent == extents[0]) => {
@@ -3927,7 +3934,11 @@ fn abstract_loop_exit_locals(
             _ => fresh,
         };
         // So do exits that agree on the class of the object it designates.
-        let fresh = match held.iter().map(c_value_object_class).collect::<Vec<_>>() {
+        let fresh = match held
+            .iter()
+            .map(program_value_object_class)
+            .collect::<Vec<_>>()
+        {
             classes if classes[1..].iter().all(|class| *class == classes[0]) => {
                 let mut evidence = None::<ObjectTypeEvidence>;
                 let mut complete = true;
@@ -4509,7 +4520,7 @@ fn loop_exit_state_difference(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn execute_c_while_exit_paths(
+fn execute_program_while_exit_paths(
     state: &ExecutionState,
     while_loop: WhileLoop<'_>,
     assumptions: &PureFactContext,
@@ -4574,7 +4585,7 @@ fn execute_c_while_exit_paths(
     let top_state = head.top.clone();
     // The loop's declared binders, for the exit join: D5 names them at the
     // head, at the back edge, and at every exit by the same rule.
-    let binders = c_loop_binders(resource_specs);
+    let binders = loop_binders(resource_specs);
     // The guard and the invariants are read with the selected arm's cells
     // published (D7); the loop's exit outcome stays `top_state`, so that read
     // authority never leaves the head.
@@ -4636,7 +4647,7 @@ fn execute_c_while_exit_paths(
     } else if final_exit_candidates.is_empty() {
         (true, true)
     } else {
-        c_loop_condition_feasibility(state, condition, assumptions)?
+        loop_condition_feasibility(state, condition, assumptions)?
     };
     let mut paths = Vec::new();
     paths.append(&mut final_exit_paths);
@@ -5330,7 +5341,7 @@ pub(super) fn collect_loop_ranking_obligations(
         |count: Option<IntegerTerm>| count.map(crate::kernel::spec::LoopIterationsScope::enter);
     for measure in ranking_measures {
         let entry = scope(head_iterations.cloned());
-        pre.push(crate::kernel::termination::c_ranking_measure_term(
+        pre.push(crate::kernel::termination::ranking_measure_term(
             measure,
             iteration_entry_state,
             &mut reader,
@@ -5340,7 +5351,7 @@ pub(super) fn collect_loop_ranking_obligations(
             head_iterations
                 .map(|head| IntegerTerm::add(head.clone(), IntegerTerm::constant(1.into()))),
         );
-        post.push(crate::kernel::termination::c_ranking_measure_term(
+        post.push(crate::kernel::termination::ranking_measure_term(
             measure,
             state,
             &mut reader,
@@ -5370,7 +5381,7 @@ pub(super) fn collect_loop_ranking_obligations(
             .with_introductions(LoweringIntroductions::new())
             .with_context(format!(
                 "loop ranking component `{}` is nonnegative at the back edge",
-                crate::kernel::termination::c_ranking_measure_display(measure)
+                crate::kernel::termination::ranking_measure_display(measure)
             )),
         );
     }
@@ -5384,7 +5395,7 @@ pub(super) fn collect_loop_ranking_obligations(
             .with_introductions(LoweringIntroductions::new())
             .with_context(format!(
                 "loop ranking measure `{}` decreases at the back edge",
-                crate::kernel::termination::c_ranking_measures_display(ranking_measures)
+                crate::kernel::termination::ranking_measures_display(ranking_measures)
             )),
     );
     Ok(obligations)
@@ -5459,7 +5470,7 @@ pub(super) fn collect_loop_preservation_summary(
     // enclosing frame withheld is returned on the way out.
     let top_state = &head.body;
     let body_declared = scope_declared_names(body);
-    let binders = c_loop_binders(resource_specs);
+    let binders = loop_binders(resource_specs);
     let whole_loop_effect_facts = whole_loop_effect_summaries
         .iter()
         .cloned()
@@ -5552,7 +5563,7 @@ pub(super) fn collect_loop_preservation_summary(
                         &body_path.facts,
                         &body_path.obligations,
                     );
-                    let (next_state, binder_failure) = match c_loop_state_with_loop_binders_rebound(
+                    let (next_state, binder_failure) = match loop_state_with_loop_binders_rebound(
                         top_state,
                         &next_state,
                         &binders,
@@ -5662,7 +5673,7 @@ pub(super) fn collect_loop_preservation_summary(
                         } else if let Some(failure) = &binder_failure {
                             Some(failure.clone())
                         } else {
-                            c_loop_binder_state_components_match_at_back_edge(
+                            loop_binder_state_components_match_at_back_edge(
                                 top_state,
                                 &next_state,
                                 &binders,
@@ -5985,7 +5996,7 @@ pub(super) fn collect_whole_loop_effect_summaries(
 ) -> Vec<Proposition> {
     ranges_by_summary
         .iter()
-        .map(|ranges| Proposition::CMemoryEffectSummary {
+        .map(|ranges| Proposition::MemoryEffectSummary {
             before: before_state.memory().clone(),
             after: after_state.memory().clone(),
             mutable_ranges: ranges.clone(),
@@ -6373,7 +6384,7 @@ pub(super) fn prepare_loop_top_state(
             .and_then(|last| last.checked_add(run.value_width()));
         let whole_stable = whole_bytes.is_some_and(|bytes| {
             summaries.iter().any(|summary| {
-                let Proposition::CMemoryEffectSummary { mutable_ranges, .. } = summary else {
+                let Proposition::MemoryEffectSummary { mutable_ranges, .. } = summary else {
                     return false;
                 };
                 crate::kernel::memory_provenance::typed_ranges_disjoint_from_pointer_evidence(
@@ -6438,7 +6449,7 @@ pub(super) fn prepare_loop_top_state(
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
-            let Proposition::CMemoryEffectSummary { mutable_ranges, .. } = summary else {
+            let Proposition::MemoryEffectSummary { mutable_ranges, .. } = summary else {
                 return false;
             };
             assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
@@ -6456,7 +6467,7 @@ pub(super) fn prepare_loop_top_state(
             continue;
         }
         let is_stable = summaries.iter().any(|summary| {
-            let Proposition::CMemoryEffectSummary { mutable_ranges, .. } = summary else {
+            let Proposition::MemoryEffectSummary { mutable_ranges, .. } = summary else {
                 return false;
             };
             assumptions.ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
@@ -6471,10 +6482,10 @@ pub(super) fn prepare_loop_top_state(
         // Restoring checked stable cells observes the abstract head's bytes;
         // it does not write them. Retain that edge so a complete pointer read
         // can follow the loop's checked footprint back to its entry origin.
-        record_c_memory_derivation(
+        record_memory_derivation(
             &mut framed_memory,
             MemoryDerivation::CellObserved {
-                base: intern_c_memory_ref(top_state.memory()),
+                base: intern_memory_ref(top_state.memory()),
             },
         );
         top_state = top_state.with_memory(framed_memory);
@@ -6515,7 +6526,7 @@ pub(super) fn prepare_loop_top_state(
     // its real entry custody before replacing concrete heldness at the head.
     let mut top_state = top_state;
     let mut selected_mutexes = std::collections::BTreeSet::new();
-    for binder in c_loop_binders(resource_specs) {
+    for binder in loop_binders(resource_specs) {
         let result = (|| -> Result<(), String> {
             let Some(entry_instance) = entry_state.resources().owned_instance(binder.identity)
             else {
@@ -7142,7 +7153,7 @@ pub struct LoopBinder {
 }
 
 /// The binders a loop's `owns name: resource(args);` clauses declare.
-pub(crate) fn c_loop_binders(resource_specs: &[ResourceSpec]) -> Vec<LoopBinder> {
+pub(crate) fn loop_binders(resource_specs: &[ResourceSpec]) -> Vec<LoopBinder> {
     resource_specs
         .iter()
         .filter_map(|spec| {
@@ -7237,7 +7248,7 @@ fn rebind_loop_binder_instances(
 /// find that resource again in whatever the body ended holding. Nothing here
 /// re-reads the loop's source clauses, so the same rule serves the kernel's
 /// own back edge and the surface `close_invariants` join.
-pub(crate) fn c_loop_state_with_loop_binders_rebound(
+pub(crate) fn loop_state_with_loop_binders_rebound(
     loop_head_state: &ExecutionState,
     state: &ExecutionState,
     binders: &[LoopBinder],
@@ -7610,7 +7621,7 @@ fn structural_measure_reaches_instance(
 /// to change them; those changes are checked as invariant preservation, not as
 /// a change of ownership. The join therefore compares the binder's family and
 /// arguments and sets its model aside.
-pub(crate) fn c_loop_state_with_head_binder_models(
+pub(crate) fn loop_state_with_head_binder_models(
     next_state: &ExecutionState,
     head_state: &ExecutionState,
     binders: &[LoopBinder],
@@ -7788,7 +7799,7 @@ pub(super) fn collect_loop_effect_check_obligations(
             let has_disjoint_effect_summary = facts.fact_iter().any(|fact| {
                 matches!(
                     fact.proposition(),
-                    Proposition::CMemoryEffectSummary { mutable_ranges, .. }
+                    Proposition::MemoryEffectSummary { mutable_ranges, .. }
                         if effective_assumptions
                             .ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
                 )
@@ -7833,7 +7844,7 @@ pub(super) fn collect_loop_effect_check_obligations(
     for (pointer, bytes) in facts
         .fact_iter()
         .filter_map(|fact| match fact.proposition() {
-            Proposition::CMemoryMutatesOnly { writes, .. } => Some(writes.as_slice()),
+            Proposition::MemoryMutatesOnly { writes, .. } => Some(writes.as_slice()),
             _ => None,
         })
         .flatten()
@@ -7846,7 +7857,7 @@ pub(super) fn collect_loop_effect_check_obligations(
     let effect_summary_ranges = facts
         .fact_iter()
         .filter_map(|fact| match fact.proposition() {
-            Proposition::CMemoryEffectSummary { mutable_ranges, .. } => {
+            Proposition::MemoryEffectSummary { mutable_ranges, .. } => {
                 Some(mutable_ranges.as_slice())
             }
             _ => None,
@@ -8029,7 +8040,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Ok(value) => {
             return Ok(Err(ValueRefusal::from(format!(
                 "segment base evaluated to a {} value, not a pointer",
-                super::functions::c_type_spelling(value.c_type())
+                super::functions::program_type_spelling(value.c_type())
             ))));
         }
         Err(message) => return Ok(Err(message)),
@@ -8068,7 +8079,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Ok(value) => {
             return Ok(Err(ValueRefusal::from(format!(
                 "segment start evaluated to a {} value, not an int32",
-                super::functions::c_type_spelling(value.c_type())
+                super::functions::program_type_spelling(value.c_type())
             ))));
         }
         Err(message) => return Ok(Err(message)),
@@ -8081,7 +8092,7 @@ pub(super) fn evaluate_loop_effect_segment_with_facts(
         Ok(value) => {
             return Ok(Err(ValueRefusal::from(format!(
                 "segment end evaluated to a {} value, not an int32",
-                super::functions::c_type_spelling(value.c_type())
+                super::functions::program_type_spelling(value.c_type())
             ))));
         }
         Err(message) => return Ok(Err(message)),
@@ -8214,7 +8225,7 @@ fn evaluate_loop_effect_segment_value_capturing(
     // resource footprint and its explicit memory(...) spelling have one identity.
     let paths = {
         let _specification = crate::kernel::eval::SpecificationReadScope::enter();
-        evaluate_c_expression_paths(state, expression, assumptions, budget)?
+        evaluate_program_expression_paths(state, expression, assumptions, budget)?
     };
     // An endpoint the facts do not keep defined splits into its defined value
     // and the undefined behavior beside it: name that behavior, which a
@@ -8811,7 +8822,7 @@ fn assume_condition_branches_at_state(
         assumptions_with_path_context(assumptions, prefix_facts, prefix_obligations);
     let mut contexts = Vec::new();
     for condition_path in
-        evaluate_c_condition_paths(state, condition, &effective_assumptions, budget)?
+        evaluate_program_condition_paths(state, condition, &effective_assumptions, budget)?
     {
         if matches!(condition_path.outcome, ExpressionOutcome::Value(_))
             && condition_path_is_ruled_out(&condition_path.facts, &effective_assumptions)
@@ -8851,7 +8862,7 @@ fn assume_condition_branches_at_state(
                 continue;
             }
         };
-        for truthiness_path in c_truthiness_paths(value, facts, obligations, assumptions) {
+        for truthiness_path in program_truthiness_paths(value, facts, obligations, assumptions) {
             contexts.push(ConditionAssumption {
                 branch: ConditionBranch::Decided(truthiness_path.is_true),
                 facts: truthiness_path.facts,
@@ -8948,7 +8959,7 @@ pub(super) fn havoc_loop_modified_locals(
         };
         // A pointer local keeps the subobject it designates across the
         // abstract iteration; the back edge checks that the body returns
-        // it to the same one (`c_loop_state_components_match_at_back_edge`).
+        // it to the same one (`loop_state_components_match_at_back_edge`).
         let value = with_retained_extent(value, state.locals.get(&name));
         let value = with_retained_object_class(value, state.locals.get(&name));
         sync_stack_local(&mut state, &name, &value);
@@ -9211,7 +9222,7 @@ fn run_slots_clear_of_loop_summaries(
     all.insert_range(0, count);
     let mut kept = IndexIntervals::default();
     for summary in summaries {
-        let Proposition::CMemoryEffectSummary { mutable_ranges, .. } = summary else {
+        let Proposition::MemoryEffectSummary { mutable_ranges, .. } = summary else {
             continue;
         };
         let mut kept_by_summary = all.clone();
@@ -9637,11 +9648,11 @@ mod wide_range_reader_tests;
 #[cfg(test)]
 mod resource_argument_diagnostic_tests;
 
-fn c_value_subobject_extent(value: &StoredExecutionValue) -> Option<&SubobjectExtent> {
+fn program_value_subobject_extent(value: &StoredExecutionValue) -> Option<&SubobjectExtent> {
     value.pointer()?.extent()
 }
 
-fn c_value_object_class(
+fn program_value_object_class(
     value: &StoredExecutionValue,
 ) -> Option<crate::kernel::effective_type::CAccessClass> {
     value.pointer()?.object_class()
@@ -9651,7 +9662,7 @@ fn with_retained_object_class(
     fresh: ProgramValue,
     previous: Option<&StoredExecutionValue>,
 ) -> ProgramValue {
-    fresh.with_pointer_declared_object_class(previous.and_then(c_value_object_class))
+    fresh.with_pointer_declared_object_class(previous.and_then(program_value_object_class))
 }
 
 /// Legacy fresh-pointer construction is the output boundary for this loop abstraction.

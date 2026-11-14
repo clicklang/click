@@ -12,7 +12,7 @@ fn model_start_membership_ignores_unrelated_order_bounds() {
         let _session = crate::kernel::VerificationSession::enter();
         let (_, _, _, _, mut context, facts) = model_start_frame();
         let (data, range) = match &facts[0] {
-            Proposition::CResourceSeparate { left, .. } => match left.as_ref() {
+            Proposition::ResourceSeparate { left, .. } => match left.as_ref() {
                 Resource::Memory(range) => (range.base().clone(), range.clone()),
                 _ => unreachable!(),
             },
@@ -67,7 +67,7 @@ fn separated_range_frame_retains_full_access_and_range_extents() {
         let field = Pointer::symbolic(Variable(9_901_002));
         let backing = MemoryRange::new(data.clone(), 0u32.into(), 2u32.into());
         let descriptor = MemoryRange::new(field.clone(), 0u32.into(), 2u32.into());
-        let separate = |left, right| Proposition::CResourceSeparate {
+        let separate = |left, right| Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(left)),
             right: Box::new(Resource::Memory(right)),
         };

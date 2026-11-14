@@ -105,7 +105,7 @@ pub(super) fn verify_execution_theorem(
     }
     let is_callback = |arguments: &[ContractExpression]| {
         matches!(arguments.first(), Some(ContractExpression::Binding(name)) if name == &execution.callback)
-            || matches!(arguments.first(), Some(ContractExpression::CFragment(ProgramExpression::Variable(name))) if name == &execution.callback)
+            || matches!(arguments.first(), Some(ContractExpression::ProgramExpression(ProgramExpression::Variable(name))) if name == &execution.callback)
     };
     if concrete_callee.is_none() && !is_callback(arguments) {
         return Err(error("the conclusion must describe the executed callback"));
@@ -187,11 +187,13 @@ pub(super) fn verify_execution_theorem(
     // against the target contract's interface.
     if let Some(callee) = concrete_callee {
         let (parameter_types, return_type) =
-            crate::kernel::c_project_function_signature(environment, callee).ok_or_else(|| {
-                error(&format!(
-                    "`{callee}` is not a verified or external function in this project"
-                ))
-            })?;
+            crate::kernel::program_project_function_signature(environment, callee).ok_or_else(
+                || {
+                    error(&format!(
+                        "`{callee}` is not a verified or external function in this project"
+                    ))
+                },
+            )?;
         if parameter_types.len() != execution.parameters.len()
             || execution
                 .parameters
@@ -243,7 +245,7 @@ pub(super) fn verify_execution_theorem(
         .map(|(declared, written)| {
             (
                 declared.name().to_string(),
-                ContractExpression::CFragment(ProgramExpression::Variable(
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(
                     written.name().to_string(),
                 )),
             )
@@ -312,11 +314,13 @@ pub(super) fn verify_execution_theorem(
             .zip(&target_values)
             .map(|(parameter, value)| {
                 Requirement::Proposition(ClickProposition::Comparison {
-                    left: ContractExpression::CFragment(ProgramExpression::Variable(
+                    left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
                         parameter.name().to_string(),
                     )),
                     operator: ComparisonOperator::Equal,
-                    right: ContractExpression::CFragment(ProgramExpression::Value(value.clone())),
+                    right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        value.clone(),
+                    )),
                 })
             }),
     );
@@ -357,7 +361,7 @@ pub(super) fn verify_execution_theorem(
             )),
         )
     };
-    let parsed = crate::surface::verification::external_c0_function(&block).with_proof_body(body);
+    let parsed = crate::surface::verification::external_c_function(&block).with_proof_body(body);
     let claims = function_claims(&block);
     let verified = prove_claims_by_grouped_script(
         None,
@@ -423,7 +427,7 @@ pub(super) fn verify_execution_theorem(
         .map(|execution| CheckedFunctionExecution::clone(execution))
         .collect::<Vec<_>>();
     let execution =
-        prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
+        prove_program_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
             state,
             function.clone(),
             arguments,
@@ -437,9 +441,10 @@ pub(super) fn verify_execution_theorem(
         .iter()
         .filter_map(|v| v.checked_proposition.clone())
         .collect::<Vec<_>>();
-    let claims = c_function_contract_claims_from_completions(&function, &execution, &propositions)
-        .ok_or_else(|| error("the one-call proof did not certify every target obligation"))?;
-    let rule = c_verified_function_rule(function, &claims)
+    let claims =
+        program_function_contract_claims_from_completions(&function, &execution, &propositions)
+            .ok_or_else(|| error("the one-call proof did not certify every target obligation"))?;
+    let rule = program_verified_function_rule(function, &claims)
         .ok_or_else(|| error("the one-call proof did not establish a checked contract"))?;
     let authority = match concrete_callee {
         Some(callee) => crate::kernel::prove_executed_concrete_contract_refinement(

@@ -52,7 +52,7 @@ fn variable_collection_after_a_store_costs_the_store() {
                 ProgramValue::Int32(MachineTerm::Variable(Variable(7_000_000 + index as u64))),
             );
         }
-        let before = crate::kernel::intern_c_memory(memory.clone());
+        let before = crate::kernel::intern_memory(memory.clone());
         crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
         let mut variables = BTreeSet::new();
         crate::kernel::reasoning::collect_bitvector_variables(
@@ -65,7 +65,7 @@ fn variable_collection_after_a_store_costs_the_store() {
             ProgramValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
         );
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(after),
+            crate::kernel::intern_memory(after),
             Box::new(at(4)),
             crate::kernel::LoadKind::Int32,
         );
@@ -104,7 +104,7 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
     let samples = [16u32, 64, 256, 1024, 1_000_000].map(|elements| {
         let _session = crate::kernel::VerificationSession::enter();
         let size = 4 * elements;
-        let source = crate::kernel::intern_c_memory(
+        let source = crate::kernel::intern_memory(
             Memory::new().with_block_without_derivation(block.clone(), size),
         );
         let Ok(memory) = Memory::new()
@@ -113,7 +113,7 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
         else {
             panic!("a symbolic array over a fresh block is one run");
         };
-        let before = crate::kernel::intern_c_memory(memory.clone());
+        let before = crate::kernel::intern_memory(memory.clone());
         let registered = crate::kernel::eval::load_variable_registry_len();
         let (variables, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut variables = BTreeSet::new();
@@ -137,7 +137,7 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
             ProgramValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
         );
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(after),
+            crate::kernel::intern_memory(after),
             Box::new(at(4)),
             crate::kernel::LoadKind::Int32,
         );

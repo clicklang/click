@@ -7,7 +7,7 @@ call's prerequisite.
 
 Two parts of that refusal used to print no source. The measure's name in the
 obligation was the parsed expression's structural dump,
-`BitwiseXor(CFragment(Variable("n")), Negate(IntegerLiteral("1")))`, because
+`BitwiseXor(ProgramExpression(Variable("n")), Negate(IntegerLiteral("1")))`, because
 the measure printer had no spelling for a bitwise operator; and the condition
 search named only the kind of the goal it could not derive, "did not derive
 signed less-or-equal is true". Both now print the measure and the goal as

@@ -47,7 +47,7 @@ pub(super) fn rust(
         right.machine()?,
         Some(bits),
     )?;
-    let KernelType::C(result_type) = result.value.ty() else {
+    let KernelType::Program(result_type) = result.value.ty() else {
         unreachable!()
     };
     let result_format = MachineIntegerType::from_c_type(*result_type)?;

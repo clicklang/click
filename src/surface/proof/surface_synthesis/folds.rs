@@ -3,7 +3,7 @@ use crate::kernel::{KernelFold, KernelFoldIndex, KernelType};
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub(super) enum BinderCarrier {
-    C,
+    Program,
     Integer,
     Algebraic,
 }
@@ -11,7 +11,7 @@ pub(super) enum BinderCarrier {
 #[derive(Default)]
 struct FoldNames {
     active: bool,
-    // Integer and C variables are separate namespaces even at the same ID.
+    // Integer and program variables are separate namespaces even at the same ID.
     names: BTreeMap<(BinderCarrier, Variable), String>,
     markers: Vec<(String, Option<String>)>,
 }
@@ -24,7 +24,7 @@ pub(super) fn binder_name(integer: bool, variable: Variable) -> Option<String> {
     let carrier = if integer {
         BinderCarrier::Integer
     } else {
-        BinderCarrier::C
+        BinderCarrier::Program
     };
     scoped_binder_name(carrier, variable)
 }
@@ -168,7 +168,7 @@ fn raise_parts<T>(
                     if integer_result {
                         BinderCarrier::Integer
                     } else {
-                        BinderCarrier::C
+                        BinderCarrier::Program
                     },
                     accumulator_id,
                 ),
@@ -179,7 +179,7 @@ fn raise_parts<T>(
                     if index == KernelFoldIndex::Integer {
                         BinderCarrier::Integer
                     } else {
-                        BinderCarrier::C
+                        BinderCarrier::Program
                     },
                     item_id,
                 ),

@@ -427,10 +427,10 @@ fn stored_child_arguments_require_owned_memory() {
     let Some(segment) = arm.contains[0].memory_segment_mut() else {
         unreachable!()
     };
-    segment.end = c_int32_literal(2); // one LP64 pointer
+    segment.end = crate::kernel::program_expression::int32_literal(2); // one LP64 pointer
     arm.children[0].arguments = vec![SpecExpression::ProgramExpression(
         ProgramExpression::TypedLoad {
-            pointer: Box::new(c_variable("p")),
+            pointer: Box::new(crate::kernel::program_expression::variable("p")),
             value_type: ProgramType::Int32Pointer,
             volatile: false,
             pointee_constant: false,
@@ -499,7 +499,9 @@ fn stored_child_arguments_require_owned_memory() {
     concrete_definition.matched.as_mut().unwrap().arms[1].children[0].arguments =
         vec![SpecExpression::ProgramExpression(
             ProgramExpression::TypedLoad {
-                pointer: Box::new(c_pointer_value(concrete.clone())),
+                pointer: Box::new(crate::kernel::program_expression::pointer_value(
+                    concrete.clone(),
+                )),
                 value_type: ProgramType::Int32Pointer,
                 volatile: false,
                 pointee_constant: false,
@@ -515,9 +517,9 @@ fn stored_child_arguments_require_owned_memory() {
         .push(ResourceSpec::owned_memory(MemorySegment {
             uninitialized: false,
             value_runs: Default::default(),
-            base: c_pointer_value(concrete),
-            start: c_int32_literal(0),
-            end: c_int32_literal(2),
+            base: crate::kernel::program_expression::pointer_value(concrete),
+            start: crate::kernel::program_expression::int32_literal(0),
+            end: crate::kernel::program_expression::int32_literal(2),
             element_width: 4,
             guard: None,
         }));
@@ -572,15 +574,15 @@ fn instance_fold_preserves_memory_pieces_without_scanning_unrelated_resources() 
             ResourceSpec::owned_memory(MemorySegment {
                 uninitialized: false,
                 value_runs: Default::default(),
-                base: c_variable("p"),
-                start: c_int32_literal(i),
-                end: c_int32_literal(i + 1),
+                base: crate::kernel::program_expression::variable("p"),
+                start: crate::kernel::program_expression::int32_literal(i),
+                end: crate::kernel::program_expression::int32_literal(i + 1),
                 element_width: 4,
                 guard: None,
             })
         })
         .collect();
-    let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+    let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap() else {
         unreachable!()
     };
     let pointer = value.pointer().clone();
@@ -1321,10 +1323,10 @@ fn observable_structural_separation_does_not_materialize_owned_pairs() {
                         .expect("structurally disjoint memory ranges should compose")
                 });
                 assert_eq!(facts.len(), 1, "size-{size} projection materialized pairs");
-                assert!(matches!(facts[0], Proposition::CResourceComposition(_)));
+                assert!(matches!(facts[0], Proposition::ResourceComposition(_)));
                 assert!(crate::kernel::search::ProofSearch::proves(
                     &(PureFactContext::new()),
-                    &Proposition::CResourceSeparate {
+                    &Proposition::ResourceSeparate {
                         left: Box::new(context.facts()[0].resource().clone()),
                         right: Box::new(context.facts()[size - 1].resource().clone()),
                     }
@@ -2040,7 +2042,7 @@ fn cross_block_alias_owner_lookup_ignores_unrelated_bases() {
 fn symbolic_same_block_ranges_emit_no_pairs_with_near_linear_work() {
     // The lazy-separation acceptance curve: N symbolic same-block owned
     // ranges expose one compact composition authority and zero pairwise
-    // CResourceSeparate propositions, in work near-linear in N.
+    // ResourceSeparate propositions, in work near-linear in N.
     let samples = [8, 16, 32, 64]
         .into_iter()
         .map(|size| {
@@ -2063,7 +2065,7 @@ fn symbolic_same_block_ranges_emit_no_pairs_with_near_linear_work() {
             });
             let pair_count = facts
                 .iter()
-                .filter(|fact| matches!(fact, Proposition::CResourceSeparate { .. }))
+                .filter(|fact| matches!(fact, Proposition::ResourceSeparate { .. }))
                 .count();
             assert_eq!(
                 pair_count, 0,
@@ -2072,7 +2074,7 @@ fn symbolic_same_block_ranges_emit_no_pairs_with_near_linear_work() {
             assert!(
                 facts
                     .iter()
-                    .any(|fact| matches!(fact, Proposition::CResourceComposition(_))),
+                    .any(|fact| matches!(fact, Proposition::ResourceComposition(_))),
                 "multi-owner contexts should expose one compact authority"
             );
             (size, work)
@@ -2097,15 +2099,15 @@ fn symbolic_same_block_ranges_emit_no_pairs_with_near_linear_work() {
 fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
     let definition = CompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("item", ProgramType::Int32Pointer)],
+        vec![program_parameter("item", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment {
             uninitialized: false,
             value_runs: Default::default(),
-            base: c_variable("item"),
-            start: c_int32_literal(0),
-            end: c_int32_literal(1),
+            base: crate::kernel::program_expression::variable("item"),
+            start: crate::kernel::program_expression::int32_literal(0),
+            end: crate::kernel::program_expression::int32_literal(1),
             element_width: 4,
             guard: None,
         })],
@@ -2485,7 +2487,7 @@ fn dependent_resource_clause_work_scales_with_dependency_nodes() {
         offset: PointerOffsetTerm::Constant((index as i64) * 4),
     };
     let load = |pointer: Pointer| ProgramExpression::TypedLoad {
-        pointer: Box::new(c_pointer_value(pointer)),
+        pointer: Box::new(crate::kernel::program_expression::pointer_value(pointer)),
         value_type: ProgramType::Int32Pointer,
         volatile: false,
         pointee_constant: false,
@@ -2509,7 +2511,7 @@ fn dependent_resource_clause_work_scales_with_dependency_nodes() {
                 .chain(std::iter::once(0))
                 .map(|index| {
                     let base = if index == 0 {
-                        c_pointer_value(pointers[index].clone())
+                        crate::kernel::program_expression::pointer_value(pointers[index].clone())
                     } else {
                         load(pointers[index - 1].clone())
                     };
@@ -2517,8 +2519,8 @@ fn dependent_resource_clause_work_scales_with_dependency_nodes() {
                         uninitialized: false,
                         value_runs: Default::default(),
                         base,
-                        start: c_int32_literal(0),
-                        end: c_int32_literal(1),
+                        start: crate::kernel::program_expression::int32_literal(0),
+                        end: crate::kernel::program_expression::int32_literal(1),
                         element_width: 4,
                         guard: None,
                     })
@@ -2761,15 +2763,15 @@ fn returned_scalar_and_bytewise_padding_rejoin_over_symbolic_objects() {
 fn frame_queries_ignore_folded_compositions_until_explicitly_opened() {
     let definition = CompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment {
             uninitialized: false,
             value_runs: Default::default(),
-            base: c_variable("p"),
-            start: c_int32_literal(0),
-            end: c_int32_literal(1),
+            base: crate::kernel::program_expression::variable("p"),
+            start: crate::kernel::program_expression::int32_literal(0),
+            end: crate::kernel::program_expression::int32_literal(1),
             element_width: 4,
             guard: None,
         })],
@@ -2793,16 +2795,16 @@ fn frame_queries_ignore_folded_compositions_until_explicitly_opened() {
             };
             let mut facts = PureFactContext::new();
             for index in 0..size {
-                facts = facts.assume_proposition(Proposition::CResourceComposition(composition(
+                facts = facts.assume_proposition(Proposition::ResourceComposition(composition(
                     if related { 0 } else { 2 * index + 2 },
                     2 * index + 3,
                 )));
             }
             let selected = composition(0, 1);
-            facts = facts.assume_proposition(Proposition::CResourceComposition(selected.clone()));
+            facts = facts.assume_proposition(Proposition::ResourceComposition(selected.clone()));
             let written = memory_range(pointer(1), 0, 1);
             let memory = Memory::new();
-            let produced = crate::kernel::intern_c_memory(memory.clone().with_call_memory_havoc(
+            let produced = crate::kernel::intern_memory(memory.clone().with_call_memory_havoc(
                 Variable(919_000),
                 std::slice::from_ref(&written),
                 &facts,
@@ -2849,7 +2851,7 @@ fn frame_queries_ignore_folded_compositions_until_explicitly_opened() {
                 )
                 .expect("the selected cell body opens");
             }
-            let explicit = facts.assume_proposition(Proposition::CResourceComposition(opened));
+            let explicit = facts.assume_proposition(Proposition::ResourceComposition(opened));
             let (found, hit) = crate::instrumentation::measure_deterministic_work(|| {
                 query(&explicit, &pointer(0))
             });
@@ -2884,15 +2886,15 @@ fn first_pass_resource_section_does_not_expand_the_frame() {
     };
     let cell = CompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment {
             uninitialized: false,
             value_runs: Default::default(),
-            base: c_variable("p"),
-            start: c_int32_literal(0),
-            end: c_int32_literal(1),
+            base: crate::kernel::program_expression::variable("p"),
+            start: crate::kernel::program_expression::int32_literal(0),
+            end: crate::kernel::program_expression::int32_literal(1),
             element_width: 4,
             guard: None,
         })],
@@ -2902,8 +2904,8 @@ fn first_pass_resource_section_does_not_expand_the_frame() {
         uninitialized: false,
         value_runs: Default::default(),
         base: ProgramExpression::Value(ProgramValue::pointer(pointer(0))),
-        start: c_int32_literal(0),
-        end: c_int32_literal(1),
+        start: crate::kernel::program_expression::int32_literal(0),
+        end: crate::kernel::program_expression::int32_literal(1),
         element_width: 4,
         guard: None,
     });
@@ -3057,7 +3059,7 @@ fn known_resource_constructor_skips_predicate_refutation_work() {
             ResourceMatchArm {
                 variant: "Filled".into(),
                 bindings: vec!["value".into()],
-                binding_types: vec![AlgebraicValueType::C(ProgramType::Int32)],
+                binding_types: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                 binding_variables: vec![None],
                 contains: vec![],
                 facts: vec![],
@@ -3159,7 +3161,7 @@ fn known_exclusion_skips_refutation_of_unpublishable_arms() {
             ResourceMatchArm {
                 variant: "Filled".into(),
                 bindings: vec!["value".into()],
-                binding_types: vec![AlgebraicValueType::C(ProgramType::Int32)],
+                binding_types: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                 binding_variables: vec![None],
                 contains: vec![],
                 facts: vec![],
@@ -3285,7 +3287,7 @@ fn observable_projection_with_one_owner_and_borrow_does_not_scan_views() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..16 {
                 let observed = context.observable_facts_assuming_valid(&assumptions);
-                let [Proposition::CResourceComposition(composition)] = observed.as_slice() else {
+                let [Proposition::ResourceComposition(composition)] = observed.as_slice() else {
                     panic!("one owner and a live borrow expose their composition");
                 };
                 assert!(std::sync::Arc::ptr_eq(
@@ -3345,10 +3347,11 @@ fn owned_range_validity_is_linear_in_stated_aliases_of_its_base() {
 fn checked_child_read_definitions_scale_with_exchanges_not_ambient_facts() {
     let (instance, mut definition, state) = recursive_child_fixture();
     let arm = &mut definition.matched.as_mut().unwrap().arms[1];
-    arm.contains[0].memory_segment_mut().unwrap().end = c_int32_literal(2);
+    arm.contains[0].memory_segment_mut().unwrap().end =
+        crate::kernel::program_expression::int32_literal(2);
     arm.children[0].arguments = vec![SpecExpression::ProgramExpression(
         ProgramExpression::TypedLoad {
-            pointer: Box::new(c_variable("p")),
+            pointer: Box::new(crate::kernel::program_expression::variable("p")),
             value_type: ProgramType::Int32Pointer,
             volatile: false,
             pointee_constant: false,
@@ -3889,15 +3892,16 @@ fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
         for count in [4u32, 16, 64, 256] {
             let (instance, mut definition, _) = instance_memory_fixture();
             definition.contains = vec![ResourceSpec::owned_memory(MemorySegment {
-                base: c_variable("p"),
-                start: c_int32_literal(0),
-                end: c_int32_literal(1024),
+                base: crate::kernel::program_expression::variable("p"),
+                start: crate::kernel::program_expression::int32_literal(0),
+                end: crate::kernel::program_expression::int32_literal(1024),
                 element_width: 4,
                 guard: None,
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+            let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap()
+            else {
                 unreachable!()
             };
             let piece = |start: u32, end: u32, width: u32| {
@@ -3991,7 +3995,7 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
             let bound =
                 |n| ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
             definition.contains = vec![ResourceSpec::owned_memory(MemorySegment {
-                base: c_variable("p"),
+                base: crate::kernel::program_expression::variable("p"),
                 start: bound(0),
                 end: bound(1024),
                 element_width: 4,
@@ -3999,7 +4003,8 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+            let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap()
+            else {
                 unreachable!()
             };
             let piece = |start, end| {
@@ -4304,7 +4309,7 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
             let bound =
                 |n| ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(n)));
             definition.contains = vec![ResourceSpec::owned_memory(MemorySegment {
-                base: c_variable("p"),
+                base: crate::kernel::program_expression::variable("p"),
                 start: bound(0),
                 end: ProgramExpression::Value(ProgramValue::UInt64(endpoint.clone())),
                 element_width: 4,
@@ -4312,7 +4317,8 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+            let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap()
+            else {
                 unreachable!()
             };
             let piece = |start: u64, end: MachineTerm| {
@@ -4403,7 +4409,7 @@ fn symbolic_offset_fold_stops_at_first_gap() {
                 |n| MachineTerm::uint64_add(endpoint.clone(), MachineTerm::uint64_constant(n));
             let bound = |n| ProgramExpression::Value(ProgramValue::UInt64(shifted(n)));
             definition.contains = vec![ResourceSpec::owned_memory(MemorySegment {
-                base: c_variable("p"),
+                base: crate::kernel::program_expression::variable("p"),
                 start: bound(0),
                 end: bound(1024),
                 element_width: 4,
@@ -4411,7 +4417,8 @@ fn symbolic_offset_fold_stops_at_first_gap() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+            let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap()
+            else {
                 unreachable!()
             };
             let piece = |start: u64, end: u64| {
@@ -4501,7 +4508,7 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
             let shifted = |n| MachineTerm::add(endpoint.clone(), MachineTerm::constant(n));
             let bound = |n| ProgramExpression::Value(ProgramValue::Int32(shifted(n)));
             definition.contains = vec![ResourceSpec::owned_memory(MemorySegment {
-                base: c_variable("p"),
+                base: crate::kernel::program_expression::variable("p"),
                 start: bound(0),
                 end: bound(1024),
                 element_width: 4,
@@ -4509,7 +4516,8 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
                 uninitialized: false,
                 value_runs: Default::default(),
             })];
-            let ProgramValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+            let ProgramValue::Pointer(value) = instance.arguments()[0].as_program_value().unwrap()
+            else {
                 unreachable!()
             };
             let piece = |start: u32, end: u32| {

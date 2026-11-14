@@ -3,7 +3,7 @@ use super::*;
 fn fixture(snapshot: ResourceSnapshot) -> (LoopBinder, Vec<ResourceInstance>) {
     let schema = ResourceFieldSchema::new(vec![(
         "tag".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let spec = ResourceSpec::new(
@@ -13,7 +13,7 @@ fn fixture(snapshot: ResourceSnapshot) -> (LoopBinder, Vec<ResourceInstance>) {
             schema: schema.clone(),
             resource: Box::new(ResourceTerm::Composite {
                 name: "cursor".into(),
-                arguments: vec![c_variable("cur")],
+                arguments: vec![crate::kernel::program_expression::variable("cur")],
                 argument_snapshots: vec![snapshot],
                 parameter_types: vec![ProgramType::Int32],
             }),
@@ -35,9 +35,9 @@ fn fixture(snapshot: ResourceSnapshot) -> (LoopBinder, Vec<ResourceInstance>) {
             ResourceInstance::new(
                 Variable(99),
                 "cursor".into(),
-                vec![AlgebraicValue::C(int32(value))].into(),
+                vec![AlgebraicValue::Program(int32(value))].into(),
                 schema.clone(),
-                vec![AlgebraicValue::C(int32(value))].into(),
+                vec![AlgebraicValue::Program(int32(value))].into(),
             )
             .unwrap()
         })
@@ -96,7 +96,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
         let ProgramValue::Pointer(pointer) = value else {
             unreachable!()
         };
-        AlgebraicValue::C(ProgramValue::UInt64(MachineTerm::pointer_address(
+        AlgebraicValue::Program(ProgramValue::UInt64(MachineTerm::pointer_address(
             pointer.pointer().clone(),
         )))
     };
@@ -120,7 +120,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
                     "cursor".into(),
                     vec![address(pointer)].into(),
                     schema.clone(),
-                    vec![AlgebraicValue::C(int32(0))].into(),
+                    vec![AlgebraicValue::Program(int32(0))].into(),
                 )
                 .unwrap()
             })
@@ -133,7 +133,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
                 resource: Box::new(ResourceTerm::Composite {
                     name: "cursor".into(),
                     arguments: vec![ProgramExpression::Cast {
-                        expression: Box::new(c_variable("cur")),
+                        expression: Box::new(crate::kernel::program_expression::variable("cur")),
                         target_type: ProgramType::UInt64,
                         integer_mode: IntegerCastMode::Standard,
                         pointee_struct: None,

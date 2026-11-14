@@ -80,8 +80,8 @@ impl TermRewrite<'_> {
         let saved_shadowed = self.integer_shadowed;
         let mut changes = Vec::new();
         let result = (|| {
-            let accumulator = self.rewrite_c_binder(fold.accumulator, &mut changes)?;
-            let item = self.rewrite_c_binder(fold.item, &mut changes)?;
+            let accumulator = self.rewrite_program_binder(fold.accumulator, &mut changes)?;
+            let item = self.rewrite_program_binder(fold.item, &mut changes)?;
             let body = if self.conditions.is_some() {
                 fold.arguments[3].clone()
             } else {
@@ -142,7 +142,7 @@ mod tests {
         let source = Variable(55);
         let replacement = Pointer::symbolic(Variable(56));
         let read = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
+            crate::kernel::intern_memory_ref(&memory),
             Box::new(Pointer::symbolic(source)),
             LoadKind::Int32,
         );
@@ -167,7 +167,7 @@ mod tests {
         let MachineTerm::MemoryLoad(snapshot, pointer, _) = *body else {
             unreachable!()
         };
-        assert_eq!(snapshot, crate::kernel::intern_c_memory_ref(&memory));
+        assert_eq!(snapshot, crate::kernel::intern_memory_ref(&memory));
         assert_eq!(*pointer, replacement);
 
         let condition = ConditionTerm::Variable(Variable(59));

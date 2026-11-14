@@ -210,7 +210,7 @@ impl Parser {
             {
                 self.position += 1;
                 parameters.push(FunctionParameter {
-                    click_type: ClickType::C(c_type),
+                    click_type: ClickType::Program(c_type),
                     name: parameter_name,
                     struct_name: None,
                     function_pointer_signature: Some(signature),
@@ -237,7 +237,7 @@ impl Parser {
                     self.parse_rust_fn_pointer_type()?
                 };
                 parameters.push(FunctionParameter {
-                    click_type: ClickType::C(c_type),
+                    click_type: ClickType::Program(c_type),
                     name: parameter_name,
                     struct_name: None,
                     function_pointer_signature: Some(signature),
@@ -1104,11 +1104,11 @@ impl Parser {
             return Ok(None);
         };
         let vector = if reference {
-            ContractExpression::CFragment(ProgramExpression::Load(Box::new(
+            ContractExpression::ProgramExpression(ProgramExpression::Load(Box::new(
                 ProgramExpression::Variable(name.to_string()),
             )))
         } else {
-            ContractExpression::CFragment(ProgramExpression::Variable(name.to_string()))
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.to_string()))
         };
         if self.peek() == Some(&Token::Dot)
             && self.peek_next() == Some(&Token::Ident("len".into()))
@@ -1695,7 +1695,7 @@ impl Parser {
                     | ProgramType::Int128
                     | ProgramType::UInt128
             );
-            let expression = match contract_expression_as_c_fragment(&operand) {
+            let expression = match contract_expression_as_program_expression(&operand) {
                 Some(expression) => expression,
                 None if integer_target => ProgramExpression::Value(int32(0)),
                 None => return Err(self.error("scalar cast expects a current C expression; put old(...) around the whole cast for an entry-state value")),

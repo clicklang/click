@@ -126,7 +126,7 @@ parameter of that name is refused. Every lexical name the parser tracks is in on
 reference, struct-array, `void*` and type parameters) and the names that
 carry data (resource instances, C parameter types and objects, struct and
 aggregate parameters, arm binder types, facts). Cross-kind questions,
-`is_bound` and `is_c_variable`, and the hiding and restoring of bindings are
+`is_bound` and `is_program_variable`, and the hiding and restoring of bindings are
 methods of the table. The table keeps one undo log: a quantifier, proof
 block, `else` block, match arm, execution `ensures`, function block or
 resource definition takes a `NameScope` mark, binds and hides through the

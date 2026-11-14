@@ -1379,7 +1379,7 @@ mod cast_tests {
         use crate::kernel::{KernelType, MachineCastSpelling as E};
         let _session = crate::kernel::VerificationSession::enter();
         let mut root = KernelTerm::variable(
-            KernelType::C(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.c_type()),
             Variable(985004),
         );
         for _ in 0..96 {
@@ -1453,7 +1453,7 @@ mod cast_tests {
     fn checking_cast_cache_survives_restore_but_not_a_new_verification() {
         use crate::kernel::{KernelType, MachineCastSpelling as E};
         let mut term = KernelTerm::variable(
-            KernelType::C(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.c_type()),
             Variable(985003),
         );
         {

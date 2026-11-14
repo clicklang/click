@@ -23,7 +23,10 @@ impl Context<'_> {
         if !self.locals.insert(field.clone()) {
             return Err("enumerated iterator identity collision".into());
         }
-        Ok(c_seq(storage, c_declare(field, ProgramType::UInt64)))
+        Ok(program_seq(
+            storage,
+            program_declare(field, ProgramType::UInt64),
+        ))
     }
 
     fn enumerated_iterator(&self, name: &str) -> Result<(), String> {
@@ -47,11 +50,14 @@ impl Context<'_> {
         }
         let base = format!("{target}_base");
         let length = format!("{target}_length");
-        Ok(c_seq(
+        Ok(program_seq(
             self.shared_array_move(target, source)?,
-            c_seq(
-                c_assign(&base, super::shared_arrays::shared_array_position(target)),
-                c_assign(&length, c_variable(format!("{target}_remaining"))),
+            program_seq(
+                program_assign(&base, super::shared_arrays::shared_array_position(target)),
+                program_assign(
+                    &length,
+                    crate::kernel::program_expression::variable(format!("{target}_remaining")),
+                ),
             ),
         ))
     }
@@ -77,11 +83,11 @@ impl Context<'_> {
         if !self.enumerated.contains(option) || !self.shared_array_options.contains_key(option) {
             return Err("unknown enumerated iterator Option".into());
         }
-        let yielded = c_assign(
+        let yielded = program_assign(
             format!("{option}_index"),
-            c_subtract(
-                c_variable(format!("{iterator}_length")),
-                c_variable(format!("{iterator}_remaining")),
+            crate::kernel::program_expression::subtract(
+                crate::kernel::program_expression::variable(format!("{iterator}_length")),
+                crate::kernel::program_expression::variable(format!("{iterator}_remaining")),
             ),
         );
         self.shared_array_next_with(iterator, option, yielded)
@@ -96,11 +102,11 @@ impl Context<'_> {
             return Err("unknown enumerated iterator Option".into());
         }
         Ok((
-            c_assert(c_equal(
-                c_variable(format!("{option}_some")),
-                c_int32_literal(1),
+            program_assert(crate::kernel::program_expression::equal(
+                crate::kernel::program_expression::variable(format!("{option}_some")),
+                crate::kernel::program_expression::int32_literal(1),
             )),
-            c_variable(format!("{option}_index")),
+            crate::kernel::program_expression::variable(format!("{option}_index")),
         ))
     }
 }

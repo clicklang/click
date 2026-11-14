@@ -22,7 +22,7 @@ fn old_collect_spec_expression_bitvector_variables(
         SpecExpression::IntegerToMachine { value, .. } => {
             old_collect_spec_integer_variables(value, variables);
         }
-        SpecExpression::Value(value) => collect_c_value_bitvector_variables(value, variables),
+        SpecExpression::Value(value) => collect_program_value_bitvector_variables(value, variables),
         SpecExpression::AlgebraicMatch { scrutinee, arms } => {
             old_collect_spec_algebraic_expression_bitvector_variables(scrutinee, variables);
             for arm in arms {
@@ -30,7 +30,7 @@ fn old_collect_spec_expression_bitvector_variables(
             }
         }
         SpecExpression::ProgramExpression(expression) => {
-            collect_c_expression_bitvector_variables(expression, variables);
+            collect_program_expression_bitvector_variables(expression, variables);
         }
         SpecExpression::CountedResourceCount { arguments, .. } => {
             for argument in arguments.iter().flatten() {
@@ -402,7 +402,7 @@ fn old_collect_spec_integer_bound_expression(
 ) {
     match expression {
         SpecExpression::Value(value) => {
-            collect_c_value_bound_identities(value, variables, integer_seen);
+            collect_program_value_bound_identities(value, variables, integer_seen);
         }
         SpecExpression::IntegerToMachine { value, .. } => {
             old_collect_spec_integer_bound_variables_inner(value, variables, integer_seen);
@@ -417,7 +417,7 @@ fn old_collect_spec_integer_bound_expression(
             }
         }
         SpecExpression::ProgramExpression(expression) => {
-            collect_c_expression_bound_identities(expression, variables, integer_seen);
+            collect_program_expression_bound_identities(expression, variables, integer_seen);
         }
         SpecExpression::CountedResourceCount { arguments, .. } => {
             for argument in arguments.iter().flatten() {
@@ -505,7 +505,7 @@ fn old_collect_spec_algebraic_bound_identities(
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
                 match field {
-                    SpecAlgebraicValue::C(value) => {
+                    SpecAlgebraicValue::Program(value) => {
                         old_collect_spec_integer_bound_expression(value, variables, integer_seen);
                     }
                     SpecAlgebraicValue::Integer(value) => {
@@ -584,9 +584,7 @@ fn old_collect_spec_resource_bound_identities(
             old_collect_spec_resource_bound_identities(b, variables, integer_seen);
         }
         SpecResource::Instance { .. } => {}
-        SpecResource::Value(resource) => {
-            collect_c_resource_bitvector_variables(resource, variables)
-        }
+        SpecResource::Value(resource) => collect_resource_bitvector_variables(resource, variables),
         SpecResource::Memory {
             base, start, end, ..
         } => {
@@ -712,7 +710,7 @@ fn old_collect_spec_algebraic_expression_bitvector_variables(
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
                 match field {
-                    SpecAlgebraicValue::C(field) => {
+                    SpecAlgebraicValue::Program(field) => {
                         old_collect_spec_expression_bitvector_variables(field, variables)
                     }
                     SpecAlgebraicValue::Integer(value) => {
@@ -802,9 +800,7 @@ fn old_collect_spec_resource_bitvector_variables(
             old_collect_spec_resource_bitvector_variables(b, variables);
         }
         SpecResource::Instance { .. } => {}
-        SpecResource::Value(resource) => {
-            collect_c_resource_bitvector_variables(resource, variables)
-        }
+        SpecResource::Value(resource) => collect_resource_bitvector_variables(resource, variables),
         SpecResource::Memory {
             base, start, end, ..
         } => {

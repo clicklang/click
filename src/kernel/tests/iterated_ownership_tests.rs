@@ -219,18 +219,18 @@ fn cells_definition() -> Vec<CompositeResourceDefinition> {
         ResourceTerm::Iterated(Box::new(crate::kernel::primitives::IteratedSpec {
             owner: "cells".into(),
             element: MemorySegment::new(
-                c_variable("data"),
-                c_int32_literal(0),
-                c_variable("capacity"),
+                crate::kernel::program_expression::variable("data"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::variable("capacity"),
             ),
             stride: 1,
             start_offset: 0,
             end_offset: 1,
-            guard_base: c_variable("occupied"),
+            guard_base: crate::kernel::program_expression::variable("occupied"),
             guard_cell_type: ProgramType::Int32,
             guard_cell_width: 4,
             holds_when_equal: true,
-            guard_value: c_int32_literal(0),
+            guard_value: crate::kernel::program_expression::int32_literal(0),
         })),
         ResourceAccessMode::Own,
         ResourceQuantity::One,
@@ -241,17 +241,17 @@ fn cells_definition() -> Vec<CompositeResourceDefinition> {
     vec![CompositeResourceDefinition::new(
         "cells",
         vec![
-            c_parameter("data", ProgramType::Int32Pointer),
-            c_parameter("occupied", ProgramType::Int32Pointer),
-            c_parameter("capacity", ProgramType::Int32),
+            program_parameter("data", ProgramType::Int32Pointer),
+            program_parameter("occupied", ProgramType::Int32Pointer),
+            program_parameter("capacity", ProgramType::Int32),
         ],
         None,
         false,
         vec![
             ResourceSpec::owned_memory(MemorySegment::new(
-                c_variable("occupied"),
-                c_int32_literal(0),
-                c_variable("capacity"),
+                crate::kernel::program_expression::variable("occupied"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::variable("capacity"),
             )),
             iterated,
         ],
@@ -278,7 +278,7 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scaled_int32_node(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory.clone()),
+                crate::kernel::intern_memory(memory.clone()),
                 Box::new(address.clone()),
                 LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),
             ),

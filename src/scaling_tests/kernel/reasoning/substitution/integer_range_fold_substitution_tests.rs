@@ -80,7 +80,8 @@ fn fold_step_substitution_retains_shared_item_replacements() {
             let _session = crate::kernel::VerificationSession::enter();
             let item = Variable(1004000);
             let accumulator = Variable(1004001);
-            let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(1004002));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(1004002));
             for _ in 0..depth {
                 root = KernelTerm::machine_binary_shared(
                     format,

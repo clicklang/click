@@ -1,7 +1,7 @@
 //! The prepared lowering must enforce owned call events independently of Charon.
 use super::*;
 use crate::languages::rust::schema::{MirTerminator as T, OwnedArgument, Place, Span};
-use crate::surface::C0VerificationSession;
+use crate::surface::ProgramVerificationSession;
 
 fn fixture() -> RustExport {
     let artifact =
@@ -74,7 +74,7 @@ fn proof(export: &RustExport) -> String {
 fn rust_owned_parameters_check_metadata_and_consumption() {
     let original = fixture();
     let prepared = super::super::import::prepared_for_test(original.clone()).unwrap();
-    C0VerificationSession::new_program_prepared(&proof(&original), &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&proof(&original), &prepared).unwrap();
     for corruption in 0..7 {
         let mut export = original.clone();
         if corruption == 5 {
@@ -130,7 +130,7 @@ fn rust_owned_parameters_check_metadata_and_consumption() {
         match super::super::import::prepared_for_test(export) {
             Err(_) => (),
             Ok(prepared) => assert!(
-                C0VerificationSession::new_program_prepared(&sidecar, &prepared).is_err(),
+                ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).is_err(),
                 "corruption {corruption}"
             ),
         }

@@ -103,9 +103,9 @@ pub(super) fn matched_resource_instance_case_read_projection(
             value,
         ) {
             (
-                AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _),
+                AlgebraicValueType::Program(_) | AlgebraicValueType::ObjectPointer(_, _),
                 None,
-                AlgebraicValue::C(value),
+                AlgebraicValue::Program(value),
             ) => {
                 let ty = value.c_type();
                 evaluation.locals.set_typed(name.clone(), value.clone(), ty);
@@ -156,7 +156,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
         supporting_facts.extend(crate::kernel::admitted_memory_range_extent_facts(range));
         supporting_facts.push(range.loadable_fact(&state.memory));
     }
-    supporting_facts.push(Proposition::CResourceComposition(body_resources));
+    supporting_facts.push(Proposition::ResourceComposition(body_resources));
     let mut body_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
@@ -165,12 +165,12 @@ pub(super) fn matched_resource_instance_case_read_projection(
     // ownership. They are justified only by the exact currently owned head.
     let mut read_projection = supporting_facts
         .iter()
-        .filter(|fact| matches!(fact, Proposition::CMemoryLoadable { .. }))
+        .filter(|fact| matches!(fact, Proposition::MemoryLoadable { .. }))
         .cloned()
         .collect::<Vec<_>>();
     for fact in evaluation.resources.facts() {
         if let Some(child) = fact.owned_resource() {
-            read_projection.push(Proposition::CResourceContains {
+            read_projection.push(Proposition::ResourceContains {
                 parent: Box::new(Resource::Instance(instance.clone())),
                 child: Box::new(child.clone()),
             });
@@ -403,7 +403,7 @@ pub(super) fn selected_instance_resource_load_values(
             }
             let mut evaluation = ExecutionState::new().with_memory(state.memory().clone());
             for (parameter, argument) in definition.parameters.iter().zip(instance.arguments()) {
-                let value = argument.as_c_value()?;
+                let value = argument.as_program_value()?;
                 if value.c_type() != parameter.c_type() {
                     return None;
                 }
@@ -421,7 +421,7 @@ pub(super) fn selected_instance_resource_load_values(
             continue;
         }
         for (name, field) in arm.bindings.iter().zip(fields) {
-            if let AlgebraicValue::C(value) = field {
+            if let AlgebraicValue::Program(value) = field {
                 evaluation
                     .locals
                     .set_typed(name.clone(), value.clone(), value.c_type());
@@ -700,7 +700,7 @@ pub(in crate::kernel) fn selected_instance_match_arm<'a>(
                     ResourceChildField::Constructor(index) => {
                         let expected = match field_type {
                             ResourceFieldType::Integer => AlgebraicValueType::Integer,
-                            ResourceFieldType::C(ty) => AlgebraicValueType::C(*ty),
+                            ResourceFieldType::Program(ty) => AlgebraicValueType::Program(*ty),
                             ResourceFieldType::Algebraic(ty) => ty.value_type(),
                         };
                         arm.binding_types.get(*index) == Some(&expected)
@@ -936,7 +936,7 @@ pub(in crate::kernel) fn instance_body_evaluation(
         .iter()
         .zip(instance.fields.iter())
     {
-        if let AlgebraicValue::C(value) = value {
+        if let AlgebraicValue::Program(value) = value {
             evaluation
                 .locals
                 .bind_logical_typed(name.clone(), value.clone(), value.c_type());
@@ -944,7 +944,7 @@ pub(in crate::kernel) fn instance_body_evaluation(
     }
     for (parameter, value) in definition.parameters.iter().zip(instance.arguments.iter()) {
         let value = value
-            .as_c_value()
+            .as_program_value()
             .ok_or("resource argument is not a C value")?;
         if value.c_type() != parameter.c_type() {
             return Err("resource argument type mismatch");

@@ -37,7 +37,7 @@ pub(in crate::kernel) fn named_contract_refinement_theorem_skeleton(
                 .get(index)
                 .and_then(Option::as_deref)
                 .map(str::to_string)
-                .unwrap_or_else(|| c_parameter_type_spelling(parameter));
+                .unwrap_or_else(|| program_parameter_type_spelling(parameter));
             format!("{spelling} {}", parameter.name())
         })
         .collect::<Vec<_>>()
@@ -153,8 +153,8 @@ pub(super) fn snake_case_contract_name(name: &str) -> String {
 /// keeps its layout, not the tag its source wrote, so a pointer to one is
 /// spelled by its pointer type. The skeleton is source the user edits, and
 /// this is the one slot they may have to correct.
-pub(super) fn c_parameter_type_spelling(parameter: &ProgramParameter) -> String {
-    let base = c_type_spelling(parameter.c_type());
+pub(super) fn program_parameter_type_spelling(parameter: &ProgramParameter) -> String {
+    let base = program_type_spelling(parameter.c_type());
     if parameter.pointee_is_constant() {
         format!("const {base}")
     } else {
@@ -164,8 +164,8 @@ pub(super) fn c_parameter_type_spelling(parameter: &ProgramParameter) -> String 
 
 /// The C0 spelling of a kernel C type, for a diagnostic that has to say what
 /// type a value had. An aggregate pointer is spelled by its pointer type, as
-/// [`c_parameter_type_spelling`] explains.
-pub(crate) fn c_type_spelling(c_type: ProgramType) -> &'static str {
+/// [`program_parameter_type_spelling`] explains.
+pub(crate) fn program_type_spelling(c_type: ProgramType) -> &'static str {
     match c_type {
         ProgramType::Parameter(name) => name.name(),
         ProgramType::ParameterPointer(name) => {
@@ -927,7 +927,9 @@ pub(in crate::kernel) fn resource_instance_field_value(
 ) -> AlgebraicValue {
     match field_type {
         ResourceFieldType::Integer => AlgebraicValue::Integer(IntegerTerm::Variable(variable)),
-        ResourceFieldType::C(c_type) => AlgebraicValue::C(symbolic_call_result(*c_type, variable)),
+        ResourceFieldType::Program(c_type) => {
+            AlgebraicValue::Program(symbolic_call_result(*c_type, variable))
+        }
         ResourceFieldType::Algebraic(algebraic_type) => AlgebraicValue::Algebraic(AlgebraicTerm {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::Variable(variable),

@@ -593,7 +593,7 @@ fn an_alias_needs_a_stated_separation_with_checked_membership() {
     // Distinct parameter names establish nothing: `a` and `b` may be one
     // object.
     assert!(is_store_refusal(&frame(&old, &new, &[])));
-    let separate = Proposition::CResourceSeparate {
+    let separate = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(MemoryRange::new(
             a.clone(),
             MachineTerm::constant(0),
@@ -1099,12 +1099,12 @@ fn fold_transport_crosses_unconditional_cache_forgetting_but_not_an_overlapping_
         ProgramType::Int32,
         0,
         8,
-        crate::kernel::intern_c_memory(Memory::new()),
+        crate::kernel::intern_memory(Memory::new()),
     );
     let forgotten =
         before.without_possible_aliasing_cells(&parameter_base(W), 4, &PureFactContext::new());
     assert!(matches!(
-        crate::kernel::intern_c_memory_ref(&forgotten)
+        crate::kernel::intern_memory_ref(&forgotten)
             .derivation()
             .as_deref(),
         Some(MemoryDerivation::CellsForgotten { .. })
@@ -1125,7 +1125,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
     let _session = VerificationSession::enter();
     let native = MachineTerm::add(MachineTerm::Variable(ITEM), MachineTerm::Variable(ITEM));
-    let x = KernelTerm::variable(KernelType::C(ProgramType::Int32), ITEM);
+    let x = KernelTerm::variable(KernelType::Program(ProgramType::Int32), ITEM);
     let root = KernelTerm::machine_binary_shared(
         MachineIntegerType::Int32,
         MachineBinaryOp::Add,

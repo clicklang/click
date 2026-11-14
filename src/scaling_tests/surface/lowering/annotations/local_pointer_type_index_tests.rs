@@ -9,11 +9,11 @@ use super::*;
 #[test]
 fn local_pointer_types_index_once_with_linear_work() {
     for count in [16, 64, 256] {
-        let mut body = crate::kernel::c_skip();
+        let mut body = crate::kernel::program_skip();
         for index in 0..count {
-            body = c_seq(
+            body = program_seq(
                 body,
-                crate::kernel::c_declare(
+                crate::kernel::program_declare(
                     format!("local_{index}"),
                     if index % 2 == 0 {
                         ProgramType::UInt8Pointer

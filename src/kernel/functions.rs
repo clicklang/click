@@ -23,7 +23,7 @@ mod produced_argument_supply;
 mod produced_argument_supply_tests;
 use produced_argument_supply::prepare_produced_argument_supply;
 
-fn execute_c_function_body_paths(
+fn execute_program_function_body_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
     assumptions: &PureFactContext,
@@ -575,7 +575,8 @@ pub(super) fn transfer_population_call_facts<'a>(
             }
             let description = authorities[0];
             if let Some((base, _)) = allocations.first() {
-                let [AlgebraicValue::C(ProgramValue::Pointer(pointer))] = description.arguments()
+                let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] =
+                    description.arguments()
                 else {
                     return Err(RuntimeError::FunctionContract(
                         "population call control needs one pointer anchor".into(),
@@ -795,7 +796,7 @@ fn recover_candidate_stable_view_resources(
             .iter()
             .any(|permitted| {
                 permitted.is_view()
-                    && super::memory_provenance::c_resources_directly_match(
+                    && super::memory_provenance::resources_directly_match(
                         permitted.resource(),
                         piece.resource(),
                         output_assumptions,
@@ -1349,7 +1350,7 @@ fn function_changes_declared_resource_quantities(function: &ProgramFunction) -> 
 /// Applies one explicitly authorized abstract-token construction to a return
 /// state. Construction is a zero-source resource event: unlike a transfer,
 /// it does not consume a caller resource or rely on a body representation.
-pub(super) fn construct_c_function_resource(
+pub(super) fn construct_program_function_resource(
     state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -1369,7 +1370,8 @@ pub(super) fn construct_c_function_resource(
             "generic resource construction cannot create members".to_string(),
         )));
     }
-    let Some(mut evaluation_state) = c_function_entry_state(state, function, arguments) else {
+    let Some(mut evaluation_state) = program_function_entry_state(state, function, arguments)
+    else {
         return Ok(Err(RuntimeError::FunctionContract(
             "could not bind function arguments for resource construction".to_string(),
         )));
@@ -1440,7 +1442,7 @@ fn complete_void_fallthrough(
     }
 }
 
-pub(super) fn execute_c_function_paths(
+pub(super) fn execute_program_function_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -1448,7 +1450,7 @@ pub(super) fn execute_c_function_paths(
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<FunctionPath>> {
-    execute_c_function_paths_with_contract_resources(
+    execute_program_function_paths_with_contract_resources(
         state,
         function,
         arguments,
@@ -1468,8 +1470,8 @@ pub(super) fn execute_c_function_paths(
 /// boundary, so the views the contract declares become loans of this
 /// application and recovery returns them.
 #[allow(clippy::too_many_arguments)]
-/// `CFunctionExecutes` for `function` applied to `arguments`.
-pub(super) fn execute_c_function_paths_with_contract_resources(
+/// `ProgramFunctionExecutes` for `function` applied to `arguments`.
+pub(super) fn execute_program_function_paths_with_contract_resources(
     state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -1520,8 +1522,8 @@ fn refresh_returned_local_bindings_from_stores(
     }
 }
 
-/// `CFunctionVerifies` for `function` applied to `arguments`.
-pub(super) fn execute_c_function_verification_paths(
+/// `ProgramFunctionVerifies` for `function` applied to `arguments`.
+pub(super) fn execute_program_function_verification_paths(
     state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -1601,7 +1603,7 @@ fn execute_function_paths(
         function,
         "verification argument evaluation",
         || {
-            evaluate_c_arguments_paths(
+            evaluate_program_arguments_paths(
                 state,
                 arguments,
                 assumptions,
@@ -1651,7 +1653,7 @@ fn execute_function_paths(
             ));
             continue;
         }
-        let Some((argument_values, argument_obligations)) = coerce_c_function_arguments(
+        let Some((argument_values, argument_obligations)) = coerce_program_function_arguments(
             function,
             &arguments_path.values,
             &arguments_path.obligations,
@@ -1666,7 +1668,7 @@ fn execute_function_paths(
             ));
             continue;
         };
-        let Some(callee_state) = bind_c_function_arguments(state, function, &argument_values)
+        let Some(callee_state) = bind_program_function_arguments(state, function, &argument_values)
         else {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -1687,8 +1689,8 @@ fn execute_function_paths(
             // The contract boundary of a whole-function judgment: the body
             // runs from the resources the contract declares, consumed
             // definitionally. Lending is the call site's job (the planner in
-            // `execute_c_function_call_paths`) and the proof's entry
-            // construction (`c_state_with_borrowed_contract_inputs`); a
+            // `execute_program_function_call_paths`) and the proof's entry
+            // construction (`execution_state_with_borrowed_contract_inputs`); a
             // judgment over a body that already happened must not lend again.
             let resource_transfer = match prepare_function_resource_transfer(
                 state,
@@ -1726,7 +1728,7 @@ fn execute_function_paths(
         // a recursive call there executes, and the budget bounds it.
         let anchor = match judgment {
             super::eval::StatementJudgment::Verifies(_) => {
-                crate::kernel::termination::c_function_recursion_anchor(
+                crate::kernel::termination::program_function_recursion_anchor(
                     function,
                     &callee_state,
                     &body_assumptions,
@@ -1868,7 +1870,7 @@ pub(in crate::kernel) use authority_contracts::*;
 #[cfg(test)]
 mod authority_helper_admission_tests;
 
-pub(super) fn execute_c_function_call_paths(
+pub(super) fn execute_program_function_call_paths(
     caller_state: &ExecutionState,
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
@@ -1925,7 +1927,7 @@ pub(super) fn execute_c_function_call_paths(
                 "selected contract is not established for this function with its call signature",
             )]);
         }
-        return execute_c_function_contracts_paths(
+        return execute_program_function_contracts_paths(
             caller_state,
             &contracts,
             arguments,
@@ -2044,7 +2046,7 @@ pub(super) fn execute_c_function_call_paths(
     }
 
     let mut paths = Vec::new();
-    for arguments_path in evaluate_c_arguments_paths(
+    for arguments_path in evaluate_program_arguments_paths(
         caller_state,
         arguments,
         assumptions,
@@ -2092,7 +2094,7 @@ pub(super) fn execute_c_function_call_paths(
             ));
             continue;
         }
-        let Some((argument_values, argument_obligations)) = coerce_c_function_arguments(
+        let Some((argument_values, argument_obligations)) = coerce_program_function_arguments(
             function,
             &arguments_path.values,
             &arguments_path.obligations,
@@ -2121,7 +2123,7 @@ pub(super) fn execute_c_function_call_paths(
             continue;
         }
         let Some(callee_state) =
-            bind_c_function_arguments(caller_state, function, &argument_values)
+            bind_program_function_arguments(caller_state, function, &argument_values)
         else {
             paths.push(FunctionPath::new(
                 FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -2148,7 +2150,7 @@ pub(super) fn execute_c_function_call_paths(
             // recovers to the caller's ledger, whose evidence the path keeps.
             let callee_state = callee_state.with_resource_context(caller_state.resources().clone());
             let previous_inline_call = budget.inline_call_name.replace(function.name().to_string());
-            let body_paths = execute_c_function_body_paths(
+            let body_paths = execute_program_function_body_paths(
                 &callee_state,
                 function,
                 &body_assumptions,
@@ -2213,7 +2215,7 @@ pub(super) fn execute_c_function_call_paths(
             }
         };
         let callee_state = callee_state_with_resource_transfer(callee_state, &resource_transfer);
-        for body_path in execute_c_function_body_paths(
+        for body_path in execute_program_function_body_paths(
             &callee_state,
             function,
             &body_assumptions,
@@ -2343,7 +2345,7 @@ pub(crate) fn apply_verified_tactic_rule(
         .map(ProgramExpression::Value)
         .collect::<Vec<_>>();
     let mut budget = ExecutionBudget::continuing_from(next_kernel_variable);
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         state,
         function,
         &expressions,
@@ -3031,15 +3033,15 @@ fn execute_verified_function_applications_with_suspension(
         "verified call variable collection",
         || {
             let mut existing_variables = BTreeSet::new();
-            collect_c_state_bitvector_variables(caller_state, &mut existing_variables);
+            collect_execution_state_bitvector_variables(caller_state, &mut existing_variables);
             for application in applications {
-                collect_c_function_contract_interface_bitvector_variables(
+                collect_program_function_contract_interface_bitvector_variables(
                     application.interface,
                     &mut existing_variables,
                 );
             }
             for argument in arguments {
-                collect_c_expression_bitvector_variables(argument, &mut existing_variables);
+                collect_program_expression_bitvector_variables(argument, &mut existing_variables);
             }
             existing_variables
         },
@@ -3057,7 +3059,7 @@ fn execute_verified_function_applications_with_suspension(
             false => None,
         };
     let mut paths = Vec::new();
-    'arguments: for arguments_path in evaluate_c_arguments_paths(
+    'arguments: for arguments_path in evaluate_program_arguments_paths(
         caller_state,
         arguments,
         assumptions,
@@ -3374,7 +3376,7 @@ fn execute_verified_function_applications_with_suspension(
         // Construction initialization is part of this checked call effect,
         // so its endpoint must include the initialized value fields.
         if !worker_effects.is_empty() {
-            let mut effect = ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+            let mut effect = ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
                 before: entry_state.memory.clone(),
                 after: post_state.memory.clone(),
                 mutable_ranges: worker_effects.clone(),
@@ -3427,7 +3429,7 @@ fn execute_verified_function_applications_with_suspension(
                     if !ranges.is_empty() {
                         worker_effects.extend(ranges.iter().cloned());
                         facts.push(
-                            ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+                            ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
                                 before: post_state.memory.clone(),
                                 after: successor.memory.clone(),
                                 mutable_ranges: ranges,
@@ -3490,7 +3492,7 @@ fn execute_verified_function_applications_with_suspension(
                         if !ranges.is_empty() {
                             worker_effects.extend(ranges.iter().cloned());
                             facts.push(
-                                ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+                                ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
                                     before,
                                     after: fresh.memory.clone(),
                                     mutable_ranges: ranges,
@@ -3901,7 +3903,7 @@ fn execute_verified_function_applications_with_suspension(
                 arguments,
                 ResourceFieldSchema::new(vec![]).expect("empty schema"),
             );
-            let [AlgebraicValue::C(ProgramValue::Pointer(pointer))] = description.arguments()
+            let [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] = description.arguments()
             else {
                 paths.push(resource_call_failure(
                     "final release needs one pointer anchor",
@@ -4004,7 +4006,7 @@ fn execute_verified_function_applications_with_suspension(
                 }
                 let retirement = if retired.recognizes_imported_population(additional) {
                     retired.checked_retire_imported(additional, &effective_assumptions)
-                } else if let Some(AlgebraicValue::C(ProgramValue::Pointer(anchor))) =
+                } else if let Some(AlgebraicValue::Program(ProgramValue::Pointer(anchor))) =
                     additional.arguments().first()
                 {
                     retired.checked_retire(&anchor.pointer().block, additional)
@@ -4121,7 +4123,7 @@ fn execute_verified_function_applications_with_suspension(
                         ));
                         continue 'arguments;
                     };
-                    if !crate::kernel::c_resources_directly_match(
+                    if !crate::kernel::resources_directly_match(
                         input.fact.resource(),
                         output.resource(),
                         &effective_assumptions,
@@ -4164,7 +4166,7 @@ fn execute_verified_function_applications_with_suspension(
                     arguments.clone(),
                     ResourceFieldSchema::new(vec![]).expect("empty schema"),
                 );
-                let Some(AlgebraicValue::C(ProgramValue::Pointer(pointer))) =
+                let Some(AlgebraicValue::Program(ProgramValue::Pointer(pointer))) =
                     description.arguments().first()
                 else {
                     paths.push(resource_call_failure(
@@ -5178,7 +5180,7 @@ fn prepare_verified_function_call<'a>(
             arguments_path.obligations,
         )));
     }
-    let Some((mut argument_values, argument_obligations)) = coerce_c_contract_arguments(
+    let Some((mut argument_values, argument_obligations)) = coerce_contract_arguments(
         contract_interface,
         &arguments_path.values,
         &arguments_path.obligations,
@@ -5222,7 +5224,7 @@ fn prepare_verified_function_call<'a>(
             argument_obligations,
         )));
     }
-    let Some(mut entry_state) = bind_c_contract_arguments(
+    let Some(mut entry_state) = bind_contract_arguments(
         caller_state,
         contract_interface,
         &argument_values,
@@ -5707,7 +5709,7 @@ fn prepare_verified_function_call<'a>(
                         .contains_exact_representation(&input.fact)
             });
         if original_flat_partition {
-            facts.push(ExecutionPureFact::new(Proposition::CResourceComposition(
+            facts.push(ExecutionPureFact::new(Proposition::ResourceComposition(
                 caller_state.resources().clone(),
             )));
         }
@@ -5864,7 +5866,7 @@ fn prepare_verified_function_call<'a>(
                 // nothing about any other proposition.
                 let load_condition_is_justified = !assumptions.retains_required_obligations()
                     && loadability_obligation_shape(path_obligation.proposition())
-                    && super::api::contract_certification::c_state_justifies_loadability_obligation(
+                    && super::api::contract_certification::execution_state_justifies_loadability_obligation(
                         &precondition_state,
                         &guarded,
                         requirement_assumptions,
@@ -5920,7 +5922,7 @@ fn prepare_verified_function_call<'a>(
                                         condition, *value,
                                     )
                         }
-                        Proposition::CResourceSeparate { .. }
+                        Proposition::ResourceSeparate { .. }
                             if requirement_path.proposition.memory_separation().is_some() =>
                         {
                             let (left, right) = requirement_path
@@ -6005,7 +6007,7 @@ fn prepare_verified_function_call<'a>(
     drop(requirement_timing);
 
     // The callee is given each of its ranges' extent guards on entry
-    // (`c_function_contract_entry_facts`), among them `start <= end`. The
+    // (`program_function_contract_entry_facts`), among them `start <= end`. The
     // planner shows each range lies inside one the caller holds, which
     // gives every other guard from the held range's own, but not the order:
     // an inverted range `bytes[5..2]` lies inside `bytes[0..8]` by its
@@ -6464,7 +6466,7 @@ pub(super) fn contracts_from_facts(
         .collect()
 }
 
-pub(super) fn execute_c_function_contracts_paths(
+pub(super) fn execute_program_function_contracts_paths(
     caller_state: &ExecutionState,
     contracts: &[&FunctionContract],
     arguments: &[ProgramExpression],
@@ -6634,7 +6636,7 @@ impl ResourceCallApplication {
 /// a call precondition applies to.
 fn loadability_obligation_shape(proposition: &Proposition) -> bool {
     match proposition {
-        Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. } => true,
+        Proposition::MemoryLoadable { .. } | Proposition::MemoryReadDefined { .. } => true,
         Proposition::Implies(_, body) => loadability_obligation_shape(body),
         Proposition::And(left, right) => {
             loadability_obligation_shape(left) && loadability_obligation_shape(right)
@@ -6693,8 +6695,8 @@ fn call_value_arguments(
                 return Ok(Err(format!(
                     "call to `{function}`: the call map gives `{}` a `{}` value; it takes a `{}`",
                     parameter.name(),
-                    named_contract_refinement::c_type_spelling(value.c_type()),
-                    named_contract_refinement::c_type_spelling(parameter.c_type())
+                    named_contract_refinement::program_type_spelling(value.c_type()),
+                    named_contract_refinement::program_type_spelling(parameter.c_type())
                 )));
             }
             values.push(value.clone());
@@ -6759,8 +6761,8 @@ fn call_value_arguments(
             continue;
         };
         let agrees = |left: &AlgebraicValue, right: &AlgebraicValue| match (
-            left.as_c_value(),
-            right.as_c_value(),
+            left.as_program_value(),
+            right.as_program_value(),
         ) {
             (Some(ProgramValue::Pointer(left)), Some(ProgramValue::Pointer(right))) => {
                 left.pointer() == right.pointer()
@@ -6789,7 +6791,7 @@ fn call_value_arguments(
                 {
                     continue;
                 }
-                let Some(value) = held_arguments[position].as_c_value() else {
+                let Some(value) = held_arguments[position].as_program_value() else {
                     continue;
                 };
                 if !found.contains(value) {
@@ -6873,7 +6875,7 @@ fn separation_requirement_parts_are_established(
             required_obligation_is_exactly_discharged(assumptions, proposition)
                 || assumptions.has_matching_condition_fact_for_memory_resolution(condition, *value)
         }
-        Proposition::CResourceSeparate { .. } if proposition.memory_separation().is_some() => {
+        Proposition::ResourceSeparate { .. } if proposition.memory_separation().is_some() => {
             let (left, right) = proposition
                 .memory_separation()
                 .expect("the guard matched a memory separation");
@@ -7036,7 +7038,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     let storage_summaries: Vec<&MemoryRange> = facts
         .fact_iter()
         .filter_map(|fact| match fact.proposition() {
-            Proposition::CMemoryEffectSummary { mutable_ranges, .. } => Some(mutable_ranges),
+            Proposition::MemoryEffectSummary { mutable_ranges, .. } => Some(mutable_ranges),
             _ => None,
         })
         .flatten()
@@ -7611,7 +7613,7 @@ fn matched_instance_body_ownership(
     let ranges = projection
         .into_iter()
         .filter_map(|fact| match fact {
-            Proposition::CResourceContains { child, .. } => match *child {
+            Proposition::ResourceContains { child, .. } => match *child {
                 Resource::Memory(range) => Some(range),
                 _ => None,
             },
@@ -8062,7 +8064,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return false;
         }
         for (parameter, argument) in definition.parameters.iter().zip(arguments) {
-            let Some(value) = argument.as_c_value() else {
+            let Some(value) = argument.as_program_value() else {
                 return false;
             };
             if value.c_type() != parameter.c_type() {
@@ -8151,7 +8153,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             evaluation.resource_bindings = None;
         }
         for ((name, _), value) in schema.fields().iter().zip(fields) {
-            if let Some(AlgebraicValue::C(value)) = value {
+            if let Some(AlgebraicValue::Program(value)) = value {
                 evaluation
                     .locals
                     .set_typed(name.clone(), value.clone(), value.c_type());
@@ -8179,7 +8181,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                 for ((name, binding_type), value) in
                     arm.bindings.iter().zip(&arm.binding_types).zip(constructor)
                 {
-                    if let (AlgebraicValueType::C(_), AlgebraicValue::C(value)) =
+                    if let (AlgebraicValueType::Program(_), AlgebraicValue::Program(value)) =
                         (binding_type, value)
                     {
                         arm_evaluation.locals.set_typed(
@@ -8352,8 +8354,8 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     let ExpressionOutcome::Value(value) = &path.outcome else {
                         return None;
                     };
-                    coerce_c_function_argument_without_obligations(&value.native(), parameter)
-                        .map(AlgebraicValue::C)
+                    coerce_program_function_argument_without_obligations(&value.native(), parameter)
+                        .map(AlgebraicValue::Program)
                 })
                 .collect::<Option<Vec<_>>>();
             let Some(arguments) = arguments.filter(|arguments| {
@@ -9111,7 +9113,7 @@ fn allocation_continuity(
             HeapExtentKind::Int32 => MachineIntegerType::Int32,
             HeapExtentKind::UInt64 => MachineIntegerType::UInt64,
         };
-        if c_values_proven_equal_for_memory_resolution(
+        if program_values_proven_equal_for_memory_resolution(
             &input_extent.token_value(),
             &output_extent.token_value(),
             assumptions,
@@ -9483,7 +9485,7 @@ fn apply_verified_heap_allocation_delta(
                 VerifiedAllocationDeltaError::Runtime(RuntimeError::InvalidFree(error))
             })?;
         effects.push(ExecutionPureFact::internal(
-            Proposition::CHeapAllocationFreed {
+            Proposition::HeapAllocationFreed {
                 before: before_free,
                 after: memory.clone(),
                 allocation_base: base,
@@ -9533,11 +9535,11 @@ pub(crate) use call_arguments::*;
 /// startup-only storage constructor passes `true` to materialize initializers.
 /// Static locals use a function-qualified block identity and are therefore
 /// initialized once for the whole symbolic execution, not once per call frame.
-pub(crate) fn initialize_c_function_globals(
+pub(crate) fn initialize_program_function_globals(
     state: &ExecutionState,
     function: &ProgramFunction,
 ) -> ExecutionState {
-    initialize_c_function_globals_owned(state.clone(), function, false)
+    initialize_program_function_globals_owned(state.clone(), function, false)
 }
 
 /// Constructs a fresh startup state, never an ordinary call transition.
@@ -9548,12 +9550,12 @@ pub(crate) fn initialize_c_function_globals(
 /// its per-object, per-element, and per-range loops is a cooperative
 /// checkpoint. `None` means a run limit stopped construction; the partial
 /// state is dropped and the caller reports the limit.
-pub(crate) fn initialize_c_program_storage(
+pub(crate) fn initialize_program_program_storage(
     functions: impl IntoIterator<Item = ProgramFunction>,
 ) -> Option<ExecutionState> {
     let mut state = ExecutionState::new();
     for function in functions {
-        state = initialize_c_function_globals_owned(state, &function, true);
+        state = initialize_program_function_globals_owned(state, &function, true);
         // Private source spellings are lexical bindings, not program globals.
         state.locals = LocalEnvironment::default();
         if crate::instrumentation::deadline_exceeded() {
@@ -9815,7 +9817,7 @@ fn evaluate_resource_population_body_resources(
         }
         let mut population_state = callee_state.clone();
         for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-            let Some(argument) = argument.as_c_value() else {
+            let Some(argument) = argument.as_program_value() else {
                 return Ok(Err(RuntimeError::TypeMismatch));
             };
             if parameter.c_type() != argument.c_type() {
@@ -9868,7 +9870,8 @@ fn bind_contract_proof_arguments(
     function: &ProgramFunction,
     argument_values: &[ProgramValue],
 ) -> Option<ExecutionState> {
-    let mut callee_state = bind_c_function_arguments(caller_state, function, argument_values)?;
+    let mut callee_state =
+        bind_program_function_arguments(caller_state, function, argument_values)?;
     if let Some(events) = caller_state
         .population_effects
         .creation
@@ -10244,7 +10247,7 @@ fn composite_definition_facts_hold(
         .with_memory(caller_state.memory().clone())
         .with_resource_context(caller_state.resources().clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-        let Some(argument) = argument.as_c_value() else {
+        let Some(argument) = argument.as_program_value() else {
             return Ok(false);
         };
         if parameter.c_type() != argument.c_type() {
@@ -10299,7 +10302,7 @@ fn composite_definition_facts_hold(
                             (
                                 parameter.name().to_owned(),
                                 argument
-                                    .as_c_value()
+                                    .as_program_value()
                                     .expect("the definition's C arguments were bound above")
                                     .clone(),
                             )
@@ -10341,7 +10344,7 @@ fn string_literal_instance_values(
         return Ok(Vec::new());
     }
     let Some(remaining) = arguments.iter().enumerate().find_map(|(index, argument)| {
-        let Some(ProgramValue::Pointer(pointer)) = argument.as_c_value() else {
+        let Some(ProgramValue::Pointer(pointer)) = argument.as_program_value() else {
             return None;
         };
         let pointer = pointer.pointer();
@@ -10362,7 +10365,7 @@ fn string_literal_instance_values(
             return Ok(Vec::new());
         };
         let mut instance = arguments.to_vec();
-        instance[position] = AlgebraicValue::C(candidate.clone());
+        instance[position] = AlgebraicValue::Program(candidate.clone());
         if composite_definition_facts_hold(
             definition,
             &instance,
@@ -10416,11 +10419,11 @@ fn string_literal_composite_holds(
         return Ok(false);
     }
     let literal_pointer = |argument: &AlgebraicValue| {
-        matches!(argument.as_c_value(), Some(ProgramValue::Pointer(pointer))
+        matches!(argument.as_program_value(), Some(ProgramValue::Pointer(pointer))
             if matches!(pointer.pointer().block, PointerBlock::StringLiteral { .. }))
     };
     let pointers_are_literal = arguments.iter().all(|argument| {
-        !matches!(argument.as_c_value(), Some(ProgramValue::Pointer(_)))
+        !matches!(argument.as_program_value(), Some(ProgramValue::Pointer(_)))
             || literal_pointer(argument)
     });
     if !pointers_are_literal || !arguments.iter().any(literal_pointer) {
@@ -10588,7 +10591,7 @@ fn string_literal_fact_value(
             Some(true)
         }
         // Every byte of a literal is initialized when its block is installed.
-        Proposition::CMemoryReadDefined {
+        Proposition::MemoryReadDefined {
             memory,
             pointer,
             value_type,
@@ -10710,7 +10713,7 @@ pub(super) enum ResourceTransitionPurpose {
     /// certifies, or reads the body's outcome from the resources the contract
     /// declares, consumed definitionally. The loan roots of its input views
     /// come from the proof's entry construction
-    /// (`c_state_with_borrowed_contract_inputs`), never from this transition,
+    /// (`execution_state_with_borrowed_contract_inputs`), never from this transition,
     /// so nothing is lent twice; no call-site transfer record exists for
     /// such a judgment to rebuild from.
     FunctionBoundary,
@@ -12637,7 +12640,7 @@ fn evaluate_contract_return_resource_context(
         let evaluated = if let Some((output, population)) = &quantity_output
             && std::ptr::eq(resource, *output)
         {
-            if !crate::kernel::c_resources_directly_match(
+            if !crate::kernel::resources_directly_match(
                 population,
                 evaluated.resource(),
                 assumptions,
@@ -13445,7 +13448,9 @@ fn held_child_witness(
     let own_pointers = arguments
         .iter()
         .filter_map(|argument| match argument {
-            AlgebraicValue::C(ProgramValue::Pointer(pointer)) => Some(pointer.pointer().clone()),
+            AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
+                Some(pointer.pointer().clone())
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -13461,7 +13466,7 @@ fn held_child_witness(
         .filter_map(|fact| match fact.resource() {
             Resource::Composite { name, arguments } if name == child_name => {
                 match arguments.as_ref() {
-                    [AlgebraicValue::C(ProgramValue::Pointer(pointer))] => {
+                    [AlgebraicValue::Program(ProgramValue::Pointer(pointer))] => {
                         Some(pointer.pointer().clone())
                     }
                     _ => None,
@@ -14297,7 +14302,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .zip(&definition.parameters)
             .any(|(argument, parameter)| {
                 argument
-                    .as_c_value()
+                    .as_program_value()
                     .is_none_or(|value| value.c_type() != parameter.c_type())
             })
         || !instance_body_clauses_are_exchangeable(&definition.contains)
@@ -14381,9 +14386,9 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .ok_or("resource match Integer binding identity count mismatch")?;
             match (binding_type, binding_variable, value) {
                 (
-                    AlgebraicValueType::C(_) | AlgebraicValueType::ObjectPointer(_, _),
+                    AlgebraicValueType::Program(_) | AlgebraicValueType::ObjectPointer(_, _),
                     None,
-                    AlgebraicValue::C(value),
+                    AlgebraicValue::Program(value),
                 ) => {
                     let ty = value.c_type();
                     evaluation.locals.set_typed(name.clone(), value.clone(), ty);
@@ -14755,7 +14760,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 }
                 match &paths[0].outcome {
                     ExpressionOutcome::Value(value) => {
-                        let value = coerce_c_function_argument_without_obligations(
+                        let value = coerce_program_function_argument_without_obligations(
                             &value.native(),
                             parameter,
                         )
@@ -14775,7 +14780,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                                 child_read_definitions.push(fact.clone());
                             }
                         }
-                        Ok(AlgebraicValue::C(value))
+                        Ok(AlgebraicValue::Program(value))
                     }
                     _ => Err("could not evaluate recursive child argument"),
                 }
@@ -14815,7 +14820,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 .zip(&child_definition.parameters)
                 .any(|(argument, parameter)| {
                     argument
-                        .as_c_value()
+                        .as_program_value()
                         .is_none_or(|value| value.c_type() != parameter.c_type())
                 })
         {
@@ -14952,7 +14957,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .map(|range| ResourceFact::view_memory(range.clone()))
             .collect::<Vec<_>>()
     };
-    facts.push(Proposition::CResourceComposition(body));
+    facts.push(Proposition::ResourceComposition(body));
     let mut body_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
@@ -15359,7 +15364,7 @@ pub(super) fn expand_composite_resource_fact_with_children(
         .with_memory(memory.clone())
         .with_resource_context(expansion_base.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-        let argument = argument.as_c_value()?;
+        let argument = argument.as_program_value()?;
         if parameter.c_type() != argument.c_type() {
             return None;
         }
@@ -15949,7 +15954,8 @@ pub(super) fn function_return_resources_definitionally_established(
     else {
         return false;
     };
-    let Some(callee_state) = bind_c_function_arguments(caller_state, function, &argument_values)
+    let Some(callee_state) =
+        bind_program_function_arguments(caller_state, function, &argument_values)
     else {
         return false;
     };
@@ -16316,7 +16322,7 @@ pub(super) fn assembled_composite_body_facts_hold(
         .with_memory(memory.clone())
         .with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-        let Some(argument) = argument.as_c_value() else {
+        let Some(argument) = argument.as_program_value() else {
             return false;
         };
         if parameter.c_type() != argument.c_type() {
@@ -16705,7 +16711,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
 ///
 /// **The rule.** For each pair (an entry clause whose fact is owned, an entry
 /// clause whose fact is viewed) this produces the ordinary explicit separation
-/// `separate(memory(X), memory(Y))` — `Proposition::CResourceSeparate` over
+/// `separate(memory(X), memory(Y))` — `Proposition::ResourceSeparate` over
 /// two `Resource::Memory` operands, exactly the proposition a written
 /// `requires separate(memory(a[0..n]), memory(g[0..1]))` lowers to. Nothing
 /// new is invented: the Store ladder already spends it at
@@ -16789,7 +16795,7 @@ pub(crate) fn contract_entry_partition_facts(
             if owned.base().blocks_proven_distinct(viewed.base()) {
                 continue;
             }
-            let fact = Proposition::CResourceSeparate {
+            let fact = Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory((*owned).clone())),
                 right: Box::new(Resource::Memory(viewed.clone())),
             };
@@ -17861,7 +17867,7 @@ fn arm_binding_free_facts<'a>(
                 .ok()?;
                 let body_state = evaluation.clone().with_resource_context(body_resources.0);
                 let body_assumptions = evaluation_assumptions.clone().assume_proposition(
-                    Proposition::CResourceComposition(body_state.resources().clone()),
+                    Proposition::ResourceComposition(body_state.resources().clone()),
                 );
                 Some((body_state, body_assumptions))
             })
@@ -17896,7 +17902,7 @@ fn instance_argument_class_facts(
     matched_argument_classes(definition, body)
         .into_iter()
         .filter_map(|(index, class)| match instance.arguments().get(index) {
-            Some(AlgebraicValue::C(value @ ProgramValue::Pointer(_))) => {
+            Some(AlgebraicValue::Program(value @ ProgramValue::Pointer(_))) => {
                 // The receipt's value carries the class, as a checked call's
                 // does: that annotation is what the graph indexes.
                 let typed = value.clone().with_pointer_object_class(Some(class.clone()));
@@ -17924,7 +17930,7 @@ fn matched_argument_classes(
         }
     }
     let is_null = |expression: &SpecExpression| match expression {
-        SpecExpression::Value(value) => crate::kernel::spec::c_value_bitvector_term(value)
+        SpecExpression::Value(value) => crate::kernel::spec::program_value_bitvector_term(value)
             .is_some_and(|term| term.as_const() == Some(0)),
         _ => false,
     };
@@ -18039,7 +18045,7 @@ fn spec_proposition_mentions_any_name(fact: &SpecProposition, names: &BTreeSet<S
         SpecExpression::Value(_) => false,
         SpecExpression::ProgramExpression(expression) => names
             .iter()
-            .any(|name| c_expression_mentions_variable(expression, name)),
+            .any(|name| program_expression_mentions_variable(expression, name)),
         _ => true,
     })
 }
@@ -19475,11 +19481,11 @@ fn evaluate_function_declared_resource_spec(
         }
         ResourceFamily::Composite => Resource::Composite {
             name: name.to_string(),
-            arguments: values.into_iter().map(AlgebraicValue::C).collect(),
+            arguments: values.into_iter().map(AlgebraicValue::Program).collect(),
         },
         ResourceFamily::Token => Resource::Token {
             name: name.to_string(),
-            arguments: values.into_iter().map(AlgebraicValue::C).collect(),
+            arguments: values.into_iter().map(AlgebraicValue::Program).collect(),
         },
         ResourceFamily::PopulationAuthority
         | ResourceFamily::Memory
@@ -20747,7 +20753,7 @@ fn contract_exit_outcome_with_boundary_transfer(
     };
     let outcome = complete_void_fallthrough(function, outcome);
     if let StatementOutcome::Return { state, .. } = &outcome {
-        let entry = bind_c_function_arguments(caller_state, function, &argument_values)
+        let entry = bind_program_function_arguments(caller_state, function, &argument_values)
             .ok_or(RuntimeError::TypeMismatch);
         match entry.and_then(|entry| {
             check_mutex_helper_body_return(

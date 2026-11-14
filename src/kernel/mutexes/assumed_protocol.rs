@@ -799,7 +799,7 @@ mod tests {
         use crate::kernel::*;
         let schema = ResourceFieldSchema::new(vec![(
             "value".into(),
-            ResourceFieldType::C(ProgramType::Int32),
+            ResourceFieldType::Program(ProgramType::Int32),
         )])
         .unwrap();
         let mutex = Pointer::symbolic(Variable(765));
@@ -1221,7 +1221,7 @@ mod tests {
         use crate::kernel::functions::{ResourceTransitionPurpose, contract_exit_outcome};
         use crate::kernel::{
             ExecutionBudget, FunctionOutcome, ProgramStatement, ProgramType, RuntimeError,
-            StatementOutcome, c_function,
+            StatementOutcome, program_function,
         };
 
         let assumptions = PureFactContext::new();
@@ -1230,7 +1230,7 @@ mod tests {
             opaque_runtime_transition(&state, protocol.mutex(), true, &assumptions).unwrap();
         let (released, _) =
             opaque_runtime_transition(&held, protocol.mutex(), false, &assumptions).unwrap();
-        let function = c_function(
+        let function = program_function(
             ProgramType::Void,
             "fallthrough",
             vec![],

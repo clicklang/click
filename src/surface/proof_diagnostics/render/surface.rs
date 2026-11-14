@@ -418,7 +418,7 @@ impl Printer<'_> {
         let mut bound = 0;
         for (index, binding) in bindings.iter().enumerate() {
             let variable = match binding {
-                V::C(value) => match value.numeric_value() {
+                V::Program(value) => match value.numeric_value() {
                     crate::kernel::ProgramValue::Parameter(term) => match term.node {
                         AlgebraicTermNode::Variable(variable) => Some(variable),
                         _ => None,
@@ -579,7 +579,7 @@ impl Printer<'_> {
             // lifetime can end between two points, so a fact checked in an
             // earlier memory keeps its point: `at(point, viewable(..))`, as a
             // proof writes it to carry the fact forward.
-            Proposition::CMemoryLoadable {
+            Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
@@ -591,7 +591,7 @@ impl Printer<'_> {
                 ));
                 self.qualify_fact(memory, fact)
             }
-            Proposition::CMemoryCanStore {
+            Proposition::MemoryCanStore {
                 pointer,
                 byte_width,
                 ..
@@ -599,7 +599,7 @@ impl Printer<'_> {
                 let place = self.place_at(pointer, depth);
                 Some(atom(format!("<{place} is writable ({byte_width} bytes)>")))
             }
-            Proposition::CMemoryReadDefined {
+            Proposition::MemoryReadDefined {
                 memory, pointer, ..
             } => {
                 let place = self.place_read_in(memory, |printer| {
@@ -607,25 +607,25 @@ impl Printer<'_> {
                 })?;
                 Some(atom(format!("defined({})", place.text)))
             }
-            Proposition::CMemoryLoads { pointer, .. } => {
+            Proposition::MemoryLoads { pointer, .. } => {
                 let place = self.place_at(pointer, depth);
                 Some(atom(format!("<the read of {place}>")))
             }
-            Proposition::CResourceSeparate { left, right } => Some(atom(format!(
+            Proposition::ResourceSeparate { left, right } => Some(atom(format!(
                 "separate({}, {})",
                 self.resource(left),
                 self.resource(right)
             ))),
-            Proposition::CResourceViewable { memory, resource } => {
+            Proposition::ResourceViewable { memory, resource } => {
                 let fact = atom(format!("viewable({})", self.resource(resource)));
                 self.qualify_fact(memory, fact)
             }
-            Proposition::CResourceContains { parent, child } => Some(atom(format!(
+            Proposition::ResourceContains { parent, child } => Some(atom(format!(
                 "contains({}, {})",
                 self.resource(parent),
                 self.resource(child)
             ))),
-            Proposition::CResourceComposition(context) => {
+            Proposition::ResourceComposition(context) => {
                 const LIMIT: usize = 8;
                 let (count, entries) = context.diagnostic_facts(LIMIT);
                 let mut held = entries
@@ -636,7 +636,7 @@ impl Printer<'_> {
                 }
                 Some(atom(format!("<held together: {}>", held.join(", "))))
             }
-            Proposition::CMemoryMutatesOnly {
+            Proposition::MemoryMutatesOnly {
                 before,
                 after,
                 writes,
@@ -654,7 +654,7 @@ impl Printer<'_> {
                     "<only {written}{more} changed between {before} and {after}>"
                 )))
             }
-            Proposition::CMemoryEffectSummary {
+            Proposition::MemoryEffectSummary {
                 before,
                 after,
                 mutable_ranges,
@@ -666,7 +666,7 @@ impl Printer<'_> {
                     mutable_ranges.len()
                 )))
             }
-            Proposition::CHeapAllocationFreed {
+            Proposition::HeapAllocationFreed {
                 before,
                 after,
                 allocation_base,
@@ -677,16 +677,16 @@ impl Printer<'_> {
                 let after = self.state_phrase(after);
                 Some(atom(format!("<{base} freed between {before} and {after}>")))
             }
-            Proposition::CExpressionEvaluates { .. }
-            | Proposition::CConditionEvaluates { .. }
-            | Proposition::CStatementExecutes { .. }
-            | Proposition::CStatementVerifies { .. }
-            | Proposition::CFunctionExecutes { .. }
-            | Proposition::CFunctionVerifies { .. } => {
+            Proposition::ProgramExpressionEvaluates { .. }
+            | Proposition::ProgramConditionEvaluates { .. }
+            | Proposition::ProgramStatementExecutes { .. }
+            | Proposition::ProgramStatementVerifies { .. }
+            | Proposition::ProgramFunctionExecutes { .. }
+            | Proposition::ProgramFunctionVerifies { .. } => {
                 Some(atom("<a fact about executing C code>"))
             }
-            Proposition::CFunctionSatisfiesSpecification { .. }
-            | Proposition::CFunctionPartiallySatisfiesSpecification { .. } => {
+            Proposition::ProgramFunctionSatisfiesSpecification { .. }
+            | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. } => {
                 Some(atom("<a function satisfies its specification>"))
             }
         }
@@ -695,12 +695,12 @@ impl Printer<'_> {
     fn sort(&self, sort: &Sort) -> String {
         match sort {
             Sort::Condition => "bool".into(),
-            Sort::Bitvector32 | Sort::CInt32 => "int32".into(),
-            Sort::Bitvector64 | Sort::CInt64 => "int64".into(),
+            Sort::Bitvector32 | Sort::ProgramInt32 => "int32".into(),
+            Sort::Bitvector64 | Sort::ProgramInt64 => "int64".into(),
             Sort::Integer => "Integer".into(),
-            Sort::CMachineInteger(ty) => machine_type_spelling(*ty).into(),
-            Sort::CObjectPointer(_, class) => format!("{}*", class.spelling()),
-            Sort::CPointer(ty) => crate::kernel::c_type_spelling(*ty).into(),
+            Sort::ProgramInteger(ty) => machine_type_spelling(*ty).into(),
+            Sort::ProgramObjectPointer(_, class) => format!("{}*", class.spelling()),
+            Sort::ProgramPointer(ty) => crate::kernel::program_type_spelling(*ty).into(),
             Sort::Algebraic(ty) => algebraic_type_spelling(&ty.name, &ty.arguments),
             other => format!("{other:?}").to_ascii_lowercase(),
         }
@@ -963,7 +963,7 @@ impl Printer<'_> {
             _ => {}
         }
         let (operator, left, right) = condition.as_bitvector_comparison()?;
-        let symbol = operator.c_symbol();
+        let symbol = operator.program_symbol();
         if operator.is_overflow() {
             return self.overflow(condition, operator, left, right, polarity, depth);
         }
@@ -1116,7 +1116,7 @@ impl Printer<'_> {
         } else {
             Hint::Signed32
         };
-        let precedence = match operator.c_symbol() {
+        let precedence = match operator.program_symbol() {
             "+" | "-" => ADD,
             "<<" => SHIFT,
             _ => MULTIPLY,
@@ -1126,7 +1126,7 @@ impl Printer<'_> {
         let operation = format!(
             "{} {} {}",
             operand(left, precedence),
-            operator.c_symbol(),
+            operator.program_symbol(),
             operand(right, precedence + 1)
         );
         Some(if polarity {
@@ -1511,7 +1511,7 @@ impl Printer<'_> {
             {
                 return None;
             }
-            let symbol = operator.c_symbol();
+            let symbol = operator.program_symbol();
             let precedence = match symbol {
                 "*" | "/" | "%" => MULTIPLY,
                 "+" | "-" => ADD,
@@ -2267,7 +2267,7 @@ impl Printer<'_> {
             }
             spelled.push(
                 match argument {
-                    AlgebraicValue::C(value) => self.cvalue(value, 0),
+                    AlgebraicValue::Program(value) => self.cvalue(value, 0),
                     AlgebraicValue::Integer(value) => self.integer(value, 0),
                     AlgebraicValue::Algebraic(value) => self.algebraic(value, 0),
                 }
@@ -2298,7 +2298,7 @@ impl Printer<'_> {
                 break;
             }
             let value = match value {
-                AlgebraicValue::C(value) => self.cvalue(value, 0),
+                AlgebraicValue::Program(value) => self.cvalue(value, 0),
                 AlgebraicValue::Integer(value) => self.integer(value, 0),
                 AlgebraicValue::Algebraic(value) => self.algebraic(value, 0),
             }
@@ -2601,7 +2601,7 @@ impl Printer<'_> {
                 for field in fields {
                     spelled_fields.push(
                         match field {
-                            AlgebraicValue::C(value) => self.cvalue(value, depth + 1),
+                            AlgebraicValue::Program(value) => self.cvalue(value, depth + 1),
                             AlgebraicValue::Integer(value) => self.integer(value, depth + 1),
                             AlgebraicValue::Algebraic(value) => self.algebraic(value, depth + 1),
                         }?
@@ -2621,7 +2621,7 @@ impl Printer<'_> {
                     return Some(atom(subslice));
                 }
                 let type_name = match value.algebraic_type.arguments.as_slice() {
-                    [crate::kernel::AlgebraicValueType::C(element)]
+                    [crate::kernel::AlgebraicValueType::Program(element)]
                         if value.algebraic_type.name == "Slice" =>
                     {
                         crate::surface::diagnostics::slice_type_spelling(element)
@@ -2853,7 +2853,7 @@ fn algebraic_type_spelling(name: &str, arguments: &[AlgebraicValueType]) -> Stri
         .map(|argument| match argument {
             AlgebraicValueType::Parameter(name) => name.clone(),
             AlgebraicValueType::ObjectPointer(_, class) => format!("{}*", class.spelling()),
-            AlgebraicValueType::C(ty) => crate::kernel::c_type_spelling(*ty).to_owned(),
+            AlgebraicValueType::Program(ty) => crate::kernel::program_type_spelling(*ty).to_owned(),
             AlgebraicValueType::Integer => "Integer".to_owned(),
             AlgebraicValueType::Algebraic { name, arguments } => {
                 algebraic_type_spelling(name, arguments)
@@ -3314,7 +3314,7 @@ mod tests {
         assert!(crate::surface::proof_diagnostics::is_internal_premise(
             &covers
         ));
-        let composition = Proposition::CResourceComposition(crate::kernel::ResourceContext::new());
+        let composition = Proposition::ResourceComposition(crate::kernel::ResourceContext::new());
         assert!(crate::surface::proof_diagnostics::is_internal_premise(
             &composition
         ));
@@ -3489,7 +3489,7 @@ mod resource_tests {
             source_resource_fact(&resource(after.memory()), &mut labels),
             "views sampled(cells[0])"
         );
-        let separate = Proposition::CResourceSeparate {
+        let separate = Proposition::ResourceSeparate {
             left: Box::new(resource(before.memory()).resource().clone()),
             right: Box::new(resource(after.memory()).resource().clone()),
         };
@@ -3533,7 +3533,7 @@ mod resource_tests {
         );
         assert_eq!(
             source(
-                &Proposition::CResourceSeparate {
+                &Proposition::ResourceSeparate {
                     left: Box::new(left.resource().clone()),
                     right: Box::new(right.resource().clone())
                 },

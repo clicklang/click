@@ -15,7 +15,7 @@ fn charon_slice_into_iter_work_does_not_depend_on_slice_extent() {
             "verifying \"iteration.rs\"; fn first_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[0]); }}"
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            ProgramVerificationSession::new_program_prepared(&sidecar, &prepared)
         });
         result.unwrap();
         if let Some(previous) = previous {

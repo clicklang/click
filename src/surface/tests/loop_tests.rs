@@ -20,7 +20,7 @@ fn loop_metadata_sees_address_escape_after_the_loop() {
         }
         solve();
     }"#;
-    let error = verify_c0_sources(source, &[("bounded.c", c_source)])
+    let error = verify_c_sources(source, &[("bounded.c", c_source)])
         .expect_err("a later address escape still invalidates the ranking component");
     assert!(
         error.message().contains("has its address taken"),
@@ -94,7 +94,7 @@ fn expanded_loop_phase_proofs_are_certificates() {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let click = fixture.click_source.as_deref().unwrap();
-        let verified = verify_c0_sources(click, &sources)
+        let verified = verify_c_sources(click, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         let expanded = expand_checked_grouped_claim(click, &verified, function)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
@@ -102,8 +102,9 @@ fn expanded_loop_phase_proofs_are_certificates() {
             !expanded.contains("close_invariants"),
             "{filename}: {expanded}"
         );
-        let parsed = crate::surface::verification::parse_c0_click_file(&expanded, &sources)
-            .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
+        let parsed =
+            crate::surface::verification::parse_click_file_with_c_sources(&expanded, &sources)
+                .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         let block = parsed
             .function_blocks()
             .iter()
@@ -129,7 +130,7 @@ fn expanded_loop_phase_proofs_are_certificates() {
                 });
             }
         }
-        verify_c0_sources(&expanded, &sources)
+        verify_c_sources(&expanded, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
     }
 }
@@ -149,7 +150,7 @@ fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
         "{expanded}"
     );
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_c0_sources(&expanded, &sources)
+        verify_c_sources(&expanded, &sources)
     });
     result.expect("expanded extraction and certificate should recheck");
     assert_eq!(planning, 0, "cold certificate recheck must not plan");
@@ -159,7 +160,7 @@ fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
         "n != 0 and (n <= 2147483647 and n == n)",
         1,
     );
-    verify_c0_sources(&tampered_sibling, &sources)
+    verify_c_sources(&tampered_sibling, &sources)
         .expect_err("a tampered sibling of the extracted conjunction must fail");
 }
 
@@ -202,7 +203,7 @@ fn natural_goto_exits_retain_checked_paths_and_expand() {
         let (click, sources) = loop_fixture(filename);
         let sources = borrowed_sources(&sources);
         with_proof_trace(function, || {
-            verify_c0_sources(&click, &sources).unwrap();
+            verify_c_sources(&click, &sources).unwrap();
             let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
                 .expect("the natural exit must retain an accepted execution path");
             assert!(
@@ -211,7 +212,7 @@ fn natural_goto_exits_retain_checked_paths_and_expand() {
             );
         });
         let expanded = expand_function_proof_source(&click, &sources, function).unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+        verify_c_sources(&expanded, &sources).unwrap();
     }
 }
 
@@ -221,7 +222,7 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
     let (click, sources) = loop_fixture("natural_goto_forward_exit_and_return");
     let sources = borrowed_sources(&sources);
     with_proof_trace("count_down_or_stop", || {
-        verify_c0_sources(&click, &sources).unwrap();
+        verify_c_sources(&click, &sources).unwrap();
         let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
             .expect("both exits must retain accepted execution paths");
         assert!(!trace.contains("<no checked simple steps"), "{trace}");
@@ -235,7 +236,7 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
         assert!(!expanded.contains("if result =="), "{expanded}");
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
-                verify_c0_sources(&expanded, &sources)
+                verify_c_sources(&expanded, &sources)
             });
         result.unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
         assert_eq!(
@@ -243,7 +244,7 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
             "expanded proof must cold recheck without planning"
         );
         let forged = expanded.replacen("result == 7", "result == 8", 1);
-        verify_c0_sources(&forged, &sources)
+        verify_c_sources(&forged, &sources)
             .expect_err("a false return contract must remain rejected");
     }
 }
@@ -268,7 +269,7 @@ fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
         expanded.contains("assumption();"),
         "each pivot is proved in a `have` and closed by `assumption`: {expanded}"
     );
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!(
             "the expanded lexicographic proof must reverify: {}\n{expanded}",
             error.message()
@@ -338,7 +339,7 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
     );
     assert!(closer.contains("integer_operation_identity"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_c0_sources(&expanded, &sources)
+        verify_c_sources(&expanded, &sources)
     });
     result.unwrap_or_else(|error| {
         panic!(
@@ -361,7 +362,7 @@ fn unsigned_integer_ranking_expands_without_search() {
         expanded.contains("integer_operation_identity"),
         "{expanded}"
     );
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 /// A stored byte counter also needs the cast identity for its narrowing;
@@ -377,7 +378,7 @@ fn promoted_integer_ranking_expands_without_search() {
         "{expanded}"
     );
     assert!(expanded.contains("integer_cast_identity"), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 /// A tuple measure's decrease member is a disjunction over pivots, so the
@@ -396,7 +397,7 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
         expanded.contains("assumption();"),
         "the chosen pivot arm must be printed: {expanded}"
     );
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!(
             "the expanded nested-loop proof must reverify: {}\n{expanded}",
             error.message()
@@ -413,14 +414,14 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
 fn smart_ranking_closure_reads_an_inequality_in_scope() {
     let (click, sources) = loop_fixture("c_decreases_nested_loop");
     let sources = borrowed_sources(&sources);
-    verify_c0_sources(&click, &sources).expect("the fixture verifies as written");
+    verify_c_sources(&click, &sources).expect("the fixture verifies as written");
     let weakened = click.replacen(
         "        invariant j <= m;\n        initialize",
         "        initialize",
         1,
     );
     assert_ne!(weakened, click, "the outer invariant was not removed");
-    verify_c0_sources(&weakened, &sources).unwrap_or_else(|error| {
+    verify_c_sources(&weakened, &sources).unwrap_or_else(|error| {
         panic!(
             "the inner loop's exit fact closes the ranking member: {}",
             error.message()
@@ -447,7 +448,7 @@ fn migrated_negative_loop_fixtures_reach_the_decrease_check() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
+        let error = verify_c_sources(fixture.click_source.as_deref().unwrap(), &sources)
             .expect_err("invalid ranking must reject");
         assert!(
             error.message().contains("at the back edge"),
@@ -492,12 +493,12 @@ fn remaining_loop_migration_fixtures_expand_and_recheck() {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let click = fixture.click_source.as_deref().unwrap();
-        let verified_for_expansion = verify_c0_sources(click, &sources)
+        let verified_for_expansion = verify_c_sources(click, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         let expanded = expand_checked_grouped_claim(click, &verified_for_expansion, function)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         assert!(!expanded.contains("close_invariants"), "{filename}");
-        verify_c0_sources(&expanded, &sources)
+        verify_c_sources(&expanded, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
     }
 }
@@ -516,10 +517,10 @@ fn loop_preservation_have_resolves_entry_label_and_expands() {
         .collect::<Vec<_>>();
     let click = fixture.click_source.unwrap();
     let verified_for_expansion =
-        verify_c0_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
+        verify_c_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "drain_to_zero")
         .unwrap_or_else(|e| panic!("{}", e.message()));
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
+    verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
 }
 
 #[test]
@@ -536,14 +537,14 @@ fn pointer_loop_increment_emits_checked_equality_proof() {
         .collect::<Vec<_>>();
     let click = fixture.click_source.unwrap();
     let verified_for_expansion =
-        verify_c0_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
+        verify_c_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "last_element")
         .unwrap_or_else(|e| panic!("{}", e.message()));
     assert!(
         expanded.contains("arithmetic_certificate rules"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
+    verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
 }
 
 #[test]
@@ -559,7 +560,7 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let click = fixture.click_source.unwrap();
-    verify_c0_sources(&click, &sources).unwrap();
+    verify_c_sources(&click, &sources).unwrap();
     let expanded = expand_function_proof_source(&click, &sources, "bump").unwrap();
     assert!(
         expanded.contains("arithmetic_certificate signed_int32"),
@@ -567,7 +568,7 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
     );
     assert!(!expanded.contains("solve() using"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_c0_sources(&expanded, &sources)
+        verify_c_sources(&expanded, &sources)
     });
     result.unwrap();
     assert_eq!(planning, 0, "explicit certificate recheck must not plan");
@@ -590,7 +591,7 @@ fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planni
         "    ensures result == 1;\n} by {\n    step_until(function.exit);\n    have aligned(p + i, 8) by { solve(); }\n    solve();\n}",
     );
     assert!(click.contains("have aligned(p + i, 8)"));
-    let verified_for_expansion = verify_c0_sources(&click, &sources).unwrap();
+    let verified_for_expansion = verify_c_sources(&click, &sources).unwrap();
     let expanded =
         expand_checked_grouped_claim(&click, &verified_for_expansion, "element_is_aligned")
             .unwrap();
@@ -599,7 +600,7 @@ fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planni
         "{expanded}"
     );
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_c0_sources(&expanded, &sources)
+        verify_c_sources(&expanded, &sources)
     });
     result.unwrap();
     assert_eq!(planning, 0, "explicit Special recheck must not plan");
@@ -626,12 +627,12 @@ fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
         let explicit = fixture.click_source.unwrap();
-        let verified_for_expansion = verify_c0_sources(&explicit, &sources)
+        let verified_for_expansion = verify_c_sources(&explicit, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         let expanded = expand_checked_grouped_claim(&explicit, &verified_for_expansion, function)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         assert!(!expanded.contains("close_invariants"));
-        verify_c0_sources(&expanded, &sources)
+        verify_c_sources(&expanded, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
     }
 }
@@ -678,7 +679,7 @@ fn explicit_straight_line_swap_transports_an_entry_bound() {
             }
         "#
         .replace("$index", index);
-        verify_c0_sources(&click, &[("swap.c", c.as_str())])
+        verify_c_sources(&click, &[("swap.c", c.as_str())])
             .unwrap_or_else(|e| panic!("index {index}: {}", e.message()));
     }
 }
@@ -754,10 +755,10 @@ fn explicit_swap_loop_transports_both_entry_bounds_and_expands() {
     let (c, click) = explicit_swap_loop_fixture(true);
     let sources = [("swap.c", c)];
     let verified_for_expansion =
-        verify_c0_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
+        verify_c_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "swap")
         .unwrap_or_else(|e| panic!("{}", e.message()));
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
+    verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     assert!(!expanded.contains("close_invariants"));
 }
 
@@ -767,7 +768,7 @@ fn explicit_swap_loop_rejects_missing_entry_bound_transports() {
     let (c, missing_transports) = explicit_swap_loop_fixture(false);
     assert!(!missing_transports.contains("transport("));
     let sources = [("swap.c", c)];
-    let error = verify_c0_sources(&missing_transports, &sources).unwrap_err();
+    let error = verify_c_sources(&missing_transports, &sources).unwrap_err();
     assert!(
         error
             .message()
@@ -790,12 +791,12 @@ fn observed_member_closure_expands_to_direct_assumptions() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let click = fixture.click_source.as_deref().unwrap();
-    verify_c0_sources(click, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c_sources(click, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
     let expanded = expand_function_proof_source(click, &sources, "count_run")
         .unwrap_or_else(|error| panic!("{}", error.message()));
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
-    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}", error.message()));
 }
 
@@ -812,10 +813,10 @@ fn explicit_invariant_body_quantified_bubble_census() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let click = fixture.click_source.as_deref().unwrap();
-    verify_c0_sources(click, &sources).unwrap();
+    verify_c_sources(click, &sources).unwrap();
     let expanded = expand_function_proof_source(click, &sources, "bubble_pass3").unwrap();
     assert!(!expanded.contains("close_invariants"));
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
 }
 
 /// The old/current snapshot body verifies and expands on the ordinary stack.
@@ -831,10 +832,10 @@ fn explicit_invariant_body_copy3_checks_and_expands() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let click = fixture.click_source.as_deref().unwrap();
-    verify_c0_sources(click, &sources).unwrap();
+    verify_c_sources(click, &sources).unwrap();
     let expanded = expand_function_proof_source(click, &sources, "copy3").unwrap();
     assert!(!expanded.contains("close_invariants"));
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
+    verify_c_sources(&expanded, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
 }
 
 #[test]
@@ -874,7 +875,7 @@ fn frontier_local_loop_verifies_and_advances_to_exit() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("count_to_three.c", c_source)])
+    let verified = verify_c_sources(click_source, &[("count_to_three.c", c_source)])
         .expect("frontier-local loop proof should verify from its actual entry frontier");
 
     assert_eq!(verified.len(), 1);
@@ -919,7 +920,7 @@ fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
     let sources = [("count_to_three.c", c_source)];
 
     let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+        crate::instrumentation::collect(|| verify_c_sources(click_source, &sources));
     let verified = verified.expect("the individual loop proof should verify once");
     assert!(events.iter().all(|event| !matches!(
         event,
@@ -933,14 +934,14 @@ fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
         .expanded_proof_certificate()
         .expect("the compatibility proof should retain expansion provenance");
 
-    let rewritten = expand_c0_claim_source(
+    let rewritten = expand_c_claim_source(
         click_source,
         &sources,
         "count_to_three",
-        CProofClaim::Ensure(0),
+        ContractProofClaim::Ensure(0),
     )
     .expect("the retained individual loop proof should expand");
-    verify_c0_sources(&rewritten, &sources)
+    verify_c_sources(&rewritten, &sources)
         .expect("the rewritten individual loop proof should verify normally");
 }
 
@@ -992,7 +993,7 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("initialize_with_theorem.c", c_source)]);
+    let verified = verify_c_sources(click_source, &[("initialize_with_theorem.c", c_source)]);
     verified.expect("loop initialization theorem search should verify through Proof");
 
     let offset = click_source
@@ -1009,7 +1010,7 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
             .map(|offset| offset + 1)
             .unwrap_or(0)
         + 1;
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("initialize_with_theorem.c", c_source)],
         line,
@@ -1021,7 +1022,7 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
         "{expanded}"
     );
     assert!(expanded.contains("x >= 0;"), "{expanded}");
-    verify_c0_sources(&expanded, &[("initialize_with_theorem.c", c_source)])
+    verify_c_sources(&expanded, &[("initialize_with_theorem.c", c_source)])
         .expect("expanded initialization theorem application should independently verify");
 }
 
@@ -1055,7 +1056,7 @@ fn loop_initialization_solve_retains_checked_fixed_state_proof() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("initialize_by_solve.c", c_source)]);
+    let verified = verify_c_sources(click_source, &[("initialize_by_solve.c", c_source)]);
     verified.expect("loop initialization solve should verify through Proof");
 
     let offset = click_source
@@ -1073,7 +1074,7 @@ fn loop_initialization_solve_retains_checked_fixed_state_proof() {
             .map(|offset| offset + 1)
             .unwrap_or(0)
         + 1;
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("initialize_by_solve.c", c_source)],
         line,
@@ -1082,7 +1083,7 @@ fn loop_initialization_solve_retains_checked_fixed_state_proof() {
     .expect("the retained initialization closer should expand");
     assert!(!expanded.contains("initialize by solve()"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
-    verify_c0_sources(&expanded, &[("initialize_by_solve.c", c_source)])
+    verify_c_sources(&expanded, &[("initialize_by_solve.c", c_source)])
         .expect("expanded initialization closer should independently verify");
 }
 
@@ -1111,7 +1112,7 @@ fn frontier_local_loop_rejects_a_non_loop_frontier() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("count_to_three.c", c_source)])
+    let error = verify_c_sources(click_source, &[("count_to_three.c", c_source)])
         .expect_err("loop should not seek forward from a non-loop frontier");
 
     assert!(
@@ -1154,7 +1155,7 @@ fn frontier_loop_initialization_rejects_execution_tactics() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("count_once.c", c_source)])
+    let error = verify_c_sources(click_source, &[("count_once.c", c_source)])
         .expect_err("initialization should not execute C statements");
     assert!(
         error.message().contains("`initialize`")
@@ -1199,7 +1200,7 @@ fn frontier_loop_preservation_reports_a_rest_that_does_not_run() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("count_once.c", c_source)])
+    let error = verify_c_sources(click_source, &[("count_once.c", c_source)])
         .expect_err("a rest of the body that does not run is reported");
     let message = error.message();
     assert!(
@@ -1245,7 +1246,7 @@ fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("count_to_three.c", c_source)])
+    verify_c_sources(click_source, &[("count_to_three.c", c_source)])
         .expect("frontier-local loop should bind a C `for` lowered to a kernel loop");
 }
 
@@ -1297,7 +1298,7 @@ fn frontier_local_loop_verifies_at_a_branch_local_frontier() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("branch_count.c", c_source)])
+    verify_c_sources(click_source, &[("branch_count.c", c_source)])
         .expect("frontier-local loop should use the branch's actual execution context");
 }
 
@@ -1323,7 +1324,7 @@ fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
     else {
         panic!("expected the loop template");
     };
-    let value = |n| ContractExpression::CFragment(ProgramExpression::Value(int32(n)));
+    let value = |n| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(n)));
     let outer = template.with_scope(BTreeMap::from([("bound".to_string(), value(0))]));
     let inner = template.with_scope(BTreeMap::from([("bound".to_string(), value(1))]));
     let initial = function
@@ -1410,11 +1411,11 @@ fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
         "#;
 
     let sources = [("nested_count.c", c_source)];
-    verify_c0_sources(click_source, &sources)
+    verify_c_sources(click_source, &sources)
         .expect("nested loop proofs should be scoped to their respective frontiers");
     let expanded = expand_function_proof_source(click_source, &sources, "nested_count")
         .expect("nested loop proofs should expand");
-    verify_c0_sources(&expanded, &sources).expect("expanded nested loops should verify");
+    verify_c_sources(&expanded, &sources).expect("expanded nested loops should verify");
     let repeated = expand_function_proof_source(&expanded, &sources, "nested_count")
         .expect("expanded nested loops should remain expandable");
     assert_eq!(repeated, expanded);
@@ -1478,13 +1479,12 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
             .unwrap_or(0)
         + 1;
 
-    let expanded =
-        expand_c0_tactic_source_at(click_source, &[("fill_n.c", c_source)], line, column)
-            .expect("the preservation store should expand");
+    let expanded = expand_c_tactic_source_at(click_source, &[("fill_n.c", c_source)], line, column)
+        .expect("the preservation store should expand");
 
     // A bare `step()` is a simple tactic: its expansion is the source.
     assert_eq!(expanded, click_source);
-    verify_c0_sources(&expanded, &[("fill_n.c", c_source)])
+    verify_c_sources(&expanded, &[("fill_n.c", c_source)])
         .expect("the expanded store should use the invariant at the current frontier");
 }
 
@@ -1523,7 +1523,7 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
             }
         "#;
 
-    let (session, _) = C0VerificationSession::new(click_source, &[("drain.c", c_source)])
+    let (session, _) = ProgramVerificationSession::new(click_source, &[("drain.c", c_source)])
         .expect("frontier-local loop should retain structural termination checking");
     assert!(session.function_termination_is_verified("drain"));
 }
@@ -1575,12 +1575,12 @@ fn frontier_local_loop_keyword_expands_omitted_phases() {
         + 1;
 
     let expanded =
-        expand_c0_tactic_source_at(click_source, &[("count_to_n.c", c_source)], line, column)
+        expand_c_tactic_source_at(click_source, &[("count_to_n.c", c_source)], line, column)
             .expect("the loop keyword should expand all omitted phase automation");
 
     assert!(expanded.contains("initialize by {"), "{expanded}");
     assert!(expanded.contains("preserve by {"), "{expanded}");
-    verify_c0_sources(&expanded, &[("count_to_n.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &[("count_to_n.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "the expanded frontier-local loop should freshly check: {}\n{expanded}",
             error.message()
@@ -1634,7 +1634,7 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         + 1;
 
     let expanded =
-        expand_c0_tactic_source_at(click_source, &[("count_to_n.c", c_source)], line, column)
+        expand_c_tactic_source_at(click_source, &[("count_to_n.c", c_source)], line, column)
             .expect("loop-exit solve should expand through explicit invariant conjuncts");
 
     assert!(
@@ -1649,7 +1649,7 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         expanded.contains("equal_from_bounds 0, 1 => result == n;"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &[("count_to_n.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &[("count_to_n.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "the expanded loop-exit proof should freshly check: {}\n{expanded}",
             error.message()
@@ -1702,7 +1702,7 @@ fn frontier_local_loop_does_not_leak_phase_tactics_into_a_later_expansion() {
             .unwrap_or(0)
         + 1;
 
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("count_to_three.c", c_source)],
         line,
@@ -1710,7 +1710,7 @@ fn frontier_local_loop_does_not_leak_phase_tactics_into_a_later_expansion() {
     )
     .expect("the post-loop step should expand independently");
 
-    verify_c0_sources(&expanded, &[("count_to_three.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(&expanded, &[("count_to_three.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "post-loop expansion should not leak loop-region tactics: {}\n{expanded}",
             error.message()
@@ -1767,12 +1767,12 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
             .map(|offset| offset + 1)
             .unwrap_or(0)
         + 1;
-    let inventory = c0_smart_tactic_source_sites(click_source, &[("count_to_three.c", c_source)])
+    let inventory = c_smart_tactic_source_sites(click_source, &[("count_to_three.c", c_source)])
         .expect("frontier-local nested tactics should be inventoried without verification");
     let matching_inventory = inventory
         .iter()
         .filter(|site| {
-            c0_tactic_source_position(
+            c_tactic_source_position(
                 click_source,
                 &[("count_to_three.c", c_source)],
                 &site.claim_label,
@@ -1784,7 +1784,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
     assert_eq!(matching_inventory.len(), 1, "{inventory:?}");
     assert_eq!(matching_inventory[0].tactic_name, "solve");
 
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("count_to_three.c", c_source)],
         line,
@@ -1794,7 +1794,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
 
     assert!(!expanded.contains("initialize by solve()"), "{expanded}");
     assert!(expanded.contains("preserve by {"), "{expanded}");
-    verify_c0_sources(&expanded, &[("count_to_three.c", c_source)])
+    verify_c_sources(&expanded, &[("count_to_three.c", c_source)])
         .expect("expanded explicit initialization tactic should freshly check");
 }
 
@@ -1833,12 +1833,12 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
             }
         "#;
 
-    let tactics = super::proof::capture_c0_tactic_expansion(
+    let tactics = super::proof::capture_program_tactic_expansion(
         click_source,
         &[("drain.c", c_source)],
         super::expansion::ProofSite::FunctionClaim {
             function_name: "drain".to_string(),
-            claim: CProofClaim::Grouped,
+            claim: ContractProofClaim::Grouped,
         },
         1,
         &[],
@@ -1907,7 +1907,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
             .unwrap_or(0)
         + 1;
 
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         click_source,
         &[("count_to_three.c", c_source)],
         line,
@@ -1919,7 +1919,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
     // written, and the loop's other phases stay untouched.
     assert_eq!(expanded, click_source);
     assert!(expanded.contains("initialize by solve()"), "{expanded}");
-    verify_c0_sources(&expanded, &[("count_to_three.c", c_source)])
+    verify_c_sources(&expanded, &[("count_to_three.c", c_source)])
         .expect("expanded preservation step should freshly check");
 }
 
@@ -1957,7 +1957,7 @@ fn explicit_loop_closer_cannot_bypass_proof_owned_bundle_check() {
             }
         "#;
 
-    let error = verify_c0_sources(click_source, &[("overshoot.c", c_source)])
+    let error = verify_c_sources(click_source, &[("overshoot.c", c_source)])
         .expect_err("the explicit closer must not authorize a false invariant bundle");
     assert!(
         error
@@ -2023,7 +2023,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
                     }"#,
     );
     let sources = [("flip_to_n.c", c_source)];
-    verify_c0_sources(&explicit, &sources).expect(
+    verify_c_sources(&explicit, &sources).expect(
         "explicit body-final branch preservation should complete at the typed back-edge boundary",
     );
 
@@ -2033,7 +2033,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
     // ranking members are ordinary arithmetic certificates over the loop head's
     // own clauses.
     let automatic = template.replace("{preserve}", "");
-    verify_c0_sources(&automatic, &sources)
+    verify_c_sources(&automatic, &sources)
         .expect("automatic preservation should plan through the body-final branch to the boundary");
 
     let broken = template.replace(
@@ -2047,7 +2047,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
         "invariant parity >= 0 and parity <= 1;",
         "invariant parity <= 0;",
     );
-    let error = verify_c0_sources(&broken, &sources)
+    let error = verify_c_sources(&broken, &sources)
         .expect_err("an invariant violated through one body-final arm must fail preservation");
     assert!(
         format!("{error:?}").contains("invariant"),
@@ -2096,7 +2096,7 @@ fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("count_to_three.c", c_source)]).expect(
+    verify_c_sources(click_source, &[("count_to_three.c", c_source)]).expect(
         "the checked outcome solve should weaken the loop-exit bound to the looser ensures",
     );
 }
@@ -2165,15 +2165,15 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
     "#;
     let sources = [("selected_then_loop.c", c_source)];
 
-    verify_c0_sources(click_source, &sources).expect("the reduced source proof should verify");
-    let expanded = expand_c0_claim_source(
+    verify_c_sources(click_source, &sources).expect("the reduced source proof should verify");
+    let expanded = expand_c_claim_source(
         click_source,
         &sources,
         "selected_then_loop",
-        CProofClaim::Ensure(0),
+        ContractProofClaim::Ensure(0),
     )
     .expect("the reduced whole claim should expand");
-    verify_c0_sources(&expanded, &sources)
+    verify_c_sources(&expanded, &sources)
         .expect("the reduced whole-claim expansion should independently verify");
 }
 
@@ -2206,13 +2206,17 @@ fn loop_exit_duplicate_invariants_verify_and_reject_false_claims() {
         source.to_owned(),
         source.replace("invariant 1 == 1;", "invariant 0 == 0;"),
     ] {
-        verify_c0_sources(&source, &[("count.c", c)]).unwrap();
-        let expanded =
-            expand_c0_claim_source(&source, &[("count.c", c)], "count", CProofClaim::Grouped)
-                .unwrap();
-        verify_c0_sources(&expanded, &[("count.c", c)]).unwrap();
+        verify_c_sources(&source, &[("count.c", c)]).unwrap();
+        let expanded = expand_c_claim_source(
+            &source,
+            &[("count.c", c)],
+            "count",
+            ContractProofClaim::Grouped,
+        )
+        .unwrap();
+        verify_c_sources(&expanded, &[("count.c", c)]).unwrap();
         let false_claim = source.replace("ensures result == n;", "ensures result == n + 1;");
-        let error = verify_c0_sources(&false_claim, &[("count.c", c)]).unwrap_err();
+        let error = verify_c_sources(&false_claim, &[("count.c", c)]).unwrap_err();
         assert!(
             error.message().contains("unclosed goal"),
             "{}",
@@ -2233,16 +2237,16 @@ fn changed_break_exit_does_not_label_head_invariants_as_exit_facts() {
         invariant 1 == 1;
         invariant forall (k: int32) { k == k };"#,
     );
-    verify_c0_sources(&source, &sources).unwrap();
+    verify_c_sources(&source, &sources).unwrap();
     let expanded = expand_function_proof_source(&source, &sources, "assign_then_break").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
     for fact in ["r == 0", "at(loop(0).exit, r) == at(loop(0).exit, 0)"] {
         let false_have = source.replace(
             "    step();\n    solve();",
             &format!("    have {fact} by {{ assumption(); }}\n    step();\n    solve();"),
         );
         assert_ne!(source, false_have);
-        let error = verify_c0_sources(&false_have, &sources).unwrap_err();
+        let error = verify_c_sources(&false_have, &sources).unwrap_err();
         assert!(
             error.message().contains("`assumption` requires"),
             "{}",
@@ -2295,7 +2299,7 @@ fn conditional_loop_resources_parse_print_and_resolve_scope() {
     );
     let scoped = clause.with_scope(BTreeMap::from([(
         "bound".to_string(),
-        ContractExpression::CFragment(ProgramExpression::Value(int32(4))),
+        ContractExpression::ProgramExpression(ProgramExpression::Value(int32(4))),
     )]));
     let resolved = scoped.resolved().unwrap();
     assert_ne!(resolved.resources(), clause.resources());
@@ -2347,29 +2351,29 @@ fn loop_return_closers_expand_in_their_preservation_arms() {
     ] {
         let (click, sources) = loop_fixture(fixture);
         let sources = borrowed_sources(&sources);
-        verify_c0_sources(&click, &sources).unwrap();
-        for site in c0_smart_tactic_source_sites(&click, &sources).unwrap() {
+        verify_c_sources(&click, &sources).unwrap();
+        for site in c_smart_tactic_source_sites(&click, &sources).unwrap() {
             let position =
-                c0_tactic_source_position(&click, &sources, &site.claim_label, site.source_index)
+                c_tactic_source_position(&click, &sources, &site.claim_label, site.source_index)
                     .unwrap();
             let expanded =
-                expand_c0_tactic_source_at(&click, &sources, position.line, position.column)
+                expand_c_tactic_source_at(&click, &sources, position.line, position.column)
                     .unwrap_or_else(|error| {
                         panic!("{fixture} {}: {}", site.source_index, error.message())
                     });
-            verify_c0_sources(&expanded, &sources).unwrap();
+            verify_c_sources(&expanded, &sources).unwrap();
         }
         let expanded = expand_function_proof_source(&click, &sources, function).unwrap();
         assert!(!expanded.contains("if result =="), "{expanded}");
         assert!(
-            c0_smart_tactic_source_sites(&expanded, &sources)
+            c_smart_tactic_source_sites(&expanded, &sources)
                 .unwrap()
                 .is_empty(),
             "{expanded}"
         );
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
-                verify_c0_sources(&expanded, &sources)
+                verify_c_sources(&expanded, &sources)
             });
         result.unwrap();
         assert_eq!(
@@ -2399,30 +2403,30 @@ int32 f(int32 n) {
 }
 "#;
     let sources = [("nested.c", c)];
-    verify_c0_sources(click, &sources).unwrap();
+    verify_c_sources(click, &sources).unwrap();
     let false_arm = click.replace("have result == 7", "have result == 8");
     assert!(
-        verify_c0_sources(&false_arm, &sources)
+        verify_c_sources(&false_arm, &sources)
             .unwrap_err()
             .message()
             .contains("could not establish `result == 8`")
     );
-    for site in c0_smart_tactic_source_sites(click, &sources).unwrap() {
+    for site in c_smart_tactic_source_sites(click, &sources).unwrap() {
         let position =
-            c0_tactic_source_position(click, &sources, &site.claim_label, site.source_index)
+            c_tactic_source_position(click, &sources, &site.claim_label, site.source_index)
                 .unwrap();
         let expanded =
-            expand_c0_tactic_source_at(click, &sources, position.line, position.column).unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+            expand_c_tactic_source_at(click, &sources, position.line, position.column).unwrap();
+        verify_c_sources(&expanded, &sources).unwrap();
     }
     let expanded = expand_function_proof_source(click, &sources, "f").unwrap();
     assert!(
-        c0_smart_tactic_source_sites(&expanded, &sources)
+        c_smart_tactic_source_sites(&expanded, &sources)
             .unwrap()
             .is_empty()
     );
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
-        verify_c0_sources(&expanded, &sources)
+        verify_c_sources(&expanded, &sources)
     });
     result.unwrap();
     assert_eq!(planning, 0);
@@ -2447,10 +2451,10 @@ fn loop_return_closers_do_not_require_distinct_result_values() {
         .map(|(name, source)| (name, source.replace("return i;", "return 7;")))
         .collect::<Vec<_>>();
     let sources = borrowed_sources(&sources);
-    let verified_for_expansion = verify_c0_sources(&click, &sources).unwrap();
+    let verified_for_expansion = verify_c_sources(&click, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "f").unwrap();
     assert!(!expanded.contains("if result =="), "{expanded}");
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
 }
 
 #[test]
@@ -2471,11 +2475,11 @@ int32 f(int32 n) {
 }
 "#;
     let sources = [("branch.c", c)];
-    let verified_for_expansion = verify_c0_sources(click, &sources).unwrap();
+    let verified_for_expansion = verify_c_sources(click, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(click, &verified_for_expansion, "f").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
     let false_contract = click.replace("result == n or result == 7", "result == n");
-    verify_c0_sources(&false_contract, &sources)
+    verify_c_sources(&false_contract, &sources)
         .expect_err("returned loop path must still be checked after joining the branch");
 }
 
@@ -2485,7 +2489,7 @@ int32 f(int32 n) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_09")]
 fn loop_local_pointer_invariants_retain_declared_element_types() {
     let (click, sources) = loop_fixture("loop_local_pointer_element_types");
-    verify_c0_sources(&click, &borrowed_sources(&sources)).unwrap();
+    verify_c_sources(&click, &borrowed_sources(&sources)).unwrap();
 }
 
 #[test]
@@ -2503,7 +2507,7 @@ fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
             1
         )
     );
-    let error = verify_c0_sources(&forged, &sources).unwrap_err();
+    let error = verify_c_sources(&forged, &sources).unwrap_err();
     assert!(
         error.message().contains("loop 0 invariant 0 entry"),
         "{error:?}"
@@ -2512,7 +2516,7 @@ fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
         "{byte}{}",
         wide.replacen("views chunk[0..4];", "views chunk[0..8];", 1)
     );
-    let error = verify_c0_sources(&forged_frame, &sources).unwrap_err();
+    let error = verify_c_sources(&forged_frame, &sources).unwrap_err();
     assert!(
         error
             .message()
@@ -2521,7 +2525,7 @@ fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
     );
     for function in ["f", "wide"] {
         let expanded = expand_function_proof_source(&click, &sources, function).unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+        verify_c_sources(&expanded, &sources).unwrap();
     }
 }
 
@@ -2531,7 +2535,7 @@ fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_09")]
 fn byte_pointer_view_aliases_rewrite_readable_addresses() {
     let (click, sources) = loop_fixture("byte_pointer_view_alias_rewrite");
-    verify_c0_sources(&click, &borrowed_sources(&sources)).unwrap();
+    verify_c_sources(&click, &borrowed_sources(&sources)).unwrap();
 }
 
 #[test]
@@ -2549,7 +2553,7 @@ fn native_read_aliases_do_not_supply_missing_authority_or_bounds() {
         click.replace("requires remaining <= held;", ""),
     ] {
         assert_ne!(invalid, click);
-        verify_c0_sources(&invalid, &sources).expect_err(
+        verify_c_sources(&invalid, &sources).expect_err(
             "a pointer equality or pure viewability cannot authorize an unchecked read",
         );
     }
@@ -2561,7 +2565,7 @@ fn native_read_aliases_expand_and_reverify() {
     let (click, sources) = loop_fixture("native_read_retains_wide_index_beside_narrow_alias");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "read").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
 }
 
 #[test]
@@ -2578,9 +2582,9 @@ fn theorem_application_expands_with_a_recorded_historical_byte_premise() {
         expanded.contains("(p[0] as int32) == (old(p)[index] as int32);"),
         "{expanded}"
     );
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
     let missing = expanded.replace("requires index == 0;", "");
-    verify_c0_sources(&missing, &sources)
+    verify_c_sources(&missing, &sources)
         .expect_err("retaining a source spelling cannot supply its missing premise");
 }
 
@@ -2594,11 +2598,11 @@ fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
         click.replace("views bytes[0..4];", ""),
         click.replacen("viewable(cursor[0..4])", "viewable(cursor[0..8])", 1),
     ] {
-        assert!(verify_c0_sources(&forged, &sources).is_err());
+        assert!(verify_c_sources(&forged, &sources).is_err());
     }
     for function in ["f", "shifted"] {
         let expanded = expand_function_proof_source(&click, &sources, function).unwrap();
-        verify_c0_sources(&expanded, &sources).unwrap();
+        verify_c_sources(&expanded, &sources).unwrap();
     }
 }
 
@@ -2608,7 +2612,7 @@ fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn nested_loop_cursor_alias_retains_enclosing_input_view() {
     let (click, sources) = loop_fixture("nested_loop_cursor_view_authority");
-    verify_c0_sources(&click, &borrowed_sources(&sources)).unwrap();
+    verify_c_sources(&click, &borrowed_sources(&sources)).unwrap();
 }
 
 #[test]
@@ -2624,10 +2628,10 @@ fn nested_loop_cursor_views_refuse_forged_ranges_and_expand() {
             "invariant cursor == bytes + (4 * outer + 1);",
         ),
     ] {
-        assert!(verify_c0_sources(&forged, &sources).is_err());
+        assert!(verify_c_sources(&forged, &sources).is_err());
     }
     let expanded = expand_function_proof_source(&click, &sources, "f").unwrap();
-    verify_c0_sources(&expanded, &sources).unwrap();
+    verify_c_sources(&expanded, &sources).unwrap();
 }
 
 #[test]
@@ -2675,7 +2679,7 @@ fn recorded_snapshots_find_the_point_reading_a_memory() {
     let mark = |name: &str| SnapshotSelector::Mark(name.to_string());
     let memory = |index: u32| {
         let pointer = Pointer::symbolic(Variable(97_400 + u64::from(index)));
-        crate::kernel::intern_c_memory(
+        crate::kernel::intern_memory(
             Memory::new().store(pointer, ProgramValue::Int32(MachineTerm::constant(index))),
         )
     };
@@ -2740,7 +2744,7 @@ fn indexed_structural_clauses_agree_with_the_clause_list_walks() {
             _ => panic!("expected loop templates"),
         })
         .collect::<Vec<_>>();
-    let value = |n| ContractExpression::CFragment(ProgramExpression::Value(int32(n)));
+    let value = |n| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(n)));
     let scoped = templates[2].with_scope(BTreeMap::from([("bound".to_string(), value(0))]));
     let choices = [&templates[0], &templates[1], &templates[2], &scoped];
     // The fold `with_bound_frontier_loop_clauses` made over a `Vec`.

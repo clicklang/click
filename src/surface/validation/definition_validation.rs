@@ -211,7 +211,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             click_functions,
             &format!("function `{}`", definition.name()),
         )?;
-        validate_c_valued_function_folds(definition, &click_function_types)?;
+        validate_program_valued_function_folds(definition, &click_function_types)?;
         let mut calls = BTreeSet::new();
         collect_click_function_calls(body, &mut calls);
         function_calls.insert(definition.name().to_string(), calls);
@@ -569,7 +569,7 @@ fn refuse_a_place_returned_twice(function: &FunctionBlock) -> Result<(), ClickEr
             }
             let fixed_place = [&left.base, &left.start, &left.end]
                 .into_iter()
-                .all(c_expression_reads_no_memory);
+                .all(program_expression_reads_no_memory);
             if !same_state && !fixed_place {
                 continue;
             }
@@ -655,11 +655,11 @@ fn resource_names_one_place_at_entry_and_exit(resource: &ResourceClause) -> bool
     let fixed_segment = |segment: &ContractSegment| {
         [&segment.base, &segment.start, &segment.end]
             .into_iter()
-            .all(c_expression_reads_no_memory)
+            .all(program_expression_reads_no_memory)
     };
     let fixed_expression = |expression: &ContractExpression| {
-        contract_expression_as_c_fragment(expression)
-            .is_some_and(|expression| c_expression_reads_no_memory(&expression))
+        contract_expression_as_program_expression(expression)
+            .is_some_and(|expression| program_expression_reads_no_memory(&expression))
     };
     match resource {
         ResourceClause::OwnMemory(segment) => fixed_segment(segment),
@@ -690,21 +690,28 @@ fn resource_names_one_place_at_entry_and_exit(resource: &ResourceClause) -> bool
 
 /// Whether an expression is built from parameters and constants alone, so
 /// that it denotes the same value at a function's entry and exit.
-pub(in crate::surface) fn c_expression_reads_no_memory(expression: &ProgramExpression) -> bool {
+pub(in crate::surface) fn program_expression_reads_no_memory(
+    expression: &ProgramExpression,
+) -> bool {
     match expression {
         ProgramExpression::Variable(_) | ProgramExpression::Value(_) => true,
         ProgramExpression::Add(left, right)
         | ProgramExpression::Subtract(left, right)
         | ProgramExpression::Multiply(left, right) => {
-            c_expression_reads_no_memory(left) && c_expression_reads_no_memory(right)
+            program_expression_reads_no_memory(left) && program_expression_reads_no_memory(right)
         }
         ProgramExpression::PointerOffsetBytes { pointer, .. }
-        | ProgramExpression::Subobject { pointer, .. } => c_expression_reads_no_memory(pointer),
-        ProgramExpression::Cast { expression, .. } => c_expression_reads_no_memory(expression),
+        | ProgramExpression::Subobject { pointer, .. } => {
+            program_expression_reads_no_memory(pointer)
+        }
+        ProgramExpression::Cast { expression, .. } => {
+            program_expression_reads_no_memory(expression)
+        }
         // `&q[i]` is an address computed from `q` and `i`; nothing is loaded.
         ProgramExpression::AddressOf(place) => match place.as_ref() {
             ProgramExpression::Index(base, index) => {
-                c_expression_reads_no_memory(base) && c_expression_reads_no_memory(index)
+                program_expression_reads_no_memory(base)
+                    && program_expression_reads_no_memory(index)
             }
             _ => false,
         },
@@ -883,7 +890,7 @@ fn validate_contract_applications_in_proposition_one(
                 ClickType::Resource => {
                     variables.remove(name);
                 }
-                ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
+                ClickType::Program(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     variables.insert(name.clone(), *c_type);
                 }
                 ClickType::Integer => {
@@ -1397,7 +1404,7 @@ fn validate_iterated_resource_clauses(
         // same read-authority check a body fact gets. A guard over a cell the
         // body does not own could change while the resource is folded.
         let guard_fact = ClickProposition::ForAll {
-            click_type: ClickType::C(C0Type::Int32),
+            click_type: ClickType::Program(C0Type::Int32),
             name: index.to_string(),
             written_name: None,
             body: Box::new(ClickProposition::Implies(
@@ -1408,7 +1415,7 @@ fn validate_iterated_resource_clauses(
         let no_values = BTreeMap::new();
         let guard_fact = crate::surface::lowering::substitute_click_proposition_in(
             &guard_fact,
-            &crate::surface::lowering::ContractSubstitutions::with_body_fields_as_c_names(
+            &crate::surface::lowering::ContractSubstitutions::with_body_fields_as_program_names(
                 &no_values,
             ),
         )
@@ -1447,7 +1454,7 @@ fn resource_body_fields_as_parameters(
         return Ok(None);
     };
     let (scalar, other): (Vec<_>, Vec<_>) = body.fields.iter().cloned().partition(|field| {
-        matches!(field.click_type, ClickType::C(_))
+        matches!(field.click_type, ClickType::Program(_))
             && !definition
                 .parameters()
                 .iter()
@@ -1457,7 +1464,7 @@ fn resource_body_fields_as_parameters(
         return Ok(None);
     }
     let no_values = BTreeMap::new();
-    let substitutions = ContractSubstitutions::with_body_fields_as_c_names(&no_values);
+    let substitutions = ContractSubstitutions::with_body_fields_as_program_names(&no_values);
     let mut parameters = definition.parameters.clone();
     parameters.extend(scalar.iter().map(|field| FunctionParameter {
         name: field.name.clone(),
@@ -1590,7 +1597,7 @@ fn validate_resource_fact_memory_read_authority(
         .map(|(name, _, _)| {
             (
                 name.clone(),
-                ContractExpression::CFragment(ProgramExpression::Variable(name.clone())),
+                ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -2052,12 +2059,12 @@ fn collect_resource_fact_reads_from_proposition(
                 reads,
                 resource_name,
             )?;
-            let start = contract_expression_as_c_fragment(start).ok_or_else(|| {
+            let start = contract_expression_as_program_expression(start).ok_or_else(|| {
                 ClickError::new(format!(
                     "resource `{resource_name}` range fact has a non-C start"
                 ))
             })?;
-            let end = contract_expression_as_c_fragment(end).ok_or_else(|| {
+            let end = contract_expression_as_program_expression(end).ok_or_else(|| {
                 ClickError::new(format!(
                     "resource `{resource_name}` range fact has a non-C end"
                 ))
@@ -2189,20 +2196,21 @@ fn quantified_index_interval(
                     (Some(left), Some(right)) => (left, right),
                     _ => (left, right),
                 };
-                let variable =
-                    ContractExpression::CFragment(ProgramExpression::Variable(name.to_string()));
+                let variable = ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    name.to_string(),
+                ));
                 match operator {
                     ComparisonOperator::LessEqual if right == &variable => {
-                        *lower = contract_expression_as_c_fragment(left);
+                        *lower = contract_expression_as_program_expression(left);
                     }
                     ComparisonOperator::GreaterEqual if left == &variable => {
-                        *lower = contract_expression_as_c_fragment(right);
+                        *lower = contract_expression_as_program_expression(right);
                     }
                     ComparisonOperator::LessThan if left == &variable => {
-                        *upper = contract_expression_as_c_fragment(right);
+                        *upper = contract_expression_as_program_expression(right);
                     }
                     ComparisonOperator::GreaterThan if right == &variable => {
-                        *upper = contract_expression_as_c_fragment(left);
+                        *upper = contract_expression_as_program_expression(left);
                     }
                     _ => {}
                 }
@@ -2240,7 +2248,7 @@ fn collect_resource_fact_reads_from_contract_segment(
 ) -> Result<(), ClickError> {
     for expression in [&segment.base, &segment.start, &segment.end] {
         collect_resource_fact_reads_from_contract_expression(
-            &ContractExpression::CFragment(expression.clone()),
+            &ContractExpression::ProgramExpression(expression.clone()),
             predicate_definitions,
             click_function_definitions,
             visited_predicates,
@@ -2431,12 +2439,12 @@ fn collect_resource_fact_reads_from_contract_expression(
             lowered: expression,
             ..
         }
-        | ContractExpression::CFragment(expression)
+        | ContractExpression::ProgramExpression(expression)
         | ContractExpression::Field {
             lowered: expression,
             ..
         } => {
-            collect_resource_fact_reads_from_c_expression(expression, reads);
+            collect_resource_fact_reads_from_program_expression(expression, reads);
             Ok(())
         }
         ContractExpression::CBinding(_) => Ok(()),
@@ -2531,13 +2539,13 @@ fn collect_resource_fact_reads_from_contract_expression(
                 reads,
                 resource_name,
             )?;
-            let Some(base) = contract_expression_as_c_fragment(base) else {
+            let Some(base) = contract_expression_as_program_expression(base) else {
                 return Err(ClickError::new(format!(
                     "resource `{resource_name}` fact reads `{}` in a form that cannot be matched to a contained memory resource with current read authority",
                     describe_contract_expression(expression)
                 )));
             };
-            let Some(index) = contract_expression_as_c_fragment(index) else {
+            let Some(index) = contract_expression_as_program_expression(index) else {
                 return Err(ClickError::new(format!(
                     "resource `{resource_name}` fact reads `{}` in a form that cannot be matched to a contained memory resource with current read authority",
                     describe_contract_expression(expression)
@@ -2770,7 +2778,7 @@ fn collect_resource_fact_reads_from_contract_expression(
     }
 }
 
-fn collect_resource_fact_reads_from_c_expression(
+fn collect_resource_fact_reads_from_program_expression(
     expression: &ProgramExpression,
     reads: &mut Vec<ResourceFactRead>,
 ) {
@@ -2780,7 +2788,7 @@ fn collect_resource_fact_reads_from_c_expression(
         | ProgramExpression::FunctionAddress(_)
         | ProgramExpression::CallResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
-            collect_resource_fact_reads_from_c_expression(expression, reads);
+            collect_resource_fact_reads_from_program_expression(expression, reads);
         }
         ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }
@@ -2790,11 +2798,11 @@ fn collect_resource_fact_reads_from_c_expression(
         | ProgramExpression::EnumIs {
             value: expression, ..
         } => {
-            collect_resource_fact_reads_from_c_expression(expression, reads);
+            collect_resource_fact_reads_from_program_expression(expression, reads);
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
             for field in fields {
-                collect_resource_fact_reads_from_c_expression(field, reads);
+                collect_resource_fact_reads_from_program_expression(field, reads);
             }
         }
         ProgramExpression::Conditional {
@@ -2802,49 +2810,49 @@ fn collect_resource_fact_reads_from_c_expression(
             then_branch,
             else_branch,
         } => {
-            collect_resource_fact_reads_from_c_expression(condition, reads);
-            collect_resource_fact_reads_from_c_expression(then_branch, reads);
-            collect_resource_fact_reads_from_c_expression(else_branch, reads);
+            collect_resource_fact_reads_from_program_expression(condition, reads);
+            collect_resource_fact_reads_from_program_expression(then_branch, reads);
+            collect_resource_fact_reads_from_program_expression(else_branch, reads);
         }
         ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_) => {}
         ProgramExpression::PointerOffsetBytes { pointer, .. }
         | ProgramExpression::Subobject { pointer, .. } => {
-            collect_resource_fact_reads_from_c_expression(pointer, reads);
+            collect_resource_fact_reads_from_program_expression(pointer, reads);
         }
         ProgramExpression::Load(pointer) => {
-            collect_resource_fact_reads_from_c_expression(pointer, reads);
+            collect_resource_fact_reads_from_program_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
                 index: ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
-                expression: describe_c_expression(expression),
+                expression: describe_program_expression(expression),
                 enclosing_range: None,
             });
         }
         ProgramExpression::TypedLoad { pointer, .. } => {
-            collect_resource_fact_reads_from_c_expression(pointer, reads);
+            collect_resource_fact_reads_from_program_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
                 index: ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
-                expression: describe_c_expression(expression),
+                expression: describe_program_expression(expression),
                 enclosing_range: None,
             });
         }
         ProgramExpression::Index(base, index) => {
-            collect_resource_fact_reads_from_c_expression(base, reads);
-            collect_resource_fact_reads_from_c_expression(index, reads);
+            collect_resource_fact_reads_from_program_expression(base, reads);
+            collect_resource_fact_reads_from_program_expression(index, reads);
             reads.push(ResourceFactRead {
                 base: base.as_ref().clone(),
                 index: index.as_ref().clone(),
-                expression: describe_c_expression(expression),
+                expression: describe_program_expression(expression),
                 enclosing_range: None,
             });
         }
         crate::kernel::binary_c_operation!(left, right) => {
-            collect_resource_fact_reads_from_c_expression(left, reads);
-            collect_resource_fact_reads_from_c_expression(right, reads);
+            collect_resource_fact_reads_from_program_expression(left, reads);
+            collect_resource_fact_reads_from_program_expression(right, reads);
         }
         ProgramExpression::Not(expression) | ProgramExpression::BitwiseNot(expression) => {
-            collect_resource_fact_reads_from_c_expression(expression, reads);
+            collect_resource_fact_reads_from_program_expression(expression, reads);
         }
     }
 }
@@ -2919,9 +2927,9 @@ fn analyze_resource_fact_read_authority(
             }
             notes.push(format!(
                 "`{resource_description}` has the right base, but the available scalar facts do not prove `{}` <= `{}` < `{}`",
-                describe_c_expression(&segment.start),
-                describe_c_expression(&read.index),
-                describe_c_expression(&segment.end)
+                describe_program_expression(&segment.start),
+                describe_program_expression(&read.index),
+                describe_program_expression(&segment.end)
             ));
             continue;
         }
@@ -2991,7 +2999,7 @@ fn evaluated_segment_covers_resource_fact_read(
 ) -> bool {
     let state = ExecutionState::new().with_memory(memory.clone());
     let evaluate = |expression: &ProgramExpression| {
-        crate::surface::proof::evaluate_c_fragment_through_kernel(
+        crate::surface::proof::evaluate_program_expression_through_kernel(
             expression,
             assumptions,
             contract_environment,
@@ -3040,7 +3048,7 @@ fn symbolic_segment_covers_range(
     let state = ExecutionState::new().with_memory(memory.clone());
     let evaluate = |expression: &ProgramExpression| {
         crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
-            &ContractExpression::CFragment(expression.clone()),
+            &ContractExpression::ProgramExpression(expression.clone()),
             &PureFactContext::new(),
             contract_environment,
             FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
@@ -3088,7 +3096,7 @@ fn symbolic_segment_covers_index(
     let state = ExecutionState::new().with_memory(memory.clone());
     let evaluate = |expression: &ProgramExpression| {
         crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
-            &ContractExpression::CFragment(expression.clone()),
+            &ContractExpression::ProgramExpression(expression.clone()),
             &PureFactContext::new(),
             contract_environment,
             FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
@@ -3122,19 +3130,19 @@ fn constant_segment_covers_index(
     end: &ProgramExpression,
     index: &ProgramExpression,
 ) -> bool {
-    let Some(start) = constant_c_expression_i64(start) else {
+    let Some(start) = constant_program_expression_i64(start) else {
         return false;
     };
-    let Some(end) = constant_c_expression_i64(end) else {
+    let Some(end) = constant_program_expression_i64(end) else {
         return false;
     };
-    let Some(index) = constant_c_expression_i64(index) else {
+    let Some(index) = constant_program_expression_i64(index) else {
         return false;
     };
     start <= index && index < end
 }
 
-fn constant_c_expression_i64(expression: &ProgramExpression) -> Option<i64> {
+fn constant_program_expression_i64(expression: &ProgramExpression) -> Option<i64> {
     match expression {
         ProgramExpression::Value(ProgramValue::Int32(bits32_constant!(value))) => {
             Some(constant_u32(*value) as i32 as i64)
@@ -3143,10 +3151,10 @@ fn constant_c_expression_i64(expression: &ProgramExpression) -> Option<i64> {
             Some(i64::from(constant_u32(*value)))
         }
         ProgramExpression::Add(left, right) => {
-            Some(constant_c_expression_i64(left)? + constant_c_expression_i64(right)?)
+            Some(constant_program_expression_i64(left)? + constant_program_expression_i64(right)?)
         }
         ProgramExpression::Subtract(left, right) => {
-            Some(constant_c_expression_i64(left)? - constant_c_expression_i64(right)?)
+            Some(constant_program_expression_i64(left)? - constant_program_expression_i64(right)?)
         }
         _ => None,
     }
@@ -3274,9 +3282,9 @@ mod read_authority_tests {
             uninitialized: false,
             state,
             surface: ContractSegmentSurface::Range {
-                base: ContractExpression::CFragment(base.clone()),
-                start: ContractExpression::CFragment(start.clone()),
-                end: ContractExpression::CFragment(end.clone()),
+                base: ContractExpression::ProgramExpression(base.clone()),
+                start: ContractExpression::ProgramExpression(start.clone()),
+                end: ContractExpression::ProgramExpression(end.clone()),
             },
             base,
             start,
@@ -3536,7 +3544,8 @@ mod resource_function_composition_tests {
             .map(|definition| (definition.name(), definition))
             .collect::<BTreeMap<_, _>>();
         for depth in [16, 64, 256] {
-            let mut expression = ContractExpression::CFragment(ProgramExpression::Value(int32(0)));
+            let mut expression =
+                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
             for _ in 0..depth {
                 expression = ContractExpression::Call {
                     name: "identity".into(),

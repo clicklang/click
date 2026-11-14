@@ -10,21 +10,21 @@ use super::*;
 /// consume (`roadmap/scaling.md`).
 #[test]
 fn allocating_call_does_not_expand_the_callers_kept_objects() {
-    let boxed = c_function(
+    let boxed = program_function(
         ProgramType::Void,
         "unused",
         vec![],
-        c_return(c_void_value()),
+        program_return(program_void_value()),
     )
     .with_composite_resource_definitions(vec![CompositeResourceDefinition::new(
         "boxed",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(MemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         ))],
         vec![],
     )]);

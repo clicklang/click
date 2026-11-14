@@ -928,8 +928,8 @@ pub(crate) fn frame_fold_applications(
     else {
         return Err(differ());
     };
-    let left_snapshot = intern_c_memory_ref(&left_interval.memory);
-    let right_snapshot = intern_c_memory_ref(right_memory);
+    let left_snapshot = intern_memory_ref(&left_interval.memory);
+    let right_snapshot = intern_memory_ref(right_memory);
     if left_snapshot == right_snapshot {
         return Ok(0);
     }

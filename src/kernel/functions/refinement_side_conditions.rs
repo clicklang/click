@@ -166,7 +166,7 @@ pub(super) fn refinement_route_proves(
 /// where `both`, `left`/`right`, `intro`, `extract`, and `rewrite` spell them
 /// and `click expand` prints them. See `prepare_contract_refinement_obligations`,
 /// which emits the refinement implication, and
-/// `api.rs::prove_c_function_contract_refinement`, which issues authority only
+/// `api.rs::prove_program_function_contract_refinement`, which issues authority only
 /// from a closed proof of exactly that implication.
 pub(super) fn contract_refinement_proves(
     assumptions: &PureFactContext,
@@ -213,7 +213,7 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
         SpecNode::Expression(expression) => match expression {
             SpecExpression::Value(_) => Visit::Skip,
             SpecExpression::ProgramExpression(expression)
-                if c_expression_is_state_independent(expression) =>
+                if program_expression_is_state_independent(expression) =>
             {
                 Visit::Skip
             }
@@ -330,7 +330,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             SpecExpression::ResourceField { .. } | SpecExpression::Value(_) => Visit::Skip,
             SpecExpression::IntegerToMachine { .. } => Visit::Stop(()),
             SpecExpression::ProgramExpression(expression) => {
-                if c_expression_supports_stateful_memory_refinement(expression) {
+                if program_expression_supports_stateful_memory_refinement(expression) {
                     Visit::Skip
                 } else {
                     Visit::Stop(())
@@ -374,7 +374,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecAlgebraicExpressionNode::ProgramValue(_) => Visit::Descend,
         },
         SpecNode::AlgebraicValue(value) => match value {
-            SpecAlgebraicValue::C(_)
+            SpecAlgebraicValue::Program(_)
             | SpecAlgebraicValue::Algebraic(_)
             | SpecAlgebraicValue::Integer(_) => Visit::Descend,
         },
@@ -499,7 +499,7 @@ pub(super) fn algebraic_match_covers_each_variant_once(
     })
 }
 
-pub(super) fn c_expression_supports_stateful_memory_refinement(
+pub(super) fn program_expression_supports_stateful_memory_refinement(
     expression: &ProgramExpression,
 ) -> bool {
     match expression {
@@ -529,31 +529,33 @@ pub(super) fn c_expression_supports_stateful_memory_refinement(
         | ProgramExpression::Not(expression)
         | ProgramExpression::BitwiseNot(expression)
         | ProgramExpression::Load(expression) => {
-            c_expression_supports_stateful_memory_refinement(expression)
+            program_expression_supports_stateful_memory_refinement(expression)
         }
         ProgramExpression::TypedLoad { pointer, .. } => {
-            c_expression_supports_stateful_memory_refinement(pointer)
+            program_expression_supports_stateful_memory_refinement(pointer)
         }
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
-            .all(c_expression_supports_stateful_memory_refinement),
+            .all(program_expression_supports_stateful_memory_refinement),
         ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            c_expression_supports_stateful_memory_refinement(condition)
-                && c_expression_supports_stateful_memory_refinement(then_branch)
-                && c_expression_supports_stateful_memory_refinement(else_branch)
+            program_expression_supports_stateful_memory_refinement(condition)
+                && program_expression_supports_stateful_memory_refinement(then_branch)
+                && program_expression_supports_stateful_memory_refinement(else_branch)
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            c_expression_supports_stateful_memory_refinement(left)
-                && c_expression_supports_stateful_memory_refinement(right)
+            program_expression_supports_stateful_memory_refinement(left)
+                && program_expression_supports_stateful_memory_refinement(right)
         }
     }
 }
 
-pub(in crate::kernel) fn c_expression_is_state_independent(expression: &ProgramExpression) -> bool {
+pub(in crate::kernel) fn program_expression_is_state_independent(
+    expression: &ProgramExpression,
+) -> bool {
     match expression {
         ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
@@ -578,22 +580,23 @@ pub(in crate::kernel) fn c_expression_is_state_independent(expression: &ProgramE
         }
         | ProgramExpression::Not(expression)
         | ProgramExpression::BitwiseNot(expression) => {
-            c_expression_is_state_independent(expression)
+            program_expression_is_state_independent(expression)
         }
         ProgramExpression::EnumConstruct { fields, .. } => {
-            fields.iter().all(c_expression_is_state_independent)
+            fields.iter().all(program_expression_is_state_independent)
         }
         ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            c_expression_is_state_independent(condition)
-                && c_expression_is_state_independent(then_branch)
-                && c_expression_is_state_independent(else_branch)
+            program_expression_is_state_independent(condition)
+                && program_expression_is_state_independent(then_branch)
+                && program_expression_is_state_independent(else_branch)
         }
         crate::kernel::binary_c_operation!(left, right) => {
-            c_expression_is_state_independent(left) && c_expression_is_state_independent(right)
+            program_expression_is_state_independent(left)
+                && program_expression_is_state_independent(right)
         }
         ProgramExpression::AddressOf(_)
         | ProgramExpression::CheckedObjectAddress(_)
@@ -610,7 +613,7 @@ pub(in crate::kernel) fn c_expression_is_state_independent(expression: &ProgramE
 pub(super) fn spec_reads_current_parameter(node: SpecNode<'_>, parameter_name: &str) -> bool {
     !spec_tree_all(node, |node| match node {
         SpecNode::Expression(SpecExpression::ProgramExpression(expression))
-            if c_expression_mentions_variable(expression, parameter_name) =>
+            if program_expression_mentions_variable(expression, parameter_name) =>
         {
             Visit::Stop(())
         }
@@ -627,7 +630,10 @@ pub(super) fn spec_reads_current_parameter(node: SpecNode<'_>, parameter_name: &
     })
 }
 
-pub(super) fn c_expression_mentions_variable(expression: &ProgramExpression, name: &str) -> bool {
+pub(super) fn program_expression_mentions_variable(
+    expression: &ProgramExpression,
+    name: &str,
+) -> bool {
     match expression {
         ProgramExpression::Variable(variable) => variable == name,
         ProgramExpression::Value(_)
@@ -659,35 +665,35 @@ pub(super) fn c_expression_mentions_variable(expression: &ProgramExpression, nam
             ..
         }
         | ProgramExpression::BitwiseNot(expression) => {
-            c_expression_mentions_variable(expression, name)
+            program_expression_mentions_variable(expression, name)
         }
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
-            .any(|field| c_expression_mentions_variable(field, name)),
+            .any(|field| program_expression_mentions_variable(field, name)),
         ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            c_expression_mentions_variable(condition, name)
-                || c_expression_mentions_variable(then_branch, name)
-                || c_expression_mentions_variable(else_branch, name)
+            program_expression_mentions_variable(condition, name)
+                || program_expression_mentions_variable(then_branch, name)
+                || program_expression_mentions_variable(else_branch, name)
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            c_expression_mentions_variable(left, name)
-                || c_expression_mentions_variable(right, name)
+            program_expression_mentions_variable(left, name)
+                || program_expression_mentions_variable(right, name)
         }
     }
 }
 
-pub(super) fn c_expression_takes_address_of_variable(
+pub(super) fn program_expression_takes_address_of_variable(
     expression: &ProgramExpression,
     name: &str,
 ) -> bool {
     match expression {
         ProgramExpression::AddressOf(expression)
         | ProgramExpression::CheckedObjectAddress(expression) => {
-            c_expression_mentions_variable(expression, name)
+            program_expression_mentions_variable(expression, name)
         }
         ProgramExpression::Value(_)
         | ProgramExpression::Variable(_)
@@ -717,23 +723,23 @@ pub(super) fn c_expression_takes_address_of_variable(
             ..
         }
         | ProgramExpression::BitwiseNot(expression) => {
-            c_expression_takes_address_of_variable(expression, name)
+            program_expression_takes_address_of_variable(expression, name)
         }
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
-            .any(|field| c_expression_takes_address_of_variable(field, name)),
+            .any(|field| program_expression_takes_address_of_variable(field, name)),
         ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            c_expression_takes_address_of_variable(condition, name)
-                || c_expression_takes_address_of_variable(then_branch, name)
-                || c_expression_takes_address_of_variable(else_branch, name)
+            program_expression_takes_address_of_variable(condition, name)
+                || program_expression_takes_address_of_variable(then_branch, name)
+                || program_expression_takes_address_of_variable(else_branch, name)
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            c_expression_takes_address_of_variable(left, name)
-                || c_expression_takes_address_of_variable(right, name)
+            program_expression_takes_address_of_variable(left, name)
+                || program_expression_takes_address_of_variable(right, name)
         }
     }
 }
@@ -758,20 +764,20 @@ impl ParameterAccessRange {
     }
 }
 
-pub(super) fn c_expression_parameter_offset(
+pub(super) fn program_expression_parameter_offset(
     expression: &ProgramExpression,
     parameter_name: &str,
 ) -> Option<u32> {
     match expression {
         ProgramExpression::Variable(variable) if variable == parameter_name => Some(0),
         ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
-            c_expression_parameter_offset(pointer, parameter_name)?.checked_add(*bytes)
+            program_expression_parameter_offset(pointer, parameter_name)?.checked_add(*bytes)
         }
         ProgramExpression::Subobject { pointer, .. } => {
-            c_expression_parameter_offset(pointer, parameter_name)
+            program_expression_parameter_offset(pointer, parameter_name)
         }
         ProgramExpression::Cast { expression, .. } => {
-            c_expression_parameter_offset(expression, parameter_name)
+            program_expression_parameter_offset(expression, parameter_name)
         }
         _ => None,
     }
@@ -808,7 +814,7 @@ pub(super) fn spec_expression_parameter_offset(
 ) -> Option<u32> {
     match expression {
         SpecExpression::ProgramExpression(expression) => {
-            c_expression_parameter_offset(expression, parameter_name)
+            program_expression_parameter_offset(expression, parameter_name)
         }
         SpecExpression::Cast(expression, _)
         | SpecExpression::PointerCoercion(expression, _)
@@ -829,7 +835,10 @@ pub(super) fn spec_expression_parameter_offset(
 
 /// Track storage provenance rather than reads used to compute a store's
 /// address. The exit-state check still detects writes through local aliases.
-pub(super) fn c_expression_uses_object_address(expression: &ProgramExpression, name: &str) -> bool {
+pub(super) fn program_expression_uses_object_address(
+    expression: &ProgramExpression,
+    name: &str,
+) -> bool {
     match expression {
         ProgramExpression::Variable(variable) => variable == name,
         ProgramExpression::Value(_)
@@ -841,14 +850,14 @@ pub(super) fn c_expression_uses_object_address(expression: &ProgramExpression, n
             pointer,
             value_type: ProgramType::Int32Array(_) | ProgramType::UInt8Array(_),
             ..
-        } => c_expression_uses_object_address(pointer, name),
+        } => program_expression_uses_object_address(pointer, name),
         ProgramExpression::Load(_) | ProgramExpression::TypedLoad { .. } => false,
         ProgramExpression::AddressOf(expression)
         | ProgramExpression::CheckedObjectAddress(expression) => match expression.as_ref() {
             ProgramExpression::Load(pointer) | ProgramExpression::TypedLoad { pointer, .. } => {
-                c_expression_uses_object_address(pointer, name)
+                program_expression_uses_object_address(pointer, name)
             }
-            expression => c_expression_uses_object_address(expression, name),
+            expression => program_expression_uses_object_address(expression, name),
         },
 
         ProgramExpression::Cast { expression, .. }
@@ -870,23 +879,23 @@ pub(super) fn c_expression_uses_object_address(expression: &ProgramExpression, n
         }
         | ProgramExpression::Not(expression)
         | ProgramExpression::BitwiseNot(expression) => {
-            c_expression_uses_object_address(expression, name)
+            program_expression_uses_object_address(expression, name)
         }
         ProgramExpression::EnumConstruct { fields, .. } => fields
             .iter()
-            .any(|field| c_expression_uses_object_address(field, name)),
+            .any(|field| program_expression_uses_object_address(field, name)),
         ProgramExpression::Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
-            c_expression_uses_object_address(condition, name)
-                || c_expression_uses_object_address(then_branch, name)
-                || c_expression_uses_object_address(else_branch, name)
+            program_expression_uses_object_address(condition, name)
+                || program_expression_uses_object_address(then_branch, name)
+                || program_expression_uses_object_address(else_branch, name)
         }
         crate::kernel::binary_c_expression!(left, right) => {
-            c_expression_uses_object_address(left, name)
-                || c_expression_uses_object_address(right, name)
+            program_expression_uses_object_address(left, name)
+                || program_expression_uses_object_address(right, name)
         }
     }
 }
@@ -899,8 +908,8 @@ pub(super) fn statement_writes_aggregate_parameter(
 ) {
     match statement {
         ProgramStatement::Store { pointer, .. } => {
-            if c_expression_parameter_offset(pointer, parameter_name).is_some()
-                || c_expression_uses_object_address(pointer, parameter_name)
+            if program_expression_parameter_offset(pointer, parameter_name).is_some()
+                || program_expression_uses_object_address(pointer, parameter_name)
             {
                 *unknown_write = true;
             }
@@ -910,11 +919,11 @@ pub(super) fn statement_writes_aggregate_parameter(
             value_type,
             ..
         } => {
-            if let Some(offset) = c_expression_parameter_offset(pointer, parameter_name) {
+            if let Some(offset) = program_expression_parameter_offset(pointer, parameter_name) {
                 if let Some(range) = parameter_access_range(offset, value_type.byte_width()) {
                     writes.push(range);
                 }
-            } else if c_expression_uses_object_address(pointer, parameter_name) {
+            } else if program_expression_uses_object_address(pointer, parameter_name) {
                 *unknown_write = true;
             }
         }
@@ -924,7 +933,7 @@ pub(super) fn statement_writes_aggregate_parameter(
             count,
             ..
         } => {
-            if let Some(offset) = c_expression_parameter_offset(target, parameter_name) {
+            if let Some(offset) = program_expression_parameter_offset(target, parameter_name) {
                 if let Some(bytes) = element_type.byte_width().checked_mul(*count)
                     && let Some(range) = parameter_access_range(offset, bytes)
                 {
@@ -932,16 +941,16 @@ pub(super) fn statement_writes_aggregate_parameter(
                 } else {
                     *unknown_write = true;
                 }
-            } else if c_expression_uses_object_address(target, parameter_name) {
+            } else if program_expression_uses_object_address(target, parameter_name) {
                 *unknown_write = true;
             }
         }
         ProgramStatement::CopyAggregate { target, layout, .. } => {
-            if let Some(offset) = c_expression_parameter_offset(target, parameter_name) {
+            if let Some(offset) = program_expression_parameter_offset(target, parameter_name) {
                 if let Some(range) = parameter_access_range(offset, layout.size_bytes()) {
                     writes.push(range);
                 }
-            } else if c_expression_uses_object_address(target, parameter_name) {
+            } else if program_expression_uses_object_address(target, parameter_name) {
                 *unknown_write = true;
             }
         }
@@ -952,17 +961,16 @@ pub(super) fn statement_writes_aggregate_parameter(
                 | ProgramExpression::Index(pointer, _) => pointer.as_ref(),
                 target => target,
             };
-            if c_expression_uses_object_address(pointer, parameter_name) {
+            if program_expression_uses_object_address(pointer, parameter_name) {
                 *unknown_write = true;
             }
         }
         ProgramStatement::Call { arguments, .. }
         | ProgramStatement::CallResult { arguments, .. }
         | ProgramStatement::CallAssign { arguments, .. } => {
-            if arguments
-                .iter()
-                .any(|argument| c_expression_takes_address_of_variable(argument, parameter_name))
-            {
+            if arguments.iter().any(|argument| {
+                program_expression_takes_address_of_variable(argument, parameter_name)
+            }) {
                 *unknown_write = true;
             }
         }

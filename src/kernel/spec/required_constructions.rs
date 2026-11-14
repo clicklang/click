@@ -45,7 +45,7 @@ pub fn is_required_construction(value: &AlgebraicTerm) -> bool {
 pub(super) fn field_is_required(field: &SpecAlgebraicValue) -> bool {
     matches!(
         field,
-        SpecAlgebraicValue::C(SpecExpression::Requires { .. })
+        SpecAlgebraicValue::Program(SpecExpression::Requires { .. })
     )
 }
 

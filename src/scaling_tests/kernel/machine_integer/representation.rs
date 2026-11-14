@@ -5,7 +5,8 @@ fn mixed_operation_construction_does_not_walk_shared_operand_dags() {
         for size in [16, 64, 256] {
             let _session = VerificationSession::enter();
             let ty = MachineIntegerType::Int32;
-            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007020));
+            let mut root =
+                KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(1007020));
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
                     ty,

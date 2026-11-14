@@ -59,7 +59,7 @@ void write(struct job *job, int32 *dest) {
             "step();\nassumption(); assumption();\nassumption(); assumption(); assumption();\n}\n",
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::without_implicit_solve(|| verify_c0_sources(&click, &[("probe.c", &c)]))
+            crate::surface::without_implicit_solve(|| verify_c_sources(&click, &[("probe.c", &c)]))
         });
         result.unwrap_or_else(|error| panic!("size {size}: {error}\n{click}"));
         if size != 2 {
@@ -117,7 +117,7 @@ int32 caller(int32 a, int32 unrelated) {{
             );
             let ((result, work), events) = crate::instrumentation::collect(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
-                    verify_c0_sources(
+                    verify_c_sources(
                         &source,
                         &[(
                             "call.c",
@@ -206,7 +206,7 @@ void check(int32 x, int32 y) {{ requires x > 0; {ambient} {produces} ensures 1 =
 "#
         );
         let (result, work) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&click, &[("known.c", &c)])
+            verify_c_sources(&click, &[("known.c", &c)])
         });
         result.unwrap_or_else(|error| panic!("{tactic}, related={related}, size={size}: {error}"));
         let selected = work
@@ -253,7 +253,7 @@ void pack(int32* p) {{
 "#
         );
         let (result, work) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&source, &[("fold.c", "void pack(int32* p) {}")])
+            verify_c_sources(&source, &[("fold.c", "void pack(int32* p) {}")])
         });
         result.unwrap_or_else(|error| panic!("{size}: {error}"));
         let selected = work
@@ -290,7 +290,7 @@ void make(int32 x) {{ requires x > 0; produces p: positive(x); }} by {{
 "#
         );
         let (result, events) = crate::instrumentation::collect(|| {
-            verify_c0_sources(&source, &[("fold.c", "void make(int32 x) {}")])
+            verify_c_sources(&source, &[("fold.c", "void make(int32 x) {}")])
         });
         result.unwrap_or_else(|error| panic!("{suffix}: {error}"));
         let constructions = events
@@ -334,7 +334,7 @@ void make(int32 x) {{ requires x > 0; produces p: positive_value(x); }} by {{
         );
         let c = format!("void make(int32 x) {{ int scratch; {statements} }}");
         let (result, events) =
-            crate::instrumentation::collect(|| verify_c0_sources(&source, &[("fold.c", &c)]));
+            crate::instrumentation::collect(|| verify_c_sources(&source, &[("fold.c", &c)]));
         result.unwrap_or_else(|error| panic!("size {size}: {error}"));
         let completions = events
             .iter()
@@ -372,7 +372,7 @@ void make(int32 x) {{ requires x > 0; produces p: positive(x); }} by {{
 "#
         );
         let (result, events) = crate::instrumentation::collect(|| {
-            verify_c0_sources(&source, &[("fold.c", "void make(int32 x) {}")])
+            verify_c_sources(&source, &[("fold.c", "void make(int32 x) {}")])
         });
         result.unwrap_or_else(|error| panic!("{count}: {error}"));
         let mut constructions = 0;
@@ -478,7 +478,7 @@ void make(struct pool* pool) {{
                 };
                 let sources = [("fold.c", c)];
                 let (result, events) =
-                    crate::instrumentation::collect(|| verify_c0_sources(&source, &sources));
+                    crate::instrumentation::collect(|| verify_c_sources(&source, &sources));
                 result.unwrap_or_else(|e| {
                     panic!("named={named}, returned={returned}, count={count}: {e}")
                 });
@@ -501,17 +501,17 @@ void make(struct pool* pool) {{
                         let expanded =
                             expand_function_proof_source(&source, &sources, "make").unwrap();
                         without_implicit_solve_for_claim("make.contract", || {
-                            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+                            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
                         })
                         .unwrap();
                         if named {
                             assert!(
-                                verify_c0_sources(&source.replace("requires x > 0;", ""), &sources)
+                                verify_c_sources(&source.replace("requires x > 0;", ""), &sources)
                                     .is_err(),
                                 "a proposed population fold cannot supply its own body premise"
                             );
                             assert!(
-                                verify_c0_sources(
+                                verify_c_sources(
                                     &source.replacen(
                                         "    owns authority(ticket(p));\n    owns witness",
                                         "    owns witness",
@@ -560,7 +560,7 @@ void make(int32 x) {{ requires x > 0; produces positive(x); }} by {{
             };
             let sources = [("legacy.c", "void make(int32 x) {}")];
             let (result, events) =
-                crate::instrumentation::collect(|| verify_c0_sources(&source, &sources));
+                crate::instrumentation::collect(|| verify_c_sources(&source, &sources));
             result.unwrap();
             let count = events
                 .iter()
@@ -574,11 +574,11 @@ void make(int32 x) {{ requires x > 0; produces positive(x); }} by {{
             if size == 1 {
                 let expanded = expand_function_proof_source(&source, &sources, "make").unwrap();
                 without_implicit_solve_for_claim("make.contract", || {
-                    verify_c0_sources(&expanded, &sources).map_err(|e| e.report())
+                    verify_c_sources(&expanded, &sources).map_err(|e| e.report())
                 })
                 .unwrap();
                 assert!(
-                    verify_c0_sources(&source.replace("requires x > 0;", ""), &sources).is_err()
+                    verify_c_sources(&source.replace("requires x > 0;", ""), &sources).is_err()
                 );
             }
         }
@@ -632,7 +632,7 @@ int32 caller(int32 a, int32* p) {{
             };
             let sources = [("call.c", c)];
             let (result, events) =
-                crate::instrumentation::collect(|| verify_c0_sources(&source, &sources));
+                crate::instrumentation::collect(|| verify_c_sources(&source, &sources));
             result.unwrap();
             let calls = events
                 .iter()
@@ -646,11 +646,11 @@ int32 caller(int32 a, int32* p) {{
             if size == 1 {
                 let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
                 without_implicit_solve_for_claim("caller.contract", || {
-                    verify_c0_sources(&expanded, &sources).map_err(|e| e.report())
+                    verify_c_sources(&expanded, &sources).map_err(|e| e.report())
                 })
                 .unwrap();
                 assert!(
-                    verify_c0_sources(&source.replace("requires a > 0;", ""), &sources).is_err()
+                    verify_c_sources(&source.replace("requires a > 0;", ""), &sources).is_err()
                 );
             }
         }
@@ -686,7 +686,7 @@ fn prepared_guarded_statement_does_not_retry_execution() {
             );
             let sources = [("guard.c", c)];
             let (result, events) =
-                crate::instrumentation::collect(|| verify_c0_sources(&source, &sources));
+                crate::instrumentation::collect(|| verify_c_sources(&source, &sources));
             result.unwrap_or_else(|e| panic!("assertion={assertion}: {e}"));
             let count = events.iter().filter(|event| matches!(event,
                 crate::instrumentation::VerificationEvent::OperationFinished { name, .. } if name == operation
@@ -695,14 +695,14 @@ fn prepared_guarded_statement_does_not_retry_execution() {
             if size == 1 {
                 let expanded = expand_function_proof_source(&source, &sources, "f").unwrap();
                 without_implicit_solve_for_claim("f.contract", || {
-                    verify_c0_sources(&expanded, &sources).map_err(|e| e.report())
+                    verify_c_sources(&expanded, &sources).map_err(|e| e.report())
                 })
                 .unwrap();
                 let bad = source
                     .replace("requires x == 5 or x == 7;", "")
                     .replace("requires x == 1 or x == 2;", "");
                 assert!(
-                    verify_c0_sources(&bad, &sources).is_err(),
+                    verify_c_sources(&bad, &sources).is_err(),
                     "the retained arm cannot prove its own guard"
                 );
             }
@@ -742,14 +742,14 @@ void make(struct holder* h) {{
 "#
         );
         let sources = [("fold.c", c.as_str())];
-        verify_c0_sources(&source, &sources).unwrap();
+        verify_c_sources(&source, &sources).unwrap();
         let expanded = expand_function_proof_source(&source, &sources, "make").unwrap();
         without_implicit_solve_for_claim("make.contract", || {
-            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
         })
         .unwrap();
         let wrong = source.replace("implies p[k] == 1", "implies p[k] == 0");
-        assert!(verify_c0_sources(&wrong, &sources).is_err());
+        assert!(verify_c_sources(&wrong, &sources).is_err());
     }
 }
 
@@ -776,10 +776,10 @@ void make(int32* p, int32 n) {
 }
 "#;
     let sources = [("fold.c", "void make(int32* p, int32 n) { *p = n + 1; }")];
-    verify_c0_sources(source, &sources).unwrap();
+    verify_c_sources(source, &sources).unwrap();
     let expanded = expand_function_proof_source(source, &sources, "make").unwrap();
     without_implicit_solve_for_claim("make.contract", || {
-        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
 }
@@ -827,7 +827,7 @@ fn store_index_separation_search_scales(c_index: &str, click_index: &str, suffix
                 size + 2
             );
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                verify_c0_sources(&click, &[("probe.c", &c)])
+                verify_c_sources(&click, &[("probe.c", &c)])
             });
             match (hit, result) {
                 (true, Err(error)) => panic!("size {size}: {}\n{click}\n{c}", error.report()),

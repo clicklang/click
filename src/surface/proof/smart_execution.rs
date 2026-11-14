@@ -101,7 +101,7 @@ impl<'a> Proof<'a> {
     /// requirement over the current state and a fact at `at(iter, …)` print
     /// alike.
     fn describe_viewable_memory_note(&self, requirement: &Proposition) -> String {
-        let Proposition::CMemoryLoadable {
+        let Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -134,7 +134,7 @@ impl<'a> Proof<'a> {
             .facts()
             .propositions()
             .filter_map(|fact| match fact {
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     memory: held,
                     base: held_base,
                     bytes: held_bytes,

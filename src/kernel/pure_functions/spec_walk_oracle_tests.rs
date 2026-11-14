@@ -159,7 +159,7 @@ fn old_collect_algebraic_body_reads(
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
                 match field {
-                    SpecAlgebraicValue::C(value) => old_collect_body_reads(value, bound, reads)?,
+                    SpecAlgebraicValue::Program(value) => old_collect_body_reads(value, bound, reads)?,
                     SpecAlgebraicValue::Integer(value) => {
                         old_collect_integer_body_reads(value, bound, reads)?
                     }

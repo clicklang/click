@@ -642,7 +642,7 @@ impl ThreadLedger {
 }
 
 impl ThreadHandle {
-    pub(super) fn c_value(self) -> ProgramValue {
+    pub(super) fn program_value(self) -> ProgramValue {
         ProgramValue::UInt64(super::MachineTerm::PureFunctionApplication {
             // This name cannot be spelled by C or Click source. The term is
             // copied as an opaque pthread_t value, never derived from its
@@ -652,7 +652,7 @@ impl ThreadHandle {
         })
     }
 
-    pub(super) fn from_c_value(value: &ProgramValue) -> Option<Self> {
+    pub(super) fn from_program_value(value: &ProgramValue) -> Option<Self> {
         match value {
             ProgramValue::UInt64(super::MachineTerm::PureFunctionApplication {
                 name,
@@ -674,15 +674,15 @@ mod handle_tests {
     #[test]
     fn handle_identity_survives_symbolic_variable_substitution() {
         let handle = ThreadHandle(42);
-        let value = handle.c_value();
-        let substituted = super::super::reasoning::substitute_bitvector_variable_in_c_value(
+        let value = handle.program_value();
+        let substituted = super::super::reasoning::substitute_bitvector_variable_in_program_value(
             &value,
             super::super::Variable(42),
             &super::super::MachineTerm::Variable(super::super::Variable(43)),
         );
         assert_eq!(substituted, value);
-        assert_eq!(ThreadHandle::from_c_value(&substituted), Some(handle));
-        assert_ne!(substituted, ThreadHandle(43).c_value());
+        assert_eq!(ThreadHandle::from_program_value(&substituted), Some(handle));
+        assert_ne!(substituted, ThreadHandle(43).program_value());
     }
 }
 
@@ -748,7 +748,7 @@ impl PreparedThreadCreate<'_> {
         );
         static NEXT_HANDLE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let handle = ThreadHandle(NEXT_HANDLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-        let effect = ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+        let effect = ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
             before: self.parent.parent.memory().clone(),
             after: self.completion.memory.clone(),
             mutable_ranges: self.completion.effects.clone(),

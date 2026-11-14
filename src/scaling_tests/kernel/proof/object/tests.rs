@@ -349,7 +349,7 @@ fn pure_match_value(variants_count: usize) -> crate::kernel::AlgebraicTerm {
     let variants: Arc<[AlgebraicVariantType]> = (0..variants_count)
         .map(|index| AlgebraicVariantType {
             name: format!("Case{index}"),
-            fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
         })
         .collect::<Vec<_>>()
         .into();

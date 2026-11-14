@@ -10,7 +10,7 @@ pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &P
         return false;
     };
     arguments.iter().any(|argument| {
-        let AlgebraicValue::C(ProgramValue::Pointer(argument)) = argument else {
+        let AlgebraicValue::Program(ProgramValue::Pointer(argument)) = argument else {
             return false;
         };
         argument.pointer() == pointer
@@ -158,10 +158,10 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions_with_state(
             let child_context = ResourceContext::new()
                 .try_compose_with_facts(children.clone(), assumptions)
                 .ok()?;
-            let mut relations = vec![Proposition::CResourceComposition(child_context)];
+            let mut relations = vec![Proposition::ResourceComposition(child_context)];
             for child in children {
                 if let Some(owned) = child.owned_resource() {
-                    relations.push(Proposition::CResourceContains {
+                    relations.push(Proposition::ResourceContains {
                         parent: Box::new(composite.resource().clone()),
                         child: Box::new(owned.clone()),
                     });
@@ -242,7 +242,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
         let body_active = {
             let mut population_state = state.clone();
             for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-                let argument = argument.as_c_value()?;
+                let argument = argument.as_program_value()?;
                 if parameter.c_type() != argument.c_type() {
                     return None;
                 }
@@ -273,7 +273,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
         };
         let mut population_state = state.clone();
         for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-            let argument = argument.as_c_value()?;
+            let argument = argument.as_program_value()?;
             if parameter.c_type() != argument.c_type() {
                 return None;
             }
@@ -378,7 +378,7 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                     ) {
                         return true;
                     }
-                    let Proposition::CMemoryLoadable {
+                    let Proposition::MemoryLoadable {
                         memory: obligation_memory,
                         base,
                         bytes,
@@ -447,7 +447,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
     }
     let mut state = ExecutionState::new().with_memory(memory.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-        let argument = argument.as_c_value()?;
+        let argument = argument.as_program_value()?;
         if parameter.c_type() != argument.c_type() {
             return None;
         }
@@ -501,14 +501,14 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
         // The child context is the compact authority for ownership-derived
         // separation. Publishing one carrier lets certification answer
         // member-pair queries on demand instead of materializing O(N^2)
-        // `CResourceSeparate` propositions.
+        // `ResourceSeparate` propositions.
         let child_context = ResourceContext::new()
             .try_compose_with_facts(child_facts, assumptions)
             .ok()?;
-        propositions.push(Proposition::CResourceComposition(child_context));
+        propositions.push(Proposition::ResourceComposition(child_context));
     }
     for child in &children {
-        propositions.push(Proposition::CResourceContains {
+        propositions.push(Proposition::ResourceContains {
             parent: Box::new(composite.resource().clone()),
             child: Box::new(child.clone()),
         });
@@ -536,7 +536,7 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
     }
     let mut state = ExecutionState::new().with_memory(memory.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-        let argument = argument.as_c_value()?;
+        let argument = argument.as_program_value()?;
         if parameter.c_type() != argument.c_type() {
             return None;
         }
@@ -696,7 +696,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
         .with_memory(memory.clone())
         .with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
-        let argument = argument.as_c_value()?;
+        let argument = argument.as_program_value()?;
         if parameter.c_type() != argument.c_type() {
             return None;
         }
@@ -765,7 +765,7 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
                 ) {
                     return true;
                 }
-                let Proposition::CMemoryLoadable {
+                let Proposition::MemoryLoadable {
                     memory: obligation_memory,
                     base,
                     bytes,

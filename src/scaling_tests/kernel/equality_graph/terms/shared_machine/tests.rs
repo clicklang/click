@@ -7,7 +7,7 @@ fn cross_width_observation_registration_keeps_shared_prefixes() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int64;
-        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982402));
+        let mut root = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(982402));
         let mut classes = TermClasses::default();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
@@ -47,8 +47,8 @@ fn comparison_nodes_reuse_shared_prefixes() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982414));
-        let right = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982415));
+        let mut root = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(982414));
+        let right = KernelTerm::variable(KernelType::Program(format.c_type()), Variable(982415));
         let mut classes = TermClasses::default();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
@@ -115,7 +115,7 @@ fn shared_cast_registration_and_readings_reuse_growing_prefixes() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut root = KernelTerm::variable(
-            KernelType::C(MachineIntegerType::Int32.c_type()),
+            KernelType::Program(MachineIntegerType::Int32.c_type()),
             Variable(985201),
         );
         let mut classes = TermClasses::default();

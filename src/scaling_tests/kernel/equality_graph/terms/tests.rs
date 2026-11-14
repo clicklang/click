@@ -144,7 +144,7 @@ fn shared_machine_prefix_registration_is_linear_and_branch_local() {
             }
             let format = MachineIntegerType::Int64;
             let mut term =
-                KernelTerm::variable(KernelType::C(ProgramType::Int64), Variable(980000));
+                KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(980000));
             let other =
                 IntegerTerm::from_machine(format, MachineTerm::Variable(Variable(980001))).unwrap();
             let mut retained = Vec::new();

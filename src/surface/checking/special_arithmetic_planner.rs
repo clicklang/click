@@ -1160,7 +1160,7 @@ mod tests {
     #[test]
     fn finite_read_certificate_preserves_snapshot_address_and_kind() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(crate::kernel::Memory::new());
+        let memory = crate::kernel::intern_memory(crate::kernel::Memory::new());
         let pointer = crate::kernel::Pointer::symbolic(Variable(22_104));
         let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
         let value = read(
@@ -1196,7 +1196,7 @@ mod tests {
             ),
             (
                 read(
-                    crate::kernel::intern_c_memory(
+                    crate::kernel::intern_memory(
                         crate::kernel::Memory::new().with_block("other", 8),
                     ),
                     pointer,

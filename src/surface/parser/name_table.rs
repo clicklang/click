@@ -318,7 +318,7 @@ impl NameTable {
 
     /// Whether `name` is a C parameter or a C object of the function block
     /// being parsed.
-    pub(super) fn is_c_variable(&self, name: &str) -> bool {
+    pub(super) fn is_program_variable(&self, name: &str) -> bool {
         self.c_parameter_types.contains_key(name)
             || self
                 .c_object_names
@@ -333,7 +333,7 @@ impl NameTable {
         self.contains_any(NameKind::BOUND, name)
             || self.resource_bindings.contains_key(name)
             || self.arm_binding_types.contains_key(name)
-            || self.is_c_variable(name)
+            || self.is_program_variable(name)
     }
 
     /// Sets `kind`'s bindings aside, leaving none, for a block to restore.

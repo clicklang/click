@@ -7,7 +7,8 @@ fn growing_order_paths_reuse_shared_prefixes() {
         let mut samples = Vec::new();
         for count in [8, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+            let variable =
+                |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
             let mut root = variable(988001);
             let zero = crate::kernel::KernelTermImport::default().machine(
                 ty,

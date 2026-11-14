@@ -2634,7 +2634,7 @@ mod tests {
             !held.satisfies_fact(&required, &low_word),
             "truncated bounds are not native coverage"
         );
-        let only_viewable = facts.assume_proposition(Proposition::CMemoryLoadable {
+        let only_viewable = facts.assume_proposition(Proposition::MemoryLoadable {
             memory: Memory::new(),
             base,
             bytes: whole,

@@ -34,7 +34,7 @@ fn target_fact_lowering_ignores_unrelated_state_and_store_history() {
             arguments: vec![],
         };
         let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::c_lower_spec_proposition_at_state(
+            crate::kernel::program_lower_spec_proposition_at_state(
                 &state,
                 &proposition,
                 Some(&state),

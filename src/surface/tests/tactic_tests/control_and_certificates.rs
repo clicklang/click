@@ -159,13 +159,13 @@ int32 identity(int32 x, int32 d) {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_02")]
 fn conditional_quotient_claim_reuses_its_checked_domain() {
     let sources = [("identity.c", CONDITIONAL_QUOTIENT_C)];
-    verify_c0_sources(CONDITIONAL_QUOTIENT_CLAIM, &sources)
+    verify_c_sources(CONDITIONAL_QUOTIENT_CLAIM, &sources)
         .expect("the completed conditional claim includes its guarded divisor obligation");
     let false_claim = CONDITIONAL_QUOTIENT_CLAIM.replace(
         "truncating_quotient(to_integer(x), to_integer(d));",
         "truncating_quotient(to_integer(x), to_integer(d)) + 1;",
     );
-    assert!(verify_c0_sources(&false_claim, &sources).is_err());
+    assert!(verify_c_sources(&false_claim, &sources).is_err());
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
         CONDITIONAL_QUOTIENT_CLAIM,
         CONDITIONAL_QUOTIENT_CLAIM.find("solve()").unwrap(),
     );
-    let expanded = expand_c0_tactic_source_at(
+    let expanded = expand_c_tactic_source_at(
         CONDITIONAL_QUOTIENT_CLAIM,
         &sources,
         position.line,
@@ -184,9 +184,9 @@ fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
     )
     .expect("the completed quotient claim expands");
     assert!(!expanded.contains("solve()"), "{expanded}");
-    verify_c0_sources(&expanded, &sources).expect("the explicit claim verifies independently");
+    verify_c_sources(&expanded, &sources).expect("the explicit claim verifies independently");
     let missing_domain = CONDITIONAL_QUOTIENT_CLAIM.replace("requires d > 0;", "");
-    assert!(verify_c0_sources(&missing_domain, &sources).is_err());
+    assert!(verify_c_sources(&missing_domain, &sources).is_err());
 }
 
 #[test]
@@ -206,19 +206,18 @@ fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
  }
 }
 "#;
-    verify_c0_sources(source, &[])
-        .expect("the native zero-add equality transports the lower bound");
+    verify_c_sources(source, &[]).expect("the native zero-add equality transports the lower bound");
     let position = expansion::position_at_offset(source, source.find("solve() using").unwrap());
-    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+    let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("the arithmetic proof expands");
     assert!(!expanded.contains("solve() using"), "{expanded}");
-    verify_c0_sources(&expanded, &[])
+    verify_c_sources(&expanded, &[])
         .expect("the explicit certificate preserves the negative bound");
     let false_claim = source.replace(
         "ensures -9223372036854775808 <=",
         "ensures -9223372036854775807 <=",
     );
-    assert!(verify_c0_sources(&false_claim, &[]).is_err());
+    assert!(verify_c_sources(&false_claim, &[]).is_err());
 }
 
 #[test]
@@ -245,9 +244,9 @@ fn relation_transport_certificate_matches_its_native_cast_conclusion() {
                 }
             }
         }"#;
-    verify_c0_sources(source, &[]).expect("the checked bound has the requested cast operand");
+    verify_c_sources(source, &[]).expect("the checked bound has the requested cast operand");
     let false_claim = source.replace("ensures -99 <=", "ensures -98 <=");
-    assert!(verify_c0_sources(&false_claim, &[]).is_err());
+    assert!(verify_c_sources(&false_claim, &[]).is_err());
 }
 
 #[test]
@@ -262,13 +261,13 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
             }
         }
     "#;
-    verify_c0_sources(source, &[]).expect("nested exact conjunction proofs");
+    verify_c_sources(source, &[]).expect("nested exact conjunction proofs");
     for bad in [
         source.replacen("both { normalize(); }", "both { }", 1),
         source.replace("x >= x", "x > x"),
         source.replace("} and {", "} else {"),
     ] {
-        assert!(verify_c0_sources(&bad, &[]).is_err());
+        assert!(verify_c_sources(&bad, &[]).is_err());
     }
     let leaking = r#"theorem leak(x: int32) {
         ensures (x == 0 implies x == 0) and x == 0 by {
@@ -276,7 +275,7 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
         }
     }"#;
     assert!(
-        verify_c0_sources(leaking, &[]).is_err(),
+        verify_c_sources(leaking, &[]).is_err(),
         "left assumptions must not leak to the right"
     );
 }
@@ -291,15 +290,15 @@ fn both_and_outcome_expands_and_rechecks() {
         }
     "#;
     let sources = [("identity.c", c)];
-    let verified_for_expansion = verify_c0_sources(source, &sources).expect("both at an outcome");
+    let verified_for_expansion = verify_c_sources(source, &sources).expect("both at an outcome");
     let expanded =
         expand_checked_grouped_claim(source, &verified_for_expansion, "identity").unwrap();
     assert!(expanded.contains("both {"), "{expanded}");
-    verify_c0_sources(&expanded, &sources).expect("expanded child proofs");
+    verify_c_sources(&expanded, &sources).expect("expanded child proofs");
     let position = expansion::position_at_offset(source, source.find("both {").unwrap());
     let selected =
-        expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
-    verify_c0_sources(&selected, &sources).expect("selected both expansion");
+        expand_c_tactic_source_at(source, &sources, position.line, position.column).unwrap();
+    verify_c_sources(&selected, &sources).expect("selected both expansion");
 }
 
 #[test]
@@ -385,19 +384,19 @@ fn linear_frontier_branch_uses_the_checked_structural_join() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[("constant.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(click_source, &[("constant.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "linear frontier branch should retain and check its arm proofs: {}",
             error.message()
         )
     });
 
-    let captured = super::super::proof::capture_c0_tactic_expansion(
+    let captured = super::super::proof::capture_program_tactic_expansion(
         click_source,
         &[("constant.c", c_source)],
         super::super::expansion::ProofSite::FunctionClaim {
             function_name: "constant".to_string(),
-            claim: CProofClaim::Grouped,
+            claim: ContractProofClaim::Grouped,
         },
         0,
         &[],
@@ -439,7 +438,7 @@ fn terminal_frontier_branch_seals_without_a_body_rerun() {
     "#;
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    verify_c0_sources(click_source, &[("choose_sign.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(click_source, &[("choose_sign.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "terminal C branch should retain its checked path evidence: {}",
             error.message()
@@ -480,7 +479,7 @@ fn successive_shared_continuation_branches_seal_without_path_multiplication() {
     "#;
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    verify_c0_sources(click_source, &[("two_branches.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(click_source, &[("two_branches.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "successive shared-continuation branches should retain a nested evidence node apiece: {}",
             error.message()
@@ -520,7 +519,7 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
     "#;
 
     let (verified, flat_units) = proof::count_flat_proof_units(|| {
-        verify_c0_sources(click_source, &[("constant_negative.c", c_source)])
+        verify_c_sources(click_source, &[("constant_negative.c", c_source)])
     });
     let verified = verified.expect("the decided C branch should retain its checked path");
     assert_eq!(flat_units, 1, "the decided proof should retain one Proof");
@@ -536,12 +535,12 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
         "the feasible then path should be retained with its structural entry step: {tactics:#?}"
     );
 
-    let captured = super::super::proof::capture_c0_tactic_expansion(
+    let captured = super::super::proof::capture_program_tactic_expansion(
         click_source,
         &[("constant_negative.c", c_source)],
         super::super::expansion::ProofSite::FunctionClaim {
             function_name: "constant_negative".to_string(),
-            claim: CProofClaim::Ensure(0),
+            claim: ContractProofClaim::Ensure(0),
         },
         0,
         &[],
@@ -556,14 +555,14 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
         "the selected source branch should expose the checked decided path: {captured:#?}"
     );
 
-    let expanded = expand_c0_claim_source(
+    let expanded = expand_c_claim_source(
         click_source,
         &[("constant_negative.c", c_source)],
         "constant_negative",
-        CProofClaim::Ensure(0),
+        ContractProofClaim::Ensure(0),
     );
     let expanded = expanded.expect("the decided branch should expand");
-    verify_c0_sources(&expanded, &[("constant_negative.c", c_source)])
+    verify_c_sources(&expanded, &[("constant_negative.c", c_source)])
         .expect("the serialized decided proof should independently reverify");
 }
 
@@ -604,7 +603,7 @@ fn empty_proof_if_branches_contribute_only_their_case_split() {
                 }
             }
         "#;
-    verify_c0_sources(click_source, &[("sign.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(click_source, &[("sign.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "empty proof-if branches should parse and verify: {}",
             error.message()
@@ -863,7 +862,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
     let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::GreaterEqual,
         right: ContractExpression::IntegerLiteral("0".into()),
     };
@@ -903,12 +902,12 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn canonical_tactic_printer_round_trips_cases_certificate() {
     let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::GreaterEqual,
         right: ContractExpression::IntegerLiteral("0".into()),
     };
     let negative = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(ProgramExpression::Variable("x".to_string())),
+        left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".to_string())),
         operator: ComparisonOperator::LessThan,
         right: ContractExpression::IntegerLiteral("0".into()),
     };
@@ -1217,7 +1216,7 @@ fn smart_have_splits_an_unfolded_predicate_conjunction_goal() {
     // conjunction of scalar bounds. The constructed certificate must split
     // the conjunction into per-conjunct `have` certificates; before the
     // split, the whole-conjunction goal had no explicit simple certificate.
-    verify_c0_sources(ORDERED_PAIR_CLICK, &[("set_pair.c", ORDERED_PAIR_C)]).unwrap_or_else(
+    verify_c_sources(ORDERED_PAIR_CLICK, &[("set_pair.c", ORDERED_PAIR_C)]).unwrap_or_else(
         |error| {
             panic!(
                 "the unfolded conjunction goal should split per conjunct: {}",
@@ -1280,7 +1279,7 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
         }
     "#;
 
-    verify_c0_sources(
+    verify_c_sources(
         click_source,
         &[("reset.c", reset_source), ("touch.c", touch_source)],
     )
@@ -1329,7 +1328,7 @@ fn grouped_outcome_solve_splits_an_unfold_active_conjunction_ensure() {
         }
     "#;
 
-    verify_c0_sources(click_source, &[("bump.c", c_source)]).unwrap_or_else(|error| {
+    verify_c_sources(click_source, &[("bump.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "the unfold-active conjunction ensure should split per conjunct: {}",
             error.message()

@@ -1887,7 +1887,7 @@ impl<'a> Proof<'a> {
             {
                 return Ok(crate::kernel::MachineTerm::constant(value as u32));
             }
-            if let ContractExpression::CFragment(crate::kernel::ProgramExpression::Value(
+            if let ContractExpression::ProgramExpression(crate::kernel::ProgramExpression::Value(
                 crate::kernel::ProgramValue::Int32(int32_constant!(value)),
             )) = expression
             {
@@ -2466,7 +2466,7 @@ impl<'a> Proof<'a> {
             .iter()
             .filter_map(|(name, expression)| {
                 let variable = match expression {
-                    ContractExpression::CFragment(ProgramExpression::Value(
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(
                         ProgramValue::Pointer(pointer),
                     )) => match (&pointer.pointer().block, &pointer.pointer().offset) {
                         (
@@ -2475,7 +2475,7 @@ impl<'a> Proof<'a> {
                         ) => Some(*variable),
                         _ => None,
                     },
-                    ContractExpression::CFragment(ProgramExpression::Value(value)) => {
+                    ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
                         super::diagnostic_value_variable(value)
                     }
                     ContractExpression::AlgebraicVariable { binder_index, .. } => {
@@ -2989,7 +2989,7 @@ impl<'a> Proof<'a> {
                 name: binder,
                 body,
                 ..
-            }) => (binder, body, matches!(click_type, ClickType::C(_))),
+            }) => (binder, body, matches!(click_type, ClickType::Program(_))),
             Some(ClickProposition::RangeAll { item, body, .. }) => (item, body, false),
             _ => {
                 return Err(self.step_error(format!(
@@ -3115,7 +3115,7 @@ impl<'a> Proof<'a> {
                         && let Some(ty) = sort.machine_integer_type()
                     {
                         let value = ty.symbolic_value(*variable);
-                        if crate::kernel::c_narrow_integer_range(&value).is_some() {
+                        if crate::kernel::program_narrow_integer_range(&value).is_some() {
                             machine_binding = Some((name.clone(), *variable, value));
                         }
                     }
@@ -3138,7 +3138,7 @@ impl<'a> Proof<'a> {
                                 .find(|(parameter, _)| parameter.name() == name)
                                 .map(|(_, argument)| argument.clone()),
                         };
-                        value.map(ContractExpression::CFragment)
+                        value.map(ContractExpression::ProgramExpression)
                     });
                     if let Some(previous) = previous {
                         let mut depth = 1;
@@ -3243,7 +3243,7 @@ impl<'a> Proof<'a> {
                         } else if !*integer {
                             surface_bindings = surface_bindings.with_inserted(
                                 name.clone(),
-                                ContractExpression::CFragment(ProgramExpression::Value(value)),
+                                ContractExpression::ProgramExpression(ProgramExpression::Value(value)),
                             );
                         }
                         surface.and_then(written_universal_body).map(Arc::new)
@@ -3274,7 +3274,7 @@ impl<'a> Proof<'a> {
                         } else {
                             surface_bindings = surface_bindings.with_inserted(
                                 name.clone(),
-                                ContractExpression::CFragment(ProgramExpression::Value(
+                                ContractExpression::ProgramExpression(ProgramExpression::Value(
                                     match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                         Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
                                         _ => ProgramValue::Int32(MachineTerm::Variable(variable)),
@@ -3307,7 +3307,7 @@ impl<'a> Proof<'a> {
                     ) => {
                         surface_bindings = surface_bindings.with_inserted(
                             item.clone(),
-                            ContractExpression::CFragment(ProgramExpression::Value(
+                            ContractExpression::ProgramExpression(ProgramExpression::Value(
                                 match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                     Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
                                     _ => ProgramValue::Int32(MachineTerm::Variable(variable)),
@@ -3733,9 +3733,9 @@ fn trace_statement_head(statement: &ProgramStatement) -> String {
     {
         return format!(
             "{}[{}] = {}",
-            crate::surface::diagnostics::describe_c_expression(base),
-            crate::surface::diagnostics::describe_c_expression(index),
-            crate::surface::diagnostics::describe_c_expression(value),
+            crate::surface::diagnostics::describe_program_expression(base),
+            crate::surface::diagnostics::describe_program_expression(index),
+            crate::surface::diagnostics::describe_program_expression(value),
         );
     }
     describe_statement_head(statement)
@@ -3789,7 +3789,7 @@ fn describe_assumption_goal(goal: &Proposition) -> &'static str {
         Proposition::Not(..) => "a negation",
         Proposition::ForAll { .. } => "a universal proposition",
         Proposition::Exists { .. } => "an existential proposition",
-        Proposition::CMemoryLoadable { .. } => "a memory-viewability fact",
+        Proposition::MemoryLoadable { .. } => "a memory-viewability fact",
         Proposition::ConditionIs(condition, _) => match condition {
             ConditionTerm::IntegerLessThan(..) => "an Integer less-than fact",
             ConditionTerm::IntegerLessEqual(..) => "an Integer less-or-equal fact",
@@ -4016,12 +4016,12 @@ fn trace_function_pointer_load(
     conclusion: &Proposition,
     assumptions: &crate::kernel::PureFactContext,
 ) -> Option<crate::surface::proof_trace::TraceLoad> {
-    let (Proposition::CStatementExecutes {
+    let (Proposition::ProgramStatementExecutes {
         state,
         statement,
         outcome,
     }
-    | Proposition::CStatementVerifies {
+    | Proposition::ProgramStatementVerifies {
         state,
         statement,
         outcome,
@@ -4046,7 +4046,7 @@ fn trace_function_pointer_load(
         return None;
     };
     let value = after.scalar_local_value(name)?;
-    let (address, _) = crate::kernel::c_evaluate_spec_expression_at_state(
+    let (address, _) = crate::kernel::program_evaluate_speprogram_expression_at_state(
         state,
         &crate::kernel::SpecExpression::ProgramExpression(pointer.as_ref().clone()),
         None,
@@ -4057,7 +4057,7 @@ fn trace_function_pointer_load(
         target: name.clone(),
         value,
         address,
-        memory: crate::kernel::intern_c_memory_ref(state.memory()),
+        memory: crate::kernel::intern_memory_ref(state.memory()),
     })
 }
 

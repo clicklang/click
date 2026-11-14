@@ -13,7 +13,7 @@ fn address(index: usize) -> Pointer {
 fn spec() -> ResourceSpec {
     ResourceSpec::new(
         ResourceTerm::MutexGuard {
-            mutex: Box::new(c_variable("mutex")),
+            mutex: Box::new(crate::kernel::program_expression::variable("mutex")),
             snapshot: ResourceSnapshot::Current,
         },
         ResourceAccessMode::Own,
@@ -23,7 +23,9 @@ fn spec() -> ResourceSpec {
     )
     .unwrap()
     .with_guard(SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(c_variable("flag")),
+        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
+            "flag",
+        )),
         operator: ComparisonOperator::Equal,
         right: SpecExpression::Value(int32(1)),
     })

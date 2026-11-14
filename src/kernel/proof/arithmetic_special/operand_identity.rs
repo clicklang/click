@@ -160,7 +160,7 @@ mod tests {
         use crate::kernel::{LoadKind, Memory, Pointer, ProgramValue, VerificationSession};
         let _session = VerificationSession::enter();
         let address = Pointer::symbolic(Variable(997109));
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let name = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &address,
@@ -184,7 +184,7 @@ mod tests {
         let raw =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::UInt16);
         let other_snapshot = wrong(
-            crate::kernel::intern_c_memory(memory.memory().clone().store(
+            crate::kernel::intern_memory(memory.memory().clone().store(
                 address.clone(),
                 ProgramValue::UInt16(MachineTerm::narrow_constant(MachineIntegerType::UInt16, 7)),
             )),

@@ -6,8 +6,8 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
         block: "pointer-snapshot-cell".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let before = intern_c_memory(Memory::new().with_block(cell.block.clone(), 8));
-    let after = intern_c_memory(before.memory().clone().with_block("other-local", 4));
+    let before = intern_memory(Memory::new().with_block(cell.block.clone(), 8));
+    let after = intern_memory(before.memory().clone().with_block("other-local", 4));
     let pointer = |memory: &SharedMemory| {
         PointerValue::from_read(
             Pointer::loaded_value(memory, &cell),
@@ -34,7 +34,7 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
             .with_designation(origin.clone())
             .with_opaque_extent(Some(origin)),
     );
-    let overwritten = intern_c_memory(after.memory().clone().store(
+    let overwritten = intern_memory(after.memory().clone().store(
         cell.clone().offset_by_bytes(4),
         ProgramValue::UInt32(0u32.into()),
     ));

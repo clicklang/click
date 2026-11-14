@@ -115,7 +115,7 @@ impl EnumTypes {
                                         "Rust enum fields must be integers or booleans".to_string()
                                     );
                                 }
-                                Ok(AlgebraicValueType::C(c_type.to_kernel_type()))
+                                Ok(AlgebraicValueType::Program(c_type.to_kernel_type()))
                             })
                             .collect::<Result<_, String>>()?,
                     })
@@ -132,7 +132,7 @@ impl EnumTypes {
                     if let Some(nested) = payload_type(argument)? {
                         return Ok(nested);
                     }
-                    Ok(AlgebraicValueType::C(
+                    Ok(AlgebraicValueType::Program(
                         scalar_type(argument)?.to_kernel_type(),
                     ))
                 })
@@ -261,7 +261,7 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
 fn vec_type(element: &Type) -> Result<crate::kernel::TypeParameterName, String> {
     let element = scalar_type(element)?.to_kernel_type();
     Ok(crate::kernel::TypeParameterName::of(
-        &crate::surface::primitive_instance_type("Vec", &[AlgebraicValueType::C(element)]),
+        &crate::surface::primitive_instance_type("Vec", &[AlgebraicValueType::Program(element)]),
     ))
 }
 /// Whether this lowering reads a slice iterator through its library contract.
@@ -273,7 +273,10 @@ fn library_iterators() -> bool {
 fn slice_iter_type(element: &Type) -> Result<crate::kernel::TypeParameterName, String> {
     let element = scalar_type(element)?.to_kernel_type();
     Ok(crate::kernel::TypeParameterName::of(
-        &crate::surface::primitive_instance_type("SliceIter", &[AlgebraicValueType::C(element)]),
+        &crate::surface::primitive_instance_type(
+            "SliceIter",
+            &[AlgebraicValueType::Program(element)],
+        ),
     ))
 }
 /// The type of a `chunks_exact` iterator over bytes: the library's primitive
@@ -281,7 +284,7 @@ fn slice_iter_type(element: &Type) -> Result<crate::kernel::TypeParameterName, S
 fn chunks_exact_type() -> crate::kernel::TypeParameterName {
     crate::kernel::TypeParameterName::of(&crate::surface::primitive_instance_type(
         "ChunksExact",
-        &[AlgebraicValueType::C(ProgramType::UInt8)],
+        &[AlgebraicValueType::Program(ProgramType::UInt8)],
     ))
 }
 /// A function-pointer type's signature, as a sidecar's `fn(i32) -> i32`
@@ -361,11 +364,11 @@ fn branch_condition(condition: ProgramExpression) -> ProgramExpression {
 
 fn rust_scalar_cast(value: ProgramExpression, target: ProgramType) -> ProgramExpression {
     if crate::kernel::MachineIntegerType::from_c_type(target).is_some() {
-        c_integer_cast_modulo(value, target)
+        crate::kernel::program_expression::integer_cast_modulo(value, target)
     } else if target.is_pointer() {
         reference_view(value, target, false, false)
     } else {
-        c_cast(value, target)
+        crate::kernel::program_expression::cast(value, target)
     }
 }
 /// Rust `!value` on an integer of type `target`: at 8 or 16 bits the native
@@ -376,9 +379,15 @@ fn rust_bitwise_not(value: ProgramExpression, target: ProgramType) -> ProgramExp
         target,
         ProgramType::Int8 | ProgramType::UInt8 | ProgramType::Int16 | ProgramType::UInt16
     ) {
-        c_narrow_arithmetic(c_bitwise_not(value), target)
+        crate::kernel::program_expression::narrow_arithmetic(
+            crate::kernel::program_expression::bitwise_not(value),
+            target,
+        )
     } else {
-        rust_scalar_cast(c_bitwise_not(value), target)
+        rust_scalar_cast(
+            crate::kernel::program_expression::bitwise_not(value),
+            target,
+        )
     }
 }
 fn integer_from(
@@ -389,7 +398,10 @@ fn integer_from(
     if !source.converts_losslessly_to(target) {
         return Err("integer From requires a supported lossless conversion".into());
     }
-    Ok(c_cast(value, scalar_type(target)?.to_kernel_type()))
+    Ok(crate::kernel::program_expression::cast(
+        value,
+        scalar_type(target)?.to_kernel_type(),
+    ))
 }
 pub(crate) fn lower(export: &RustExport) -> Result<LoweredRust, String> {
     lower_with_identity(export, None)
@@ -591,11 +603,11 @@ fn lower_function(
                 None,
             ));
             kernel_parameters.push(
-                c_parameter(&p.name, ProgramType::UInt8Pointer)
+                program_parameter(&p.name, ProgramType::UInt8Pointer)
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
-            kernel_parameters.push(c_parameter(length, ProgramType::UInt64));
+            kernel_parameters.push(program_parameter(length, ProgramType::UInt64));
             continue;
         }
         if let Type::ScalarSlice { element, mutable } = &p.value_type {
@@ -627,11 +639,11 @@ fn lower_function(
                 None,
             ));
             kernel_parameters.push(
-                c_parameter(&p.name, pointer.to_kernel_type())
+                program_parameter(&p.name, pointer.to_kernel_type())
                     .with_pointee_constant(!mutable)
                     .with_slice_length_parameter(1),
             );
-            kernel_parameters.push(c_parameter(length, ProgramType::UInt64));
+            kernel_parameters.push(program_parameter(length, ProgramType::UInt64));
             continue;
         }
         if let Type::Reference { mutable, .. } = &p.value_type {
@@ -639,7 +651,7 @@ fn lower_function(
         }
         if let Type::FnPointer { .. } = &p.value_type {
             let signature = fn_pointer_signature(&p.value_type)?;
-            kernel_parameters.push(c_parameter(
+            kernel_parameters.push(program_parameter(
                 &p.name,
                 signature.pointer_type().to_kernel_type(),
             ));
@@ -685,7 +697,7 @@ fn lower_function(
             parameter = parameter.with_pointee_struct_layout(tag.clone().unwrap(), layout.clone());
         }
         let mut kernel_parameter =
-            c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant);
+            program_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant);
         if let Some((length, element, _)) = arrays.get(&p.name) {
             let bytes = u32::try_from(*length * u64::from(element.byte_width()))
                 .expect("validated fixed array extent");
@@ -761,7 +773,7 @@ fn lower_function(
         None => cx.body(&f.body)?,
     };
     let loop_iterators = std::mem::take(&mut cx.loop_iterators);
-    let mut kernel = c_function(
+    let mut kernel = program_function(
         return_type.to_kernel_type(),
         &f.name,
         kernel_parameters,
@@ -875,7 +887,7 @@ impl Context<'_> {
         value: ProgramExpression,
         value_type: ProgramType,
     ) -> ProgramStatement {
-        let mut statement = c_typed_store(pointer, value, value_type);
+        let mut statement = program_typed_store(pointer, value, value_type);
         if let ProgramStatement::TypedStore { source, .. } = &mut statement
             && let Some(id) = self.reference_source(target, ReferenceAccessKind::Write)
         {
@@ -884,9 +896,9 @@ impl Context<'_> {
         statement
     }
     fn body(&mut self, body: &[S]) -> Result<ProgramStatement, String> {
-        let mut result = c_skip();
+        let mut result = program_skip();
         for s in body {
-            result = c_seq(result, self.statement(s)?);
+            result = program_seq(result, self.statement(s)?);
         }
         Ok(result)
     }
@@ -923,8 +935,8 @@ impl Context<'_> {
                     }
                     self.slices
                         .insert(place.name.clone(), (length.clone(), !mutable));
-                    return Ok(c_seq(
-                        c_declare_with_all_qualifiers(
+                    return Ok(program_seq(
+                        program_declare_with_all_qualifiers(
                             &place.name,
                             ProgramType::UInt8Pointer,
                             false,
@@ -932,10 +944,10 @@ impl Context<'_> {
                             false,
                             !mutable,
                         ),
-                        c_seq(
-                            c_declare(&length, ProgramType::UInt64),
-                            c_seq(
-                                c_assign(
+                        program_seq(
+                            program_declare(&length, ProgramType::UInt64),
+                            program_seq(
+                                program_assign(
                                     &place.name,
                                     reference_view(
                                         pointer,
@@ -944,7 +956,7 @@ impl Context<'_> {
                                         !mutable,
                                     ),
                                 ),
-                                c_assign(length, length_value),
+                                program_assign(length, length_value),
                             ),
                         ),
                     ));
@@ -954,7 +966,7 @@ impl Context<'_> {
                 {
                     let (pointer, source_length, source_element) =
                         self.indexed_parts(initializer)?;
-                    if source_length != c_uint64_literal(*length)
+                    if source_length != crate::kernel::program_expression::uint64_literal(*length)
                         || source_element != scalar_type(element)?.to_kernel_type()
                     {
                         return Err("fixed array local disagrees with initializer".into());
@@ -962,8 +974,8 @@ impl Context<'_> {
                     let t = scalar_type(&place.value_type)?.to_kernel_type();
                     self.arrays
                         .insert(place.name.clone(), (*length, source_element, !mutable));
-                    return Ok(c_seq(
-                        c_declare_with_all_qualifiers(
+                    return Ok(program_seq(
+                        program_declare_with_all_qualifiers(
                             &place.name,
                             t,
                             false,
@@ -971,7 +983,7 @@ impl Context<'_> {
                             false,
                             !mutable,
                         ),
-                        c_assign(&place.name, reference_view(pointer, t, false, !mutable)),
+                        program_assign(&place.name, reference_view(pointer, t, false, !mutable)),
                     ));
                 }
                 let t = scalar_type(&place.value_type)?;
@@ -979,7 +991,7 @@ impl Context<'_> {
                     return Err("unit locals outside Rust slice".into());
                 }
                 let constant = matches!(place.value_type, Type::Reference { mutable: false, .. });
-                let declaration = c_declare_with_all_qualifiers(
+                let declaration = program_declare_with_all_qualifiers(
                     &place.name,
                     t.to_kernel_type(),
                     false,
@@ -988,7 +1000,7 @@ impl Context<'_> {
                     constant,
                 );
                 let assign = self.assign(&place.name, initializer)?;
-                Ok(c_seq(declaration, assign))
+                Ok(program_seq(declaration, assign))
             }
             S::Assign {
                 target: E::Local { name },
@@ -1001,7 +1013,7 @@ impl Context<'_> {
                 } = target
                 {
                     let (checks, pointer) = self.prepared_address(target)?;
-                    return Ok(c_seq(
+                    return Ok(program_seq(
                         checks,
                         self.assign_array(
                             pointer,
@@ -1018,13 +1030,13 @@ impl Context<'_> {
                     let value_type = indexed_element_type(self.place_type(target)?)
                         .ok_or("unsupported Rust indexed assignment type")?;
                     let (capture, name) = self.capture_operand(value, &value_type)?;
-                    checks = c_seq(checks, capture);
-                    value = c_variable(name);
+                    checks = program_seq(checks, capture);
+                    value = crate::kernel::program_expression::variable(name);
                 }
                 let (target_checks, address) = self.prepared_address(target)?;
-                Ok(c_seq(
-                    c_seq(checks, target_checks),
-                    c_typed_store(address, value, self.place_type(target)?),
+                Ok(program_seq(
+                    program_seq(checks, target_checks),
+                    program_typed_store(address, value, self.place_type(target)?),
                 ))
             }
             S::While { condition, body } => {
@@ -1058,7 +1070,7 @@ impl Context<'_> {
                 if !simple_guard(condition) {
                     return Err("Rust while conditions currently require scalar comparisons without calls, indexing or arithmetic".into());
                 }
-                Ok(c_while(
+                Ok(program_while(
                     branch_condition(self.expr(condition)?),
                     Vec::new(),
                     self.body(body)?,
@@ -1070,9 +1082,9 @@ impl Context<'_> {
                 else_body,
             } => {
                 let (checks, condition) = self.prepared_expr(condition)?;
-                Ok(c_seq(
+                Ok(program_seq(
                     checks,
-                    c_if(
+                    program_if(
                         branch_condition(condition),
                         self.body(then_body)?,
                         self.body(else_body)?,
@@ -1092,23 +1104,23 @@ impl Context<'_> {
                 }
                 self.locals.insert(name.clone());
                 let (checks, arguments) = self.prepared_arguments(function, arguments)?;
-                Ok(c_seq(
+                Ok(program_seq(
                     checks,
-                    c_seq(
-                        c_declare(&name, self.return_type.to_kernel_type()),
-                        c_seq(
-                            c_call_assign(&name, function, arguments),
-                            c_return(c_variable(name)),
+                    program_seq(
+                        program_declare(&name, self.return_type.to_kernel_type()),
+                        program_seq(
+                            program_call_assign(&name, function, arguments),
+                            program_return(crate::kernel::program_expression::variable(name)),
                         ),
                     ),
                 ))
             }
             S::Return { value: Some(value) } => {
                 let (checks, value) = self.prepared_expr(value)?;
-                Ok(c_seq(checks, c_return(value)))
+                Ok(program_seq(checks, program_return(value)))
             }
             S::Return { value: None } if self.return_type == C0Type::Void => {
-                Ok(c_return(c_void_value()))
+                Ok(program_return(program_void_value()))
             }
             S::Return { value: None } => Err("missing Rust return value".into()),
             S::Call {
@@ -1116,7 +1128,7 @@ impl Context<'_> {
                 arguments,
             } => {
                 let (checks, arguments) = self.prepared_arguments(function, arguments)?;
-                Ok(c_seq(checks, c_call(function, arguments)))
+                Ok(program_seq(checks, program_call(function, arguments)))
             }
         }
     }
@@ -1160,25 +1172,41 @@ impl Context<'_> {
         let (midpoint_prefix, midpoint_value) = self.prepared_expr(midpoint)?;
         let (midpoint_capture, midpoint_name) =
             self.capture_operand(midpoint_value, &Type::Usize)?;
-        let mut result = c_seq(
+        let mut result = program_seq(
             pointer_capture,
-            c_seq(length_capture, c_seq(midpoint_prefix, midpoint_capture)),
+            program_seq(
+                length_capture,
+                program_seq(midpoint_prefix, midpoint_capture),
+            ),
         );
-        result = c_seq(
+        result = program_seq(
             result,
-            c_labeled_assert(
-                c_less_equal(c_variable(&midpoint_name), c_variable(&length_name)),
+            program_labeled_assert(
+                crate::kernel::program_expression::less_equal(
+                    crate::kernel::program_expression::variable(&midpoint_name),
+                    crate::kernel::program_expression::variable(&length_name),
+                ),
                 "Rust split_at panic check",
             ),
         );
         for (place, pointer, length) in [
-            (left, c_variable(&pointer_name), c_variable(&midpoint_name)),
+            (
+                left,
+                crate::kernel::program_expression::variable(&pointer_name),
+                crate::kernel::program_expression::variable(&midpoint_name),
+            ),
             (
                 right,
                 // The right half starts at the midpoint in its own type, as
                 // the contract's `bytes[mid]` does.
-                c_add(c_variable(&pointer_name), c_variable(&midpoint_name)),
-                c_subtract(c_variable(&length_name), c_variable(&midpoint_name)),
+                crate::kernel::program_expression::add(
+                    crate::kernel::program_expression::variable(&pointer_name),
+                    crate::kernel::program_expression::variable(&midpoint_name),
+                ),
+                crate::kernel::program_expression::subtract(
+                    crate::kernel::program_expression::variable(&length_name),
+                    crate::kernel::program_expression::variable(&midpoint_name),
+                ),
             ),
         ] {
             if place.value_type != (Type::ByteSlice { mutable: false }) {
@@ -1193,10 +1221,10 @@ impl Context<'_> {
                 }
                 self.slices
                     .insert(place.name.clone(), (length_name.clone(), true));
-                result = c_seq(
+                result = program_seq(
                     result,
-                    c_seq(
-                        c_declare_with_all_qualifiers(
+                    program_seq(
+                        program_declare_with_all_qualifiers(
                             &place.name,
                             ProgramType::UInt8Pointer,
                             false,
@@ -1204,7 +1232,7 @@ impl Context<'_> {
                             false,
                             true,
                         ),
-                        c_declare(&length_name, ProgramType::UInt64),
+                        program_declare(&length_name, ProgramType::UInt64),
                     ),
                 );
                 length_name
@@ -1215,14 +1243,14 @@ impl Context<'_> {
                     .map(|(length, _)| length.clone())
                     .ok_or("split_at requires declared shared slice results")?
             };
-            result = c_seq(
+            result = program_seq(
                 result,
-                c_seq(
-                    c_assign(
+                program_seq(
+                    program_assign(
                         &place.name,
                         reference_view(pointer, ProgramType::UInt8Pointer, false, true),
                     ),
-                    c_assign(length_name, length),
+                    program_assign(length_name, length),
                 ),
             );
         }
@@ -1259,7 +1287,7 @@ impl Context<'_> {
         if binding.value_type != expected {
             return Err("Rust iterator yielded binding type mismatch".into());
         }
-        let declaration = c_declare_with_all_qualifiers(
+        let declaration = program_declare_with_all_qualifiers(
             &binding.name,
             scalar_type(&binding.value_type)?.to_kernel_type(),
             false,
@@ -1270,15 +1298,15 @@ impl Context<'_> {
         // Save Some's shared address before advancing. Copy patterns likewise
         // read that address before the source body; None does neither operation.
         let yielded = if by_reference {
-            c_variable(&item)
+            crate::kernel::program_expression::variable(&item)
         } else {
             let occurrence = self.next_load;
             self.next_load = self
                 .next_load
                 .checked_add(1)
                 .ok_or("Rust load identity exhausted")?;
-            c_typed_load_with_source(
-                c_variable(&item),
+            crate::kernel::program_expression::typed_load_with_source(
+                crate::kernel::program_expression::variable(&item),
                 ProgramType::UInt8,
                 Some(LoadSourceId {
                     owner: LoadSourceOwnerId {
@@ -1291,8 +1319,8 @@ impl Context<'_> {
             )
         };
         // The remaining count is the slice's length, a `usize`.
-        let next = c_seq(
-            c_declare_with_all_qualifiers(
+        let next = program_seq(
+            program_declare_with_all_qualifiers(
                 &item,
                 ProgramType::UInt8Pointer,
                 false,
@@ -1300,23 +1328,32 @@ impl Context<'_> {
                 false,
                 true,
             ),
-            c_seq(
-                c_assign(&item, c_variable(&cursor)),
-                c_seq(
-                    c_assign(&cursor, c_add(c_variable(&cursor), c_int32_literal(1))),
-                    c_seq(
-                        c_assign(
-                            &remaining,
-                            c_subtract(c_variable(&remaining), c_uint64_literal(1)),
+            program_seq(
+                program_assign(&item, crate::kernel::program_expression::variable(&cursor)),
+                program_seq(
+                    program_assign(
+                        &cursor,
+                        crate::kernel::program_expression::add(
+                            crate::kernel::program_expression::variable(&cursor),
+                            crate::kernel::program_expression::int32_literal(1),
                         ),
-                        c_seq(declaration, c_assign(&binding.name, yielded)),
+                    ),
+                    program_seq(
+                        program_assign(
+                            &remaining,
+                            crate::kernel::program_expression::subtract(
+                                crate::kernel::program_expression::variable(&remaining),
+                                crate::kernel::program_expression::uint64_literal(1),
+                            ),
+                        ),
+                        program_seq(declaration, program_assign(&binding.name, yielded)),
                     ),
                 ),
             ),
         );
         let source_body = self.body(body)?;
-        Ok(c_seq(
-            c_declare_with_all_qualifiers(
+        Ok(program_seq(
+            program_declare_with_all_qualifiers(
                 &cursor,
                 ProgramType::UInt8Pointer,
                 false,
@@ -1324,16 +1361,21 @@ impl Context<'_> {
                 false,
                 true,
             ),
-            c_seq(
-                c_assign(&cursor, pointer),
-                c_seq(
-                    c_declare(&remaining, ProgramType::UInt64),
-                    c_seq(
-                        c_assign(&remaining, length),
-                        c_while(
-                            c_not(c_equal(c_variable(&remaining), c_uint64_literal(0))),
+            program_seq(
+                program_assign(&cursor, pointer),
+                program_seq(
+                    program_declare(&remaining, ProgramType::UInt64),
+                    program_seq(
+                        program_assign(&remaining, length),
+                        program_while(
+                            crate::kernel::program_expression::not(
+                                crate::kernel::program_expression::equal(
+                                    crate::kernel::program_expression::variable(&remaining),
+                                    crate::kernel::program_expression::uint64_literal(0),
+                                ),
+                            ),
                             Vec::new(),
-                            c_seq(next, source_body),
+                            program_seq(next, source_body),
                         ),
                     ),
                 ),
@@ -1350,9 +1392,13 @@ impl Context<'_> {
             let temporary = self.fresh_temporary()?;
             let assign = self.assign(&temporary, e)?;
             let address = self.address(&E::Local { name: name.into() })?;
-            return Ok(c_seq(
-                c_seq(c_declare(&temporary, value_type), assign),
-                c_typed_store(address, c_variable(&temporary), value_type),
+            return Ok(program_seq(
+                program_seq(program_declare(&temporary, value_type), assign),
+                program_typed_store(
+                    address,
+                    crate::kernel::program_expression::variable(&temporary),
+                    value_type,
+                ),
             ));
         }
         if let Some((length, expected)) = self.shared_scalar_slices.get(name).cloned() {
@@ -1360,9 +1406,9 @@ impl Context<'_> {
             if element != expected {
                 return Err("shared scalar slice assignment element mismatch".into());
             }
-            return Ok(c_seq(
-                c_assign(name, pointer),
-                c_assign(length, source_length),
+            return Ok(program_seq(
+                program_assign(name, pointer),
+                program_assign(length, source_length),
             ));
         }
         if self.local_arrays.contains(name) {
@@ -1372,20 +1418,22 @@ impl Context<'_> {
         if let Some((length, constant)) = self.slices.get(name).cloned() {
             let checks = self.chunk_slice_checks(e)?;
             let (pointer, length_value) = self.slice_parts(e)?;
-            return Ok(c_seq(
+            return Ok(program_seq(
                 checks,
-                c_seq(
-                    c_assign(
+                program_seq(
+                    program_assign(
                         name,
                         reference_view(pointer, ProgramType::UInt8Pointer, false, constant),
                     ),
-                    c_assign(length, length_value),
+                    program_assign(length, length_value),
                 ),
             ));
         }
         if let Some((length, element, constant)) = self.arrays.get(name).copied() {
             let (pointer, source_length, source_element) = self.indexed_parts(e)?;
-            if source_length != c_uint64_literal(length) || source_element != element {
+            if source_length != crate::kernel::program_expression::uint64_literal(length)
+                || source_element != element
+            {
                 return Err("fixed array assignment disagrees with destination".into());
             }
             let pointer_type = match element {
@@ -1394,7 +1442,7 @@ impl Context<'_> {
                 ProgramType::UInt32 => ProgramType::UInt32Pointer,
                 _ => return Err("unsupported fixed array element".into()),
             };
-            return Ok(c_assign(
+            return Ok(program_assign(
                 name,
                 reference_view(pointer, pointer_type, false, constant),
             ));
@@ -1405,11 +1453,14 @@ impl Context<'_> {
                 arguments,
             } => {
                 let (checks, arguments) = self.prepared_arguments(function, arguments)?;
-                Ok(c_seq(checks, c_call_assign(name, function, arguments)))
+                Ok(program_seq(
+                    checks,
+                    program_call_assign(name, function, arguments),
+                ))
             }
             _ => {
                 let (checks, value) = self.prepared_expr(e)?;
-                let mut assignment = c_assign(name, value);
+                let mut assignment = program_assign(name, value);
                 if let (
                     Some(import_identity),
                     Some(point),
@@ -1439,7 +1490,7 @@ impl Context<'_> {
                         child: name.into(),
                     });
                 }
-                Ok(c_seq(checks, assignment))
+                Ok(program_seq(checks, assignment))
             }
         }
     }
@@ -1468,7 +1519,7 @@ impl Context<'_> {
         if types.len() != args.len() {
             return Err("Rust call argument count disagrees with callee".into());
         }
-        let mut checks = c_skip();
+        let mut checks = program_skip();
         let mut values = Vec::new();
         for (argument, value_type) in args.iter().zip(types) {
             if matches!(value_type, Type::Record { .. }) {
@@ -1478,7 +1529,7 @@ impl Context<'_> {
                 if !self.owned_locals.contains(name) {
                     return Err("owned call operand has no local storage".into());
                 }
-                values.push(c_variable(name));
+                values.push(crate::kernel::program_expression::variable(name));
                 continue;
             }
             if let Type::ByteSlice { mutable } = value_type {
@@ -1491,8 +1542,11 @@ impl Context<'_> {
                     },
                 )?;
                 let (capture_length, length_name) = self.capture_operand(length, &Type::Usize)?;
-                checks = c_seq(checks, c_seq(capture_pointer, capture_length));
-                values.extend([c_variable(pointer_name), c_variable(length_name)]);
+                checks = program_seq(checks, program_seq(capture_pointer, capture_length));
+                values.extend([
+                    crate::kernel::program_expression::variable(pointer_name),
+                    crate::kernel::program_expression::variable(length_name),
+                ]);
                 continue;
             }
             if let Type::ScalarSlice { element, mutable } = &value_type {
@@ -1508,14 +1562,17 @@ impl Context<'_> {
                     },
                 )?;
                 let (capture_length, length_name) = self.capture_operand(length, &Type::Usize)?;
-                checks = c_seq(checks, c_seq(capture_pointer, capture_length));
-                values.extend([c_variable(pointer_name), c_variable(length_name)]);
+                checks = program_seq(checks, program_seq(capture_pointer, capture_length));
+                values.extend([
+                    crate::kernel::program_expression::variable(pointer_name),
+                    crate::kernel::program_expression::variable(length_name),
+                ]);
                 continue;
             }
             let (prefix, value) = self.prepared_expr(argument)?;
             let (capture, name) = self.capture_operand(value, &value_type)?;
-            checks = c_seq(checks, c_seq(prefix, capture));
-            values.push(c_variable(name));
+            checks = program_seq(checks, program_seq(prefix, capture));
+            values.push(crate::kernel::program_expression::variable(name));
         }
         Ok((checks, values))
     }
@@ -1544,12 +1601,12 @@ impl Context<'_> {
         let value = if matches!(value_type, Type::Reference { .. }) {
             reference_view(value, c_type, false, constant)
         } else {
-            c_cast(value, c_type)
+            crate::kernel::program_expression::cast(value, c_type)
         };
         Ok((
-            c_seq(
-                c_declare_with_all_qualifiers(&name, c_type, false, false, false, constant),
-                c_assign(&name, value),
+            program_seq(
+                program_declare_with_all_qualifiers(&name, c_type, false, false, false, constant),
+                program_assign(&name, value),
             ),
             name,
         ))
@@ -1567,9 +1624,9 @@ impl Context<'_> {
                 if self.library_slice_options.contains_key(option) =>
             {
                 Ok((
-                    c_skip(),
+                    program_skip(),
                     ProgramExpression::EnumField {
-                        value: Box::new(c_variable(option)),
+                        value: Box::new(crate::kernel::program_expression::variable(option)),
                         variant: "Some".into(),
                         index: 0,
                     },
@@ -1580,11 +1637,11 @@ impl Context<'_> {
                     return Err("unknown shared iterator Option".into());
                 }
                 Ok((
-                    c_assert(c_equal(
-                        c_variable(format!("{option}_some")),
-                        c_int32_literal(1),
+                    program_assert(crate::kernel::program_expression::equal(
+                        crate::kernel::program_expression::variable(format!("{option}_some")),
+                        crate::kernel::program_expression::int32_literal(1),
                     )),
-                    c_variable(format!("{option}_pointer")),
+                    crate::kernel::program_expression::variable(format!("{option}_pointer")),
                 ))
             }
             E::Call {
@@ -1598,13 +1655,16 @@ impl Context<'_> {
                     .return_type
                     .clone();
                 let (prefix, arguments) = self.prepared_arguments(function, arguments)?;
-                let (declare, name) = self.capture_operand(c_int32_literal(0), &return_type)?;
+                let (declare, name) = self.capture_operand(
+                    crate::kernel::program_expression::int32_literal(0),
+                    &return_type,
+                )?;
                 Ok((
-                    c_seq(
+                    program_seq(
                         prefix,
-                        c_seq(declare, c_call_assign(&name, function, arguments)),
+                        program_seq(declare, program_call_assign(&name, function, arguments)),
                     ),
-                    c_variable(name),
+                    crate::kernel::program_expression::variable(name),
                 ))
             }
             E::Index { .. } => {
@@ -1616,7 +1676,7 @@ impl Context<'_> {
                     .ok_or("Rust load identity exhausted")?;
                 Ok((
                     checks,
-                    c_typed_load_with_source(
+                    crate::kernel::program_expression::typed_load_with_source(
                         pointer,
                         self.place_type(e)?,
                         Some(LoadSourceId {
@@ -1651,52 +1711,69 @@ impl Context<'_> {
             } => {
                 let (left_prefix, left_value) = self.prepared_expr(left)?;
                 let (left_capture, left_name) = self.capture_operand(left_value, left_type)?;
-                let prefix = c_seq(left_prefix, left_capture);
+                let prefix = program_seq(left_prefix, left_capture);
                 if operator == "and" || operator == "or" {
                     if *left_type != Type::Bool || *right_type != Type::Bool {
                         return Err("Rust logical operators require bool operands".into());
                     }
                     let (right_prefix, right_value) = self.prepared_expr(right)?;
                     let condition = if operator == "and" {
-                        c_variable(&left_name)
+                        crate::kernel::program_expression::variable(&left_name)
                     } else {
-                        c_not(c_variable(&left_name))
+                        crate::kernel::program_expression::not(
+                            crate::kernel::program_expression::variable(&left_name),
+                        )
                     };
-                    let update = c_seq(
+                    let update = program_seq(
                         right_prefix,
-                        c_assign(&left_name, c_cast(right_value, ProgramType::Bool)),
+                        program_assign(
+                            &left_name,
+                            crate::kernel::program_expression::cast(right_value, ProgramType::Bool),
+                        ),
                     );
                     return Ok((
-                        c_seq(prefix, c_if(condition, update, c_skip())),
-                        c_variable(left_name),
+                        program_seq(prefix, program_if(condition, update, program_skip())),
+                        crate::kernel::program_expression::variable(left_name),
                     ));
                 }
                 let (right_prefix, right_value) = self.prepared_expr(right)?;
                 let (right_capture, right_name) = self.capture_operand(right_value, right_type)?;
-                let mut prefix = c_seq(prefix, c_seq(right_prefix, right_capture));
+                let mut prefix = program_seq(prefix, program_seq(right_prefix, right_capture));
                 if matches!(left_type, Type::Usize | Type::U64) {
-                    let l = c_variable(&left_name);
-                    let r = c_variable(&right_name);
-                    let max = c_uint64_literal(u64::MAX);
+                    let l = crate::kernel::program_expression::variable(&left_name);
+                    let r = crate::kernel::program_expression::variable(&right_name);
+                    let max = crate::kernel::program_expression::uint64_literal(u64::MAX);
                     // Stay unsigned at the full target width. Widening to
                     // signed i64 would lose half of the usize value range.
                     let obligation = match operator.as_str() {
-                        "add" => Some(c_less_equal(l, c_subtract(max, r))),
-                        "sub" => Some(c_greater_equal(l, r)),
-                        "mul" => Some(c_or(
-                            c_equal(r.clone(), c_uint64_literal(0)),
-                            c_less_equal(l, c_divide(max, r)),
+                        "add" => Some(crate::kernel::program_expression::less_equal(
+                            l,
+                            crate::kernel::program_expression::subtract(max, r),
                         )),
-                        "shl" | "shr" => Some(c_less_than(
-                            c_cast(r, ProgramType::UInt64),
-                            c_uint64_literal(64),
+                        "sub" => Some(crate::kernel::program_expression::greater_equal(l, r)),
+                        "mul" => Some(crate::kernel::program_expression::or(
+                            crate::kernel::program_expression::equal(
+                                r.clone(),
+                                crate::kernel::program_expression::uint64_literal(0),
+                            ),
+                            crate::kernel::program_expression::less_equal(
+                                l,
+                                crate::kernel::program_expression::divide(max, r),
+                            ),
+                        )),
+                        "shl" | "shr" => Some(crate::kernel::program_expression::less_than(
+                            crate::kernel::program_expression::cast(r, ProgramType::UInt64),
+                            crate::kernel::program_expression::uint64_literal(64),
                         )),
                         _ => None,
                     };
                     if let Some(obligation) = obligation {
-                        prefix = c_seq(
+                        prefix = program_seq(
                             prefix,
-                            c_labeled_assert(obligation, format!("Rust {operator} panic check")),
+                            program_labeled_assert(
+                                obligation,
+                                format!("Rust {operator} panic check"),
+                            ),
                         );
                     }
                 }
@@ -1708,18 +1785,21 @@ impl Context<'_> {
                     let width = left_type
                         .integer_bits()
                         .ok_or("Rust signed shift operand has no width")?;
-                    let count = c_variable(&right_name);
+                    let count = crate::kernel::program_expression::variable(&right_name);
                     let obligation = if right_type.integer_bits() == Some(64) {
-                        c_less_than(
-                            c_cast(count, ProgramType::UInt64),
-                            c_uint64_literal(width.into()),
+                        crate::kernel::program_expression::less_than(
+                            crate::kernel::program_expression::cast(count, ProgramType::UInt64),
+                            crate::kernel::program_expression::uint64_literal(width.into()),
                         )
                     } else {
-                        c_less_than(c_cast(count, ProgramType::UInt32), c_uint32_literal(width))
+                        crate::kernel::program_expression::less_than(
+                            crate::kernel::program_expression::cast(count, ProgramType::UInt32),
+                            crate::kernel::program_expression::uint32_literal(width),
+                        )
                     };
-                    prefix = c_seq(
+                    prefix = program_seq(
                         prefix,
-                        c_labeled_assert(obligation, format!("Rust {operator} panic check")),
+                        program_labeled_assert(obligation, format!("Rust {operator} panic check")),
                     );
                 }
                 // Narrow signed arithmetic is computed in `int`, where it
@@ -1727,24 +1807,38 @@ impl Context<'_> {
                 if matches!(left_type, Type::I8 | Type::I16)
                     && matches!(operator.as_str(), "add" | "sub" | "mul")
                 {
-                    let l = c_cast(c_variable(&left_name), ProgramType::Int32);
-                    let r = c_cast(c_variable(&right_name), ProgramType::Int32);
+                    let l = crate::kernel::program_expression::cast(
+                        crate::kernel::program_expression::variable(&left_name),
+                        ProgramType::Int32,
+                    );
+                    let r = crate::kernel::program_expression::cast(
+                        crate::kernel::program_expression::variable(&right_name),
+                        ProgramType::Int32,
+                    );
                     let (minimum, maximum) = match left_type {
                         Type::I8 => (i8::MIN as i64, i8::MAX as i64),
                         _ => (i16::MIN as i64, i16::MAX as i64),
                     };
-                    let wide = |value: ProgramExpression| c_cast(value, ProgramType::Int64);
-                    let value = match operator.as_str() {
-                        "add" => c_add(wide(l), wide(r)),
-                        "sub" => c_subtract(wide(l), wide(r)),
-                        _ => c_multiply(wide(l), wide(r)),
+                    let wide = |value: ProgramExpression| {
+                        crate::kernel::program_expression::cast(value, ProgramType::Int64)
                     };
-                    prefix = c_seq(
+                    let value = match operator.as_str() {
+                        "add" => crate::kernel::program_expression::add(wide(l), wide(r)),
+                        "sub" => crate::kernel::program_expression::subtract(wide(l), wide(r)),
+                        _ => crate::kernel::program_expression::multiply(wide(l), wide(r)),
+                    };
+                    prefix = program_seq(
                         prefix,
-                        c_labeled_assert(
-                            c_and(
-                                c_greater_equal(value.clone(), c_int64_literal(minimum)),
-                                c_less_equal(value, c_int64_literal(maximum)),
+                        program_labeled_assert(
+                            crate::kernel::program_expression::and(
+                                crate::kernel::program_expression::greater_equal(
+                                    value.clone(),
+                                    crate::kernel::program_expression::int64_literal(minimum),
+                                ),
+                                crate::kernel::program_expression::less_equal(
+                                    value,
+                                    crate::kernel::program_expression::int64_literal(maximum),
+                                ),
                             ),
                             format!("Rust {operator} panic check"),
                         ),
@@ -1759,22 +1853,46 @@ impl Context<'_> {
                         Type::I8 => i8::MIN as i32,
                         _ => i16::MIN as i32,
                     };
-                    let l = c_cast(c_variable(&left_name), ProgramType::Int32);
-                    let r = c_cast(c_variable(&right_name), ProgramType::Int32);
-                    prefix = c_seq(
+                    let l = crate::kernel::program_expression::cast(
+                        crate::kernel::program_expression::variable(&left_name),
+                        ProgramType::Int32,
+                    );
+                    let r = crate::kernel::program_expression::cast(
+                        crate::kernel::program_expression::variable(&right_name),
+                        ProgramType::Int32,
+                    );
+                    prefix = program_seq(
                         prefix,
-                        c_labeled_assert(
-                            c_not(c_and(
-                                c_equal(l, c_int32_literal(minimum as u32)),
-                                c_equal(r, c_int32_literal(-1i32 as u32)),
-                            )),
+                        program_labeled_assert(
+                            crate::kernel::program_expression::not(
+                                crate::kernel::program_expression::and(
+                                    crate::kernel::program_expression::equal(
+                                        l,
+                                        crate::kernel::program_expression::int32_literal(
+                                            minimum as u32,
+                                        ),
+                                    ),
+                                    crate::kernel::program_expression::equal(
+                                        r,
+                                        crate::kernel::program_expression::int32_literal(
+                                            -1i32 as u32,
+                                        ),
+                                    ),
+                                ),
+                            ),
                             format!("Rust {operator} panic check"),
                         ),
                     );
                 }
                 if matches!(left_type, Type::U8 | Type::U16 | Type::U32) {
-                    let l = c_cast(c_variable(&left_name), ProgramType::UInt32);
-                    let r = c_cast(c_variable(&right_name), ProgramType::UInt32);
+                    let l = crate::kernel::program_expression::cast(
+                        crate::kernel::program_expression::variable(&left_name),
+                        ProgramType::UInt32,
+                    );
+                    let r = crate::kernel::program_expression::cast(
+                        crate::kernel::program_expression::variable(&right_name),
+                        ProgramType::UInt32,
+                    );
                     let width = match left_type {
                         Type::U8 => 8,
                         Type::U16 => 16,
@@ -1785,30 +1903,48 @@ impl Context<'_> {
                         Type::U16 => 65535,
                         _ => u32::MAX,
                     };
-                    let max = c_uint32_literal(maximum);
+                    let max = crate::kernel::program_expression::uint32_literal(maximum);
                     // Stay unsigned, as `usize` does: `max - r` cannot wrap,
                     // and a guard such as `l < n` then bounds `l` directly.
                     let obligation = match operator.as_str() {
-                        "add" => Some(c_less_equal(l, c_subtract(max.clone(), r))),
-                        "sub" => Some(c_greater_equal(l, r)),
-                        "mul" => Some(c_or(
-                            c_equal(r.clone(), c_uint32_literal(0)),
-                            c_less_equal(l, c_divide(max, r)),
+                        "add" => Some(crate::kernel::program_expression::less_equal(
+                            l,
+                            crate::kernel::program_expression::subtract(max.clone(), r),
+                        )),
+                        "sub" => Some(crate::kernel::program_expression::greater_equal(l, r)),
+                        "mul" => Some(crate::kernel::program_expression::or(
+                            crate::kernel::program_expression::equal(
+                                r.clone(),
+                                crate::kernel::program_expression::uint32_literal(0),
+                            ),
+                            crate::kernel::program_expression::less_equal(
+                                l,
+                                crate::kernel::program_expression::divide(max, r),
+                            ),
                         )),
                         "shl" | "shr" => Some(if right_type.integer_bits() == Some(64) {
-                            c_less_than(
-                                c_cast(c_variable(&right_name), ProgramType::UInt64),
-                                c_uint64_literal(width),
+                            crate::kernel::program_expression::less_than(
+                                crate::kernel::program_expression::cast(
+                                    crate::kernel::program_expression::variable(&right_name),
+                                    ProgramType::UInt64,
+                                ),
+                                crate::kernel::program_expression::uint64_literal(width),
                             )
                         } else {
-                            c_less_than(r, c_uint32_literal(width as u32))
+                            crate::kernel::program_expression::less_than(
+                                r,
+                                crate::kernel::program_expression::uint32_literal(width as u32),
+                            )
                         }),
                         _ => None,
                     };
                     if let Some(obligation) = obligation {
-                        prefix = c_seq(
+                        prefix = program_seq(
                             prefix,
-                            c_labeled_assert(obligation, format!("Rust {operator} panic check")),
+                            program_labeled_assert(
+                                obligation,
+                                format!("Rust {operator} panic check"),
+                            ),
                         );
                     }
                 }
@@ -1827,7 +1963,9 @@ impl Context<'_> {
             | E::IntegerFrom { value, .. } => {
                 let (prefix, value) = self.prepared_expr(value)?;
                 let value = match e {
-                    E::Not { .. } => c_bool_value(c_not(value)),
+                    E::Not { .. } => crate::kernel::program_expression::bool_value(
+                        crate::kernel::program_expression::not(value),
+                    ),
                     E::BitwiseNot { value_type, .. } => {
                         rust_bitwise_not(value, scalar_type(value_type)?.to_kernel_type())
                     }
@@ -1843,7 +1981,7 @@ impl Context<'_> {
                 };
                 Ok((prefix, value))
             }
-            _ => Ok((c_skip(), self.expr(e)?)),
+            _ => Ok((program_skip(), self.expr(e)?)),
         }
     }
     fn slice_parts(&mut self, e: &E) -> Result<(ProgramExpression, ProgramExpression), String> {
@@ -1852,8 +1990,8 @@ impl Context<'_> {
                 return Err("unknown chunk Option".into());
             }
             return Ok((
-                c_variable(format!("{option}_pointer")),
-                c_variable(format!("{option}_len")),
+                crate::kernel::program_expression::variable(format!("{option}_pointer")),
+                crate::kernel::program_expression::variable(format!("{option}_len")),
             ));
         }
         if let E::Borrow {
@@ -1874,8 +2012,8 @@ impl Context<'_> {
                 return Err("unknown Rust chunk iterator".into());
             }
             return Ok((
-                c_variable(format!("{iterator}_tail")),
-                c_variable(format!("{iterator}_tail_len")),
+                crate::kernel::program_expression::variable(format!("{iterator}_tail")),
+                crate::kernel::program_expression::variable(format!("{iterator}_tail_len")),
             ));
         }
         if let E::ArrayToSlice { array, mutable } = e {
@@ -1896,7 +2034,10 @@ impl Context<'_> {
             .slices
             .get(name)
             .ok_or("unknown Rust slice reference")?;
-        Ok((c_variable(name), c_variable(length)))
+        Ok((
+            crate::kernel::program_expression::variable(name),
+            crate::kernel::program_expression::variable(length),
+        ))
     }
     fn array_source_is_constant(&self, e: &E) -> Result<bool, String> {
         match e {
@@ -1943,7 +2084,11 @@ impl Context<'_> {
             E::Deref { reference, .. } => self.indexed_parts(reference),
             E::Local { name } if self.shared_scalar_slices.contains_key(name) => {
                 let (length, element) = self.shared_scalar_slices[name].clone();
-                Ok((c_variable(name), c_variable(length), element))
+                Ok((
+                    crate::kernel::program_expression::variable(name),
+                    crate::kernel::program_expression::variable(length),
+                    element,
+                ))
             }
             E::ArrayToSlice {
                 array,
@@ -1951,7 +2096,11 @@ impl Context<'_> {
             } => self.indexed_parts(array),
             E::Local { name } if self.arrays.contains_key(name) => {
                 let (length, element, _) = self.arrays[name];
-                Ok((self.array_pointer(name)?, c_uint64_literal(length), element))
+                Ok((
+                    self.array_pointer(name)?,
+                    crate::kernel::program_expression::uint64_literal(length),
+                    element,
+                ))
             }
             E::Field { record, field, .. } => {
                 let (_, ty) = *self
@@ -1970,7 +2119,7 @@ impl Context<'_> {
                 let pointer = self.address(e)?;
                 Ok((
                     reference_view(pointer, pointer_type, false, constant),
-                    c_uint64_literal(u64::from(length)),
+                    crate::kernel::program_expression::uint64_literal(u64::from(length)),
                     element,
                 ))
             }
@@ -1989,7 +2138,7 @@ impl Context<'_> {
             _ => return Err("unsupported fixed array element".into()),
         };
         Ok(reference_view(
-            c_variable(name),
+            crate::kernel::program_expression::variable(name),
             pointer_type,
             false,
             *constant,
@@ -2000,16 +2149,16 @@ impl Context<'_> {
             let (pointer, length, _) = self.indexed_parts(slice)?;
             let (checks, value) = self.prepared_expr(index)?;
             let (capture, name) = self.capture_operand(value, &Type::Usize)?;
-            let index = c_variable(name);
+            let index = crate::kernel::program_expression::variable(name);
             // The index keeps its own type, as the contract's place does.
             let offset = index.clone();
             return Ok((
-                c_seq(
+                program_seq(
                     checks,
-                    c_seq(
+                    program_seq(
                         capture,
-                        c_labeled_assert(
-                            c_less_than(index.clone(), length),
+                        program_labeled_assert(
+                            crate::kernel::program_expression::less_than(index.clone(), length),
                             if matches!(slice.as_ref(), E::Local { name }
                                 if self.slices.contains_key(name)
                                     || self.shared_scalar_slices.contains_key(name))
@@ -2021,10 +2170,10 @@ impl Context<'_> {
                         ),
                     ),
                 ),
-                c_add(pointer, offset),
+                crate::kernel::program_expression::add(pointer, offset),
             ));
         }
-        Ok((c_skip(), self.address(e)?))
+        Ok((program_skip(), self.address(e)?))
     }
     fn address(&mut self, e: &E) -> Result<ProgramExpression, String> {
         match e {
@@ -2044,13 +2193,20 @@ impl Context<'_> {
                     E::Deref { reference, .. } => self.expr(reference)?,
                     _ => self.expr(base)?,
                 };
-                Ok(c_pointer_offset_bytes(pointer, offset))
+                Ok(crate::kernel::program_expression::pointer_offset_bytes(
+                    pointer, offset,
+                ))
             }
             E::Local { name } if self.owned_locals.contains(name) => {
-                Ok(c_cast(c_variable(name), ProgramType::Int32Pointer))
+                Ok(crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::variable(name),
+                    ProgramType::Int32Pointer,
+                ))
             }
             E::Local { name } if self.addressable_locals.contains(name) => {
-                Ok(ProgramExpression::AddressOf(Box::new(c_variable(name))))
+                Ok(ProgramExpression::AddressOf(Box::new(
+                    crate::kernel::program_expression::variable(name),
+                )))
             }
             E::Local { name } if self.memory_values.contains_key(name) => {
                 let ProgramType::Parameter(value_type) = self.memory_values[name] else {
@@ -2058,8 +2214,8 @@ impl Context<'_> {
                         "a memory-backed Rust local holds an enum or type-parameter value".into(),
                     );
                 };
-                Ok(c_cast(
-                    c_variable(name),
+                Ok(crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::variable(name),
                     ProgramType::ParameterPointer(value_type),
                 ))
             }
@@ -2091,7 +2247,7 @@ impl Context<'_> {
                 if self.library_slice_options.contains_key(option) =>
             {
                 Ok(ProgramExpression::EnumIs {
-                    value: Box::new(c_variable(option)),
+                    value: Box::new(crate::kernel::program_expression::variable(option)),
                     variant: "Some".into(),
                 })
             }
@@ -2099,7 +2255,9 @@ impl Context<'_> {
                 if !self.shared_array_options.contains_key(option) {
                     return Err("unknown shared iterator Option".into());
                 }
-                Ok(c_variable(format!("{option}_some")))
+                Ok(crate::kernel::program_expression::variable(format!(
+                    "{option}_some"
+                )))
             }
             E::SharedArrayOptionElement { .. } => {
                 Err("shared Option payload requires checked preparation".into())
@@ -2114,11 +2272,13 @@ impl Context<'_> {
                 }
                 if library_iterators() {
                     return Ok(ProgramExpression::EnumIs {
-                        value: Box::new(c_variable(option)),
+                        value: Box::new(crate::kernel::program_expression::variable(option)),
                         variant: "Some".into(),
                     });
                 }
-                Ok(c_variable(format!("{option}_some")))
+                Ok(crate::kernel::program_expression::variable(format!(
+                    "{option}_some"
+                )))
             }
             E::ChunkOptionSlice { .. } | E::ChunkRemainder { .. } | E::ArrayToSlice { .. } => {
                 Err("Rust slices require pointer-plus-length preparation".into())
@@ -2126,8 +2286,12 @@ impl Context<'_> {
             E::Array { .. } | E::Repeat { .. } => {
                 Err("array values require whole-array assignment".into())
             }
-            E::Integer { value } => Ok(c_int32_literal(*value as u32)),
-            E::UsizeInteger { value } => Ok(c_uint64_literal(*value)),
+            E::Integer { value } => Ok(crate::kernel::program_expression::int32_literal(
+                *value as u32,
+            )),
+            E::UsizeInteger { value } => {
+                Ok(crate::kernel::program_expression::uint64_literal(*value))
+            }
             E::EnumConstruct {
                 name,
                 variant,
@@ -2149,7 +2313,9 @@ impl Context<'_> {
                     .map(|(field, declared)| {
                         let value = self.expr(field)?;
                         Ok(match declared {
-                            AlgebraicValueType::C(c_type) => c_cast(value, *c_type),
+                            AlgebraicValueType::Program(c_type) => {
+                                crate::kernel::program_expression::cast(value, *c_type)
+                            }
                             _ => value,
                         })
                     })
@@ -2173,44 +2339,53 @@ impl Context<'_> {
             E::SliceLength { slice } => Ok(self.indexed_parts(slice)?.1),
             E::Index { .. } => Err("indexed Rust places require checked preparation".into()),
             E::UnsignedInteger { value, value_type } => match value_type {
-                Type::U8 => Ok(c_uint8_literal(
+                Type::U8 => Ok(crate::kernel::program_expression::uint8_literal(
                     u8::try_from(*value).map_err(|_| "Rust u8 literal out of range")?,
                 )),
-                Type::U16 => Ok(c_cast(
-                    c_int32_literal(
+                Type::U16 => Ok(crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::int32_literal(
                         u16::try_from(*value).map_err(|_| "Rust u16 literal out of range")? as u32,
                     ),
                     ProgramType::UInt16,
                 )),
-                Type::U32 => Ok(c_uint32_literal(
+                Type::U32 => Ok(crate::kernel::program_expression::uint32_literal(
                     u32::try_from(*value).map_err(|_| "Rust u32 literal out of range")?,
                 )),
-                Type::U64 | Type::Usize => Ok(c_uint64_literal(*value)),
+                Type::U64 | Type::Usize => {
+                    Ok(crate::kernel::program_expression::uint64_literal(*value))
+                }
                 _ => Err("unsigned literal needs an unsigned Rust type".into()),
             },
             E::SignedInteger { value, value_type } => match value_type {
-                Type::I8 => Ok(c_cast(
-                    c_int32_literal(
+                Type::I8 => Ok(crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::int32_literal(
                         i8::try_from(*value).map_err(|_| "Rust i8 literal out of range")? as i32
                             as u32,
                     ),
                     ProgramType::Int8,
                 )),
-                Type::I16 => Ok(c_cast(
-                    c_int32_literal(
+                Type::I16 => Ok(crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::int32_literal(
                         i16::try_from(*value).map_err(|_| "Rust i16 literal out of range")? as i32
                             as u32,
                     ),
                     ProgramType::Int16,
                 )),
-                Type::I32 => Ok(c_int32_literal(
+                Type::I32 => Ok(crate::kernel::program_expression::int32_literal(
                     i32::try_from(*value).map_err(|_| "Rust i32 literal out of range")? as u32,
                 )),
-                Type::I64 | Type::Isize => Ok(c_int64_literal(*value)),
+                Type::I64 | Type::Isize => {
+                    Ok(crate::kernel::program_expression::int64_literal(*value))
+                }
                 _ => Err("signed literal needs a signed Rust type".into()),
             },
-            E::Boolean { value } => Ok(c_int32_literal(u32::from(*value))),
-            E::NoneBox => Ok(c_cast(c_int32_literal(0), ProgramType::Int32Pointer)),
+            E::Boolean { value } => Ok(crate::kernel::program_expression::int32_literal(
+                u32::from(*value),
+            )),
+            E::NoneBox => Ok(crate::kernel::program_expression::cast(
+                crate::kernel::program_expression::int32_literal(0),
+                ProgramType::Int32Pointer,
+            )),
             E::IntegerFrom {
                 value,
                 source_type,
@@ -2221,15 +2396,20 @@ impl Context<'_> {
             }
             E::Local { name } if self.memory_values.contains_key(name) => {
                 let value_type = self.memory_values[name];
-                Ok(c_typed_load(self.address(e)?, value_type))
+                Ok(crate::kernel::program_expression::typed_load(
+                    self.address(e)?,
+                    value_type,
+                ))
             }
             E::Local { name } => {
                 if !self.locals.contains(name) {
                     return Err(format!("unknown Rust local `{name}`"));
                 }
-                Ok(c_variable(name))
+                Ok(crate::kernel::program_expression::variable(name))
             }
-            E::Not { value } => Ok(c_bool_value(c_not(self.expr(value)?))),
+            E::Not { value } => Ok(crate::kernel::program_expression::bool_value(
+                crate::kernel::program_expression::not(self.expr(value)?),
+            )),
             E::Borrow { place, value_type } => {
                 if let E::Field { record, field, .. } = place.as_ref()
                     && self
@@ -2268,7 +2448,7 @@ impl Context<'_> {
                     .next_load
                     .checked_add(1)
                     .ok_or("Rust load identity exhausted")?;
-                Ok(c_typed_load_with_source(
+                Ok(crate::kernel::program_expression::typed_load_with_source(
                     pointer,
                     self.place_type(e)?,
                     Some(LoadSourceId {
@@ -2327,7 +2507,7 @@ impl Context<'_> {
                     // Narrow unsigned remainder fits in signed int, matching
                     // the promotion used by its contract expression. Other
                     // operations keep unsigned words (notably u16 multiply).
-                    l = c_cast(
+                    l = crate::kernel::program_expression::cast(
                         l,
                         if operator == "rem" {
                             ProgramType::Int32
@@ -2340,7 +2520,7 @@ impl Context<'_> {
                     // in C: shift the bits as an unsigned word of at least
                     // the operand's width, then reinterpret them at the
                     // operand's width below.
-                    l = c_cast(
+                    l = crate::kernel::program_expression::cast(
                         l,
                         if left_type.integer_bits() == Some(64) {
                             ProgramType::UInt64
@@ -2349,27 +2529,27 @@ impl Context<'_> {
                         },
                     );
                 } else if matches!(left_type, Type::I8 | Type::I16) {
-                    l = c_cast(l, ProgramType::Int32);
+                    l = crate::kernel::program_expression::cast(l, ProgramType::Int32);
                 }
                 let result = match operator.as_str() {
-                    "add" => c_add(l, r),
-                    "sub" => c_subtract(l, r),
-                    "mul" => c_multiply(l, r),
-                    "div" => c_divide(l, r),
-                    "rem" => c_remainder(l, r),
-                    "shl" => c_shift_left(l, r),
-                    "shr" => c_shift_right(l, r),
-                    "bit_and" => c_bitwise_and(l, r),
-                    "bit_or" => c_bitwise_or(l, r),
-                    "bit_xor" => c_bitwise_xor(l, r),
-                    "eq" => c_equal(l, r),
-                    "ne" => c_not_equal(l, r),
-                    "lt" => c_less_than(l, r),
-                    "le" => c_less_equal(l, r),
-                    "gt" => c_greater_than(l, r),
-                    "ge" => c_greater_equal(l, r),
-                    "and" => c_and(l, r),
-                    "or" => c_or(l, r),
+                    "add" => crate::kernel::program_expression::add(l, r),
+                    "sub" => crate::kernel::program_expression::subtract(l, r),
+                    "mul" => crate::kernel::program_expression::multiply(l, r),
+                    "div" => crate::kernel::program_expression::divide(l, r),
+                    "rem" => crate::kernel::program_expression::remainder(l, r),
+                    "shl" => crate::kernel::program_expression::shift_left(l, r),
+                    "shr" => crate::kernel::program_expression::shift_right(l, r),
+                    "bit_and" => crate::kernel::program_expression::bitwise_and(l, r),
+                    "bit_or" => crate::kernel::program_expression::bitwise_or(l, r),
+                    "bit_xor" => crate::kernel::program_expression::bitwise_xor(l, r),
+                    "eq" => crate::kernel::program_expression::equal(l, r),
+                    "ne" => crate::kernel::program_expression::not_equal(l, r),
+                    "lt" => crate::kernel::program_expression::less_than(l, r),
+                    "le" => crate::kernel::program_expression::less_equal(l, r),
+                    "gt" => crate::kernel::program_expression::greater_than(l, r),
+                    "ge" => crate::kernel::program_expression::greater_equal(l, r),
+                    "and" => crate::kernel::program_expression::and(l, r),
+                    "or" => crate::kernel::program_expression::or(l, r),
                     _ => return Err("unsupported Rust operator in artifact".into()),
                 };
                 if matches!(
@@ -2378,9 +2558,9 @@ impl Context<'_> {
                 ) {
                     // A Rust comparison or connective is a `bool` value: the
                     // condition itself, with no path split (Stage 5, D5).
-                    Ok(c_bool_value(result))
+                    Ok(crate::kernel::program_expression::bool_value(result))
                 } else if narrow_native {
-                    Ok(c_narrow_arithmetic(
+                    Ok(crate::kernel::program_expression::narrow_arithmetic(
                         result,
                         scalar_type(left_type)?.to_kernel_type(),
                     ))
@@ -2394,9 +2574,12 @@ impl Context<'_> {
                     let computed = if matches!(left_type, Type::U8 | Type::U16) {
                         result
                     } else {
-                        c_cast(result, ProgramType::Int32)
+                        crate::kernel::program_expression::cast(result, ProgramType::Int32)
                     };
-                    Ok(c_cast(computed, scalar_type(left_type)?.to_kernel_type()))
+                    Ok(crate::kernel::program_expression::cast(
+                        computed,
+                        scalar_type(left_type)?.to_kernel_type(),
+                    ))
                 } else {
                     Ok(rust_scalar_cast(
                         result,
@@ -2431,7 +2614,9 @@ impl Context<'_> {
                         "Rust function address `{function}` does not have its function's type"
                     ));
                 }
-                Ok(c_function_address(function))
+                Ok(crate::kernel::program_expression::function_address(
+                    function,
+                ))
             }
         }
     }

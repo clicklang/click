@@ -427,9 +427,9 @@ into a cached success.
 
 ## Lazy separation and compact composition carriers
 
-Resource contexts never materialize pairwise `CResourceSeparate`
+Resource contexts never materialize pairwise `ResourceSeparate`
 propositions, and neither do the fact contexts that hold them. A multi-owner
-context exposes one compact `CResourceComposition` carrier, and holding it
+context exposes one compact `ResourceComposition` carrier, and holding it
 states nothing further (`holding_a_parameter_composition_states_no_pairs`).
 A separation query (range and pointer disjointness, subrange inheritance, a
 store crossing a cached cell, two distinct range anchors) asks each held
@@ -674,9 +674,9 @@ identity across claims (`checked_callee_summary_reuse_scales_with_input_not_prod
 A branch proved unreachable adds no calls; a summarized statement adds every
 call in its syntax; missing evidence falls back to the source body.
 
-`c_termination_height_plan` proposes a height per node (iterative Tarjan,
+`program_termination_height_plan` proposes a height per node (iterative Tarjan,
 longest path over the condensation, cycle members sharing a height).
-`c_verified_function_termination_rules` checks the proposal level by level in
+`program_verified_function_termination_rules` checks the proposal level by level in
 ascending height, reading at each call site only whether the callee is above
 its caller, whether a strictly lower callee has evidence, and whether an
 equal-height callee is a recursive edge a declared measure ranks. A refused

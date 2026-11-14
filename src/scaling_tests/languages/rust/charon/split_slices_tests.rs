@@ -16,7 +16,7 @@ fn charon_split_at_checked_byte_reads_do_not_enumerate_slice_extent() {
             &format!("requires bytes.len() == {length}u64; views bytes[0..bytes.len()];"),
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            ProgramVerificationSession::new_program_prepared(&sidecar, &prepared)
         });
         result.unwrap();
         if let Some(previous) = previous {

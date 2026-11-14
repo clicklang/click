@@ -64,7 +64,9 @@ fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts()
             .map(|index| {
                 LoopInvariantCheck::new(
                     SpecProposition::Comparison {
-                        left: SpecExpression::ProgramExpression(c_variable("i")),
+                        left: SpecExpression::ProgramExpression(
+                            crate::kernel::program_expression::variable("i"),
+                        ),
                         operator: ComparisonOperator::LessEqual,
                         right: SpecExpression::Value(int32(1000 + index as u32)),
                     },
@@ -86,7 +88,7 @@ fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts()
             }
             let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
             let (goals, work) = crate::instrumentation::measure_deterministic_work(|| {
-                c_loop_invariant_obligations_at_back_edge(
+                loop_invariant_obligations_at_back_edge(
                     &state,
                     &state,
                     &checks,
@@ -136,9 +138,12 @@ fn a_zero_filled_automatic_array_costs_the_same_whatever_its_length() {
         let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
             let stored = execute_declaration(
                 &state,
-                &c_typed_store(
-                    c_pointer_offset_bytes(c_variable("items"), last),
-                    c_int32_literal(9),
+                &program_typed_store(
+                    crate::kernel::program_expression::pointer_offset_bytes(
+                        crate::kernel::program_expression::variable("items"),
+                        last,
+                    ),
+                    crate::kernel::program_expression::int32_literal(9),
                     ProgramType::Int32,
                 ),
             );
@@ -188,7 +193,13 @@ fn a_zero_filled_automatic_array_costs_the_same_whatever_its_length() {
 #[test]
 fn statement_theorems_do_not_list_the_context_they_executed_under() {
     let state = ExecutionState::new().with_local("i", int32(0));
-    let statement = c_assign("i", c_add(c_variable("i"), c_int32_literal(1)));
+    let statement = program_assign(
+        "i",
+        crate::kernel::program_expression::add(
+            crate::kernel::program_expression::variable("i"),
+            crate::kernel::program_expression::int32_literal(1),
+        ),
+    );
     let mut premise_counts = Vec::new();
     for size in [16u32, 64, 256] {
         let mut assumptions = PureFactContext::new();
@@ -201,7 +212,7 @@ fn statement_theorems_do_not_list_the_context_they_executed_under() {
                 true,
             );
         }
-        let execution = prove_symbolic_c_statement_verification_paths_with_environment(
+        let execution = prove_symbolic_execution_statement_verification_paths_with_environment(
             state.clone(),
             statement.clone(),
             assumptions,
@@ -217,7 +228,7 @@ fn statement_theorems_do_not_list_the_context_they_executed_under() {
         }
         assert!(matches!(
             proposition,
-            Proposition::CStatementVerifies { .. }
+            Proposition::ProgramStatementVerifies { .. }
         ));
         premise_counts.push(premises);
     }

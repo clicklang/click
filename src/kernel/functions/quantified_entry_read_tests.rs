@@ -22,7 +22,7 @@ fn fixture(
     let slot = ResourceSpec::composite(
         ResourceAccessMode::Own,
         "slot".into(),
-        vec![c_variable("pool")],
+        vec![crate::kernel::program_expression::variable("pool")],
         vec![ProgramType::Int32Pointer],
     );
     let authority = ResourceSpec::new(
@@ -42,14 +42,14 @@ fn fixture(
     .unwrap();
     let control = CompositeResourceDefinition::new(
         "zz_control",
-        vec![c_parameter("pool", ProgramType::Int32Pointer)],
+        vec![program_parameter("pool", ProgramType::Int32Pointer)],
         None,
         false,
         vec![
             ResourceSpec::owned_memory(MemorySegment::new(
-                c_variable("pool"),
-                c_int32_literal(0),
-                c_int32_literal(2),
+                crate::kernel::program_expression::variable("pool"),
+                crate::kernel::program_expression::int32_literal(0),
+                crate::kernel::program_expression::int32_literal(2),
             )),
             authority,
         ],
@@ -70,7 +70,10 @@ fn fixture(
     definitions.push(control);
     definitions.sort_by(|a, b| a.name().cmp(b.name()));
     let quantity = ResourceSpec::quantified(
-        c_load(c_add(c_variable("pool"), c_int32_literal(1))),
+        crate::kernel::program_expression::load(crate::kernel::program_expression::add(
+            crate::kernel::program_expression::variable("pool"),
+            crate::kernel::program_expression::int32_literal(1),
+        )),
         slot,
         ResourceTransferRole::Borrow,
         ResourceSnapshot::Entry,
@@ -79,7 +82,7 @@ fn fixture(
     let mut resources = vec![ResourceSpec::composite(
         ResourceAccessMode::Own,
         "zz_control".into(),
-        vec![c_variable("pool")],
+        vec![crate::kernel::program_expression::variable("pool")],
         vec![ProgramType::Int32Pointer],
     )];
     resources.extend(std::iter::repeat_n(quantity, quantities));

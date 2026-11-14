@@ -278,7 +278,7 @@ fn continuity_requires_both_the_allocation_base_and_size() {
 #[test]
 fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
     let _session = crate::kernel::VerificationSession::enter();
-    let before = crate::kernel::intern_c_memory(Memory::new().with_block("alloc-size", 8));
+    let before = crate::kernel::intern_memory(Memory::new().with_block("alloc-size", 8));
     let pointer = |index| Pointer {
         block: "alloc-size".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
@@ -296,7 +296,7 @@ fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
         MachineTerm::Variable(Variable(930_010)),
         MachineTerm::Variable(Variable(930_011)),
     );
-    let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+    let after = crate::kernel::intern_memory(before.memory().clone().store(
         pointer(b.clone()),
         ProgramValue::Int32(MachineTerm::constant(9)),
     ));

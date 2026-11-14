@@ -1,9 +1,9 @@
 use super::*;
 use crate::kernel::{
-    FunctionContractClaim, ProgramStatement, Proposition, bool_value, c_call, c_function, c_if,
-    c_int32_literal, c_parameter, c_return, c_seq, c_skip, c_try_catch_int32, c_variable,
-    prove_c_function_contract_execution_paths_with_checked_artifacts,
-    prove_checked_c_function_execution_with_environment,
+    FunctionContractClaim, ProgramStatement, Proposition, bool_value, program_call,
+    program_function, program_if, program_parameter, program_return, program_seq, program_skip,
+    program_try_catch_int32, prove_checked_program_function_execution_with_environment,
+    prove_program_function_contract_execution_paths_with_checked_artifacts,
 };
 
 /// A caught-throw call splits into its returned and threw arms the way a C
@@ -15,14 +15,14 @@ use crate::kernel::{
 /// units at 16 to 256 facts.
 #[test]
 fn call_outcome_split_does_not_copy_the_proofs_facts() {
-    let helper = c_function(
+    let helper = program_function(
         ProgramType::Int32,
         "helper",
-        vec![c_parameter("should_throw", ProgramType::Bool)],
-        c_if(
-            c_variable("should_throw"),
-            ProgramStatement::Throw(c_int32_literal(7)),
-            c_return(c_int32_literal(5)),
+        vec![program_parameter("should_throw", ProgramType::Bool)],
+        program_if(
+            crate::kernel::program_expression::variable("should_throw"),
+            ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(7)),
+            program_return(crate::kernel::program_expression::int32_literal(5)),
         ),
     )
     .with_int32_exceptional_outcome()
@@ -36,7 +36,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
     let helper_arguments = vec![ProgramExpression::Value(bool_value(MachineTerm::Variable(
         Variable(80_111),
     )))];
-    let artifacts = prove_checked_c_function_execution_with_environment(
+    let artifacts = prove_checked_program_function_execution_with_environment(
         ExecutionState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments.clone(),
@@ -45,7 +45,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         ExecutionSemantics::EXECUTE_BODIES,
         FunctionContractExecutionMode::VerifyLoops,
     );
-    let certified = prove_c_function_contract_execution_paths_with_checked_artifacts(
+    let certified = prove_program_function_contract_execution_paths_with_checked_artifacts(
         ExecutionState::new().with_population_creation_tracking(),
         helper.clone(),
         helper_arguments,
@@ -54,31 +54,34 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         FunctionContractExecutionMode::VerifyLoops,
         &[artifacts],
     );
-    let claims = crate::kernel::c_verified_function_contract_claims(&helper, &certified)
+    let claims = crate::kernel::program_verified_function_contract_claims(&helper, &certified)
         .expect("helper body safety should certify");
-    let helper_rule = c_verified_function_rule(helper.clone(), &claims)
+    let helper_rule = program_verified_function_rule(helper.clone(), &claims)
         .expect("the checked helper should have a modular rule");
     let function_environment = ExecutionEnvironment::new()
         .with_function(helper)
         .with_verified_function_rule(helper_rule);
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "caller",
         vec![
-            c_parameter("construct", ProgramType::Bool),
-            c_parameter("should_throw", ProgramType::Bool),
+            program_parameter("construct", ProgramType::Bool),
+            program_parameter("should_throw", ProgramType::Bool),
         ],
-        c_seq(
-            c_if(
-                c_variable("construct"),
-                c_try_catch_int32(
-                    c_call("helper", vec![c_variable("should_throw")]),
+        program_seq(
+            program_if(
+                crate::kernel::program_expression::variable("construct"),
+                program_try_catch_int32(
+                    program_call(
+                        "helper",
+                        vec![crate::kernel::program_expression::variable("should_throw")],
+                    ),
                     "caught",
-                    c_return(c_variable("caught")),
+                    program_return(crate::kernel::program_expression::variable("caught")),
                 ),
-                c_skip(),
+                program_skip(),
             ),
-            c_return(c_int32_literal(5)),
+            program_return(crate::kernel::program_expression::int32_literal(5)),
         ),
     );
     let parsed_function = syntax::C0Function::external(

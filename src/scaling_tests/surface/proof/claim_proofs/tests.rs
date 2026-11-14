@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn explicit_closers_lower_each_return_goal_once_without_unfoldings() {
     use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
-    crate::surface::verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[])
+    crate::surface::verify_c_sources("theorem warm() { ensures true by normalize(); }", &[])
         .unwrap();
     for size in [2, 4, 8, 16] {
         let claims = "ensures result == x;\n".repeat(size);
@@ -17,7 +17,7 @@ fn explicit_closers_lower_each_return_goal_once_without_unfoldings() {
         );
         let ((verified, events), work) = measure_deterministic_work(|| {
             collect(|| {
-                crate::surface::verify_c0_sources(
+                crate::surface::verify_c_sources(
                     &source,
                     &[("echo.c", "int32 echo(int32 x) { return x; }")],
                 )
@@ -43,7 +43,7 @@ fn check_return_claim_preparation_scaling(
     sizes: impl IntoIterator<Item = (usize, usize)>,
 ) {
     use crate::instrumentation::{VerificationEvent, collect};
-    crate::surface::verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[])
+    crate::surface::verify_c_sources("theorem warm() { ensures true by normalize(); }", &[])
         .unwrap();
     for (resources, claims) in sizes {
         let holdings = (0..resources)
@@ -64,7 +64,7 @@ fn check_return_claim_preparation_scaling(
          by {{ step(); {closers} }}"
         );
         let (verified, events) = collect(|| {
-            crate::surface::verify_c0_sources(
+            crate::surface::verify_c_sources(
                 &source,
                 &[("echo.c", "int32 echo(int32 x) { return x; }")],
             )
@@ -170,7 +170,7 @@ fn joint_resource_receipts_ignore_unrelated_holdings() {
 #[test]
 fn post_execution_haves_before_a_fold_cost_the_same_at_every_position() {
     use crate::instrumentation::collect_tactic_work;
-    crate::surface::verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[])
+    crate::surface::verify_c_sources("theorem warm() { ensures true by normalize(); }", &[])
         .unwrap();
     let mut last_works = Vec::new();
     for size in [4, 8, 12, 16] {
@@ -208,7 +208,7 @@ void write(struct holder* h, int32 x{click_parameters}) {{
 }}"
         );
         let (verified, samples) = collect_tactic_work(|| {
-            crate::surface::verify_c0_sources(&source, &[("cell.c", c.as_str())])
+            crate::surface::verify_c_sources(&source, &[("cell.c", c.as_str())])
         });
         verified.unwrap_or_else(|error| panic!("size {size}: {error}"));
         let works = samples

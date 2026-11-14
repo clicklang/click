@@ -13,7 +13,7 @@ fn explicit_separation_lookup_reads_only_related_blocks() {
     let narrow =
         |base: Pointer| MemoryRange::new_with_element_width(base, 0u32.into(), 8u32.into(), 1);
     let wide = |base: Pointer| MemoryRange::new_wide(base, 0u32.into(), 8u32.into(), 1);
-    let separation = |left: MemoryRange, right: MemoryRange| Proposition::CResourceSeparate {
+    let separation = |left: MemoryRange, right: MemoryRange| Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(left)),
         right: Box::new(Resource::Memory(right)),
     };
@@ -78,7 +78,7 @@ fn wide_separation_lookup_ignores_unrelated_wide_facts() {
             4,
         )
     };
-    let separation = |left, right| Proposition::CResourceSeparate {
+    let separation = |left, right| Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(left)),
         right: Box::new(Resource::Memory(right)),
     };
@@ -144,7 +144,7 @@ fn wide_separation_lookup_scales_with_its_related_alias_chain() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let witness = Proposition::CResourceSeparate {
+        let witness = Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(wide(pointer(0)))),
             right: Box::new(Resource::Memory(wide(pointer(1)))),
         };

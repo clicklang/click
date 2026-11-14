@@ -19,7 +19,7 @@ fn load(memory: &SharedMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
     ))
 }
 fn memory() -> SharedMemory {
-    intern_c_memory(Memory::new().with_block("array", 4096))
+    intern_memory(Memory::new().with_block("array", 4096))
 }
 
 #[test]
@@ -49,7 +49,7 @@ fn shallow_scalar_decision_uses_only_registered_loads_in_one_snapshot() {
     let before = memory();
     let left = load(&before, &address(1), 4);
     let right = load(&before, &address(2), 4);
-    let after = intern_c_memory(
+    let after = intern_memory(
         before
             .memory()
             .clone()
@@ -82,7 +82,7 @@ fn int32_load_congruence_keeps_snapshots_blocks_and_widths_distinct() {
     let memory = memory();
     let left = load(&memory, &address(1), 4);
     let right = load(&memory, &address(2), 4);
-    let after = intern_c_memory(
+    let after = intern_memory(
         memory
             .memory()
             .clone()
@@ -131,7 +131,7 @@ fn int32_load_congruence_is_branch_local() {
 fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = memory();
-    let after = intern_c_memory(
+    let after = intern_memory(
         before
             .memory()
             .clone()
@@ -198,7 +198,7 @@ fn int32_load_registration_can_follow_a_later_width_declaration() {
 fn explicit_cross_snapshot_load_equality_composes_without_merging_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = memory();
-    let after = intern_c_memory(
+    let after = intern_memory(
         before
             .memory()
             .clone()
@@ -235,13 +235,13 @@ fn explicit_cross_snapshot_load_equality_composes_without_merging_snapshots() {
 #[test]
 fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = intern_c_memory(Memory::new().with_block("left", 64).with_block("right", 64));
+    let memory = intern_memory(Memory::new().with_block("left", 64).with_block("right", 64));
     let at = |block: &str, bytes: i64| Pointer {
         block: block.into(),
         offset: PointerOffsetTerm::Constant(bytes),
     };
     let address_of = |pointer: Pointer| MachineTerm::pointer_address(pointer);
-    let after = intern_c_memory(
+    let after = intern_memory(
         memory
             .memory()
             .clone()
@@ -487,7 +487,7 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
     crate::kernel::eval::record_load_access_width(before.memory(), &pointer, 4);
     let named =
         crate::kernel::canonical_form_of_load(before.clone(), pointer.clone(), LoadKind::Int32);
-    let beside = intern_c_memory(before.memory().clone().store(
+    let beside = intern_memory(before.memory().clone().store(
         Pointer {
             block: "beside-array".into(),
             offset: PointerOffsetTerm::Constant(0),
@@ -509,7 +509,7 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
     );
     assert_eq!(root.machine_read_leaf(), Some(&raw));
     let changed = MachineTerm::MemoryLoad(
-        intern_c_memory(
+        intern_memory(
             before
                 .memory()
                 .clone()
@@ -535,7 +535,7 @@ fn structural_read_graph_keeps_native_only_stored_values() {
         arguments: vec![var(993184)],
     };
     let pointer = address(993185);
-    let snapshot = intern_c_memory(
+    let snapshot = intern_memory(
         memory()
             .memory()
             .clone()

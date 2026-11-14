@@ -60,7 +60,7 @@ fn native_domain(value: &Proposition) -> Proposition {
 }
 
 #[test]
-fn c_shifts_match_native_terms_and_independently_typed_count_domains() {
+fn program_shifts_match_native_terms_and_independently_typed_count_domains() {
     check_shift_parity(false);
 }
 
@@ -174,7 +174,7 @@ fn check_shift_parity(rust: bool) {
 }
 
 #[test]
-fn c_shift_evaluator_retains_wide_count_refusals() {
+fn program_shift_evaluator_retains_wide_count_refusals() {
     for op in OPS {
         let left = Box::new(SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
             Variable(995475),

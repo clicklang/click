@@ -9,7 +9,7 @@ fn word(format: MachineIntegerType, value: i64) -> SpecValue {
 }
 fn variable(format: MachineIntegerType, id: u64) -> SpecValue {
     SpecValue::Shared(KernelTerm::variable(
-        KernelType::C(format.c_type()),
+        KernelType::Program(format.c_type()),
         Variable(id),
     ))
 }

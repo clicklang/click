@@ -36,7 +36,7 @@ fn arithmetic_certificate_mixed_atom_lowering_scales_with_selected_inputs() {
             parameters.join(", ")
         );
         let (result, measured) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         result.unwrap();
         work.push(measured);
     }
@@ -236,7 +236,7 @@ fn typed_equality_certificate_steps_ignore_unrelated_parameters() {
         source.push_str(&theorem);
     }
     let (result, samples) =
-        crate::instrumentation::collect_tactic_work(|| verify_c0_sources(&source, &[]));
+        crate::instrumentation::collect_tactic_work(|| verify_c_sources(&source, &[]));
     result.unwrap();
     let work = [4, 16, 64, 256].map(|count| {
         let label = format!("chain_{count}.ensures_0");
@@ -252,14 +252,18 @@ fn typed_equality_certificate_steps_ignore_unrelated_parameters() {
 
 #[test]
 fn returning_arm_index_visits_selected_c_once_at_multiple_sizes() {
-    use crate::kernel::{c_if, c_int32_literal, c_return, c_seq, c_skip};
+    use crate::kernel::{program_if, program_return, program_seq, program_skip};
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256] {
-        let mut body = c_skip();
+        let mut body = program_skip();
         for _ in 0..size {
-            body = c_seq(
+            body = program_seq(
                 body,
-                c_if(c_int32_literal(1), c_return(c_int32_literal(0)), c_skip()),
+                program_if(
+                    crate::kernel::program_expression::int32_literal(1),
+                    program_return(crate::kernel::program_expression::int32_literal(0)),
+                    program_skip(),
+                ),
             );
         }
         let (returning, work) =

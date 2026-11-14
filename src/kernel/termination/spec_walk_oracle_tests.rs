@@ -14,24 +14,24 @@ fn old_collect_pure_function_arguments(
                 old_collect_pure_function_arguments(std::slice::from_ref(argument.as_ref()), reads)?
             }
             SpecPureFunctionArgument::Value(value) => {
-                old_collect_spec_expression_c_variables(value, reads)?
+                old_collect_speprogram_expression_program_variables(value, reads)?
             }
             SpecPureFunctionArgument::ArrayRef { pointer, .. } => {
                 reads.memory = true;
-                old_collect_spec_expression_c_variables(pointer, reads)?
+                old_collect_speprogram_expression_program_variables(pointer, reads)?
             }
             SpecPureFunctionArgument::Integer(value) => {
-                old_collect_spec_integer_expression_c_variables(value, reads)?
+                old_collect_spec_integer_expression_program_variables(value, reads)?
             }
             SpecPureFunctionArgument::Algebraic(value) => {
-                old_collect_spec_algebraic_expression_c_variables(value, reads)?
+                old_collect_spec_algebraiprogram_expression_program_variables(value, reads)?
             }
         }
     }
     Ok(())
 }
 
-fn old_collect_spec_algebraic_expression_c_variables(
+fn old_collect_spec_algebraiprogram_expression_program_variables(
     expression: &SpecAlgebraicExpression,
     reads: &mut MeasureReads,
 ) -> Result<(), UncollectedForm> {
@@ -45,19 +45,19 @@ fn old_collect_spec_algebraic_expression_c_variables(
             Ok(())
         }
         SpecAlgebraicExpressionNode::ProgramValue(value) => {
-            old_collect_spec_expression_c_variables(value, reads)
+            old_collect_speprogram_expression_program_variables(value, reads)
         }
         SpecAlgebraicExpressionNode::Constructor { fields, .. } => {
             for field in fields {
                 match field {
-                    SpecAlgebraicValue::C(value) => {
-                        old_collect_spec_expression_c_variables(value, reads)?
+                    SpecAlgebraicValue::Program(value) => {
+                        old_collect_speprogram_expression_program_variables(value, reads)?
                     }
                     SpecAlgebraicValue::Integer(value) => {
-                        old_collect_spec_integer_expression_c_variables(value, reads)?
+                        old_collect_spec_integer_expression_program_variables(value, reads)?
                     }
                     SpecAlgebraicValue::Algebraic(value) => {
-                        old_collect_spec_algebraic_expression_c_variables(value, reads)?
+                        old_collect_spec_algebraiprogram_expression_program_variables(value, reads)?
                     }
                 }
             }
@@ -65,9 +65,9 @@ fn old_collect_spec_algebraic_expression_c_variables(
         }
         SpecAlgebraicExpressionNode::If { .. } => Err("a conditional `if` expression"),
         SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
-            old_collect_spec_algebraic_expression_c_variables(scrutinee, reads)?;
+            old_collect_spec_algebraiprogram_expression_program_variables(scrutinee, reads)?;
             for arm in arms {
-                old_collect_spec_algebraic_expression_c_variables(&arm.body, reads)?;
+                old_collect_spec_algebraiprogram_expression_program_variables(&arm.body, reads)?;
             }
             Ok(())
         }
@@ -77,7 +77,7 @@ fn old_collect_spec_algebraic_expression_c_variables(
     }
 }
 
-fn old_collect_spec_integer_expression_c_variables(
+fn old_collect_spec_integer_expression_program_variables(
     expression: &SpecIntegerExpression,
     reads: &mut MeasureReads,
 ) -> Result<(), UncollectedForm> {
@@ -88,22 +88,22 @@ fn old_collect_spec_integer_expression_c_variables(
         SpecIntegerExpression::ResourceField(_) => Ok(()),
         SpecIntegerExpression::If { .. } => Err("a conditional `if` expression"),
         SpecIntegerExpression::FromMachine(value) => {
-            old_collect_spec_expression_c_variables(value, reads)
+            old_collect_speprogram_expression_program_variables(value, reads)
         }
         SpecIntegerExpression::Negate(inner) => {
-            old_collect_spec_integer_expression_c_variables(inner, reads)
+            old_collect_spec_integer_expression_program_variables(inner, reads)
         }
         crate::kernel::binary_spec_integer_expression!(left, right) => {
-            old_collect_spec_integer_expression_c_variables(left, reads)?;
-            old_collect_spec_integer_expression_c_variables(right, reads)
+            old_collect_spec_integer_expression_program_variables(left, reads)?;
+            old_collect_spec_integer_expression_program_variables(right, reads)
         }
         SpecIntegerExpression::PureFunctionApplication { arguments, .. } => {
             old_collect_pure_function_arguments(arguments, reads)
         }
         SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } => {
-            old_collect_spec_algebraic_expression_c_variables(scrutinee, reads)?;
+            old_collect_spec_algebraiprogram_expression_program_variables(scrutinee, reads)?;
             for arm in arms {
-                old_collect_spec_integer_expression_c_variables(&arm.body, reads)?;
+                old_collect_spec_integer_expression_program_variables(&arm.body, reads)?;
             }
             Ok(())
         }
@@ -111,7 +111,7 @@ fn old_collect_spec_integer_expression_c_variables(
     }
 }
 
-fn old_collect_spec_expression_c_variables(
+fn old_collect_speprogram_expression_program_variables(
     expression: &SpecExpression,
     reads: &mut MeasureReads,
 ) -> Result<(), UncollectedForm> {
@@ -119,7 +119,7 @@ fn old_collect_spec_expression_c_variables(
     match expression {
         SpecExpression::Value(_) => Ok(()),
         SpecExpression::ProgramExpression(expression) => {
-            collect_c_expression_variables(expression, &mut reads.variables);
+            collect_program_expression_variables(expression, &mut reads.variables);
             Ok(())
         }
         crate::kernel::binary_spec_expression!(left, right)
@@ -128,30 +128,30 @@ fn old_collect_spec_expression_c_variables(
             elements: right,
             ..
         } => {
-            old_collect_spec_expression_c_variables(left, reads)?;
-            old_collect_spec_expression_c_variables(right, reads)
+            old_collect_speprogram_expression_program_variables(left, reads)?;
+            old_collect_speprogram_expression_program_variables(right, reads)
         }
         SpecExpression::Subobject { pointer: value, .. }
         | SpecExpression::BitwiseNot(value)
         | SpecExpression::Cast(value, _)
         | SpecExpression::NarrowArithmetic(value, _)
         | SpecExpression::PointerCoercion(value, _) => {
-            old_collect_spec_expression_c_variables(value, reads)
+            old_collect_speprogram_expression_program_variables(value, reads)
         }
         SpecExpression::MemoryLoad { pointer, .. } => {
             reads.memory = true;
-            old_collect_spec_expression_c_variables(pointer, reads)
+            old_collect_speprogram_expression_program_variables(pointer, reads)
         }
         SpecExpression::PureFunctionApplication { arguments, .. } => {
             old_collect_pure_function_arguments(arguments, reads)
         }
         SpecExpression::IntegerToMachine { value, .. } => {
-            old_collect_spec_integer_expression_c_variables(value, reads)
+            old_collect_spec_integer_expression_program_variables(value, reads)
         }
         SpecExpression::AlgebraicMatch { scrutinee, arms } => {
-            old_collect_spec_algebraic_expression_c_variables(scrutinee, reads)?;
+            old_collect_spec_algebraiprogram_expression_program_variables(scrutinee, reads)?;
             for arm in arms {
-                old_collect_spec_expression_c_variables(&arm.body, reads)?;
+                old_collect_speprogram_expression_program_variables(&arm.body, reads)?;
             }
             Ok(())
         }
@@ -188,14 +188,14 @@ fn measure_reads_agree_with_their_recursive_original() {
         let depth = 1 + (round % 4) as u32;
         let expression = generator.expr(depth);
         let (mut old_reads, mut new_reads) = (MeasureReads::default(), MeasureReads::default());
-        let old = old_collect_spec_expression_c_variables(&expression, &mut old_reads);
-        let new = collect_spec_c_variables(SpecNode::Expression(&expression), &mut new_reads);
+        let old = old_collect_speprogram_expression_program_variables(&expression, &mut old_reads);
+        let new = collect_spec_program_variables(SpecNode::Expression(&expression), &mut new_reads);
         assert!(same(new, &new_reads, old, &old_reads), "{expression:?}");
         collected += usize::from(old.is_ok());
         let integer = generator.int(depth);
         let (mut old_reads, mut new_reads) = (MeasureReads::default(), MeasureReads::default());
-        let old = old_collect_spec_integer_expression_c_variables(&integer, &mut old_reads);
-        let new = collect_spec_c_variables(SpecNode::Integer(&integer), &mut new_reads);
+        let old = old_collect_spec_integer_expression_program_variables(&integer, &mut old_reads);
+        let new = collect_spec_program_variables(SpecNode::Integer(&integer), &mut new_reads);
         assert!(same(new, &new_reads, old, &old_reads), "{integer:?}");
         collected += usize::from(old.is_ok());
     }

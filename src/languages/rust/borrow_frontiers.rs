@@ -1219,17 +1219,17 @@ mod tests {
                         std::sync::Arc::new(fragment(statement, remove_declarations))
                     }))
                 }
-                ProgramStatement::Return(_) => c_skip(),
-                ProgramStatement::Declare { .. } if remove_declarations => c_skip(),
+                ProgramStatement::Return(_) => program_skip(),
+                ProgramStatement::Declare { .. } if remove_declarations => program_skip(),
                 other => other.clone(),
             }
         }
         let body = if twice {
-            c_seq(fragment(&body, false), fragment(&body, true))
+            program_seq(fragment(&body, false), fragment(&body, true))
         } else {
             body
         };
-        prove_symbolic_c_execution_paths(state, body, PureFactContext::new())
+        prove_symbolic_program_execution_paths(state, body, PureFactContext::new())
     }
 
     #[test]

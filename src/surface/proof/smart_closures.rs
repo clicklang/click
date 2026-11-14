@@ -219,7 +219,7 @@ fn collect_signed_surface_terms<'a>(
             | ContractExpression::ResourceField(_)
             | ContractExpression::AlgebraicVariable { .. }
             | ContractExpression::Binding(_)
-            | ContractExpression::CFragment(_)
+            | ContractExpression::ProgramExpression(_)
             | ContractExpression::CBinding(_)
             | ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
@@ -1018,7 +1018,7 @@ fn integer_surface_zero_claim(
 fn surface_expression_is_constant(expression: &ContractExpression) -> bool {
     match expression {
         ContractExpression::IntegerLiteral(_) => true,
-        ContractExpression::CFragment(crate::kernel::ProgramExpression::Value(_)) => true,
+        ContractExpression::ProgramExpression(crate::kernel::ProgramExpression::Value(_)) => true,
         ContractExpression::Negate(inner) => surface_expression_is_constant(inner),
         ContractExpression::At { expression, .. } | ContractExpression::Old(expression) => {
             surface_expression_is_constant(expression)
@@ -1162,12 +1162,12 @@ fn with_operation_operands(written: &[ContractExpression]) -> Vec<ContractExpres
             | ContractExpression::Remainder(operand, _)
             | ContractExpression::ShiftRight(operand, _)
             | ContractExpression::RustShiftRight(operand, _) => operand.as_ref().clone(),
-            ContractExpression::CFragment(
+            ContractExpression::ProgramExpression(
                 ProgramExpression::Divide(operand, _)
                 | ProgramExpression::Remainder(operand, _)
                 | ProgramExpression::ShiftRight(operand, _)
                 | ProgramExpression::RustShiftRight(operand, _),
-            ) => ContractExpression::CFragment(operand.as_ref().clone()),
+            ) => ContractExpression::ProgramExpression(operand.as_ref().clone()),
             _ => continue,
         };
         let observed = ContractExpression::Call {
@@ -1259,8 +1259,13 @@ fn written_integer_observations<'s>(
                     operand,
                     lowered: ProgramExpression::Cast { .. },
                 } => vec![operand.as_ref().clone()],
-                ContractExpression::CFragment(ProgramExpression::Cast { expression, .. }) => {
-                    vec![ContractExpression::CFragment(expression.as_ref().clone())]
+                ContractExpression::ProgramExpression(ProgramExpression::Cast {
+                    expression,
+                    ..
+                }) => {
+                    vec![ContractExpression::ProgramExpression(
+                        expression.as_ref().clone(),
+                    )]
                 }
                 _ => Vec::new(),
             };
@@ -1659,7 +1664,7 @@ fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option
             left,
             operator: ComparisonOperator::LessThan,
             right: ContractExpression::Add(pivot, one),
-        } if **one == ContractExpression::CFragment(ProgramExpression::Value(int32(1))) => {
+        } if **one == ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))) => {
             Some(ClickProposition::Comparison {
                 left: left.clone(),
                 operator: ComparisonOperator::LessThan,
@@ -1675,9 +1680,9 @@ fn surface_upper_bound_split_condition(proposition: &ClickProposition) -> Option
             operator: ComparisonOperator::LessThan,
             right: native_int32_split_operand(ContractExpression::Subtract(
                 Box::new(right.clone()),
-                Box::new(ContractExpression::CFragment(ProgramExpression::Value(
-                    int32(1),
-                ))),
+                Box::new(ContractExpression::ProgramExpression(
+                    ProgramExpression::Value(int32(1)),
+                )),
             )),
         }),
         _ => None,
@@ -3923,7 +3928,7 @@ fn quantified_external_range_goal(goal: &Proposition) -> bool {
             return false;
         }
         match current {
-            Proposition::CMemoryLoadable { base, .. }
+            Proposition::MemoryLoadable { base, .. }
                 if matches!(base.block, crate::kernel::PointerBlock::ExternalArgument) =>
             {
                 saw_range = true;
@@ -3948,7 +3953,7 @@ fn quantified_external_range_goal(goal: &Proposition) -> bool {
             Proposition::Not(body)
             | Proposition::ForAll { body, .. }
             | Proposition::Exists { body, .. } => work.push(body),
-            Proposition::CMemoryLoadable { .. } => return false,
+            Proposition::MemoryLoadable { .. } => return false,
             Proposition::ConditionIs(_, _) => {}
             _ => return false,
         }
@@ -4038,9 +4043,9 @@ impl<'a> Proof<'a> {
 fn asserted_condition_proposition(condition: &ProgramExpression) -> ClickProposition {
     let comparison = |left: &ProgramExpression, operator, right: &ProgramExpression| {
         ClickProposition::Comparison {
-            left: ContractExpression::CFragment(left.clone()),
+            left: ContractExpression::ProgramExpression(left.clone()),
             operator,
-            right: ContractExpression::CFragment(right.clone()),
+            right: ContractExpression::ProgramExpression(right.clone()),
         }
     };
     match condition {
@@ -4095,11 +4100,13 @@ fn literal_requirement_spelling(
     }
     Some(RequirementSpelling {
         surface: ClickProposition::Comparison {
-            left: ContractExpression::CFragment(ProgramExpression::Value(crate::kernel::int32(0))),
+            left: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                crate::kernel::int32(0),
+            )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::CFragment(ProgramExpression::Value(crate::kernel::int32(
-                u32::from(value != polarity),
-            ))),
+            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                crate::kernel::int32(u32::from(value != polarity)),
+            )),
         },
     })
 }
@@ -4126,7 +4133,7 @@ pub(super) fn lowered_states_requirement(
         // A resource spelling includes its formation prerequisites. Proving
         // that complete conjunction proves the selected exact requirement;
         // never discard the extra goals or consult ambient facts here.
-        || (matches!(requirement.proposition, Proposition::CResourceSeparate { .. } | Proposition::CResourceContains { .. })
+        || (matches!(requirement.proposition, Proposition::ResourceSeparate { .. } | Proposition::ResourceContains { .. })
             && crate::kernel::proof::fact_reasoning::exact_fact_contains_conjunct(
                 lowered,
                 &requirement.proposition,
@@ -4225,13 +4232,13 @@ pub(super) fn propositions_match_after_canonical_loads(
                 }
             }
             (
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     memory: lm,
                     base: lb,
                     bytes: ln,
                     wide: lw,
                 },
-                Proposition::CMemoryLoadable {
+                Proposition::MemoryLoadable {
                     memory: rm,
                     base: rb,
                     bytes: rn,
@@ -4508,9 +4515,9 @@ fn source_backed_call_requirement_surface(
                     &context.parsed_function.parameters()[slot],
                     *parameter_type,
                 ),
-                None => ContractExpression::CFragment(super::surface_synthesis::source_c_argument(
-                    argument,
-                )),
+                None => ContractExpression::ProgramExpression(
+                    super::surface_synthesis::source_c_argument(argument),
+                ),
             };
             (parameter.clone(), argument)
         })
@@ -4550,7 +4557,7 @@ fn source_backed_call_requirement_surface(
         let expression = if let Some(written) = written_values.get(name.as_str()) {
             (*written).clone()
         } else if super::resources::is_integer_constant(value) {
-            ContractExpression::CFragment(ProgramExpression::Value(value.clone()))
+            ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone()))
         } else {
             let term = match value {
                 ProgramValue::Int32(term)
@@ -4565,8 +4572,8 @@ fn source_backed_call_requirement_surface(
                 .locals()
                 .names_holding_integer(term)
                 .next()?;
-            ContractExpression::CFragment(ProgramExpression::Variable(
-                crate::kernel::c_local_source_name(local).to_owned(),
+            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::program_local_source_name(local).to_owned(),
             ))
         };
         substitutions.insert(name.clone(), expression);
@@ -4673,7 +4680,8 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
         .iter()
         .enumerate()
         .filter_map(|(predicate_argument_slot, argument)| {
-            let ContractExpression::CFragment(ProgramExpression::Variable(callee_name)) = argument
+            let ContractExpression::ProgramExpression(ProgramExpression::Variable(callee_name)) =
+                argument
             else {
                 return None;
             };
@@ -4754,9 +4762,9 @@ fn caller_parameter_as_argument(
         {
             crate::surface::lowering::character_byte_view(parameter.name())
         }
-        _ => {
-            ContractExpression::CFragment(ProgramExpression::Variable(parameter.name().to_string()))
-        }
+        _ => ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            parameter.name().to_string(),
+        )),
     }
 }
 
@@ -5085,7 +5093,7 @@ mod synthesized_literal_tests {
         ));
         let whole = Proposition::And(Box::new(trivial.clone()), Box::new(bound));
         assert!(!lowered_states_requirement(&whole, &requirement(trivial)));
-        let separation = Proposition::CResourceSeparate {
+        let separation = Proposition::ResourceSeparate {
             left: Box::new(crate::kernel::Resource::Emp),
             right: Box::new(crate::kernel::Resource::Emp),
         };
@@ -5095,11 +5103,11 @@ mod synthesized_literal_tests {
 
     #[test]
     fn signed_certificate_spelling_matches_exact_read_atoms() {
-        use crate::kernel::{LoadKind, Memory, Pointer, intern_c_memory};
+        use crate::kernel::{LoadKind, Memory, Pointer, intern_memory};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(71_230));
-        let before = intern_c_memory(Memory::new());
-        let after = intern_c_memory(before.memory().clone().store(
+        let before = intern_memory(Memory::new());
+        let after = intern_memory(before.memory().clone().store(
             pointer.clone(),
             ProgramValue::Int32(MachineTerm::constant(1)),
         ));
@@ -5124,15 +5132,15 @@ mod synthesized_literal_tests {
     fn retained_requirements_match_mirrored_orders_and_stored_read_sources() {
         use crate::kernel::{
             CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
-            MachineOperandView as V, Memory, Pointer, intern_c_memory,
+            MachineOperandView as V, Memory, Pointer, intern_memory,
         };
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
         let x = MachineTerm::Variable(Variable(71231));
         let sum = MachineTerm::logical_machine_binary(ty, Op::Add, x, 1u32.into());
         let pointer = Pointer::symbolic(Variable(71232));
-        let before = intern_c_memory(Memory::new());
-        let after = intern_c_memory(
+        let before = intern_memory(Memory::new());
+        let after = intern_memory(
             before
                 .memory()
                 .clone()

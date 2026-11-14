@@ -11,7 +11,7 @@ fn charon_range_loops_verify_from_their_bounds() {
     let p = Project::from_fixture("design/charon-trial/ranges");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         // The count trails the yielded value, it does not lead it.
@@ -43,7 +43,7 @@ fn charon_range_loops_verify_from_their_bounds() {
             "verifying \"ranges.rs\";\nfn {}",
             function.replacen(before, after, 1)
         );
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));
         let rendered = format!("{error:?} {error}");

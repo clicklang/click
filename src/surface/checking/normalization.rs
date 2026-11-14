@@ -208,25 +208,25 @@ pub(in crate::surface) fn solve_proposition(
         Proposition::ForAll { .. }
         | Proposition::Exists { .. }
         | Proposition::Predicate { .. }
-        | Proposition::CExpressionEvaluates { .. }
-        | Proposition::CConditionEvaluates { .. }
-        | Proposition::CStatementExecutes { .. }
-        | Proposition::CStatementVerifies { .. }
-        | Proposition::CFunctionExecutes { .. }
-        | Proposition::CFunctionVerifies { .. }
-        | Proposition::CFunctionSatisfiesSpecification { .. }
-        | Proposition::CFunctionPartiallySatisfiesSpecification { .. }
-        | Proposition::CMemoryLoads { .. }
-        | Proposition::CMemoryReadDefined { .. }
-        | Proposition::CResourceViewable { .. }
-        | Proposition::CMemoryLoadable { .. }
-        | Proposition::CMemoryCanStore { .. }
-        | Proposition::CResourceSeparate { .. }
-        | Proposition::CResourceComposition(_)
-        | Proposition::CResourceContains { .. }
-        | Proposition::CMemoryMutatesOnly { .. }
-        | Proposition::CMemoryEffectSummary { .. }
-        | Proposition::CHeapAllocationFreed { .. } => {
+        | Proposition::ProgramExpressionEvaluates { .. }
+        | Proposition::ProgramConditionEvaluates { .. }
+        | Proposition::ProgramStatementExecutes { .. }
+        | Proposition::ProgramStatementVerifies { .. }
+        | Proposition::ProgramFunctionExecutes { .. }
+        | Proposition::ProgramFunctionVerifies { .. }
+        | Proposition::ProgramFunctionSatisfiesSpecification { .. }
+        | Proposition::ProgramFunctionPartiallySatisfiesSpecification { .. }
+        | Proposition::MemoryLoads { .. }
+        | Proposition::MemoryReadDefined { .. }
+        | Proposition::ResourceViewable { .. }
+        | Proposition::MemoryLoadable { .. }
+        | Proposition::MemoryCanStore { .. }
+        | Proposition::ResourceSeparate { .. }
+        | Proposition::ResourceComposition(_)
+        | Proposition::ResourceContains { .. }
+        | Proposition::MemoryMutatesOnly { .. }
+        | Proposition::MemoryEffectSummary { .. }
+        | Proposition::HeapAllocationFreed { .. } => {
             NormalizedProposition::Proposition(proposition.clone())
         }
     };
@@ -789,10 +789,10 @@ mod tests {
                 block: PointerBlock::Heap(920_000 + case),
                 offset: PointerOffsetTerm::Constant(4),
             };
-            let identity = crate::kernel::intern_c_memory(
+            let identity = crate::kernel::intern_memory(
                 Memory::new().with_block(format!("rewrite-origin-{case}"), 16),
             );
-            let observed = crate::kernel::intern_c_memory(
+            let observed = crate::kernel::intern_memory(
                 identity
                     .memory()
                     .clone()
@@ -856,9 +856,8 @@ mod tests {
             block: PointerBlock::Heap(930_001),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = crate::kernel::intern_c_memory(
-            Memory::new().with_block(PointerBlock::Heap(930_001), 16),
-        );
+        let memory =
+            crate::kernel::intern_memory(Memory::new().with_block(PointerBlock::Heap(930_001), 16));
         let loaded = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &source,
@@ -914,7 +913,7 @@ mod tests {
 
     #[test]
     fn pointer_rewrite_changes_every_matching_field_load_at_one_snapshot() {
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let source = Pointer {
             block: PointerBlock::Symbolic(Variable(91)),
             offset: PointerOffsetTerm::Constant(0),
@@ -1028,7 +1027,7 @@ mod tests {
 
     #[test]
     fn rewrite_substitutes_index_and_base_equalities_inside_load_addresses() {
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let data = MachineTerm::Variable(Variable(51));
         let alias = MachineTerm::Variable(Variable(52));
         let index = MachineTerm::Variable(Variable(53));
@@ -1104,7 +1103,7 @@ mod tests {
                 end,
             ))
         };
-        let goal = Proposition::CResourceSeparate {
+        let goal = Proposition::ResourceSeparate {
             left: Box::new(fixed.clone()),
             right: Box::new(range(source.clone(), source_len.clone())),
         };
@@ -1132,7 +1131,7 @@ mod tests {
             rewrite_proposition_by_exact_equality(&resized, &base_equality, &available).unwrap();
         assert_eq!(
             replaced,
-            Proposition::CResourceSeparate {
+            Proposition::ResourceSeparate {
                 left: Box::new(fixed),
                 right: Box::new(match range(source, target_len) {
                     Resource::Memory(range) => Resource::Memory(range.with_base(Pointer {
@@ -1171,7 +1170,7 @@ mod tests {
     }
     #[test]
     fn integer_observation_rewrite_requires_an_available_machine_equality() {
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block("rewrite-cell", 4));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block("rewrite-cell", 4));
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -1203,7 +1202,7 @@ mod tests {
     fn integer_range_fold_rewrite_changes_only_int32_endpoints() {
         let from = MachineTerm::Variable(Variable(71));
         let to = MachineTerm::Variable(Variable(72));
-        let memory = crate::kernel::intern_c_memory(Memory::new().with_block("fold", 4));
+        let memory = crate::kernel::intern_memory(Memory::new().with_block("fold", 4));
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             MachineTerm::MemoryLoad(
@@ -1312,12 +1311,12 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let first_memory =
-            crate::kernel::intern_c_memory(Memory::new().with_block("rewrite-cell", 4).store(
+            crate::kernel::intern_memory(Memory::new().with_block("rewrite-cell", 4).store(
                 pointer.clone(),
                 ProgramValue::Int32(MachineTerm::constant(0)),
             ));
         let second_memory =
-            crate::kernel::intern_c_memory(Memory::new().with_block("rewrite-cell", 4).store(
+            crate::kernel::intern_memory(Memory::new().with_block("rewrite-cell", 4).store(
                 pointer.clone(),
                 ProgramValue::Int32(MachineTerm::constant(7)),
             ));

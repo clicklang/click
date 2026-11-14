@@ -3962,7 +3962,7 @@ mod tests {
         let claim = include_str!("../../../design/charon-trial/plain-record-loop/loop.click");
         let export = decode(artifact, "loop.rs", source).unwrap();
         let prepared = super::super::import::prepared_for_test(export.clone()).unwrap();
-        C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
+        ProgramVerificationSession::new_program_prepared(claim, &prepared).unwrap();
         let mut missing = export;
         let mut removed = 0;
         for f in &mut missing.functions {
@@ -3981,7 +3981,7 @@ mod tests {
         }
         assert!(removed > 0);
         let prepared = super::super::import::prepared_for_test(missing).unwrap();
-        let error = C0VerificationSession::new_program_prepared(claim, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(claim, &prepared)
             .err()
             .expect("loop lost its storage-lifetime prerequisite");
         assert!(
@@ -4072,7 +4072,7 @@ mod tests {
             let rejected = match super::super::import::prepared_for_test(altered) {
                 Err(_) => true,
                 Ok(prepared) => {
-                    C0VerificationSession::new_program_prepared(claim, &prepared).is_err()
+                    ProgramVerificationSession::new_program_prepared(claim, &prepared).is_err()
                 }
             };
             assert!(rejected, "accepted array storage mutation {mutation}");
@@ -4188,7 +4188,7 @@ mod tests {
         block.statements.insert(index + 2, constructor);
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         assert!(
-            C0VerificationSession::new_program_prepared(
+            ProgramVerificationSession::new_program_prepared(
                 include_str!("../../../design/charon-trial/borrowed-loop/loop.click"),
                 &prepared,
             )
@@ -4196,7 +4196,7 @@ mod tests {
         );
     }
     use super::*;
-    use crate::surface::C0VerificationSession;
+    use crate::surface::ProgramVerificationSession;
     const ARTIFACT: &[u8] =
         include_bytes!("../../../design/charon-trial/.click/trial/trial.rs.ullbc");
     const SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/trial.rs");
@@ -4269,7 +4269,7 @@ mod tests {
         export.library_iterators = true;
         super::super::standard_library::declare_iterator_operations(&mut export);
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             include_str!("../../../design/charon-trial/chunks/chunks.click"),
             &prepared,
         )
@@ -4306,7 +4306,7 @@ mod tests {
     fn charon_assignment_operator_source_bodies_verify() {
         let export = decode(OPERATOR_ARTIFACT, "operators.rs", OPERATOR_SOURCE).unwrap();
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             include_str!("../../../design/charon-trial/assignment-operators/operators.click"),
             &prepared,
         )
@@ -4439,7 +4439,7 @@ mod tests {
                 .any(|s| matches!(s, S::SharedArrayMove { .. }))
         );
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        C0VerificationSession::new_program_prepared(ITERATION_CLAIM, &prepared).unwrap();
+        ProgramVerificationSession::new_program_prepared(ITERATION_CLAIM, &prepared).unwrap();
     }
 
     #[test]
@@ -4556,7 +4556,7 @@ mod tests {
             } else {
                 "verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { views words[0..4]; ensures result == old(words[0]); }"
             };
-            assert!(C0VerificationSession::new_program_prepared(claim, &prepared).is_err());
+            assert!(ProgramVerificationSession::new_program_prepared(claim, &prepared).is_err());
         }
     }
 
@@ -4609,7 +4609,7 @@ mod tests {
         };
         mir.blocks[none].statements.insert(0, payload);
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        assert!(C0VerificationSession::new_program_prepared("verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { ensures result == 0; }", &prepared).is_err());
+        assert!(ProgramVerificationSession::new_program_prepared("verifying \"iteration.rs\"; fn signed(words: &[i32; 4]) -> i32 { ensures result == 0; }", &prepared).is_err());
     }
 
     const OWNED_ARRAY_ARTIFACT: &[u8] = include_bytes!(
@@ -4638,7 +4638,7 @@ mod tests {
             .statements
             .insert(index + 1, block.statements[index].clone());
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        assert!(C0VerificationSession::new_program_prepared("verifying \"owned.rs\"; fn moved(value: u32, index: usize) -> u32 { requires index < 4u64; ensures result == value; }", &prepared).is_err());
+        assert!(ProgramVerificationSession::new_program_prepared("verifying \"owned.rs\"; fn moved(value: u32, index: usize) -> u32 { requires index < 4u64; ensures result == value; }", &prepared).is_err());
     }
 
     const FIELDS_ARTIFACT: &[u8] =
@@ -4954,7 +4954,7 @@ mod tests {
         // array length. Warm it outside the metadata scaling measurement.
         {
             let _session = crate::kernel::VerificationSession::enter();
-            crate::surface::verify_c0_sources(
+            crate::surface::verify_c_sources(
                 "theorem warm_array_metadata_library() { ensures 0 == 0 by solve(); }",
                 &[],
             )
@@ -4972,7 +4972,7 @@ mod tests {
                 "verifying \"nested.rs\"; fn {name}() -> usize {{ ensures result == {length}u64; }}"
             );
             let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-                C0VerificationSession::new_program_prepared(&claim, &prepared)
+                ProgramVerificationSession::new_program_prepared(&claim, &prepared)
             });
             verified.unwrap();
             samples.push(work);
@@ -5117,7 +5117,7 @@ mod tests {
                 sidecar.to_string()
             };
             assert_eq!(
-                C0VerificationSession::new_program_prepared(&sidecar, &prepared).is_err(),
+                ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).is_err(),
                 !duplicate,
                 "duplicate={duplicate}"
             );
@@ -5203,7 +5203,7 @@ mod tests {
         mir.blocks[none].statements.insert(0, payload);
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         let claim = "verifying \"chunks.rs\"; fn next_len(bytes: &[u8]) -> usize { requires bytes.len() == 0u64; ensures result == 0u64; }";
-        assert!(C0VerificationSession::new_program_prepared(claim, &prepared).is_err());
+        assert!(ProgramVerificationSession::new_program_prepared(claim, &prepared).is_err());
     }
 
     const SLICE_ARTIFACT: &[u8] =
@@ -5329,7 +5329,7 @@ mod tests {
             include_bytes!("../../../design/charon-trial/identity-from/identity.rs");
         let export = decode(ARTIFACT, "identity.rs", SOURCE).unwrap();
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        C0VerificationSession::new_program_prepared(
+        ProgramVerificationSession::new_program_prepared(
             include_str!("../../../design/charon-trial/identity-from/identity.click"),
             &prepared,
         )
@@ -5507,7 +5507,7 @@ mod tests {
             .unwrap();
         *index = 1_000_000;
         let prepared = super::super::import::prepared_for_test(export).unwrap();
-        assert!(C0VerificationSession::new_program_prepared(ARRAY_CLAIM, &prepared).is_err());
+        assert!(ProgramVerificationSession::new_program_prepared(ARRAY_CLAIM, &prepared).is_err());
     }
 
     #[test]
@@ -5583,7 +5583,7 @@ mod tests {
         drop.terminator = T::Goto { target };
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         assert!(
-            C0VerificationSession::new_program_prepared(
+            ProgramVerificationSession::new_program_prepared(
                 include_str!("../../../design/charon-trial/borrowed-loop/loop.click"),
                 &prepared
             )
@@ -5692,7 +5692,7 @@ mod tests {
             // shared checker rather than rustc's rejection of invalid safe source.
             let prepared = super::super::import::prepared_for_test(export).unwrap();
             assert!(
-                C0VerificationSession::new_program_prepared(CLAIM, &prepared).is_err(),
+                ProgramVerificationSession::new_program_prepared(CLAIM, &prepared).is_err(),
                 "corruption {corruption}"
             );
         }

@@ -1,12 +1,12 @@
 use super::*;
-use crate::kernel::{ProgramType, ResourceAccessMode, ResourceSpec, c_function, int32};
+use crate::kernel::{ProgramType, ResourceAccessMode, ResourceSpec, int32, program_function};
 
 #[test]
 fn authority_named_memory_rewrite_preserves_population_ledger() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
     let schema = ResourceFieldSchema::new(vec![(
         "value".into(),
-        ResourceFieldType::C(ProgramType::Int32),
+        ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
     let instance = ResourceInstance::new(
@@ -38,7 +38,7 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
         vec![],
     )
     .with_instance_schema(Some(schema));
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "test",
         vec![],
@@ -73,7 +73,7 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
     .expect("ordinary named memory is a checked representation exchange");
     let forged_facts = open_facts
         .clone()
-        .with_fact(Proposition::CMemoryReadDefined {
+        .with_fact(Proposition::MemoryReadDefined {
             memory: open.memory().clone(),
             pointer: crate::kernel::Pointer::symbolic(Variable(9_850_004)),
             value_type: ProgramType::Int32,

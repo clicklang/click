@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn a_typed_producer_replaces_an_untyped_canonical_reads_guessed_width() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(Memory::new());
+        let memory = intern_memory(Memory::new());
         let pointer = Pointer::symbolic(Variable(998_709));
         let untyped = canonical_scalar_read(&MachineTerm::MemoryLoad(
             memory.clone(),
@@ -340,7 +340,7 @@ mod tests {
     #[test]
     fn inspecting_an_unobserved_read_does_not_capture_its_width_or_origin() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(Memory::new());
+        let memory = intern_memory(Memory::new());
         let pointer = Pointer::symbolic(Variable(998_707));
         let read =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
@@ -351,7 +351,7 @@ mod tests {
             8
         );
         assert!(existing(&memory, &pointer, LoadKind::Int32).is_none());
-        let live = intern_c_memory(memory.memory().clone().store(
+        let live = intern_memory(memory.memory().clone().store(
             pointer.offset_by_bytes(16),
             ProgramValue::Int32(1u32.into()),
         ));
@@ -366,7 +366,7 @@ mod tests {
             block: format!("local:frame-origin-{index}").into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory = intern_c_memory(Memory::new().with_block(pointer.block.clone(), 4));
+        let memory = intern_memory(Memory::new().with_block(pointer.block.clone(), 4));
         let read =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
         let bound = Variable(998_800 + index);
@@ -383,7 +383,7 @@ mod tests {
             ),
             4,
         );
-        let origin = intern_c_memory(memory.memory().clone().with_call_memory_havoc(
+        let origin = intern_memory(memory.memory().clone().with_call_memory_havoc(
             Variable(999_800 + index),
             &[range],
             &PureFactContext::new(),
@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn structural_observations_need_no_reserved_name_and_restore_branch_metadata() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(Memory::new());
+        let memory = intern_memory(Memory::new());
         let pointer = Pointer::symbolic(Variable(998_701));
         let read = KernelTerm::scalar_read_descriptor(
             MachineIntegerType::Int32,
@@ -442,7 +442,7 @@ mod tests {
         let saved = capture_load_variable_registry();
         begin_load_origin_epoch();
         assert!(observe(&other_format).origin.is_none());
-        let later = intern_c_memory(memory.memory().clone().store(
+        let later = intern_memory(memory.memory().clone().store(
             pointer.offset_by_bytes(16),
             ProgramValue::Int32(1u32.into()),
         ));
@@ -459,9 +459,9 @@ mod tests {
     fn structural_observations_distinguish_read_kind_and_snapshot() {
         let _session = VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(998_702));
-        let before = intern_c_memory(Memory::new());
+        let before = intern_memory(Memory::new());
         let after =
-            intern_c_memory(Memory::new().store(pointer.clone(), ProgramValue::Int32(1u32.into())));
+            intern_memory(Memory::new().store(pointer.clone(), ProgramValue::Int32(1u32.into())));
         let first = record(&before, &pointer, LoadKind::Int32, &before, 4);
         let other_kind = record(&before, &pointer, LoadKind::Int16, &before, 2);
         let other_time = record(&after, &pointer, LoadKind::Int32, &after, 8);
@@ -509,7 +509,8 @@ mod tests {
                 LoadPurpose::Logical,
             )
             .expect("integer read");
-            let read = crate::kernel::spec::c_value_bitvector_term(&value).expect("scalar term");
+            let read =
+                crate::kernel::spec::program_value_bitvector_term(&value).expect("scalar term");
             let MachineTerm::MemoryLoad(snapshot, address, kind) = &read else {
                 panic!("{ty:?} must retain its read: {read:?}");
             };
@@ -528,9 +529,9 @@ mod tests {
         let _session = VerificationSession::enter();
         let source = Pointer::symbolic(Variable(998_705));
         let destination = Pointer::symbolic(Variable(998_706));
-        let memory = intern_c_memory(Memory::new());
+        let memory = intern_memory(Memory::new());
         let held = canonical_form_of_load(memory.clone(), source, LoadKind::Int32);
-        let after = intern_c_memory(
+        let after = intern_memory(
             memory
                 .memory()
                 .clone()

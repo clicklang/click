@@ -84,7 +84,7 @@ fn inferred_constructor_type_arguments_are_written_into_the_declaration() {
     else {
         panic!("the body is a constructor");
     };
-    let int32_list = vec![ClickType::C(C0Type::Int32)];
+    let int32_list = vec![ClickType::Program(C0Type::Int32)];
     assert_eq!(algebraic_type.arguments, int32_list);
     let ContractExpression::AlgebraicConstructor { algebraic_type, .. } = &arguments[1] else {
         panic!("the tail is a constructor");
@@ -107,7 +107,8 @@ fn authority_test_protected(argument: ContractExpression) -> ResourceClause {
 
 #[test]
 fn authority_type_argument_requires_exact_unary_pointer_family() {
-    let pointer = ContractExpression::CFragment(ProgramExpression::Variable("p".to_string()));
+    let pointer =
+        ContractExpression::ProgramExpression(ProgramExpression::Variable("p".to_string()));
     let accepted = expand_resource_type_arguments(
         "authority",
         vec![authority_test_protected(pointer.clone())],
@@ -187,7 +188,7 @@ fn check_isolated_program(value: i32, expected: i32) {
         }}
         "#
     );
-    let result = verify_c0_sources(&click_source, &[("answer.c", &c_source)]);
+    let result = verify_c_sources(&click_source, &[("answer.c", &c_source)]);
     if value == expected {
         result.expect("each program must use its own wanted predicate");
     } else {
@@ -358,7 +359,7 @@ fn certification_checks_only_the_cited_library_theorem() {
         }
     "#;
     let proved = proved_theorems_during(|| {
-        verify_c0_sources(click_source, &[("keep.c", c_source)])
+        verify_c_sources(click_source, &[("keep.c", c_source)])
             .unwrap_or_else(|error| panic!("C proof failed: {}", error.message()));
     });
     assert_eq!(proved, ["click::integer::int32_remainder_to_integer"]);
@@ -366,12 +367,12 @@ fn certification_checks_only_the_cited_library_theorem() {
 
 #[test]
 fn authority_field_schema_and_count_admission_are_independent_of_instance_fields() {
-    let pointer = ContractExpression::CFragment(ProgramExpression::Variable("p".into()));
+    let pointer = ContractExpression::ProgramExpression(ProgramExpression::Variable("p".into()));
     let mut scope = authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, true);
     scope.definitions.get_mut("reference").unwrap().fields =
         std::sync::Arc::new(BTreeMap::from([(
             "serial".into(),
-            (0, ClickType::C(C0Type::Int32)),
+            (0, ClickType::Program(C0Type::Int32)),
         )]));
     let accepted = expand_resource_type_arguments(
         "authority",
@@ -398,7 +399,7 @@ fn authority_field_schema_and_count_admission_are_independent_of_instance_fields
 /// `authorized`, whether or not it declares fields.
 #[test]
 fn authorization_not_field_presence_selects_countability() {
-    let pointer = ContractExpression::CFragment(ProgramExpression::Variable("p".into()));
+    let pointer = ContractExpression::ProgramExpression(ProgramExpression::Variable("p".into()));
     let count = ContractExpression::ResourceCount(Box::new(authority_test_protected(pointer)));
     for has_fields in [false, true] {
         for authorized in [false, true] {
@@ -410,7 +411,7 @@ fn authorization_not_field_presence_selects_countability() {
             if has_fields {
                 info.fields = std::sync::Arc::new(BTreeMap::from([(
                     "serial".into(),
-                    (0, ClickType::C(C0Type::Int32)),
+                    (0, ClickType::Program(C0Type::Int32)),
                 )]));
             }
             assert_eq!(

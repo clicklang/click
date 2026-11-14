@@ -16,9 +16,9 @@ fn pointee_const_return_rebinding_is_allowed_but_store_through_pointer_is_not() 
         true,
     );
     let environment = ExecutionEnvironment::new();
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         &state,
-        &c_assign("q", c_variable("p")),
+        &program_assign("q", crate::kernel::program_expression::variable("p")),
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::default(),
@@ -34,9 +34,12 @@ fn pointee_const_return_rebinding_is_allowed_but_store_through_pointer_is_not() 
             ..
         })
     ));
-    let paths = execute_c_statement_paths(
+    let paths = execute_execution_statement_paths(
         state,
-        &c_store(c_variable("q"), c_int32_literal(1)),
+        &program_store(
+            crate::kernel::program_expression::variable("q"),
+            crate::kernel::program_expression::int32_literal(1),
+        ),
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::default(),
@@ -53,8 +56,8 @@ fn pointee_const_return_inline_call_preserves_pointer_identity() {
     let function = ProgramFunction::new(
         ProgramType::Int32Pointer,
         "view",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_variable("p")),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::variable("p")),
     )
     .with_return_pointee_constant(true)
     .with_inline_body();
@@ -62,11 +65,11 @@ fn pointee_const_return_inline_call_preserves_pointer_identity() {
         ProgramValue::typed_pointer(Pointer::symbolic(Variable(917)), ProgramType::Int32Pointer);
     let state = ExecutionState::new().with_local("p", value.clone());
     let environment = ExecutionEnvironment::new().with_function(function);
-    let paths = execute_c_call_assign_paths(
+    let paths = execute_program_call_assign_paths(
         &state,
         "temporary",
         "view",
-        &[c_variable("p")],
+        &[crate::kernel::program_expression::variable("p")],
         &PureFactContext::new(),
         ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::default(),
@@ -79,7 +82,7 @@ fn pointee_const_return_inline_call_preserves_pointer_identity() {
     let result = local_native_output_76.as_deref().unwrap();
     assert!(matches!(result, ProgramValue::Pointer(pointer) if pointer.pointee_constant()));
     let equality =
-        c_value_comparison_proposition(result, ComparisonOperator::Equal, &value).unwrap();
+        program_value_comparison_proposition(result, ComparisonOperator::Equal, &value).unwrap();
     assert!(crate::kernel::search::ProofSearch::proves(
         &(PureFactContext::new()),
         &equality
@@ -93,12 +96,12 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         ProgramType::UInt8Pointer,
         "text",
         Vec::new(),
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     )
     .with_return_pointee_constant(true);
     let function_type = function.function_pointer_type();
     let environment = ExecutionEnvironment::new().with_function(function);
-    let paths = execute_c_call_assign_paths(
+    let paths = execute_program_call_assign_paths(
         &ExecutionState::new(),
         "temporary",
         "text",
@@ -120,7 +123,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
             function_type,
         ),
     );
-    let paths = execute_c_call_assign_paths(
+    let paths = execute_program_call_assign_paths(
         &state,
         "temporary",
         "callback",
@@ -137,7 +140,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
         "mutable",
         ProgramValue::typed_pointer(Pointer::null(), ProgramType::UInt8Pointer),
     );
-    let paths = execute_c_call_assign_paths(
+    let paths = execute_program_call_assign_paths(
         &state,
         "mutable",
         "callback",
@@ -166,7 +169,7 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
             incompatible,
         ),
     );
-    let paths = execute_c_call_assign_paths(
+    let paths = execute_program_call_assign_paths(
         &state,
         "temporary",
         "callback",
@@ -311,7 +314,7 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
                 ProgramValue::typed_pointer(Pointer::null(), ProgramType::Int32Pointer),
             );
         }
-        let paths = execute_c_call_assign_paths(
+        let paths = execute_program_call_assign_paths(
             &state,
             "temporary",
             "callback",

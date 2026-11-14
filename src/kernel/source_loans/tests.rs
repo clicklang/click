@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::eval::{evaluate_c_expression_paths, execute_c_statement_paths};
+use crate::kernel::eval::{evaluate_program_expression_paths, execute_execution_statement_paths};
 use crate::languages::rust::schema::{self as r, Expression as E, MirStatement as M, Type};
 
 fn reference_type() -> Type {
@@ -128,7 +128,7 @@ fn initial() -> (ExecutionState, ResourceOccurrenceId) {
 
 fn execute(state: &ExecutionState, statement: &ProgramStatement) -> StatementOutcome {
     let environment = ExecutionEnvironment::default();
-    let mut paths = execute_c_statement_paths(
+    let mut paths = execute_execution_statement_paths(
         state,
         statement,
         &PureFactContext::new(),
@@ -148,7 +148,7 @@ fn normal(outcome: StatementOutcome) -> ExecutionState {
 }
 
 fn read(state: &ExecutionState, expression: ProgramExpression) -> ExpressionOutcome {
-    let mut paths = evaluate_c_expression_paths(
+    let mut paths = evaluate_program_expression_paths(
         state,
         &expression,
         &PureFactContext::new(),
@@ -274,16 +274,32 @@ fn source_scalar_lease_explicit_ends_preserve_store_read_and_alias_behavior() {
                 .is_none()
         );
         assert!(matches!(
-            read(&active, c_load(c_variable("parent"))),
+            read(
+                &active,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::RuntimeError(RuntimeError::MissingResource { .. })
         ));
         assert!(matches!(
-            execute(&active, &c_store(c_variable("parent"), c_int32_literal(9))),
+            execute(
+                &active,
+                &program_store(
+                    crate::kernel::program_expression::variable("parent"),
+                    crate::kernel::program_expression::int32_literal(9)
+                )
+            ),
             StatementOutcome::RuntimeError(_)
         ));
         for _ in 0..2 {
             assert_eq!(
-                read(&active, c_load(c_variable("child"))),
+                read(
+                    &active,
+                    crate::kernel::program_expression::load(
+                        crate::kernel::program_expression::variable("child")
+                    )
+                ),
                 ExpressionOutcome::Value(int32(expected))
             );
         }
@@ -296,19 +312,32 @@ fn source_scalar_lease_explicit_ends_preserve_store_read_and_alias_behavior() {
                 .is_some()
         );
         assert_eq!(
-            read(&recovered, c_load(c_variable("parent"))),
+            read(
+                &recovered,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(int32(expected))
         );
         for slot in &source.functions[0].mir.as_ref().unwrap().locals {
             if matches!(slot.value_type, Type::Reference { .. }) {
                 assert!(matches!(
-                    read(&recovered, c_load(c_variable(&slot.name))),
+                    read(
+                        &recovered,
+                        crate::kernel::program_expression::load(
+                            crate::kernel::program_expression::variable(&slot.name)
+                        )
+                    ),
                     ExpressionOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
                 ));
                 assert!(matches!(
                     execute(
                         &recovered,
-                        &c_store(c_variable(&slot.name), c_int32_literal(9))
+                        &program_store(
+                            crate::kernel::program_expression::variable(&slot.name),
+                            crate::kernel::program_expression::int32_literal(9)
+                        )
                     ),
                     StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
                 ));
@@ -323,7 +352,12 @@ fn source_scalar_lease_explicit_ends_preserve_store_read_and_alias_behavior() {
             panic!("source return");
         };
         assert_eq!(
-            read(&state, c_load(c_variable("parent"))),
+            read(
+                &state,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(int32(8))
         );
     }
@@ -353,7 +387,12 @@ fn source_scalar_lease_explicit_nested_shared_frontiers_end_innermost_first() {
             );
         }
         assert_eq!(
-            read(&state, c_load(c_variable("parent"))),
+            read(
+                &state,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(int32(7))
         );
         assert!(!state.has_local_scalar_references());
@@ -361,7 +400,12 @@ fn source_scalar_lease_explicit_nested_shared_frontiers_end_innermost_first() {
             panic!("nested return");
         };
         assert_eq!(
-            read(&state, c_load(c_variable("parent"))),
+            read(
+                &state,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(int32(8))
         );
     }
@@ -402,7 +446,12 @@ fn source_scalar_lease_explicit_end_uses_live_handle_after_alias_replacement() {
         );
     let (state, end) = boundary(&initial, &program);
     assert_eq!(
-        read(&state, c_load(c_variable("child"))),
+        read(
+            &state,
+            crate::kernel::program_expression::load(crate::kernel::program_expression::variable(
+                "child"
+            ))
+        ),
         ExpressionOutcome::Value(int32(2))
     );
     let state = normal(execute(&state, &end));
@@ -413,15 +462,30 @@ fn source_scalar_lease_explicit_end_uses_live_handle_after_alias_replacement() {
             .is_some()
     );
     assert_eq!(
-        read(&state, c_load(c_variable("parent"))),
+        read(
+            &state,
+            crate::kernel::program_expression::load(crate::kernel::program_expression::variable(
+                "parent"
+            ))
+        ),
         ExpressionOutcome::Value(int32(7))
     );
     assert_eq!(
-        read(&state, c_load(c_variable("child"))),
+        read(
+            &state,
+            crate::kernel::program_expression::load(crate::kernel::program_expression::variable(
+                "child"
+            ))
+        ),
         ExpressionOutcome::Value(int32(2))
     );
     assert!(matches!(
-        read(&state, c_load(c_variable("alias_0"))),
+        read(
+            &state,
+            crate::kernel::program_expression::load(crate::kernel::program_expression::variable(
+                "alias_0"
+            ))
+        ),
         ExpressionOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
     ));
 }
@@ -459,11 +523,11 @@ fn source_scalar_lease_explicit_operations_are_semantic_and_observations_are_ine
     let (program, _scope) = alias_body(&export());
     let (initial, _) = initial();
     let statements = leaves(&program);
-    let mut without_ends = c_skip();
-    let mut without_birth = c_skip();
+    let mut without_ends = program_skip();
+    let mut without_birth = program_skip();
     for statement in statements {
         if !matches!(statement, ProgramStatement::EndScalarReference(_)) {
-            without_ends = c_seq(without_ends, statement.clone());
+            without_ends = program_seq(without_ends, statement.clone());
         }
         let mut bare = statement;
         if let ProgramStatement::Assign { source, .. } = &mut bare
@@ -471,7 +535,7 @@ fn source_scalar_lease_explicit_operations_are_semantic_and_observations_are_ine
         {
             *source = StatementAssignSource::new(observer.clone());
         }
-        without_birth = c_seq(without_birth, bare);
+        without_birth = program_seq(without_birth, bare);
     }
     assert_ne!(program, without_ends);
     assert_ne!(program, without_birth);
@@ -491,7 +555,7 @@ fn source_scalar_lease_explicit_operations_are_semantic_and_observations_are_ine
     let ProgramStatement::Assign { expression, .. } = &mut altered else {
         panic!()
     };
-    *expression = c_variable("parent");
+    *expression = crate::kernel::program_expression::variable("parent");
     assert!(matches!(
         execute(&initial, &altered),
         StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
@@ -521,7 +585,10 @@ fn source_scalar_lease_explicit_end_is_not_executed_after_failed_read_assignment
         false,
     );
     eval::sync_stack_local(&mut state, "x", &int32(0));
-    let tail = statements[point..].iter().cloned().fold(c_skip(), c_seq);
+    let tail = statements[point..]
+        .iter()
+        .cloned()
+        .fold(program_skip(), program_seq);
     assert!(matches!(
         execute(&state, &tail),
         StatementOutcome::RuntimeError(_) | StatementOutcome::UndefinedBehavior(_)
@@ -547,9 +614,15 @@ fn source_scalar_lease_explicit_ending_follows_late_alias_use() {
 fn source_scalar_lease_explicit_declared_local_and_current_child_writes_survive_recovery() {
     let mut initial = normal(execute(
         &ExecutionState::new(),
-        &c_declare("number", ProgramType::Int32),
+        &program_declare("number", ProgramType::Int32),
     ));
-    initial = normal(execute(&initial, &c_assign("number", c_int32_literal(4))));
+    initial = normal(execute(
+        &initial,
+        &program_assign(
+            "number",
+            crate::kernel::program_expression::int32_literal(4),
+        ),
+    ));
     let pointer = initial.locals.slot("number").unwrap().clone();
     let initial = initial.with_local(
         "parent",
@@ -562,16 +635,22 @@ fn source_scalar_lease_explicit_declared_local_and_current_child_writes_survive_
     let (program, _scope) = alias_body(&source);
     let (state, end) = boundary(&initial, &program);
     assert!(matches!(
-        read(&state, c_variable("number")),
+        read(
+            &state,
+            crate::kernel::program_expression::variable("number")
+        ),
         ExpressionOutcome::RuntimeError(RuntimeError::MissingResource { .. })
     ));
     let recovered = normal(execute(&state, &end));
     assert_eq!(
-        read(&recovered, c_variable("number")),
+        read(
+            &recovered,
+            crate::kernel::program_expression::variable("number")
+        ),
         ExpressionOutcome::Value(int32(7))
     );
     assert_eq!(
-        read(&recovered, c_variable("x")),
+        read(&recovered, crate::kernel::program_expression::variable("x")),
         ExpressionOutcome::Value(int32(7))
     );
 }
@@ -631,7 +710,12 @@ fn source_scalar_lease_explicit_unsigned_widths_preserve_current_values() {
                 panic!("unsigned return")
             };
             assert_eq!(
-                read(&state, c_load(c_variable("parent"))),
+                read(
+                    &state,
+                    crate::kernel::program_expression::load(
+                        crate::kernel::program_expression::variable("parent")
+                    )
+                ),
                 ExpressionOutcome::Value(finish.clone())
             );
             assert!(
@@ -641,7 +725,12 @@ fn source_scalar_lease_explicit_unsigned_widths_preserve_current_values() {
                     .is_some()
             );
             assert!(matches!(
-                read(&state, c_load(c_variable("alias_0"))),
+                read(
+                    &state,
+                    crate::kernel::program_expression::load(
+                        crate::kernel::program_expression::variable("alias_0")
+                    )
+                ),
                 ExpressionOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
             ));
         }
@@ -673,7 +762,12 @@ fn source_scalar_lease_explicit_end_handles_scalar_expressions_and_unused_childr
             panic!("source return")
         };
         assert_eq!(
-            read(&state, c_load(c_variable("parent"))),
+            read(
+                &state,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(int32(8))
         );
         assert!(!state.has_local_scalar_references());
@@ -752,11 +846,22 @@ fn source_scalar_lease_branches_keep_identical_live_ledger_until_common_end() {
         for state in [&left, &right] {
             assert!(state.has_local_scalar_references());
             assert!(matches!(
-                read(state, c_load(c_variable("parent"))),
+                read(
+                    state,
+                    crate::kernel::program_expression::load(
+                        crate::kernel::program_expression::variable("parent")
+                    )
+                ),
                 ExpressionOutcome::RuntimeError(_)
             ));
             assert!(matches!(
-                execute(state, &c_store(c_variable("parent"), c_int32_literal(6))),
+                execute(
+                    state,
+                    &program_store(
+                        crate::kernel::program_expression::variable("parent"),
+                        crate::kernel::program_expression::int32_literal(6)
+                    )
+                ),
                 StatementOutcome::RuntimeError(_)
             ));
         }
@@ -769,7 +874,7 @@ fn source_scalar_lease_branches_keep_identical_live_ledger_until_common_end() {
             .collect::<std::collections::BTreeMap<_, _>>();
         common.retain(|name, value| right.locals().get(name) == Some(&*value));
         let joined =
-            abstract_c_state_for_interface_join_across(&left, &[&left, &right], 0).unwrap();
+            abstract_execution_state_for_interface_join_across(&left, &[&left, &right], 0).unwrap();
         assert_eq!(joined.state.loan_ledger(), active.loan_ledger());
         let endings = ends(&program);
         assert_eq!(endings.len(), depth);
@@ -790,10 +895,20 @@ fn source_scalar_lease_branches_keep_identical_live_ledger_until_common_end() {
                 .is_some()
         );
         assert!(matches!(
-            read(&recovered, c_load(c_variable("parent"))),
+            read(
+                &recovered,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(_)
         ));
-        let stale = read(&recovered, c_load(c_variable("child")));
+        let stale = read(
+            &recovered,
+            crate::kernel::program_expression::load(crate::kernel::program_expression::variable(
+                "child",
+            )),
+        );
         assert!(
             matches!(
                 stale,
@@ -822,7 +937,12 @@ fn source_scalar_lease_branches_keep_identical_live_ledger_until_common_end() {
                     .is_some()
             );
             assert_eq!(
-                read(&state, c_load(c_variable("parent"))),
+                read(
+                    &state,
+                    crate::kernel::program_expression::load(
+                        crate::kernel::program_expression::variable("parent")
+                    )
+                ),
                 ExpressionOutcome::Value(int32(8))
             );
         }
@@ -909,7 +1029,12 @@ fn source_scalar_lease_branch_conditions_and_later_join_reads_extend_the_frontie
         let (active, _) = boundary(&initial().0, &program);
         assert!(active.has_local_scalar_references());
         assert_eq!(
-            read(&active, c_load(c_variable("child"))),
+            read(
+                &active,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("child")
+                )
+            ),
             ExpressionOutcome::Value(int32(4))
         );
         let recovered = normal(execute(&active, &ending));
@@ -953,7 +1078,12 @@ fn source_scalar_lease_nested_branch_regions_end_only_at_outer_continuation() {
             &program,
         );
         assert_eq!(
-            read(&active, c_load(c_variable("nested_1"))),
+            read(
+                &active,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("nested_1")
+                )
+            ),
             ExpressionOutcome::Value(int32(expected))
         );
         let mut recovered = active;
@@ -961,7 +1091,12 @@ fn source_scalar_lease_nested_branch_regions_end_only_at_outer_continuation() {
             recovered = normal(execute(&recovered, end));
         }
         assert_eq!(
-            read(&recovered, c_load(c_variable("parent"))),
+            read(
+                &recovered,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(int32(expected))
         );
     }
@@ -1008,7 +1143,12 @@ fn source_scalar_lease_birth_after_join_binds_actual_nonentry_source_point() {
         };
         assert!(!state.has_local_scalar_references());
         assert_eq!(
-            read(&state, c_load(c_variable("parent"))),
+            read(
+                &state,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(int32(8))
         );
     }
@@ -1065,7 +1205,7 @@ fn source_scalar_scope_closes_arm_borrows_and_clears_local_reference_slots() {
         .unwrap();
     assert!(entered.has_local_reference_scope());
     assert!(matches!(
-        execute(&entered, &c_return(c_void_value())),
+        execute(&entered, &program_return(program_void_value())),
         StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
     ));
     let left = normal(execute(&entered, yes));
@@ -1077,7 +1217,7 @@ fn source_scalar_scope_closes_arm_borrows_and_clears_local_reference_slots() {
         for name in ["arm_0_1", "arm_0_2"] {
             assert!(state.locals().is_uninitialized_object(name));
             assert_eq!(
-                read(state, c_variable(name)),
+                read(state, crate::kernel::program_expression::variable(name)),
                 ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::UninitializedRead)
             );
         }
@@ -1085,7 +1225,12 @@ fn source_scalar_scope_closes_arm_borrows_and_clears_local_reference_slots() {
     }
     for (state, expected) in [(&left, 7), (&right, 9)] {
         assert_eq!(
-            read(state, c_load(c_variable("parent"))),
+            read(
+                state,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(int32(expected))
         );
     }
@@ -1098,7 +1243,12 @@ fn source_scalar_scope_closes_arm_borrows_and_clears_local_reference_slots() {
         };
         assert!(!state.has_local_reference_scope());
         assert_eq!(
-            read(&state, c_load(c_variable("parent"))),
+            read(
+                &state,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(int32(8))
         );
     }
@@ -1213,9 +1363,9 @@ fn source_scalar_scope_kernel_recovery_preserves_memory_support_and_freshness() 
         );
         let written = normal(execute(
             &active,
-            &c_store(
+            &program_store(
                 ProgramExpression::Value(ProgramValue::Pointer(child.clone())),
-                c_int32_literal(value),
+                crate::kernel::program_expression::int32_literal(value),
             ),
         ));
         let closed = written
@@ -1237,15 +1387,20 @@ fn source_scalar_scope_kernel_recovery_preserves_memory_support_and_freshness() 
                 .is_some()
         );
         assert_eq!(
-            read(&recovered, c_load(c_variable("parent"))),
+            read(
+                &recovered,
+                crate::kernel::program_expression::load(
+                    crate::kernel::program_expression::variable("parent")
+                )
+            ),
             ExpressionOutcome::Value(int32(value))
         );
         assert!(matches!(
             read(
                 &recovered,
-                c_load(ProgramExpression::Value(ProgramValue::Pointer(
-                    child.clone()
-                )))
+                crate::kernel::program_expression::load(ProgramExpression::Value(
+                    ProgramValue::Pointer(child.clone())
+                ))
             ),
             ExpressionOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
         ));
@@ -1288,9 +1443,9 @@ fn source_scalar_scope_nested_checkpoint_cannot_end_an_entry_reference() {
     assert_eq!(
         read(
             &recovered,
-            c_load(ProgramExpression::Value(ProgramValue::Pointer(
-                child.clone()
-            )))
+            crate::kernel::program_expression::load(ProgramExpression::Value(
+                ProgramValue::Pointer(child.clone())
+            ))
         ),
         ExpressionOutcome::Value(int32(4))
     );

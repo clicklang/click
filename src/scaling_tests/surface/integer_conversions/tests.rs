@@ -21,7 +21,7 @@ fn integer_conversion_aliases_preserve_shared_expression_scaling() {
             "requires a{depth} == a{depth}; ensures a{depth} == a{depth} by {{ assumption(); }} }}"
         ));
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         result.unwrap_or_else(|error| panic!("depth {depth}: {}", error.message()));
         measured.push(work);
     }
@@ -52,7 +52,7 @@ fn integer_function_let_aliases_preserve_shared_expression_scaling() {
             "requires a{depth} == a{depth}; ensures a{depth} == a{depth} by {{ assumption(); }} }}"
         ));
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         result.unwrap_or_else(|error| panic!("depth {depth}: {}", error.message()));
         measured.push(work);
     }
@@ -82,7 +82,7 @@ fn deferred_integer_function_high_arity_scales_with_arguments() {
              ensures mix({arguments}) == mix({arguments}) by {{ solve(); }} }}"
         );
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         result.unwrap_or_else(|error| panic!("arity {arity}: {}", error.message()));
         measured.push(work);
     }
@@ -112,7 +112,7 @@ fn machine_integer_order_bridge_applications_scale_with_steps_and_unused_bounds(
             }
             source.push_str("assumption(); } }");
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                verify_c0_sources(&source, &[])
+                verify_c_sources(&source, &[])
             });
             result.unwrap_or_else(|error| panic!("{ty}/{size}: {}", error.message()));
             samples.push(work);
@@ -147,7 +147,7 @@ fn int64_integer_operation_applications_scale_with_steps_and_unused_bounds() {
             }
             source.push_str("assumption(); } }");
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                verify_c0_sources(&source, &[])
+                verify_c_sources(&source, &[])
             });
             result.unwrap_or_else(|error| panic!("{name}/{size}: {}", error.message()));
             samples.push(work);
@@ -178,7 +178,7 @@ fn opaque_product_arithmetic_scales_with_steps_and_unused_bounds() {
         }
         source.push_str("assumption(); } }");
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         samples.push(work);
     }
@@ -207,7 +207,7 @@ fn integer_multiply_add_applications_scale_with_steps_and_unused_bounds() {
         }
         source.push_str("assumption(); } }");
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         samples.push(work);
     }
@@ -236,7 +236,7 @@ fn integer_truncation_applications_scale_with_steps_and_unused_bounds() {
         }
         source.push_str("assumption(); } }");
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         samples.push(work);
     }
@@ -262,7 +262,7 @@ fn multiply_order_applications_scale_with_explicit_inputs() {
         }
         source.push_str("assumption(); } }");
         let (result, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         result.unwrap();
         samples.push(work);
     }
@@ -288,7 +288,7 @@ fn scaled_quotient_applications_scale_with_steps_and_unused_bounds() {
         }
         source.push_str("assumption(); } }");
         let (checked, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         checked.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         samples.push(work);
     }
@@ -314,7 +314,7 @@ fn correction_endpoint_applications_scale_with_steps_and_unused_bounds() {
         }
         source.push_str("assumption(); } }");
         let (checked, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         checked.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         samples.push(work);
     }
@@ -340,7 +340,7 @@ fn normalized_opposite_bound_certificates_scale_with_steps_and_unused_facts() {
         }
         source.push_str("assumption(); } }");
         let (checked, work) =
-            crate::instrumentation::measure_deterministic_work(|| verify_c0_sources(&source, &[]));
+            crate::instrumentation::measure_deterministic_work(|| verify_c_sources(&source, &[]));
         checked.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         samples.push(work);
     }

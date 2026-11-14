@@ -836,13 +836,13 @@ mod outcome_claim_goal_tests {
     }
     fn closing_execution() -> crate::kernel::CheckedFunctionExecution {
         use crate::kernel::*;
-        prove_checked_c_function_execution_with_environment(
+        prove_checked_program_function_execution_with_environment(
             ExecutionState::new(),
-            c_function(
+            program_function(
                 ProgramType::Int32,
                 "closing_goals",
                 vec![],
-                c_return(c_int32_literal(0)),
+                program_return(crate::kernel::program_expression::int32_literal(0)),
             ),
             vec![],
             PureFactContext::new(),

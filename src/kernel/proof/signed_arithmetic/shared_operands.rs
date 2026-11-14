@@ -29,7 +29,7 @@ mod tests {
             let snapshot = crate::kernel::VerificationSession::capture_state();
             let format = MachineIntegerType::Int32;
             let mut term = KernelTerm::variable(
-                KernelType::C(crate::kernel::ProgramType::Int32),
+                KernelType::Program(crate::kernel::ProgramType::Int32),
                 Variable(982501),
             );
             for _ in 0..32 {

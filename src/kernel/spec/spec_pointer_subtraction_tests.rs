@@ -12,8 +12,12 @@ fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
         .with_local("left", ProgramValue::pointer(left.clone()))
         .with_local("right", ProgramValue::pointer(right.clone()));
     let expression = SpecExpression::Subtract(
-        Box::new(SpecExpression::ProgramExpression(c_variable("right"))),
-        Box::new(SpecExpression::ProgramExpression(c_variable("left"))),
+        Box::new(SpecExpression::ProgramExpression(
+            crate::kernel::program_expression::variable("right"),
+        )),
+        Box::new(SpecExpression::ProgramExpression(
+            crate::kernel::program_expression::variable("left"),
+        )),
     );
 
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(

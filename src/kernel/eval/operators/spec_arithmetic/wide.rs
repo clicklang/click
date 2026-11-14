@@ -7,7 +7,10 @@ fn observe(value: &ProgramValue) -> Option<IntegerTerm> {
         ProgramType::Bool => MachineIntegerType::UInt8,
         ty => MachineIntegerType::from_c_type(ty)?,
     };
-    IntegerTerm::from_machine(ty, crate::kernel::spec::c_value_bitvector_term(value)?)
+    IntegerTerm::from_machine(
+        ty,
+        crate::kernel::spec::program_value_bitvector_term(value)?,
+    )
 }
 
 pub(super) fn apply(
@@ -160,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn a_wide_zero_divisor_is_owed_only_by_c_definedness() {
+    fn a_wide_zero_divisor_is_owed_only_by_program_definedness() {
         for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
             for op in [MachineBinaryOp::Divide, MachineBinaryOp::Remainder] {
                 let (left, right) = (value(format, 1), value(format, 0));
@@ -222,9 +225,9 @@ mod tests {
                 )
                 .unwrap();
                 let execute = match op {
-                    MachineBinaryOp::Multiply => apply_c_multiply,
-                    MachineBinaryOp::Divide => apply_c_divide,
-                    MachineBinaryOp::Remainder => apply_c_remainder,
+                    MachineBinaryOp::Multiply => apply_program_multiply,
+                    MachineBinaryOp::Divide => apply_program_divide,
+                    MachineBinaryOp::Remainder => apply_program_remainder,
                     _ => unreachable!(),
                 };
                 let execution = execute(

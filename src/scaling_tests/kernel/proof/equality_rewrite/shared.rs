@@ -8,8 +8,8 @@ fn exact_rewrite_keeps_cold_and_growing_shared_goals() {
                     let _session = VerificationSession::enter();
                     let x = Variable(1006300);
                     let y = Variable(1006301);
-                    let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), x);
-                    let mut expected = KernelTerm::variable(KernelType::C(ty.c_type()), y);
+                    let mut root = KernelTerm::variable(KernelType::Program(ty.c_type()), x);
+                    let mut expected = KernelTerm::variable(KernelType::Program(ty.c_type()), y);
                     let goal = |root: KernelTerm| {
                         let value = if fold {
                             let start =

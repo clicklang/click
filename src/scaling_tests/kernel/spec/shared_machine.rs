@@ -42,7 +42,8 @@ fn shared_arithmetic_children_are_not_reimported_or_expanded_during_construction
         MachineIntegerType::UInt64,
     ] {
         for size in [16, 64, 256] {
-            let mut term = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982000));
+            let mut term =
+                KernelTerm::variable(KernelType::Program(format.c_type()), Variable(982000));
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {
                     term = KernelTerm::arithmetic_binary(

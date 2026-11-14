@@ -13,7 +13,7 @@ pub(super) fn link_c_units(
     target: CTarget,
     thread_runtime: crate::languages::c::thread_runtime::CThreadRuntime,
     external_functions: &[&str],
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     build_storage: bool,
 ) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
     let mut parsed = BTreeMap::new();
@@ -681,12 +681,14 @@ pub(super) fn link_c_units(
                 .1
                 .program_entry_state = Some(std::sync::Arc::new({
                 let _timing = VerificationTimingPhase::new("program-entry storage");
-                crate::kernel::initialize_c_program_storage(storage_functions).ok_or_else(|| {
-                    ClickError::new(format!(
-                        "verification budget exhausted inside {}",
-                        instrumentation::deadline_context()
-                    ))
-                })?
+                crate::kernel::initialize_program_program_storage(storage_functions).ok_or_else(
+                    || {
+                        ClickError::new(format!(
+                            "verification budget exhausted inside {}",
+                            instrumentation::deadline_context()
+                        ))
+                    },
+                )?
             }));
         }
     }
@@ -754,7 +756,7 @@ fn unit_storage_context(
 /// translation units.
 pub(super) fn c_layouts(
     verifying_paths: Vec<String>,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     target: CTarget,
 ) -> Result<parser::ProgramLayouts, ClickError> {
     if let ProgramSource::PreparedC {
@@ -844,7 +846,7 @@ pub(super) fn c_layouts(
             calls
                 .entry(function.source_name().to_string())
                 .or_default()
-                .extend(super::c0_statement_calls(&function).into_iter().flatten());
+                .extend(super::c_statement_calls(&function).into_iter().flatten());
             record_function_tables(&mut tables, function);
         }
     }
@@ -872,7 +874,7 @@ fn c_parse_error_kind(error: &syntax::C0SyntaxError) -> ClickErrorKind {
 
 pub(super) fn parse_c_source_unit(
     source_path: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     target: CTarget,
 ) -> Result<syntax::C0TranslationUnit, ClickError> {
     if let Some(import) = c_sources.prepared_c_import(source_path)
@@ -1488,7 +1490,7 @@ pub(super) fn validate_modeled_pthread_binding(
 /// objects are reached through qualified names, which need no list.
 pub(super) fn file_scope_object_names(
     click_source: &str,
-    c_sources: &CSourceContext<'_>,
+    c_sources: &ProgramSourceContext<'_>,
     target: CTarget,
 ) -> Result<BTreeSet<String>, ClickError> {
     let mut names = BTreeSet::new();

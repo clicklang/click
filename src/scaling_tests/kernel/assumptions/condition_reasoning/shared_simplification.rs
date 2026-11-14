@@ -4,7 +4,7 @@ fn shared_checking_simplification_visits_dag_nodes_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut root = KernelTerm::variable(
-            crate::kernel::KernelType::C(T::Int32.c_type()),
+            crate::kernel::KernelType::Program(T::Int32.c_type()),
             Variable(1017111),
         );
         for _ in 0..size {

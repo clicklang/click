@@ -36,8 +36,8 @@ pub(super) fn endings(prepared: &Prepared, point: MirPoint) -> ProgramStatement 
         .get(&point)
         .into_iter()
         .flatten()
-        .fold(c_skip(), |prefix, key| {
-            c_seq(
+        .fold(program_skip(), |prefix, key| {
+            program_seq(
                 prefix,
                 ProgramStatement::EndScalarReference(crate::kernel::ScalarReferenceEnd::new(
                     key.clone(),
@@ -95,8 +95,8 @@ pub(super) fn decorate(
             );
         }
     }
-    let original = std::mem::replace(statement, c_skip());
-    *statement = c_seq(
+    let original = std::mem::replace(statement, program_skip());
+    *statement = program_seq(
         original,
         endings(
             prepared,

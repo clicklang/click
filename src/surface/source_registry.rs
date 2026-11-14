@@ -363,7 +363,7 @@ impl CallerRequirementIndex {
 
 fn direct_parameter_name(expression: &ContractExpression) -> Option<&str> {
     match expression {
-        ContractExpression::CFragment(ProgramExpression::Variable(name)) => Some(name),
+        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => Some(name),
         // The elaborated C-string bridge names its parameter's storage.
         expression => crate::surface::lowering::character_byte_view_name(expression),
     }
@@ -578,7 +578,7 @@ mod tests {
                 parameters: parameter_names
                     .iter()
                     .map(|name| FunctionParameter {
-                        click_type: ClickType::C(C0Type::Int32),
+                        click_type: ClickType::Program(C0Type::Int32),
                         name: (*name).to_string(),
                         struct_name: None,
                         function_pointer_signature: None,
@@ -623,9 +623,9 @@ mod tests {
     fn direct_predicate(name: &str, parameter: &str) -> Requirement {
         Requirement::Proposition(ClickProposition::PredicateCall {
             name: name.to_string(),
-            arguments: vec![ContractExpression::CFragment(ProgramExpression::Variable(
-                parameter.to_string(),
-            ))],
+            arguments: vec![ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(parameter.to_string()),
+            )],
         })
     }
 
@@ -784,9 +784,9 @@ mod tests {
             &origins,
             snapshot_value,
         );
-        let source_arguments = vec![ContractExpression::CFragment(ProgramExpression::Variable(
-            "p".to_string(),
-        ))];
+        let source_arguments = vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("p".to_string()),
+        )];
         let selected = index
             .lookup_unique_caller_requirement(
                 &owner,
@@ -840,7 +840,7 @@ mod tests {
                 snapshot_value,
             );
             assert_eq!(index.bucket_count(), count);
-            let source_arguments = vec![ContractExpression::CFragment(
+            let source_arguments = vec![ContractExpression::ProgramExpression(
                 ProgramExpression::Variable("p".to_string()),
             )];
             let selected = index
@@ -873,9 +873,9 @@ mod tests {
     fn caller_index_rejects_duplicates_and_overfull_buckets() {
         let owner = owner();
         let snapshot_value = snapshot();
-        let source_arguments = vec![ContractExpression::CFragment(ProgramExpression::Variable(
-            "p".to_string(),
-        ))];
+        let source_arguments = vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("p".to_string()),
+        )];
         let duplicate_requires = vec![direct_predicate("readable", "p"); 2];
         let duplicate_block = function_with_parameters("caller", duplicate_requires, &["p"]);
         let duplicate_index = CallerRequirementIndex::from_entry_facts(
@@ -989,7 +989,7 @@ mod tests {
                 Requirement::Proposition(ClickProposition::And(
                     Box::new(ClickProposition::PredicateCall {
                         name: "nested".to_string(),
-                        arguments: vec![ContractExpression::CFragment(
+                        arguments: vec![ContractExpression::ProgramExpression(
                             ProgramExpression::Variable("p".to_string()),
                         )],
                     }),
@@ -1021,9 +1021,9 @@ mod tests {
             &entry_origins(&owner, 0..2),
             snapshot_value,
         );
-        let source_arguments = vec![ContractExpression::CFragment(ProgramExpression::Variable(
-            "p".to_string(),
-        ))];
+        let source_arguments = vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Variable("p".to_string()),
+        )];
         assert!(
             index
                 .lookup_unique_caller_requirement(

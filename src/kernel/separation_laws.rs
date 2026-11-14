@@ -39,7 +39,7 @@ pub(crate) fn prove_separation_elements(
             },
             false,
         )),
-        Box::new(Proposition::CResourceSeparate {
+        Box::new(Proposition::ResourceSeparate {
             left: Box::new(element(i)),
             right: Box::new(element(j)),
         }),
@@ -97,21 +97,21 @@ pub(crate) fn prove_separation_restrict(
     right_part: Resource,
 ) -> Theorem {
     let premises = [
-        Proposition::CResourceSeparate {
+        Proposition::ResourceSeparate {
             left: Box::new(left.clone()),
             right: Box::new(right.clone()),
         },
-        Proposition::CResourceContains {
+        Proposition::ResourceContains {
             parent: Box::new(left),
             child: Box::new(left_part.clone()),
         },
-        Proposition::CResourceContains {
+        Proposition::ResourceContains {
             parent: Box::new(right),
             child: Box::new(right_part.clone()),
         },
     ];
     Theorem::new(premises.into_iter().rev().fold(
-        Proposition::CResourceSeparate {
+        Proposition::ResourceSeparate {
             left: Box::new(left_part),
             right: Box::new(right_part),
         },
@@ -147,7 +147,7 @@ pub(crate) fn prove_separation_subrange(
         }
         _ => unreachable!(),
     };
-    let conclusion = Proposition::CResourceContains {
+    let conclusion = Proposition::ResourceContains {
         parent: Box::new(Resource::Memory(range(lo, hi))),
         child: Box::new(Resource::Memory(range(inner_lo, inner_hi))),
     };
@@ -203,7 +203,7 @@ pub(crate) fn prove_separation_contains_element(
         1u32.into(),
         width,
     );
-    let conclusion = Proposition::CResourceContains {
+    let conclusion = Proposition::ResourceContains {
         parent: Box::new(Resource::Memory(parent)),
         child: Box::new(Resource::Memory(child)),
     };
@@ -234,11 +234,11 @@ mod scaling_tests {
 /// Resource laws construct only the explicitly supplied proposition tree.
 /// They neither inspect ownership nor discover containment paths.
 pub(crate) fn prove_resource_law(name: &str, args: &[Resource]) -> Option<Theorem> {
-    let contains = |a: &Resource, b: &Resource| Proposition::CResourceContains {
+    let contains = |a: &Resource, b: &Resource| Proposition::ResourceContains {
         parent: Box::new(a.clone()),
         child: Box::new(b.clone()),
     };
-    let separate = |a: &Resource, b: &Resource| Proposition::CResourceSeparate {
+    let separate = |a: &Resource, b: &Resource| Proposition::ResourceSeparate {
         left: Box::new(a.clone()),
         right: Box::new(b.clone()),
     };
@@ -277,7 +277,7 @@ pub(crate) fn prove_resource_law(name: &str, args: &[Resource]) -> Option<Theore
 pub(crate) fn resource_viewable(memory: &Memory, resource: Resource) -> Proposition {
     match resource {
         Resource::Memory(range) => range.loadable_fact(memory),
-        resource => Proposition::CResourceViewable {
+        resource => Proposition::ResourceViewable {
             memory: memory.clone(),
             resource: Box::new(resource),
         },
@@ -293,7 +293,7 @@ pub(crate) fn prove_viewable_restrict(
     Theorem::new(Proposition::Implies(
         Box::new(resource_viewable(memory, parent.clone())),
         Box::new(Proposition::Implies(
-            Box::new(Proposition::CResourceContains {
+            Box::new(Proposition::ResourceContains {
                 parent: Box::new(parent),
                 child: Box::new(child.clone()),
             }),

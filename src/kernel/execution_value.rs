@@ -80,7 +80,7 @@ impl ExecutionValue {
             Self::Native(value) => value,
             Self::Shared(term) => {
                 if matches!(term.node(), KernelTermNode::Call { .. }) {
-                    let KernelType::C(ty) = term.ty() else {
+                    let KernelType::Program(ty) = term.ty() else {
                         unreachable!()
                     };
                     let format =
@@ -114,7 +114,7 @@ impl ExecutionValue {
         match self {
             Self::Native(value) => value.c_type(),
             Self::Shared(term) => match term.ty() {
-                KernelType::C(ty) => *ty,
+                KernelType::Program(ty) => *ty,
                 _ => unreachable!(),
             },
         }

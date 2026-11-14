@@ -72,7 +72,7 @@ fn integer_substitution_nested_carrier_scopes_scale_with_shared_body() {
                 Proposition::ForAll {
                     name: Default::default(),
                     var: variable,
-                    sort: Sort::CInt32,
+                    sort: Sort::ProgramInt32,
                     body: Box::new(body),
                 }
             } else {

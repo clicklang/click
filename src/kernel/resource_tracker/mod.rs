@@ -82,7 +82,7 @@ impl ProgramPoint {
     /// The point a `Memory` value stands at, interning it first. Callers
     /// that already hold an interned snapshot use [`ProgramPoint::at`].
     pub(crate) fn of_memory(memory: &Memory) -> Self {
-        Self(crate::kernel::intern_c_memory(memory.clone()))
+        Self(crate::kernel::intern_memory(memory.clone()))
     }
 
     pub(crate) fn snapshot(&self) -> &SharedMemory {
@@ -1486,7 +1486,7 @@ fn collect_value_reads(value: &ProgramValue, reads: &mut Vec<ResourceRead>) {
     match value {
         ProgramValue::Pointer(pointer) => collect_pointer_reads(pointer.pointer(), reads),
         _ => {
-            if let Some(term) = crate::kernel::spec::c_value_bitvector_term(value) {
+            if let Some(term) = crate::kernel::spec::program_value_bitvector_term(value) {
                 collect_bitvector_reads(&term, reads);
             }
         }

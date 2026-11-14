@@ -160,7 +160,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         {
             let fact = driver_proof
                 .lower_surface_proposition_direct(&separation, "transport separation")?;
-            if let Proposition::CResourceSeparate { left, .. } = fact
+            if let Proposition::ResourceSeparate { left, .. } = fact
                 && let crate::kernel::Resource::Footprint(footprint) = left.as_ref()
                 && crate::kernel::MemorySnapshotIdentity::of(&footprint.after)
                     == crate::kernel::MemorySnapshotIdentity::of(execution.core.state.memory())
@@ -204,22 +204,22 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 driver_proof.lower_surface_proposition_direct(target, "transport target")?;
             let same_snapshot = match (&source_fact, &target_fact) {
                 (
-                    Proposition::CMemoryLoadable {
+                    Proposition::MemoryLoadable {
                         memory: left,
                         wide: false,
                         ..
                     },
-                    Proposition::CMemoryLoadable {
+                    Proposition::MemoryLoadable {
                         memory: right,
                         wide: false,
                         ..
                     },
                 ) if narrow_range => left == right,
                 (
-                    Proposition::CResourceViewable { memory: left, .. }
-                    | Proposition::CMemoryLoadable { memory: left, .. },
-                    Proposition::CResourceViewable { memory: right, .. }
-                    | Proposition::CMemoryLoadable { memory: right, .. },
+                    Proposition::ResourceViewable { memory: left, .. }
+                    | Proposition::MemoryLoadable { memory: left, .. },
+                    Proposition::ResourceViewable { memory: right, .. }
+                    | Proposition::MemoryLoadable { memory: right, .. },
                 ) if !narrow_range => left == right,
                 _ => false,
             };

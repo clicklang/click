@@ -1,17 +1,26 @@
 use super::*;
 
 fn helper() -> ProgramFunction {
-    c_function(
+    program_function(
         ProgramType::Int32,
         "drain_to_zero",
-        vec![c_parameter("n", ProgramType::Int32)],
-        c_seq(
-            c_while(
-                c_greater_than(c_variable("n"), c_int32_literal(0)),
+        vec![program_parameter("n", ProgramType::Int32)],
+        program_seq(
+            program_while(
+                crate::kernel::program_expression::greater_than(
+                    crate::kernel::program_expression::variable("n"),
+                    crate::kernel::program_expression::int32_literal(0),
+                ),
                 vec![],
-                c_assign("n", c_subtract(c_variable("n"), c_int32_literal(1))),
+                program_assign(
+                    "n",
+                    crate::kernel::program_expression::subtract(
+                        crate::kernel::program_expression::variable("n"),
+                        crate::kernel::program_expression::int32_literal(1),
+                    ),
+                ),
             ),
-            c_return(c_variable("n")),
+            program_return(crate::kernel::program_expression::variable("n")),
         ),
     )
     .with_inline_body()
@@ -19,7 +28,7 @@ fn helper() -> ProgramFunction {
 
 fn call(value: ProgramValue, budget: &mut ExecutionBudget) -> ExecutionResult<Vec<FunctionPath>> {
     let function = helper();
-    execute_c_function_call_paths(
+    execute_program_function_call_paths(
         &ExecutionState::new(),
         &function,
         &[ProgramExpression::Value(value)],

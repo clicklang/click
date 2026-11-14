@@ -30,7 +30,7 @@ pub(super) fn collect_match_carriers(matched: &KernelMatch, variables: &mut Carr
                         .chain(nested.arms.iter().flat_map(|arm| &arm.bindings)),
                 );
             }
-        } else if let KernelType::C(ty) = child.ty()
+        } else if let KernelType::Program(ty) = child.ty()
             && MachineIntegerType::from_c_type(*ty).is_some()
         {
             collect_machine_operand_carriers(MachineOperandView::Shared(child), variables);
@@ -199,7 +199,7 @@ impl TermRewrite<'_> {
             memo.borrow_mut().insert(key, value.clone());
             return Some(value);
         }
-        if let KernelType::C(ty) = child.ty()
+        if let KernelType::Program(ty) = child.ty()
             && MachineIntegerType::from_c_type(*ty).is_some()
         {
             return self.shared_machine_operand(child);
@@ -371,19 +371,21 @@ mod tests {
     fn common_numeric_match_reduction_agrees_with_native_checked_fields() {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
             let ty = format.c_type();
-            let binding = AlgebraicValue::C(if format == MachineIntegerType::Int32 {
+            let binding = AlgebraicValue::Program(if format == MachineIntegerType::Int32 {
                 ProgramValue::Int32(MachineTerm::Variable(Variable(7)))
             } else {
                 ProgramValue::UInt64(MachineTerm::Variable(Variable(7)))
             });
-            let mut scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(ty)]);
+            let mut scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ty)]);
             scrutinee.node = AlgebraicTermNode::Constructor {
                 variant: "Arm".into(),
-                fields: vec![AlgebraicValue::C(if format == MachineIntegerType::Int32 {
-                    ProgramValue::Int32(MachineTerm::Variable(Variable(8)))
-                } else {
-                    ProgramValue::UInt64(MachineTerm::Variable(Variable(8)))
-                })],
+                fields: vec![AlgebraicValue::Program(
+                    if format == MachineIntegerType::Int32 {
+                        ProgramValue::Int32(MachineTerm::Variable(Variable(8)))
+                    } else {
+                        ProgramValue::UInt64(MachineTerm::Variable(Variable(8)))
+                    },
+                )],
             };
             let native = MachineTerm::AlgebraicMatch {
                 scrutinee: Box::new(scrutinee.clone()),
@@ -473,13 +475,13 @@ mod tests {
         assert!(!new.integer_shadowed);
 
         let native = MachineTerm::AlgebraicMatch {
-            scrutinee: Box::new(KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(
-                ProgramType::Int32,
-            )])),
+            scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
+                AlgebraicValueType::Program(ProgramType::Int32),
+            ])),
             arms: vec![AlgebraicBitvectorMatchArm {
                 variant: "Arm".into(),
                 binding_names: Default::default(),
-                bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
                     MachineTerm::Variable(Variable(2)),
                 ))],
                 body: MachineTerm::Binary {
@@ -519,7 +521,7 @@ mod tests {
     #[test]
     fn common_match_pointer_transport_preserves_snapshots_and_avoids_capture() {
         let _session = VerificationSession::enter();
-        let memory = intern_c_memory(Memory::new());
+        let memory = intern_memory(Memory::new());
         let source = Variable(3);
         let bound = Variable(2);
         let read = |variable| {
@@ -530,13 +532,13 @@ mod tests {
             )
         };
         let native = MachineTerm::AlgebraicMatch {
-            scrutinee: Box::new(KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(
-                ProgramType::Int32Pointer,
-            )])),
+            scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
+                AlgebraicValueType::Program(ProgramType::Int32Pointer),
+            ])),
             arms: vec![AlgebraicBitvectorMatchArm {
                 variant: "Arm".into(),
                 binding_names: Default::default(),
-                bindings: vec![AlgebraicValue::C(ProgramValue::typed_pointer(
+                bindings: vec![AlgebraicValue::Program(ProgramValue::typed_pointer(
                     Pointer::symbolic(bound),
                     ProgramType::Int32Pointer,
                 ))],
@@ -590,7 +592,7 @@ mod tests {
         };
         let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
             name: "Box".into(),
-            fields: vec![AlgebraicValueType::C(ProgramType::Int32Pointer)],
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32Pointer)],
         }]
         .into();
         let ty = AlgebraicType {
@@ -612,7 +614,7 @@ mod tests {
                         algebraic_type: ty,
                         node: AlgebraicTermNode::Constructor {
                             variant: "Box".into(),
-                            fields: vec![AlgebraicValue::C(original.clone())],
+                            fields: vec![AlgebraicValue::Program(original.clone())],
                         },
                     },
                 }],
@@ -633,7 +635,7 @@ mod tests {
         let AlgebraicTermNode::Constructor { fields, .. } = &arms[0].body.node else {
             unreachable!()
         };
-        let AlgebraicValue::C(ProgramValue::Pointer(pointer)) = &fields[0] else {
+        let AlgebraicValue::Program(ProgramValue::Pointer(pointer)) = &fields[0] else {
             unreachable!()
         };
         assert!(pointer.supports_object_class(&class));
@@ -648,13 +650,13 @@ mod tests {
             right: Box::new(MachineTerm::Variable(Variable(2))),
         };
         let native = MachineTerm::AlgebraicMatch {
-            scrutinee: Box::new(KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(
-                ProgramType::Int32,
-            )])),
+            scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
+                AlgebraicValueType::Program(ProgramType::Int32),
+            ])),
             arms: vec![AlgebraicBitvectorMatchArm {
                 variant: "Arm".into(),
                 binding_names: Default::default(),
-                bindings: vec![AlgebraicValue::C(ProgramValue::Int32(
+                bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
                     MachineTerm::Variable(Variable(2)),
                 ))],
                 body: source.clone(),

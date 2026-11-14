@@ -34,7 +34,7 @@ fn memory_constructions_cover_non_transition_producers() {
     let memory = Memory::new()
         .with_block("local:construction", 16)
         .store(pointer.clone(), ProgramValue::Int32(7.into()));
-    let projected = crate::kernel::memory_provenance::canonical_c_memory_for_pointer_load(
+    let projected = crate::kernel::memory_provenance::canonical_program_memory_for_pointer_load(
         &memory,
         &Pointer::symbolic(Variable(990_810)),
     );
@@ -47,7 +47,7 @@ fn memory_constructions_cover_non_transition_producers() {
     ));
     let variants = [
         projected,
-        crate::kernel::memory_provenance::canonical_c_memory_deep(&memory),
+        crate::kernel::memory_provenance::canonical_memory_deep(&memory),
         memory.without_cell(&pointer),
         memory.clone().with_uninitialized_object(pointer.clone(), 4),
         memory.clone().with_block_without_derivation("synthetic", 4),
@@ -81,19 +81,19 @@ fn memory_constructions_cover_non_transition_producers() {
 fn construction_metadata_does_not_change_memory_identity_or_proof_edges() {
     let _session = crate::kernel::VerificationSession::enter();
     let original = Memory::new().with_block("local:identity", 4);
-    let interned = intern_c_memory_ref(&original);
+    let interned = intern_memory_ref(&original);
     let mut described = original.clone();
     // A distinct diagnostic path describes exactly the same semantic snapshot.
     described.record_diagnostic_transform("diagnostic test", vec![Memory::new()], Vec::new());
     assert_eq!(original, described);
     assert_eq!(
-        c_memory_content_hash(&original),
-        c_memory_content_hash(&described)
+        memory_content_hash(&original),
+        memory_content_hash(&described)
     );
-    assert_eq!(interned, intern_c_memory_ref(&described));
+    assert_eq!(interned, intern_memory_ref(&described));
     assert_eq!(
         interned.read_identity(),
-        intern_c_memory_ref(&described).read_identity()
+        intern_memory_ref(&described).read_identity()
     );
     assert_eq!(interned.derivation().unwrap().kind_name(), "BlockDeclared");
 }

@@ -8,7 +8,7 @@ fn match_dependencies_visit_shared_arm_bodies_once() {
         let current = Memory::new();
         let pointer = Pointer::symbolic(Variable(991930));
         let read = MachineTerm::MemoryLoad(
-            intern_c_memory_ref(&current),
+            intern_memory_ref(&current),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
@@ -35,7 +35,8 @@ fn match_dependencies_visit_shared_arm_bodies_once() {
                 )
             })
             .collect();
-        let matched = KernelMatch::new(KernelType::C(ProgramType::Int32), scrutinee, arms).unwrap();
+        let matched =
+            KernelMatch::new(KernelType::Program(ProgramType::Int32), scrutinee, arms).unwrap();
         let exports = KernelTermExport::machine_export_count();
         let ((result, loads), work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut loads = Vec::new();

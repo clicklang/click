@@ -239,9 +239,9 @@ fn instantiate_lowered_predicate_definition(
             Some(parameter.click_type().clone())
         } else {
             let actual = match arguments.get(argument_index) {
-                Some(Term::ProgramValue(value)) => {
-                    Some(ClickType::C(generics::c0_type_from_kernel(value.c_type())))
-                }
+                Some(Term::ProgramValue(value)) => Some(ClickType::Program(
+                    generics::c0_type_from_kernel(value.c_type()),
+                )),
                 Some(Term::Algebraic(value)) => {
                     Some(generics::click_type_from_algebraic_value_type(
                         &value.algebraic_type.value_type(),

@@ -58,28 +58,34 @@ pub(in crate::kernel) fn algebraic_constructor_case_equations(
         for (index, field_type) in variant.fields.iter().enumerate() {
             let variable = fresh();
             let (sort, field) = match field_type {
-                AlgebraicValueType::C(c_type) | AlgebraicValueType::ObjectPointer(c_type, _) => {
+                AlgebraicValueType::Program(c_type)
+                | AlgebraicValueType::ObjectPointer(c_type, _) => {
                     let sort = match c_type {
-                        ProgramType::Int32 => Sort::CInt32,
-                        ProgramType::Int64 => Sort::CInt64,
+                        ProgramType::Int32 => Sort::ProgramInt32,
+                        ProgramType::Int64 => Sort::ProgramInt64,
                         ty if ty.is_pointer() => match field_type.object_class() {
-                            Some(class) => Sort::CObjectPointer(*ty, class),
-                            None => Sort::CPointer(*ty),
+                            Some(class) => Sort::ProgramObjectPointer(*ty, class),
+                            None => Sort::ProgramPointer(*ty),
                         },
                         // A Rust enum's narrower or unsigned integer field,
                         // or its `bool`, a byte.
-                        ProgramType::Bool => Sort::CMachineInteger(MachineIntegerType::UInt8),
+                        ProgramType::Bool => Sort::ProgramInteger(MachineIntegerType::UInt8),
                         // A value of a Rust type parameter, or of a crate
                         // enum, is a term of its type.
                         ProgramType::Parameter(name) => Sort::Algebraic(name.algebraic_type()),
-                        ty => Sort::CMachineInteger(MachineIntegerType::from_c_type(*ty)?),
+                        ty => Sort::ProgramInteger(MachineIntegerType::from_c_type(*ty)?),
                     };
                     (
                         sort,
-                        AlgebraicValue::C(
+                        AlgebraicValue::Program(
                             value
                                 .algebraic_type
-                                .symbolic_c_field_value(&variant.name, index, *c_type, variable)
+                                .symbolic_program_field_value(
+                                    &variant.name,
+                                    index,
+                                    *c_type,
+                                    variable,
+                                )
                                 .with_pointer_object_class(field_type.object_class()),
                         ),
                     )
@@ -155,8 +161,8 @@ mod tests {
                 AlgebraicVariantType {
                     name: "Node".into(),
                     fields: vec![
-                        AlgebraicValueType::C(ProgramType::Int32Pointer),
-                        AlgebraicValueType::C(ProgramType::Int32),
+                        AlgebraicValueType::Program(ProgramType::Int32Pointer),
+                        AlgebraicValueType::Program(ProgramType::Int32),
                         AlgebraicValueType::Parameter("T".into()),
                         recursive.clone(),
                         recursive,
@@ -187,8 +193,8 @@ mod tests {
         let mut binders = BTreeSet::new();
         let mut ordered_binders = Vec::new();
         let expected_sorts = [
-            Sort::CPointer(ProgramType::Int32Pointer),
-            Sort::CInt32,
+            Sort::ProgramPointer(ProgramType::Int32Pointer),
+            Sort::ProgramInt32,
             Sort::Algebraic(AlgebraicType::parameter("T".into())),
             Sort::Algebraic(value.algebraic_type.clone()),
             Sort::Algebraic(value.algebraic_type.clone()),
@@ -218,11 +224,14 @@ mod tests {
         assert_eq!(
             constructor.checked_constructor_fields().unwrap(),
             &[
-                AlgebraicValue::C(symbolic_call_result(
+                AlgebraicValue::Program(symbolic_call_result(
                     ProgramType::Int32Pointer,
                     ordered_binders[0]
                 )),
-                AlgebraicValue::C(symbolic_call_result(ProgramType::Int32, ordered_binders[1])),
+                AlgebraicValue::Program(symbolic_call_result(
+                    ProgramType::Int32,
+                    ordered_binders[1]
+                )),
                 AlgebraicValue::Algebraic(AlgebraicTerm {
                     algebraic_type: AlgebraicType::parameter("T".into()),
                     node: AlgebraicTermNode::Variable(ordered_binders[2])
@@ -257,7 +266,7 @@ mod tests {
                 },
                 AlgebraicVariantType {
                     name: "Some".into(),
-                    fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
+                    fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
                 },
             ],
         );
@@ -279,7 +288,7 @@ mod tests {
                     AlgebraicResultMatchArm {
                         binding_names: Default::default(),
                         variant: "Some".into(),
-                        bindings: vec![AlgebraicValue::C(symbolic_call_result(
+                        bindings: vec![AlgebraicValue::Program(symbolic_call_result(
                             ProgramType::Int32,
                             Variable(2),
                         ))],
@@ -373,7 +382,7 @@ mod tests {
                 "Unsupported",
                 vec![AlgebraicVariantType {
                     name: "Value".into(),
-                    fields: vec![AlgebraicValueType::C(ProgramType::Void)],
+                    fields: vec![AlgebraicValueType::Program(ProgramType::Void)],
                 }],
             ),
         ] {
@@ -417,21 +426,24 @@ mod tests {
             "Cell",
             vec![AlgebraicVariantType {
                 name: "Cell".into(),
-                fields: vec![AlgebraicValueType::C(ProgramType::Int32)],
+                fields: vec![AlgebraicValueType::Program(ProgramType::Int32)],
             }],
         );
         for (variant, fields) in [
             (
                 "Cell",
-                vec![AlgebraicValue::C(symbolic_call_result(
+                vec![AlgebraicValue::Program(symbolic_call_result(
                     ProgramType::Int32Pointer,
                     Variable(0),
                 ))],
             ),
-            ("Other", vec![AlgebraicValue::C(int32(0))]),
+            ("Other", vec![AlgebraicValue::Program(int32(0))]),
             (
                 "Cell",
-                vec![AlgebraicValue::C(int32(0)), AlgebraicValue::C(int32(1))],
+                vec![
+                    AlgebraicValue::Program(int32(0)),
+                    AlgebraicValue::Program(int32(1)),
+                ],
             ),
         ] {
             assert!(
@@ -482,9 +494,9 @@ mod tests {
     fn constructor_cases_preserve_generic_instantiation_in_recursive_tails() {
         for item in [
             AlgebraicValueType::Parameter("T".into()),
-            AlgebraicValueType::C(ProgramType::Int32),
-            AlgebraicValueType::C(ProgramType::Int64),
-            AlgebraicValueType::C(ProgramType::VoidPointer),
+            AlgebraicValueType::Program(ProgramType::Int32),
+            AlgebraicValueType::Program(ProgramType::Int64),
+            AlgebraicValueType::Program(ProgramType::VoidPointer),
         ] {
             let key = AlgebraicValueType::Algebraic {
                 name: "List".into(),
@@ -526,10 +538,10 @@ mod tests {
                 AlgebraicValueType::Parameter(name) => {
                     Sort::Algebraic(AlgebraicType::parameter(name))
                 }
-                AlgebraicValueType::C(ProgramType::Int32) => Sort::CInt32,
-                AlgebraicValueType::C(ProgramType::Int64) => Sort::CInt64,
-                AlgebraicValueType::C(ProgramType::VoidPointer) => {
-                    Sort::CPointer(ProgramType::VoidPointer)
+                AlgebraicValueType::Program(ProgramType::Int32) => Sort::ProgramInt32,
+                AlgebraicValueType::Program(ProgramType::Int64) => Sort::ProgramInt64,
+                AlgebraicValueType::Program(ProgramType::VoidPointer) => {
+                    Sort::ProgramPointer(ProgramType::VoidPointer)
                 }
                 _ => unreachable!(),
             };

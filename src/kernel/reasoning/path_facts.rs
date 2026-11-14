@@ -34,7 +34,7 @@ pub(in crate::kernel) fn forall_int32(var: Variable, body: Proposition) -> Propo
     Proposition::ForAll {
         name: Default::default(),
         var,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(body),
     }
 }
@@ -195,9 +195,9 @@ pub(in crate::kernel) fn memory_effect_execution_facts(
             || fact.reference_observation.is_some()
             || matches!(
                 fact.proposition(),
-                Proposition::CMemoryMutatesOnly { .. }
-                    | Proposition::CMemoryEffectSummary { .. }
-                    | Proposition::CHeapAllocationFreed { .. }
+                Proposition::MemoryMutatesOnly { .. }
+                    | Proposition::MemoryEffectSummary { .. }
+                    | Proposition::HeapAllocationFreed { .. }
             )
     })
 }
@@ -231,7 +231,7 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             matches!(body.as_ref(), Proposition::Implies(antecedent, _)
                 if conjunction_order_facts_are_inconsistent(antecedent))
         }
-        Proposition::CMemoryLoadable {
+        Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
@@ -240,8 +240,8 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             let written = crate::kernel::eval::pointer_read_over_immediate_store(base);
             memory.access_in_bounds(written.as_ref().unwrap_or(base), bytes)
         }),
-        Proposition::CResourceSeparate { .. } | Proposition::CResourceContains { .. } => false,
-        Proposition::CMemoryCanStore {
+        Proposition::ResourceSeparate { .. } | Proposition::ResourceContains { .. } => false,
+        Proposition::MemoryCanStore {
             memory,
             pointer,
             byte_width,
@@ -275,7 +275,7 @@ pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> boo
             sequence_terms_definitely_distinct(left, right)
         }
         Proposition::Equal(Term::ProgramValue(left), Term::ProgramValue(right)) => {
-            c_values_definitely_distinct(left, right)
+            program_values_definitely_distinct(left, right)
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
             algebraic_terms_definitely_distinct(left, right)
@@ -342,8 +342,8 @@ fn algebraic_terms_definitely_distinct(left: &AlgebraicTerm, right: &AlgebraicTe
                     .iter()
                     .zip(right_fields)
                     .any(|(left, right)| match (left, right) {
-                        (AlgebraicValue::C(left), AlgebraicValue::C(right)) => {
-                            c_values_definitely_distinct(left, right)
+                        (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) => {
+                            program_values_definitely_distinct(left, right)
                         }
                         (AlgebraicValue::Algebraic(left), AlgebraicValue::Algebraic(right)) => {
                             algebraic_terms_definitely_distinct(left, right)
@@ -382,7 +382,9 @@ fn sequence_terms_definitely_distinct(left: &SequenceTerm, right: &SequenceTerm)
     let mut right = crate::kernel::spec::sequence_elements(right);
     loop {
         match (left.next(), right.next()) {
-            (Some(left), Some(right)) if c_values_definitely_distinct(left, right) => return true,
+            (Some(left), Some(right)) if program_values_definitely_distinct(left, right) => {
+                return true;
+            }
             (Some(_), Some(_)) => {}
             (None, None) => return false,
             _ => return true,
@@ -390,7 +392,7 @@ fn sequence_terms_definitely_distinct(left: &SequenceTerm, right: &SequenceTerm)
     }
 }
 
-fn c_values_definitely_distinct(left: &ProgramValue, right: &ProgramValue) -> bool {
+fn program_values_definitely_distinct(left: &ProgramValue, right: &ProgramValue) -> bool {
     fn constant(bits: &MachineTerm) -> Option<u64> {
         match bits {
             bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
@@ -1489,7 +1491,7 @@ pub(in crate::kernel) fn add_proof_obligation_with_context(
     // structure is emitted as an obligation instead of being discharged by a
     // proof search inside lowering.
     let defer_contextual_proof = assumptions.should_defer_non_exact_loadability_obligations()
-        && matches!(proposition, Proposition::CMemoryLoadable { .. });
+        && matches!(proposition, Proposition::MemoryLoadable { .. });
     if assumptions.proves_exact(&proposition)
         || !defer_contextual_proof && assumptions.proves_atomic_memory_or_resource(&proposition)
         || obligations
@@ -2010,9 +2012,9 @@ fn merge_facts_with_changes(
         // agreeing entry facts can still make a postcondition redundant.
         if matches!(
             fact.proposition(),
-            Proposition::CMemoryMutatesOnly { .. }
-                | Proposition::CMemoryEffectSummary { .. }
-                | Proposition::CHeapAllocationFreed { .. }
+            Proposition::MemoryMutatesOnly { .. }
+                | Proposition::MemoryEffectSummary { .. }
+                | Proposition::HeapAllocationFreed { .. }
         ) {
             saw_memory_effect = true;
         }
@@ -2134,9 +2136,9 @@ pub(in crate::kernel) fn merge_prepared_execution_path(
     let assumptions = if right_facts.iter().any(|fact| {
         matches!(
             fact.proposition(),
-            Proposition::CMemoryMutatesOnly { .. }
-                | Proposition::CMemoryEffectSummary { .. }
-                | Proposition::CHeapAllocationFreed { .. }
+            Proposition::MemoryMutatesOnly { .. }
+                | Proposition::MemoryEffectSummary { .. }
+                | Proposition::HeapAllocationFreed { .. }
         )
     }) {
         assumptions_with_path_context(base, &facts, &obligations)
@@ -2577,7 +2579,7 @@ mod mandatory_integer_obligation_tests {
         let prepared = assumptions_with_path_context(&base, &[], &left);
         let memory = Memory::new();
         let right = ExecutionFacts::from(vec![
-            ExecutionPureFact::new(Proposition::CMemoryMutatesOnly {
+            ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
                 before: memory.clone(),
                 after: memory,
                 writes: vec![],
@@ -2734,7 +2736,8 @@ mod native_observation_guard_tests {
         };
         for truth in [None, Some(false), Some(true)] {
             let _session = crate::kernel::VerificationSession::enter();
-            let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+            let variable =
+                |id| KernelTerm::variable(KernelType::Program(ty.c_type()), Variable(id));
             let product = KernelTerm::machine_binary_shared(
                 ty,
                 MachineBinaryOp::Multiply,
@@ -2915,8 +2918,8 @@ mod shared_reconstruction_tests {
             T::UInt64,
             MachineBinaryOp::Add,
             [
-                KernelTerm::variable(KernelType::C(T::UInt64.c_type()), Variable(1018202)),
-                KernelTerm::variable(KernelType::C(T::UInt64.c_type()), Variable(1018203)),
+                KernelTerm::variable(KernelType::Program(T::UInt64.c_type()), Variable(1018202)),
+                KernelTerm::variable(KernelType::Program(T::UInt64.c_type()), Variable(1018203)),
             ],
         );
         let offset = scaled(V::Shared(&root).retain(T::Int64), 8, true);

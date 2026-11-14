@@ -31,7 +31,7 @@ impl ClickType {
                 base: CPointeeBase::Struct(class),
                 depth: 1,
             } if c_type == C0Type::Int32PointerPointer => class.tag(),
-            _ => return Self::C(c_type),
+            _ => return Self::Program(c_type),
         };
         Self::CObjectPointer {
             c_type,
@@ -163,7 +163,7 @@ impl Analysis<'_> {
         }
         // A library primitive operation has no body to derive an origin from.
         let body = definition.body()?;
-        if !(matches!(definition.return_type(), ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
+        if !(matches!(definition.return_type(), ClickType::Program(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
             || matches!(definition.return_type(), ClickType::Parameter(_)))
             || !self.active.insert(name.to_string())
         {
@@ -175,7 +175,7 @@ impl Analysis<'_> {
             .enumerate()
             .map(|(index, parameter)| {
                 let origin =
-                    (matches!(parameter.click_type(), ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
+                    (matches!(parameter.click_type(), ClickType::Program(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
                         || matches!(parameter.click_type(), ClickType::Parameter(_)))
                     .then(|| {
                         Arc::new(PurePointerResult {
@@ -192,7 +192,7 @@ impl Analysis<'_> {
         result
     }
 
-    fn c_expression(
+    fn program_expression(
         expression: &ProgramExpression,
         bindings: &BTreeMap<String, Origins>,
     ) -> Origins {
@@ -208,7 +208,7 @@ impl Analysis<'_> {
                 expression,
                 target_type,
                 ..
-            } if target_type.is_pointer() => Self::c_expression(expression, bindings),
+            } if target_type.is_pointer() => Self::program_expression(expression, bindings),
             _ => None,
         }
     }
@@ -240,7 +240,9 @@ impl Analysis<'_> {
             ContractExpression::Binding(name) | ContractExpression::CBinding(name) => {
                 bindings.get(name).cloned().flatten()
             }
-            ContractExpression::CFragment(expression) => Self::c_expression(expression, bindings),
+            ContractExpression::ProgramExpression(expression) => {
+                Self::program_expression(expression, bindings)
+            }
             ContractExpression::CUnary {
                 operand,
                 lowered: ProgramExpression::Cast { target_type, .. },
@@ -327,7 +329,7 @@ impl Analysis<'_> {
             .enumerate()
             .map(|(index, parameter)| {
                 let origin =
-                    (matches!(parameter.click_type(), ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
+                    (matches!(parameter.click_type(), ClickType::Program(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
                         || matches!(parameter.click_type(), ClickType::Parameter(_)))
                     .then(|| {
                         Arc::new(PurePointerResult {
@@ -560,7 +562,7 @@ impl Analysis<'_> {
             | ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
             | ContractExpression::RegionParameter { .. }
-            | ContractExpression::CFragment(_) => {}
+            | ContractExpression::ProgramExpression(_) => {}
         }
         Ok(())
     }

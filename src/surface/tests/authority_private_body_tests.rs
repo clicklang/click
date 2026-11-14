@@ -30,7 +30,7 @@ fn authority_control_extra_payload_does_not_replace_counter_ownership() {
             owns control(obj);
         }
     "#;
-    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    let error = verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect_err("payload ownership does not authenticate the counter load");
     assert!(
         error
@@ -68,7 +68,7 @@ fn authority_member_local_body_uses_scalar_allocation_ownership() {
             solve();
         }
     "#;
-    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect("scalar allocation supplies the body, and unfold restores it before local access");
 }
 
@@ -108,7 +108,7 @@ fn authority_member_private_heap_body_round_trip() {
             solve();
         }
     "#;
-    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect("fresh heap ownership can back a member and its private body");
 }
 
@@ -156,7 +156,7 @@ fn authority_helper_returns_member_with_private_memory_body() {
             solve();
         }
     "#;
-    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect("a checked helper returns the same private-body member");
 }
 
@@ -226,7 +226,7 @@ fn authority_helpers_create_and_consume_member_with_private_memory_body() {
             solve();
         }
     "#;
-    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect("verified helpers move the private body with one member birth and death");
 }
 
@@ -262,7 +262,7 @@ fn authority_creating_helper_cannot_outlive_caller_scalar_storage() {
             solve();
         }
     "#;
-    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    let error = verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect_err("the live population authority prevents retiring its backing scalar");
     assert!(
         error
@@ -289,7 +289,7 @@ fn authority_consuming_helper_cannot_return_the_wrong_private_body() {
             solve();
         }
     "#;
-    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    let error = verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect_err("the returned private body must match the member definition");
     assert!(
         error
@@ -334,7 +334,7 @@ fn authority_member_private_heap_body_cannot_back_two_births() {
             fold(reference(p));
         }
     "#;
-    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    let error = verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect_err("one exclusive private memory body cannot create two members");
     assert!(
         error.message().contains("Requires the private body"),
@@ -355,7 +355,7 @@ fn authority_malloc_statement_evidence_starts_at_running_state() {
             step();
         }
     "#;
-    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect("malloc statement evidence must start at the current proof state");
 }
 
@@ -400,7 +400,7 @@ fn authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes(
             step_until(function.exit); solve();
         }
     "#;
-    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect("control owns the counter and authority through both count changes");
 }
 
@@ -437,7 +437,7 @@ fn authority_control_wrapper_rejects_a_false_close_invariant() {
             }
         }
     "#;
-    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    let error = verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect_err("changing counter memory without a member birth violates control's fact");
     assert!(
         // Integer-default arithmetic reads the fact as an Integer comparison
@@ -477,7 +477,7 @@ fn authority_control_wrapper_requires_its_contained_authority() {
             fold(control(p));
         }
     "#;
-    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    let error = verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect_err("counter memory alone cannot create a population authority");
     assert!(error.message().contains("authority"), "{error:?}");
 }
@@ -513,7 +513,7 @@ fn authority_control_wrapper_requires_its_counter_memory() {
             fold(control(p));
         }
     "#;
-    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    let error = verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect_err("the member's private body cannot also be control's counter memory");
     assert!(
         error.message().contains("authority control body"),
@@ -586,7 +586,7 @@ fn authority_control_survives_balanced_helper_calls() {
             step_until(function.exit); solve();
         }
     "#;
-    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect("ordinary control returns through retaining and releasing helpers");
     let expanded = expand_project_claim_source_by_label(
         &project(click_source),
@@ -594,7 +594,7 @@ fn authority_control_survives_balanced_helper_calls() {
         "value.contract",
     )
     .expect("the caller expands with checked unselected helper contracts");
-    verify_c0_project(&project(&expanded), &[("private_body.c", c_source)])
+    verify_c_project(&project(&expanded), &[("private_body.c", c_source)])
         .expect("the expanded caller proof checks beside both helpers");
 }
 
@@ -647,11 +647,11 @@ fn authority_final_release_helper_retires_population_and_allocation() {
             step_until(function.exit); solve();
         }
     "#;
-    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+    verify_c_project(&project(click_source), &[("private_body.c", c_source)])
         .expect("final release retires the last member, authority, and allocation through a call");
 
     let bad_c_source = c_source.replace("            free(obj);", "");
-    let error = verify_c0_project(&project(click_source), &[("private_body.c", &bad_c_source)])
+    let error = verify_c_project(&project(click_source), &[("private_body.c", &bad_c_source)])
         .expect_err("a helper that omits free cannot consume the allocation");
     assert!(
         error
@@ -661,7 +661,7 @@ fn authority_final_release_helper_retires_population_and_allocation() {
     );
 
     let bad_contract = click_source.replace("requires obj->refs == 1;", "requires obj->refs == 2;");
-    let error = verify_c0_project(&project(&bad_contract), &[("private_body.c", c_source)])
+    let error = verify_c_project(&project(&bad_contract), &[("private_body.c", c_source)])
         .expect_err("one consumed member cannot retire an authority with count two");
     assert!(
         error

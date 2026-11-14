@@ -32,17 +32,23 @@ fn caller_with_owned_end(pointer: &Pointer, owned_end: u32, bytes: u32) -> Execu
 }
 
 fn reader_with_output(name: &str, output_start: u32, output_end: u32) -> ProgramFunction {
-    let input = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let output = MemorySegment::new(
-        c_variable("p"),
-        c_int32_literal(output_start),
-        c_int32_literal(output_end),
+    let input = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
     );
-    c_function(
+    let output = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(output_start),
+        crate::kernel::program_expression::int32_literal(output_end),
+    );
+    program_function(
         ProgramType::Int32,
         name,
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(
         vec![ResourceSpec::viewed_memory(input)],
@@ -52,35 +58,43 @@ fn reader_with_output(name: &str, output_start: u32, output_end: u32) -> Program
 
 fn reader_for_input(name: &str, input_end: u32) -> ProgramFunction {
     let input = MemorySegment::new(
-        c_variable("p"),
-        c_int32_literal(0),
-        c_int32_literal(input_end),
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(input_end),
     );
-    c_function(
+    program_function(
         ProgramType::Int32,
         name,
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(vec![ResourceSpec::viewed_memory(input)], Vec::new())
 }
 
 fn reader_with_mutable_range(name: &str, mutable_start: u32, mutable_end: u32) -> ProgramFunction {
-    let input = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    c_function(
+    let input = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    program_function(
         ProgramType::Int32,
         name,
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(vec![ResourceSpec::viewed_memory(input)], Vec::new())
     .with_contract(
         Vec::new(),
         Vec::new(),
         vec![MemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(mutable_start),
-            c_int32_literal(mutable_end),
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(mutable_start),
+            crate::kernel::program_expression::int32_literal(mutable_end),
         )],
         Vec::new(),
         true,
@@ -88,27 +102,37 @@ fn reader_with_mutable_range(name: &str, mutable_start: u32, mutable_end: u32) -
 }
 
 fn reader(name: &str, duplicate_view: bool) -> ProgramFunction {
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
     let mut requires = vec![ResourceSpec::viewed_memory(segment.clone())];
     if duplicate_view {
         requires.push(ResourceSpec::viewed_memory(segment));
     }
-    c_function(
+    program_function(
         ProgramType::Int32,
         name,
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(requires, Vec::new())
 }
 
 fn composite_reader(name: &str) -> ProgramFunction {
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
     let required = ResourceSpec::declared(
         ResourceFamily::Composite,
         ResourceAccessMode::View,
         "cell".into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Borrow,
         ResourceSnapshot::Entry,
@@ -116,31 +140,37 @@ fn composite_reader(name: &str) -> ProgramFunction {
     .unwrap();
     let definition = CompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(segment)],
         Vec::new(),
     );
-    c_function(
+    program_function(
         ProgramType::Int32,
         name,
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(vec![required], Vec::new())
     .with_composite_resource_definitions(vec![definition])
 }
 
 fn early_reader(name: &str) -> ProgramFunction {
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    c_function(
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    program_function(
         ProgramType::Void,
         name,
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         ProgramStatement::If {
-            condition: c_int32_literal(1),
-            then_branch: Box::new(c_return(c_void_value())),
+            condition: crate::kernel::program_expression::int32_literal(1),
+            then_branch: Box::new(program_return(program_void_value())),
             else_branch: Box::new(ProgramStatement::Skip),
         },
     )
@@ -152,31 +182,33 @@ fn early_reader(name: &str) -> ProgramFunction {
 fn conditional_owner(name: &str) -> (ProgramFunction, ExecutionEnvironment) {
     let definition = CompositeResourceDefinition::new(
         "guarded_item",
-        vec![c_parameter("item", ProgramType::Int32Pointer)],
+        vec![program_parameter("item", ProgramType::Int32Pointer)],
         Some(SpecProposition::Comparison {
-            left: SpecExpression::ProgramExpression(c_variable("item")),
+            left: SpecExpression::ProgramExpression(crate::kernel::program_expression::variable(
+                "item",
+            )),
             operator: ComparisonOperator::NotEqual,
             right: SpecExpression::Value(ProgramValue::pointer(Pointer::null())),
         }),
         false,
         vec![ResourceSpec::owned_memory(MemorySegment::new(
-            c_variable("item"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+            crate::kernel::program_expression::variable("item"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         ))],
         Vec::new(),
     );
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         name,
-        vec![c_parameter("item", ProgramType::Int32Pointer)],
-        c_return(c_int32_literal(0)),
+        vec![program_parameter("item", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     )
     .with_resource_summary(
         vec![ResourceSpec::composite(
             ResourceAccessMode::Own,
             "guarded_item".to_string(),
-            vec![c_variable("item")],
+            vec![crate::kernel::program_expression::variable("item")],
             vec![ProgramType::Int32Pointer],
         )],
         Vec::new(),
@@ -203,10 +235,10 @@ fn independent_verification_uses_the_call_transfer_boundary() {
     let state = caller(&pointer);
     let mut budget = ExecutionBudget::new();
     let mut variables = KernelVariableGenerator::fresh_for(0, BTreeSet::new());
-    let paths = execute_c_function_verification_paths(
+    let paths = execute_program_function_verification_paths(
         &state,
         &function,
-        &[c_pointer_value(pointer)],
+        &[crate::kernel::program_expression::pointer_value(pointer)],
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&environment(&function)),
         &mut budget,
@@ -230,7 +262,7 @@ fn candidate_reader_escrows_owner_until_return() {
     let function = reader("candidate_reader", false);
     let caller = caller(&pointer);
     let argument_values = vec![ProgramValue::pointer(pointer.clone())];
-    let callee = bind_c_function_arguments(&caller, &function, &argument_values)
+    let callee = bind_program_function_arguments(&caller, &function, &argument_values)
         .expect("reader argument should bind");
     let transfer = prepare_function_resource_transfer(
         &caller,
@@ -274,20 +306,23 @@ fn candidate_reader_escrows_owner_until_return() {
 #[test]
 fn candidate_function_entry_preserves_outer_loan_authority() {
     let pointer = pointer();
-    let function = c_function(
+    let function = program_function(
         ProgramType::Void,
         "candidate_empty_resource_entry",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_void_value()),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(program_void_value()),
     );
     let ledger = LoanLedger::new();
     let participant = ledger.fresh_participant().expect("caller participant");
     let caller_state = caller(&pointer)
         .with_loan_ledger(Some(ledger.clone()))
         .with_loan_participant(Some(participant));
-    let callee =
-        bind_c_function_arguments(&caller_state, &function, &[ProgramValue::pointer(pointer)])
-            .expect("the function argument should bind");
+    let callee = bind_program_function_arguments(
+        &caller_state,
+        &function,
+        &[ProgramValue::pointer(pointer)],
+    )
+    .expect("the function argument should bind");
 
     assert_eq!(callee.loan_ledger(), Some(&ledger));
     assert_eq!(callee.loan_participant(), Some(participant));
@@ -307,7 +342,7 @@ fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(head.clone()));
     let function = composite_reader("candidate_composite_reader");
-    let callee = bind_c_function_arguments(
+    let callee = bind_program_function_arguments(
         &caller,
         &function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -369,27 +404,33 @@ fn composite_reader_with_definition(
         ResourceFamily::Composite,
         ResourceAccessMode::View,
         "cell".into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Borrow,
         ResourceSnapshot::Entry,
     )
     .unwrap();
-    c_function(
+    program_function(
         ProgramType::Int32,
         name,
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(vec![required], Vec::new())
     .with_composite_resource_definitions(vec![definition])
 }
 
 fn fact_bearing_cell_definition() -> CompositeResourceDefinition {
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
     CompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(segment)],
@@ -408,8 +449,9 @@ fn plan_composite_lend(function: &ProgramFunction) -> Result<(), RuntimeError> {
                 .store(pointer.clone(), int32(7)),
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(head));
-    let callee = bind_c_function_arguments(&caller, function, &[ProgramValue::pointer(pointer)])
-        .expect("composite reader arguments should bind");
+    let callee =
+        bind_program_function_arguments(&caller, function, &[ProgramValue::pointer(pointer)])
+            .expect("composite reader arguments should bind");
     prepare_function_resource_transfer(
         &caller,
         &callee,
@@ -447,12 +489,16 @@ fn candidate_composite_with_unstable_facts_is_refused() {
         matches!(&error, RuntimeError::FunctionContract(message) if message.contains("allocation-liveness")),
         "{error}"
     );
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
     let counted = composite_reader_with_definition(
         "candidate_counted_fact_reader",
         CompositeResourceDefinition::authority_control(
             "cell",
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             vec![ResourceSpec::owned_memory(segment)],
             vec![SpecProposition::Defined(SpecExpression::Value(int32(0)))],
@@ -466,10 +512,14 @@ fn candidate_composite_with_unstable_facts_is_refused() {
 // checked frontier covers it.
 
 fn cell_definition(end: u32, facts: Vec<SpecProposition>) -> CompositeResourceDefinition {
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(end));
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(end),
+    );
     CompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(segment)],
@@ -478,10 +528,14 @@ fn cell_definition(end: u32, facts: Vec<SpecProposition>) -> CompositeResourceDe
 }
 
 fn wide_definition(end: u32) -> CompositeResourceDefinition {
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(end));
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(end),
+    );
     CompositeResourceDefinition::new(
         "wide",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(segment)],
@@ -499,17 +553,19 @@ fn adapter_reader(
         ResourceFamily::Composite,
         ResourceAccessMode::View,
         "cell".into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Borrow,
         ResourceSnapshot::Entry,
     )
     .unwrap();
-    c_function(
+    program_function(
         ProgramType::Int32,
         name,
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(vec![required], Vec::new())
     .with_composite_resource_definitions(vec![cell, wide])
@@ -544,9 +600,12 @@ fn plan_adapter_lend(
 ) {
     let pointer = pointer();
     let caller = adapter_caller(&pointer);
-    let callee =
-        bind_c_function_arguments(&caller, function, &[ProgramValue::pointer(pointer.clone())])
-            .expect("adapter reader arguments should bind");
+    let callee = bind_program_function_arguments(
+        &caller,
+        function,
+        &[ProgramValue::pointer(pointer.clone())],
+    )
+    .expect("adapter reader arguments should bind");
     let transfer = prepare_function_resource_transfer(
         &caller,
         &callee,
@@ -596,7 +655,7 @@ fn candidate_composite_view_is_backed_by_a_covering_owned_composite() {
             Err(LoanRefusal::ActiveDependency)
         );
     }
-    let callee = bind_c_function_arguments(
+    let callee = bind_program_function_arguments(
         &caller,
         &function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -651,9 +710,13 @@ fn candidate_composite_view_over_an_uncovered_owner_is_refused() {
 #[test]
 fn candidate_composite_view_with_an_unestablished_fact_is_refused() {
     let unestablished = SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(c_load(c_variable("p"))),
+        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
         operator: ComparisonOperator::Equal,
-        right: SpecExpression::ProgramExpression(c_int32_literal(0)),
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
+            0,
+        )),
     };
     let function = adapter_reader(
         "candidate_unestablished_fact_adapter_reader",
@@ -695,7 +758,7 @@ fn candidate_composite_view_is_materialized_from_the_caller_frontier() {
     let pointer = pointer();
     let function = composite_reader("candidate_materialized_adapter_reader");
     let caller = caller_with_owned_end(&pointer, 2, 8);
-    let callee = bind_c_function_arguments(
+    let callee = bind_program_function_arguments(
         &caller,
         &function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -760,12 +823,16 @@ fn candidate_composite_view_is_materialized_from_the_caller_frontier() {
 /// gets back: composing the produced head beside it would leave the caller
 /// owning `p[0..1]` twice, once directly and once inside `zz_box3(p)`.
 fn view_and_produce_reader(name: &str) -> ProgramFunction {
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
     let produced = ResourceSpec::declared(
         ResourceFamily::Composite,
         ResourceAccessMode::Own,
         "zz_box3".into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Produce,
         ResourceSnapshot::Post,
@@ -773,17 +840,19 @@ fn view_and_produce_reader(name: &str) -> ProgramFunction {
     .unwrap();
     let definition = CompositeResourceDefinition::new(
         "zz_box3",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(segment.clone())],
         Vec::new(),
     );
-    c_function(
+    program_function(
         ProgramType::Int32,
         name,
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(vec![ResourceSpec::viewed_memory(segment)], vec![produced])
     .with_composite_resource_definitions(vec![definition])
@@ -801,10 +870,10 @@ fn produced_composite_over_a_viewed_owner_is_refused() {
             checked_callees: None,
             applied_tactics: Default::default(),
         });
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller(&pointer),
         &function,
-        &[c_pointer_value(pointer)],
+        &[crate::kernel::program_expression::pointer_value(pointer)],
         &PureFactContext::new(),
         ExecutionContext::apply_verified_rules(&environment),
         &mut ExecutionBudget::new(),
@@ -840,7 +909,7 @@ fn candidate_composite_reader_can_be_called_twice() {
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(head.clone()));
     let function = composite_reader("candidate_composite_reader_twice");
-    let first = execute_c_function_call_paths(
+    let first = execute_program_function_call_paths(
         &caller,
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(
@@ -863,7 +932,7 @@ fn candidate_composite_reader_can_be_called_twice() {
         panic!("first composite call should return: {first:?}");
     };
     assert_eq!(after_first.resources().facts(), std::slice::from_ref(&head));
-    let second = execute_c_function_call_paths(
+    let second = execute_program_function_call_paths(
         after_first,
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(
@@ -895,7 +964,7 @@ fn candidate_reader_recovers_owner_for_following_write() {
     let caller_state = caller(&pointer)
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(participant));
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller_state,
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(
@@ -939,7 +1008,7 @@ fn candidate_reader_recovers_owner_for_following_write() {
 fn candidate_direct_reader_recovers_owner_for_following_write() {
     let pointer = pointer();
     let function = reader("candidate_direct_reader", false);
-    let paths = execute_c_function_paths(
+    let paths = execute_program_function_paths(
         &caller(&pointer),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(
@@ -977,7 +1046,7 @@ fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity()
     let caller_state = caller(&pointer)
         .with_loan_ledger(Some(caller_ledger.clone()))
         .with_loan_participant(Some(caller_participant));
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller_state,
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -1019,16 +1088,26 @@ fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity()
 fn candidate_nested_body_call_retains_inner_and_outer_evidence() {
     let pointer = pointer();
     let inner = reader("candidate_nested_inner", false);
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let outer = c_function(
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    let outer = program_function(
         ProgramType::Int32,
         "candidate_nested_outer",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         ProgramStatement::seq(
-            Arc::new(c_declare("result", ProgramType::Int32)),
+            Arc::new(program_declare("result", ProgramType::Int32)),
             Arc::new(ProgramStatement::seq(
-                Arc::new(c_call_assign("result", inner.name(), vec![c_variable("p")])),
-                Arc::new(c_return(c_variable("result"))),
+                Arc::new(program_call_assign(
+                    "result",
+                    inner.name(),
+                    vec![crate::kernel::program_expression::variable("p")],
+                )),
+                Arc::new(program_return(crate::kernel::program_expression::variable(
+                    "result",
+                ))),
             )),
         ),
     )
@@ -1039,7 +1118,7 @@ fn candidate_nested_body_call_retains_inner_and_outer_evidence() {
     let caller_state = caller(&pointer)
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(participant));
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller_state,
         &outer,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -1069,7 +1148,7 @@ fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
             .with_block(pointer.block.clone(), 4)
             .store(pointer.clone(), int32(7)),
     );
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller,
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -1106,7 +1185,7 @@ fn candidate_local_array_view_out_of_bounds_is_refused() {
             .with_block(pointer.block.clone(), 4)
             .store(pointer.clone(), int32(7)),
     );
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller,
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -1136,10 +1215,12 @@ fn candidate_local_array_view_out_of_bounds_is_refused() {
 #[test]
 fn candidate_conditional_composite_with_a_false_guard_needs_no_owned_entry() {
     let (function, environment) = conditional_owner("candidate_guarded_free");
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &ExecutionState::new(),
         &function,
-        &[c_pointer_value(Pointer::null())],
+        &[crate::kernel::program_expression::pointer_value(
+            Pointer::null(),
+        )],
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::new(),
@@ -1167,10 +1248,10 @@ fn candidate_conditional_composite_with_an_undecided_guard_still_needs_its_entry
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(910_101)), 4),
     };
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &ExecutionState::new(),
         &function,
-        &[c_pointer_value(symbolic)],
+        &[crate::kernel::program_expression::pointer_value(symbolic)],
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&environment),
         &mut ExecutionBudget::new(),
@@ -1202,18 +1283,18 @@ fn candidate_repeated_token_requirement_reports_the_demanded_quantity() {
         ResourceSpec::token(
             ResourceAccessMode::Own,
             "can_complete".to_string(),
-            vec![c_variable(parameter)],
+            vec![crate::kernel::program_expression::variable(parameter)],
             vec![ProgramType::Int32],
         )
     };
-    let function = c_function(
+    let function = program_function(
         ProgramType::Int32,
         "candidate_consume_two",
         vec![
-            c_parameter("first", ProgramType::Int32),
-            c_parameter("second", ProgramType::Int32),
+            program_parameter("first", ProgramType::Int32),
+            program_parameter("second", ProgramType::Int32),
         ],
-        c_return(c_int32_literal(0)),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
     )
     .with_resource_summary(
         vec![requirement("first"), requirement("second")],
@@ -1224,7 +1305,7 @@ fn candidate_repeated_token_requirement_reports_the_demanded_quantity() {
         ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
             ResourceFact::own_token("can_complete".to_string(), vec![token.clone()]),
         ));
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller,
         &function,
         &[
@@ -1254,7 +1335,7 @@ fn candidate_repeated_token_requirement_reports_the_demanded_quantity() {
 fn candidate_inline_reader_uses_the_callers_checked_resources() {
     let pointer = pointer();
     let function = reader("candidate_inline_reader", false).with_inline_body();
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller(&pointer),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -1278,7 +1359,7 @@ fn candidate_unresolved_return_obligation_refuses_recovery() {
     let function = reader("candidate_unresolved_return", false);
     let caller = caller(&pointer);
     let arguments = vec![ProgramValue::pointer(pointer.clone())];
-    let callee = bind_c_function_arguments(&caller, &function, &arguments)
+    let callee = bind_program_function_arguments(&caller, &function, &arguments)
         .expect("reader argument should bind");
     let transfer = prepare_function_resource_transfer(
         &caller,
@@ -1326,7 +1407,7 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
     let assumptions = PureFactContext::new();
     let mut budget = ExecutionBudget::new();
     let caller_with_ledger = caller(&pointer).with_loan_ledger(Some(LoanLedger::new()));
-    let callee = bind_c_function_arguments(
+    let callee = bind_program_function_arguments(
         &caller_with_ledger,
         &function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -1353,7 +1434,7 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
     let ledger = LoanLedger::new();
     let participant = ledger.fresh_participant().expect("participant");
     let caller_with_participant = caller(&pointer).with_loan_participant(Some(participant));
-    let callee = bind_c_function_arguments(
+    let callee = bind_program_function_arguments(
         &caller_with_participant,
         &function,
         &[ProgramValue::pointer(pointer)],
@@ -1384,7 +1465,7 @@ fn candidate_rejects_wrong_callee_participant_on_recovery() {
     let function = reader("candidate_wrong_participant", false);
     let caller = caller(&pointer);
     let arguments = vec![ProgramValue::pointer(pointer.clone())];
-    let callee = bind_c_function_arguments(&caller, &function, &arguments)
+    let callee = bind_program_function_arguments(&caller, &function, &arguments)
         .expect("reader argument should bind");
     let transfer = prepare_function_resource_transfer(
         &caller,
@@ -1444,7 +1525,7 @@ fn candidate_joint_planner_reuses_one_escrow_for_two_aliases() {
     let pointer = pointer();
     let function = reader("candidate_aliases", true);
     let caller = caller(&pointer);
-    let callee = bind_c_function_arguments(
+    let callee = bind_program_function_arguments(
         &caller,
         &function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -1478,7 +1559,7 @@ fn candidate_nested_reader_reborrows_and_restores_outer_view_binding() {
     let pointer = pointer();
     let function = reader("candidate_nested_reader", false);
     let caller = caller(&pointer);
-    let outer_template = bind_c_function_arguments(
+    let outer_template = bind_program_function_arguments(
         &caller,
         &function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -1496,7 +1577,7 @@ fn candidate_nested_reader_reborrows_and_restores_outer_view_binding() {
     .expect("outer transfer should run")
     .expect("outer transfer should be accepted");
     let outer_callee = callee_state_with_resource_transfer(outer_template, &outer_transfer);
-    let inner_template = bind_c_function_arguments(
+    let inner_template = bind_program_function_arguments(
         &outer_callee,
         &function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -1554,14 +1635,22 @@ fn candidate_nested_reader_reborrows_and_restores_outer_view_binding() {
 fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
     let pointer = pointer();
     let inner = reader("candidate_nested_body_inner", false);
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let outer = c_function(
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    let outer = program_function(
         ProgramType::Int32,
         "candidate_nested_body_outer",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_seq(
-            c_call_assign("result", inner.name(), vec![c_variable("p")]),
-            c_return(c_variable("result")),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_seq(
+            program_call_assign(
+                "result",
+                inner.name(),
+                vec![crate::kernel::program_expression::variable("p")],
+            ),
+            program_return(crate::kernel::program_expression::variable("result")),
         ),
     )
     .with_resource_summary(vec![ResourceSpec::viewed_memory(segment)], Vec::new());
@@ -1575,7 +1664,7 @@ fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
             applied_tactics: Default::default(),
         });
 
-    let paths = execute_c_function_paths(
+    let paths = execute_program_function_paths(
         &caller(&pointer),
         &outer,
         &[ProgramExpression::Value(ProgramValue::pointer(
@@ -1608,7 +1697,7 @@ fn candidate_nested_call_preserves_outer_view_for_wider_output() {
     let pointer = pointer();
     let outer_function = reader_for_input("candidate_outer_view", 2);
     let caller = caller_with_owned_end(&pointer, 2, 8);
-    let outer_template = bind_c_function_arguments(
+    let outer_template = bind_program_function_arguments(
         &caller,
         &outer_function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -1628,7 +1717,7 @@ fn candidate_nested_call_preserves_outer_view_for_wider_output() {
     let outer_callee = callee_state_with_resource_transfer(outer_template, &outer_transfer);
 
     let inner_function = reader_with_output("candidate_outer_output", 0, 2);
-    let inner_template = bind_c_function_arguments(
+    let inner_template = bind_program_function_arguments(
         &outer_callee,
         &inner_function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -1670,7 +1759,7 @@ fn candidate_nested_call_preserves_outer_view_for_wider_output() {
 fn assert_unbacked_output_rejected(output_start: u32, output_end: u32, name: &str) {
     let pointer = pointer();
     let function = reader_with_output(name, output_start, output_end);
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller_with_owned_end(&pointer, 3, 12),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -1710,7 +1799,7 @@ fn recover_with_extra_returned_view(
     let pointer = pointer();
     let function = reader("candidate_returned_projection", false);
     let caller = caller_with_owned_end(&pointer, 3, 12);
-    let callee_template = bind_c_function_arguments(
+    let callee_template = bind_program_function_arguments(
         &caller,
         &function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -1813,7 +1902,7 @@ fn recover_with_a_carried_view_of_another_block(
                 read_only,
             ));
     let callee_template =
-        bind_c_function_arguments(&caller, &function, &[ProgramValue::pointer(pointer)])
+        bind_program_function_arguments(&caller, &function, &[ProgramValue::pointer(pointer)])
             .expect("reader argument should bind");
     let mut transfer = prepare_function_resource_transfer(
         &caller,
@@ -2016,7 +2105,7 @@ fn assert_mutable_view_effect_result(
 ) -> Vec<FunctionPath> {
     let pointer = pointer();
     let function = reader_with_mutable_range(name, mutable_start, mutable_end);
-    execute_c_function_call_paths(
+    execute_program_function_call_paths(
         &caller_with_owned_end(&pointer, 2, 8),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -2052,7 +2141,7 @@ fn candidate_rejects_symbolic_same_base_overlapping_effect() {
         offset: PointerOffsetTerm::Variable(Variable(700)),
     };
     let function = reader_with_mutable_range("candidate_symbolic_overlap_effect", 0, 1);
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller_with_owned_end(&pointer, 2, 8),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -2084,29 +2173,35 @@ fn candidate_rejects_unproved_mutable_effect_separation() {
         block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
         offset: PointerOffsetTerm::Variable(Variable(701)),
     };
-    let input = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let function = c_function(
+    let input = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    let function = program_function(
         ProgramType::Int32,
         "candidate_unknown_effect",
         vec![
-            c_parameter("p", ProgramType::Int32Pointer),
-            c_parameter("q", ProgramType::Int32Pointer),
+            program_parameter("p", ProgramType::Int32Pointer),
+            program_parameter("q", ProgramType::Int32Pointer),
         ],
-        c_return(c_load(c_variable("p"))),
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(vec![ResourceSpec::viewed_memory(input)], Vec::new())
     .with_contract(
         Vec::new(),
         Vec::new(),
         vec![MemorySegment::new(
-            c_variable("q"),
-            c_int32_literal(0),
-            c_int32_literal(1),
+            crate::kernel::program_expression::variable("q"),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(1),
         )],
         Vec::new(),
         true,
     );
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller_with_owned_end(&viewed, 2, 8),
         &function,
         &[
@@ -2132,18 +2227,28 @@ fn candidate_rejects_unproved_mutable_effect_separation() {
 /// write footprint derived from that ownership. Each requirement is
 /// served by a different owned occurrence of the caller's partition.
 fn viewer_and_writer(name: &str) -> ProgramFunction {
-    let viewed = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let viewed = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
     // The writer reads only `p`, so `q` may arrive unwritten.
-    let owned = MemorySegment::new(c_variable("q"), c_int32_literal(0), c_int32_literal(1))
-        .with_uninitialized(true);
-    c_function(
+    let owned = MemorySegment::new(
+        crate::kernel::program_expression::variable("q"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    )
+    .with_uninitialized(true);
+    program_function(
         ProgramType::Int32,
         name,
         vec![
-            c_parameter("p", ProgramType::Int32Pointer),
-            c_parameter("q", ProgramType::Int32Pointer),
+            program_parameter("p", ProgramType::Int32Pointer),
+            program_parameter("q", ProgramType::Int32Pointer),
         ],
-        c_return(c_load(c_variable("p"))),
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(
         vec![
@@ -2193,7 +2298,7 @@ fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
                 .unchecked_with_fact(owned_range(&mutated)),
         );
     let function = viewer_and_writer("candidate_separate_occurrence_effect");
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller,
         &function,
         &[
@@ -2242,13 +2347,23 @@ fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
 #[test]
 fn candidate_rejects_a_mutable_effect_overlapping_a_view_from_its_own_occurrence() {
     let pointer = pointer();
-    let viewed = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(2));
-    let owned = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
-    let function = c_function(
+    let viewed = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(2),
+    );
+    let owned = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
+    let function = program_function(
         ProgramType::Int32,
         "candidate_same_occurrence_overlap_effect",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(
         vec![
@@ -2258,7 +2373,7 @@ fn candidate_rejects_a_mutable_effect_overlapping_a_view_from_its_own_occurrence
         Vec::new(),
     )
     .with_resource_derived_mutable_frame();
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller_with_owned_end(&pointer, 2, 8),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -2297,12 +2412,16 @@ fn composite_reader_with_mutable_range(
     mutable_start: u32,
     mutable_end: u32,
 ) -> ProgramFunction {
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
     let required = ResourceSpec::declared(
         ResourceFamily::Composite,
         ResourceAccessMode::View,
         "cell".into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Borrow,
         ResourceSnapshot::Entry,
@@ -2310,17 +2429,19 @@ fn composite_reader_with_mutable_range(
     .unwrap();
     let definition = CompositeResourceDefinition::new(
         "cell",
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
         None,
         false,
         vec![ResourceSpec::owned_memory(segment)],
         Vec::new(),
     );
-    c_function(
+    program_function(
         ProgramType::Int32,
         name,
-        vec![c_parameter("p", ProgramType::Int32Pointer)],
-        c_return(c_load(c_variable("p"))),
+        vec![program_parameter("p", ProgramType::Int32Pointer)],
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(vec![required], Vec::new())
     .with_composite_resource_definitions(vec![definition])
@@ -2328,9 +2449,9 @@ fn composite_reader_with_mutable_range(
         Vec::new(),
         Vec::new(),
         vec![MemorySegment::new(
-            c_variable("p"),
-            c_int32_literal(mutable_start),
-            c_int32_literal(mutable_end),
+            crate::kernel::program_expression::variable("p"),
+            crate::kernel::program_expression::int32_literal(mutable_start),
+            crate::kernel::program_expression::int32_literal(mutable_end),
         )],
         Vec::new(),
         true,
@@ -2354,7 +2475,7 @@ fn composite_mutable_effect_paths(
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(head));
     let function = composite_reader_with_mutable_range(name, mutable_start, mutable_end);
-    execute_c_function_call_paths(
+    execute_program_function_call_paths(
         &caller,
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -2408,7 +2529,7 @@ fn candidate_rejects_mutable_effect_overlapping_a_local_view() {
             .with_block(pointer.block.clone(), 8)
             .store(pointer.clone(), int32(7)),
     );
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller,
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(pointer))],
@@ -2432,7 +2553,7 @@ fn candidate_nested_reader_rejects_stale_outer_binding() {
     let pointer = pointer();
     let function = reader("candidate_stale_nested_reader", false);
     let caller = caller(&pointer);
-    let outer_template = bind_c_function_arguments(
+    let outer_template = bind_program_function_arguments(
         &caller,
         &function,
         &[ProgramValue::pointer(pointer.clone())],
@@ -2451,9 +2572,12 @@ fn candidate_nested_reader_rejects_stale_outer_binding() {
     .expect("outer transfer should be accepted");
     let outer_callee = callee_state_with_resource_transfer(outer_template, &outer_transfer)
         .with_loan_view_bindings(LoanViewBindings::default());
-    let inner_template =
-        bind_c_function_arguments(&outer_callee, &function, &[ProgramValue::pointer(pointer)])
-            .expect("inner reader arguments should bind");
+    let inner_template = bind_program_function_arguments(
+        &outer_callee,
+        &function,
+        &[ProgramValue::pointer(pointer)],
+    )
+    .expect("inner reader arguments should bind");
     let result = prepare_function_resource_transfer(
         &outer_callee,
         &inner_template,
@@ -2476,7 +2600,7 @@ fn candidate_nested_reader_rejects_stale_outer_binding() {
 fn candidate_early_return_closes_call_scope() {
     let pointer = pointer();
     let function = early_reader("candidate_early_reader");
-    let paths = execute_c_function_call_paths(
+    let paths = execute_program_function_call_paths(
         &caller(&pointer),
         &function,
         &[ProgramExpression::Value(ProgramValue::pointer(
@@ -2549,32 +2673,38 @@ fn candidate_wrong_scope_close_is_refused() {
 /// unit and the declared cardinality lives in the tracked population, so
 /// `n of slot(p)` is never one owned entry the reservation can select.
 fn token_population_reader(name: &str, population: &str) -> ProgramFunction {
-    let segment = MemorySegment::new(c_variable("p"), c_int32_literal(0), c_int32_literal(1));
+    let segment = MemorySegment::new(
+        crate::kernel::program_expression::variable("p"),
+        crate::kernel::program_expression::int32_literal(0),
+        crate::kernel::program_expression::int32_literal(1),
+    );
     let unit = ResourceSpec::declared(
         ResourceFamily::Composite,
         ResourceAccessMode::Own,
         population.into(),
-        vec![c_variable("p")],
+        vec![crate::kernel::program_expression::variable("p")],
         vec![ProgramType::Int32Pointer],
         ResourceTransferRole::Consume,
         ResourceSnapshot::Entry,
     )
     .expect("a unit population term");
     let counted = ResourceSpec::quantified(
-        c_variable("n"),
+        crate::kernel::program_expression::variable("n"),
         unit,
         ResourceTransferRole::Consume,
         ResourceSnapshot::Entry,
     )
     .expect("a counted population requirement");
-    c_function(
+    program_function(
         ProgramType::Int32,
         name,
         vec![
-            c_parameter("p", ProgramType::Int32Pointer),
-            c_parameter("n", ProgramType::Int32),
+            program_parameter("p", ProgramType::Int32Pointer),
+            program_parameter("n", ProgramType::Int32),
         ],
-        c_return(c_load(c_variable("p"))),
+        program_return(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
     )
     .with_resource_summary(
         vec![ResourceSpec::viewed_memory(segment), counted],
@@ -2583,7 +2713,7 @@ fn token_population_reader(name: &str, population: &str) -> ProgramFunction {
     .with_composite_resource_definitions(vec![
         CompositeResourceDefinition::new(
             population,
-            vec![c_parameter("p", ProgramType::Int32Pointer)],
+            vec![program_parameter("p", ProgramType::Int32Pointer)],
             None,
             false,
             Vec::new(),
@@ -2632,7 +2762,7 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
         ProgramValue::Int32(MachineTerm::Variable(Variable(4242))),
     ];
     let assumptions = nonnegative_quantity(Variable(4242));
-    let callee = bind_c_function_arguments(&caller, &function, &arguments)
+    let callee = bind_program_function_arguments(&caller, &function, &arguments)
         .expect("population reader arguments should bind");
     let transfer = prepare_function_resource_transfer(
         &caller,
@@ -2675,22 +2805,37 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
 fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
     let pointer = pointer();
     let function = reader("sequence_exit_reader", false);
-    let call = c_call(
+    let call = program_call(
         "sequence_exit_reader",
         vec![ProgramExpression::Value(ProgramValue::pointer(
             pointer.clone(),
         ))],
     );
     let exits = [
-        ("break", c_break()),
-        ("return", c_return(c_int32_literal(0))),
-        ("throw", ProgramStatement::Throw(c_int32_literal(1))),
-        ("runtime error", c_assign("undeclared", c_int32_literal(1))),
+        ("break", program_break()),
+        (
+            "return",
+            program_return(crate::kernel::program_expression::int32_literal(0)),
+        ),
+        (
+            "throw",
+            ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(1)),
+        ),
+        (
+            "runtime error",
+            program_assign(
+                "undeclared",
+                crate::kernel::program_expression::int32_literal(1),
+            ),
+        ),
     ];
     for (name, exit) in exits {
-        let statement = c_seq(
-            c_seq(call.clone(), exit),
-            c_assign("unreached", c_int32_literal(2)),
+        let statement = program_seq(
+            program_seq(call.clone(), exit),
+            program_assign(
+                "unreached",
+                crate::kernel::program_expression::int32_literal(2),
+            ),
         );
         let ledger = LoanLedger::new();
         let participant = ledger.fresh_participant().expect("caller participant");
@@ -2698,7 +2843,7 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
             .with_loan_ledger(Some(ledger))
             .with_loan_participant(Some(participant));
         let environment = environment(&function).with_function(function.clone());
-        let executes = crate::kernel::eval::execute_c_statement_paths(
+        let executes = crate::kernel::eval::execute_execution_statement_paths(
             &state,
             &statement,
             &PureFactContext::new(),
@@ -2707,7 +2852,7 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
         )
         .expect("the sequence executes");
         let mut variables = KernelVariableGenerator::fresh_for(0, BTreeSet::new());
-        let verifies = crate::kernel::loops::execute_c_statement_verification_paths(
+        let verifies = crate::kernel::loops::execute_execution_statement_verification_paths(
             &state,
             &statement,
             &PureFactContext::new(),
@@ -2739,14 +2884,22 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
 #[test]
 fn refused_composite_assembly_retains_the_failed_source_clause() {
     let always = SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(c_int32_literal(0)),
+        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
+            0,
+        )),
         operator: ComparisonOperator::Equal,
-        right: SpecExpression::ProgramExpression(c_int32_literal(0)),
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
+            0,
+        )),
     };
     let missing = SpecProposition::Comparison {
-        left: SpecExpression::ProgramExpression(c_load(c_variable("p"))),
+        left: SpecExpression::ProgramExpression(crate::kernel::program_expression::load(
+            crate::kernel::program_expression::variable("p"),
+        )),
         operator: ComparisonOperator::Equal,
-        right: SpecExpression::ProgramExpression(c_int32_literal(0)),
+        right: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
+            0,
+        )),
     };
     let definition = cell_definition(1, vec![always.clone(), always, missing])
         .with_fact_source_indices(vec![0, 0, 1])
@@ -2844,10 +2997,10 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             )
             .with_resource_context(resources);
         let function = reader_for_input("classify_local_storage_authority", 4);
-        let paths = execute_c_function_call_paths(
+        let paths = execute_program_function_call_paths(
             &state,
             &function,
-            &[c_pointer_value(local)],
+            &[crate::kernel::program_expression::pointer_value(local)],
             &facts,
             ExecutionContext::execute_bodies(&environment(&function)),
             &mut ExecutionBudget::new(),

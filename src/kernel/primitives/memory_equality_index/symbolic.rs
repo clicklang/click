@@ -634,7 +634,7 @@ mod tests {
         let alias = Pointer::symbolic(Variable(940_001));
         let n = MachineTerm::Variable(Variable(940_002));
         let m = MachineTerm::Variable(Variable(940_003));
-        let snapshot = crate::kernel::intern_c_memory(Memory::new());
+        let snapshot = crate::kernel::intern_memory(Memory::new());
         let loaded = Pointer::loaded_value(&snapshot, &slot);
         let loaded_alias = Pointer::loaded_value(&snapshot, &alias);
         let empty = PureFactContext::new();
@@ -667,7 +667,7 @@ mod tests {
             resources.symbolic_range_read_supported(&required, &empty, None),
             None
         );
-        let later = crate::kernel::intern_c_memory(Memory::new().with_block("later", 8));
+        let later = crate::kernel::intern_memory(Memory::new().with_block("later", 8));
         let required = range(&Pointer::loaded_value(&later, &alias), 0u32.into(), n);
         assert_eq!(
             resources.symbolic_range_read_supported(&required, &facts, None),

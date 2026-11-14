@@ -218,7 +218,7 @@ impl PureFactContext {
         // effect fact is a candidate; other proposition facts are not.
         self.memory_effect_fact_propositions()
             .any(|proposition| match proposition {
-                Proposition::CMemoryMutatesOnly {
+                Proposition::MemoryMutatesOnly {
                     before,
                     after,
                     writes,
@@ -240,7 +240,7 @@ impl PureFactContext {
                             )
                         })
                 }
-                Proposition::CMemoryEffectSummary {
+                Proposition::MemoryEffectSummary {
                     before,
                     after,
                     mutable_ranges,
@@ -271,7 +271,7 @@ impl PureFactContext {
                                     )
                                 }))
                 }
-                Proposition::CHeapAllocationFreed {
+                Proposition::HeapAllocationFreed {
                     before,
                     after,
                     allocation_base,
@@ -540,7 +540,7 @@ mod tests {
     #[test]
     fn held_word_read_equality_accepts_named_raw_and_mixed_atoms() {
         let _session = crate::kernel::VerificationSession::enter();
-        let memory = crate::kernel::intern_c_memory(
+        let memory = crate::kernel::intern_memory(
             Memory::new()
                 .with_block("held-read-left", 4)
                 .with_block("held-read-right", 4),

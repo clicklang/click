@@ -60,7 +60,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
         let observable = resources
             .unchecked_with_fact(addressed.clone())
             .observable_facts_assuming_valid(&assumptions);
-        assert!(observable.iter().any(|fact| matches!(fact, Proposition::CResourceComposition(context) if context.facts().contains(&addressed))));
+        assert!(observable.iter().any(|fact| matches!(fact, Proposition::ResourceComposition(context) if context.facts().contains(&addressed))));
     }
     crate::kernel::restore_block_registries(&saved);
     assert!(
@@ -95,7 +95,7 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                assert!(c_resources_directly_match(
+                assert!(resources_directly_match(
                     &left,
                     &resource(index),
                     &assumptions,
@@ -122,13 +122,13 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         ConditionTerm::pointer_equal(result.clone(), storage.clone()),
         true,
     );
-    let view = Proposition::CMemoryLoadable {
+    let view = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: storage.clone(),
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    let goal = Proposition::CMemoryLoadable {
+    let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: result.clone(),
         bytes: MachineTerm::constant(4),
@@ -147,7 +147,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
             .assume_proposition(equality.clone())
             .assume_proposition(view.clone());
         for index in 0..size {
-            context = context.assume_proposition(Proposition::CMemoryLoadable {
+            context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: Pointer {
                     block: format!("unrelated-view-{index}").into(),
@@ -163,7 +163,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         assert!(proved);
         assert!(!crate::kernel::search::ProofSearch::proves(
             &(context),
-            &Proposition::CMemoryLoadable {
+            &Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: result.offset_by_bytes(4),
                 bytes: MachineTerm::constant(4),
@@ -185,7 +185,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
             ConditionTerm::pointer_equal(result.clone(), local.clone()),
             true,
         ))
-        .assume_proposition(Proposition::CMemoryLoadable {
+        .assume_proposition(Proposition::MemoryLoadable {
             memory: before,
             base: local,
             bytes: MachineTerm::constant(4),
@@ -193,7 +193,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         });
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(context),
-        &Proposition::CMemoryLoadable {
+        &Proposition::MemoryLoadable {
             memory: after,
             base: result,
             bytes: MachineTerm::constant(4),
@@ -213,14 +213,14 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
         .into_iter()
         .map(|size| {
             let mut assumptions =
-                PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
+                PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: target.clone(),
                     bytes: MachineTerm::constant(8),
                     wide: false,
                 });
             for index in 0..size {
-                assumptions = assumptions.assume_proposition(Proposition::CMemoryLoadable {
+                assumptions = assumptions.assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: Pointer {
                         block: target.block.clone(),
@@ -233,7 +233,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
-                    &Proposition::CMemoryLoadable {
+                    &Proposition::MemoryLoadable {
                         memory: memory.clone(),
                         base: target.clone(),
                         bytes: MachineTerm::constant(4),
@@ -277,14 +277,14 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
                 ])
                 .fold(ResourceContext::new(), ResourceContext::unchecked_with_fact);
             let without_alias = PureFactContext::new()
-                .assume_proposition(Proposition::CResourceComposition(resources));
+                .assume_proposition(Proposition::ResourceComposition(resources));
             let assumptions = without_alias.clone().assume_condition(alias.clone(), true);
             let (hop, work) = crate::instrumentation::measure_deterministic_work(|| {
                 owned_composition_store_separated_evidence(&write, 4, &read, 4, &assumptions)
             });
             let hop = hop.expect("the store's exact alias names its owned member");
             let store = MemoryDerivation::Store {
-                base: crate::kernel::intern_c_memory(Memory::new()),
+                base: crate::kernel::intern_memory(Memory::new()),
                 pointer: write.clone(),
                 value: int32(7),
             };
@@ -304,7 +304,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
                     .is_none()
             );
             let wider_store = MemoryDerivation::Store {
-                base: crate::kernel::intern_c_memory(Memory::new()),
+                base: crate::kernel::intern_memory(Memory::new()),
                 pointer: write.clone(),
                 value: int64(7),
             };
@@ -343,14 +343,14 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
             Memory::new().store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
         for index in (0..length).rev() {
             let next = MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
+                crate::kernel::intern_memory(memory),
                 Box::new(cell(index + 1)),
                 crate::kernel::LoadKind::Int32,
             );
             memory = Memory::new().store(cell(index), ProgramValue::Int32(next));
         }
         let load = MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(memory),
+            crate::kernel::intern_memory(memory),
             Box::new(cell(0)),
             crate::kernel::LoadKind::Int32,
         );
@@ -395,7 +395,7 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
             Box::new(index.clone()),
         )
     };
-    let source = |bytes| Proposition::CMemoryLoadable {
+    let source = |bytes| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
         bytes,
@@ -606,8 +606,8 @@ fn store_separation_without_an_owner_reads_only_listed_compositions() {
             let (next, used) = crate::instrumentation::measure_deterministic_work(|| {
                 context
                     .clone()
-                    .assume_proposition(Proposition::CResourceComposition(resources.clone()))
-                    .assume_proposition(Proposition::CResourceComposition(alone))
+                    .assume_proposition(Proposition::ResourceComposition(resources.clone()))
+                    .assume_proposition(Proposition::ResourceComposition(alone))
             });
             context = next;
             last = used;
@@ -658,7 +658,7 @@ fn store_separation_work_is_independent_of_earlier_compositions() {
         for index in 0..size {
             resources = resources.unchecked_with_fact(own_memory_fact(object(index), 0, 1));
             context =
-                context.assume_proposition(Proposition::CResourceComposition(resources.clone()));
+                context.assume_proposition(Proposition::ResourceComposition(resources.clone()));
         }
         let context = context.with_store_owner(Some(resources));
         let (first, last) = (object(0), object(size - 1));
@@ -708,7 +708,7 @@ fn written_store_separation_and_alias_refusal_ignore_unrelated_objects() {
                 context = context.assume_proposition(equal(&alias, &object));
             }
             let context =
-                context.assume_proposition(Proposition::CResourceComposition(resources.clone()));
+                context.assume_proposition(Proposition::ResourceComposition(resources.clone()));
             let context = if explicit_owners {
                 context.with_store_owner(Some(resources))
             } else {
@@ -745,7 +745,7 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
             },
             offset: PointerOffsetTerm::Variable(Variable(id)),
         };
-        let fact = |id| Proposition::CResourceSeparate {
+        let fact = |id| Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(memory_range(pointer(id, false), 0, 1))),
             right: Box::new(Resource::Memory(memory_range(pointer(id + 1, true), 0, 1))),
         };
@@ -944,7 +944,7 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
         let resources =
             ResourceContext::new().unchecked_with_fact(own_memory_fact(base.clone(), 0, 64));
         let mut context = PureFactContext::new()
-            .assume_proposition(Proposition::CResourceComposition(resources))
+            .assume_proposition(Proposition::ResourceComposition(resources))
             .assume_condition(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
@@ -1023,7 +1023,7 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
                     4,
                 ),
             };
-            facts = facts.assume_proposition(Proposition::CResourceSeparate {
+            facts = facts.assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(MemoryRange::new(
                     a,
                     0u32.into(),
@@ -1068,14 +1068,14 @@ fn ownerless_store_separation_ignores_unrelated_composition_history() {
             let mut resources =
                 ResourceContext::new().unchecked_with_fact(own_memory_fact(object(0), 0, 1));
             let mut context = PureFactContext::new()
-                .assume_proposition(Proposition::CResourceComposition(resources.clone()));
+                .assume_proposition(Proposition::ResourceComposition(resources.clone()));
             for index in 1..=size {
                 if !growing_partition {
                     resources = ResourceContext::new();
                 }
                 resources = resources.unchecked_with_fact(own_memory_fact(object(index), 0, 1));
-                context = context
-                    .assume_proposition(Proposition::CResourceComposition(resources.clone()));
+                context =
+                    context.assume_proposition(Proposition::ResourceComposition(resources.clone()));
             }
             // Only this last composition holds the pair. In the growing
             // partition it adds the read, not the write: querying only the
@@ -1083,7 +1083,7 @@ fn ownerless_store_separation_ignores_unrelated_composition_history() {
             let write = object(if growing_partition { 0 } else { size });
             let read = object(size + 1);
             resources = resources.unchecked_with_fact(own_memory_fact(read.clone(), 0, 1));
-            context = context.assume_proposition(Proposition::CResourceComposition(resources));
+            context = context.assume_proposition(Proposition::ResourceComposition(resources));
             let (answers, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let footprint = context.owned_store_footprint(&write, 4);
                 (

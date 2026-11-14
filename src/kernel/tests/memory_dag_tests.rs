@@ -20,7 +20,7 @@ fn rewritten_load_store_witness_binds_value_address_and_snapshot() {
         .with_block("arg-memory", 32)
         .store(write, ProgramValue::Int32(value.clone()));
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&memory),
+        crate::kernel::intern_memory_ref(&memory),
         Box::new(arc_pointer(4)),
         crate::kernel::LoadKind::Int32,
     );
@@ -39,7 +39,7 @@ fn rewritten_load_store_witness_binds_value_address_and_snapshot() {
         &events
     ));
     let wrong_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&memory),
+        crate::kernel::intern_memory_ref(&memory),
         Box::new(arc_pointer(8)),
         crate::kernel::LoadKind::Int32,
     );
@@ -49,7 +49,7 @@ fn rewritten_load_store_witness_binds_value_address_and_snapshot() {
         ProgramValue::Int32(MachineTerm::constant(8)),
     );
     let overwritten_load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&overwritten),
+        crate::kernel::intern_memory_ref(&overwritten),
         Box::new(arc_pointer(4)),
         crate::kernel::LoadKind::Int32,
     );
@@ -78,7 +78,7 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
             .store(pointer.clone(), stored);
         let load = |memory: &Memory, pointer: Pointer| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             )
@@ -158,7 +158,7 @@ fn rewritten_goal_does_not_reuse_an_ambient_equality_for_a_bound_variable() {
     let goal = |value| Proposition::ForAll {
         name: Default::default(),
         var: variable,
-        sort: Sort::CInt32,
+        sort: Sort::ProgramInt32,
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(value, MachineTerm::constant(2)),
             true,
@@ -189,7 +189,7 @@ fn a_new_load_origin_epoch_retires_cached_origins() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(733)), 4),
     };
-    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("arg-memory", 32));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("arg-memory", 32));
     let load = MachineTerm::MemoryLoad(
         memory.clone(),
         Box::new(pointer.clone()),
@@ -232,7 +232,7 @@ fn origin_load_equality_retains_singleton_index_bounds() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(MachineTerm::constant(5), 4),
     };
-    let memory = crate::kernel::intern_c_memory(Memory::new().with_block("arg-memory", 32));
+    let memory = crate::kernel::intern_memory(Memory::new().with_block("arg-memory", 32));
     let left = MachineTerm::MemoryLoad(
         memory.clone(),
         Box::new(left_pointer),
@@ -276,8 +276,8 @@ fn checked_call_event_equality_requires_one_proof_owned_event_and_exact_query() 
         .with_call_memory_havoc(Variable(700), &mutable_ranges, &assumptions, None);
     assert_ne!(left, right);
 
-    let left_memory = crate::kernel::intern_c_memory_ref(&left);
-    let right_memory = crate::kernel::intern_c_memory_ref(&right);
+    let left_memory = crate::kernel::intern_memory_ref(&left);
+    let right_memory = crate::kernel::intern_memory_ref(&right);
     let event = crate::kernel::proof::CheckedCallEvent::new(left_memory.clone());
     let events = crate::kernel::proof::CheckedCallEvents::containing_for_test(&event);
     let left_load = MachineTerm::MemoryLoad(
@@ -344,7 +344,7 @@ fn checked_load_equality_retains_canonical_projection_provenance() {
     let source = Memory::new()
         .with_block_without_derivation("arg-memory", 16)
         .with_block_without_derivation("local:i", 4);
-    let source = crate::kernel::intern_c_memory_ref(&source);
+    let source = crate::kernel::intern_memory_ref(&source);
     let pointer = arc_pointer(0);
     let original = MachineTerm::MemoryLoad(
         source.clone(),
@@ -387,12 +387,12 @@ fn checked_load_equality_retains_canonical_projection_provenance() {
 
 #[test]
 fn canonical_projection_evidence_survives_a_better_source_registration() {
-    let older = crate::kernel::intern_c_memory_ref(
+    let older = crate::kernel::intern_memory_ref(
         &Memory::new()
             .with_block_without_derivation("arg-memory", 16)
             .with_block_without_derivation("local:older", 4),
     );
-    let newer = crate::kernel::intern_c_memory_ref(
+    let newer = crate::kernel::intern_memory_ref(
         &Memory::new()
             .with_block_without_derivation("arg-memory", 16)
             .with_block_without_derivation("local:newer", 4),
@@ -476,7 +476,7 @@ fn a_store_records_the_edge_from_the_snapshot_it_wrote() {
         ProgramValue::Int32(MachineTerm::constant(7)),
     );
 
-    let derivation = crate::kernel::intern_c_memory_ref(&after)
+    let derivation = crate::kernel::intern_memory_ref(&after)
         .derivation()
         .expect("a store records how the snapshot was produced");
     match derivation.as_ref() {
@@ -509,8 +509,8 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
         ProgramValue::Int32(MachineTerm::constant(7)),
     );
     let constant_evidence = memory_load_equality_evidence_at(
-        &crate::kernel::intern_c_memory_ref(&after_constant),
-        &crate::kernel::intern_c_memory_ref(&base),
+        &crate::kernel::intern_memory_ref(&after_constant),
+        &crate::kernel::intern_memory_ref(&base),
         &constant_read,
         crate::kernel::LoadKind::Int32,
         &PureFactContext::new(),
@@ -532,12 +532,12 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
         &PureFactContext::new(),
     ));
     let constant_left = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&after_constant),
+        crate::kernel::intern_memory_ref(&after_constant),
         Box::new(constant_read.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let constant_right = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&base),
+        crate::kernel::intern_memory_ref(&base),
         Box::new(constant_read.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -566,8 +566,8 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
         ProgramValue::Int32(MachineTerm::constant(9)),
     );
     let symbolic_evidence = memory_load_equality_evidence_at(
-        &crate::kernel::intern_c_memory_ref(&after_symbolic),
-        &crate::kernel::intern_c_memory_ref(&Memory::new().with_block("arg-memory", 32)),
+        &crate::kernel::intern_memory_ref(&after_symbolic),
+        &crate::kernel::intern_memory_ref(&Memory::new().with_block("arg-memory", 32)),
         &symbolic_read,
         crate::kernel::LoadKind::Int32,
         &assumptions,
@@ -596,12 +596,12 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
         "the retained exact premise must still be present during check"
     );
     let symbolic_left = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&after_symbolic),
+        crate::kernel::intern_memory_ref(&after_symbolic),
         Box::new(symbolic_read.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let symbolic_right = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&Memory::new().with_block("arg-memory", 32)),
+        crate::kernel::intern_memory_ref(&Memory::new().with_block("arg-memory", 32)),
         Box::new(symbolic_read),
         crate::kernel::LoadKind::Int32,
     );
@@ -656,8 +656,8 @@ fn retained_common_base_store_hop_uses_a_stated_endpoint_order() {
         .store(write, ProgramValue::Int32(MachineTerm::constant(7)));
     assert!(
         memory_load_equality_evidence_at(
-            &crate::kernel::intern_c_memory_ref(&after),
-            &crate::kernel::intern_c_memory_ref(&base),
+            &crate::kernel::intern_memory_ref(&after),
+            &crate::kernel::intern_memory_ref(&base),
             &read,
             crate::kernel::LoadKind::Int32,
             &assumptions,
@@ -668,8 +668,8 @@ fn retained_common_base_store_hop_uses_a_stated_endpoint_order() {
     let endpoint = ConditionTerm::signed_less_than(write_index.clone(), read_index.clone());
     let assumptions = assumptions.assume_condition(endpoint.clone(), true);
     let evidence = memory_load_equality_evidence_at(
-        &crate::kernel::intern_c_memory_ref(&after),
-        &crate::kernel::intern_c_memory_ref(&base),
+        &crate::kernel::intern_memory_ref(&after),
+        &crate::kernel::intern_memory_ref(&base),
         &read,
         crate::kernel::LoadKind::Int32,
         &assumptions,
@@ -724,7 +724,7 @@ fn store_hop_retains_direct_or_composed_separated_range_authority() {
     let load_base = range_base(111);
     let write_range = memory_range(write_base.clone(), 0, 2);
     let load_range = memory_range(load_base.clone(), 0, 2);
-    let separation = Proposition::CResourceSeparate {
+    let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(write_range.clone())),
         right: Box::new(Resource::Memory(load_range.clone())),
     };
@@ -733,19 +733,19 @@ fn store_hop_retains_direct_or_composed_separated_range_authority() {
         .unchecked_with_fact(ResourceFact::own_memory(load_range.clone()));
     let direct_assumptions = PureFactContext::new().assume_proposition(separation.clone());
     let composed_assumptions = PureFactContext::new()
-        .assume_proposition(Proposition::CResourceComposition(resources.clone()));
+        .assume_proposition(Proposition::ResourceComposition(resources.clone()));
     let write = write_base.offset_by_int32_elements(MachineTerm::constant(1));
     let load = load_base.offset_by_int32_elements(MachineTerm::constant(0));
     let after = base
         .clone()
         .store(write, ProgramValue::Int32(MachineTerm::constant(7)));
     let left = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&after),
+        crate::kernel::intern_memory_ref(&after),
         Box::new(load.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let right = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&base),
+        crate::kernel::intern_memory_ref(&base),
         Box::new(load.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -809,7 +809,7 @@ fn store_hop_retains_direct_or_composed_separated_range_authority() {
         orientation,
         &StoreSeparatedRangeOrientation::WriteLeftLoadRight
     );
-    let derivation = crate::kernel::intern_c_memory_ref(&after)
+    let derivation = crate::kernel::intern_memory_ref(&after)
         .derivation()
         .expect("the written snapshot retains its store");
     assert!(
@@ -835,7 +835,7 @@ fn entry_separation_does_not_frame_a_store_after_its_bases_become_equal() {
     };
     let left_range = memory_range(left.clone(), 0, 1);
     let right_range = memory_range(right.clone(), 0, 1);
-    let separation = Proposition::CResourceSeparate {
+    let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(left_range.clone())),
         right: Box::new(Resource::Memory(right_range.clone())),
     };
@@ -889,7 +889,7 @@ fn entry_separation_does_not_frame_a_store_after_its_bases_become_equal() {
     let after = base
         .clone()
         .store(left.clone(), ProgramValue::Int32(MachineTerm::constant(7)));
-    let derivation = crate::kernel::intern_c_memory_ref(&after)
+    let derivation = crate::kernel::intern_memory_ref(&after)
         .derivation()
         .expect("the written snapshot retains its store");
     assert!(
@@ -910,7 +910,7 @@ fn equal_range_bases_keep_a_separation_for_disjoint_byte_intervals() {
     };
     let left_range = memory_range(left.clone(), 0, 1);
     let right_range = memory_range(right.clone(), 1, 2);
-    let separation = Proposition::CResourceSeparate {
+    let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(left_range.clone())),
         right: Box::new(Resource::Memory(right_range.clone())),
     };
@@ -939,7 +939,7 @@ fn separated_range_store_hop_retains_symbolic_membership_bounds() {
     let load_base = range_base(121);
     let write_range = memory_range(write_base.clone(), 0, 3);
     let load_range = memory_range(load_base.clone(), 0, 3);
-    let separation = Proposition::CResourceSeparate {
+    let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(write_range)),
         right: Box::new(Resource::Memory(load_range)),
     };
@@ -971,12 +971,12 @@ fn separated_range_store_hop_retains_symbolic_membership_bounds() {
     crate::kernel::eval::symbolic_load_value(&base, &load, ProgramType::Int32).unwrap();
     crate::kernel::eval::symbolic_load_value(&after, &load, ProgramType::Int32).unwrap();
     let left = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&after),
+        crate::kernel::intern_memory_ref(&after),
         Box::new(load.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let right = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&base),
+        crate::kernel::intern_memory_ref(&base),
         Box::new(load.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -1043,7 +1043,7 @@ fn derivation_bases_are_strictly_older_so_the_dag_cannot_cycle() {
         );
     assert_eq!(restored, written, "the round trip returns the same value");
 
-    let mut node = crate::kernel::intern_c_memory_ref(&restored);
+    let mut node = crate::kernel::intern_memory_ref(&restored);
     let mut hops = 0;
     while let Some(derivation) = node.derivation() {
         let next = derivation.base().clone();
@@ -1088,7 +1088,7 @@ fn check_call_havoc_path_local_evidence(empty_first: bool) {
     };
     let load = |memory: &Memory| {
         canonicalize_atomic_loads_deep(&MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             Box::new(arc_pointer(0)),
             crate::kernel::LoadKind::Int32,
         ))
@@ -1151,8 +1151,8 @@ fn call_havoc_marker_identity_includes_symbolic_write_set() {
         "different symbolic write sets need distinct snapshots"
     );
 
-    let first = crate::kernel::intern_c_memory_ref(&first);
-    let second = crate::kernel::intern_c_memory_ref(&second);
+    let first = crate::kernel::intern_memory_ref(&first);
+    let second = crate::kernel::intern_memory_ref(&second);
     assert_ne!(first.arena_id(), second.arena_id());
     let MemoryDerivation::CallHavoc { mutable_ranges, .. } = second
         .derivation()
@@ -1177,7 +1177,7 @@ fn a_store_that_changes_nothing_records_no_edge_to_itself() {
     );
     assert_eq!(again, base);
 
-    let node = crate::kernel::intern_c_memory_ref(&again);
+    let node = crate::kernel::intern_memory_ref(&again);
     if let Some(derivation) = node.derivation() {
         assert_ne!(
             derivation.base().arena_id(),
@@ -1204,7 +1204,7 @@ fn loop_havoc_is_its_own_edge_kind_and_keeps_its_marker_block() {
         after.has_block(&"havoc:0".into()),
         "the freshness marker block must survive the arc untouched"
     );
-    let derivation = crate::kernel::intern_c_memory_ref(&after)
+    let derivation = crate::kernel::intern_memory_ref(&after)
         .derivation()
         .expect("loop havoc records how the snapshot was produced");
     match derivation.as_ref() {
@@ -1294,7 +1294,7 @@ fn loop_havoc_carries_a_verified_write_set_for_disjoint_loads() {
         None,
     );
 
-    let derivation = crate::kernel::intern_c_memory_ref(&havoced)
+    let derivation = crate::kernel::intern_memory_ref(&havoced)
         .derivation()
         .expect("verified loop havoc records its write set");
     let MemoryDerivation::LoopHavoc {
@@ -1308,7 +1308,7 @@ fn loop_havoc_carries_a_verified_write_set_for_disjoint_loads() {
 
     let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             Box::new(read.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -1343,7 +1343,7 @@ fn loop_kept_frame_preserves_only_complete_pointer_reads() {
     let base = Memory::new()
         .with_block("arg-memory", 16)
         .store(field.clone(), ProgramValue::Int32(7u32.into()));
-    let before = crate::kernel::intern_c_memory_ref(&base);
+    let before = crate::kernel::intern_memory_ref(&base);
     let ranges = [memory_range(field.clone(), 0, 16)];
     let havoc = |kept_bytes: u32| {
         let kept = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
@@ -1366,7 +1366,7 @@ fn loop_kept_frame_preserves_only_complete_pointer_reads() {
     let unchanged = |after: &Memory| {
         crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
             &Pointer::loaded_value(&before, &field),
-            &Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(after), &field),
+            &Pointer::loaded_value(&crate::kernel::intern_memory_ref(after), &field),
             &PureFactContext::new(),
         )
     };
@@ -1446,7 +1446,7 @@ fn loan_havoc_may_forget_a_run_crossing_the_interval_index_boundary() {
     let opening = ledger.lend(owner, reader, support, fact.clone()).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
     assert!(ledger.has_indexed_memory_overlap(fact.memory_range().unwrap()));
-    let original = intern_c_memory(Memory::new());
+    let original = intern_memory(Memory::new());
     let run = CellRun::new(
         pointer.clone(),
         4,
@@ -1488,7 +1488,7 @@ fn sibling_snapshots_resolve_one_cell_to_a_common_ancestor() {
     let read = arc_pointer(0);
     let load_in = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             Box::new(read.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -1517,8 +1517,8 @@ fn sibling_snapshots_resolve_one_cell_to_a_common_ancestor() {
         "the common-ancestor lookup is exactly what the DAG adds here"
     );
     let evidence = memory_load_equality_evidence_at(
-        &crate::kernel::intern_c_memory_ref(&left),
-        &crate::kernel::intern_c_memory_ref(&right),
+        &crate::kernel::intern_memory_ref(&left),
+        &crate::kernel::intern_memory_ref(&right),
         &read,
         crate::kernel::LoadKind::Int32,
         &PureFactContext::new(),
@@ -1610,7 +1610,7 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
     // width-less load would stand in eight bytes and reach into it.
     crate::kernel::eval::declare_load_access_width(&data, 4);
     let len = MachineTerm::Variable(Variable(203));
-    let separation = Proposition::CResourceSeparate {
+    let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(memory_range(owner.clone(), 0, 4))),
         right: Box::new(Resource::Memory(memory_range(data.clone(), 0, 16))),
     };
@@ -1628,7 +1628,7 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
             .with_call_memory_havoc(Variable(204), &mutable_ranges, &assumptions, None);
     let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             Box::new(data.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -1708,7 +1708,7 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
     // which the neighbouring store at offset four overlaps.
     crate::kernel::eval::declare_load_access_width(&len_pointer, 4);
     let len_at_entry = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&entry),
+        crate::kernel::intern_memory_ref(&entry),
         Box::new(len_pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
@@ -1719,25 +1719,25 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
         // Same-block loadability ranges that cannot cover `buffer[len]`. These used
         // to trigger costly general equality searches before the matching
         // symbolic range was considered.
-        .assume_proposition(Proposition::CMemoryLoadable {
+        .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(0),
             bytes: MachineTerm::constant(4),
             wide: false,
         })
-        .assume_proposition(Proposition::CMemoryLoadable {
+        .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(8),
             bytes: MachineTerm::constant(4),
             wide: false,
         })
-        .assume_proposition(Proposition::CMemoryLoadable {
+        .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(12),
             bytes: MachineTerm::constant(4),
             wide: false,
         })
-        .assume_proposition(Proposition::CMemoryLoadable {
+        .assume_proposition(Proposition::MemoryLoadable {
             memory: entry.clone(),
             base: arc_pointer(16),
             bytes: MachineTerm::constant(32),
@@ -1768,7 +1768,7 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
         )
         .without_possible_aliasing_cells(&arc_pointer(4), 4, &assumptions);
     let len_at_later = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory_ref(&later),
+        crate::kernel::intern_memory_ref(&later),
         Box::new(len_pointer),
         crate::kernel::LoadKind::Int32,
     );
@@ -1826,7 +1826,7 @@ fn conditions_equal_modulo_proven_snapshots_needs_frame_evidence() {
             MachineTerm::Variable(Variable(77)),
             MachineTerm::add(
                 MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(memory.clone()),
+                    crate::kernel::intern_memory(memory.clone()),
                     Box::new(loaded.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
@@ -1851,7 +1851,7 @@ fn conditions_equal_modulo_proven_snapshots_needs_frame_evidence() {
 
     // With an effect summary whose mutable range misses the loaded pointer,
     // the two snapshots provably agree there and the forms match.
-    let effect = Proposition::CMemoryEffectSummary {
+    let effect = Proposition::MemoryEffectSummary {
         before: before.clone(),
         after: after.clone(),
         mutable_ranges: vec![MemoryRange::new(
@@ -1888,7 +1888,7 @@ fn conditions_equal_modulo_proven_snapshots_needs_frame_evidence() {
         MachineTerm::Variable(Variable(78)),
         MachineTerm::add(
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(after.clone()),
+                crate::kernel::intern_memory(after.clone()),
                 Box::new(loaded.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
@@ -1955,7 +1955,7 @@ fn a_load_projection_jump_does_not_restore_a_havocked_cell() {
     let materialized = source
         .clone()
         .store(sibling.clone(), source.symbolic_int32_load(&sibling));
-    let separation = Proposition::CResourceSeparate {
+    let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(memory_range(loaded.clone(), 0, 1))),
         right: Box::new(Resource::Memory(memory_range(sibling.clone(), 0, 1))),
     };
@@ -1985,7 +1985,7 @@ fn a_load_projection_jump_does_not_restore_a_havocked_cell() {
     );
     assert_ne!(
         crate::kernel::eval::canonical_form_of_load(
-            crate::kernel::intern_c_memory_ref(&havocked),
+            crate::kernel::intern_memory_ref(&havocked),
             loaded,
             crate::kernel::LoadKind::Int32,
         ),
@@ -2016,7 +2016,7 @@ fn a_materialized_pointer_cell_is_named_at_its_source() {
     let sibling = symbolic_descriptor(92_001);
     let name = |memory: &Memory, pointer: &Pointer| {
         crate::kernel::eval::canonical_cell_load(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             pointer.clone(),
             ProgramType::Int32Pointer,
         )
@@ -2061,7 +2061,7 @@ fn a_materialized_pointer_cell_must_not_launder_a_havoc() {
     let loaded = symbolic_descriptor(92_010);
     let sibling = symbolic_descriptor(92_011);
     let own = crate::kernel::eval::canonical_form_of_load(
-        crate::kernel::intern_c_memory_ref(&pristine),
+        crate::kernel::intern_memory_ref(&pristine),
         sibling.clone(),
         crate::kernel::LoadKind::Int32,
     );
@@ -2126,7 +2126,7 @@ fn a_symbolic_store_requires_the_current_paths_separation_order() {
         .store_with_context(written.clone(), int32(7), &ordered);
     let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             Box::new(kept.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -2146,12 +2146,12 @@ fn a_symbolic_store_requires_the_current_paths_separation_order() {
         .store_with_context(written, int32(7), &PureFactContext::new());
     assert_ne!(
         crate::kernel::eval::canonical_form_of_load(
-            crate::kernel::intern_c_memory_ref(&unordered),
+            crate::kernel::intern_memory_ref(&unordered),
             kept.clone(),
             crate::kernel::LoadKind::Int32
         ),
         crate::kernel::eval::canonical_form_of_load(
-            crate::kernel::intern_c_memory_ref(&base),
+            crate::kernel::intern_memory_ref(&base),
             kept,
             crate::kernel::LoadKind::Int32
         ),
@@ -2189,7 +2189,7 @@ fn canonical_form_resolves_loads_at_any_depth() {
         ProgramValue::Int32(MachineTerm::constant(7)),
     );
     let load = MachineTerm::MemoryLoad(
-        crate::kernel::intern_c_memory(memory),
+        crate::kernel::intern_memory(memory),
         Box::new(arc_pointer(4)),
         crate::kernel::LoadKind::Int32,
     );
@@ -2254,14 +2254,14 @@ fn a_retained_cell_keeps_its_load_variable_across_a_call_havoc() {
         0,
         2,
     );
-    let separated = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+    let separated = PureFactContext::new().assume_proposition(Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(written.clone())),
         right: Box::new(Resource::Memory(memory_range(cell.clone(), 0, 2))),
     });
 
     let load_in = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -2330,7 +2330,7 @@ fn an_array_refs_epoch_stops_at_a_store_that_may_alias_it() {
     let epoch = |memory: &Memory, block: PointerBlock| {
         crate::kernel::resource_tracker::last_same_point(
             crate::kernel::resource_tracker::TrackedResource::Block(&block),
-            &crate::kernel::resource_tracker::ProgramPoint::at(&crate::kernel::intern_c_memory(
+            &crate::kernel::resource_tracker::ProgramPoint::at(&crate::kernel::intern_memory(
                 memory.clone(),
             )),
         )
@@ -2418,7 +2418,7 @@ fn a_session_reset_empties_the_block_epoch_memo() {
         );
     crate::kernel::resource_tracker::last_same_point(
         crate::kernel::resource_tracker::TrackedResource::Block(&PointerBlock::ExternalArgument),
-        &crate::kernel::resource_tracker::ProgramPoint::at(&crate::kernel::intern_c_memory(memory)),
+        &crate::kernel::resource_tracker::ProgramPoint::at(&crate::kernel::intern_memory(memory)),
     );
     assert!(
         crate::kernel::resource_tracker::block_version_memo_len() > 0,
@@ -2680,8 +2680,8 @@ fn a_store_inside_a_read_refutes_the_load_equality_at_every_offset() {
         };
         let history_about = |after: &Memory| {
             crate::kernel::memory_provenance::recorded_load_history(
-                &crate::kernel::intern_c_memory_ref(&base),
-                &crate::kernel::intern_c_memory_ref(after),
+                &crate::kernel::intern_memory_ref(&base),
+                &crate::kernel::intern_memory_ref(after),
                 &read,
                 crate::kernel::LoadKind::Int32,
                 &bare,
@@ -2689,7 +2689,7 @@ fn a_store_inside_a_read_refutes_the_load_equality_at_every_offset() {
         };
         let load_in = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(read.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -2971,7 +2971,7 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
                 pointer: cell,
                 bytes: 4,
             },
-            &crate::kernel::resource_tracker::ProgramPoint::at(&intern_c_memory_ref(memory)),
+            &crate::kernel::resource_tracker::ProgramPoint::at(&intern_memory_ref(memory)),
         )
         .map(|point| point.snapshot().clone())
     };
@@ -2990,20 +2990,14 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
         &MachineTerm::constant(4),
         &assumptions,
     );
-    assert_eq!(named(&retired, &owner), Some(intern_c_memory_ref(&called)));
+    assert_eq!(named(&retired, &owner), Some(intern_memory_ref(&called)));
     assert_eq!(
         named(&retired, &data),
-        Some(intern_c_memory_ref(&called)),
+        Some(intern_memory_ref(&called)),
         "a byte of the retired allocation is named by the call's own havoc"
     );
     let cell = with_extended_dag_bridging(|| {
-        memory_dag_cell_source(
-            &intern_c_memory_ref(&retired),
-            &owner,
-            4,
-            &assumptions,
-            false,
-        )
+        memory_dag_cell_source(&intern_memory_ref(&retired), &owner, 4, &assumptions, false)
     })
     .expect("the walk has an answer");
     // The bounded check records the retirement's actual rule, even when
@@ -3012,7 +3006,7 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
         retained_memory_dag_path(&cell)[0].justification,
         MemoryDagHopJustification::RetirementInsideItsCallHavoc
     ));
-    let retired_snapshot = intern_c_memory_ref(&retired);
+    let retired_snapshot = intern_memory_ref(&retired);
     let derivation = retired_snapshot.derivation().expect("the retirement edge");
     let crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
         crate::kernel::resource_tracker::step_effect::Separation::Cell(justification),
@@ -3046,7 +3040,7 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
         &MachineTerm::constant(8),
         &assumptions,
     );
-    assert_eq!(named(&wider, &owner), Some(intern_c_memory_ref(&wider)));
+    assert_eq!(named(&wider, &owner), Some(intern_memory_ref(&wider)));
 
     // Another edge stands between the havoc and the retirement.
     let declared = havoc(215).with_block("arg-memory", 4);
@@ -3057,7 +3051,7 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
     );
     assert_eq!(
         named(&separated, &owner),
-        Some(intern_c_memory_ref(&separated))
+        Some(intern_memory_ref(&separated))
     );
 }
 
@@ -3070,7 +3064,7 @@ fn constant_normalization_bridges_a_load_across_a_call() {
     let read = arc_pointer(0);
     let load_in = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             Box::new(read.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -3135,13 +3129,13 @@ fn seeded_pointer_read_context(
 fn seeded_pointer_read_evidence_is_local_full_width_and_retargeting_safe() {
     let a = Pointer::symbolic(Variable(98_300));
     let b = Pointer::symbolic(Variable(98_301));
-    let old = intern_c_memory(Memory::new());
+    let old = intern_memory(Memory::new());
     let seeded = old
         .memory()
         .clone()
         .store(a.offset_by_bytes(32), int32(1))
         .with_seeded_cells(a.clone(), 4, ProgramType::Int32, 0, 2, old.clone());
-    let current = intern_c_memory(seeded);
+    let current = intern_memory(seeded);
     let (context, left, right) = seeded_pointer_read_context(&old, &current, &a, &b);
     let sibling = context.clone();
     let branch = context.clone();
@@ -3171,13 +3165,13 @@ fn seeded_pointer_read_evidence_refuses_partial_changed_and_unknown_footprints()
     let a = Pointer::symbolic(Variable(98_310));
     let b = Pointer::symbolic(Variable(98_311));
     let unknown = Pointer::symbolic(Variable(98_312));
-    let old = intern_c_memory(Memory::new());
+    let old = intern_memory(Memory::new());
     let full = old
         .memory()
         .clone()
         .store(a.offset_by_bytes(32), int32(1))
         .with_seeded_cells(a.clone(), 4, ProgramType::Int32, 0, 2, old.clone());
-    let changed_source = intern_c_memory(old.memory().clone().store(a.clone(), int32(7)));
+    let changed_source = intern_memory(old.memory().clone().store(a.clone(), int32(7)));
     for (case, current) in [
         old.memory()
             .clone()
@@ -3201,7 +3195,7 @@ fn seeded_pointer_read_evidence_refuses_partial_changed_and_unknown_footprints()
     .into_iter()
     .enumerate()
     {
-        let current = intern_c_memory(current);
+        let current = intern_memory(current);
         let (context, left, right) = seeded_pointer_read_context(&old, &current, &a, &b);
         context.register_pointer_read(&right, &current, &a);
 
@@ -3214,8 +3208,7 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Pointer::symbolic(Variable(98_340));
     let alias = Pointer::symbolic(Variable(98_341));
-    let source =
-        intern_c_memory(Memory::new().with_block_without_derivation("local:projection", 4));
+    let source = intern_memory(Memory::new().with_block_without_derivation("local:projection", 4));
     let projected = crate::kernel::memory_provenance::canonical_value_load_memory(
         &source,
         &address,
@@ -3242,7 +3235,7 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
     let shifted = context.clone();
     assert!(shifted.pointers_known_equal(&named.offset_by_bytes(8), &observed.offset_by_bytes(8)));
     assert!(!shifted.pointers_known_equal(&named.offset_by_bytes(8), &observed));
-    let changed = intern_c_memory(
+    let changed = intern_memory(
         source
             .memory()
             .clone()
@@ -3258,12 +3251,12 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
 fn pointer_read_producer_closes_seeded_snapshot_equality_in_the_shared_graph() {
     let a = Pointer::symbolic(Variable(98_330));
     let b = Pointer::symbolic(Variable(98_331));
-    let old = intern_c_memory(Memory::new());
+    let old = intern_memory(Memory::new());
     let seeded =
         old.memory()
             .clone()
             .with_seeded_cells(a.clone(), 4, ProgramType::Int32, 0, 2, old.clone());
-    let current = intern_c_memory(seeded);
+    let current = intern_memory(seeded);
     let context = PureFactContext::new();
     let left = Pointer::loaded_value(&old, &b);
     let right = Pointer::loaded_value(&current, &a);
@@ -3289,8 +3282,8 @@ fn pointer_read_producer_closes_seeded_snapshot_equality_in_the_shared_graph() {
 #[test]
 fn pointer_read_producer_admits_one_separate_store_into_the_shared_graph() {
     let address = Pointer::symbolic(Variable(98_350));
-    let old = intern_c_memory(Memory::new());
-    let current = intern_c_memory(
+    let old = intern_memory(Memory::new());
+    let current = intern_memory(
         old.memory()
             .clone()
             .store(address.offset_by_bytes(16), int32(1)),
@@ -3308,7 +3301,7 @@ fn pointer_read_producer_admits_one_separate_store_into_the_shared_graph() {
         &left, &right, &context
     ));
     let argument = |value| {
-        AlgebraicValue::C(ProgramValue::typed_pointer(
+        AlgebraicValue::Program(ProgramValue::typed_pointer(
             value,
             ProgramType::Int32Pointer,
         ))
@@ -3323,14 +3316,14 @@ fn pointer_read_producer_admits_one_separate_store_into_the_shared_graph() {
 fn pointer_read_single_store_refuses_changed_partial_and_unknown_accesses() {
     let address = Pointer::symbolic(Variable(98_360));
     let unknown = Pointer::symbolic(Variable(98_361));
-    let old = intern_c_memory(Memory::new());
+    let old = intern_memory(Memory::new());
     for write in [
         address.clone(),
         address.offset_by_bytes(4),
         address.offset_by_bytes(7),
         unknown,
     ] {
-        let current = intern_c_memory(old.memory().clone().store(write, uint8(1)));
+        let current = intern_memory(old.memory().clone().store(write, uint8(1)));
         let context = PureFactContext::new();
         let left = Pointer::loaded_value(&old, &address);
         let right = Pointer::loaded_value(&current, &address);
@@ -3340,7 +3333,7 @@ fn pointer_read_single_store_refuses_changed_partial_and_unknown_accesses() {
     }
     // A four-byte store inside an eight-byte read overlaps it even though
     // their starting addresses differ. Address inequality is insufficient.
-    let current = intern_c_memory(
+    let current = intern_memory(
         old.memory()
             .clone()
             .store(address.offset_by_bytes(4), int32(7)),
@@ -3351,7 +3344,7 @@ fn pointer_read_single_store_refuses_changed_partial_and_unknown_accesses() {
     context.register_pointer_read(&left, &old, &address);
     context.register_pointer_read(&right, &current, &address);
     assert!(!context.pointers_known_equal(&left, &right));
-    let adjacent = intern_c_memory(
+    let adjacent = intern_memory(
         old.memory()
             .clone()
             .store(address.offset_by_bytes(8), int32(7)),
@@ -3365,8 +3358,8 @@ fn pointer_read_single_store_refuses_changed_partial_and_unknown_accesses() {
 fn pointer_read_single_store_uses_only_its_branch_address_equality() {
     let read = Pointer::symbolic(Variable(98_370));
     let write = Pointer::symbolic(Variable(98_371));
-    let old = intern_c_memory(Memory::new());
-    let current = intern_c_memory(old.memory().clone().store(write.clone(), int32(7)));
+    let old = intern_memory(Memory::new());
+    let current = intern_memory(old.memory().clone().store(write.clone(), int32(7)));
     let context = PureFactContext::new();
     let left = Pointer::loaded_value(&old, &read);
     let right = Pointer::loaded_value(&current, &read);
@@ -3400,8 +3393,8 @@ fn pointer_read_single_store_uses_only_its_branch_address_equality() {
 fn pointer_read_single_store_preservation_propagates_late_read_aliases() {
     let address = Pointer::symbolic(Variable(98_380));
     let alias = Pointer::symbolic(Variable(98_381));
-    let old = intern_c_memory(Memory::new());
-    let current = intern_c_memory(
+    let old = intern_memory(Memory::new());
+    let current = intern_memory(
         old.memory()
             .clone()
             .store(address.offset_by_bytes(16), int32(1)),
@@ -3419,12 +3412,12 @@ fn pointer_read_single_store_preservation_propagates_late_read_aliases() {
 #[test]
 fn pointer_read_producer_admits_recorded_cache_forgetting() {
     let address = arc_pointer(0);
-    let seeded = intern_c_memory(Memory::new().with_block("arg-memory", 32).store(
+    let seeded = intern_memory(Memory::new().with_block("arg-memory", 32).store(
         address.clone(),
         ProgramValue::Int64(MachineTerm::int64_constant(7)),
     ));
     let context = PureFactContext::new();
-    let forgotten = intern_c_memory(seeded.memory().without_possible_aliasing_cells(
+    let forgotten = intern_memory(seeded.memory().without_possible_aliasing_cells(
         &address.offset_by_bytes(4),
         1,
         &context,
@@ -3461,12 +3454,12 @@ fn pointer_read_producer_admits_recorded_cache_forgetting() {
 #[test]
 fn pointer_read_cache_forgetting_does_not_bridge_writes_havoc_or_unrecorded_pruning() {
     let address = arc_pointer(0);
-    let seeded = intern_c_memory(Memory::new().with_block("arg-memory", 32).store(
+    let seeded = intern_memory(Memory::new().with_block("arg-memory", 32).store(
         address.clone(),
         ProgramValue::Int64(MachineTerm::int64_constant(9)),
     ));
     let context = PureFactContext::new();
-    let forgotten = intern_c_memory(seeded.memory().without_possible_aliasing_cells(
+    let forgotten = intern_memory(seeded.memory().without_possible_aliasing_cells(
         &address.offset_by_bytes(4),
         1,
         &context,
@@ -3496,7 +3489,7 @@ fn pointer_read_cache_forgetting_does_not_bridge_writes_havoc_or_unrecorded_prun
             ),
         seeded.memory().without_cell(&address),
     ] {
-        let changed = intern_c_memory(changed);
+        let changed = intern_memory(changed);
         let right = Pointer::loaded_value(&changed, &address);
         context.register_pointer_read(&right, &changed, &address);
         assert!(!context.pointers_known_equal(&left, &right));
@@ -3507,7 +3500,7 @@ fn pointer_read_cache_forgetting_does_not_bridge_writes_havoc_or_unrecorded_prun
 fn pointer_read_congruence_composes_materialization_and_forgetting_at_production() {
     let address = Pointer::symbolic(Variable(98_420));
     let unknown_write = Pointer::symbolic(Variable(98_421));
-    let original = intern_c_memory(Memory::new());
+    let original = intern_memory(Memory::new());
     let memory = original
         .memory()
         .clone()
@@ -3537,7 +3530,7 @@ fn pointer_read_congruence_composes_materialization_and_forgetting_at_production
         );
     let context = PureFactContext::new();
     let forgotten =
-        intern_c_memory(memory.without_possible_aliasing_cells(&unknown_write, 4, &context));
+        intern_memory(memory.without_possible_aliasing_cells(&unknown_write, 4, &context));
     assert!(matches!(
         forgotten.derivation().unwrap().as_ref(),
         MemoryDerivation::CellsForgotten { .. }
@@ -3553,9 +3546,9 @@ fn pointer_read_congruence_composes_materialization_and_forgetting_at_production
 #[test]
 fn read_identity_refuses_changed_sources_constant_runs_and_unrecorded_pruning() {
     let address = Pointer::symbolic(Variable(98_430));
-    let original = intern_c_memory(Memory::new());
-    let changed = intern_c_memory(original.memory().clone().store(address.clone(), int32(7)));
-    let from_changed = intern_c_memory(original.memory().clone().with_seeded_cells(
+    let original = intern_memory(Memory::new());
+    let changed = intern_memory(original.memory().clone().store(address.clone(), int32(7)));
+    let from_changed = intern_memory(original.memory().clone().with_seeded_cells(
         address.clone(),
         4,
         ProgramType::Int32,
@@ -3563,7 +3556,7 @@ fn read_identity_refuses_changed_sources_constant_runs_and_unrecorded_pruning() 
         2,
         changed.clone(),
     ));
-    let after_changed = intern_c_memory(changed.memory().clone().with_seeded_cells(
+    let after_changed = intern_memory(changed.memory().clone().with_seeded_cells(
         address.offset_by_bytes(8),
         4,
         ProgramType::Int32,
@@ -3571,7 +3564,7 @@ fn read_identity_refuses_changed_sources_constant_runs_and_unrecorded_pruning() 
         2,
         original.clone(),
     ));
-    let constant = intern_c_memory(
+    let constant = intern_memory(
         original
             .memory()
             .clone()
@@ -3586,14 +3579,14 @@ fn read_identity_refuses_changed_sources_constant_runs_and_unrecorded_pruning() 
             !context.pointers_known_equal(&old_read, &Pointer::loaded_value(&memory, &address))
         );
     }
-    let forgotten = intern_c_memory(changed.memory().without_cell(&address));
+    let forgotten = intern_memory(changed.memory().without_cell(&address));
     assert_ne!(forgotten.read_identity(), changed.read_identity());
 }
 
 #[test]
 fn read_identity_is_immutable_when_a_snapshot_was_interned_before_its_edge() {
     let address = Pointer::symbolic(Variable(98_450));
-    let original = intern_c_memory(Memory::new());
+    let original = intern_memory(Memory::new());
     let run = CellRun::new(
         address,
         4,
@@ -3604,9 +3597,9 @@ fn read_identity_is_immutable_when_a_snapshot_was_interned_before_its_edge() {
     );
     let mut memory = original.memory().clone();
     std::sync::Arc::make_mut(&mut memory.cells).add_run(run.clone());
-    let current = intern_c_memory(memory.clone());
+    let current = intern_memory(memory.clone());
     let before = current.read_identity();
-    record_c_memory_derivation(
+    record_memory_derivation(
         &mut memory,
         MemoryDerivation::CellsSeeded {
             base: original.clone(),
@@ -3636,7 +3629,7 @@ fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
     };
     let base = Memory::new().with_block(block, 16);
     let stored_at = |write: Pointer, value: ProgramValue| {
-        crate::kernel::intern_c_memory_ref(
+        crate::kernel::intern_memory_ref(
             &base
                 .clone()
                 .without_possible_aliasing_cells(&write, value.byte_width(), &bare)
@@ -3699,7 +3692,7 @@ fn canonical_load_naming_retains_the_live_memory_origin() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let live =
-        crate::kernel::intern_c_memory(Memory::new().with_block("unrelated-origin-storage", 16));
+        crate::kernel::intern_memory(Memory::new().with_block("unrelated-origin-storage", 16));
     let read = crate::kernel::canonical_form_of_load(
         live.clone(),
         pointer.clone(),
@@ -3761,7 +3754,7 @@ fn kept_constant_offset_fields_have_checkable_call_havoc_evidence() {
     assert!(!recorded.holds_access(&owner.offset_by_bytes(16), 4, &assumptions));
     let load = |memory: &Memory| {
         MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(memory),
+            crate::kernel::intern_memory_ref(memory),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -3803,7 +3796,7 @@ fn two_edge_pointer_alias_witness_rechecks_each_named_premise() {
     for pointer in [&left, &right] {
         crate::kernel::eval::declare_load_access_width(pointer, 4);
     }
-    let memory = crate::kernel::intern_c_memory(Memory::new());
+    let memory = crate::kernel::intern_memory(Memory::new());
     let first = ConditionTerm::pointer_equal(left.clone(), middle.clone());
     let second = ConditionTerm::pointer_equal(middle, right.clone());
     let assumptions = PureFactContext::new()
@@ -3918,7 +3911,7 @@ fn initialized_array_copy_preserves_source_history_with_constant_work() {
         );
         let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory_ref(memory),
+                crate::kernel::intern_memory_ref(memory),
                 Box::new(source.clone()),
                 LoadKind::Int32,
             )
@@ -3950,7 +3943,7 @@ fn initialized_array_copy_preserves_source_history_with_constant_work() {
             copied
         });
         assert!(matches!(
-            crate::kernel::intern_c_memory_ref(&copied)
+            crate::kernel::intern_memory_ref(&copied)
                 .derivation()
                 .as_deref(),
             Some(MemoryDerivation::ObjectInitializationRecorded { .. })
@@ -3966,8 +3959,8 @@ fn initialized_array_copy_preserves_source_history_with_constant_work() {
         ));
         let repeated = copied.clone().with_initialized_object(&target, count * 4);
         assert_eq!(
-            crate::kernel::intern_c_memory_ref(&repeated),
-            crate::kernel::intern_c_memory_ref(&copied)
+            crate::kernel::intern_memory_ref(&repeated),
+            crate::kernel::intern_memory_ref(&copied)
         );
         samples.push(work);
     }
@@ -3984,8 +3977,8 @@ fn seeded_scalar_no_write_witness_rejects_changed_or_represented_values() {
     use crate::kernel::primitives::{IndexIntervals, RunValueMode};
     let anchor = Pointer::symbolic(Variable(98_480));
     let other = Pointer::symbolic(Variable(98_481));
-    let original = intern_c_memory(Memory::new());
-    let changed = intern_c_memory(original.memory().clone().store(anchor.clone(), int32(7)));
+    let original = intern_memory(Memory::new());
+    let changed = intern_memory(original.memory().clone().store(anchor.clone(), int32(7)));
     let assumptions = PureFactContext::new();
     let witness = MemoryDagHopJustification::SeededLoadsOfBase;
     for (source, mode, ty, width) in [
@@ -4065,16 +4058,16 @@ fn recording_a_fresh_snapshot_keeps_the_derivation_generation() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let base = Memory::new().with_block("generation-block", 8);
-    let before = crate::kernel::primitives::c_memory_derivation_generation();
+    let before = crate::kernel::primitives::memory_derivation_generation();
     let stored = base.store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(1)));
     assert!(
-        crate::kernel::intern_c_memory_ref(&stored)
+        crate::kernel::intern_memory_ref(&stored)
             .derivation()
             .is_some(),
         "the store recorded its edge"
     );
     assert_eq!(
-        crate::kernel::primitives::c_memory_derivation_generation(),
+        crate::kernel::primitives::memory_derivation_generation(),
         before,
         "a fresh snapshot's edge invalidates no earlier answer"
     );
@@ -4088,7 +4081,7 @@ mod scaling_tests {
 #[test]
 fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     let _session = crate::kernel::VerificationSession::enter();
-    let before = intern_c_memory(Memory::new());
+    let before = intern_memory(Memory::new());
     let p = Pointer::symbolic(Variable(998_710));
     let q = PointerValue::new(
         Pointer::symbolic(Variable(998_711)),
@@ -4112,14 +4105,14 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     };
     let left = before.memory().clone().store(beside.clone(), int32(0));
     let right = before.memory().clone().store(beside.clone(), int32(1));
-    let joined = intern_c_memory(
+    let joined = intern_memory(
         left.clone()
             .with_interface_memory_havoc(Variable(998_712), &BTreeSet::new(), &[&left, &right])
             .unwrap(),
     );
     // The explicit proof selects the disjoint byte ranges after rewriting
     // child == q: [q + 8, q + 12) is separate from [q, q + 8).
-    let facts = facts.assume_proposition(Proposition::CResourceSeparate {
+    let facts = facts.assume_proposition(Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(MemoryRange::new_with_element_width(
             beside.clone(),
             0u32.into(),
@@ -4135,7 +4128,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     });
     // The explicit join summary names the common write footprint of both arms.
     // Comparing the distant snapshots alone no longer searches their histories.
-    let effect = Proposition::CMemoryEffectSummary {
+    let effect = Proposition::MemoryEffectSummary {
         before: before.memory().clone(),
         after: joined.memory().clone(),
         mutable_ranges: vec![MemoryRange::new(beside, 0u32.into(), 1u32.into())],
@@ -4159,9 +4152,9 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
         block: q.pointer().block.clone(),
         offset: PointerOffsetTerm::add(q.pointer().offset.clone(), PointerOffsetTerm::Constant(4)),
     };
-    let changed = intern_c_memory(joined.memory().clone().store(upper_half, int32(5)));
-    let projection = intern_c_memory(
-        crate::kernel::memory_provenance::canonical_c_memory_for_pointer_load(
+    let changed = intern_memory(joined.memory().clone().store(upper_half, int32(5)));
+    let projection = intern_memory(
+        crate::kernel::memory_provenance::canonical_program_memory_for_pointer_load(
             &changed,
             q.pointer(),
         ),
@@ -4196,8 +4189,8 @@ fn seeded_scalar_read_keeps_its_predecessor_cell_version() {
     ] {
         let pointer = Pointer::symbolic(Variable(98_610 + u64::from(bytes)));
         crate::kernel::eval::declare_load_access_width(&pointer, bytes);
-        let original = intern_c_memory(Memory::new());
-        let cached = intern_c_memory(original.memory().clone().with_seeded_cells(
+        let original = intern_memory(Memory::new());
+        let cached = intern_memory(original.memory().clone().with_seeded_cells(
             pointer.clone(),
             bytes,
             ty,
@@ -4212,7 +4205,7 @@ fn seeded_scalar_read_keeps_its_predecessor_cell_version() {
             matches!(history, LoadHistory::OneVersion(_)),
             "{ty:?}: {history:?}"
         );
-        let overwritten = intern_c_memory(
+        let overwritten = intern_memory(
             cached
                 .memory()
                 .clone()
@@ -4244,7 +4237,7 @@ fn numeric_address_byte_gaps_preserve_cache_and_read_history() {
         let context = PureFactContext::new().assume_proposition(premise.clone());
         // Equal physical addresses do not grant pointer provenance.
         assert!(!context.pointers_known_equal(&q, &p.offset_by_bytes(shift)));
-        let before = intern_c_memory(Memory::new().store(
+        let before = intern_memory(Memory::new().store(
             p.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(17)),
         ));
@@ -4252,7 +4245,7 @@ fn numeric_address_byte_gaps_preserve_cache_and_read_history() {
             .memory()
             .without_possible_aliasing_cells(&q, 8, &context);
         assert_eq!(cache.has_known_cell_at(&p), shift >= 8, "gap {shift}");
-        let after = intern_c_memory(cache.store(
+        let after = intern_memory(cache.store(
             q.clone(),
             ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
         ));
@@ -4285,7 +4278,7 @@ fn anchored_byte_separation_checks_full_width_and_scope() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Variable(Variable(970_112)),
     };
-    let separation = Proposition::CResourceSeparate {
+    let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(memory_range(p.clone(), 0, 2))),
         right: Box::new(Resource::Memory(memory_range(q.clone(), 0, 2))),
     };
@@ -4315,7 +4308,7 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = Pointer::symbolic(Variable(970_141));
     let q = Pointer::symbolic(Variable(970_142));
-    let owners = Proposition::CResourceComposition(
+    let owners = Proposition::ResourceComposition(
         ResourceContext::new()
             .unchecked_with_fact(ResourceFact::own_memory(memory_range(p.clone(), 0, 2)))
             .unchecked_with_fact(ResourceFact::own_memory(memory_range(q.clone(), 0, 2))),
@@ -4334,7 +4327,7 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
     );
     let context = address.clone().assume_proposition(owners.clone());
     assert!(!context.address_connected_objects(&q).is_empty());
-    let before = intern_c_memory(Memory::new().store(
+    let before = intern_memory(Memory::new().store(
         p.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant(17)),
     ));
@@ -4342,7 +4335,7 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
         .memory()
         .without_possible_aliasing_cells(&q, 8, &context);
     assert!(cache.has_known_cell_at(&p));
-    let after = intern_c_memory(cache.store(
+    let after = intern_memory(cache.store(
         q.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
     ));
@@ -4375,7 +4368,7 @@ fn seeded_mixed_width_runs_match_per_cell_caching() {
                     offset: PointerOffsetTerm::Variable(Variable(98_761)),
                 },
             };
-            let source = intern_c_memory(Memory::new());
+            let source = intern_memory(Memory::new());
             let word = CellRun::new(
                 base,
                 8,
@@ -4435,7 +4428,7 @@ fn seeded_mixed_width_aliases_still_invalidate_overlapping_reads() {
     };
     let word = address(98_770);
     let bytes = address(98_771);
-    let source = intern_c_memory(Memory::new());
+    let source = intern_memory(Memory::new());
     let memory = Memory::new()
         .with_seeded_cells(bytes.clone(), 1, ProgramType::UInt8, 0, 16, source.clone())
         .with_seeded_cells(word.clone(), 8, ProgramType::UInt64, 0, 1, source);
@@ -4475,8 +4468,8 @@ fn equal_object_origins_frame_neighbor_fields_without_equating_index_atoms() {
         .assume_proposition(first.clone())
         .assume_proposition(second.clone());
     assert!(context.pointers_known_equal(&left, &right));
-    let before = intern_c_memory(Memory::new());
-    let after = intern_c_memory(
+    let before = intern_memory(Memory::new());
+    let after = intern_memory(
         before
             .memory()
             .clone()
@@ -4528,7 +4521,7 @@ fn stated_separation_frames_equal_model_and_program_origins() {
     );
     let second =
         Proposition::ConditionIs(ConditionTerm::pointer_equal(bridge, entry.clone()), true);
-    let separation = Proposition::CResourceSeparate {
+    let separation = Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(memory_range(
             parent.offset_by_bytes(8),
             0,
@@ -4540,8 +4533,8 @@ fn stated_separation_frames_equal_model_and_program_origins() {
             2,
         ))),
     };
-    let before = intern_c_memory(Memory::new());
-    let after = intern_c_memory(before.memory().clone().store(
+    let before = intern_memory(Memory::new());
+    let after = intern_memory(before.memory().clone().store(
         node.offset_by_bytes(16),
         ProgramValue::UInt64(MachineTerm::uint64_constant(19)),
     ));
@@ -4624,7 +4617,7 @@ fn stated_separation_frames_equal_model_and_program_origins() {
 #[test]
 fn an_abstract_value_seeded_unchanged_is_its_source_snapshots_load() {
     let address = Pointer::symbolic(Variable(98_470));
-    let original = intern_c_memory(Memory::new());
+    let original = intern_memory(Memory::new());
     let seeded = original.memory().clone().with_seeded_cells(
         address.clone(),
         4,
@@ -4680,7 +4673,7 @@ fn an_abstract_value_fact_carries_across_snapshots_only_with_frame_evidence() {
     };
     let read = |memory: &Memory| {
         let ProgramValue::Parameter(load) = AlgebraicTermNode::parameter_load(
-            crate::kernel::intern_c_memory(memory.clone()),
+            crate::kernel::intern_memory(memory.clone()),
             field.clone(),
             parameter,
         ) else {
@@ -4696,7 +4689,7 @@ fn an_abstract_value_fact_carries_across_snapshots_only_with_frame_evidence() {
         "an unframed call havoc must not carry the value"
     );
 
-    let effect = Proposition::CMemoryEffectSummary {
+    let effect = Proposition::MemoryEffectSummary {
         before: before.clone(),
         after: after.clone(),
         mutable_ranges: vec![MemoryRange::new(
@@ -4735,7 +4728,7 @@ fn an_abstract_value_fact_carries_across_snapshots_only_with_frame_evidence() {
 
 #[test]
 fn abstract_reads_follow_address_equalities_in_the_shared_graph() {
-    let memory = intern_c_memory(Memory::new());
+    let memory = intern_memory(Memory::new());
     let left = Pointer::symbolic(Variable(98_490));
     let right = Pointer::symbolic(Variable(98_491));
     let parameter = TypeParameterName::intern("ReadCongruenceT");
@@ -4758,13 +4751,13 @@ fn abstract_reads_follow_address_equalities_in_the_shared_graph() {
         context.equality_graph.are_algebraic_equal(&a, &b),
         "equal addresses give equal abstract reads of the same snapshot"
     );
-    let changed = intern_c_memory(memory.memory().clone().store(left.clone(), int32(9)));
+    let changed = intern_memory(memory.memory().clone().store(left.clone(), int32(9)));
     assert!(
         !context
             .equality_graph
             .are_algebraic_equal(&a, &read(&left, &changed))
     );
-    let source = intern_c_memory(
+    let source = intern_memory(
         Memory::new().with_block_without_derivation("local:abstract-read-projection", 4),
     );
     let projected = crate::kernel::memory_provenance::canonical_value_load_memory(
@@ -4804,7 +4797,7 @@ fn abstract_reads_follow_address_equalities_in_the_shared_graph() {
 fn abstract_read_naming_retains_its_selected_width_origin() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Pointer::symbolic(Variable(98_499));
-    let source = intern_c_memory(
+    let source = intern_memory(
         Memory::new()
             .with_block_without_derivation("local:abstract-origin", 4)
             .store(
@@ -4839,7 +4832,7 @@ fn abstract_read_naming_retains_its_selected_width_origin() {
         unreachable!()
     };
     assert!(crate::kernel::prelude::value_load_origin(memory, &address, 16).is_none());
-    let changed = intern_c_memory(
+    let changed = intern_memory(
         source
             .memory()
             .clone()
@@ -4865,7 +4858,7 @@ fn program_store_cache_cleanup_records_only_the_original_store_edge() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = arc_pointer(0);
         let root = Memory::new().with_block("arg-memory", 32);
-        let before = intern_c_memory(root.clone().store(
+        let before = intern_memory(root.clone().store(
             field.clone(),
             ProgramValue::Int64(MachineTerm::int64_constant(7)),
         ));
@@ -4874,7 +4867,7 @@ fn program_store_cache_cleanup_records_only_the_original_store_edge() {
         } else {
             Pointer::symbolic(Variable(998_950))
         };
-        let after = intern_c_memory(before.memory().clone().store_classed_with_context(
+        let after = intern_memory(before.memory().clone().store_classed_with_context(
             write.clone(),
             int32(2),
             &PureFactContext::new(),

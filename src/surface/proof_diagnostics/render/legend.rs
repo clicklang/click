@@ -382,7 +382,7 @@ impl SnapshotLabels {
                 return format!("{point}initial empty memory");
             }
             None => {
-                let shared = crate::kernel::intern_c_memory_ref(memory);
+                let shared = crate::kernel::intern_memory_ref(memory);
                 let Some(edge) = shared.derivation() else {
                     return format!(
                         "{point}INTERNAL ERROR: snapshot constructor did not record its origin"
@@ -713,7 +713,7 @@ mod tests {
 
     #[test]
     fn legend_defines_loaded_address_and_displacement_recursively() {
-        let memory = crate::kernel::intern_c_memory(Memory::new());
+        let memory = crate::kernel::intern_memory(Memory::new());
         let base = Pointer::symbolic(Variable(986_401));
         let mut loaded = Pointer::loaded_value(&memory, &base);
         loaded.offset = PointerOffsetTerm::Constant(16);

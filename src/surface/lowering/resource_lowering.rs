@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{ResourceFieldSchema, ResourceTerm, c_int32_literal, c_variable};
+use crate::kernel::{ResourceFieldSchema, ResourceTerm};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 pub(in crate::surface) fn construction_result_layout(
@@ -26,9 +26,9 @@ pub(in crate::surface) fn construction_result_resource(
     }
     Ok(Some(ResourceSpec::owned_memory(
         MemorySegment::new(
-            c_variable(crate::kernel::C_CONTRACT_RESULT_NAME),
-            c_int32_literal(0),
-            c_int32_literal(layout.size_bytes()),
+            crate::kernel::program_expression::variable(crate::kernel::C_CONTRACT_RESULT_NAME),
+            crate::kernel::program_expression::int32_literal(0),
+            crate::kernel::program_expression::int32_literal(layout.size_bytes()),
         )
         .with_element_width(1),
     )))
@@ -513,7 +513,7 @@ pub(in crate::surface) fn initial_call_state(
     // cells. Otherwise a loadable clause can create a block first and leave
     // entry initialization unable to install its stable typed cells.
     let initial = ExecutionState::new().with_population_creation_tracking();
-    let mut state = crate::kernel::initialize_c_function_globals(&initial, function);
+    let mut state = crate::kernel::initialize_program_function_globals(&initial, function);
     if function.contract_interface().aggregate_return_mode()
         == crate::kernel::AggregateReturnMode::Construction
     {
@@ -574,8 +574,10 @@ pub(in crate::surface) fn initial_call_state(
         // aggregate image using the same typed copy operation as C calls,
         // before resource clauses follow any pointer fields. This image is
         // caller storage; the callee still receives its own fresh copy.
-        state = crate::kernel::c_function_input_objects_state(&state, function, &arguments)
-            .ok_or_else(|| ClickError::new("could not materialize aggregate argument values"))?;
+        state = crate::kernel::program_function_input_objects_state(&state, function, &arguments)
+            .ok_or_else(|| {
+            ClickError::new("could not materialize aggregate argument values")
+        })?;
         for (index, (parameter, argument)) in parameters.iter().zip(&mut arguments).enumerate() {
             if parameter.is_struct_value() {
                 *argument = initial_pointer_argument(
@@ -631,8 +633,9 @@ pub(in crate::surface) fn initial_call_state(
         &state,
         &entry_assumptions,
     )?;
-    let mut state =
-        crate::kernel::c_state_with_assumed_mutex_inputs(state.with_resource_context(resources));
+    let mut state = crate::kernel::execution_state_with_assumed_mutex_inputs(
+        state.with_resource_context(resources),
+    );
     {
         // A standalone helper is proved for an arbitrary population supplied
         // by its caller. Import only the explicitly declared ownership, with
@@ -829,13 +832,13 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
                                     element_type,
                                     0,
                                     1,
-                                    crate::kernel::intern_c_memory(base_memory.clone()),
+                                    crate::kernel::intern_memory(base_memory.clone()),
                                 );
                             }
                             memory.materialize_cell_from_source(
                                 pointer,
                                 element_type,
-                                crate::kernel::intern_c_memory(base_memory.clone()),
+                                crate::kernel::intern_memory(base_memory.clone()),
                             )
                         },
                     );
@@ -859,7 +862,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
             element_type,
             0,
             count,
-            crate::kernel::intern_c_memory(base_memory.clone()),
+            crate::kernel::intern_memory(base_memory.clone()),
         );
     }
     memory
@@ -1155,22 +1158,28 @@ fn check_segment_base_loadability(
         array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
     // The address of the cell, not its content: a base whose address this
     // entry cannot evaluate is reported by the clause's own lowering.
-    let Ok(ProgramValue::Pointer(cell)) = crate::surface::proof::evaluate_c_fragment_through_kernel(
-        pointer,
-        assumptions,
-        ContractEnvironment::new(&values, &array_refs),
-        state,
-        None,
-    ) else {
+    let Ok(ProgramValue::Pointer(cell)) =
+        crate::surface::proof::evaluate_program_expression_through_kernel(
+            pointer,
+            assumptions,
+            ContractEnvironment::new(&values, &array_refs),
+            state,
+            None,
+        )
+    else {
         return Ok(());
     };
-    let obligation = Proposition::CMemoryLoadable {
+    let obligation = Proposition::MemoryLoadable {
         memory: state.memory().clone(),
         base: cell.into_pointer(),
         bytes: MachineTerm::constant(value_type.byte_width()),
         wide: false,
     };
-    if crate::kernel::c_state_justifies_loadability_obligation(state, &obligation, assumptions) {
+    if crate::kernel::execution_state_justifies_loadability_obligation(
+        state,
+        &obligation,
+        assumptions,
+    ) {
         return Ok(());
     }
     Err(format!(
@@ -1310,7 +1319,7 @@ fn materialize_access_segment_cells(
                     memory.materialize_cell_from_source(
                         pointer,
                         element_type,
-                        crate::kernel::intern_c_memory(base_memory.clone()),
+                        crate::kernel::intern_memory(base_memory.clone()),
                     )
                 },
             );
@@ -1341,7 +1350,7 @@ fn materialize_access_segment_cells(
                         memory.materialize_cell_from_source(
                             pointer,
                             element_type,
-                            crate::kernel::intern_c_memory(base_memory.clone()),
+                            crate::kernel::intern_memory(base_memory.clone()),
                         )
                     },
                 );
@@ -1366,7 +1375,7 @@ fn materialize_access_segment_cells(
         end = end * element_width / width;
         element_width = width;
     }
-    let source = crate::kernel::intern_c_memory(memory.clone());
+    let source = crate::kernel::intern_memory(memory.clone());
     // One run for the segment's elements, spelled from the segment's own
     // base as each element's pointer is (see `memory_with_symbolic_loadable_cells`).
     Ok(memory.with_seeded_cells(
@@ -1675,7 +1684,7 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
         let mut expressions = Vec::new();
         collect(proposition, &mut expressions);
         for expression in expressions {
-            if contract_expression_to_c_fragment(expression).is_none() {
+            if contract_expression_to_program_expression(expression).is_none() {
                 continue;
             }
             let surface = ClickProposition::Defined {
@@ -2151,7 +2160,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
         ResourceClause::Quantified { quantity, resource } => {
             let original_quantity = quantity.clone();
             let (quantity, quantity_snapshot) =
-                resource_argument_to_typed_c_expression_with_snapshot(
+                resource_argument_to_typed_program_expression_with_snapshot(
                     quantity,
                     syntax::C0Type::Int32,
                 )?;
@@ -2276,7 +2285,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
             {
                 let original_argument = argument.clone();
                 let (argument, argument_snapshot) =
-                    resource_argument_to_typed_c_expression_with_snapshot(
+                    resource_argument_to_typed_program_expression_with_snapshot(
                         argument,
                         *parameter_type,
                     )?;
@@ -2296,11 +2305,11 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     ))
                 })?;
                 let matches_type = if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 0 {
-                    c_value_matches_allocation_pointer(&value)
+                    program_value_matches_allocation_pointer(&value)
                 } else if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
-                    c_value_matches_allocation_extent(&value)
+                    program_value_matches_allocation_extent(&value)
                 } else {
-                    c_value_matches_click_type(&value, *parameter_type)
+                    program_value_matches_click_type(&value, *parameter_type)
                 };
                 if !matches_type {
                     let (naming_parameters, naming_arguments) =
@@ -2310,11 +2319,11 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         crate::surface::diagnostics::describe_contract_expression(
                             &original_argument
                         ),
-                        crate::surface::diagnostics::describe_c_value(
+                        crate::surface::diagnostics::describe_program_value(
                             &value,
                             ParameterBinding::new(&naming_parameters, &naming_arguments)
                         ),
-                        crate::kernel::c_type_spelling(value.c_type()),
+                        crate::kernel::program_type_spelling(value.c_type()),
                         crate::surface::validation::describe_c0_type(*parameter_type)
                     )));
                 }
@@ -2324,7 +2333,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 let [ProgramValue::Pointer(mutex)] = resource_values.as_slice() else {
                     return Err(ClickError::new("mutex_guard expects one mutex pointer"));
                 };
-                let guard = crate::kernel::c_mutex_guard_resource(
+                let guard = crate::kernel::program_mutex_guard_resource(
                     state,
                     mutex.pointer(),
                     allow_symbolic_resource_arguments,
@@ -2405,7 +2414,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 let [ProgramValue::Pointer(mutex)] = resource_values.as_slice() else {
                     return Err(ClickError::new("mutex_live expects one mutex pointer"));
                 };
-                let guard = crate::kernel::c_mutex_live_resource(
+                let guard = crate::kernel::program_mutex_live_resource(
                     state,
                     mutex.pointer(),
                     allow_symbolic_resource_arguments,
@@ -2493,7 +2502,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                             "protected resource type must be a composite resource",
                         ));
                     };
-                    crate::kernel::c_mutex_use_resource_with_type(
+                    crate::kernel::program_mutex_use_resource_with_type(
                         state,
                         mutex.pointer(),
                         crate::kernel::ResourceDescription::new(
@@ -2503,7 +2512,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         ),
                     )
                 } else {
-                    crate::kernel::c_mutex_use_resource(state, mutex.pointer())
+                    crate::kernel::program_mutex_use_resource(state, mutex.pointer())
                 };
                 return Ok(match access {
                     ResourceAccessMode::Own => guard,
@@ -2513,11 +2522,17 @@ fn lower_resource_clause_with_values_mode_at_entry(
             let resource = match kind {
                 ResourceKind::Composite => Resource::Composite {
                     name: name.clone(),
-                    arguments: resource_values.into_iter().map(AlgebraicValue::C).collect(),
+                    arguments: resource_values
+                        .into_iter()
+                        .map(AlgebraicValue::Program)
+                        .collect(),
                 },
                 ResourceKind::Token => Resource::Token {
                     name: name.clone(),
-                    arguments: resource_values.into_iter().map(AlgebraicValue::C).collect(),
+                    arguments: resource_values
+                        .into_iter()
+                        .map(AlgebraicValue::Program)
+                        .collect(),
                 },
             };
             Ok(match access {
@@ -2632,7 +2647,7 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
         ResourceClause::Quantified { quantity, resource } => {
             let original_quantity = quantity.clone();
             let (quantity, quantity_snapshot) =
-                resource_argument_to_typed_c_expression_with_snapshot(
+                resource_argument_to_typed_program_expression_with_snapshot(
                     quantity,
                     syntax::C0Type::Int32,
                 )?;
@@ -2716,43 +2731,43 @@ pub(in crate::surface) fn argument_is_null_pointer_constant(
         && matches!(argument, ContractExpression::IntegerLiteral(text) if text == "0")
 }
 
-/// `resource_argument_to_c_expression` with the declared parameter type in
+/// `resource_argument_to_program_expression` with the declared parameter type in
 /// hand, so the null pointer constant lowers to that pointer type's null
 /// value instead of an `int32` zero.
-pub(in crate::surface) fn resource_argument_to_typed_c_expression(
+pub(in crate::surface) fn resource_argument_to_typed_program_expression(
     argument: &ContractExpression,
     parameter_type: C0Type,
 ) -> Result<ProgramExpression, ClickError> {
     if argument_is_null_pointer_constant(argument, parameter_type) {
-        return Ok(c_typed_pointer_value(
+        return Ok(crate::kernel::program_expression::typed_pointer_value(
             Pointer::null(),
             parameter_type.to_kernel_type(),
         ));
     }
-    resource_argument_to_c_expression(argument)
+    resource_argument_to_program_expression(argument)
 }
 
 /// Lowers a declared-resource argument together with the state that supplies
 /// its value.  The surrounding resource clause still has its own snapshot
 /// (entry for requirements, post for produced resources); `old(...)` selects
 /// the entry state for only this argument.
-pub(in crate::surface) fn resource_argument_to_typed_c_expression_with_snapshot(
+pub(in crate::surface) fn resource_argument_to_typed_program_expression_with_snapshot(
     argument: &ContractExpression,
     parameter_type: C0Type,
 ) -> Result<(ProgramExpression, crate::kernel::ResourceSnapshot), ClickError> {
     if let ContractExpression::Old(inner) = argument {
         return Ok((
-            resource_argument_to_typed_c_expression(inner, parameter_type)?,
+            resource_argument_to_typed_program_expression(inner, parameter_type)?,
             crate::kernel::ResourceSnapshot::Entry,
         ));
     }
     Ok((
-        resource_argument_to_typed_c_expression(argument, parameter_type)?,
+        resource_argument_to_typed_program_expression(argument, parameter_type)?,
         crate::kernel::ResourceSnapshot::Current,
     ))
 }
 
-pub(in crate::surface) fn resource_argument_to_c_expression(
+pub(in crate::surface) fn resource_argument_to_program_expression(
     argument: &ContractExpression,
 ) -> Result<ProgramExpression, ClickError> {
     match argument {
@@ -2785,7 +2800,7 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
                 Box::new(ProgramExpression::Value(ProgramValue::Int32(
                     MachineTerm::constant(0),
                 ))),
-                Box::new(resource_argument_to_c_expression(expression)?),
+                Box::new(resource_argument_to_program_expression(expression)?),
             ))
         }
         ContractExpression::ResourceField(_) => Err(ClickError::new(
@@ -2807,7 +2822,7 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
             lowered: expression,
             ..
         }
-        | ContractExpression::CFragment(expression) => Ok(expression.clone()),
+        | ContractExpression::ProgramExpression(expression) => Ok(expression.clone()),
         ContractExpression::Field { lowered, .. } => Ok(lowered.clone()),
         ContractExpression::ArrayIndex { lowered, .. } => Ok(lowered.clone()),
         // A loop's pass count is a Click Integer, never a C value; a program
@@ -2819,59 +2834,59 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
             Ok(ProgramExpression::Variable(name.clone()))
         }
         ContractExpression::Add(left, right) => Ok(ProgramExpression::Add(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::Subtract(left, right) => Ok(ProgramExpression::Subtract(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::Multiply(left, right) => Ok(ProgramExpression::Multiply(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::Divide(left, right) => Ok(ProgramExpression::Divide(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::Remainder(left, right) => Ok(ProgramExpression::Remainder(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::ShiftLeft(left, right) => Ok(ProgramExpression::ShiftLeft(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::RustShiftLeft(left, right) => Ok(ProgramExpression::RustShiftLeft(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::ShiftRight(left, right) => Ok(ProgramExpression::ShiftRight(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::RustShiftRight(left, right) => Ok(ProgramExpression::RustShiftRight(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::BitwiseAnd(left, right) => Ok(ProgramExpression::BitwiseAnd(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::BitwiseOr(left, right) => Ok(ProgramExpression::BitwiseOr(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::BitwiseXor(left, right) => Ok(ProgramExpression::BitwiseXor(
-            Box::new(resource_argument_to_c_expression(left)?),
-            Box::new(resource_argument_to_c_expression(right)?),
+            Box::new(resource_argument_to_program_expression(left)?),
+            Box::new(resource_argument_to_program_expression(right)?),
         )),
         ContractExpression::BitwiseNot(expression) => Ok(ProgramExpression::BitwiseNot(Box::new(
-            resource_argument_to_c_expression(expression)?,
+            resource_argument_to_program_expression(expression)?,
         ))),
         ContractExpression::Index(base, index) => Ok(ProgramExpression::Index(
-            Box::new(resource_argument_to_c_expression(base)?),
-            Box::new(resource_argument_to_c_expression(index)?),
+            Box::new(resource_argument_to_program_expression(base)?),
+            Box::new(resource_argument_to_program_expression(index)?),
         )),
         ContractExpression::Old(_)
         | ContractExpression::ResourceCount(_)
@@ -2890,7 +2905,7 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
             // `apply_contract_lets_to_expression` already substituted every
             // referenced value into the body; the wrapper only preserves
             // sharing for later passes. Unwrap to the substituted body.
-            resource_argument_to_c_expression(body)
+            resource_argument_to_program_expression(body)
         }
     }
 }
@@ -3080,7 +3095,7 @@ fn loadable_requirement_props(
     }
     let (base, bytes, guards) = loadable_base_and_bytes(requirement, parameter_binding)?;
     reject_impossible_range_guards(&guards, assumptions)?;
-    let mut propositions = vec![Proposition::CMemoryLoadable {
+    let mut propositions = vec![Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
         bytes,
@@ -3227,7 +3242,7 @@ pub(in crate::surface) fn memory_range_loadable_atom_prop(
         return range.loadable_fact(memory);
     }
     let (base, bytes) = range.byte_footprint();
-    Proposition::CMemoryLoadable {
+    Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
         bytes,
@@ -3855,19 +3870,23 @@ fn requirement_proposition_and_facts_with_assumptions(
         spec_definitions,
     )
     .map_err(ClickError::new)?;
-    let (lowered, facts, obligations) =
-        crate::kernel::c_lower_spec_proposition_at_state(lowering_state, &spec, None, assumptions)
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "could not lower requirement `{}`: {message}",
-                    crate::surface::diagnostics::describe_click_proposition(proposition)
-                ))
-            })?;
+    let (lowered, facts, obligations) = crate::kernel::program_lower_spec_proposition_at_state(
+        lowering_state,
+        &spec,
+        None,
+        assumptions,
+    )
+    .map_err(|message| {
+        ClickError::new(format!(
+            "could not lower requirement `{}`: {message}",
+            crate::surface::diagnostics::describe_click_proposition(proposition)
+        ))
+    })?;
     // A requirement may read only memory the function's entry justifies:
     // cells the entry holds, a resource it views or owns, or a loadability
     // the requirements state.
     if let Some(obligation) = obligations.iter().find(|obligation| {
-        !crate::kernel::c_state_justifies_loadability_obligation(
+        !crate::kernel::execution_state_justifies_loadability_obligation(
             lowering_state,
             obligation,
             assumptions,

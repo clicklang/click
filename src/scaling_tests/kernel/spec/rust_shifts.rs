@@ -29,7 +29,7 @@ fn rust_shifts_are_fact_stable_and_do_not_scan_ambient_facts() {
         };
         let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
             [&base, &defined, &undefined, &impossible].map(|context| {
-                crate::kernel::c_lower_spec_proposition_with_checked_obligations(
+                crate::kernel::program_lower_spec_proposition_with_checked_obligations(
                     &ExecutionState::new(),
                     &written,
                     None,

@@ -4,7 +4,8 @@ fn memory_order_queries_scale_across_growing_prefixes_and_fact_contexts() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(993211));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(993211));
         let target =
             IntegerTerm::from_machine(format, MachineTerm::Variable(Variable(993212))).unwrap();
         let mut facts = PureFactContext::new();
@@ -61,7 +62,7 @@ fn shared_read_order_bucket_ignores_unrelated_addresses() {
             } else {
                 Pointer::symbolic(Variable(993_300 + index as u64))
             };
-            let memory = crate::kernel::intern_c_memory(
+            let memory = crate::kernel::intern_memory(
                 Memory::new().with_block(format!("order-snapshot-{index}"), 0),
             );
             let read = MachineTerm::MemoryLoad(memory, Box::new(address), LoadKind::Int32);
@@ -133,8 +134,8 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
             ProgramValue::Int32(MachineTerm::constant(9)),
             &context,
         );
-        let before = crate::kernel::intern_c_memory(before);
-        let after = crate::kernel::intern_c_memory(after);
+        let before = crate::kernel::intern_memory(before);
+        let after = crate::kernel::intern_memory(after);
         let zero = KernelTermImport::default()
             .machine_arithmetic(format, &MachineTerm::constant(0))
             .unwrap();

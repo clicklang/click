@@ -141,7 +141,7 @@ fn retained_local_assignment_and_readback_scale_without_prefix_exports() {
         let exports = KernelTermExport::machine_export_count();
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
-                let outcome = super::super::super::statements::execute_c_statement(
+                let outcome = super::super::super::statements::execute_execution_statement(
                     &state,
                     &assignment,
                     &PureFactContext::new(),
@@ -190,7 +190,7 @@ fn retained_return_and_caller_receipt_do_not_export_growing_prefixes() {
             false,
         );
         let statement = ProgramStatement::Return(ProgramExpression::Variable("held".into()));
-        let function = c_function(
+        let function = program_function(
             ProgramType::UInt32,
             "handoff",
             Vec::new(),
@@ -200,7 +200,7 @@ fn retained_return_and_caller_receipt_do_not_export_growing_prefixes() {
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 let StatementOutcome::Return { value, .. } =
-                    super::super::super::statements::execute_c_statement(
+                    super::super::super::statements::execute_execution_statement(
                         &state,
                         &statement,
                         &PureFactContext::new(),
@@ -247,7 +247,7 @@ fn complete_c_and_rust_machine_handoffs_retain_roots_without_prefix_exports() {
             let (environment, statement) = complete_machine_handoff_program(rust, size, false);
             let exports = KernelTermExport::machine_export_count();
             let (paths, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                super::super::super::statements::execute_c_statement_paths(
+                super::super::super::statements::execute_execution_statement_paths(
                     &ExecutionState::new(),
                     &statement,
                     &PureFactContext::new(),

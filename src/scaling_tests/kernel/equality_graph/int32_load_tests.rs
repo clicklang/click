@@ -104,7 +104,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
         );
         let load = |memory: &Memory| {
             MachineTerm::MemoryLoad(
-                intern_c_memory_ref(memory),
+                intern_memory_ref(memory),
                 Box::new(field.clone()),
                 crate::kernel::LoadKind::Int32,
             )
@@ -234,8 +234,8 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
                     ProgramValue::Int32(MachineTerm::constant(index as u32)),
                 );
             }
-            let source = intern_c_memory(history.clone());
-            let projected = intern_c_memory(history.with_block("local:projection", 1));
+            let source = intern_memory(history.clone());
+            let projected = intern_memory(history.with_block("local:projection", 1));
             let cell = address(1);
             crate::kernel::reasoning::record_canonical_load_projection(&source, &projected, &cell);
             let read = |memory: &SharedMemory| {

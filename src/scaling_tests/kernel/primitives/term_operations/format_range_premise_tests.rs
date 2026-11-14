@@ -5,7 +5,8 @@ fn intrinsic_format_queries_retain_growing_shared_prefixes() {
     for count in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut root = KernelTerm::variable(KernelType::C(ProgramType::Int32), Variable(994201));
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(994201));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..count {
@@ -15,7 +16,7 @@ fn intrinsic_format_queries_retain_growing_shared_prefixes() {
                     [
                         root.clone(),
                         KernelTerm::variable(
-                            KernelType::C(ProgramType::Int32),
+                            KernelType::Program(ProgramType::Int32),
                             Variable(994202 + index),
                         ),
                     ],

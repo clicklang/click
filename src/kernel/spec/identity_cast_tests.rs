@@ -65,8 +65,8 @@ fn identity_casts_preserve_exact_shared_roots_at_every_integer_width() {
 fn identity_casts_keep_selected_read_snapshots_distinct() {
     let _session = VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(995411));
-    let before = crate::kernel::intern_c_memory(Memory::new());
-    let after = crate::kernel::intern_c_memory(
+    let before = crate::kernel::intern_memory(Memory::new());
+    let after = crate::kernel::intern_memory(
         Memory::new().store(pointer.clone(), ProgramValue::Int32(7u32.into())),
     );
     let roots = [before, after].map(|memory| {

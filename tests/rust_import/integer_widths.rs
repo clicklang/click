@@ -11,7 +11,7 @@ fn charon_integer_widths_verify_with_their_panic_checks() {
     let p = Project::from_fixture("design/charon-trial/integer-widths");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
+    ProgramVerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
     for (before, after, expected) in [
         // `u64` addition checks the full unsigned width, as `usize` does.
@@ -44,7 +44,7 @@ fn charon_integer_widths_verify_with_their_panic_checks() {
     ] {
         assert!(SIDECAR.contains(before), "{before}");
         let invalid = SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));
         let rendered = format!("{error:?} {error}");
@@ -68,7 +68,7 @@ fn charon_whole_record_owns_covers_a_64_bit_field_load() {
         "    ensures account.id == old(account.id) + 1u64;",
         1,
     );
-    let error = C0VerificationSession::new_program_prepared(&changed, &prepared)
+    let error = ProgramVerificationSession::new_program_prepared(&changed, &prepared)
         .err()
         .expect("a changed untouched field must be refused");
     assert!(format!("{error:?}").contains("deposit"), "{error:?}");
@@ -94,12 +94,12 @@ fn check_remainder_guards(ty: &str, maximum: &str, controls: bool) {
         let claim = format!(
             "verifying \"widths.rs\"; fn {name}(x: {ty}){result} {{ requires x % 2{ty} == 0{ty}; ensures {ensures}; }}"
         );
-        C0VerificationSession::new_program_prepared(&claim, &prepared)
+        ProgramVerificationSession::new_program_prepared(&claim, &prepared)
             .unwrap_or_else(|error| panic!("{claim}: {error:?}"));
         if controls {
             let invalid = claim.replace(&format!("requires x % 2{ty} == 0{ty};"), "");
             assert!(
-                C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+                ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
                 "{invalid}"
             );
         }
@@ -110,7 +110,7 @@ fn check_remainder_guards(ty: &str, maximum: &str, controls: bool) {
     let odd = format!(
         "verifying \"widths.rs\"; fn parity_{ty}(x: {ty}) -> {ty} {{ requires x == {maximum}{ty}; ensures result == 0{ty}; }}"
     );
-    C0VerificationSession::new_program_prepared(&odd, &prepared).unwrap();
+    ProgramVerificationSession::new_program_prepared(&odd, &prepared).unwrap();
 }
 
 #[test]
@@ -139,11 +139,11 @@ fn charon_narrow_remainder_keeps_variable_divisor_and_zero_checks() {
         let claim = format!(
             "verifying \"widths.rs\"; fn remainder_{ty}(x: {ty}, y: {ty}) -> {ty} {{ requires y != 0{ty}; ensures result == x % y; }}"
         );
-        C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
+        ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
         let invalid = format!(
             "verifying \"widths.rs\"; fn remainder_{ty}(x: {ty}, y: {ty}) -> {ty} {{ ensures true; }}"
         );
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .expect("a possible zero divisor must be refused");
         assert!(error.to_string().contains("zero"), "{error:?}");

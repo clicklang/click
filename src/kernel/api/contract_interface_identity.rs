@@ -66,10 +66,10 @@ mod tests {
     use super::*;
 
     fn interface(parameter: &str, local: &str, body: &str) -> ProgramFunction {
-        c_function(
+        program_function(
             ProgramType::Void,
             "interface",
-            vec![c_parameter(parameter, ProgramType::Int32)],
+            vec![program_parameter(parameter, ProgramType::Int32)],
             ProgramStatement::Skip,
         )
         .with_contract(
@@ -77,11 +77,17 @@ mod tests {
             vec![SpecProposition::Comparison {
                 left: SpecExpression::Let {
                     name: local.to_string(),
-                    value: Box::new(SpecExpression::ProgramExpression(c_variable(parameter))),
-                    body: Box::new(SpecExpression::ProgramExpression(c_variable(body))),
+                    value: Box::new(SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable(parameter),
+                    )),
+                    body: Box::new(SpecExpression::ProgramExpression(
+                        crate::kernel::program_expression::variable(body),
+                    )),
                 },
                 operator: ComparisonOperator::Equal,
-                right: SpecExpression::ProgramExpression(c_variable(parameter)),
+                right: SpecExpression::ProgramExpression(
+                    crate::kernel::program_expression::variable(parameter),
+                ),
             }],
             vec![],
             vec![],
@@ -106,14 +112,16 @@ mod tests {
             let observation =
                 SpecIntegerExpression::FromMachine(Box::new(SpecExpression::IntegerToMachine {
                     value: Box::new(SpecIntegerExpression::FromMachine(Box::new(
-                        SpecExpression::ProgramExpression(c_variable(referenced)),
+                        SpecExpression::ProgramExpression(
+                            crate::kernel::program_expression::variable(referenced),
+                        ),
                     ))),
                     destination: MachineIntegerType::Int32,
                 }));
-            c_function(
+            program_function(
                 ProgramType::Void,
                 "interface",
-                vec![c_parameter(parameter, ProgramType::Int32)],
+                vec![program_parameter(parameter, ProgramType::Int32)],
                 ProgramStatement::Skip,
             )
             .with_contract(
@@ -144,9 +152,9 @@ mod tests {
                 let mut proposition = SpecProposition::Comparison {
                     left: SpecExpression::CountedResourceCount {
                         name: "Token".into(),
-                        arguments: vec![Some(SpecExpression::ProgramExpression(c_variable(
-                            format!("argument{index}"),
-                        )))],
+                        arguments: vec![Some(SpecExpression::ProgramExpression(
+                            crate::kernel::program_expression::variable(format!("argument{index}")),
+                        ))],
                     },
                     operator: ComparisonOperator::Equal,
                     right: SpecExpression::Value(int32(1)),
@@ -160,7 +168,7 @@ mod tests {
     #[test]
     fn lexical_identity_preserves_resource_projection_identity_and_snapshot() {
         let interface = |identity, at_entry| {
-            c_function(
+            program_function(
                 ProgramType::Void,
                 "interface",
                 vec![],
@@ -466,7 +474,7 @@ impl Names {
             Constructor { fields, .. } => {
                 for field in fields {
                     match field {
-                        SpecAlgebraicValue::C(e) => self.expression(e),
+                        SpecAlgebraicValue::Program(e) => self.expression(e),
                         SpecAlgebraicValue::Integer(_) => {}
                         SpecAlgebraicValue::Algebraic(e) => self.algebraic(e),
                     }

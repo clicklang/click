@@ -13,13 +13,13 @@ use crate::kernel::{
 use std::collections::BTreeMap;
 
 fn memory() -> SharedMemory {
-    crate::kernel::intern_c_memory(Memory::new().with_block("registered-load-capture", 64))
+    crate::kernel::intern_memory(Memory::new().with_block("registered-load-capture", 64))
 }
 
 #[test]
 fn checked_index_substitution_reprojects_the_selected_scalar_read() {
     let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(memory().memory().clone().store(
+    let memory = crate::kernel::intern_memory(memory().memory().clone().store(
         Pointer {
             block: PointerBlock::Concrete("registered-load-capture".into()),
             offset: PointerOffsetTerm::Constant(0),
@@ -112,7 +112,7 @@ fn machine_variable(variable: Variable) -> IntegerTerm {
 }
 
 #[test]
-fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
+fn checked_program_substitution_reserves_free_integer_in_registered_load_pointer() {
     let memory = memory();
     let source = Variable(3_210_000);
     let free_integer = Variable(3_210_001);
@@ -175,7 +175,7 @@ fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
 }
 
 #[test]
-fn checked_c_substitution_reserves_free_c_in_registered_load_pointer() {
+fn checked_program_substitution_reserves_free_program_in_registered_load_pointer() {
     let memory = memory();
     let source = Variable(3_220_000);
     let free_c = Variable(3_220_001);
@@ -320,8 +320,8 @@ fn shared_carrier_cache_preserves_current_registered_load_dependencies() {
         format,
         MachineBinaryOp::Add,
         [
-            KernelTerm::variable(KernelType::C(ProgramType::Int32), load),
-            KernelTerm::variable(KernelType::C(ProgramType::Int32), load),
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), load),
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), load),
         ],
     );
     let machine = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
@@ -412,7 +412,7 @@ fn structural_read_replacement_matches_retained_name_at_native_value_boundary() 
 fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Pointer::symbolic(Variable(3_219_020));
-    let memory = crate::kernel::intern_c_memory(
+    let memory = crate::kernel::intern_memory(
         Memory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
     );
     let relation = |term: MachineTerm| {
@@ -425,9 +425,9 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
         };
         let child = Resource::Composite {
             name: "allocation".into(),
-            arguments: vec![AlgebraicValue::C(ProgramValue::Int32(term))].into(),
+            arguments: vec![AlgebraicValue::Program(ProgramValue::Int32(term))].into(),
         };
-        Proposition::CResourceContains {
+        Proposition::ResourceContains {
             parent: Box::new(parent),
             child: Box::new(child),
         }
@@ -446,7 +446,7 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
         crate::kernel::eval::comparison_form(&other_address),
         Some(expected.clone())
     );
-    let other_memory = crate::kernel::intern_c_memory(
+    let other_memory = crate::kernel::intern_memory(
         Memory::new().store(address.clone(), ProgramValue::Int32(38u32.into())),
     );
     assert_ne!(
