@@ -427,8 +427,8 @@ fn refuse_freed_pointer(
     path: &mut ExecutionValuePath,
     assumptions: &PureFactContext,
 ) {
-    if let ExpressionOutcome::Value(ExecutionValue::Native(value)) = &path.outcome
-        && let Some(undefined) = freed_pointer_use(state, value, assumptions)
+    if let ExpressionOutcome::Value(value) = &path.outcome
+        && let Some(undefined) = freed_expression_value_pointer_use(state, value, assumptions)
     {
         path.outcome = ExpressionOutcome::UndefinedBehavior(undefined);
     }
@@ -474,6 +474,45 @@ fn retained_binary(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retained_pointer_reads_preserve_freed_value_refusal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Pointer::symbolic(Variable(1021001));
+        let assumptions = PureFactContext::new();
+        let memory = Memory::new();
+        let native = memory.symbolic_pointer_load(&cell, ProgramType::Int32Pointer);
+        let ProgramValue::Pointer(pointer) = &native else {
+            unreachable!()
+        };
+        // Allocation contracts can name a retained read as their exact base.
+        // Value-use refusal consults that base's own freed-block record.
+        let base = pointer.pointer().clone();
+        let retained = ExecutionValue::retain_native(native.clone());
+        assert!(matches!(
+            retained.shared().map(KernelTerm::node),
+            Some(KernelTermNode::PointerRead { .. })
+        ));
+        let memory = memory
+            .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
+            .unwrap();
+        let freed = memory.free_heap_block(&base, &assumptions).unwrap();
+        let state = ExecutionState::new().with_memory(freed);
+        assert_eq!(
+            freed_pointer_use(&state, &native, &assumptions),
+            Some(UndefinedBehavior::FreedPointerUse)
+        );
+        let mut path = ExecutionValuePath {
+            outcome: ExpressionOutcome::Value(retained),
+            facts: Default::default(),
+            obligations: vec![],
+        };
+        refuse_freed_pointer(&state, &mut path, &assumptions);
+        assert!(matches!(
+            path.outcome,
+            ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::FreedPointerUse)
+        ));
+    }
+
     fn evaluate(expression: &ProgramExpression) -> Vec<ExecutionValuePath> {
         evaluate_expression_value_paths(
             &ExecutionState::new(),

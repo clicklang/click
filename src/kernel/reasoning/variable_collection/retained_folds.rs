@@ -131,6 +131,13 @@ pub(super) fn common_variables(
                     &mut SeenTerms::default(),
                 );
             }
+            KernelTermNode::PointerRead { value, .. } => {
+                super::retained_pointers::collect_pointer_variables(
+                    value,
+                    mode,
+                    &mut leaf_variables,
+                );
+            }
             KernelTermNode::MemoryLoad { address, .. } => match mode {
                 FoldVariableRead::IntegerFree | FoldVariableRead::MachineCapture => {
                     super::retained_pointers::collect_address_variables_with_summaries(

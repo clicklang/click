@@ -3270,6 +3270,13 @@ pub(super) fn raise_kernel_term(
                 }],
             }
         }
+        Node::PointerRead { value, .. } => {
+            if let Some(name) = pointer_names::shared_name(value) {
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name))
+            } else {
+                synthesize_surface_value(term.pointer_read_native()?, parameter_binding, state)?
+            }
+        }
         Node::Legacy(legacy) => match legacy.value() {
             crate::kernel::PureFunctionArgument::Integer(value) => {
                 let mut import = crate::kernel::KernelTermImport::default();

@@ -22,6 +22,60 @@ impl KernelTermImport {
 }
 
 impl KernelTerm {
+    /// Retain a pointer result only when its producer already retained a read
+    /// definition. This reads term metadata, never hypotheses or stored values.
+    pub(crate) fn retained_pointer_read(value: &PointerValue) -> Option<Self> {
+        // Later arithmetic and ordinary pointer values belong to their own
+        // producer slices. Do not clone or hash a growing displacement merely
+        // to ask whether it is an undisplaced read atom.
+        if !matches!(value.pointer().offset, PointerOffsetTerm::Constant(0))
+            || !matches!(
+                value.pointer().block,
+                PointerBlock::LoadedPointer(_) | PointerBlock::FunctionSymbolic(_)
+            )
+        {
+            return None;
+        }
+        let MachineTerm::MemoryLoad(memory, address, _) =
+            crate::kernel::equality_graph::logical_pointer_read_term(value.pointer())?
+        else {
+            return None;
+        };
+        Some(Self::shared_pointer_read(
+            SharedPointerValue::import(value),
+            memory,
+            SharedPointerAddress::import(&address),
+        ))
+    }
+
+    pub(crate) fn shared_pointer_read(
+        value: SharedPointerValue,
+        memory: SharedMemory,
+        address: SharedPointerAddress,
+    ) -> Self {
+        Self::intern(
+            KernelType::Program(value.node().program_type),
+            KernelTermNode::PointerRead {
+                value,
+                memory,
+                address,
+            },
+        )
+    }
+
+    /// Explicit compatibility view for native execution consumers. The common
+    /// result retains the complete payload and definition independently of it.
+    pub(crate) fn pointer_read_native(&self) -> Option<&ProgramValue> {
+        let KernelTermNode::PointerRead { value, .. } = self.node() else {
+            return None;
+        };
+        Some(self.0.pointer_leaf.get_or_init(|| {
+            Box::new(ProgramValue::Pointer(
+                value.export().expect("retained pointer result"),
+            ))
+        }))
+    }
+
     /// Selected native read leaf for consumers still using the native atom
     /// interface. Never expands a surrounding shared arithmetic expression.
     pub(crate) fn machine_read_leaf(&self) -> Option<&MachineTerm> {
@@ -110,6 +164,80 @@ fn exact_address(address: &Pointer) -> bool {
 mod tests {
     use super::*;
     use crate::kernel::VerificationSession;
+
+    #[test]
+    fn pointer_read_execution_results_keep_definition_type_and_complete_payload() {
+        let _session = VerificationSession::enter();
+        let memory = Memory::new();
+        let address = Pointer::symbolic(Variable(1018000));
+        for ty in [
+            ProgramType::Int32Pointer,
+            ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+        ] {
+            let ProgramValue::Pointer(pointer) = memory.symbolic_pointer_load(&address, ty) else {
+                panic!("pointer producer");
+            };
+            let pointer = pointer
+                .with_pointee_constant(true)
+                .with_pointee_volatile(true);
+            let expected = SharedPointerValue::import(&pointer);
+            let native = ProgramValue::Pointer(pointer);
+            let result = crate::kernel::ExecutionValue::retain_native(native.clone());
+            let root = result.shared().expect("retained pointer read");
+            let KernelTermNode::PointerRead {
+                value,
+                memory: snapshot,
+                address: cell,
+            } = root.node()
+            else {
+                panic!("pointer read root");
+            };
+            assert_eq!(root.ty(), &KernelType::Program(ty));
+            assert_eq!(
+                snapshot.arena_id(),
+                intern_memory(memory.clone()).arena_id()
+            );
+            assert_eq!(cell, &SharedPointerAddress::import(&address));
+            assert!(value.same_source_payload(&expected));
+            assert!(root.0.pointer_leaf.get().is_none());
+            let ProgramValue::Pointer(restored) = result.native_payload().unwrap() else {
+                panic!("compatibility value");
+            };
+            assert!(SharedPointerValue::import(restored).same_source_payload(&expected));
+            assert_eq!(result.clone().into_native(), native);
+            // Locals retain their existing compatibility policy until their slice.
+            assert_eq!(
+                crate::kernel::StoredExecutionValue::from(result).into_native(),
+                native
+            );
+        }
+    }
+
+    #[test]
+    fn pointer_read_root_retains_definition_after_registry_reset() {
+        let _session = VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(1018001));
+        let memory = Memory::new();
+        let native = memory.symbolic_pointer_load(&address, ProgramType::UInt8Pointer);
+        let retained = crate::kernel::ExecutionValue::retain_native(native);
+        let root = retained.shared().expect("read root").clone();
+        crate::kernel::eval::clear_load_variable_registry();
+        crate::kernel::equality_graph::clear_logical_pointer_reads();
+        let KernelTermNode::PointerRead {
+            memory: snapshot,
+            address: cell,
+            ..
+        } = root.node()
+        else {
+            panic!("read root");
+        };
+        assert_eq!(snapshot.arena_id(), intern_memory(memory).arena_id());
+        assert_eq!(cell, &SharedPointerAddress::import(&address));
+        assert!(matches!(
+            root.pointer_read_native(),
+            Some(ProgramValue::Pointer(_))
+        ));
+    }
 
     #[test]
     fn scalar_reads_retain_exact_descriptors_and_survive_registry_reset() {

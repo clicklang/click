@@ -101,6 +101,13 @@ pub enum KernelTermNode {
         address: SharedPointerAddress,
         kind: LoadKind,
     },
+    /// Complete pointer read result and its producer-retained definition.
+    /// Access authority and read-over-write evidence remain outside the term.
+    PointerRead {
+        value: SharedPointerValue,
+        memory: SharedMemory,
+        address: SharedPointerAddress,
+    },
     MachineObservation {
         format: MachineIntegerType,
         operand: KernelTerm,
@@ -219,6 +226,7 @@ struct TermData {
     // Temporary reverse bridge. Weak because the old node caches this term.
     integer: Mutex<WeakIntegerTerm>,
     machine_leaf: MachineLeafCache,
+    pointer_leaf: std::sync::OnceLock<Box<ProgramValue>>,
 }
 
 struct NodeKeyData {
@@ -259,6 +267,18 @@ impl PartialEq for NodeKey {
                         // memory while registering one selected read.
                         a.arena_id() == b.arena_id() && p == q && k == l
                     }
+                    (
+                        KernelTermNode::PointerRead {
+                            value: a,
+                            memory: m,
+                            address: p,
+                        },
+                        KernelTermNode::PointerRead {
+                            value: b,
+                            memory: n,
+                            address: q,
+                        },
+                    ) => m.arena_id() == n.arena_id() && a == b && p == q,
                     (a, b) => a == b,
                 })
     }
@@ -273,7 +293,9 @@ impl NodeKey {
     fn new(ty: KernelType, node: KernelTermNode) -> Self {
         let mut hash = crate::id_hash::FingerprintHasher::default();
         ty.hash(&mut hash);
-        if let KernelTermNode::MemoryLoad { memory, .. } = &node {
+        if let KernelTermNode::MemoryLoad { memory, .. }
+        | KernelTermNode::PointerRead { memory, .. } = &node
+        {
             memory.arena_id().hash(&mut hash);
         }
         node.hash(&mut hash);
@@ -536,6 +558,7 @@ impl Interner {
             key: key.clone(),
             integer: Mutex::default(),
             machine_leaf: Default::default(),
+            pointer_leaf: Default::default(),
         });
         self.terms.insert(key.clone(), Arc::downgrade(&value));
         self.cleanup.push_back(key);
@@ -1402,6 +1425,9 @@ impl KernelTermExport {
             }
             KernelTermNode::Fold(fold) if term.ty() == &KernelType::Integer => {
                 PureFunctionArgument::Integer(fold.integer_compatibility(self)?.into())
+            }
+            KernelTermNode::PointerRead { value, .. } => {
+                PureFunctionArgument::Value(ProgramValue::Pointer(value.export()?))
             }
             KernelTermNode::Legacy(value) => value.value().clone(),
             KernelTermNode::IntegerLiteral(value) => {

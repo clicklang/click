@@ -14,6 +14,14 @@ impl PartialEq for ExecutionValue {
             (Self::Native(a), Self::Native(b)) => a == b,
             (Self::Shared(a), Self::Shared(b)) => {
                 a == b
+                    || matches!((a.node(), b.node()),
+                        (KernelTermNode::PointerRead { value: a, .. },
+                         KernelTermNode::PointerRead { value: b, .. })
+                        if a.same_source_payload(b))
+                    || match (a.pointer_read_native(), b.pointer_read_native()) {
+                        (Some(a), Some(b)) => a == b,
+                        _ => false,
+                    }
                     || (a.ty() == b.ty()
                         && (a.has_machine_matches() || b.has_machine_matches())
                         && crate::kernel::shared_machine_syntax_equal(a, b))
@@ -43,7 +51,7 @@ impl ExecutionValue {
     pub fn native_payload(&self) -> Option<&ProgramValue> {
         match self {
             Self::Native(value) => Some(value),
-            Self::Shared(_) => None,
+            Self::Shared(root) => root.pointer_read_native(),
         }
     }
     pub fn pointer(&self) -> Option<&PointerValue> {
@@ -55,9 +63,14 @@ impl ExecutionValue {
     pub fn byte_width(&self) -> u32 {
         self.program_type().byte_width()
     }
-    /// Import a native machine producer's result once at its execution boundary.
-    /// Other result families keep their exact native payloads.
+    /// Retain machine expressions and producer-defined pointer reads at their
+    /// execution boundary. Other result families keep their exact native payloads.
     pub(in crate::kernel) fn retain_native(value: ProgramValue) -> Self {
+        if let ProgramValue::Pointer(pointer) = &value
+            && let Some(root) = KernelTerm::retained_pointer_read(pointer)
+        {
+            return Self::Shared(root);
+        }
         if let crate::kernel::integer_c_value!(term) = &value {
             // Scalar leaves have no expression prefix to retain. Keep their
             // existing cheap reading, including condition truth values.
@@ -79,6 +92,9 @@ impl ExecutionValue {
         match self {
             Self::Native(value) => value,
             Self::Shared(term) => {
+                if let Some(value) = term.pointer_read_native() {
+                    return value.clone();
+                }
                 if matches!(term.node(), KernelTermNode::Call { .. }) {
                     let KernelType::Program(ty) = term.ty() else {
                         unreachable!()

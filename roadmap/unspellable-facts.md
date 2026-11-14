@@ -299,6 +299,14 @@ descriptor queries do not re-import them after unrelated arena cleanup. Live
 interner hits skip insertion upkeep, and kind-only fingerprints inspect the
 shared read directly. Existing search budgets and scaling limits are unchanged.
 
+7l retains pointer and function-pointer read results as common roots containing
+the complete result payload, defining memory and shared source address. Read
+definitions remain available after producer-registry reset. Native consumers
+use an explicit cached compatibility view; lifetime refusals retain their
+existing checks. Surface naming preserves complete metadata. Ordinary pointer
+formation and arithmetic, calls and storage handoffs remain in their subsequent
+slices.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface
