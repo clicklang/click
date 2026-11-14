@@ -400,7 +400,7 @@ fn collect_program_expression_variables(expression: &ProgramExpression, names: &
             }
             ProgramExpression::Value(_)
             | ProgramExpression::FunctionAddress(_)
-            | ProgramExpression::CallResult { .. } => {}
+            | ProgramExpression::StepResult { .. } => {}
             ProgramExpression::Cast { expression, .. }
             | ProgramExpression::FloatNegate(expression)
             | ProgramExpression::FloatClassification { expression, .. }

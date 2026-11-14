@@ -46,18 +46,17 @@ int32 walk(const uint8* p, int32 n) {
    have defined(p[0]) by solve();
    mark before_pointer;
    step_until(assignment(total, 1));
-   have __click_call_result0 == old(p) + (old(n) - n) by solve();
-   have __click_call_result0 == at(before_pointer, p) by solve();
-   have defined(__click_call_result0[0]) by solve();
-   have viewable(__click_call_result0[0..1]) by solve();
-   apply(byte_as_int32(__click_call_result0[0]));
+   have at(before_pointer, p) == old(p) + (old(n) - n) by solve();
+   have defined(at(before_pointer, p[0])) by solve();
+   have at(before_pointer, viewable(p[0..1])) by solve();
+   apply(byte_as_int32(at(before_pointer, p[0])));
    have to_integer(old(n) - n) <= 14 by solve() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have 255 * (old(n) - n) <= 3570 by solve() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have total <= 3570 by solve() using { total <= 255 * (old(n) - n); 255 * (old(n) - n) <= 3570; };
-   have __click_call_result0[0] as int32 <= 255 by assumption();
-   have to_integer(total) <= to_integer(2147483647 - __click_call_result0[0] as int32) by solve() using { total <= 3570; 0 <= __click_call_result0[0] as int32; __click_call_result0[0] as int32 <= 255; };
-   have defined(total + (__click_call_result0[0] as int32));
-   have defined(total + __click_call_result0[0] as int32) by solve();
+   have at(before_pointer, p[0] as int32) <= 255 by assumption();
+   have to_integer(total) <= to_integer(2147483647 - at(before_pointer, p[0] as int32)) by solve() using { total <= 3570; 0 <= at(before_pointer, p[0] as int32); at(before_pointer, p[0] as int32) <= 255; };
+   have defined(total + (at(before_pointer, p[0] as int32)));
+   have defined(total + at(before_pointer, p[0] as int32)) by solve();
    mark before_sum;
    step(); step();
    have to_integer(n) == to_integer(at(before_pointer, n) - 1) by solve();
@@ -80,9 +79,9 @@ int32 walk(const uint8* p, int32 n) {
    have 0 <= to_integer(old(n) - n) by solve() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; 1 <= at(before_pointer, n); at(before_pointer, n) <= old(n); };
    have to_integer(old(n) - n + n) == to_integer(old(n)) by solve() using { 0 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have viewable(p[0..n]) by solve();
-   have total == at(before_sum, total) + at(before_sum, __click_call_result0[0] as int32);
-   have 0 <= total by solve() using { total == at(before_sum, total) + at(before_sum, __click_call_result0[0] as int32); 0 <= at(before_sum, total); 0 <= at(before_sum, __click_call_result0[0] as int32); };
-   have total <= 255 * (old(n) - n) by solve() using { total == at(before_sum, total) + at(before_sum, __click_call_result0[0] as int32); at(before_sum, total) <= 255 * (old(n) - at(before_sum, n)); n == at(before_pointer, n) - 1; at(before_sum, n) == at(before_pointer, n); at(before_sum, __click_call_result0[0] as int32) <= 255; };
+   have total == at(before_sum, total) + at(before_pointer, p[0] as int32);
+   have 0 <= total by solve() using { total == at(before_sum, total) + at(before_pointer, p[0] as int32); 0 <= at(before_sum, total); 0 <= at(before_pointer, p[0] as int32); };
+   have total <= 255 * (old(n) - n) by solve() using { total == at(before_sum, total) + at(before_pointer, p[0] as int32); at(before_sum, total) <= 255 * (old(n) - at(before_sum, n)); n == at(before_pointer, n) - 1; at(before_sum, n) == at(before_pointer, n); at(before_pointer, p[0] as int32) <= 255; };
   }
  }
  have n == 0 by solve() using { 0 <= n; n <= 0; };

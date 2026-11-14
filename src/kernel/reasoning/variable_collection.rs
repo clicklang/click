@@ -862,7 +862,7 @@ pub(in crate::kernel) fn collect_program_expression_bitvector_variables(
         }
         ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => {}
+        | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. } => {
             collect_program_expression_bitvector_variables(expression, variables)
         }
@@ -1374,7 +1374,7 @@ fn collect_program_expression_bound_identities(
         }
         ProgramExpression::Variable(_)
         | ProgramExpression::FunctionAddress(_)
-        | ProgramExpression::CallResult { .. } => {}
+        | ProgramExpression::StepResult { .. } => {}
         ProgramExpression::Cast { expression, .. }
         | ProgramExpression::FloatNegate(expression)
         | ProgramExpression::FloatClassification { expression, .. }

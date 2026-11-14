@@ -1579,15 +1579,15 @@ pub(super) fn evaluate_native_expression_paths(
             read_program_lvalue_expression_paths(state, expression, assumptions, budget)?
         }
         // The term this statement's own call step returned.
-        ProgramExpression::CallResult { call, .. } => vec![ExpressionPath {
+        ProgramExpression::StepResult { step, .. } => vec![ExpressionPath {
             outcome: match state
-                .call_results
+                .step_results
                 .as_ref()
-                .and_then(|results| results.get(call))
+                .and_then(|results| results.get(step))
             {
                 Some(value) => ExpressionOutcome::Value(value.clone()),
                 None => ExpressionOutcome::RuntimeError(RuntimeError::UnboundVariable(format!(
-                    "the result of call {call}, read before the call ran"
+                    "the result of step {step}, read before the step ran"
                 ))),
             },
             facts: Vec::new().into(),
@@ -3866,8 +3866,8 @@ pub(in crate::kernel) fn program_expression_pointee_type(
             None => None,
         },
         // A call's result has the callee's declared type.
-        ProgramExpression::CallResult { call, .. } => {
-            state.call_result(*call)?.program_type().pointee_type()
+        ProgramExpression::StepResult { step, .. } => {
+            state.step_result(*step)?.program_type().pointee_type()
         }
         ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
         ProgramExpression::AddressOf(target) | ProgramExpression::CheckedObjectAddress(target) => {

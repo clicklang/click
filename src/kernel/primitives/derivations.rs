@@ -1952,7 +1952,7 @@ fn program_expression_steps_for_mode(expression: &ProgramExpression, lvalue: boo
         match expression {
             ProgramExpression::Value(_)
             | ProgramExpression::FunctionAddress(_)
-            | ProgramExpression::CallResult { .. } => {}
+            | ProgramExpression::StepResult { .. } => {}
             ProgramExpression::Cast { expression, .. } => pending.push((expression, false)),
             ProgramExpression::Conditional {
                 condition,

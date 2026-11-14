@@ -71,7 +71,7 @@ fn substitute_program_expression_variables(
         )
     };
     match expression {
-        Value(_) | FunctionAddress(_) | CallResult { .. } => expression.clone(),
+        Value(_) | FunctionAddress(_) | StepResult { .. } => expression.clone(),
         Cast {
             expression: body,
             target_type,
@@ -1176,7 +1176,7 @@ fn expression_address_taken_locals(expression: &ProgramExpression, names: &mut B
     use ProgramExpression::*;
     let mut inner = |body: &ProgramExpression| expression_address_taken_locals(body, names);
     match expression {
-        Value(_) | Variable(_) | FunctionAddress(_) | CallResult { .. } => {}
+        Value(_) | Variable(_) | FunctionAddress(_) | StepResult { .. } => {}
         Cast { expression, .. } => inner(expression),
         FloatNegate(expression)
         | FloatClassification { expression, .. }
@@ -1247,7 +1247,7 @@ fn collect_program_expression_variables(
         Variable(name) => {
             names.insert(name.clone());
         }
-        CallResult { .. } => {}
+        StepResult { .. } => {}
         Cast { expression, .. }
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
@@ -2280,7 +2280,7 @@ fn termination_measure_display(measure: &ProgramExpression) -> String {
         | EnumConstruct { .. }
         | EnumField { .. }
         | EnumIs { .. }
-        | CallResult { .. }
+        | StepResult { .. }
         | Value(_) => "…".to_string(),
     }
 }
@@ -2789,7 +2789,7 @@ fn ranking_measure_term_unfolded(
         EnumConstruct { .. } | EnumField { .. } | EnumIs { .. } => {
             Err("termination measures may not read Rust enum values".into())
         }
-        CallResult { .. } => Err("termination measures may not read a call's result".into()),
+        StepResult { .. } => Err("termination measures may not read a call's result".into()),
         Conditional {
             condition,
             then_branch,
@@ -4166,7 +4166,7 @@ fn expression_function_addresses(expression: &ProgramExpression, taken: &mut BTr
                 taken.insert(name.to_string());
             }
         }
-        Variable(_) | CallResult { .. } => {}
+        Variable(_) | StepResult { .. } => {}
         Cast { expression, .. }
         | FloatNegate(expression)
         | FloatClassification { expression, .. }
@@ -5485,6 +5485,7 @@ mod address_escape_tests {
             source: Default::default(),
             name: "p".to_string(),
             expression: address_of("i"),
+            prior_result: None,
         };
         let store = ProgramStatement::Store {
             pointer: variable("p"),
@@ -5513,6 +5514,7 @@ mod address_escape_tests {
             source: Default::default(),
             name: "p".to_string(),
             expression: ProgramExpression::Add(Box::new(address_of("n")), Box::new(variable("k"))),
+            prior_result: None,
         };
         let branch = ProgramStatement::If {
             condition: variable("c"),
@@ -6555,6 +6557,7 @@ mod local_descent_tests {
                     source: Default::default(),
                     name: "slot".to_string(),
                     expression: crate::kernel::program_expression::function_address(*taken),
+                    prior_result: None,
                 }),
             );
         }

@@ -139,7 +139,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                     summary.taken.insert(name.clone());
                 }
             }
-            ProgramExpression::FunctionAddress(_) | ProgramExpression::CallResult { .. } => {}
+            ProgramExpression::FunctionAddress(_) | ProgramExpression::StepResult { .. } => {}
             ProgramExpression::AddressOf(value)
             | ProgramExpression::CheckedObjectAddress(value) => {
                 expressions.push((value, true));

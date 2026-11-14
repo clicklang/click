@@ -3834,6 +3834,7 @@ fn execute_execution_statement_leaf_paths(
             name,
             expression,
             source,
+            ..
         } => source
             .lease_plan()
             .is_none_or(|plan| plan.validates_assignment(name, expression)),
@@ -4156,7 +4157,38 @@ fn execute_execution_statement_leaf_paths(
             name,
             expression,
             source,
+            prior_result,
         } => {
+            // A postfix update keeps the value the assignment replaces as its
+            // step's result: one read of the local, as the program reads it.
+            let prior = match prior_result {
+                Some(step) => {
+                    let reads = evaluate_expression_value_paths(
+                        state,
+                        &crate::kernel::program_expression::variable(name.clone()),
+                        assumptions,
+                        budget,
+                    )?;
+                    match reads.as_slice() {
+                        [
+                            ExpressionPath {
+                                outcome: ExpressionOutcome::Value(value),
+                                ..
+                            },
+                        ] => Some((*step, value.clone())),
+                        _ => {
+                            return Ok(vec![StatementExecutionPath::new(
+                                StatementOutcome::RuntimeError(RuntimeError::UnboundVariable(
+                                    format!("`{name}` has no single value before its update"),
+                                )),
+                                Vec::new().into(),
+                                Vec::new(),
+                            )]);
+                        }
+                    }
+                }
+                None => None,
+            };
             let mut paths = execute_program_lvalue_assignment_paths(
                 state,
                 &crate::kernel::program_expression::variable(name.clone()),
@@ -4185,6 +4217,9 @@ fn execute_execution_statement_leaf_paths(
                     }
                     if let Some(fact) = source.completed(state, after, name) {
                         path.facts.push(fact);
+                    }
+                    if let Some((step, value)) = &prior {
+                        after.set_step_result(*step, value.clone().into_native());
                     }
                 }
             }
@@ -4263,7 +4298,7 @@ fn execute_execution_statement_leaf_paths(
                     None => value,
                 };
                 if let StatementOutcome::Normal(state) = &mut path.outcome {
-                    state.set_call_result(*call, value);
+                    state.set_step_result(*call, value);
                 }
             }
             paths
@@ -4501,7 +4536,7 @@ fn execute_execution_statement_leaf_paths(
                                 branch_state
                             };
                             // The condition's call results end with it.
-                            let branch_state = without_read_call_results(branch_state, condition);
+                            let branch_state = without_read_step_results(branch_state, condition);
                             // The arm is a scope: what it declares stops
                             // existing however control leaves it.
                             let declared = scope_declared_names(branch);
@@ -4597,13 +4632,20 @@ fn execute_execution_statement_leaf_paths(
     // made end with the statement that reads them: none is left at a loop
     // head or a join.
     let mut paths = paths;
-    if state.call_results.is_some()
-        && !matches!(statement, ProgramStatement::CallResult { .. })
-        && statement_reads_call_result(statement)
+    if state.step_results.is_some()
+        && !matches!(
+            statement,
+            ProgramStatement::CallResult { .. }
+                | ProgramStatement::Assign {
+                    prior_result: Some(_),
+                    ..
+                }
+        )
+        && statement_reads_step_result(statement)
     {
         for path in &mut paths {
             if let Some(state) = execution_statement_outcome_state_mut(&mut path.outcome) {
-                state.call_results = None;
+                state.step_results = None;
             }
         }
     }
@@ -4612,23 +4654,23 @@ fn execute_execution_statement_leaf_paths(
 }
 
 /// `state` past a condition that read its call results, which end with it.
-pub(in crate::kernel) fn without_read_call_results(
+pub(in crate::kernel) fn without_read_step_results(
     mut state: ExecutionState,
     condition: &ProgramExpression,
 ) -> ExecutionState {
-    if state.call_results.is_some() && condition.reads_call_result() {
-        state.call_results = None;
+    if state.step_results.is_some() && condition.reads_step_result() {
+        state.step_results = None;
     }
     state
 }
 
 /// Whether `statement` itself reads a call's result.
-fn statement_reads_call_result(statement: &ProgramStatement) -> bool {
+fn statement_reads_step_result(statement: &ProgramStatement) -> bool {
     let mut expressions = Vec::new();
     super::undefined_site::statement_expressions(statement, &mut expressions);
     expressions
         .into_iter()
-        .any(|(expression, _)| expression.reads_call_result())
+        .any(|(expression, _)| expression.reads_step_result())
 }
 
 /// The state an outcome continues in, when it has one.

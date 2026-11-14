@@ -4398,7 +4398,7 @@ fn c_statement_calls_recording(
             }
             syntax::C0Expression::Void
             | syntax::C0Expression::Variable(_)
-            | syntax::C0Expression::CallResult { .. }
+            | syntax::C0Expression::StepResult { .. }
             | syntax::C0Expression::Int32Literal(_)
             | syntax::C0Expression::UInt8Literal(_)
             | syntax::C0Expression::UInt32Literal(_)

@@ -237,6 +237,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
             source: Default::default(),
             name: "x".to_string(),
             expression: crate::kernel::program_expression::int32_literal(1),
+            prior_result: None,
         },
         &PureFactContext::new(),
         ExecutionContext::execute_bodies(&ExecutionEnvironment::new()),
@@ -396,6 +397,7 @@ fn volatile_parameter_accesses_emit_ordered_facts() {
                 source: Default::default(),
                 name: "value".to_string(),
                 expression: crate::kernel::program_expression::int32_literal(8),
+                prior_result: None,
             }),
             std::sync::Arc::new(ProgramStatement::Return(
                 crate::kernel::program_expression::variable("value"),
