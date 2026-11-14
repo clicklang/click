@@ -4162,6 +4162,8 @@ This establishes live storage, not initialized contents or any stored value.
 To restrict the resulting fact to a smaller range, use `separation::subrange`
 and `separation::viewable_restrict`. For example, see
 [`observe_memory_after_store.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_memory_after_store.md).
+[`observe_uninitialized_memory_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_uninitialized_memory_rejected.md)
+checks that a subsequent `solve` still cannot establish initialization.
 
 The remaining rules in this section describe observing a declared composite
 resource.
