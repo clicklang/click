@@ -99,6 +99,15 @@ impl ExecutionValue {
         }
     }
 
+    /// A branch handoff retains an existing producer root or admits its
+    /// selected complete pointer value without changing any other carrier.
+    pub(in crate::kernel) fn retain_pointer_result(self) -> Self {
+        match self {
+            Self::Native(value @ ProgramValue::Pointer(_)) => Self::retain_formed_pointer(value),
+            value => value,
+        }
+    }
+
     /// Retain one selected operand before crossing a native checking boundary.
     pub(in crate::kernel) fn common_operand(&self) -> KernelTerm {
         match self {

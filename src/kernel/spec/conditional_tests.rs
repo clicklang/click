@@ -240,3 +240,77 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
     }
     assert_eq!(KernelTermExport::machine_export_count(), exports);
 }
+
+#[test]
+fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
+    let _session = VerificationSession::enter();
+    let pointer = PointerValue::new(
+        Pointer::symbolic(Variable(1026100)),
+        ProgramType::Int32Pointer,
+    )
+    .with_pointee_constant(true)
+    .with_pointee_volatile(true);
+    let native = SpecValue::Native(ProgramValue::Pointer(pointer.clone()));
+    let shared = native.clone().retain_pointer_result();
+    let other_payload = SpecValue::Native(ProgramValue::Pointer(
+        pointer.clone().with_pointee_constant(false),
+    ));
+    let condition = Proposition::ConditionIs(ConditionTerm::Variable(Variable(1026101)), true);
+    for left in [native.clone(), shared.clone()] {
+        for right in [
+            other_payload.clone(),
+            other_payload.clone().retain_pointer_result(),
+        ] {
+            let result = SpecValue::conditional(&condition, &left, &right, true)
+                .unwrap()
+                .unwrap();
+            assert!(result.shared().is_some());
+            if let Some(root) = left.shared() {
+                assert_eq!(result.shared(), Some(root));
+            }
+            assert_eq!(result.clone().into_native(), native.clone().into_native());
+            assert!(result.pointer().unwrap().pointee_constant());
+            assert!(result.pointer().unwrap().pointee_volatile());
+        }
+    }
+    let distinct = SpecValue::Native(ProgramValue::Pointer(PointerValue::new(
+        Pointer::symbolic(Variable(1026102)),
+        ProgramType::Int32Pointer,
+    )));
+    for retain in [false, true] {
+        assert!(
+            SpecValue::conditional(&condition, &shared, &distinct, retain)
+                .unwrap()
+                .is_none()
+        );
+    }
+    for truth in [false, true] {
+        let expression = SpecExpression::If {
+            condition: Box::new(SpecProposition::Comparison {
+                left: SpecExpression::Value(int32(0)),
+                operator: ComparisonOperator::Equal,
+                right: SpecExpression::Value(int32(if truth { 0 } else { 1 })),
+            }),
+            then_branch: Box::new(SpecExpression::Value(native.clone().into_native())),
+            else_branch: Box::new(SpecExpression::Value(distinct.clone().into_native())),
+        };
+        let mut execution = ExecutionBudget::new();
+        let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            SpecScope::unbound(&ExecutionState::new(), None),
+            &expression,
+            &PureFactContext::new(),
+            &mut SpecEvaluation::logical(&mut execution),
+        )
+        .unwrap();
+        assert_eq!(paths.len(), 1);
+        assert!(paths[0].value.shared().is_some());
+        assert_eq!(
+            paths[0].value.clone().into_native(),
+            if truth {
+                native.clone().into_native()
+            } else {
+                distinct.clone().into_native()
+            }
+        );
+    }
+}
