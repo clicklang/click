@@ -423,10 +423,21 @@ owning proof must have no open outcome branches before completion proceeds.
 The outcome producer returns a path-to-branch index, so later completion does
 not scan siblings to locate a case. Registration selects the retained entry
 of a coherent proof, including frontier-loop proofs, and consumes its prepared
-case contexts. Artifact-premise admission and whole-contract claim/case coverage
-remain registration responsibilities to migrate. Independent conditional
-execution artifacts have no opened contract proof and retain their entry
-validation route.
+case contexts. `WholeContractProof` opens a boundary obligation and each
+declared clause for every entry case before body tactics run. Clause-specific
+proofs can finish while this owner still has open obligations. Admission and
+consumption of their checked receipts update the owner; a finished clause or
+case cannot stand in for another. Different cases may use different complete
+execution strategies. Persistent candidate owners retain independent progress.
+`complete()` returns `CompletedContract` only when the indexed open-goal set is
+empty. Registration consumes its already constructed rule and performs no
+additional clause-coverage or function-packaging check.
+
+Artifact admission still uses the existing premise-authorization and entry
+representation adaptation algorithm while the owner remains open. Retaining
+those relationships directly remains migration work, as does return-path
+reconstruction before whole-contract completion. Independent conditional
+execution artifacts retain their separate validation and rule-packaging APIs.
 
 Closing goal state is fixed-size and shared proof forks retain independent
 updates. An explicit `assumption()` discharges the selected closing goal using

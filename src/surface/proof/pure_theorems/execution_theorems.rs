@@ -376,48 +376,32 @@ pub(super) fn verify_execution_theorem(
         function_source_registry,
         tactics,
     )?;
-    // Certification starts from the entry the proof was built from.
-    let (mut state, arguments, facts) = match verified
+    let entry = verified
         .iter()
+        .filter(|verified| {
+            verified
+                .checked_execution
+                .has_checked_resource_transitions()
+        })
         .find_map(|verified| verified.entry_context.clone())
-    {
-        Some(entry) => (
-            entry.state.clone(),
-            entry.arguments.clone(),
-            entry.pure_facts.clone(),
-        ),
-        None => {
-            let (state, arguments, facts, _) = initial_claim_context(
-                &block,
-                &parsed,
-                resources,
-                spec_definitions,
-                theorem.name(),
-            )?;
-            (state, arguments, facts)
-        }
-    };
-    // A stable-view proof artifact carries the exact caller state the checked
-    // function-entry boundary accepted, including its loan ledger roots and
-    // resource occurrence IDs. Certifying the one-call proof against an
-    // independently built entry state would compare two equivalent-looking
-    // but distinct authorities and reject every artifact. This is the same
-    // reuse the ordinary contract-certification path performs.
-    if let Some(entry) = verified
-        .iter()
-        .find_map(|verified| verified.checked_execution.caller_state())
-    {
-        state = entry.clone();
-    }
+        .or_else(|| {
+            verified
+                .iter()
+                .find_map(|verified| verified.entry_context.clone())
+        })
+        .ok_or_else(|| error("the one-call proof did not retain its contract entry"))?;
+    let state = entry.cases.caller_state();
+    let arguments = &entry.arguments;
+    let facts = &entry.pure_facts;
     let function = annotated_function_with_assumptions(
         &block,
         &parsed,
-        &state,
-        &arguments,
+        state,
+        arguments,
         spec_definitions,
         resources,
         Some(ResourceFrameEntry {
-            assumptions: &assumptions_from_propositions(&facts),
+            assumptions: &assumptions_from_propositions(facts),
             checked_entry_state: None,
         }),
         None,
@@ -426,26 +410,29 @@ pub(super) fn verify_execution_theorem(
         .into_iter()
         .map(|execution| CheckedFunctionExecution::clone(execution))
         .collect::<Vec<_>>();
-    let execution =
-        prove_program_function_contract_execution_paths_with_checked_artifacts_and_pure_theorems(
-            state,
-            function.clone(),
-            arguments,
-            environment.clone(),
-            ExecutionSemantics::APPLY_VERIFIED_RULES,
-            FunctionContractExecutionMode::VerifyLoops,
-            &artifacts,
-            &[],
-        );
+    let owner = entry
+        .completion
+        .clone()
+        .ok_or_else(|| error("the one-call proof did not open a whole-contract owner"))?;
+    let admitted = owner.admit_executions(
+        function,
+        environment.clone(),
+        ExecutionSemantics::APPLY_VERIFIED_RULES,
+        FunctionContractExecutionMode::VerifyLoops,
+        &artifacts,
+        &[],
+    );
     let propositions = verified
         .iter()
         .filter_map(|v| v.checked_proposition.clone())
         .collect::<Vec<_>>();
-    let claims =
-        program_function_contract_claims_from_completions(&function, &execution, &propositions)
-            .ok_or_else(|| error("the one-call proof did not certify every target obligation"))?;
-    let rule = program_verified_function_rule(function, &claims)
-        .ok_or_else(|| error("the one-call proof did not establish a checked contract"))?;
+    let completed = admitted
+        .consume_completions(&propositions)
+        .complete()
+        .map_err(|goal| error(&format!("the one-call proof still owes {goal:?}")))?;
+    let rule = completed
+        .into_rule()
+        .expect("a synthetic one-call function is never a program entry");
     let authority = match concrete_callee {
         Some(callee) => crate::kernel::prove_executed_concrete_contract_refinement(
             environment,
