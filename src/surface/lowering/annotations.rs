@@ -1487,7 +1487,8 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
         | CStatement::CopyAggregate { .. }
         | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. }
-        | CStatement::Assert { .. } => None,
+        | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. } => None,
         CStatement::ForStep { .. } | CStatement::EndAutomaticLifetimes { .. } => None,
     }
 }
@@ -8357,6 +8358,13 @@ impl AnnotationLowerer<'_> {
             (CodeRegion::Loop(_), ProgramPointKind::Exit) | (CodeRegion::Statement(_), _)
                 if self.snapshots.is_some() =>
             {
+                if let Some(refusal) = self.snapshots.and_then(|snapshots| {
+                    snapshots.ambiguous_exit_refusal(&SnapshotSelector::ProgramPoint(
+                        program_point.clone(),
+                    ))
+                }) {
+                    return Err(refusal);
+                }
                 Err(format!(
                     "no state snapshot was recorded for `{}`; run `step()` across that statement before using it in `at(...)`",
                     crate::surface::diagnostics::describe_program_point_ref(program_point)

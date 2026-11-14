@@ -3248,6 +3248,7 @@ fn collect_scope_declared_names(statement: &CStatement, names: &mut Vec<String>)
         | CStatement::HeapAllocate { .. }
         | CStatement::HeapFree { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Return(_)
         | CStatement::Throw(_)
         | CStatement::Store { .. }
@@ -3602,6 +3603,7 @@ fn verification_operation_name(statement: &CStatement) -> &'static str {
         CStatement::ScalarReferenceScope(_) => "verification statement: borrow scope",
         CStatement::Skip => "verification statement: skip",
         CStatement::Break => "verification statement: break",
+        CStatement::LoopTest { .. } => "verification statement: loop test",
         CStatement::Continue => "verification statement: continue",
         CStatement::Goto { .. } => "verification statement: goto",
         CStatement::ForStep { .. } => "verification statement: continue with for step",
@@ -3841,6 +3843,21 @@ fn execute_c_statement_leaf_paths(
             Vec::new().into(),
             Vec::new(),
         )],
+        // A loop's test continues the pass when its condition holds and
+        // leaves the loop when it does not. Leaving is the loop's exit, the
+        // outcome a `break` also has; the frontier records which one it was.
+        CStatement::LoopTest { condition } => execute_c_statement_leaf_paths(
+            state,
+            &CStatement::If {
+                condition: condition.clone(),
+                then_branch: Box::new(CStatement::Skip),
+                else_branch: Box::new(CStatement::Break),
+            },
+            assumptions,
+            execution_context,
+            budget,
+            judgment,
+        )?,
         CStatement::Continue => vec![CStatementExecutionPath::new(
             CStatementOutcome::Continue(Box::new(state.clone())),
             Vec::new().into(),

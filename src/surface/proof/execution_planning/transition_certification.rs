@@ -618,6 +618,7 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &CStatement)
         | CStatement::DeclareAggregate { .. }
         | CStatement::Assign { .. }
         | CStatement::Assert { .. }
+        | CStatement::LoopTest { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_)
         | CStatement::Store { .. }

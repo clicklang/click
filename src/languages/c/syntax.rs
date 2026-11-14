@@ -3034,6 +3034,14 @@ pub enum C0Statement {
         /// Where the source statement was written; see [`C0Site`].
         site: C0Site,
     },
+    /// A loop's own test inside its pass, after the calls its condition
+    /// makes: true continues, false leaves the loop. It is a position of the
+    /// loop as written (`loop(i).test`), not a statement of the source.
+    LoopTest {
+        condition: C0Expression,
+        /// The loop's site: the test is the loop's own region.
+        site: C0Site,
+    },
     If {
         condition: C0Expression,
         then_branch: Box<C0Statement>,
@@ -5622,6 +5630,7 @@ impl C0Statement {
             | Self::HeapAllocate { site, .. }
             | Self::HeapFree { site, .. }
             | Self::Assert { site, .. }
+            | Self::LoopTest { site, .. }
             | Self::Return(_, site)
             | Self::Store { site, .. }
             | Self::SequentialStore { site, .. }
@@ -5652,6 +5661,7 @@ impl C0Statement {
             | Self::HeapAllocate { site, .. }
             | Self::HeapFree { site, .. }
             | Self::Assert { site, .. }
+            | Self::LoopTest { site, .. }
             | Self::Return(_, site)
             | Self::Store { site, .. }
             | Self::SequentialStore { site, .. }
@@ -5830,6 +5840,9 @@ impl C0Statement {
             Self::Assert {
                 condition, label, ..
             } => crate::kernel::c_labeled_assert(condition.to_kernel_expression(), label.clone()),
+            Self::LoopTest { condition, .. } => crate::kernel::CStatement::LoopTest {
+                condition: condition.to_kernel_expression(),
+            },
             Self::Return(expression, _) => {
                 crate::kernel::c_return(expression.to_kernel_expression())
             }
@@ -6577,7 +6590,8 @@ fn validate_function_returns(
         | C0Statement::SequentialStore { .. }
         | C0Statement::AggregateCopy { .. }
         | C0Statement::Update { .. }
-        | C0Statement::Assert { .. } => Ok(()),
+        | C0Statement::Assert { .. }
+        | C0Statement::LoopTest { .. } => Ok(()),
     }
 }
 
@@ -7014,6 +7028,7 @@ fn validate_direct_forward_gotos(
 fn statement_contains_control_transfer(statement: &C0Statement) -> bool {
     match statement {
         C0Statement::Break
+        | C0Statement::LoopTest { .. }
         | C0Statement::Continue
         | C0Statement::Goto { .. }
         | C0Statement::Return(_, _) => true,
@@ -15263,7 +15278,7 @@ impl Parser {
                     }
                 }
                 C0Statement::IndirectCall { .. } => return true,
-                C0Statement::Assert { condition, .. } => {
+                C0Statement::Assert { condition, .. } | C0Statement::LoopTest { condition, .. } => {
                     if self.expression_contains_lowerable_expression(condition) {
                         return true;
                     }
@@ -15704,10 +15719,8 @@ impl Parser {
                 if !prefix.is_empty() {
                     let guard = prepend_statements(
                         prefix,
-                        C0Statement::If {
-                            condition: C0Expression::Not(Box::new(condition)),
-                            then_branch: Box::new(C0Statement::Break),
-                            else_branch: Box::new(C0Statement::Skip),
+                        C0Statement::LoopTest {
+                            condition,
                             site: site.clone(),
                         },
                     );
@@ -15743,14 +15756,13 @@ impl Parser {
                 // continue gets the same call-and-check sequence before
                 // returning to the shell head; nested loops keep their own
                 // continue targets.
-                let body =
-                    prepend_condition_check_before_loop_continues(body, &prefix, &condition)?;
+                let body = prepend_condition_check_before_loop_continues(
+                    body, &prefix, &condition, &site,
+                )?;
                 let condition_check = prepend_statements(
                     prefix,
-                    C0Statement::If {
-                        condition: C0Expression::Not(Box::new(condition)),
-                        then_branch: Box::new(C0Statement::Break),
-                        else_branch: Box::new(C0Statement::Skip),
+                    C0Statement::LoopTest {
+                        condition,
                         site: site.clone(),
                     },
                 );
@@ -15774,10 +15786,8 @@ impl Parser {
                 if !prefix.is_empty() {
                     let guard = prepend_statements(
                         prefix,
-                        C0Statement::If {
-                            condition: C0Expression::Not(Box::new(condition)),
-                            then_branch: Box::new(C0Statement::Break),
-                            else_branch: Box::new(C0Statement::Skip),
+                        C0Statement::LoopTest {
+                            condition,
                             site: site.clone(),
                         },
                     );
@@ -15894,6 +15904,13 @@ impl Parser {
                         label,
                         site,
                     },
+                ))
+            }
+            C0Statement::LoopTest { condition, site } => {
+                let (prefix, condition) = self.lower_expression_calls(condition)?;
+                Ok(prepend_statements(
+                    prefix,
+                    C0Statement::LoopTest { condition, site },
                 ))
             }
             C0Statement::Assign {
@@ -21335,7 +21352,8 @@ fn statement_continues_enclosing_loop(statement: &C0Statement) -> bool {
         | C0Statement::SequentialStore { .. }
         | C0Statement::AggregateCopy { .. }
         | C0Statement::Update { .. }
-        | C0Statement::Assert { .. } => false,
+        | C0Statement::Assert { .. }
+        | C0Statement::LoopTest { .. } => false,
     }
 }
 
@@ -21343,27 +21361,33 @@ fn prepend_condition_check_before_loop_continues(
     statement: C0Statement,
     prefix: &[C0Statement],
     loop_condition: &C0Expression,
+    loop_site: &C0Site,
 ) -> Result<C0Statement, C0SyntaxError> {
     Ok(match statement {
+        // A `continue` in a `do ... while` goes to the loop's test, which
+        // runs the condition's calls first.
         C0Statement::Continue => prepend_statements(
             prefix.to_vec(),
-            C0Statement::If {
-                condition: C0Expression::Not(Box::new(loop_condition.clone())),
-                then_branch: Box::new(C0Statement::Break),
-                else_branch: Box::new(C0Statement::Continue),
-                site: C0Site::NONE,
-            },
+            C0Statement::Seq(
+                Box::new(C0Statement::LoopTest {
+                    condition: loop_condition.clone(),
+                    site: loop_site.clone(),
+                }),
+                Box::new(C0Statement::Continue),
+            ),
         ),
         C0Statement::Seq(first, second) => C0Statement::Seq(
             Box::new(prepend_condition_check_before_loop_continues(
                 *first,
                 prefix,
                 loop_condition,
+                loop_site,
             )?),
             Box::new(prepend_condition_check_before_loop_continues(
                 *second,
                 prefix,
                 loop_condition,
+                loop_site,
             )?),
         ),
         C0Statement::If {
@@ -21377,11 +21401,13 @@ fn prepend_condition_check_before_loop_continues(
                 *then_branch,
                 prefix,
                 loop_condition,
+                loop_site,
             )?),
             else_branch: Box::new(prepend_condition_check_before_loop_continues(
                 *else_branch,
                 prefix,
                 loop_condition,
+                loop_site,
             )?),
             site,
         },
@@ -21429,7 +21455,8 @@ fn prepend_condition_check_before_loop_continues(
         | C0Statement::SequentialStore { .. }
         | C0Statement::AggregateCopy { .. }
         | C0Statement::Update { .. }
-        | C0Statement::Assert { .. }) => statement,
+        | C0Statement::Assert { .. }
+        | C0Statement::LoopTest { .. }) => statement,
     })
 }
 

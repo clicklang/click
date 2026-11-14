@@ -11034,3 +11034,46 @@ fn consuming_call_bound_samples() {
     }
     assert_near_linear_scaling_at_sampled_sizes("consuming call bound", &samples);
 }
+
+/// A loop's exit carries out the points its leaving pass recorded, read by
+/// walking the path's change history back to a mark taken where the pass
+/// began. The walk costs the changes the pass made: it is flat as the history
+/// before the pass grows, and grows with the points the pass recorded.
+#[test]
+fn a_loop_exit_reads_only_the_points_its_pass_recorded() {
+    use crate::instrumentation::measure_deterministic_work;
+    let region = |index: usize, kind: ProgramPointKind| {
+        SnapshotSelector::ProgramPoint(ProgramPointRef {
+            region: CodeRegionRef::Region(index),
+            kind,
+        })
+    };
+    let pass_work = |before: usize, during: usize| {
+        let mut snapshots = RecordedSnapshots::new();
+        for index in 0..before {
+            snapshots.insert(region(index, ProgramPointKind::Entry), CState::new());
+        }
+        let mark = snapshots.history_mark();
+        for index in 0..during {
+            snapshots.insert(
+                region(before + index, ProgramPointKind::Exit),
+                CState::new(),
+            );
+        }
+        let (points, work) = measure_deterministic_work(|| snapshots.recorded_since(&mark));
+        assert_eq!(points.snapshots.len(), during);
+        work
+    };
+    let unrelated = [16_usize, 64, 256, 1024].map(|before| pass_work(before, 4));
+    assert!(
+        unrelated.iter().all(|work| *work == unrelated[0]),
+        "the walk must not read history from before the pass: {unrelated:?}"
+    );
+    let related = [2_usize, 4, 8, 16].map(|during| pass_work(64, during));
+    for pair in related.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 3,
+            "the walk must grow linearly with the pass's points: {related:?}"
+        );
+    }
+}

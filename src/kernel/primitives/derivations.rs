@@ -2041,7 +2041,7 @@ fn c_statement_source_cost(statement: &CStatement) -> CSourceCost {
             CStatement::HeapFree { pointer } => {
                 cost.add_expression(c_expression_source_steps(pointer));
             }
-            CStatement::Assert { condition, .. } => {
+            CStatement::Assert { condition, .. } | CStatement::LoopTest { condition } => {
                 cost.add_expression(c_expression_source_steps(condition));
             }
             CStatement::Seq(statements) => {

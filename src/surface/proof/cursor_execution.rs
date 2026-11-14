@@ -2858,7 +2858,7 @@ fn execute_step_from_frontier_position_selecting_path(
     if transitions.len() > 1
         && !descended_try
         && let Some(path_cases) = path_cases
-        && statement_successors_are_path_cases(&transitions)
+        && statement_successors_are_path_cases(&step_statement, &transitions)
     {
         execution.core.next_opaque_call = next_opaque_call_before_step;
         *path_cases = transitions;
@@ -3077,7 +3077,8 @@ fn execute_step_from_frontier_position_selecting_path(
             .with_kind(kind)
             .with_runtime_missing_resource(error));
             }
-            let path_case_split = statement_successors_are_path_cases(&transitions);
+            let path_case_split =
+                statement_successors_are_path_cases(&step_statement, &transitions);
             let split_condition = if path_case_split {
                 let cases = transitions
                     .iter()
@@ -3894,16 +3895,23 @@ pub(super) const BOUNDED_EXECUTE_SPLIT_LIMIT: usize = 1_024;
 /// path split: each completes the statement normally or returns, and each
 /// assumes a path fact some other successor does not, so the facts tell the
 /// cases apart.
-fn statement_successors_are_path_cases(transitions: &[CertifiedStatementTransition]) -> bool {
+/// A loop's own test has two such cases: true continues the pass, false
+/// leaves the loop, whose outcome is the loop's exit.
+fn statement_successors_are_path_cases(
+    statement: &CStatement,
+    transitions: &[CertifiedStatementTransition],
+) -> bool {
     let facts = transitions
         .iter()
         .map(|transition| transition.path_facts.as_slice())
         .collect::<Vec<_>>();
+    let loop_test = matches!(statement, CStatement::LoopTest { .. });
     transitions.iter().all(|transition| {
-        matches!(
+        (matches!(
             transition.outcome,
             CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
-        ) && !distinguishing_path_facts(&transition.path_facts, &facts).is_empty()
+        ) || (loop_test && matches!(transition.outcome, CStatementOutcome::Break(_))))
+            && !distinguishing_path_facts(&transition.path_facts, &facts).is_empty()
     })
 }
 
@@ -4380,6 +4388,9 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
             describe_c_expression(operand)
         ),
         CStatement::If { condition, .. } => format!("if ({})", describe_c_expression(condition)),
+        CStatement::LoopTest { condition } => {
+            format!("the loop's test ({})", describe_c_expression(condition))
+        }
         CStatement::While { condition, .. } => {
             format!("while ({})", describe_c_expression(condition))
         }

@@ -98,6 +98,8 @@ struct SourceExecutionLayoutData {
     source_statements: BTreeMap<Vec<u32>, Vec<usize>>,
     /// The function each direct-call region calls, for `.call(f, j)`.
     call_targets: BTreeMap<usize, String>,
+    /// The regions that are a loop's own test, `loop(i).test()`.
+    loop_tests: BTreeSet<usize>,
     /// The local each call region assigns its result to, for
     /// `<region>.result`, and the call region of each frontend result
     /// temporary, which no other name spells.
@@ -608,6 +610,9 @@ impl SourceExecutionLayout {
                     .or_default()
                     .push(index);
                 layout.region_paths.insert(index, path.to_vec());
+            }
+            if let syntax::C0Statement::LoopTest { .. } = statement {
+                layout.loop_tests.insert(index);
             }
             if let syntax::C0Statement::CallAssign { function_name, .. }
             | syntax::C0Statement::Call { function_name, .. } = statement
@@ -1131,6 +1136,18 @@ impl SourceExecutionLayout {
                         )
                     });
                 }
+                SourcePathStep::Test if last => {
+                    return own(&path)
+                        .iter()
+                        .find(|region| data.loop_tests.contains(region))
+                        .copied()
+                        .ok_or_else(|| {
+                            format!(
+                                "`{}` tests its condition at its head, before any region of its own, so it has no `test()`",
+                                describe(&path)
+                            )
+                        });
+                }
                 SourcePathStep::Assignment(local, index) if last => {
                     let assigns = |region: &usize| {
                         data.assignments
@@ -1157,10 +1174,11 @@ impl SourceExecutionLayout {
                 }
                 SourcePathStep::Region(_)
                 | SourcePathStep::Call(..)
+                | SourcePathStep::Test
                 | SourcePathStep::Assignment(..)
                 | SourcePathStep::Read(_) => {
                     return Err(
-                        "`region(j)`, `call(f, j)`, `assignment(x, j)` and `read(j)` end a chained region"
+                        "`region(j)`, `call(f, j)`, `test()`, `assignment(x, j)` and `read(j)` end a chained region"
                             .into(),
                     );
                 }
@@ -1209,6 +1227,7 @@ impl SourceExecutionLayout {
             let own = data.source_statements.get(path)?;
             let position = own.iter().position(|own| *own == region)?;
             steps.push(match data.call_targets.get(&region) {
+                None if data.loop_tests.contains(&region) => SourcePathStep::Test,
                 Some(function) => SourcePathStep::Call(
                     function.clone(),
                     own[..position]
@@ -1891,6 +1910,7 @@ mod source_execution_layout_tests {
                 sites: BTreeMap::new(),
                 source_statements: BTreeMap::new(),
                 call_targets: BTreeMap::new(),
+                loop_tests: BTreeSet::new(),
                 call_results: BTreeMap::new(),
                 allocation_regions: BTreeSet::new(),
                 temporary_call_regions: BTreeMap::new(),

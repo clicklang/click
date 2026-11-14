@@ -2736,7 +2736,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                             return Ok(proof);
                         }
                         return Err(ClickError::new(format!(
-                            "`{claim_label}` must execute exactly one complete loop-body iteration, ending at the body's end, a `continue`, or a `break`"
+                            "`{claim_label}` must execute exactly one complete loop-body iteration, ending at the body's end, a `continue`, a `break`, or the loop's test when it is false"
                         )));
                     }
                     leaves.push(proof.clone());
@@ -3193,7 +3193,7 @@ impl UnfinishedPreservationPath<'_> {
                 None => frontier,
             }),
             None => ClickError::new(format!(
-                "`{claim_label}` must execute exactly one complete loop-body iteration, ending at the body's end, a `continue`, or a `break`"
+                "`{claim_label}` must execute exactly one complete loop-body iteration, ending at the body's end, a `continue`, a `break`, or the loop's test when it is false"
             )),
         };
         self.proof.attach_step_diagnostic(error)
@@ -3257,6 +3257,10 @@ fn describe_unfinished_preservation(
         ),
         (count_leaves(leaves, LoopControlExit::Break), "a `break`"),
         (
+            count_leaves(leaves, LoopControlExit::TestFalse),
+            "the loop's test, false",
+        ),
+        (
             count_leaves(leaves, LoopControlExit::Continue),
             "a `continue`",
         ),
@@ -3271,7 +3275,7 @@ fn describe_unfinished_preservation(
         message.push_str(&format!(". Already complete: {}", join_list(&closed)));
     }
     message.push_str(
-        ". Every path a `preserve` opens must end at the body's end, a `continue`, or a `break`",
+        ". Every path a `preserve` opens must end at the body's end, a `continue`, a `break`, or the loop's test when it is false",
     );
     Some(message)
 }
@@ -4730,7 +4734,9 @@ fn advance_checked_branch_arms<'a>(
     for (name, take_then) in [("then", true), ("else", false)] {
         let control = advanced.arm_loop_control(record, take_then);
         if control != LoopControlExit::BodyEnd {
-            let keyword = if control.is_exit() {
+            let keyword = if control == LoopControlExit::TestFalse {
+                "path leaves the loop at its test"
+            } else if control.is_exit() {
                 "`break` leaves the loop"
             } else {
                 "`continue` reaches the loop's back edge"

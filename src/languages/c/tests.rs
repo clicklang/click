@@ -5180,7 +5180,8 @@ fn c0_syntax_models_missing_else_and_empty_statements_as_skip() {
             | syntax::C0Statement::SequentialStore { .. }
             | syntax::C0Statement::AggregateCopy { .. }
             | syntax::C0Statement::Update { .. }
-            | syntax::C0Statement::Assert { .. } => false,
+            | syntax::C0Statement::Assert { .. }
+            | syntax::C0Statement::LoopTest { .. } => false,
         }
     }
 
