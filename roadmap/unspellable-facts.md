@@ -223,6 +223,19 @@ Explicit import/export preserves native shape and opaque index annotations;
 shared numeric index DAGs are never exported by this boundary. Live producers
 remain unchanged until their consumers and pointer-context spelling migrate.
 
+7b prepares raw addresses from shared block identities and shared offsets, with
+no parallel native address tree. Block atoms preserve literal occurrence IDs,
+loaded-pointer IDs, and exact pure-call payload handles. Call argument migration
+remains in 7p. Address identity compares only handles; explicit native output
+preserves the original address shape. Producers remain inactive in this slice.
+
+7c prepares complete pointer payloads with shared addresses and common numeric
+subobject widths. Qualifiers, designation, opaque extent, object-type evidence
+and local-reference custody survive explicit round trips, including metadata
+ignored by logical pointer equality. Exact producer handles do not coalesce
+those payloads. Persistent evidence is retained without premise traversal;
+no live producer or access decision changes in this preparation slice.
+
 ## Chunk 6: folds, binders and algebraic matches
 
 Delivered one PR per subchunk, in sequence, preparing scoped consumers and Surface
