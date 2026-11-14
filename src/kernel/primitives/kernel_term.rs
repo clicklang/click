@@ -4,7 +4,7 @@
 use super::*;
 use crate::kernel::MachineCastSpelling;
 mod boolean;
-// Prepared payloads; activation follows scoped consumers and Surface support.
+// Scoped payloads shared by evaluation, checking, and Surface synthesis.
 #[allow(dead_code)]
 mod folds;
 pub use folds::KernelFold;

@@ -566,3 +566,77 @@ fn common_match_surface_work_tracks_selected_body_without_exports() {
         assert!(work <= 100 * size + 100, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
+    use crate::kernel::{
+        AlgebraicValueType, BindingNames, KernelFold, KernelFoldIndex, KernelMatch, KernelMatchArm,
+        KernelTerm, KernelTermExport, KernelTermImport, KernelType, PureFunctionArgument,
+    };
+    let mut baseline = BTreeMap::new();
+    for unrelated in [0, 64, 256] {
+        for depth in [3, 9, 27] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let n = MachineTerm::Variable(Variable(992000));
+            let mut state = CState::new().with_local("n", CValue::Int32(n.clone()));
+            for i in 0..unrelated {
+                state = state.with_local(
+                    format!("unused_{i}"),
+                    CValue::Int32(MachineTerm::Variable(Variable(993000 + i))),
+                );
+            }
+            let mut import = KernelTermImport::default();
+            let scrutinee = import.argument(&PureFunctionArgument::Algebraic(
+                KernelMatch::test_scrutinee(vec![AlgebraicValueType::C(CType::Int32)]),
+            ));
+            let ty = KernelType::C(CType::Int32);
+            let zero = import.machine(MachineIntegerType::Int32, &MachineTerm::constant(0));
+            let end = import.machine(MachineIntegerType::Int32, &n);
+            let declaration = KernelTerm::variable(ty.clone(), Variable(992003));
+            let mut root = KernelTerm::variable(ty.clone(), Variable(992001));
+            for _ in 0..depth {
+                let matched = KernelMatch::new(
+                    ty.clone(),
+                    scrutinee.clone(),
+                    vec![(
+                        KernelMatchArm {
+                            variant: "Arm".into(),
+                            bindings: vec![declaration.clone()],
+                            binding_names: BindingNames::written(&["field".into()]),
+                        },
+                        root,
+                    )],
+                )
+                .unwrap()
+                .into_term();
+                let folded = KernelFold::new(
+                    KernelFoldIndex::Int32,
+                    Variable(992001),
+                    Variable(992002),
+                    [zero.clone(), end.clone(), zero.clone(), matched],
+                )
+                .unwrap()
+                .into_term();
+                root = KernelTerm::checked_call(ty.clone(), "wrapped".into(), vec![folded]);
+            }
+            let names = BTreeMap::from([(Variable(991900), "payload".into())]);
+            let exports = KernelTermExport::machine_export_count();
+            let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+                raise_kernel_term(&root, ParameterBinding::default(), &state, &names)
+            });
+            let surface = surface.expect("nested fold/match/call spelling");
+            let text = crate::surface::diagnostics::describe_contract_expression(&surface);
+            assert!(!text.contains('\0'));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            if unrelated == 0 {
+                baseline.insert(depth, work);
+            } else {
+                assert_eq!(
+                    work, baseline[&depth],
+                    "depth={depth}, unrelated={unrelated}"
+                );
+            }
+            assert!(work <= 500 * depth + 500, "depth={depth}, work={work}");
+        }
+    }
+}

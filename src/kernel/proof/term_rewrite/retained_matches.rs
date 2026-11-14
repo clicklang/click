@@ -622,11 +622,8 @@ mod tests {
             unreachable!()
         };
         let mut rewrite = TermRewrite::for_pointer_value_exact(from, to);
-        let result = rewrite
-            .retained_match(&common)
-            .unwrap()
-            .export_algebraic(&mut KernelTermExport::default())
-            .unwrap();
+        let result = rewrite.retained_match(&common).unwrap().into_term();
+        let result = KernelTermExport::default().algebraic(&result).unwrap();
         let AlgebraicTermNode::Match { arms, .. } = result.node else {
             unreachable!()
         };

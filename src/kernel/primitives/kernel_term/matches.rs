@@ -270,35 +270,6 @@ impl KernelMatch {
                 .collect::<Result<_, &'static str>>()?,
         })
     }
-    pub(crate) fn export_algebraic(
-        &self,
-        export: &mut KernelTermExport,
-    ) -> Result<AlgebraicTerm, &'static str> {
-        let KernelType::Algebraic(ty) = &self.result_type else {
-            return Err("expected algebraic match");
-        };
-        let scrutinee = self.export_scrutinee(export)?;
-        let arms = self
-            .arms
-            .iter()
-            .zip(&self.arguments[1..])
-            .map(|(arm, body)| {
-                let PureFunctionArgument::Algebraic(body) = export.argument(body)? else {
-                    return Err("expected algebraic arm");
-                };
-                Ok(AlgebraicResultMatchArm {
-                    variant: arm.variant.clone(),
-                    bindings: arm.export_bindings(export)?,
-                    body,
-                    binding_names: arm.binding_names.clone(),
-                })
-            })
-            .collect::<Result<_, &'static str>>()?;
-        Ok(AlgebraicTerm {
-            algebraic_type: ty.clone(),
-            node: AlgebraicTermNode::Match { scrutinee, arms },
-        })
-    }
 }
 
 impl KernelConstructor {
@@ -517,7 +488,7 @@ mod tests {
             },
         };
         let common = KernelMatch::import_algebraic(&mut import, &native).unwrap();
-        assert_eq!(common.export_algebraic(&mut export).unwrap(), native);
+        assert_eq!(export.algebraic(&common.into_term()).unwrap(), native);
     }
     #[test]
     fn match_payload_preserves_arm_order_and_rejects_mixed_result_sorts() {
