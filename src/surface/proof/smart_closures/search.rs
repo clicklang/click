@@ -8386,19 +8386,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 },
             )
         })?;
-        Self::try_universal_conclusion_steps(search_input, &tactics)
+        Self::try_universal_steps_with_arithmetic(search_input, &tactics)
     }
 
     /// Specialization can expose an arithmetic consequence without changing
     /// any read. Keep that consequence as ordinary arithmetic certificates,
     /// rather than asking legacy transport to rediscover it. This runs only
     /// in search; checking the emitted steps never enters arithmetic planning.
-    fn try_universal_conclusion_steps(
+    fn try_universal_steps_with_arithmetic(
         search_input: &Proof<'a>,
         tactics: &[ProofTactic],
     ) -> Option<Proof<'a>> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_universal_conclusion_steps");
+        crate::kernel::search::record_discovery("try_universal_steps_with_arithmetic");
         let mut proof = search_input.clone();
         for (index, tactic) in tactics.iter().enumerate() {
             if proof.focused_discharged() {
@@ -8431,210 +8431,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     continue;
                 }
             }
-            if let ProofTactic::TransportUsing {
-                source,
-                target,
-                premises,
-            } = tactic
-                && let Some(closed) = Self::try_instantiated_indexed_read_preservation(
-                    &proof, source, target, premises,
-                )
-            {
-                proof = closed;
-                continue;
-            }
             let step = SourceContext::PureGoal.leaf_step(tactic)?;
             proof = proof.driver().apply_step(step).ok()?;
         }
         proof.focused_discharged().then_some(proof)
-    }
-
-    /// Select explicit cell containment, separation, and per-statement
-    /// preservation for an instantiated comparison. History enumeration is
-    /// confined to search; each accepted equality names its one footprint.
-    fn try_instantiated_indexed_read_preservation(
-        search_input: &Proof<'a>,
-        source: &ClickProposition,
-        target: &ClickProposition,
-        premises: &[ClickProposition],
-    ) -> Option<Proof<'a>> {
-        #[cfg(test)]
-        crate::kernel::search::record_discovery("try_instantiated_indexed_read_preservation");
-        let reads = comparison_preservation_reads(source, target)?;
-        let have = |proof: &Proof<'a>, goal, steps: Vec<ProofStep>| {
-            let mut scope = proof
-                .driver()
-                .open_have_with_goal_observations(goal, true)
-                .ok()?;
-            for step in steps {
-                scope = scope.driver().apply_step(step).ok()?;
-            }
-            scope.join().ok()
-        };
-        let apply = |name: &str, arguments, premises| ProofStep::ApplyTheoremUsing {
-            application: TheoremApplication {
-                name: format!("click::separation::{name}"),
-                arguments,
-            },
-            premises,
-        };
-        let arg =
-            |resource: &ResourceSubject| ContractExpression::Resource(Box::new(resource.clone()));
-        let contains =
-            |parent: &ResourceSubject, child: &ResourceSubject| ClickProposition::Contains {
-                parent: parent.clone(),
-                child: child.clone(),
-            };
-        let mut proof = search_input.clone();
-        for (_, read) in reads {
-            check_verification_deadline().ok()?;
-            let CExpression::Index(base, index) = contract_expression_as_c_fragment(&read)? else {
-                return None;
-            };
-            let mut selected = None;
-            for premise in premises {
-                check_verification_deadline().ok()?;
-                let unanchored = match premise {
-                    ClickProposition::At { proposition, .. } => proposition.as_ref(),
-                    other => other,
-                };
-                let ClickProposition::Separate {
-                    left,
-                    right: parent,
-                } = unanchored
-                else {
-                    continue;
-                };
-                let ResourceSubject::Memory(segment) = parent else {
-                    continue;
-                };
-                let Some((parent_base, lo, hi)) = segment.surface_range() else {
-                    continue;
-                };
-                if contract_expression_as_c_fragment(parent_base).as_ref() != Some(base.as_ref()) {
-                    continue;
-                }
-                let address = CExpression::AddressOf(Box::new(CExpression::Index(
-                    base.clone(),
-                    index.clone(),
-                )));
-                let zero = CExpression::Value(crate::kernel::int32(0));
-                let one = CExpression::Value(crate::kernel::int32(1));
-                let cell = ResourceSubject::Memory(ContractSegment {
-                    state: ContractSegmentState::Current,
-                    base: address.clone(),
-                    start: zero.clone(),
-                    end: one.clone(),
-                    uninitialized: false,
-                    surface: ContractSegmentSurface::Range {
-                        base: ContractExpression::CFragment(address),
-                        start: ContractExpression::CFragment(zero),
-                        end: ContractExpression::CFragment(one),
-                    },
-                });
-                let index = ContractExpression::CFragment(*index.clone());
-                let bounds = vec![
-                    ClickProposition::Comparison {
-                        left: lo.clone(),
-                        operator: ComparisonOperator::LessEqual,
-                        right: index.clone(),
-                    },
-                    ClickProposition::Comparison {
-                        left: index.clone(),
-                        operator: ComparisonOperator::LessThan,
-                        right: hi.clone(),
-                    },
-                ];
-                let Some(contained) = have(
-                    &proof,
-                    contains(parent, &cell),
-                    vec![apply(
-                        "contains_element",
-                        vec![parent_base.clone(), lo.clone(), hi.clone(), index],
-                        bounds,
-                    )],
-                ) else {
-                    continue;
-                };
-                let Some(reflexive) = have(
-                    &contained,
-                    contains(left, left),
-                    vec![apply("contains_refl", vec![arg(left)], vec![])],
-                ) else {
-                    continue;
-                };
-                let separation = ClickProposition::Separate {
-                    left: left.clone(),
-                    right: cell.clone(),
-                };
-                let Some(restricted) = have(
-                    &reflexive,
-                    separation.clone(),
-                    vec![apply(
-                        "restrict",
-                        vec![arg(left), arg(parent), arg(left), arg(&cell)],
-                        vec![
-                            premise.clone(),
-                            contains(left, left),
-                            contains(parent, &cell),
-                        ],
-                    )],
-                ) else {
-                    continue;
-                };
-                selected = Some((restricted, cell, separation));
-                break;
-            }
-            let (mut current, cell, separation) = selected?;
-            let regions = search_input
-                .premise_fixed_state_view()?
-                .fixed_state
-                .recorded_snapshots
-                .iter()
-                .filter_map(|(selector, _)| match selector {
-                    SnapshotSelector::ProgramPoint(ProgramPointRef {
-                        region: region @ CodeRegionRef::Region(_),
-                        kind: ProgramPointKind::Entry,
-                    }) => Some(region.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            for region in &regions {
-                check_verification_deadline().ok()?;
-                let footprint_separation = ClickProposition::Separate {
-                    left: ResourceSubject::Footprint(region.clone()),
-                    right: cell.clone(),
-                };
-                let Some(separated) = have(
-                    &current,
-                    footprint_separation.clone(),
-                    vec![ProofStep::NormalizeUsing(vec![separation.clone()])],
-                ) else {
-                    continue;
-                };
-                let at = |kind| ContractExpression::At {
-                    selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
-                        region: region.clone(),
-                        kind,
-                    }),
-                    expression: Box::new(read.clone()),
-                };
-                let equality = ClickProposition::Comparison {
-                    left: at(ProgramPointKind::Exit),
-                    operator: ComparisonOperator::Equal,
-                    right: at(ProgramPointKind::Entry),
-                };
-                if let Some(preserved) = have(
-                    &separated,
-                    equality,
-                    vec![ProofStep::Preserve(footprint_separation)],
-                ) {
-                    current = preserved;
-                }
-            }
-            proof = current;
-        }
-        proof.driver().apply_step(ProofStep::Assumption).ok()
     }
 
     /// Tries available universal facts when the atomic decision cannot name
@@ -9126,7 +8926,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .ok()
                 .flatten()
         } else {
-            Self::try_universal_conclusion_steps(search_input, &tactics)
+            Self::try_universal_steps_with_arithmetic(search_input, &tactics)
         }
     }
 

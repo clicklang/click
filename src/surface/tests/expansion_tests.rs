@@ -22298,7 +22298,7 @@ fn instantiated_bound_to_result_expands_without_transport() {
 }
 
 #[test]
-fn instantiated_indexed_read_expands_to_separation_and_preservation() {
+fn instantiated_indexed_read_expands_without_transport() {
     let c_source = "void keep(int32 p[], int32 n, int32 *q) { *q = 9; }";
     let source = r#"
         verifying "keep.c";
@@ -22313,8 +22313,7 @@ fn instantiated_indexed_read_expands_to_separation_and_preservation() {
     let sources = [("keep.c", c_source)];
     let expanded = expand_function_proof_source(source, &sources, "keep").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
-    assert!(expanded.contains("contains_element"), "{expanded}");
-    assert!(expanded.contains("preserve("), "{expanded}");
+    assert!(expanded.contains("instantiate("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let missing = source.replace(
         "requires forall (i: int32) { 0 <= i and i < n implies p[i] == 7 };",

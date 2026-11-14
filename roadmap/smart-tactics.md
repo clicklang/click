@@ -181,7 +181,7 @@ also passed the CLI's replay with the implicit closer disabled.
 
 There are **three remaining reproduced output shapes**, from two successful
 source examples. Two shapes occur in the same vector example. These may share fixes;
-they are not necessarily five different kernel primitives.
+they need not require separate kernel primitives.
 
 | ID | Reproducer | Surviving generated operation | Work to isolate next |
 | --- | --- | --- | --- |

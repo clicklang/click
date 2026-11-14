@@ -646,9 +646,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_view
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_viewability_restriction_closure	requirement_kernel_atoms_for_search	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_ordinary_viewability_restriction_closure	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_goal	try_universal_conclusion_steps	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_instantiation	try_universal_conclusion_steps	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_conclusion_steps	driver	4
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_conclusion_steps	try_arithmetic_with_selected_premises	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_conclusion_steps	try_instantiated_indexed_read_preservation	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_instantiated_indexed_read_preservation	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_goal	try_universal_steps_with_arithmetic	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_instantiation	try_universal_steps_with_arithmetic	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	try_arithmetic_with_selected_premises	1
